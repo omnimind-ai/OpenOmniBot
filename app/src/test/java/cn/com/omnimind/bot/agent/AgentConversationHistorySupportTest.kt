@@ -239,6 +239,55 @@ class AgentConversationHistorySupportTest {
     }
 
     @Test
+    fun `normalizeInterruptedEntries finalizes lone thinking card during restore`() {
+        val thinkingEntry = AgentConversationEntry(
+            id = 1,
+            conversationId = 9,
+            conversationMode = "normal",
+            entryId = "task-1-thinking",
+            entryType = AgentConversationHistoryRepository.ENTRY_TYPE_UI_CARD,
+            status = AgentConversationHistoryRepository.STATUS_SUCCESS,
+            summary = "",
+            payloadJson = """
+                {
+                  "id":"task-1-thinking",
+                  "type":2,
+                  "user":3,
+                  "content":{
+                    "id":"task-1-thinking",
+                    "cardData":{
+                      "type":"deep_thinking",
+                      "taskID":"task-1",
+                      "thinkingContent":"正在分析",
+                      "startTime":1000,
+                      "endTime":null,
+                      "stage":1,
+                      "isLoading":true
+                    }
+                  },
+                  "isLoading":false,
+                  "isFirst":false,
+                  "isError":false,
+                  "isSummarizing":false,
+                  "createAt":"2026-03-27T00:00:01Z"
+                }
+            """.trimIndent(),
+            createdAt = 1000,
+            updatedAt = 1500
+        )
+
+        val normalized = AgentConversationHistorySupport.normalizeInterruptedEntries(
+            entries = listOf(thinkingEntry),
+            finalizeLatestThinkingEntries = true
+        )
+
+        assertEquals(1, normalized.size)
+        assertTrue(normalized.single().payloadJson.contains("\"stage\":4"))
+        assertTrue(normalized.single().payloadJson.contains("\"isLoading\":false"))
+        assertTrue(normalized.single().payloadJson.contains("\"endTime\":1500"))
+    }
+
+    @Test
     fun `buildPromptSeedFromEntries prepends context summary and skips entries before cutoff`() {
         val entries = listOf(
             buildUserEntry(id = 1, entryId = "u1", text = "旧问题"),

@@ -208,7 +208,7 @@ class AgentConversationHistoryRepository(
         conversationId: Long,
         conversationMode: String
     ): List<Map<String, Any?>> = withContext(Dispatchers.IO) {
-        val normalized = normalizeInterruptedToolEntries(
+        val normalized = normalizeEntriesForDisplay(
             DatabaseHelper.getAgentConversationEntriesDesc(conversationId, conversationMode)
         )
         val messagePayloads = normalized.mapNotNull { entry -> entryToMessagePayload(entry) }
@@ -370,6 +370,22 @@ class AgentConversationHistoryRepository(
     ): List<AgentConversationEntry> {
         if (entries.isEmpty()) return entries
         val normalized = AgentConversationHistorySupport.normalizeInterruptedEntries(entries)
+        normalized.forEachIndexed { index, updated ->
+            if (updated != entries[index]) {
+                upsertEntry(updated.copy(updatedAt = System.currentTimeMillis()))
+            }
+        }
+        return normalized
+    }
+
+    private suspend fun normalizeEntriesForDisplay(
+        entries: List<AgentConversationEntry>
+    ): List<AgentConversationEntry> {
+        if (entries.isEmpty()) return entries
+        val normalized = AgentConversationHistorySupport.normalizeInterruptedEntries(
+            entries = entries,
+            finalizeLatestThinkingEntries = true
+        )
         normalized.forEachIndexed { index, updated ->
             if (updated != entries[index]) {
                 upsertEntry(updated.copy(updatedAt = System.currentTimeMillis()))

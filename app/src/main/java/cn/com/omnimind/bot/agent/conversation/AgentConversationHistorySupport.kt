@@ -219,7 +219,8 @@ internal object AgentConversationHistorySupport {
     }
 
     fun normalizeInterruptedEntries(
-        entries: List<AgentConversationEntry>
+        entries: List<AgentConversationEntry>,
+        finalizeLatestThinkingEntries: Boolean = false
     ): List<AgentConversationEntry> {
         if (entries.isEmpty()) return entries
         val normalized = entries.map { entry ->
@@ -248,7 +249,10 @@ internal object AgentConversationHistorySupport {
                 )
             }
         }
-        return normalizeStaleThinkingEntries(normalized)
+        return normalizeStaleThinkingEntries(
+            entries = normalized,
+            finalizeLatestThinkingEntries = finalizeLatestThinkingEntries
+        )
     }
 
     fun mergeToolPayload(
@@ -561,7 +565,8 @@ internal object AgentConversationHistorySupport {
     }
 
     private fun normalizeStaleThinkingEntries(
-        entries: List<AgentConversationEntry>
+        entries: List<AgentConversationEntry>,
+        finalizeLatestThinkingEntries: Boolean
     ): List<AgentConversationEntry> {
         if (entries.isEmpty()) return entries
 
@@ -609,24 +614,33 @@ internal object AgentConversationHistorySupport {
             val latest = ordered.lastOrNull()
             val terminalTime = latest?.taskId?.let { terminalEntryTimeByTask[it] }
 
-            ordered.forEach { thinkingEntry ->
+            ordered.forEachIndexed { orderedIndex, thinkingEntry ->
+                val nextThinkingStart = ordered.getOrNull(orderedIndex + 1)?.startTime
                 val shouldFinalize = when {
                     latest == null -> false
                     thinkingEntry.index != latest.index -> true
                     terminalTime != null && terminalTime >= thinkingEntry.startTime -> true
+                    finalizeLatestThinkingEntries -> true
                     else -> false
                 }
                 if (!shouldFinalize) {
-                    return@forEach
+                    return@forEachIndexed
+                }
+                val resolvedEndTime = when {
+                    terminalTime != null -> terminalTime
+                    nextThinkingStart != null -> nextThinkingStart
+                    finalizeLatestThinkingEntries -> maxOf(
+                        thinkingEntry.startTime,
+                        thinkingEntry.entry.updatedAt,
+                        thinkingEntry.entry.createdAt
+                    )
+                    else -> System.currentTimeMillis()
                 }
                 val normalized = finalizeThinkingEntry(
                     entry = thinkingEntry.entry,
                     payload = thinkingEntry.payload,
                     cardData = thinkingEntry.cardData,
-                    endTime = maxOf(
-                        thinkingEntry.startTime,
-                        terminalTime ?: System.currentTimeMillis()
-                    )
+                    endTime = maxOf(thinkingEntry.startTime, resolvedEndTime)
                 )
                 if (normalized != null) {
                     updatedEntries[thinkingEntry.index] = normalized
