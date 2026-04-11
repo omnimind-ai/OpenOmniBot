@@ -73,14 +73,6 @@ class AccessibilityController() {
             return true
         }
 
-        fun hideKeyboard() {
-            service?.hideKeyboard()
-        }
-
-        fun restoreKeyboard() {
-            service?.restoreKeyboard()
-        }
-
         private fun checkAccessibilityPermissions() {
             if (!AssistsCore.isAccessibilityServiceEnabled()) {
                 throw PermissionException("无障碍服务未启用或权限未授予!")

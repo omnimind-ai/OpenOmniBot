@@ -3,7 +3,6 @@ package cn.com.omnimind.accessibility.api
 object Constant {
     val IGNORED_PACKAGES = listOf(
         "com.android.systemui",           // 状态栏、通知栏
-        "com.google.android.inputmethod.latin", // Google输入法
         "com.samsung.android.app.clipboardedge", // Samsung边缘面板
         "com.android.quickstep",           // 最近任务
         "com.huawei.screenrecorder",//华为录屏功能 直接过滤
@@ -13,7 +12,6 @@ object Constant {
     // 屏蔽特定类名
     val IGNORED_CLASSES = listOf(
         "android.view.View",//普通view变化
-        "android.inputmethodservice.SoftInputWindow",  // 输入法窗口
         "android.widget.Toast\$ToastView",             // Toast提示
         "com.android.systemui.statusbar.phone.StatusBarWindowView", // 状态栏
         "com.android.systemui.popup.PopupContainerWithArrow", // 弹窗
@@ -25,7 +23,7 @@ object Constant {
         "^android\\.view\\..*".toRegex(),  // 匹配android.widget包下的所有类
         "^android\\.support\\..*".toRegex()  // 匹配android.widget包下的所有类
     )
-    val IGNORED_VIEWS =   listOf("toast", "popup", "dialog", "ime")
+    val IGNORED_VIEWS =   listOf("toast", "popup", "dialog")
     val SYSTEM_PACKAGE_START="com.android"
 
 

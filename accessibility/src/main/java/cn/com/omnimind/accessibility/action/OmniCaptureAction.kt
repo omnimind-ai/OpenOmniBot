@@ -17,7 +17,7 @@ class OmniCaptureAction(
         const val TAG = "OmniScreenshotController"
         /**
          * 判断是否应该忽略窗口变化
-         * 屏蔽状态栏、输入法等系统组件
+         * 屏蔽状态栏等系统组件
          */
         fun shouldIgnoreWindowChange(packageName: String, className: String): Boolean {
 
@@ -117,13 +117,12 @@ class OmniCaptureAction(
 
     /**
      * 判断是否应该忽略窗口变化
-     * 屏蔽状态栏、输入法等系统组件
+     * 屏蔽状态栏等系统组件
      */
     private fun shouldIgnoreWindowChange(packageName: String, className: String): Boolean {
         // 屏蔽系统UI组件
         val ignoredPackages = listOf(
             "com.android.systemui",           // 状态栏、通知栏
-            "com.google.android.inputmethod.latin", // Google输入法
             "com.samsung.android.app.clipboardedge", // Samsung边缘面板
             "com.android.quickstep"           // 最近任务
         )
@@ -131,7 +130,6 @@ class OmniCaptureAction(
         // 屏蔽特定类名
         val ignoredClasses = listOf(
             "android.view.View",//普通view变化
-            "android.inputmethodservice.SoftInputWindow",  // 输入法窗口
             "android.widget.Toast\$ToastView",             // Toast提示
             "com.android.systemui.statusbar.phone.StatusBarWindowView", // 状态栏
             "com.android.systemui.popup.PopupContainerWithArrow" // 弹窗
@@ -159,7 +157,7 @@ class OmniCaptureAction(
         }
 
         // 屏蔽包含特定关键词的类
-        val ignoredKeywords = listOf("toast", "popup", "dialog", "ime")
+        val ignoredKeywords = listOf("toast", "popup", "dialog")
         if (ignoredKeywords.any {
                 className.lowercase().contains(it) && packageName.startsWith("com.android")
             }) {

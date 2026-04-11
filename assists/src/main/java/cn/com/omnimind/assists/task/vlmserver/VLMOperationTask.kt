@@ -126,8 +126,6 @@ open class VLMOperationTask(
             question
         }
         val infoMessage = "小万需要你的帮助：$mQuestion"
-        AccessibilityController.restoreKeyboard()
-
         onTaskStop(TaskFinishType.WAITING_INPUT, infoMessage)
         notifyTerminalResult(
             VlmTaskTerminalResult(
@@ -151,7 +149,6 @@ open class VLMOperationTask(
         val userConfirmation = userInputChannel.receive()
         OmniLog.d(Tag, "收到用户确认：$userConfirmation")
 
-        AccessibilityController.hideKeyboard()
         setStartWithNotShowReadFlag = true
         onTaskStarted()
         taskStartTime = System.currentTimeMillis()
@@ -186,7 +183,6 @@ open class VLMOperationTask(
         onTaskStop(TaskFinishType.USER_PAUSED, "")
         executionTaskEventApi?.onVlmTaskPaused(this)
         // 不推送按钮卡片，直接通知UI层切换小猫状态
-        AccessibilityController.Companion.restoreKeyboard()
         if (onMessagePushListener != null) {
             try {
                 onMessagePushListener.onVLMRequestUserInput("已接管控制，完成操作后点击继续")
@@ -195,7 +191,6 @@ open class VLMOperationTask(
             }
         }
         userPauseChannel.receive() // 阻塞等待用户点击继续
-        AccessibilityController.Companion.hideKeyboard()
         setStartWithNotShowReadFlag = true
         onTaskStarted()
         taskStartTime = System.currentTimeMillis()
@@ -268,7 +263,6 @@ open class VLMOperationTask(
         this.taskContext = context
         this.onTaskFinishListener = onTaskFinishListener
         super.start {
-            AccessibilityController.Companion.hideKeyboard()
             val currentPackageName = packageName ?: (AccessibilityController.Companion.getPackageName() ?: "")
             val installedApps = AccessibilityController.Companion.mapInstalledApplications()
             val shouldSummary = (needSummary || hasSummaryIntent(goal))
@@ -439,7 +433,6 @@ open class VLMOperationTask(
 
         super.start {
             taskStartTime = System.currentTimeMillis()
-            AccessibilityController.Companion.hideKeyboard()
             val installedApps = AccessibilityController.Companion.mapInstalledApplications()
             OmniLog.d(Tag, "VLM Operation Sequence Sub Task Is Running !")
             try {
@@ -824,7 +817,6 @@ $goal
     }
 
     override suspend fun onTaskDestroy() {
-        AccessibilityController.Companion.restoreKeyboard()
         onTaskFinishListener.invoke()
         super.onTaskDestroy()
     }
