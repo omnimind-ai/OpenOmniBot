@@ -1,12 +1,8 @@
 package cn.com.omnimind.accessibility.util
 
 import android.graphics.Rect
-import android.os.Build
 import android.util.Xml
 import android.view.accessibility.AccessibilityNodeInfo
-import android.view.accessibility.AccessibilityNodeInfo.FLAG_PREFETCH_DESCENDANTS_BREADTH_FIRST
-import android.view.accessibility.AccessibilityNodeInfo.FLAG_PREFETCH_DESCENDANTS_DEPTH_FIRST
-import android.view.accessibility.AccessibilityNodeInfo.FLAG_PREFETCH_SIBLINGS
 import cn.com.omnimind.accessibility.action.AccessibilityNode
 import cn.com.omnimind.accessibility.action.OmniScreenshotAction
 import cn.com.omnimind.accessibility.action.XmlTreeNode
@@ -14,145 +10,222 @@ import cn.com.omnimind.baselib.util.OmniLog
 import java.io.StringWriter
 
 object XmlTreeUtils {
+    private const val DIRECT_XML_MAX_DEPTH = 20
+    private const val DIRECT_XML_MAX_VISITED_NODES = 600
+    private const val DIRECT_XML_MAX_CHARS = 256 * 1024
+    private const val DIRECT_XML_MAX_TEXT_ATTR_LENGTH = 256
+    private const val DIRECT_XML_MAX_GENERIC_ATTR_LENGTH = 128
+
+    private data class DirectBuildResult(
+        val xml: String?,
+        val nodeMap: Map<String, AccessibilityNode>?
+    )
+
     /**
      * 直接生成 XML 字符串（优化版本，避免构建中间树结构）
      * 性能优化：
-     * 1. 限制子节点数量（浅层50，深层20）
-     * 2. 限制最大深度（15层）
+     * 1. 避免构建中间树结构
+     * 2. 限制最大深度、节点数和字符串大小
      * 3. 只处理可见节点
-     * 4. 及时回收节点
+     * 4. 非采集 nodeMap 场景下及时回收子节点
      */
     fun buildXmlDirectly(root: AccessibilityNodeInfo?): String? {
+        return buildXmlDirectlyInternal(
+            root = root,
+            includeXml = true,
+            includeNodeMap = false
+        )?.xml
+    }
+
+    fun buildNodeMapDirectly(root: AccessibilityNodeInfo?): Map<String, AccessibilityNode>? {
+        return buildXmlDirectlyInternal(
+            root = root,
+            includeXml = false,
+            includeNodeMap = true
+        )?.nodeMap
+    }
+
+    @Suppress("DEPRECATION")
+    fun findFocusedNode(root: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
         if (root == null) return null
 
-        val writer = StringWriter()
-        val namespace = "http://schemas.android.com/apk/res/android"
-        val serializer = Xml.newSerializer().apply {
-            setOutput(writer)
-            startDocument("UTF-8", true)
-            setPrefix("", namespace)
-            startTag(namespace, "hierarchy")
+        val visitedNodes = mutableSetOf<AccessibilityNodeInfo>()
+
+        fun dfs(node: AccessibilityNodeInfo?, depth: Int = 0): AccessibilityNodeInfo? {
+            if (node == null || depth > DIRECT_XML_MAX_DEPTH) return null
+            if (!visitedNodes.add(node)) return null
+            try {
+                if ((depth == 0 || node.isVisibleToUser) && node.isFocused) {
+                    return node
+                }
+
+                val childCount = node.childCount
+                for (index in 0 until childCount) {
+                    val child = try {
+                        node.getChild(index)
+                    } catch (e: Exception) {
+                        OmniLog.w(
+                            OmniScreenshotAction.TAG,
+                            "Failed to get child at index $index while finding focused node: ${e.message}"
+                        )
+                        continue
+                    }
+
+                    if (child != null) {
+                        val found = try {
+                            dfs(child, depth + 1)
+                        } finally {
+                            if (!child.isFocused) {
+                                child.recycle()
+                            }
+                        }
+                        if (found != null) {
+                            return found
+                        }
+                    }
+                }
+                return null
+            } finally {
+                visitedNodes.remove(node)
+            }
         }
 
+        return dfs(root)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun buildXmlDirectlyInternal(
+        root: AccessibilityNodeInfo?,
+        includeXml: Boolean,
+        includeNodeMap: Boolean
+    ): DirectBuildResult? {
+        if (root == null) return null
+
+        val writer = if (includeXml) StringWriter() else null
+        val serializer = if (includeXml) {
+            val namespace = "http://schemas.android.com/apk/res/android"
+            Xml.newSerializer().apply {
+                setOutput(writer)
+                startDocument("UTF-8", true)
+                setPrefix("", namespace)
+                startTag(namespace, "hierarchy")
+            }
+        } else {
+            null
+        }
+
+        val nodeMap = if (includeNodeMap) linkedMapOf<String, AccessibilityNode>() else null
+
         val visitedNodes = mutableSetOf<AccessibilityNodeInfo>()
-        var nodeIdCounter = 0
+        var nextNodeId = 0
+        var visitedNodeCount = 0
+        var truncated = false
+
+        fun canContinueSerializing(): Boolean {
+            if (truncated) return false
+            if (visitedNodeCount >= DIRECT_XML_MAX_VISITED_NODES) {
+                truncated = true
+                return false
+            }
+            if (writer != null && writer.buffer.length >= DIRECT_XML_MAX_CHARS) {
+                truncated = true
+                return false
+            }
+            return true
+        }
 
         fun addAttr(name: String, value: String?) {
-            if (!value.isNullOrEmpty() && value != "false") {
+            if (!value.isNullOrEmpty() && value != "false" && serializer != null) {
                 serializer.attribute(null, name, value)
             }
         }
 
-        fun serializeNodeDirectly(
+        fun trimAttr(
+            text: String?,
+            maxLen: Int
+        ): String? {
+            val sanitized = sanitizeXmlString(text)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            return if (sanitized.length <= maxLen) sanitized else sanitized.take(maxLen) + "…"
+        }
+
+        fun traverse(
             node: AccessibilityNodeInfo?,
             depth: Int = 0
-        ): Int {
-            // 深度限制
-            if (depth > 15) {
-                return 0
-            }
+        ) {
+            if (!canContinueSerializing()) return
+            if (depth > DIRECT_XML_MAX_DEPTH || node == null) return
 
-            if (node == null) return 0
-
-            // 循环引用检查
             if (visitedNodes.contains(node)) {
-                return 0
+                return
             }
 
-            // 可见性检查（根节点除外）
             if (depth > 0 && !node.isVisibleToUser) {
-                return 0
+                return
             }
 
             visitedNodes.add(node)
 
             try {
+                if (!canContinueSerializing()) return
+                visitedNodeCount++
+
+                val nodeId = nextNodeId.toString()
+                nextNodeId++
                 val bounds = Rect()
                 node.getBoundsInScreen(bounds)
 
                 val hasText = !node.text.isNullOrEmpty()
                 val interactive = node.isClickable || node.isLongClickable ||
-                        node.isFocusable || node.isFocused ||
-                        node.isScrollable || node.isPassword ||
-                        node.isSelected || node.isEditable
+                    node.isFocusable || node.isFocused ||
+                    node.isScrollable || node.isPassword ||
+                    node.isSelected || node.isEditable
                 val show = hasText || interactive || depth == 0
 
-//                if (show) {
-                val currentId = nodeIdCounter++
-                serializer.startTag(null, "node")
-                serializer.attribute(null, "id", currentId.toString())
-
-                // 文本和描述属性
-                addAttr("text", sanitizeXmlString(node.text?.toString()))
-                addAttr("content-desc", sanitizeXmlString(node.contentDescription?.toString()))
-                addAttr("hintText", sanitizeXmlString(node.hintText?.toString()))
-                // 标识属性（非常重要，用于元素定位）
-                addAttr("resource-id", node.viewIdResourceName)
-                addAttr("class", node.className?.toString())
-                // 交互状态属性
-                addAttr("clickable", node.isClickable.toString())
-                addAttr("long-clickable", node.isLongClickable.toString())
-                addAttr("focusable", node.isFocusable.toString())
-                addAttr("focused", node.isFocused.toString())
-                addAttr("scrollable", node.isScrollable.toString())
-                addAttr("editable", node.isEditable.toString())
-                addAttr("selected", node.isSelected.toString())
-                // 状态属性
-                addAttr("enabled", node.isEnabled.toString())
-                addAttr("checkable", node.isCheckable.toString())
-                addAttr("checked", node.isChecked.toString())
-                addAttr("password", node.isPassword.toString())
-                // 特征点强的属性：输入类型（对于输入框很重要）
-                if (node.isEditable) {
-                    val inputType = node.inputType
-                    if (inputType != 0) {
-                        addAttr("input-type", inputType.toString())
-                    }
-                    val maxTextLength = node.maxTextLength
-                    if (maxTextLength > 0) {
-                        addAttr("max-text-length", maxTextLength.toString())
-                    }
+                if (nodeMap != null) {
+                    nodeMap[nodeId] = AccessibilityNode(
+                        info = node,
+                        bounds = bounds,
+                        show = show,
+                        interactive = interactive
+                    )
                 }
-                // 特征点强的属性：面板和容器标题
-                addAttr("pane-title", sanitizeXmlString(node.paneTitle?.toString()))
-                addAttr("state-description", sanitizeXmlString(node.stateDescription?.toString()))
-                addAttr("tooltip-text", sanitizeXmlString(node.tooltipText?.toString()))
 
-                // 特征点强的属性：错误信息
-                addAttr("error", sanitizeXmlString(node.error?.toString()))
-                // 特征点强的属性：绘制顺序（用于区分重叠元素）
-                val drawingOrder = node.drawingOrder
-                if (drawingOrder > 0) {
-                    addAttr("drawing-order", drawingOrder.toString())
+                if (show && serializer != null) {
+                    serializer.startTag(null, "node")
+                    serializer.attribute(null, "id", nodeId)
+                    addAttr("text", trimAttr(node.text?.toString(), DIRECT_XML_MAX_TEXT_ATTR_LENGTH))
+                    addAttr(
+                        "content-desc",
+                        trimAttr(node.contentDescription?.toString(), DIRECT_XML_MAX_TEXT_ATTR_LENGTH)
+                    )
+                    addAttr("clickable", node.isClickable.toString())
+                    addAttr("long-clickable", node.isLongClickable.toString())
+                    addAttr("focusable", node.isFocusable.toString())
+                    addAttr("focused", node.isFocused.toString())
+                    addAttr("scrollable", node.isScrollable.toString())
+                    addAttr("password", node.isPassword.toString())
+                    addAttr("selected", node.isSelected.toString())
+                    addAttr("editable", node.isEditable.toString())
+                    addAttr(
+                        "class",
+                        trimAttr(node.className?.toString(), DIRECT_XML_MAX_GENERIC_ATTR_LENGTH)
+                    )
+                    addAttr(
+                        "resource-id",
+                        trimAttr(node.viewIdResourceName, DIRECT_XML_MAX_GENERIC_ATTR_LENGTH)
+                    )
+                    serializer.attribute(
+                        null,
+                        "bounds",
+                        "[${bounds.left},${bounds.top}][${bounds.right},${bounds.bottom}]"
+                    )
                 }
-                serializer.attribute(
-                    null,
-                    "bounds",
-                    "[${bounds.left},${bounds.top}][${bounds.right},${bounds.bottom}]"
-                )
-//                }
 
-                // 限制子节点数量：浅层50，深层20
-                val maxChildren = if (depth < 3) 50 else 20
-                val childCount = minOf(node.childCount, maxChildren)
-
-
-                var processedChildren = 0
+                val childCount = node.childCount
                 for (i in 0 until childCount) {
+                    if (!canContinueSerializing()) break
                     val child = try {
-                        val startTime = System.currentTimeMillis()
-                        // 获取子节点时添加异常处理
-                        val child =
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                node.getChild(i, FLAG_PREFETCH_DESCENDANTS_DEPTH_FIRST)
-                            } else {
-                                node.getChild(i)
-                            }
-                        OmniLog.d(
-                            OmniScreenshotAction.TAG,
-                            "Processing child used time ${System.currentTimeMillis() - startTime}ms"
-                        )
-                        child
+                        node.getChild(i)
                     } catch (e: Exception) {
                         OmniLog.w(
                             OmniScreenshotAction.TAG,
@@ -163,32 +236,34 @@ object XmlTreeUtils {
 
                     if (child != null) {
                         try {
-                            // 只处理可见的子节点
-                            if (child.isVisibleToUser || depth == 0) {
-                                processedChildren += serializeNodeDirectly(child, depth + 1)
-                            }
+                            traverse(child, depth + 1)
                         } finally {
-                            // 及时回收节点，避免内存泄漏
-                            child.recycle()
+                            if (nodeMap == null) {
+                                child.recycle()
+                            }
                         }
                     }
                 }
 
-//                if (show) {
-                serializer.endTag(null, "node")
-//                }
-
-                return processedChildren + 1
+                if (show && serializer != null) {
+                    serializer.endTag(null, "node")
+                }
             } finally {
                 visitedNodes.remove(node)
             }
         }
 
-        serializeNodeDirectly(root, 0)
+        traverse(root, 0)
 
-        serializer.endTag(namespace, "hierarchy")
-        serializer.endDocument()
-        return writer.toString()
+        if (serializer != null) {
+            val namespace = "http://schemas.android.com/apk/res/android"
+            serializer.endTag(namespace, "hierarchy")
+            serializer.endDocument()
+        }
+        return DirectBuildResult(
+            xml = writer?.toString(),
+            nodeMap = nodeMap
+        )
     }
 
     fun buildXmlTree(root: AccessibilityNodeInfo?): XmlTreeNode? =
@@ -219,9 +294,7 @@ object XmlTreeUtils {
         }
 
         // 将当前节点添加到已访问节点集合中
-        if (node != null) {
-            visitedNodes.add(node)
-        }
+        visitedNodes.add(node)
 
         val nodeId = currentId.toString()
         val bounds = Rect()
@@ -252,9 +325,7 @@ object XmlTreeUtils {
         }
 
         // 从已访问节点集合中移除当前节点（确保在其他路径中可以再次访问）
-        if (node != null) {
-            visitedNodes.remove(node)
-        }
+        visitedNodes.remove(node)
 
         return XmlTreeNode(
             id = nodeId,
@@ -342,4 +413,3 @@ object XmlTreeUtils {
         return writer.toString()
     }
 }
-

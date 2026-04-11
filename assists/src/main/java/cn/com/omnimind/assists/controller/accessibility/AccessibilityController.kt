@@ -98,7 +98,7 @@ class AccessibilityController() {
 
         suspend fun inputTextToFocusedNode(text: String) {
             val focusedNode =
-                captureAction?.getNodeMap()?.values?.firstOrNull { it.info.isFocused }?.info
+                captureAction?.findFocusedNode()
                     ?: throw NoFocusedNodeException()
             actionController?.inputText(focusedNode, text)
         }
@@ -107,7 +107,7 @@ class AccessibilityController() {
             when (key.trim().uppercase()) {
                 "ENTER" -> {
                     val focusedNode =
-                        captureAction?.getNodeMap()?.values?.firstOrNull { it.info.isFocused }?.info
+                        captureAction?.findFocusedNode()
                             ?: throw NoFocusedNodeException()
                     actionController?.performImeEnter(focusedNode)
                         ?: throw IllegalStateException("Accessibility action controller is not ready")

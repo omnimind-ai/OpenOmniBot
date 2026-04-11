@@ -1168,8 +1168,7 @@ class VLMOperationService(
         return try {
             val service = AssistsService.instance
             val rootNode = service?.rootInActiveWindow ?: return null
-            val xmlTree = XmlTreeUtils.buildXmlTree(rootNode) ?: return null
-            XmlTreeUtils.serializeXml(xmlTree)
+            XmlTreeUtils.buildXmlDirectly(rootNode)
         } catch (e: Exception) {
             println("获取XML失败: ${e.message}")
             null
