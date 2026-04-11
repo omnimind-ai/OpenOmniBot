@@ -78,8 +78,7 @@ class ScreenStableDetector(
      */
     private fun captureScreenshotXml(): String? {
         val rootNode = service?.rootInActiveWindow ?: return null
-        val xmlTree = XmlTreeUtils.buildXmlTree(rootNode) ?: return null
-        return XmlTreeUtils.serializeXml(xmlTree)
+        return XmlTreeUtils.buildXmlDirectly(rootNode)
     }
 
 

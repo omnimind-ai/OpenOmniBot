@@ -204,14 +204,7 @@ class OmniCaptureAction(
 //        if (rootNode == null){
 //            return null
 //        }
-//        if (withOld){
-//            val rootNode = service.rootInActiveWindow ?: return null
-            val xmlTree = XmlTreeUtils.buildXmlTree(rootNode) ?: return null
-            xml = XmlTreeUtils.serializeXml(xmlTree)
-//        }else{
-//            xml = XmlTreeUtils.buildXmlDirectly(rootNode) ?: return null
-
-//        }
+        xml = XmlTreeUtils.buildXmlDirectly(rootNode) ?: return null
         OmniLog.d("CaptureServer", "xml used time ${System.currentTimeMillis()-startTime}")
 
         // 使用优化的直接生成 XML 方法，避免构建中间树结构
@@ -220,8 +213,12 @@ class OmniCaptureAction(
 
     fun getNodeMap(): Map<String, AccessibilityNode>? {
         val rootNode = service.rootInActiveWindow ?: return null
-        val xmlTree = XmlTreeUtils.buildXmlTree(rootNode) ?: return null
-        return XmlTreeUtils.extractNodeMap(xmlTree)
+        return XmlTreeUtils.buildNodeMapDirectly(rootNode)
+    }
+
+    fun findFocusedNode(): AccessibilityNodeInfo? {
+        val rootNode = service.rootInActiveWindow ?: return null
+        return XmlTreeUtils.findFocusedNode(rootNode)
     }
 }
 
@@ -237,4 +234,3 @@ data class XmlTreeNode(
     val node: AccessibilityNode,
     val children: List<XmlTreeNode>,
 )
-
