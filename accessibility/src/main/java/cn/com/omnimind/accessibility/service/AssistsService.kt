@@ -195,19 +195,6 @@ open class AssistsService : AccessibilityService(), LifecycleOwner {
     override fun onMotionEvent(event: MotionEvent) {
     }
 
-    fun hideKeyboard() {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-            softKeyboardController.showMode = AccessibilityService.SHOW_MODE_HIDDEN
-        }
-    }
-
-    fun restoreKeyboard() {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-            softKeyboardController.showMode = AccessibilityService.SHOW_MODE_AUTO
-        }
-    }
-
-
     override val lifecycle: Lifecycle
         get() = dispatcher.lifecycle
 }
