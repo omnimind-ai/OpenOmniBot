@@ -37,6 +37,9 @@ class _UtgDashboardPageState extends State<UtgDashboardPage> {
   String? _providerControlAction;
   String? _highlightedFunctionId;
   bool _resettingAllData = false;
+  bool _checkingUpdate = false;
+  bool _applyingUpdate = false;
+  UtgUpdateCheckResult? _updateCheckResult;
   final Map<String, Map<String, dynamic>> _functionBundleCache = {};
   final Map<String, String> _functionBundleErrorById = {};
   final Set<String> _expandedStepKeys = <String>{};
@@ -1371,6 +1374,63 @@ class _UtgDashboardPageState extends State<UtgDashboardPage> {
     }
   }
 
+  Future<void> _checkForUpdate() async {
+    setState(() => _checkingUpdate = true);
+    try {
+      final result = await AssistsMessageService.checkForUpdate(
+        baseUrl: _baseUrlController.text.trim(),
+      );
+      if (!mounted) return;
+      setState(() => _updateCheckResult = result);
+      if (result.updateAvailable) {
+        showToast(
+          '发现新版本: ${result.latestVersion}',
+          type: ToastType.info,
+        );
+      } else {
+        showToast('已是最新版本', type: ToastType.success);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showToast('检查更新失败: $e', type: ToastType.error);
+    } finally {
+      if (mounted) {
+        setState(() => _checkingUpdate = false);
+      }
+    }
+  }
+
+  Future<void> _applyUpdate() async {
+    setState(() => _applyingUpdate = true);
+    try {
+      final result = await AssistsMessageService.applyUpdate(
+        baseUrl: _baseUrlController.text.trim(),
+      );
+      if (!mounted) return;
+      if (result.success) {
+        showToast(
+          '更新成功: ${result.installedVersion}。需要重启 Provider。',
+          type: ToastType.success,
+        );
+        setState(() => _updateCheckResult = null);
+        // 重新检查更新状态
+        await _checkForUpdate();
+      } else {
+        showToast(
+          '更新失败: ${result.error ?? "未知错误"}',
+          type: ToastType.error,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showToast('更新失败: $e', type: ToastType.error);
+    } finally {
+      if (mounted) {
+        setState(() => _applyingUpdate = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final config = _config;
@@ -1586,6 +1646,109 @@ class _UtgDashboardPageState extends State<UtgDashboardPage> {
                                     : context.l10n.omniflowProviderStop,
                               ),
                             ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Provider 更新卡片
+                  _buildCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Provider 更新',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (_updateCheckResult != null) ...[
+                          _buildInfoRow(
+                            '当前版本',
+                            _updateCheckResult!.currentVersion,
+                          ),
+                          if (_updateCheckResult!.latestVersion != null)
+                            _buildInfoRow(
+                              '最新版本',
+                              _updateCheckResult!.latestVersion!,
+                            ),
+                          if (_updateCheckResult!.updateAvailable)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFF4E5),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.system_update_outlined,
+                                      size: 18,
+                                      color: const Color(0xFFF59E0B),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '有新版本可用',
+                                      style: TextStyle(
+                                        color: const Color(0xFFF59E0B),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 12),
+                        ],
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: config == null ||
+                                      !config.providerHealthy ||
+                                      _checkingUpdate ||
+                                      _applyingUpdate
+                                  ? null
+                                  : _checkForUpdate,
+                              icon: _checkingUpdate
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.refresh_outlined),
+                              label: Text(
+                                _checkingUpdate ? '检查中...' : '检查更新',
+                              ),
+                            ),
+                            if (_updateCheckResult?.updateAvailable == true)
+                              FilledButton.icon(
+                                onPressed: _applyingUpdate ? null : _applyUpdate,
+                                icon: _applyingUpdate
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(Icons.download_outlined),
+                                label: Text(
+                                  _applyingUpdate ? '更新中...' : '立即更新',
+                                ),
+                              ),
                           ],
                         ),
                       ],

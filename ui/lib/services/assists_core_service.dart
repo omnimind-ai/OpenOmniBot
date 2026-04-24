@@ -226,6 +226,77 @@ class EmbeddedProviderInstallResult {
   }
 }
 
+/// Provider 更新检查结果
+class UtgUpdateCheckResult {
+  final String currentVersion;
+  final String? latestVersion;
+  final String? latestCommit;
+  final bool updateAvailable;
+  final String wheelUrl;
+  final bool localWheelExists;
+  final String? localWheelHash;
+  final String? error;
+
+  const UtgUpdateCheckResult({
+    required this.currentVersion,
+    this.latestVersion,
+    this.latestCommit,
+    required this.updateAvailable,
+    required this.wheelUrl,
+    required this.localWheelExists,
+    this.localWheelHash,
+    this.error,
+  });
+
+  factory UtgUpdateCheckResult.fromMap(Map<dynamic, dynamic>? map) {
+    final raw = map ?? const {};
+    return UtgUpdateCheckResult(
+      currentVersion: (raw['current_version'] ?? 'unknown').toString(),
+      latestVersion: raw['latest_version']?.toString(),
+      latestCommit: raw['latest_commit']?.toString(),
+      updateAvailable: raw['update_available'] == true,
+      wheelUrl: (raw['wheel_url'] ?? '').toString(),
+      localWheelExists: raw['local_wheel_exists'] == true,
+      localWheelHash: raw['local_wheel_hash']?.toString(),
+      error: raw['error']?.toString(),
+    );
+  }
+}
+
+/// Provider 更新应用结果
+class UtgUpdateApplyResult {
+  final bool success;
+  final String? previousVersion;
+  final String? installedVersion;
+  final String? latestVersion;
+  final bool restartRequired;
+  final String? message;
+  final String? error;
+
+  const UtgUpdateApplyResult({
+    required this.success,
+    this.previousVersion,
+    this.installedVersion,
+    this.latestVersion,
+    required this.restartRequired,
+    this.message,
+    this.error,
+  });
+
+  factory UtgUpdateApplyResult.fromMap(Map<dynamic, dynamic>? map) {
+    final raw = map ?? const {};
+    return UtgUpdateApplyResult(
+      success: raw['success'] == true,
+      previousVersion: raw['previous_version']?.toString(),
+      installedVersion: raw['installed_version']?.toString(),
+      latestVersion: raw['latest_version']?.toString(),
+      restartRequired: raw['restart_required'] == true,
+      message: raw['message']?.toString(),
+      error: raw['error']?.toString(),
+    );
+  }
+}
+
 class UtgFunctionSummary {
   final String functionId;
   final String description;
@@ -1922,6 +1993,26 @@ class AssistsMessageService {
       baseUrl: baseUrl,
     );
     return Map<String, dynamic>.from(decoded);
+  }
+
+  /// 检查 Provider 是否有新版本
+  static Future<UtgUpdateCheckResult> checkForUpdate({String? baseUrl}) async {
+    final decoded = await _requestUtgJson(
+      method: 'GET',
+      path: '/update/check',
+      baseUrl: baseUrl,
+    );
+    return UtgUpdateCheckResult.fromMap(decoded);
+  }
+
+  /// 一键更新 Provider：检查 + 下载 + 安装
+  static Future<UtgUpdateApplyResult> applyUpdate({String? baseUrl}) async {
+    final decoded = await _requestUtgJson(
+      method: 'POST',
+      path: '/update/apply',
+      baseUrl: baseUrl,
+    );
+    return UtgUpdateApplyResult.fromMap(decoded);
   }
 
   static Future<Map<String, dynamic>> getUtgFunctionBundle({
