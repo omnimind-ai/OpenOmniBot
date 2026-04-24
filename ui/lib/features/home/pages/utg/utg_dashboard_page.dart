@@ -1708,6 +1708,17 @@ class _UtgDashboardPageState extends State<UtgDashboardPage> {
                             ),
                           const SizedBox(height: 12),
                         ],
+                        if (config != null && !config.providerHealthy)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Text(
+                              '请先启动 Provider 后再检查更新',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: context.omniPalette.textTertiary,
+                              ),
+                            ),
+                          ),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
