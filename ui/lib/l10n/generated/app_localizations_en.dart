@@ -2516,4 +2516,51 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get actionTypeDefault => 'Action';
+
+  @override
+  String get omniflowProviderUpdate => 'Provider Update';
+
+  @override
+  String get omniflowCurrentVersion => 'Current Version';
+
+  @override
+  String get omniflowLatestVersion => 'Latest Version';
+
+  @override
+  String get omniflowUpdateAvailable => 'Update Available';
+
+  @override
+  String get omniflowStartProviderFirst =>
+      'Please start Provider first to check for updates';
+
+  @override
+  String get omniflowCheckUpdate => 'Check Update';
+
+  @override
+  String get omniflowCheckingUpdate => 'Checking...';
+
+  @override
+  String get omniflowApplyUpdate => 'Update Now';
+
+  @override
+  String get omniflowApplyingUpdate => 'Updating...';
+
+  @override
+  String get omniflowCheckUpdateFailed => 'Check update failed';
+
+  @override
+  String omniflowNewVersionFound(String version) {
+    return 'New version found: $version';
+  }
+
+  @override
+  String get omniflowAlreadyLatest => 'Already up to date';
+
+  @override
+  String omniflowUpdateSuccess(String version) {
+    return 'Update successful: $version. Restart Provider to apply.';
+  }
+
+  @override
+  String get omniflowUpdateFailed => 'Update failed';
 }

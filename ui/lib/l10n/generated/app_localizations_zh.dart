@@ -2394,4 +2394,50 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get actionTypeDefault => '动作';
+
+  @override
+  String get omniflowProviderUpdate => 'Provider 更新';
+
+  @override
+  String get omniflowCurrentVersion => '当前版本';
+
+  @override
+  String get omniflowLatestVersion => '最新版本';
+
+  @override
+  String get omniflowUpdateAvailable => '有新版本可用';
+
+  @override
+  String get omniflowStartProviderFirst => '请先启动 Provider 后再检查更新';
+
+  @override
+  String get omniflowCheckUpdate => '检查更新';
+
+  @override
+  String get omniflowCheckingUpdate => '检查中...';
+
+  @override
+  String get omniflowApplyUpdate => '立即更新';
+
+  @override
+  String get omniflowApplyingUpdate => '更新中...';
+
+  @override
+  String get omniflowCheckUpdateFailed => '检查更新失败';
+
+  @override
+  String omniflowNewVersionFound(String version) {
+    return '发现新版本: $version';
+  }
+
+  @override
+  String get omniflowAlreadyLatest => '已是最新版本';
+
+  @override
+  String omniflowUpdateSuccess(String version) {
+    return '更新成功: $version。需要重启 Provider。';
+  }
+
+  @override
+  String get omniflowUpdateFailed => '更新失败';
 }

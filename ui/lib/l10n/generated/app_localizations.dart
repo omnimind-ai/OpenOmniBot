@@ -4627,6 +4627,90 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'动作'**
   String get actionTypeDefault;
+
+  /// No description provided for @omniflowProviderUpdate.
+  ///
+  /// In zh, this message translates to:
+  /// **'Provider 更新'**
+  String get omniflowProviderUpdate;
+
+  /// No description provided for @omniflowCurrentVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前版本'**
+  String get omniflowCurrentVersion;
+
+  /// No description provided for @omniflowLatestVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'最新版本'**
+  String get omniflowLatestVersion;
+
+  /// No description provided for @omniflowUpdateAvailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'有新版本可用'**
+  String get omniflowUpdateAvailable;
+
+  /// No description provided for @omniflowStartProviderFirst.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先启动 Provider 后再检查更新'**
+  String get omniflowStartProviderFirst;
+
+  /// No description provided for @omniflowCheckUpdate.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查更新'**
+  String get omniflowCheckUpdate;
+
+  /// No description provided for @omniflowCheckingUpdate.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查中...'**
+  String get omniflowCheckingUpdate;
+
+  /// No description provided for @omniflowApplyUpdate.
+  ///
+  /// In zh, this message translates to:
+  /// **'立即更新'**
+  String get omniflowApplyUpdate;
+
+  /// No description provided for @omniflowApplyingUpdate.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新中...'**
+  String get omniflowApplyingUpdate;
+
+  /// No description provided for @omniflowCheckUpdateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查更新失败'**
+  String get omniflowCheckUpdateFailed;
+
+  /// No description provided for @omniflowNewVersionFound.
+  ///
+  /// In zh, this message translates to:
+  /// **'发现新版本: {version}'**
+  String omniflowNewVersionFound(String version);
+
+  /// No description provided for @omniflowAlreadyLatest.
+  ///
+  /// In zh, this message translates to:
+  /// **'已是最新版本'**
+  String get omniflowAlreadyLatest;
+
+  /// No description provided for @omniflowUpdateSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新成功: {version}。需要重启 Provider。'**
+  String omniflowUpdateSuccess(String version);
+
+  /// No description provided for @omniflowUpdateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新失败'**
+  String get omniflowUpdateFailed;
 }
 
 class _AppLocalizationsDelegate
