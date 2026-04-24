@@ -228,6 +228,9 @@ class AssistsCoreChannel {
                 "uninstallEmbeddedProvider" -> {
                     assistsCoreManager!!.uninstallEmbeddedProvider(call, result)
                 }
+                "updateOmniFlowPackage" -> {
+                    assistsCoreManager!!.updateOmniFlowPackage(call, result)
+                }
 
                 "getInstalledApplications" -> {
                     assistsCoreManager!!.getInstalledApplications( call, result)

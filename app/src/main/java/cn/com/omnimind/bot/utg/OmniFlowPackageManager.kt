@@ -24,9 +24,17 @@ object OmniFlowPackageManager {
     private const val EXTERNAL_PACKAGE_DIR = "/data/local/tmp/omnibot/packages"
     private const val WHEEL_HASH_FILE = ".wheel_hash"
 
-    // GitHub Release 下载（公开仓库，代码私有）
-    private const val GITHUB_RELEASE_URL =
-        "https://github.com/omnimind-ai/omniflow-release/releases/latest/download/omniflow-latest-py3-none-any.whl"
+    // Release 下载 URL（按优先级排序）
+    // 使用 Alpine/Cython 编译版本（ARM64 musllinux）
+    private val RELEASE_URLS = listOf(
+        // GitHub Raw（直接，无重定向）
+        "https://raw.githubusercontent.com/omnimind-ai/omniflow-release/main/wheels/omniflow-alpine-aarch64.whl",
+        // Gitee 镜像（国内备用）
+        "https://gitee.com/omnimind-ai/omniflow-release/raw/main/wheels/omniflow-alpine-aarch64.whl",
+    )
+
+    // 下载后的本地文件名（保留原始 wheel 格式，uv 会从 wheel 内部读取版本）
+    private const val WHEEL_INSTALL_NAME = "omniflow-alpine-aarch64.whl"
 
     // SharedPreferences
     private const val PREFS_NAME = "omniflow_package"
@@ -183,11 +191,26 @@ object OmniFlowPackageManager {
                 hash = hash
             )
         } else {
-            OmniLog.e(TAG, "OmniFlow install failed: ${result.errorMessage ?: result.output}")
+            // 提取更详细的错误信息
+            val errorDetail = buildString {
+                if (!result.errorMessage.isNullOrBlank()) {
+                    append(result.errorMessage)
+                }
+                if (!result.output.isNullOrBlank()) {
+                    if (isNotEmpty()) append(": ")
+                    // 只取最后 200 个字符，避免太长
+                    val output = result.output.takeLast(200)
+                    append(output)
+                }
+                if (isEmpty()) {
+                    append("uv pip install 执行失败")
+                }
+            }
+            OmniLog.e(TAG, "OmniFlow install failed: $errorDetail")
             InstallResult(
                 success = false,
                 alreadyInstalled = false,
-                message = result.errorMessage ?: "安装失败",
+                message = errorDetail,
                 source = null,
                 hash = null
             )
@@ -195,7 +218,7 @@ object OmniFlowPackageManager {
     }
 
     /**
-     * 从 GitHub 下载并安装。
+     * 从远程下载并安装（尝试多个镜像源）。
      */
     private suspend fun installFromGitHub(
         context: Context,
@@ -205,77 +228,104 @@ object OmniFlowPackageManager {
         val installedHash = prefs.getString(KEY_INSTALLED_HASH, null)
         val installedSource = prefs.getString(KEY_INSTALL_SOURCE, null)
 
-        // 如果已从 GitHub 安装且不强制，跳过
+        // 如果已从远程安装且不强制，跳过
         if (!force && installedSource == "github" && installedHash != null) {
             return@withContext InstallResult(
                 success = true,
                 alreadyInstalled = true,
-                message = "OmniFlow 已安装（GitHub）",
+                message = "OmniFlow 已安装（远程）",
                 source = "github",
                 hash = installedHash
             )
         }
 
-        OmniLog.i(TAG, "Downloading wheel from GitHub: $GITHUB_RELEASE_URL")
-
         val downloadDir = File(context.cacheDir, "omniflow-download")
         downloadDir.mkdirs()
         val targetFile = File(downloadDir, "omniflow-latest.whl")
 
-        try {
-            val client = OkHttpClient.Builder()
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(300, TimeUnit.SECONDS)
-                .followRedirects(true)
-                .build()
+        val client = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(300, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .build()
 
-            val request = Request.Builder()
-                .url(GITHUB_RELEASE_URL)
-                .build()
+        val errors = mutableListOf<String>()
 
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    return@withContext InstallResult(
-                        success = false,
-                        alreadyInstalled = false,
-                        message = "GitHub 下载失败: HTTP ${response.code}",
-                        source = null,
-                        hash = null
-                    )
-                }
+        // 尝试多个镜像源
+        for (url in RELEASE_URLS) {
+            OmniLog.i(TAG, "Trying to download wheel from: $url")
+            try {
+                val request = Request.Builder()
+                    .url(url)
+                    .build()
 
-                response.body?.byteStream()?.use { input ->
-                    targetFile.outputStream().use { output ->
-                        input.copyTo(output)
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        val error = "$url -> HTTP ${response.code}"
+                        OmniLog.w(TAG, "Download failed: $error")
+                        errors.add(error)
+                        return@use // 继续尝试下一个 URL
                     }
-                }
-            }
 
-            // 计算 hash
-            val hash = targetFile.inputStream().use { input ->
-                val digest = java.security.MessageDigest.getInstance("MD5")
-                val buffer = ByteArray(8192)
-                var read: Int
-                while (input.read(buffer).also { read = it } != -1) {
-                    digest.update(buffer, 0, read)
-                }
-                digest.digest().joinToString("") { "%02x".format(it) }
-            }
+                    response.body?.byteStream()?.use { input ->
+                        targetFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
 
-            return@withContext installFromFile(context, targetFile, "github", hash)
-        } catch (e: Exception) {
-            OmniLog.e(TAG, "GitHub download failed", e)
-            return@withContext InstallResult(
-                success = false,
-                alreadyInstalled = false,
-                message = "GitHub 下载失败: ${e.message}",
-                source = null,
-                hash = null
-            )
-        } finally {
-            // 清理下载文件
-            runCatching { targetFile.delete() }
+                    // 验证文件是否是有效的 wheel/zip（检查 PK 魔术数字）
+                    val isValidWheel = targetFile.inputStream().use { input ->
+                        val magic = ByteArray(2)
+                        input.read(magic) == 2 && magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte()
+                    }
+                    if (!isValidWheel) {
+                        val preview = targetFile.readText().take(200)
+                        val error = "$url -> Invalid wheel file (not a ZIP): $preview"
+                        OmniLog.w(TAG, error)
+                        errors.add(error)
+                        targetFile.delete()
+                        return@use // 继续尝试下一个 URL
+                    }
+
+                    // 下载成功，计算 hash
+                    val hash = targetFile.inputStream().use { input ->
+                        val digest = java.security.MessageDigest.getInstance("MD5")
+                        val buffer = ByteArray(8192)
+                        var read: Int
+                        while (input.read(buffer).also { read = it } != -1) {
+                            digest.update(buffer, 0, read)
+                        }
+                        digest.digest().joinToString("") { "%02x".format(it) }
+                    }
+
+                    OmniLog.i(TAG, "Download successful from: $url (hash: ${hash.take(8)})")
+
+                    // 重命名为符合 wheel 规范的文件名（pip/uv 需要正确的命名格式）
+                    val renamedFile = File(targetFile.parent, WHEEL_INSTALL_NAME)
+                    if (renamedFile.exists()) renamedFile.delete()
+                    targetFile.renameTo(renamedFile)
+
+                    val installResult = installFromFile(context, renamedFile, "github", hash)
+                    runCatching { renamedFile.delete() }
+                    return@withContext installResult
+                }
+            } catch (e: Exception) {
+                val error = "$url -> ${e.message}"
+                OmniLog.w(TAG, "Download failed: $error", e)
+                errors.add(error)
+                // 继续尝试下一个 URL
+            }
         }
+
+        // 所有 URL 都失败了
+        runCatching { targetFile.delete() }
+        return@withContext InstallResult(
+            success = false,
+            alreadyInstalled = false,
+            message = "所有下载源都失败: ${errors.joinToString("; ")}",
+            source = null,
+            hash = null
+        )
     }
 
     /**
@@ -330,7 +380,7 @@ object OmniFlowPackageManager {
             "externalWheelAvailable" to (externalWheel != null),
             "externalWheelPath" to externalWheel?.absolutePath,
             "externalHash" to readExternalHash()?.take(8),
-            "githubUrl" to GITHUB_RELEASE_URL
+            "releaseUrls" to RELEASE_URLS
         )
     }
 }

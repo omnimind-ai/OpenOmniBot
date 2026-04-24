@@ -130,6 +130,7 @@ class UtgBridgeConfig {
   final String providerHealthStatus;
   final String providerRunLogPath;
   final String canonicalRunLogPath;
+  final bool useEmbeddedProvider; // 是否使用内置 Provider
 
   const UtgBridgeConfig({
     required this.utgEnabled,
@@ -143,6 +144,7 @@ class UtgBridgeConfig {
     required this.providerHealthStatus,
     required this.providerRunLogPath,
     required this.canonicalRunLogPath,
+    required this.useEmbeddedProvider,
   });
 
   factory UtgBridgeConfig.fromMap(Map<dynamic, dynamic>? map) {
@@ -163,6 +165,7 @@ class UtgBridgeConfig {
           (raw['providerHealthStatus'] ?? health['status'] ?? '').toString(),
       providerRunLogPath: (raw['providerRunLogPath'] ?? '').toString(),
       canonicalRunLogPath: (raw['canonicalRunLogPath'] ?? '').toString(),
+      useEmbeddedProvider: raw['useEmbeddedProvider'] == true,
     );
   }
 }
@@ -233,6 +236,7 @@ class UtgUpdateCheckResult {
   final String? latestCommit;
   final bool updateAvailable;
   final String wheelUrl;
+  final int? wheelSizeBytes; // wheel 文件大小
   final bool localWheelExists;
   final String? localWheelHash;
   final String? error;
@@ -243,6 +247,7 @@ class UtgUpdateCheckResult {
     this.latestCommit,
     required this.updateAvailable,
     required this.wheelUrl,
+    this.wheelSizeBytes,
     required this.localWheelExists,
     this.localWheelHash,
     this.error,
@@ -256,10 +261,18 @@ class UtgUpdateCheckResult {
       latestCommit: raw['latest_commit']?.toString(),
       updateAvailable: raw['update_available'] == true,
       wheelUrl: (raw['wheel_url'] ?? '').toString(),
+      wheelSizeBytes: raw['wheel_size_bytes'] as int?,
       localWheelExists: raw['local_wheel_exists'] == true,
       localWheelHash: raw['local_wheel_hash']?.toString(),
       error: raw['error']?.toString(),
     );
+  }
+
+  /// 格式化 wheel 大小显示
+  String get wheelSizeFormatted {
+    if (wheelSizeBytes == null) return '';
+    final mb = wheelSizeBytes! / (1024 * 1024);
+    return '${mb.toStringAsFixed(1)} MB';
   }
 }
 
@@ -272,6 +285,7 @@ class UtgUpdateApplyResult {
   final bool restartRequired;
   final String? message;
   final String? error;
+  final String? hint; // 额外提示信息
 
   const UtgUpdateApplyResult({
     required this.success,
@@ -281,6 +295,7 @@ class UtgUpdateApplyResult {
     required this.restartRequired,
     this.message,
     this.error,
+    this.hint,
   });
 
   factory UtgUpdateApplyResult.fromMap(Map<dynamic, dynamic>? map) {
@@ -293,6 +308,7 @@ class UtgUpdateApplyResult {
       restartRequired: raw['restart_required'] == true,
       message: raw['message']?.toString(),
       error: raw['error']?.toString(),
+      hint: raw['hint']?.toString(),
     );
   }
 }
@@ -2005,14 +2021,15 @@ class AssistsMessageService {
     return UtgUpdateCheckResult.fromMap(decoded);
   }
 
-  /// 一键更新 Provider：检查 + 下载 + 安装
+  /// 一键更新 Provider：从 GitHub 下载并安装最新 wheel
+  ///
+  /// 注意：此方法直接调用 OOB 本地的 OmniFlowPackageManager，
+  /// 不经过 Provider API（因为 Provider 无法更新自己）
   static Future<UtgUpdateApplyResult> applyUpdate({String? baseUrl}) async {
-    final decoded = await _requestUtgJson(
-      method: 'POST',
-      path: '/update/apply',
-      baseUrl: baseUrl,
+    final result = await assistCore.invokeMethod<Map<dynamic, dynamic>>(
+      'updateOmniFlowPackage',
     );
-    return UtgUpdateApplyResult.fromMap(decoded);
+    return UtgUpdateApplyResult.fromMap(result);
   }
 
   static Future<Map<String, dynamic>> getUtgFunctionBundle({

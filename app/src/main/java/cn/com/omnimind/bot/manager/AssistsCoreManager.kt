@@ -80,6 +80,7 @@ import cn.com.omnimind.bot.agent.resolveToolExecutionStatus
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
 import cn.com.omnimind.bot.omniinfer.OmniInferLocalRuntime
 import cn.com.omnimind.bot.utg.EmbeddedProviderManager
+import cn.com.omnimind.bot.utg.OmniFlowPackageManager
 import cn.com.omnimind.bot.utg.UtgBridge
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
 import cn.com.omnimind.bot.webchat.ConversationDomainService
@@ -1375,6 +1376,82 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     result.error("UNINSTALL_EMBEDDED_PROVIDER_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    /**
+     * 更新 OmniFlow 包（从 GitHub 下载并安装最新 wheel）
+     *
+     * 仅支持内置 Provider 模式（Android + Alpine 环境）。
+     * 如果使用主机 Provider，应通过 git pull 手动更新。
+     */
+    fun updateOmniFlowPackage(
+        call: MethodCall, result: MethodChannel.Result,
+    ) {
+        mainJob.launch {
+            try {
+                val isEmbedded = UtgBridge.isUseEmbeddedProvider()
+                OmniLog.i("AssistsCoreManager", "updateOmniFlowPackage: isEmbedded=$isEmbedded")
+
+                // 检查是否使用内置 Provider
+                if (!isEmbedded) {
+                    withContext(Dispatchers.Main) {
+                        result.success(mapOf(
+                            "success" to false,
+                            "error" to "自动更新仅支持内置 Provider。主机 Provider 请使用 git pull 手动更新。"
+                        ))
+                    }
+                    return@launch
+                }
+
+                // 获取更新前的版本
+                val previousStatus = OmniFlowPackageManager.getStatusSummary(context)
+                OmniLog.i("AssistsCoreManager", "updateOmniFlowPackage: previousStatus=$previousStatus")
+                val previousHash = previousStatus["installedHash"]?.toString()
+
+                // 停止正在运行的 Provider
+                val wasRunning = withContext(Dispatchers.IO) {
+                    OmniFlowPackageManager.isProviderRunning(context)
+                }
+                if (wasRunning) {
+                    withContext(Dispatchers.IO) {
+                        OmniFlowPackageManager.stopProvider(context)
+                    }
+                }
+
+                // 强制从 GitHub 下载并安装
+                OmniLog.i("AssistsCoreManager", "updateOmniFlowPackage: starting download and install...")
+                val installResult = withContext(Dispatchers.IO) {
+                    OmniFlowPackageManager.ensureInstalled(
+                        context,
+                        force = true,
+                        preferGitHub = true
+                    )
+                }
+                OmniLog.i("AssistsCoreManager", "updateOmniFlowPackage: installResult=${installResult.success}, message=${installResult.message}")
+
+                // 如果之前在运行，重新启动
+                if (wasRunning && installResult.success) {
+                    withContext(Dispatchers.IO) {
+                        OmniFlowPackageManager.startProvider(context, UtgBridge.EMBEDDED_PROVIDER_PORT)
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    result.success(mapOf(
+                        "success" to installResult.success,
+                        "previous_version" to previousHash,
+                        "installed_version" to installResult.hash,
+                        "message" to installResult.message,
+                        "restart_required" to wasRunning,
+                        "error" to if (!installResult.success) installResult.message else null
+                    ))
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("UPDATE_OMNIFLOW_PACKAGE_ERROR", e.message, null)
                 }
             }
         }
