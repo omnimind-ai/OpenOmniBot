@@ -67,8 +67,8 @@ object UtgBridge {
     private const val PREF_OMNIFLOW_WORKING_DIRECTORY = "utg_omniflow_working_directory"
     private const val PREF_USE_EMBEDDED_PROVIDER = "utg_use_embedded_provider"
     private const val PREF_VLM_TASK_RUN_LOG_PREFIX = "utg_vlm_task_run_log_"
-    private const val DEFAULT_OMNIFLOW_BASE_URL = "http://127.0.0.1:19070"
-    private const val EMBEDDED_PROVIDER_PORT = 19070
+    private const val DEFAULT_OMNIFLOW_BASE_URL = "http://127.0.0.1:9417"
+    private const val EMBEDDED_PROVIDER_PORT = 9417
     private const val DEFAULT_PROVIDER_SESSION_NAME = EXPECTED_PROVIDER_ID
     private const val DEFAULT_PROVIDER_START_TIMEOUT_SECONDS = 20
     private const val DEFAULT_PROVIDER_HEALTH_RETRY_COUNT = 8

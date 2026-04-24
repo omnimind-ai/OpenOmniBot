@@ -193,7 +193,7 @@ class EmbeddedProviderStatus {
       installed: raw['installed'] == true,
       installedVersion: raw['installedVersion']?.toString(),
       running: raw['running'] == true,
-      port: (raw['port'] as int?) ?? 19070,
+      port: (raw['port'] as int?) ?? 9417,
       binaryPath: raw['binaryPath']?.toString(),
       latestVersion: (raw['latestVersion'] ?? '0.1.0').toString(),
       needsUpdate: raw['needsUpdate'] == true,
@@ -2974,7 +2974,7 @@ class AssistsMessageService {
   }
 
   /// 启动 Embedded Provider
-  static Future<bool> startEmbeddedProvider({int port = 19070}) async {
+  static Future<bool> startEmbeddedProvider({int port = 9417}) async {
     final result = await assistCore.invokeMethod('startEmbeddedProvider', {
       'port': port,
     });
