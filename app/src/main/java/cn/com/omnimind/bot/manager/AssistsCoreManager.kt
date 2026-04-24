@@ -1203,7 +1203,12 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         (method == "GET" && Regex("^/run_logs/[^/]+$").matches(routePath)) ||
                         (method == "POST" && routePath == "/run_logs/import_trace") ||
                         (method == "POST" && routePath == "/run_logs/import") ||
-                        (method == "POST" && routePath == "/run_logs/replay")
+                        (method == "POST" && routePath == "/run_logs/replay") ||
+                        // Update APIs
+                        (method == "GET" && routePath == "/update/check") ||
+                        (method == "POST" && routePath == "/update/download") ||
+                        (method == "POST" && routePath == "/update/install") ||
+                        (method == "POST" && routePath == "/update/apply")
                 if (!isAllowedRequest) {
                     throw IllegalArgumentException("unsupported_utg_debug_route")
                 }
