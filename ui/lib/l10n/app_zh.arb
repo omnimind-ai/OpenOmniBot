@@ -849,5 +849,34 @@
   "actionTypeWait": "等待",
   "actionTypeFinished": "结束",
   "actionTypeCallFunction": "调用功能",
-  "actionTypeDefault": "动作"
+  "actionTypeDefault": "动作",
+
+  "omniflowProviderUpdate": "Provider 更新",
+  "omniflowCurrentVersion": "当前版本",
+  "omniflowLatestVersion": "最新版本",
+  "omniflowUpdateAvailable": "有新版本可用",
+  "omniflowStartProviderFirst": "请先启动 Provider 后再检查更新",
+  "omniflowCheckUpdate": "检查更新",
+  "omniflowCheckingUpdate": "检查中...",
+  "omniflowApplyUpdate": "立即更新",
+  "omniflowApplyingUpdate": "更新中...",
+  "omniflowCheckUpdateFailed": "检查更新失败",
+  "omniflowNewVersionFound": "发现新版本: {version}",
+  "@omniflowNewVersionFound": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "omniflowAlreadyLatest": "已是最新版本",
+  "omniflowUpdateSuccess": "更新成功: {version}。需要重启 Provider。",
+  "@omniflowUpdateSuccess": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "omniflowUpdateFailed": "更新失败"
 }

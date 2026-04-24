@@ -1384,15 +1384,15 @@ class _UtgDashboardPageState extends State<UtgDashboardPage> {
       setState(() => _updateCheckResult = result);
       if (result.updateAvailable) {
         showToast(
-          '发现新版本: ${result.latestVersion}',
+          context.l10n.omniflowNewVersionFound(result.latestVersion ?? ''),
           type: ToastType.info,
         );
       } else {
-        showToast('已是最新版本', type: ToastType.success);
+        showToast(context.l10n.omniflowAlreadyLatest, type: ToastType.success);
       }
     } catch (e) {
       if (!mounted) return;
-      showToast('检查更新失败: $e', type: ToastType.error);
+      showToast('${context.l10n.omniflowCheckUpdateFailed}: $e', type: ToastType.error);
     } finally {
       if (mounted) {
         setState(() => _checkingUpdate = false);
@@ -1409,7 +1409,7 @@ class _UtgDashboardPageState extends State<UtgDashboardPage> {
       if (!mounted) return;
       if (result.success) {
         showToast(
-          '更新成功: ${result.installedVersion}。需要重启 Provider。',
+          context.l10n.omniflowUpdateSuccess(result.installedVersion ?? ''),
           type: ToastType.success,
         );
         setState(() => _updateCheckResult = null);
@@ -1417,13 +1417,13 @@ class _UtgDashboardPageState extends State<UtgDashboardPage> {
         await _checkForUpdate();
       } else {
         showToast(
-          '更新失败: ${result.error ?? "未知错误"}',
+          '${context.l10n.omniflowUpdateFailed}: ${result.error ?? ""}',
           type: ToastType.error,
         );
       }
     } catch (e) {
       if (!mounted) return;
-      showToast('更新失败: $e', type: ToastType.error);
+      showToast('${context.l10n.omniflowUpdateFailed}: $e', type: ToastType.error);
     } finally {
       if (mounted) {
         setState(() => _applyingUpdate = false);
@@ -1658,7 +1658,7 @@ class _UtgDashboardPageState extends State<UtgDashboardPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Provider 更新',
+                          context.l10n.omniflowProviderUpdate,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
@@ -1667,12 +1667,12 @@ class _UtgDashboardPageState extends State<UtgDashboardPage> {
                         const SizedBox(height: 12),
                         if (_updateCheckResult != null) ...[
                           _buildInfoRow(
-                            '当前版本',
+                            context.l10n.omniflowCurrentVersion,
                             _updateCheckResult!.currentVersion,
                           ),
                           if (_updateCheckResult!.latestVersion != null)
                             _buildInfoRow(
-                              '最新版本',
+                              context.l10n.omniflowLatestVersion,
                               _updateCheckResult!.latestVersion!,
                             ),
                           if (_updateCheckResult!.updateAvailable)
@@ -1696,7 +1696,7 @@ class _UtgDashboardPageState extends State<UtgDashboardPage> {
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
-                                      '有新版本可用',
+                                      context.l10n.omniflowUpdateAvailable,
                                       style: TextStyle(
                                         color: const Color(0xFFF59E0B),
                                         fontWeight: FontWeight.w600,
@@ -1712,7 +1712,7 @@ class _UtgDashboardPageState extends State<UtgDashboardPage> {
                           Padding(
                             padding: const EdgeInsets.only(bottom: 12),
                             child: Text(
-                              '请先启动 Provider 后再检查更新',
+                              context.l10n.omniflowStartProviderFirst,
                               style: TextStyle(
                                 fontSize: 13,
                                 color: context.omniPalette.textTertiary,
@@ -1740,7 +1740,9 @@ class _UtgDashboardPageState extends State<UtgDashboardPage> {
                                     )
                                   : const Icon(Icons.refresh_outlined),
                               label: Text(
-                                _checkingUpdate ? '检查中...' : '检查更新',
+                                _checkingUpdate
+                                    ? context.l10n.omniflowCheckingUpdate
+                                    : context.l10n.omniflowCheckUpdate,
                               ),
                             ),
                             if (_updateCheckResult?.updateAvailable == true)
@@ -1757,7 +1759,9 @@ class _UtgDashboardPageState extends State<UtgDashboardPage> {
                                       )
                                     : const Icon(Icons.download_outlined),
                                 label: Text(
-                                  _applyingUpdate ? '更新中...' : '立即更新',
+                                  _applyingUpdate
+                                      ? context.l10n.omniflowApplyingUpdate
+                                      : context.l10n.omniflowApplyUpdate,
                                 ),
                               ),
                           ],

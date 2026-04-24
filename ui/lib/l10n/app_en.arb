@@ -849,5 +849,34 @@
   "actionTypeWait": "Wait",
   "actionTypeFinished": "Finished",
   "actionTypeCallFunction": "Call Function",
-  "actionTypeDefault": "Action"
+  "actionTypeDefault": "Action",
+
+  "omniflowProviderUpdate": "Provider Update",
+  "omniflowCurrentVersion": "Current Version",
+  "omniflowLatestVersion": "Latest Version",
+  "omniflowUpdateAvailable": "Update Available",
+  "omniflowStartProviderFirst": "Please start Provider first to check for updates",
+  "omniflowCheckUpdate": "Check Update",
+  "omniflowCheckingUpdate": "Checking...",
+  "omniflowApplyUpdate": "Update Now",
+  "omniflowApplyingUpdate": "Updating...",
+  "omniflowCheckUpdateFailed": "Check update failed",
+  "omniflowNewVersionFound": "New version found: {version}",
+  "@omniflowNewVersionFound": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "omniflowAlreadyLatest": "Already up to date",
+  "omniflowUpdateSuccess": "Update successful: {version}. Restart Provider to apply.",
+  "@omniflowUpdateSuccess": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "omniflowUpdateFailed": "Update failed"
 }
