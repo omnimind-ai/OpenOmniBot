@@ -325,17 +325,24 @@ object OmniInferModelsManager {
         val quants = model["quants"]?.jsonObject ?: return emptyList()
         val sources = model["sources"]?.jsonObject
 
-        return quants.entries.map { (quantName, quantObj) ->
+        val repo = sources?.get(source)?.jsonPrimitive?.contentOrNull.orEmpty()
+
+        return quants.entries.mapNotNull { (quantName, quantObj) ->
             val sizeBytes = quantObj.jsonObject["size_bytes"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
             val id = "$modelName-$quantName"
             val localFile = findModelFile(id)
             val activeDownload = activeDownloads[id]
+            val hasPausedPart = buildPausedMapFromPartFiles(id) != null
+            // Hide models that have no repo for the current source,
+            // unless already downloaded, actively downloading, or paused.
+            if (repo.isEmpty() && localFile == null && activeDownload == null && !hasPausedPart) {
+                return@mapNotNull null
+            }
             val downloadMap = when {
                 activeDownload != null -> activeDownload.toMap()
                 localFile != null -> completedDownloadMap(localFile.length())
                 else -> buildPausedMapFromPartFiles(id)
             }
-            val repo = sources?.get(source)?.jsonPrimitive?.contentOrNull.orEmpty()
             mapOf(
                 "id" to id,
                 "name" to "$modelName $quantName",
