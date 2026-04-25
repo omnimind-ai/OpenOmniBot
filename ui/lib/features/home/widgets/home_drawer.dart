@@ -1564,6 +1564,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
                                     errorBorder: InputBorder.none,
                                     focusedErrorBorder: InputBorder.none,
                                   ),
+                                  onTapOutside: (_) => _commitTitleEdit(),
                                   onSubmitted: (_) => _commitTitleEdit(),
                                 )
                               : Text(
