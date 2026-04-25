@@ -90,6 +90,7 @@ class HomeDrawer extends ConsumerStatefulWidget {
 class HomeDrawerState extends ConsumerState<HomeDrawer> {
   static const double _conversationActionIconSize = 18;
   static const Duration _searchDebounceDuration = Duration(milliseconds: 220);
+  static const Duration _sectionToggleDuration = Duration(milliseconds: 260);
   static const BorderRadius _drawerTrailingActionRadius = BorderRadius.only(
     topRight: Radius.circular(4),
     bottomRight: Radius.circular(4),
@@ -99,6 +100,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
   final FocusNode _searchFocusNode = FocusNode();
   final Map<String, _ConversationSearchIndex> _conversationSearchCache =
       <String, _ConversationSearchIndex>{};
+  final Map<String, bool> _expandedConversationSections = <String, bool>{};
   final Set<String> _busyConversationKeys = <String>{};
   List<ConversationModel> _allConversations = <ConversationModel>[];
   List<_ConversationSearchResult> _searchResults =
@@ -115,67 +117,127 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
 
     if (hour >= 2 && hour < 6) {
       final greetings = [
-        {'title': context.l10n.homeDrawerDawnGreeting, 'subtitle': context.l10n.homeDrawerDawnSub},
-        {'title': context.l10n.homeDrawerDawnGreeting2, 'subtitle': context.l10n.homeDrawerDawnSub2},
-        {'title': context.l10n.homeDrawerDawnGreeting3, 'subtitle': context.l10n.homeDrawerDawnSub3},
+        {
+          'title': context.l10n.homeDrawerDawnGreeting,
+          'subtitle': context.l10n.homeDrawerDawnSub,
+        },
+        {
+          'title': context.l10n.homeDrawerDawnGreeting2,
+          'subtitle': context.l10n.homeDrawerDawnSub2,
+        },
+        {
+          'title': context.l10n.homeDrawerDawnGreeting3,
+          'subtitle': context.l10n.homeDrawerDawnSub3,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 6 && hour < 8) {
       final greetings = [
-        {'title': context.l10n.homeDrawerMorningGreeting, 'subtitle': context.l10n.homeDrawerMorningSub},
-        {'title': context.l10n.homeDrawerMorningGreeting2, 'subtitle': context.l10n.homeDrawerMorningSub2},
+        {
+          'title': context.l10n.homeDrawerMorningGreeting,
+          'subtitle': context.l10n.homeDrawerMorningSub,
+        },
+        {
+          'title': context.l10n.homeDrawerMorningGreeting2,
+          'subtitle': context.l10n.homeDrawerMorningSub2,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 8 && hour < 12) {
       final greetings = [
-        {'title': context.l10n.homeDrawerForenoonGreeting, 'subtitle': context.l10n.homeDrawerForenoonSub},
-        {'title': context.l10n.homeDrawerForenoonGreeting2, 'subtitle': context.l10n.homeDrawerForenoonSub2},
+        {
+          'title': context.l10n.homeDrawerForenoonGreeting,
+          'subtitle': context.l10n.homeDrawerForenoonSub,
+        },
+        {
+          'title': context.l10n.homeDrawerForenoonGreeting2,
+          'subtitle': context.l10n.homeDrawerForenoonSub2,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 12 && hour < 14) {
       final greetings = [
-        {'title': context.l10n.homeDrawerLunchGreeting, 'subtitle': context.l10n.homeDrawerLunchSub},
-        {'title': context.l10n.homeDrawerLunchGreeting2, 'subtitle': context.l10n.homeDrawerLunchSub2},
-        {'title': context.l10n.homeDrawerLunchGreeting3, 'subtitle': context.l10n.homeDrawerLunchSub3},
+        {
+          'title': context.l10n.homeDrawerLunchGreeting,
+          'subtitle': context.l10n.homeDrawerLunchSub,
+        },
+        {
+          'title': context.l10n.homeDrawerLunchGreeting2,
+          'subtitle': context.l10n.homeDrawerLunchSub2,
+        },
+        {
+          'title': context.l10n.homeDrawerLunchGreeting3,
+          'subtitle': context.l10n.homeDrawerLunchSub3,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 14 && hour < 18) {
       final greetings = [
-        {'title': context.l10n.homeDrawerAfternoonGreeting, 'subtitle': context.l10n.homeDrawerAfternoonSub},
-        {'title': context.l10n.homeDrawerAfternoonGreeting2, 'subtitle': context.l10n.homeDrawerAfternoonSub2},
+        {
+          'title': context.l10n.homeDrawerAfternoonGreeting,
+          'subtitle': context.l10n.homeDrawerAfternoonSub,
+        },
+        {
+          'title': context.l10n.homeDrawerAfternoonGreeting2,
+          'subtitle': context.l10n.homeDrawerAfternoonSub2,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 18 && hour < 20) {
       final greetings = [
-        {'title': context.l10n.homeDrawerEveningGreeting, 'subtitle': context.l10n.homeDrawerEveningSub},
-        {'title': context.l10n.homeDrawerEveningGreeting2, 'subtitle': context.l10n.homeDrawerEveningSub2},
-        {'title': context.l10n.homeDrawerEveningGreeting3, 'subtitle': context.l10n.homeDrawerEveningSub3},
+        {
+          'title': context.l10n.homeDrawerEveningGreeting,
+          'subtitle': context.l10n.homeDrawerEveningSub,
+        },
+        {
+          'title': context.l10n.homeDrawerEveningGreeting2,
+          'subtitle': context.l10n.homeDrawerEveningSub2,
+        },
+        {
+          'title': context.l10n.homeDrawerEveningGreeting3,
+          'subtitle': context.l10n.homeDrawerEveningSub3,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 20 && hour < 22) {
       final greetings = [
-        {'title': context.l10n.homeDrawerNightGreeting, 'subtitle': context.l10n.homeDrawerNightSub},
-        {'title': context.l10n.homeDrawerNightGreeting2, 'subtitle': context.l10n.homeDrawerNightSub2},
-        {'title': context.l10n.homeDrawerNightGreeting3, 'subtitle': context.l10n.homeDrawerNightSub3},
+        {
+          'title': context.l10n.homeDrawerNightGreeting,
+          'subtitle': context.l10n.homeDrawerNightSub,
+        },
+        {
+          'title': context.l10n.homeDrawerNightGreeting2,
+          'subtitle': context.l10n.homeDrawerNightSub2,
+        },
+        {
+          'title': context.l10n.homeDrawerNightGreeting3,
+          'subtitle': context.l10n.homeDrawerNightSub3,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     final greetings = [
-      {'title': context.l10n.homeDrawerLateNightGreeting, 'subtitle': context.l10n.homeDrawerLateNightSub},
-      {'title': context.l10n.homeDrawerLateNightGreeting2, 'subtitle': context.l10n.homeDrawerLateNightSub2},
+      {
+        'title': context.l10n.homeDrawerLateNightGreeting,
+        'subtitle': context.l10n.homeDrawerLateNightSub,
+      },
+      {
+        'title': context.l10n.homeDrawerLateNightGreeting2,
+        'subtitle': context.l10n.homeDrawerLateNightSub2,
+      },
     ];
     return greetings[DateTime.now().minute % greetings.length];
   }
@@ -237,7 +299,9 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       final loadedConversations = await ConversationService.getAllConversations(
         includeArchived: true,
       );
-      debugPrint('[HomeDrawer] Loaded ${loadedConversations.length} conversations');
+      debugPrint(
+        '[HomeDrawer] Loaded ${loadedConversations.length} conversations',
+      );
       if (!mounted) return;
       final visibleThreadKeys = loadedConversations
           .map((conversation) => conversation.threadKey)
@@ -1002,16 +1066,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       if (sectionIndex > 0) {
         children.add(const SizedBox(height: 14));
       }
-      children.add(_buildConversationSectionHeader(section.label));
-      children.add(const SizedBox(height: 4));
-      for (int itemIndex = 0; itemIndex < section.results.length; itemIndex++) {
-        children.add(
-          _buildSwipeConversationItem(
-            section.results[itemIndex],
-            showDivider: itemIndex != section.results.length - 1,
-          ),
-        );
-      }
+      children.add(_buildConversationDateSection(section));
     }
     return children;
   }
@@ -1037,32 +1092,121 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     return sections;
   }
 
-  Widget _buildConversationSectionHeader(String label) {
-    final palette = context.omniPalette;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
-      child: Row(
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.6,
-              color: palette.textTertiary,
-              fontFamily: 'PingFang SC',
-            ),
+  bool _isConversationSectionExpanded(String label) =>
+      _expandedConversationSections[label] ?? true;
+
+  void _toggleConversationSection(String label) {
+    setState(() {
+      _expandedConversationSections[label] = !_isConversationSectionExpanded(
+        label,
+      );
+    });
+  }
+
+  Widget _buildConversationDateSection(_ConversationSection section) {
+    final expanded = _isConversationSectionExpanded(section.label);
+    final items = Column(
+      children: [
+        const SizedBox(height: 4),
+        for (int itemIndex = 0; itemIndex < section.results.length; itemIndex++)
+          _buildSwipeConversationItem(
+            section.results[itemIndex],
+            showDivider: itemIndex != section.results.length - 1,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Container(
-              height: 1,
-              color: palette.borderSubtle.withValues(
-                alpha: context.isDarkTheme ? 0.56 : 0.8,
+      ],
+    );
+
+    return Column(
+      children: [
+        _buildConversationSectionHeader(
+          section.label,
+          expanded: expanded,
+          itemCount: section.results.length,
+          onTap: () => _toggleConversationSection(section.label),
+        ),
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: expanded ? 1 : 0, end: expanded ? 1 : 0),
+          duration: _sectionToggleDuration,
+          curve: Curves.easeInOutCubicEmphasized,
+          builder: (context, value, child) {
+            return ClipRect(
+              child: Align(
+                alignment: Alignment.topCenter,
+                heightFactor: value,
+                child: Opacity(
+                  opacity: value.clamp(0.0, 1.0).toDouble(),
+                  child: IgnorePointer(ignoring: value < 0.99, child: child),
+                ),
               ),
-            ),
+            );
+          },
+          child: items,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildConversationSectionHeader(
+    String label, {
+    required bool expanded,
+    required int itemCount,
+    required VoidCallback onTap,
+  }) {
+    final palette = context.omniPalette;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        splashColor: palette.accentPrimary.withValues(alpha: 0.06),
+        highlightColor: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+          child: Row(
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.6,
+                  color: palette.textTertiary,
+                  fontFamily: 'PingFang SC',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '$itemCount',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: palette.textTertiary.withValues(alpha: 0.82),
+                  fontFamily: 'PingFang SC',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Container(
+                  height: 1,
+                  color: palette.borderSubtle.withValues(
+                    alpha: context.isDarkTheme ? 0.56 : 0.8,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              AnimatedRotation(
+                turns: expanded ? 0 : -0.25,
+                duration: _sectionToggleDuration,
+                curve: Curves.easeInOutCubicEmphasized,
+                child: Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                  color: palette.textTertiary,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1266,9 +1410,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     });
 
     showToast(
-      deleted
-          ? context.trLegacy('已删除')
-          : context.trLegacy('删除失败'),
+      deleted ? context.trLegacy('已删除') : context.trLegacy('删除失败'),
       type: deleted ? ToastType.success : ToastType.error,
     );
   }
@@ -1310,9 +1452,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     });
 
     showToast(
-      archived
-          ? context.trLegacy('已归档')
-          : context.trLegacy('归档失败'),
+      archived ? context.trLegacy('已归档') : context.trLegacy('归档失败'),
       type: archived ? ToastType.success : ToastType.error,
     );
   }
@@ -1354,9 +1494,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     });
 
     showToast(
-      restored
-          ? context.trLegacy('已取消归档')
-          : context.trLegacy('取消归档失败'),
+      restored ? context.trLegacy('已取消归档') : context.trLegacy('取消归档失败'),
       type: restored ? ToastType.success : ToastType.error,
     );
   }
@@ -1416,9 +1554,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       return title;
     }
     final summary = (conversation.summary ?? '').trim();
-    return summary.isNotEmpty
-        ? summary
-        : context.trLegacy('未命名对话');
+    return summary.isNotEmpty ? summary : context.trLegacy('未命名对话');
   }
 
   Widget _buildSwipeConversationItem(

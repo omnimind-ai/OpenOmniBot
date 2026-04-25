@@ -485,7 +485,7 @@ class _SettingsPageState extends State<SettingsPage> {
         items: [
           _SettingItem(
             icon: Icons.admin_panel_settings_outlined,
-            iconSvg: 'assets/home/companion_permission_setting_icon.svg',
+            iconSvg: 'assets/home/app_permission_authorize_icon.svg',
             title: context.l10n.authorizePageTitle,
             subtitle: context.trLegacy('查看并配置无障碍、悬浮窗、Shizuku 等权限'),
             onTap: () {
