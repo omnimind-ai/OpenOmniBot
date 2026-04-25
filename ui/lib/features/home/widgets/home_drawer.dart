@@ -1153,58 +1153,64 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     required VoidCallback onTap,
   }) {
     final palette = context.omniPalette;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        splashColor: palette.accentPrimary.withValues(alpha: 0.06),
-        highlightColor: Colors.transparent,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
-          child: Row(
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.6,
-                  color: palette.textTertiary,
-                  fontFamily: 'PingFang SC',
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '$itemCount',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  color: palette.textTertiary.withValues(alpha: 0.82),
-                  fontFamily: 'PingFang SC',
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Container(
-                  height: 1,
-                  color: palette.borderSubtle.withValues(
-                    alpha: context.isDarkTheme ? 0.56 : 0.8,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          splashColor: palette.accentPrimary.withValues(alpha: 0.06),
+          highlightColor: Colors.transparent,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 28),
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.fromLTRB(4, 5, 4, 5),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.6,
+                    color: palette.textTertiary,
+                    fontFamily: 'PingFang SC',
                   ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              AnimatedRotation(
-                turns: expanded ? 0 : -0.25,
-                duration: _sectionToggleDuration,
-                curve: Curves.easeInOutCubicEmphasized,
-                child: Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  size: 18,
-                  color: palette.textTertiary,
+                const SizedBox(width: 8),
+                Text(
+                  '$itemCount',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: palette.textTertiary.withValues(alpha: 0.82),
+                    fontFamily: 'PingFang SC',
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: palette.borderSubtle.withValues(
+                      alpha: context.isDarkTheme ? 0.56 : 0.8,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                AnimatedRotation(
+                  turns: expanded ? 0 : -0.25,
+                  duration: _sectionToggleDuration,
+                  curve: Curves.easeInOutCubicEmphasized,
+                  child: Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: palette.textTertiary,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
