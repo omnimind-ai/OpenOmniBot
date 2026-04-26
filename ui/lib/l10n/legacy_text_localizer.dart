@@ -220,6 +220,16 @@ class LegacyTextLocalizer {
     '检查更新': 'Check for updates',
     '已关闭思考': 'Thinking disabled',
     '请求日志': 'Request logs',
+    '概览': 'Overview',
+    '最近记录': 'Recent logs',
+    '最近 10 条 AI 请求，按时间倒序展示。':
+        'The latest 10 AI requests are shown in reverse chronological order.',
+    '点击条目展开查看请求与响应正文。':
+        'Tap an entry to expand the request and response payloads.',
+    '总数': 'Total',
+    '最近一条': 'Latest entry',
+    '基础信息': 'Basic info',
+    '载荷': 'Payloads',
     '保存中...': 'Saving...',
     '未选择文件': 'No file selected',
     '远程地址': 'Remote URL',
