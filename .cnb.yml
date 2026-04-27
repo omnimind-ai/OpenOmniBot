@@ -138,6 +138,10 @@ $:
         - name: build-release
           imports:
             - https://cnb.cool/o.k/secrets/-/blob/main/omnibot-release.yml
+          exports:
+            RELEASE_APK_NAME: RELEASE_APK_NAME
+            RELEASE_APK_PATH: RELEASE_APK_PATH
+            RELEASE_SHA256_PATH: RELEASE_SHA256_PATH
           script: |
             RELEASE_STORE_PASSWORD_VALUE="${SECRETS_RELEASE_PASSWORD:-}"
             RELEASE_KEY_ALIAS_VALUE="${SECRETS_RELEASE_KEY_ALIAS:-}"
@@ -193,13 +197,88 @@ $:
             sha256sum "${RELEASE_DIR}/app-production-release.apk" > "${RELEASE_DIR}/app-production-release.apk.sha256"
             mv "${RELEASE_DIR}/app-production-release.apk" "${RELEASE_DIR}/${RELEASE_APK_NAME}"
             mv "${RELEASE_DIR}/app-production-release.apk.sha256" "${RELEASE_DIR}/${RELEASE_APK_NAME}.sha256"
+            echo "##[set-output RELEASE_APK_NAME=${RELEASE_APK_NAME}]"
+            echo "##[set-output RELEASE_APK_PATH=${RELEASE_DIR}/${RELEASE_APK_NAME}]"
+            echo "##[set-output RELEASE_SHA256_PATH=${RELEASE_DIR}/${RELEASE_APK_NAME}.sha256]"
+        - name: prepare-release-metadata
+          exports:
+            RELEASE_TRACK: RELEASE_TRACK
+            RELEASE_DRAFT: RELEASE_DRAFT
+            RELEASE_PRERELEASE: RELEASE_PRERELEASE
+            RELEASE_MAKE_LATEST: RELEASE_MAKE_LATEST
+            RELEASE_NAME: RELEASE_NAME
+            RELEASE_BODY: RELEASE_BODY
+          script: |
+            NORMALIZED_REF="${CNB_BRANCH#v}"
+            RELEASE_TRACK="custom"
+            RELEASE_DRAFT="true"
+            RELEASE_PRERELEASE="false"
+            RELEASE_MAKE_LATEST="false"
+            if printf '%s' "$NORMALIZED_REF" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+              RELEASE_TRACK="beta"
+              RELEASE_DRAFT="false"
+              RELEASE_PRERELEASE="true"
+            elif printf '%s' "$NORMALIZED_REF" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              RELEASE_TRACK="stable"
+              RELEASE_DRAFT="true"
+              RELEASE_PRERELEASE="false"
+            fi
+            RELEASE_NAME="$CNB_BRANCH"
+            RELEASE_BODY="Automated release build for $CNB_BRANCH"
+            echo "##[set-output RELEASE_TRACK=${RELEASE_TRACK}]"
+            echo "##[set-output RELEASE_DRAFT=${RELEASE_DRAFT}]"
+            echo "##[set-output RELEASE_PRERELEASE=${RELEASE_PRERELEASE}]"
+            echo "##[set-output RELEASE_MAKE_LATEST=${RELEASE_MAKE_LATEST}]"
+            echo "##[set-output RELEASE_NAME=${RELEASE_NAME}]"
+            echo "##[set-output RELEASE_BODY=${RELEASE_BODY}]"
         - name: create-release
-          jobs:
-            - name: publish-release
-              type: git:release
-              options:
-                tag: $CNB_BRANCH
-                description: Automated release build for $CNB_BRANCH
+          image: node:22-bullseye
+          script: |
+            EXISTING_RELEASE_JSON="$(mktemp)"
+            CREATED_RELEASE_JSON="$(mktemp)"
+            npx -y @cnbcool/cnb-cli releases get-release-by-tag \
+              --repo "$CNB_REPO_SLUG" \
+              --tag "$CNB_BRANCH" \
+              --verbose > "$EXISTING_RELEASE_JSON"
+            EXISTING_RELEASE_STATUS="$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(String(d.status || ""));' "$EXISTING_RELEASE_JSON")"
+            if [ "$EXISTING_RELEASE_STATUS" = "200" ]; then
+              EXISTING_RELEASE_ID="$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(String((d.data && d.data.id) || ""));' "$EXISTING_RELEASE_JSON")"
+              if [ -n "$EXISTING_RELEASE_ID" ]; then
+                npx -y @cnbcool/cnb-cli releases delete-release \
+                  --repo "$CNB_REPO_SLUG" \
+                  --release-id "$EXISTING_RELEASE_ID"
+              fi
+            elif [ "$EXISTING_RELEASE_STATUS" != "404" ]; then
+              cat "$EXISTING_RELEASE_JSON" >&2
+              echo "Failed to inspect existing release metadata for $CNB_BRANCH" >&2
+              exit 1
+            fi
+            set -- releases post-release \
+              --repo "$CNB_REPO_SLUG" \
+              --tag-name "$CNB_BRANCH" \
+              --target-commitish "$CNB_COMMIT" \
+              --name "$RELEASE_NAME" \
+              --body "$RELEASE_BODY" \
+              --make-latest "$RELEASE_MAKE_LATEST"
+            if [ "$RELEASE_DRAFT" = "true" ]; then
+              set -- "$@" --draft
+            fi
+            if [ "$RELEASE_PRERELEASE" = "true" ]; then
+              set -- "$@" --prerelease
+            fi
+            npx -y @cnbcool/cnb-cli "$@" --verbose > "$CREATED_RELEASE_JSON"
+            CREATED_RELEASE_STATUS="$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(String(d.status || ""));' "$CREATED_RELEASE_JSON")"
+            if [ "$CREATED_RELEASE_STATUS" != "201" ] && [ "$CREATED_RELEASE_STATUS" != "200" ]; then
+              cat "$CREATED_RELEASE_JSON" >&2
+              echo "Failed to create release for $CNB_BRANCH" >&2
+              exit 1
+            fi
+        - name: upload-release-assets
+          image: cnbcool/attachments:latest
+          settings:
+            attachments:
+              - $RELEASE_APK_PATH
+              - $RELEASE_SHA256_PATH
         - name: sync-tag-to-github
           imports:
             - https://cnb.cool/o.k/secrets/-/blob/main/sync-env.yml
