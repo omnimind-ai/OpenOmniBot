@@ -85,9 +85,20 @@
               echo "GitHub sync credentials are not configured; skipping CNB -> GitHub sync."
               exit 0
             fi
-            git remote remove github-sync 2>/dev/null || true
-            git remote add github-sync "https://${GITHUB_SYNC_USERNAME}:${GITHUB_SYNC_TOKEN}@github.com/omnimind-ai/OpenOmniBot.git"
-            git push --force github-sync "HEAD:refs/heads/${CNB_BRANCH}"
+            GITHUB_BASIC_AUTH="$(printf '%s:%s' "${GITHUB_SYNC_USERNAME}" "${GITHUB_SYNC_TOKEN}" | base64 | tr -d '\n')"
+            GITHUB_REMOTE_URL="https://github.com/omnimind-ai/OpenOmniBot.git"
+            for attempt in 1 2 3; do
+              if git -c http.extraheader="Authorization: Basic ${GITHUB_BASIC_AUTH}" -c http.version=HTTP/1.1 \
+                push --force "${GITHUB_REMOTE_URL}" "HEAD:refs/heads/${CNB_BRANCH}"; then
+                exit 0
+              fi
+              status=$?
+              if [ "$attempt" -eq 3 ]; then
+                exit "$status"
+              fi
+              echo "GitHub sync attempt ${attempt} failed, retrying..."
+              sleep $((attempt * 5))
+            done
 
 main:
   push:
@@ -189,6 +200,17 @@ $:
               echo "GitHub sync credentials are not configured; skipping CNB tag -> GitHub sync."
               exit 0
             fi
-            git remote remove github-sync 2>/dev/null || true
-            git remote add github-sync "https://${GITHUB_SYNC_USERNAME}:${GITHUB_SYNC_TOKEN}@github.com/omnimind-ai/OpenOmniBot.git"
-            git push --force github-sync "refs/tags/${CNB_BRANCH}:refs/tags/${CNB_BRANCH}"
+            GITHUB_BASIC_AUTH="$(printf '%s:%s' "${GITHUB_SYNC_USERNAME}" "${GITHUB_SYNC_TOKEN}" | base64 | tr -d '\n')"
+            GITHUB_REMOTE_URL="https://github.com/omnimind-ai/OpenOmniBot.git"
+            for attempt in 1 2 3; do
+              if git -c http.extraheader="Authorization: Basic ${GITHUB_BASIC_AUTH}" -c http.version=HTTP/1.1 \
+                push --force "${GITHUB_REMOTE_URL}" "refs/tags/${CNB_BRANCH}:refs/tags/${CNB_BRANCH}"; then
+                exit 0
+              fi
+              status=$?
+              if [ "$attempt" -eq 3 ]; then
+                exit "$status"
+              fi
+              echo "GitHub tag sync attempt ${attempt} failed, retrying..."
+              sleep $((attempt * 5))
+            done
