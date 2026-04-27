@@ -185,7 +185,13 @@ class _ChatHistoryPageState extends State<ChatHistoryPage> {
     });
 
     showToast(
-      success ? (archived ? 'Archived' : 'Unarchived') : (archived ? 'Failed to archive' : 'Failed to unarchive'),
+      success
+          ? (archived
+                ? context.l10n.chatHistoryArchivedToast
+                : context.l10n.chatHistoryUnarchivedToast)
+          : (archived
+                ? context.l10n.chatHistoryArchiveFailed
+                : context.l10n.chatHistoryUnarchiveFailed),
       type: success ? ToastType.success : ToastType.error,
     );
   }
@@ -373,7 +379,7 @@ class _ChatHistoryPageState extends State<ChatHistoryPage> {
     }
 
     return Text(
-      'Swipe left on a conversation to archive',
+      context.l10n.chatHistoryArchiveHint,
       style: TextStyle(
         fontSize: 13,
         color: context.isDarkTheme ? palette.textSecondary : Colors.grey[500],

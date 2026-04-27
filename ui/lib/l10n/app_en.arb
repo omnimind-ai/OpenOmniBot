@@ -134,6 +134,11 @@
   "chatHistoryTitle": "Chat History",
   "chatHistoryNoArchived": "No archived conversations",
   "chatHistoryEmpty": "No conversations yet",
+  "chatHistoryArchivedToast": "Archived",
+  "chatHistoryUnarchivedToast": "Moved out of archive",
+  "chatHistoryArchiveFailed": "Couldn't archive the conversation",
+  "chatHistoryUnarchiveFailed": "Couldn't restore the conversation",
+  "chatHistoryArchiveHint": "Swipe left on a conversation to archive it",
   "homeDrawerArchive": "Archive",
   "homeDrawerNewChat": "New conversation",
   "webchatNoChats": "Start a new conversation",
@@ -151,7 +156,7 @@
   "memoryDeleteWarning": "This action cannot be undone",
   "memoryEditDisabled": "Editing short-term memory is not supported",
   "memoryDeleteDisabled": "Deleting short-term memory is not supported",
-  "memoryGreeting": "Hello!\nOmnibot will collect your memories here!",
+  "memoryGreeting": "Hi there,\nWe'll keep your memories together here.",
   "memorySelectedCount": "{n} selected",
   "memoryDeselectAll": "Deselect all",
   "memoryEditTitle": "Edit Memory",
@@ -230,12 +235,77 @@
   "modelDeleteProviderMsg": "Delete \"{name}\"? Scene bindings will be preserved, but you need to reselect an available Provider.",
   "modelProviderDeleted": "Provider deleted",
   "modelProviderDeleteFailed": "Failed to delete Provider: {error}",
+  "modelProviderLoadFailed": "Failed to load model provider settings",
+  "modelProviderSwitchFailed": "Failed to switch providers: {error}",
+  "modelProviderBaseUrlRequired": "Enter a Base URL first",
+  "modelProviderInvalidBaseUrl": "Enter a valid http(s) Base URL",
+  "modelProviderFetchedModels": "Fetched {count} models",
+  "@modelProviderFetchedModels": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "modelProviderFetchFailed": "Failed to fetch the model list: {error}",
 
   "sceneModelMapping": "Scene Mapping",
   "sceneModelMappingDesc": "Bind Providers and models by scene. Unbound scenes will continue using the default model.",
   "sceneModelRefreshList": "Refresh model list",
   "sceneModelSearchHint": "Click the button on the right to search, collapse, and select models by Provider; the top search bar stays fixed.",
   "sceneModelNoScenes": "No configurable scenes",
+  "sceneModelLoadFailed": "Failed to load scene model settings",
+  "sceneModelPartialUpdateFailed": "Updated some models, but these providers failed: {profiles}",
+  "@sceneModelPartialUpdateFailed": {
+    "placeholders": {
+      "profiles": {}
+    }
+  },
+  "sceneModelUpdatedModels": "Updated {count} models",
+  "@sceneModelUpdatedModels": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "sceneModelRefreshFailed": "Failed to refresh the model list: {error}",
+  "sceneModelInvalidModelId": "Model ID can't start with scene.",
+  "sceneModelBoundToast": "{scene} is now using {model}",
+  "@sceneModelBoundToast": {
+    "placeholders": {
+      "scene": {},
+      "model": {}
+    }
+  },
+  "sceneModelSaveFailed": "Failed to save {scene}: {error}",
+  "@sceneModelSaveFailed": {
+    "placeholders": {
+      "scene": {},
+      "error": {}
+    }
+  },
+  "sceneModelBindingCleared": "Cleared the binding for {scene}",
+  "@sceneModelBindingCleared": {
+    "placeholders": {
+      "scene": {}
+    }
+  },
+  "sceneModelDefaultRestored": "{scene} is back to the default model",
+  "@sceneModelDefaultRestored": {
+    "placeholders": {
+      "scene": {}
+    }
+  },
+  "sceneModelClearFailed": "Failed to clear {scene}: {error}",
+  "@sceneModelClearFailed": {
+    "placeholders": {
+      "scene": {},
+      "error": {}
+    }
+  },
+  "sceneVoiceSaveFailed": "Failed to save voice settings: {error}",
+  "@sceneVoiceSaveFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
 
   "localModelsTitle": "Local Models",
   "localModelsAutoPreheat": "Auto preheat on app open",
@@ -603,10 +673,10 @@
   "homeDrawerLunchSub2": "Take a short break after lunch",
   "homeDrawerLunchGreeting3": "Not sure what to eat?",
   "homeDrawerLunchSub3": "Let Omnibot recommend for you",
-  "homeDrawerAfternoonGreeting": "Tea break",
-  "homeDrawerAfternoonSub": "You can finish the rest with ease",
-  "homeDrawerAfternoonGreeting2": "Look outside for a minute",
-  "homeDrawerAfternoonSub2": "Give your eyes a rest",
+  "homeDrawerAfternoonGreeting": "Time for a tea break",
+  "homeDrawerAfternoonSub": "You've got this!",
+  "homeDrawerAfternoonGreeting2": "Look away for a bit",
+  "homeDrawerAfternoonSub2": "Refresh your eyes for a moment",
   "homeDrawerEveningGreeting": "Take it easy on the way home",
   "homeDrawerEveningSub": "Relax tonight",
   "homeDrawerEveningGreeting2": "Evening breeze",

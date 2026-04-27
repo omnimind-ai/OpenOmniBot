@@ -373,7 +373,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
       );
     } catch (_) {
       if (!mounted) return;
-      showToast('Failed to load model provider config', type: ToastType.error);
+      showToast(context.l10n.modelProviderLoadFailed, type: ToastType.error);
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -482,7 +482,10 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      showToast('Failed to switch provider: $e', type: ToastType.error);
+      showToast(
+        context.l10n.modelProviderSwitchFailed(e.toString()),
+        type: ToastType.error,
+      );
     } finally {
       _isSwitchingProfile = false;
     }
@@ -496,14 +499,17 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
 
     if (baseUrl.isEmpty) {
       if (!silentError) {
-        showToast('Please fill in Base URL first', type: ToastType.warning);
+        showToast(
+          context.l10n.modelProviderBaseUrlRequired,
+          type: ToastType.warning,
+        );
       }
       return;
     }
     if (!ModelProviderConfigService.isValidApiBase(baseUrl)) {
       if (!silentError) {
         showToast(
-          'Invalid Base URL format, please enter http(s) address',
+          context.l10n.modelProviderInvalidBaseUrl,
           type: ToastType.error,
         );
       }
@@ -531,7 +537,10 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
       }
     } catch (e) {
       if (!mounted || silentError) return;
-      showToast('Failed to fetch model list: $e', type: ToastType.error);
+      showToast(
+        context.l10n.modelProviderFetchFailed(e.toString()),
+        type: ToastType.error,
+      );
     } finally {
       if (mounted) {
         setState(() => _isFetchingModels = false);
@@ -593,6 +602,64 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
           type: ToastType.error,
         );
       });
+    }
+  }
+
+  Future<void> _fetchModelsLocalized({bool silentError = false}) async {
+    final current = _currentProfile;
+    if (current == null || _isFetchingModels) return;
+    final baseUrl = _baseUrlController.text.trim();
+    final apiKey = _apiKeyController.text.trim();
+
+    if (baseUrl.isEmpty) {
+      if (!silentError) {
+        showToast(
+          context.l10n.modelProviderBaseUrlRequired,
+          type: ToastType.warning,
+        );
+      }
+      return;
+    }
+    if (!ModelProviderConfigService.isValidApiBase(baseUrl)) {
+      if (!silentError) {
+        showToast(
+          context.l10n.modelProviderInvalidBaseUrl,
+          type: ToastType.error,
+        );
+      }
+      return;
+    }
+
+    setState(() => _isFetchingModels = true);
+    try {
+      final models = await ModelProviderConfigService.fetchModels(
+        apiBase: baseUrl,
+        apiKey: apiKey,
+        profileId: current.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _remoteModels = models;
+      });
+      if (!silentError) {
+        final message = models.isEmpty
+            ? context.l10n.localModelsNoAvailableModels
+            : context.l10n.modelProviderFetchedModels(models.length);
+        showToast(
+          message,
+          type: models.isEmpty ? ToastType.warning : ToastType.success,
+        );
+      }
+    } catch (e) {
+      if (!mounted || silentError) return;
+      showToast(
+        context.l10n.modelProviderFetchFailed(e.toString()),
+        type: ToastType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isFetchingModels = false);
+      }
     }
   }
 
@@ -1436,7 +1503,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
                               svg: _kArrowBigDownSvg,
                               onPressed: _isFetchingModels
                                   ? null
-                                  : _fetchModels,
+                                  : _fetchModelsLocalized,
                               highlighted: true,
                               loading: _isFetchingModels,
                             ),

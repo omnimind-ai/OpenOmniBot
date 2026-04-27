@@ -453,6 +453,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatHistoryEmpty => 'No conversations yet';
 
   @override
+  String get chatHistoryArchivedToast => 'Archived';
+
+  @override
+  String get chatHistoryUnarchivedToast => 'Moved out of archive';
+
+  @override
+  String get chatHistoryArchiveFailed => 'Couldn\'t archive the conversation';
+
+  @override
+  String get chatHistoryUnarchiveFailed => 'Couldn\'t restore the conversation';
+
+  @override
+  String get chatHistoryArchiveHint =>
+      'Swipe left on a conversation to archive it';
+
+  @override
   String get homeDrawerArchive => 'Archive';
 
   @override
@@ -507,7 +523,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get memoryGreeting =>
-      'Hello!\nOmnibot will collect your memories here!';
+      'Hi there,\nWe\'ll keep your memories together here.';
 
   @override
   String memorySelectedCount(Object n) {
@@ -765,6 +781,31 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get modelProviderLoadFailed =>
+      'Failed to load model provider settings';
+
+  @override
+  String modelProviderSwitchFailed(Object error) {
+    return 'Failed to switch providers: $error';
+  }
+
+  @override
+  String get modelProviderBaseUrlRequired => 'Enter a Base URL first';
+
+  @override
+  String get modelProviderInvalidBaseUrl => 'Enter a valid http(s) Base URL';
+
+  @override
+  String modelProviderFetchedModels(Object count) {
+    return 'Fetched $count models';
+  }
+
+  @override
+  String modelProviderFetchFailed(Object error) {
+    return 'Failed to fetch the model list: $error';
+  }
+
+  @override
   String get sceneModelMapping => 'Scene Mapping';
 
   @override
@@ -780,6 +821,57 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sceneModelNoScenes => 'No configurable scenes';
+
+  @override
+  String get sceneModelLoadFailed => 'Failed to load scene model settings';
+
+  @override
+  String sceneModelPartialUpdateFailed(Object profiles) {
+    return 'Updated some models, but these providers failed: $profiles';
+  }
+
+  @override
+  String sceneModelUpdatedModels(Object count) {
+    return 'Updated $count models';
+  }
+
+  @override
+  String sceneModelRefreshFailed(Object error) {
+    return 'Failed to refresh the model list: $error';
+  }
+
+  @override
+  String get sceneModelInvalidModelId => 'Model ID can\'t start with scene.';
+
+  @override
+  String sceneModelBoundToast(Object scene, Object model) {
+    return '$scene is now using $model';
+  }
+
+  @override
+  String sceneModelSaveFailed(Object scene, Object error) {
+    return 'Failed to save $scene: $error';
+  }
+
+  @override
+  String sceneModelBindingCleared(Object scene) {
+    return 'Cleared the binding for $scene';
+  }
+
+  @override
+  String sceneModelDefaultRestored(Object scene) {
+    return '$scene is back to the default model';
+  }
+
+  @override
+  String sceneModelClearFailed(Object scene, Object error) {
+    return 'Failed to clear $scene: $error';
+  }
+
+  @override
+  String sceneVoiceSaveFailed(Object error) {
+    return 'Failed to save voice settings: $error';
+  }
 
   @override
   String get localModelsTitle => 'Local Models';
@@ -1867,16 +1959,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeDrawerLunchSub3 => 'Let Omnibot recommend for you';
 
   @override
-  String get homeDrawerAfternoonGreeting => 'Tea break';
+  String get homeDrawerAfternoonGreeting => 'Time for a tea break';
 
   @override
-  String get homeDrawerAfternoonSub => 'You can finish the rest with ease';
+  String get homeDrawerAfternoonSub => 'You\'ve got this!';
 
   @override
-  String get homeDrawerAfternoonGreeting2 => 'Look outside for a minute';
+  String get homeDrawerAfternoonGreeting2 => 'Look away for a bit';
 
   @override
-  String get homeDrawerAfternoonSub2 => 'Give your eyes a rest';
+  String get homeDrawerAfternoonSub2 => 'Refresh your eyes for a moment';
 
   @override
   String get homeDrawerEveningGreeting => 'Take it easy on the way home';

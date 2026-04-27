@@ -134,6 +134,11 @@
   "chatHistoryTitle": "聊天记录",
   "chatHistoryNoArchived": "暂无归档对话",
   "chatHistoryEmpty": "暂无聊天记录",
+  "chatHistoryArchivedToast": "已归档",
+  "chatHistoryUnarchivedToast": "已移出归档",
+  "chatHistoryArchiveFailed": "归档对话失败",
+  "chatHistoryUnarchiveFailed": "移出归档失败",
+  "chatHistoryArchiveHint": "左滑对话即可归档",
   "homeDrawerArchive": "归档对话",
   "homeDrawerNewChat": "新对话",
   "webchatNoChats": "开始一个新的对话吧",
@@ -151,7 +156,7 @@
   "memoryDeleteWarning": "删除后该内容将不可找回",
   "memoryEditDisabled": "短期记忆暂不支持编辑",
   "memoryDeleteDisabled": "短期记忆暂不支持删除",
-  "memoryGreeting": "你好呀，\n小万会在这里收集你的记忆！",
+  "memoryGreeting": "你好呀，\n欢迎回来，我们会在这里慢慢整理你的记忆。",
   "memorySelectedCount": "已选择{n}项",
   "memoryDeselectAll": "全不选",
   "memoryEditTitle": "编辑记忆",
@@ -230,12 +235,77 @@
   "modelDeleteProviderMsg": "确定删除\"{name}\"吗？场景绑定会保留，但需要重新选择可用 Provider。",
   "modelProviderDeleted": "已删除 Provider",
   "modelProviderDeleteFailed": "删除 Provider 失败：{error}",
+  "modelProviderLoadFailed": "加载模型提供商配置失败",
+  "modelProviderSwitchFailed": "切换 Provider 失败：{error}",
+  "modelProviderBaseUrlRequired": "请先填写 Base URL",
+  "modelProviderInvalidBaseUrl": "请输入有效的 http(s) Base URL",
+  "modelProviderFetchedModels": "已获取 {count} 个模型",
+  "@modelProviderFetchedModels": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "modelProviderFetchFailed": "拉取模型列表失败：{error}",
 
   "sceneModelMapping": "场景映射",
   "sceneModelMappingDesc": "按场景绑定 Provider 与模型，未绑定的场景会继续使用默认模型。",
   "sceneModelRefreshList": "刷新模型列表",
   "sceneModelSearchHint": "点击右侧按钮后，可按 Provider 搜索、折叠并选择模型；顶部搜索框固定不随列表滚动。",
   "sceneModelNoScenes": "暂无可配置场景",
+  "sceneModelLoadFailed": "加载场景模型配置失败",
+  "sceneModelPartialUpdateFailed": "部分模型已更新，但这些 Provider 刷新失败：{profiles}",
+  "@sceneModelPartialUpdateFailed": {
+    "placeholders": {
+      "profiles": {}
+    }
+  },
+  "sceneModelUpdatedModels": "已更新 {count} 个模型",
+  "@sceneModelUpdatedModels": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "sceneModelRefreshFailed": "刷新模型列表失败：{error}",
+  "sceneModelInvalidModelId": "模型 ID 不能以 scene. 开头",
+  "sceneModelBoundToast": "已将 {scene} 绑定到 {model}",
+  "@sceneModelBoundToast": {
+    "placeholders": {
+      "scene": {},
+      "model": {}
+    }
+  },
+  "sceneModelSaveFailed": "保存 {scene} 配置失败：{error}",
+  "@sceneModelSaveFailed": {
+    "placeholders": {
+      "scene": {},
+      "error": {}
+    }
+  },
+  "sceneModelBindingCleared": "已清除 {scene} 的绑定",
+  "@sceneModelBindingCleared": {
+    "placeholders": {
+      "scene": {}
+    }
+  },
+  "sceneModelDefaultRestored": "{scene} 已恢复为默认模型",
+  "@sceneModelDefaultRestored": {
+    "placeholders": {
+      "scene": {}
+    }
+  },
+  "sceneModelClearFailed": "清除 {scene} 配置失败：{error}",
+  "@sceneModelClearFailed": {
+    "placeholders": {
+      "scene": {},
+      "error": {}
+    }
+  },
+  "sceneVoiceSaveFailed": "保存语音配置失败：{error}",
+  "@sceneVoiceSaveFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
 
   "localModelsTitle": "本地模型",
   "localModelsAutoPreheat": "打开 App 时自动预热",

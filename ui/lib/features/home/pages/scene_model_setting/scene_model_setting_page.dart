@@ -118,7 +118,9 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
           if (suppressUntil != null && DateTime.now().isBefore(suppressUntil)) {
             return;
           }
-          unawaited(_loadData(showLoading: false, refreshProviderModels: false));
+          unawaited(
+            _loadData(showLoading: false, refreshProviderModels: false),
+          );
         });
   }
 
@@ -262,12 +264,13 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
         _voiceConfig = voiceConfig;
       });
       _syncVoiceControllers(voiceConfig);
-      if (refreshProviderModels && _profiles.any((profile) => profile.configured)) {
+      if (refreshProviderModels &&
+          _profiles.any((profile) => profile.configured)) {
         unawaited(_refreshProviderModels());
       }
     } catch (_) {
       if (!mounted) return;
-      showToast('Failed to load scene config', type: ToastType.error);
+      showToast(context.l10n.sceneModelLoadFailed, type: ToastType.error);
     } finally {
       if (showLoading && mounted) {
         setState(() => _isLoading = false);
@@ -352,18 +355,23 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
         final extraCount = failedProfiles.length - 2;
         final suffix = extraCount > 0 ? ' (+$extraCount)' : '';
         showToast(
-          'Partially updated, but some Providers failed: $preview$suffix',
+          context.l10n.sceneModelPartialUpdateFailed('$preview$suffix'),
           type: ToastType.warning,
         );
         return;
       }
       showToast(
-        refreshedCount == 0 ? 'No available models' : 'Updated $refreshedCount models',
+        refreshedCount == 0
+            ? context.l10n.localModelsNoAvailableModels
+            : context.l10n.sceneModelUpdatedModels(refreshedCount),
         type: refreshedCount == 0 ? ToastType.warning : ToastType.success,
       );
     } catch (e) {
       if (!mounted) return;
-      showToast('Failed to refresh model list: $e', type: ToastType.error);
+      showToast(
+        context.l10n.sceneModelRefreshFailed(e.toString()),
+        type: ToastType.error,
+      );
     } finally {
       if (mounted) {
         setState(() => _isRefreshingModels = false);
@@ -383,7 +391,7 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
       return;
     }
     if (!SceneModelConfigService.isValidModelName(modelId)) {
-      showToast('Model ID must not start with scene.', type: ToastType.error);
+      showToast(context.l10n.sceneModelInvalidModelId, type: ToastType.error);
       return;
     }
 
@@ -405,13 +413,16 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
         );
       });
       showToast(
-        '${_sceneDisplayName(sceneId)} bound to $modelId',
+        context.l10n.sceneModelBoundToast(_sceneDisplayName(sceneId), modelId),
         type: ToastType.success,
       );
     } catch (e) {
       if (!mounted) return;
       showToast(
-        'Failed to save ${_sceneDisplayName(sceneId)} config: $e',
+        context.l10n.sceneModelSaveFailed(
+          _sceneDisplayName(sceneId),
+          e.toString(),
+        ),
         type: ToastType.error,
       );
     } finally {
@@ -449,7 +460,48 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
     } catch (e) {
       if (!mounted) return;
       showToast(
-        'Failed to clear ${_sceneDisplayName(sceneId)} config: $e',
+        context.l10n.sceneModelClearFailed(
+          _sceneDisplayName(sceneId),
+          e.toString(),
+        ),
+        type: ToastType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _savingSceneIds = {..._savingSceneIds}..remove(sceneId);
+        });
+      }
+    }
+  }
+
+  Future<void> _clearSceneBindingLocalized(SceneCatalogItem scene) async {
+    final sceneId = scene.sceneId;
+    if (!_bindingMap.containsKey(sceneId)) {
+      return;
+    }
+    setState(() {
+      _savingSceneIds = {..._savingSceneIds, sceneId};
+    });
+    try {
+      final bindings = await SceneModelConfigService.clearSceneModelBinding(
+        sceneId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _bindings = bindings;
+      });
+      final toastText = _isVoiceScene(sceneId)
+          ? context.l10n.sceneModelBindingCleared(_sceneDisplayName(sceneId))
+          : context.l10n.sceneModelDefaultRestored(_sceneDisplayName(sceneId));
+      showToast(toastText, type: ToastType.success);
+    } catch (e) {
+      if (!mounted) return;
+      showToast(
+        context.l10n.sceneModelClearFailed(
+          _sceneDisplayName(sceneId),
+          e.toString(),
+        ),
         type: ToastType.error,
       );
     } finally {
@@ -570,7 +622,7 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
       return;
     }
     if (result.restoreDefault) {
-      await _clearSceneBinding(scene);
+      await _clearSceneBindingLocalized(scene);
       return;
     }
     if (result.providerProfileId.isNotEmpty && result.modelId.isNotEmpty) {
@@ -597,7 +649,9 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
     final profile = _profiles.where(
       (item) => item.id == binding.providerProfileId,
     );
-    final profileName = profile.isEmpty ? 'Provider unavailable' : profile.first.name;
+    final profileName = profile.isEmpty
+        ? 'Provider unavailable'
+        : profile.first.name;
     return '$profileName / ${binding.modelId}';
   }
 
@@ -991,7 +1045,10 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _pageBackground,
-      appBar: CommonAppBar(title: context.l10n.settingsSceneModelTitle, primary: true),
+      appBar: CommonAppBar(
+        title: context.l10n.settingsSceneModelTitle,
+        primary: true,
+      ),
       body: SafeArea(
         top: false,
         child: _isLoading

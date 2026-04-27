@@ -896,6 +896,36 @@ abstract class AppLocalizations {
   /// **'暂无聊天记录'**
   String get chatHistoryEmpty;
 
+  /// No description provided for @chatHistoryArchivedToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'已归档'**
+  String get chatHistoryArchivedToast;
+
+  /// No description provided for @chatHistoryUnarchivedToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'已移出归档'**
+  String get chatHistoryUnarchivedToast;
+
+  /// No description provided for @chatHistoryArchiveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'归档对话失败'**
+  String get chatHistoryArchiveFailed;
+
+  /// No description provided for @chatHistoryUnarchiveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'移出归档失败'**
+  String get chatHistoryUnarchiveFailed;
+
+  /// No description provided for @chatHistoryArchiveHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'左滑对话即可归档'**
+  String get chatHistoryArchiveHint;
+
   /// No description provided for @homeDrawerArchive.
   ///
   /// In zh, this message translates to:
@@ -995,7 +1025,7 @@ abstract class AppLocalizations {
   /// No description provided for @memoryGreeting.
   ///
   /// In zh, this message translates to:
-  /// **'你好呀，\n小万会在这里收集你的记忆！'**
+  /// **'你好呀，\n欢迎回来，我们会在这里慢慢整理你的记忆。'**
   String get memoryGreeting;
 
   /// No description provided for @memorySelectedCount.
@@ -1448,6 +1478,42 @@ abstract class AppLocalizations {
   /// **'删除 Provider 失败：{error}'**
   String modelProviderDeleteFailed(Object error);
 
+  /// No description provided for @modelProviderLoadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载模型提供商配置失败'**
+  String get modelProviderLoadFailed;
+
+  /// No description provided for @modelProviderSwitchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换 Provider 失败：{error}'**
+  String modelProviderSwitchFailed(Object error);
+
+  /// No description provided for @modelProviderBaseUrlRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先填写 Base URL'**
+  String get modelProviderBaseUrlRequired;
+
+  /// No description provided for @modelProviderInvalidBaseUrl.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入有效的 http(s) Base URL'**
+  String get modelProviderInvalidBaseUrl;
+
+  /// No description provided for @modelProviderFetchedModels.
+  ///
+  /// In zh, this message translates to:
+  /// **'已获取 {count} 个模型'**
+  String modelProviderFetchedModels(Object count);
+
+  /// No description provided for @modelProviderFetchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'拉取模型列表失败：{error}'**
+  String modelProviderFetchFailed(Object error);
+
   /// No description provided for @sceneModelMapping.
   ///
   /// In zh, this message translates to:
@@ -1477,6 +1543,72 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'暂无可配置场景'**
   String get sceneModelNoScenes;
+
+  /// No description provided for @sceneModelLoadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载场景模型配置失败'**
+  String get sceneModelLoadFailed;
+
+  /// No description provided for @sceneModelPartialUpdateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'部分模型已更新，但这些 Provider 刷新失败：{profiles}'**
+  String sceneModelPartialUpdateFailed(Object profiles);
+
+  /// No description provided for @sceneModelUpdatedModels.
+  ///
+  /// In zh, this message translates to:
+  /// **'已更新 {count} 个模型'**
+  String sceneModelUpdatedModels(Object count);
+
+  /// No description provided for @sceneModelRefreshFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新模型列表失败：{error}'**
+  String sceneModelRefreshFailed(Object error);
+
+  /// No description provided for @sceneModelInvalidModelId.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型 ID 不能以 scene. 开头'**
+  String get sceneModelInvalidModelId;
+
+  /// No description provided for @sceneModelBoundToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'已将 {scene} 绑定到 {model}'**
+  String sceneModelBoundToast(Object scene, Object model);
+
+  /// No description provided for @sceneModelSaveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存 {scene} 配置失败：{error}'**
+  String sceneModelSaveFailed(Object scene, Object error);
+
+  /// No description provided for @sceneModelBindingCleared.
+  ///
+  /// In zh, this message translates to:
+  /// **'已清除 {scene} 的绑定'**
+  String sceneModelBindingCleared(Object scene);
+
+  /// No description provided for @sceneModelDefaultRestored.
+  ///
+  /// In zh, this message translates to:
+  /// **'{scene} 已恢复为默认模型'**
+  String sceneModelDefaultRestored(Object scene);
+
+  /// No description provided for @sceneModelClearFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除 {scene} 配置失败：{error}'**
+  String sceneModelClearFailed(Object scene, Object error);
+
+  /// No description provided for @sceneVoiceSaveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存语音配置失败：{error}'**
+  String sceneVoiceSaveFailed(Object error);
 
   /// No description provided for @localModelsTitle.
   ///

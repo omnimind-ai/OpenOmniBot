@@ -421,6 +421,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatHistoryEmpty => '暂无聊天记录';
 
   @override
+  String get chatHistoryArchivedToast => '已归档';
+
+  @override
+  String get chatHistoryUnarchivedToast => '已移出归档';
+
+  @override
+  String get chatHistoryArchiveFailed => '归档对话失败';
+
+  @override
+  String get chatHistoryUnarchiveFailed => '移出归档失败';
+
+  @override
+  String get chatHistoryArchiveHint => '左滑对话即可归档';
+
+  @override
   String get homeDrawerArchive => '归档对话';
 
   @override
@@ -469,7 +484,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get memoryDeleteDisabled => '短期记忆暂不支持删除';
 
   @override
-  String get memoryGreeting => '你好呀，\n小万会在这里收集你的记忆！';
+  String get memoryGreeting => '你好呀，\n欢迎回来，我们会在这里慢慢整理你的记忆。';
 
   @override
   String memorySelectedCount(Object n) {
@@ -721,6 +736,30 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get modelProviderLoadFailed => '加载模型提供商配置失败';
+
+  @override
+  String modelProviderSwitchFailed(Object error) {
+    return '切换 Provider 失败：$error';
+  }
+
+  @override
+  String get modelProviderBaseUrlRequired => '请先填写 Base URL';
+
+  @override
+  String get modelProviderInvalidBaseUrl => '请输入有效的 http(s) Base URL';
+
+  @override
+  String modelProviderFetchedModels(Object count) {
+    return '已获取 $count 个模型';
+  }
+
+  @override
+  String modelProviderFetchFailed(Object error) {
+    return '拉取模型列表失败：$error';
+  }
+
+  @override
   String get sceneModelMapping => '场景映射';
 
   @override
@@ -735,6 +774,57 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sceneModelNoScenes => '暂无可配置场景';
+
+  @override
+  String get sceneModelLoadFailed => '加载场景模型配置失败';
+
+  @override
+  String sceneModelPartialUpdateFailed(Object profiles) {
+    return '部分模型已更新，但这些 Provider 刷新失败：$profiles';
+  }
+
+  @override
+  String sceneModelUpdatedModels(Object count) {
+    return '已更新 $count 个模型';
+  }
+
+  @override
+  String sceneModelRefreshFailed(Object error) {
+    return '刷新模型列表失败：$error';
+  }
+
+  @override
+  String get sceneModelInvalidModelId => '模型 ID 不能以 scene. 开头';
+
+  @override
+  String sceneModelBoundToast(Object scene, Object model) {
+    return '已将 $scene 绑定到 $model';
+  }
+
+  @override
+  String sceneModelSaveFailed(Object scene, Object error) {
+    return '保存 $scene 配置失败：$error';
+  }
+
+  @override
+  String sceneModelBindingCleared(Object scene) {
+    return '已清除 $scene 的绑定';
+  }
+
+  @override
+  String sceneModelDefaultRestored(Object scene) {
+    return '$scene 已恢复为默认模型';
+  }
+
+  @override
+  String sceneModelClearFailed(Object scene, Object error) {
+    return '清除 $scene 配置失败：$error';
+  }
+
+  @override
+  String sceneVoiceSaveFailed(Object error) {
+    return '保存语音配置失败：$error';
+  }
 
   @override
   String get localModelsTitle => '本地模型';

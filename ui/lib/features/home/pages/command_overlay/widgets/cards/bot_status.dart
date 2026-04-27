@@ -24,6 +24,23 @@ class BotStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final normalizedCostTime = costTime == null
+        ? ''
+        : LegacyTextLocalizer.isEnglish
+        ? costTime!
+        : costTime!.replaceAll(' ', '');
+    if (status == BotStatusType.completed && LegacyTextLocalizer.isEnglish) {
+      final completedEnglishText = normalizedCostTime.isEmpty
+          ? 'Thought complete'
+          : 'Thought for $normalizedCostTime';
+      return _buildStatusRow(
+        context,
+        customIcon: showAvatar ? const AgentAvatarButton(size: 30) : null,
+        text: completedEnglishText,
+        shimmerText: false,
+      );
+    }
+
     switch (status) {
       case BotStatusType.completed:
         return _buildStatusRow(
