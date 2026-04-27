@@ -1602,11 +1602,41 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutBetaProgramDescription =>
-      'Beta builds use four-segment version numbers, update faster, and get new features earlier.';
+      'Get faster four-part beta updates.';
 
   @override
   String get aboutBetaProgramToggleFailed =>
       'Failed to update beta testing preference';
+
+  @override
+  String get aboutPreferencesSectionTitle => 'Update & Testing';
+
+  @override
+  String get aboutApkSourceTitle => 'APK Download Source';
+
+  @override
+  String get aboutApkSourceDescription =>
+      'Choose the source used for update installs.';
+
+  @override
+  String get aboutApkSourceOptionCnb => 'CNB';
+
+  @override
+  String get aboutApkSourceOptionCnbDescription => 'Best for mainland China';
+
+  @override
+  String get aboutApkSourceOptionGithub => 'GitHub';
+
+  @override
+  String get aboutApkSourceOptionGithubDescription => 'Official release source';
+
+  @override
+  String get aboutApkSourceSwitchFailed =>
+      'Failed to switch APK download source';
+
+  @override
+  String get aboutUpdateHintDefault =>
+      'Check for updates to get the latest version';
 
   @override
   String get workspaceMemoryLoadFailed =>

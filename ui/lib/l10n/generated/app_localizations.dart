@@ -2879,7 +2879,7 @@ abstract class AppLocalizations {
   /// No description provided for @aboutBetaProgramDescription.
   ///
   /// In zh, this message translates to:
-  /// **'beta 版本为 4 位数版本号，迭代更快，优先获取最新的功能支持。'**
+  /// **'接收更快的四段版更新。'**
   String get aboutBetaProgramDescription;
 
   /// No description provided for @aboutBetaProgramToggleFailed.
@@ -2887,6 +2887,60 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'beta 测试设置更新失败'**
   String get aboutBetaProgramToggleFailed;
+
+  /// No description provided for @aboutPreferencesSectionTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新与测试'**
+  String get aboutPreferencesSectionTitle;
+
+  /// No description provided for @aboutApkSourceTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装包下载源'**
+  String get aboutApkSourceTitle;
+
+  /// No description provided for @aboutApkSourceDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择安装更新时使用的下载源。'**
+  String get aboutApkSourceDescription;
+
+  /// No description provided for @aboutApkSourceOptionCnb.
+  ///
+  /// In zh, this message translates to:
+  /// **'CNB'**
+  String get aboutApkSourceOptionCnb;
+
+  /// No description provided for @aboutApkSourceOptionCnbDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'国内网络优先'**
+  String get aboutApkSourceOptionCnbDescription;
+
+  /// No description provided for @aboutApkSourceOptionGithub.
+  ///
+  /// In zh, this message translates to:
+  /// **'GitHub'**
+  String get aboutApkSourceOptionGithub;
+
+  /// No description provided for @aboutApkSourceOptionGithubDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'官方 Release'**
+  String get aboutApkSourceOptionGithubDescription;
+
+  /// No description provided for @aboutApkSourceSwitchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装包下载源切换失败'**
+  String get aboutApkSourceSwitchFailed;
+
+  /// No description provided for @aboutUpdateHintDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查更新获取最新版本'**
+  String get aboutUpdateHintDefault;
 
   /// No description provided for @workspaceMemoryLoadFailed.
   ///

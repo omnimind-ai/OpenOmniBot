@@ -558,8 +558,17 @@
 
   "aboutDescription": "小万，是一款以智能对话为核心的手机AI助\n手，通过语义理解与持续学习能力，协助用户\n完成信息处理、决策辅助和日常管理。",
   "aboutBetaProgramTitle": "加入 beta 测试",
-  "aboutBetaProgramDescription": "beta 版本为 4 位数版本号，迭代更快，优先获取最新的功能支持。",
+  "aboutBetaProgramDescription": "接收更快的四段版更新。",
   "aboutBetaProgramToggleFailed": "beta 测试设置更新失败",
+  "aboutPreferencesSectionTitle": "更新与测试",
+  "aboutApkSourceTitle": "安装包下载源",
+  "aboutApkSourceDescription": "选择安装更新时使用的下载源。",
+  "aboutApkSourceOptionCnb": "CNB",
+  "aboutApkSourceOptionCnbDescription": "国内网络优先",
+  "aboutApkSourceOptionGithub": "GitHub",
+  "aboutApkSourceOptionGithubDescription": "官方 Release",
+  "aboutApkSourceSwitchFailed": "安装包下载源切换失败",
+  "aboutUpdateHintDefault": "检查更新获取最新版本",
 
   "workspaceMemoryLoadFailed": "加载 workspace 记忆配置失败",
   "workspaceSoulSaved": "SOUL.md 已保存",

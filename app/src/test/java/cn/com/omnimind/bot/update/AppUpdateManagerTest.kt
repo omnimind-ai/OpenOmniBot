@@ -80,4 +80,21 @@ class AppUpdateManagerTest {
         val selected = AppUpdateManager.selectPreferredApkAsset(emptyList())
         assertNull(selected)
     }
+
+    @Test
+    fun resolveApkDownloadUrlBuildsUrlForSelectedSource() {
+        val asset = ReleaseAsset(
+            name = "OpenOmniBot-v0.3.7.5.apk",
+            downloadUrl = "https://example.com/OpenOmniBot-v0.3.7.5.apk"
+        )
+
+        assertEquals(
+            "https://cnb.cool/o.a/OpenOmniBot/-/releases/download/v0.3.7.5/OpenOmniBot-v0.3.7.5.apk",
+            AppUpdateManager.resolveApkDownloadUrl(ApkDownloadSource.CNB, "0.3.7.5", asset)
+        )
+        assertEquals(
+            "https://github.com/omnimind-ai/OpenOmniBot/releases/download/v0.3.7.5/OpenOmniBot-v0.3.7.5.apk",
+            AppUpdateManager.resolveApkDownloadUrl(ApkDownloadSource.GITHUB, "0.3.7.5", asset)
+        )
+    }
 }

@@ -558,8 +558,17 @@
 
   "aboutDescription": "Omnibot is an AI assistant app centered on\nintelligent conversation, using semantic understanding\nand continuous learning to help with information\nprocessing, decision support, and daily management.",
   "aboutBetaProgramTitle": "Join beta testing",
-  "aboutBetaProgramDescription": "Beta builds use four-segment version numbers, update faster, and get new features earlier.",
+  "aboutBetaProgramDescription": "Get faster four-part beta updates.",
   "aboutBetaProgramToggleFailed": "Failed to update beta testing preference",
+  "aboutPreferencesSectionTitle": "Update & Testing",
+  "aboutApkSourceTitle": "APK Download Source",
+  "aboutApkSourceDescription": "Choose the source used for update installs.",
+  "aboutApkSourceOptionCnb": "CNB",
+  "aboutApkSourceOptionCnbDescription": "Best for mainland China",
+  "aboutApkSourceOptionGithub": "GitHub",
+  "aboutApkSourceOptionGithubDescription": "Official release source",
+  "aboutApkSourceSwitchFailed": "Failed to switch APK download source",
+  "aboutUpdateHintDefault": "Check for updates to get the latest version",
 
   "workspaceMemoryLoadFailed": "Failed to load workspace memory config",
   "workspaceSoulSaved": "SOUL.md saved",

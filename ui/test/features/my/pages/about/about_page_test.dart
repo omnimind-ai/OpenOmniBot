@@ -13,6 +13,7 @@ void main() {
 
   tearDown(() async {
     AppUpdateService.betaOptInNotifier.value = false;
+    AppUpdateService.downloadSourceNotifier.value = AppUpdateDownloadSource.cnb;
     AppUpdateService.statusNotifier.value = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(deviceChannel, null);
@@ -32,6 +33,9 @@ void main() {
         .setMockMethodCallHandler(updateChannel, (call) async {
           if (call.method == 'getBetaOptIn') {
             return false;
+          }
+          if (call.method == 'getApkDownloadSource') {
+            return 'cnb';
           }
           if (call.method == 'getCachedStatus') {
             return <String, dynamic>{
@@ -72,9 +76,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.byType(SingleChildScrollView), findsNothing);
     expect(find.text('Version 0.0.1'), findsOneWidget);
     expect(find.text('加入 beta 测试'), findsOneWidget);
+    expect(find.text('安装包下载源'), findsOneWidget);
+    expect(find.text('CNB'), findsWidgets);
     expect(find.textContaining('发现新版本'), findsOneWidget);
     expect(find.text('查看新版本'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('about-download-source-dropdown')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('国内网络优先'), findsOneWidget);
+    expect(find.text('官方 Release'), findsOneWidget);
   });
 }

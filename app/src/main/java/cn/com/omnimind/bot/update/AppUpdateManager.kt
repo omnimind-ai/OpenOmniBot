@@ -19,6 +19,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import java.io.IOException
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -54,6 +56,18 @@ internal data class ReleaseAsset(
 )
 
 @VisibleForTesting
+internal enum class ApkDownloadSource(val value: String) {
+    CNB("cnb"),
+    GITHUB("github");
+
+    companion object {
+        fun fromValue(raw: String?): ApkDownloadSource {
+            return entries.firstOrNull { it.value.equals(raw?.trim(), ignoreCase = true) } ?: CNB
+        }
+    }
+}
+
+@VisibleForTesting
 internal enum class ReleaseTrack {
     STABLE,
     BETA,
@@ -82,9 +96,14 @@ object AppUpdateManager {
     private const val KEY_RELEASE_NOTES = "release_notes"
     private const val KEY_APK_NAME = "apk_name"
     private const val KEY_APK_DOWNLOAD_URL = "apk_download_url"
+    private const val KEY_APK_DOWNLOAD_SOURCE = "apk_download_source"
 
     private const val RELEASES_URL =
         "https://api.github.com/repos/omnimind-ai/OpenOmniBot/releases?per_page=30"
+    private const val GITHUB_RELEASE_DOWNLOAD_PREFIX =
+        "https://github.com/omnimind-ai/OpenOmniBot/releases/download"
+    private const val CNB_RELEASE_DOWNLOAD_PREFIX =
+        "https://cnb.cool/o.a/OpenOmniBot/-/releases/download"
     private const val WORK_NAME = "app_update_periodic_check"
     private const val PERIODIC_CHECK_HOURS = 12L
     private const val SILENT_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L
@@ -144,6 +163,13 @@ object AppUpdateManager {
             .getBoolean(KEY_BETA_OPT_IN, false)
     }
 
+    internal fun getApkDownloadSource(context: Context): ApkDownloadSource {
+        val rawValue = context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_APK_DOWNLOAD_SOURCE, null)
+        return ApkDownloadSource.fromValue(rawValue)
+    }
+
     fun setBetaOptIn(context: Context, enabled: Boolean): Boolean {
         val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val changed = prefs.getBoolean(KEY_BETA_OPT_IN, false) != enabled
@@ -156,17 +182,28 @@ object AppUpdateManager {
         return enabled
     }
 
+    internal fun setApkDownloadSource(context: Context, rawValue: String?): ApkDownloadSource {
+        val source = ApkDownloadSource.fromValue(rawValue)
+        context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_APK_DOWNLOAD_SOURCE, source.value)
+            .apply()
+        return source
+    }
+
     suspend fun checkNow(context: Context, force: Boolean): AppUpdateState {
         val appContext = context.applicationContext
         val now = System.currentTimeMillis()
         val currentVersion = currentVersion(appContext)
         val includeBeta = isBetaOptIn(appContext)
+        val downloadSource = getApkDownloadSource(appContext)
         val cached = readState(appContext, currentVersion, includeBeta)
         if (!force && now - cached.checkedAt < SILENT_CHECK_INTERVAL_MS) {
             return cached
         }
 
-        val fetched = fetchLatestReleaseState(currentVersion, includeBeta)
+        val fetched = fetchLatestReleaseState(currentVersion, includeBeta, downloadSource)
             .copy(checkedAt = now)
         saveState(appContext, fetched)
         return fetched
@@ -307,12 +344,16 @@ object AppUpdateManager {
             apkName = prefs.getString(KEY_APK_NAME, "").orEmpty(),
             apkDownloadUrl = prefs.getString(KEY_APK_DOWNLOAD_URL, "").orEmpty()
         )
-        if (!shouldIncludeTrack(classifyReleaseTrack(storedState.latestVersion), includeBeta)) {
-            return emptyState(currentVersion = currentVersion, checkedAt = storedState.checkedAt)
+        val stateWithPreferredSource = applyPreferredDownloadSource(
+            storedState,
+            getApkDownloadSource(context)
+        )
+        if (!shouldIncludeTrack(classifyReleaseTrack(stateWithPreferredSource.latestVersion), includeBeta)) {
+            return emptyState(currentVersion = currentVersion, checkedAt = stateWithPreferredSource.checkedAt)
         }
-        return storedState.copy(
-            hasUpdate = storedState.hasUpdate &&
-                compareVersions(storedState.latestVersion, currentVersion) > 0
+        return stateWithPreferredSource.copy(
+            hasUpdate = stateWithPreferredSource.hasUpdate &&
+                compareVersions(stateWithPreferredSource.latestVersion, currentVersion) > 0
         )
     }
 
@@ -337,7 +378,11 @@ object AppUpdateManager {
             ?: "0.0.0"
     }
 
-    private fun fetchLatestReleaseState(currentVersion: String, includeBeta: Boolean): AppUpdateState {
+    private fun fetchLatestReleaseState(
+        currentVersion: String,
+        includeBeta: Boolean,
+        downloadSource: ApkDownloadSource
+    ): AppUpdateState {
         val request = Request.Builder()
             .url(RELEASES_URL)
             .addHeader("Accept", "application/vnd.github+json")
@@ -371,9 +416,52 @@ object AppUpdateManager {
                 releaseUrl = selectedRelease.releaseUrl,
                 releaseNotes = selectedRelease.releaseNotes,
                 apkName = preferredAsset?.name.orEmpty(),
-                apkDownloadUrl = preferredAsset?.downloadUrl.orEmpty()
+                apkDownloadUrl = preferredAsset?.let {
+                    resolveApkDownloadUrl(downloadSource, selectedRelease.version, it)
+                }.orEmpty()
             )
         }
+    }
+
+    private fun applyPreferredDownloadSource(
+        state: AppUpdateState,
+        downloadSource: ApkDownloadSource
+    ): AppUpdateState {
+        if (state.latestVersion.isBlank() || state.apkName.isBlank()) {
+            return state
+        }
+        return state.copy(
+            apkDownloadUrl = resolveApkDownloadUrl(
+                downloadSource = downloadSource,
+                version = state.latestVersion,
+                asset = ReleaseAsset(
+                    name = state.apkName,
+                    downloadUrl = state.apkDownloadUrl
+                )
+            )
+        )
+    }
+
+    @VisibleForTesting
+    internal fun resolveApkDownloadUrl(
+        downloadSource: ApkDownloadSource,
+        version: String,
+        asset: ReleaseAsset
+    ): String {
+        if (asset.name.isBlank()) {
+            return asset.downloadUrl
+        }
+        val normalizedVersion = normalizeVersion(version)
+        if (normalizedVersion.isBlank()) {
+            return asset.downloadUrl
+        }
+        val releaseTag = "v${encodePathSegment(normalizedVersion)}"
+        val fileName = encodePathSegment(asset.name)
+        val prefix = when (downloadSource) {
+            ApkDownloadSource.CNB -> CNB_RELEASE_DOWNLOAD_PREFIX
+            ApkDownloadSource.GITHUB -> GITHUB_RELEASE_DOWNLOAD_PREFIX
+        }
+        return "$prefix/$releaseTag/$fileName"
     }
 
     private fun parseReleaseCandidates(array: JSONArray?): List<ReleaseCandidate> {
@@ -414,6 +502,11 @@ object AppUpdateManager {
     private fun parseGithubTimeToMillis(raw: String?): Long {
         if (raw.isNullOrBlank()) return 0L
         return runCatching { Instant.parse(raw).toEpochMilli() }.getOrDefault(0L)
+    }
+
+    private fun encodePathSegment(raw: String): String {
+        return URLEncoder.encode(raw, StandardCharsets.UTF_8.toString())
+            .replace("+", "%20")
     }
 
     private fun emptyState(currentVersion: String, checkedAt: Long = 0L): AppUpdateState {

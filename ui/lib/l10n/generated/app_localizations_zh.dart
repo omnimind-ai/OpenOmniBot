@@ -1495,11 +1495,37 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aboutBetaProgramTitle => '加入 beta 测试';
 
   @override
-  String get aboutBetaProgramDescription =>
-      'beta 版本为 4 位数版本号，迭代更快，优先获取最新的功能支持。';
+  String get aboutBetaProgramDescription => '接收更快的四段版更新。';
 
   @override
   String get aboutBetaProgramToggleFailed => 'beta 测试设置更新失败';
+
+  @override
+  String get aboutPreferencesSectionTitle => '更新与测试';
+
+  @override
+  String get aboutApkSourceTitle => '安装包下载源';
+
+  @override
+  String get aboutApkSourceDescription => '选择安装更新时使用的下载源。';
+
+  @override
+  String get aboutApkSourceOptionCnb => 'CNB';
+
+  @override
+  String get aboutApkSourceOptionCnbDescription => '国内网络优先';
+
+  @override
+  String get aboutApkSourceOptionGithub => 'GitHub';
+
+  @override
+  String get aboutApkSourceOptionGithubDescription => '官方 Release';
+
+  @override
+  String get aboutApkSourceSwitchFailed => '安装包下载源切换失败';
+
+  @override
+  String get aboutUpdateHintDefault => '检查更新获取最新版本';
 
   @override
   String get workspaceMemoryLoadFailed => '加载 workspace 记忆配置失败';

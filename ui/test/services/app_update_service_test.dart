@@ -11,6 +11,7 @@ void main() {
 
   tearDown(() async {
     AppUpdateService.betaOptInNotifier.value = false;
+    AppUpdateService.downloadSourceNotifier.value = AppUpdateDownloadSource.cnb;
     AppUpdateService.statusNotifier.value = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
@@ -70,6 +71,44 @@ void main() {
     expect(AppUpdateService.betaOptInNotifier.value, isTrue);
     expect(AppUpdateService.statusNotifier.value?.latestVersion, '1.6.1.2');
   });
+
+  test(
+    'setDownloadSource updates notifier and refreshes cached status',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'setApkDownloadSource') {
+              return call.arguments['source'] as String?;
+            }
+            if (call.method == 'getCachedStatus') {
+              return <String, dynamic>{
+                'currentVersion': '1.6.1',
+                'latestVersion': '1.6.2',
+                'hasUpdate': true,
+                'checkedAt': 5,
+                'publishedAt': 6,
+                'releaseUrl': 'https://example.com/release',
+                'releaseNotes': 'stable notes',
+                'apkName': 'OpenOmniBot-v1.6.2.apk',
+                'apkDownloadUrl':
+                    'https://github.com/omnimind-ai/OpenOmniBot/releases/download/v1.6.2/OpenOmniBot-v1.6.2.apk',
+              };
+            }
+            return null;
+          });
+
+      final source = await AppUpdateService.setDownloadSource(
+        AppUpdateDownloadSource.github,
+      );
+
+      expect(source, AppUpdateDownloadSource.github);
+      expect(
+        AppUpdateService.downloadSourceNotifier.value,
+        AppUpdateDownloadSource.github,
+      );
+      expect(AppUpdateService.statusNotifier.value?.latestVersion, '1.6.2');
+    },
+  );
 
   test('dismissBanner hides the banner for the same version only', () async {
     SharedPreferences.setMockInitialValues({});

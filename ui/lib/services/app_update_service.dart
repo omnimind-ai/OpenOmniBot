@@ -4,6 +4,22 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:ui/services/storage_service.dart';
 
+enum AppUpdateDownloadSource {
+  cnb('cnb'),
+  github('github');
+
+  const AppUpdateDownloadSource(this.value);
+
+  final String value;
+
+  static AppUpdateDownloadSource fromRaw(String? raw) {
+    return AppUpdateDownloadSource.values.firstWhere(
+      (source) => source.value == raw?.trim().toLowerCase(),
+      orElse: () => AppUpdateDownloadSource.cnb,
+    );
+  }
+}
+
 class AppUpdateStatus {
   final String currentVersion;
   final String latestVersion;
@@ -90,13 +106,19 @@ class AppUpdateService {
   static final ValueNotifier<bool> betaOptInNotifier = ValueNotifier<bool>(
     false,
   );
+  static final ValueNotifier<AppUpdateDownloadSource> downloadSourceNotifier =
+      ValueNotifier<AppUpdateDownloadSource>(AppUpdateDownloadSource.cnb);
   static final ValueNotifier<AppUpdateStatus?> statusNotifier =
       ValueNotifier<AppUpdateStatus?>(null);
 
   static Future<void> initialize() => _initialize();
 
   static Future<void> _initialize() async {
-    await Future.wait<void>([refreshBetaOptIn(), refreshCachedStatus()]);
+    await Future.wait<void>([
+      refreshBetaOptIn(),
+      refreshCachedStatus(),
+      refreshDownloadSource(),
+    ]);
     unawaited(_safeRefreshIfNeeded());
   }
 
@@ -124,6 +146,19 @@ class AppUpdateService {
     }
   }
 
+  static Future<AppUpdateDownloadSource> refreshDownloadSource() async {
+    try {
+      final rawSource = await _channel.invokeMethod<String>(
+        'getApkDownloadSource',
+      );
+      final source = AppUpdateDownloadSource.fromRaw(rawSource);
+      downloadSourceNotifier.value = source;
+      return source;
+    } catch (_) {
+      return downloadSourceNotifier.value;
+    }
+  }
+
   static Future<AppUpdateStatus?> refreshIfNeeded() {
     return _safeRefreshIfNeeded();
   }
@@ -145,6 +180,19 @@ class AppUpdateService {
       await refreshCachedStatus();
     }
     return updated;
+  }
+
+  static Future<AppUpdateDownloadSource> setDownloadSource(
+    AppUpdateDownloadSource source,
+  ) async {
+    final rawSource = await _channel.invokeMethod<String>(
+      'setApkDownloadSource',
+      {'source': source.value},
+    );
+    final updatedSource = AppUpdateDownloadSource.fromRaw(rawSource);
+    downloadSourceNotifier.value = updatedSource;
+    await refreshCachedStatus();
+    return updatedSource;
   }
 
   static Future<AppUpdateInstallResult> installLatestApk() async {
