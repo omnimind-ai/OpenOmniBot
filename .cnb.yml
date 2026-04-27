@@ -5,7 +5,7 @@
       git:
         submodules: false
       runner:
-        cpus: 4
+        cpus: 8
       docker:
         image: ghcr.io/cirruslabs/flutter:3.38.7
         volumes:
@@ -49,7 +49,18 @@
               flutter pub get --enforce-lockfile
               flutter analyze --no-fatal-warnings --no-fatal-infos
             )
-            ./gradlew --no-daemon --parallel --build-cache \
+            CPU_COUNT="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)"
+            if [ "$CPU_COUNT" -ge 8 ]; then
+              MAX_WORKERS=8
+            elif [ "$CPU_COUNT" -ge 4 ]; then
+              MAX_WORKERS=4
+            elif [ "$CPU_COUNT" -ge 2 ]; then
+              MAX_WORKERS="$CPU_COUNT"
+            else
+              MAX_WORKERS=2
+            fi
+            echo "Using Gradle max workers: ${MAX_WORKERS}"
+            ./gradlew --no-daemon --parallel --build-cache --max-workers="${MAX_WORKERS}" \
               :app:testDevelopDebugUnitTest \
               :app:assembleDevelopDebug \
               :app:lintDevelopDebug
@@ -64,7 +75,7 @@
       stages:
         - name: sync
           imports:
-            - https://cnb.cool/o.k/secrets/-/blob/main/omnibot-release.yml
+            - https://cnb.cool/o.k/secrets/-/blob/main/sync-env.yml
           script: |
             GITHUB_SYNC_USERNAME="${GIT_USERNAME:-${SECRETS_GIT_USERNAME:-${GITHUB_USERNAME:-}}}"
             GITHUB_SYNC_TOKEN="${GIT_ACCESS_TOKEN:-${SECRETS_GIT_ACCESS_TOKEN:-${SECRETS_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}}}"
@@ -86,7 +97,7 @@ $:
       git:
         submodules: false
       runner:
-        cpus: 4
+        cpus: 8
       docker:
         image: ghcr.io/cirruslabs/flutter:3.38.7
         volumes:
@@ -128,13 +139,16 @@ $:
             )
             printf '%s' "$RELEASE_KEYSTORE_VALUE" | base64 -d > "$CNB_BUILD_WORKSPACE/release.jks"
             CPU_COUNT="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)"
-            if [ "$CPU_COUNT" -ge 4 ]; then
+            if [ "$CPU_COUNT" -ge 8 ]; then
+              MAX_WORKERS=8
+            elif [ "$CPU_COUNT" -ge 4 ]; then
               MAX_WORKERS=4
             elif [ "$CPU_COUNT" -ge 2 ]; then
               MAX_WORKERS="$CPU_COUNT"
             else
               MAX_WORKERS=2
             fi
+            echo "Using Gradle max workers: ${MAX_WORKERS}"
             ./gradlew --no-daemon --build-cache --max-workers="${MAX_WORKERS}" assembleProductionRelease \
               -POMNI_RELEASE_STORE_FILE="$CNB_BUILD_WORKSPACE/release.jks" \
               -POMNI_RELEASE_STORE_PWD="$RELEASE_PASSWORD_VALUE" \
@@ -155,7 +169,7 @@ $:
                 description: Automated release build for $CNB_BRANCH
         - name: sync-tag-to-github
           imports:
-            - https://cnb.cool/o.k/secrets/-/blob/main/omnibot-release.yml
+            - https://cnb.cool/o.k/secrets/-/blob/main/sync-env.yml
           script: |
             GITHUB_SYNC_USERNAME="${GIT_USERNAME:-${SECRETS_GIT_USERNAME:-${GITHUB_USERNAME:-}}}"
             GITHUB_SYNC_TOKEN="${GIT_ACCESS_TOKEN:-${SECRETS_GIT_ACCESS_TOKEN:-${SECRETS_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}}}"
