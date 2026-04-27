@@ -189,7 +189,8 @@ OpenOmniBot/
   <tr>
     <td align="center">
       <img src="docs/pic/wechat.jpg" alt="WeChat Group" width="220"/><br/>
-      <b>WeChat Group</b>
+      <b>WeChat Group</b><br/>
+      <a href="https://discord.gg/WnBvBXgykD">加入 Discord 社区</a>
     </td>
   </tr>
 </table>

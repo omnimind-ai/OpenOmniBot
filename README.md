@@ -189,7 +189,8 @@ Special thanks to these open-source projects:
   <tr>
     <td align="center">
       <img src="docs/pic/wechat.jpg" alt="WeChat Group" width="220"/><br/>
-      <b>WeChat Group</b>
+      <b>WeChat Group</b><br/>
+      <a href="https://discord.gg/WnBvBXgykD">Join our Discord community</a>
     </td>
   </tr>
 </table>
