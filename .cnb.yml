@@ -26,6 +26,8 @@
             git -C third_party/omniinfer submodule update --init framework/mnn framework/llama.cpp
         - name: secret-scan
           image: alpine:3.20
+          imports:
+            - https://cnb.cool/o.k/secrets/-/blob/main/omnibot-release.yml
           script: |
             apk add --no-cache curl git tar
             GITLEAKS_VERSION=8.28.0
@@ -36,6 +38,9 @@
             esac
             curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${GITLEAKS_ARCH}.tar.gz" \
               | tar -xz -C /usr/local/bin gitleaks
+            if [ -n "${SECRETS_GITLEAKS_LICENSE:-}" ]; then
+              export GITLEAKS_LICENSE="$SECRETS_GITLEAKS_LICENSE"
+            fi
             gitleaks git . --redact --verbose --gitleaks-ignore-path .
         - name: verify
           script: |
@@ -134,92 +139,14 @@ $:
           imports:
             - https://cnb.cool/o.k/secrets/-/blob/main/omnibot-release.yml
           script: |
-            get_var() {
-              eval "printf '%s' \"\${$1:-}\""
-            }
-            RELEASE_STORE_PASSWORD_VALUE=""
-            RELEASE_KEY_PASSWORD_VALUE=""
-            RELEASE_KEY_ALIAS_VALUE=""
-            RELEASE_KEYSTORE_VALUE=""
-            RELEASE_STORE_PASSWORD_SOURCE=""
-            RELEASE_KEY_PASSWORD_SOURCE=""
-            RELEASE_KEY_ALIAS_SOURCE=""
-            RELEASE_KEYSTORE_SOURCE=""
-            RELEASE_KEYSTORE_CANDIDATES="
-            SECRETS_RELEASE_KEYSTORE
-            SECRETS_RELEASEKEYSTORE
-            RELEASE_KEYSTORE
-            "
-            RELEASE_STORE_PASSWORD_CANDIDATES="
-            SECRETS_RELEASE_PASSWORD
-            SECRETS_RELEASE_STORE_PASSWORD
-            SECRETS_RELEASE_STORE_PWD
-            RELEASE_PASSWORD
-            RELEASE_STORE_PASSWORD
-            RELEASE_STORE_PWD
-            "
-            RELEASE_KEY_ALIAS_CANDIDATES="
-            SECRETS_RELEASE_KEY_ALIAS
-            SECRETS_RELEASEKEYALIAS
-            RELEASE_KEY_ALIAS
-            "
-            RELEASE_KEY_PASSWORD_CANDIDATES="
-            SECRETS_RELEASE_KEY_PASSWORD
-            SECRETS_RELEASE_KEY_PWD
-            RELEASE_KEY_PASSWORD
-            RELEASE_KEY_PWD
-            "
-            for keystore_candidate in $RELEASE_KEYSTORE_CANDIDATES; do
-              candidate_keystore_value="$(get_var "$keystore_candidate")"
-              if [ -z "$candidate_keystore_value" ]; then
-                continue
-              fi
-              if ! printf '%s' "$candidate_keystore_value" | base64 -d > "$CNB_BUILD_WORKSPACE/release.jks" 2>/dev/null; then
-                echo "Unable to decode candidate release keystore from ${keystore_candidate}" >&2
-                rm -f "$CNB_BUILD_WORKSPACE/release.jks"
-                continue
-              fi
-              for store_password_candidate in $RELEASE_STORE_PASSWORD_CANDIDATES; do
-                candidate_store_password_value="$(get_var "$store_password_candidate")"
-                if [ -z "$candidate_store_password_value" ]; then
-                  continue
-                fi
-                for key_alias_candidate in $RELEASE_KEY_ALIAS_CANDIDATES; do
-                  candidate_key_alias_value="$(get_var "$key_alias_candidate")"
-                  if [ -z "$candidate_key_alias_value" ]; then
-                    continue
-                  fi
-                  if keytool -list -keystore "$CNB_BUILD_WORKSPACE/release.jks" -storepass "$candidate_store_password_value" -alias "$candidate_key_alias_value" >/dev/null 2>&1; then
-                    RELEASE_KEYSTORE_SOURCE="$keystore_candidate"
-                    RELEASE_STORE_PASSWORD_SOURCE="$store_password_candidate"
-                    RELEASE_KEY_ALIAS_SOURCE="$key_alias_candidate"
-                    RELEASE_KEYSTORE_VALUE="$candidate_keystore_value"
-                    RELEASE_STORE_PASSWORD_VALUE="$candidate_store_password_value"
-                    RELEASE_KEY_ALIAS_VALUE="$candidate_key_alias_value"
-                    break 3
-                  fi
-                done
-              done
-            done
+            RELEASE_STORE_PASSWORD_VALUE="${SECRETS_RELEASE_PASSWORD:-}"
+            RELEASE_KEY_ALIAS_VALUE="${SECRETS_RELEASE_KEY_ALIAS:-}"
+            RELEASE_KEYSTORE_VALUE="${SECRETS_RELEASE_KEYSTORE:-}"
             if [ -z "${RELEASE_STORE_PASSWORD_VALUE:-}" ] || [ -z "${RELEASE_KEY_ALIAS_VALUE:-}" ] || [ -z "${RELEASE_KEYSTORE_VALUE:-}" ]; then
-              echo "release signing secrets are missing or invalid in omnibot-release.yml" >&2
-              echo "Checked keystore candidates: ${RELEASE_KEYSTORE_CANDIDATES}" >&2
-              echo "Checked password candidates: ${RELEASE_STORE_PASSWORD_CANDIDATES}" >&2
-              echo "Checked alias candidates: ${RELEASE_KEY_ALIAS_CANDIDATES}" >&2
+              echo "release signing secrets are missing from omnibot-release.yml" >&2
               exit 1
             fi
-            for key_password_candidate in $RELEASE_KEY_PASSWORD_CANDIDATES; do
-              candidate_key_password_value="$(get_var "$key_password_candidate")"
-              if [ -n "$candidate_key_password_value" ]; then
-                RELEASE_KEY_PASSWORD_SOURCE="$key_password_candidate"
-                RELEASE_KEY_PASSWORD_VALUE="$candidate_key_password_value"
-                break
-              fi
-            done
-            if [ -z "${RELEASE_KEY_PASSWORD_VALUE:-}" ]; then
-              RELEASE_KEY_PASSWORD_SOURCE="$RELEASE_STORE_PASSWORD_SOURCE"
-              RELEASE_KEY_PASSWORD_VALUE="$RELEASE_STORE_PASSWORD_VALUE"
-            fi
+            RELEASE_KEY_PASSWORD_VALUE="${SECRETS_RELEASE_KEY_PASSWORD:-$RELEASE_STORE_PASSWORD_VALUE}"
             export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-/opt/android-sdk-linux}"
             yes | sdkmanager --licenses >/dev/null || true
             if [ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]; then
@@ -231,8 +158,11 @@ $:
               cd ui
               flutter pub get --enforce-lockfile
             )
-            printf 'Using release signing secrets: keystore=%s store_password=%s alias=%s key_password=%s\n' \
-              "$RELEASE_KEYSTORE_SOURCE" "$RELEASE_STORE_PASSWORD_SOURCE" "$RELEASE_KEY_ALIAS_SOURCE" "$RELEASE_KEY_PASSWORD_SOURCE"
+            printf '%s' "$RELEASE_KEYSTORE_VALUE" | base64 -d > "$CNB_BUILD_WORKSPACE/release.jks"
+            if ! keytool -list -keystore "$CNB_BUILD_WORKSPACE/release.jks" -storepass "$RELEASE_STORE_PASSWORD_VALUE" -alias "$RELEASE_KEY_ALIAS_VALUE" >/dev/null 2>&1; then
+              echo "release keystore, alias, or password is invalid in omnibot-release.yml" >&2
+              exit 1
+            fi
             CPU_COUNT="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)"
             if [ "$CPU_COUNT" -ge 8 ]; then
               MAX_WORKERS=8
