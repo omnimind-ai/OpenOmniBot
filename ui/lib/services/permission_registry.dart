@@ -117,7 +117,7 @@ class PermissionRegistry {
             ? 'Keep running in background'
             : '后台持续运行，切出APP不中断服务',
         openMethod: 'openBatteryOptimizationSettings',
-        checkMethod: 'isIgnoringBatteryOptimizations',
+        checkMethod: 'isBackgroundRunAllowed',
       ),
       PermissionSpec(
         id: 'installed_apps',
