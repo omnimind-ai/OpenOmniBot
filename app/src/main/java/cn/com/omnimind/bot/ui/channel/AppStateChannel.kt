@@ -5,6 +5,7 @@ import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.activity.MainActivity
+import cn.com.omnimind.bot.quicklog.QuickLogWidgetUpdater
 import cn.com.omnimind.bot.share.SharedOpenDraftStore
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -91,6 +92,11 @@ class AppStateChannel {
                     AgentWorkspaceManager(appContext).ensureRuntimeDirectories()
                 }.onFailure {
                     OmniLog.w(TAG, "Failed to refresh workspace defaults after language change: ${it.message}")
+                }
+                runCatching {
+                    QuickLogWidgetUpdater.updateAll(appContext)
+                }.onFailure {
+                    OmniLog.w(TAG, "Failed to refresh quick log widget language: ${it.message}")
                 }
                 result.success(true)
             }

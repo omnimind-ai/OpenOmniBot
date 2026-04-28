@@ -7,7 +7,6 @@ import 'package:ui/features/home/pages/alarm_setting/alarm_setting_page.dart';
 import 'package:ui/features/home/pages/authorize_setting/authorize_setting_page.dart';
 import 'package:ui/features/home/pages/companion_setting/companion_setting_page.dart';
 import 'package:ui/features/home/pages/chat_history/chat_history_page.dart';
-import 'package:ui/features/home/pages/logs/quick_logs_page.dart';
 import 'package:ui/features/home/pages/permission_guide/permission_guide_detail_page.dart';
 import 'package:ui/features/home/pages/permission_guide/permission_guide_page.dart';
 import 'pages/authorize/authorize_page.dart';
@@ -243,16 +242,6 @@ List<GoRoute> homeRoutes = [
       key: state.pageKey,
       name: 'home/settings',
       child: const SettingsPage(),
-    ),
-  ),
-
-  GoRoute(
-    path: '/home/quick_logs',
-    name: 'home/quick_logs',
-    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
-      key: state.pageKey,
-      name: 'home/quick_logs',
-      child: const QuickLogsPage(),
     ),
   ),
 

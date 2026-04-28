@@ -1,4 +1,30 @@
 <resources>
     <string name="app_name">Omnibot</string>
     <string name="omni_app_name">Omnibot</string>
+    <string name="quick_log_widget_title">Quick Log</string>
+    <string name="quick_log_widget_description">Capture logs from the home screen and sync them to short memories</string>
+    <string name="quick_log_widget_add">Add</string>
+    <string name="quick_log_widget_open">Memories</string>
+    <string name="quick_log_widget_edit">Edit</string>
+    <string name="quick_log_widget_delete">Delete</string>
+    <string name="quick_log_widget_summary">%1$d recent quick logs</string>
+    <string name="quick_log_widget_empty_summary">Save ideas, tasks, and reminders from your home screen</string>
+    <string name="quick_log_widget_empty_hint">No quick logs yet. Tap Add to save one.</string>
+    <string name="quick_log_entry_title">Save a quick log</string>
+    <string name="quick_log_entry_subtitle">Write down a task, idea, or note. Omnibot will sync it to short memories.</string>
+    <string name="quick_log_entry_edit_title">Edit quick log</string>
+    <string name="quick_log_entry_edit_subtitle">Changes here will sync back into short memories.</string>
+    <string name="quick_log_entry_hint">What do you want to remember right now?</string>
+    <string name="quick_log_cancel">Cancel</string>
+    <string name="quick_log_save">Save</string>
+    <string name="quick_log_update">Update</string>
+    <string name="quick_log_delete">Delete</string>
+    <string name="quick_log_content_required">Enter some log content first</string>
+    <string name="quick_log_save_success">Log saved</string>
+    <string name="quick_log_save_failed">Save failed. Please try again.</string>
+    <string name="quick_log_update_success">Log updated</string>
+    <string name="quick_log_update_failed">Update failed. Please try again.</string>
+    <string name="quick_log_delete_success">Log deleted</string>
+    <string name="quick_log_delete_failed">Delete failed. Please try again.</string>
+    <string name="quick_log_not_found">This quick log no longer exists.</string>
 </resources>

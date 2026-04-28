@@ -131,6 +131,16 @@ object AppLocaleManager {
         return locale
     }
 
+    fun localizedContext(context: Context): Context {
+        val locale = currentLocale(context)
+        val configuration = Configuration(context.resources.configuration)
+        configuration.setLocale(locale)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            configuration.setLocales(LocaleList(locale))
+        }
+        return context.createConfigurationContext(configuration)
+    }
+
     private fun systemLocale(context: Context): Locale {
         val configuration = context.applicationContext.resources.configuration
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {

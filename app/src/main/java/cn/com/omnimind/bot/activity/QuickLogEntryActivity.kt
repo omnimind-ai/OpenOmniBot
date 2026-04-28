@@ -1,51 +1,24 @@
 package cn.com.omnimind.bot.activity
 
+import android.app.Activity
+import android.content.Context
 import android.os.Bundle
-import android.widget.Button
-import android.widget.EditText
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import cn.com.omnimind.bot.R
-import cn.com.omnimind.bot.quicklog.QuickLogService
+import cn.com.omnimind.baselib.i18n.AppLocaleManager
 
-class QuickLogEntryActivity : AppCompatActivity() {
+class QuickLogEntryActivity : Activity() {
+    companion object {
+        const val EXTRA_LOG_ID = "extra_quick_log_id"
+        const val EXTRA_LOG_CONTENT = "extra_quick_log_content"
+    }
+
+    override fun attachBaseContext(newBase: Context?) {
+        super.attachBaseContext(
+            if (newBase == null) null else AppLocaleManager.localizedContext(newBase)
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_quick_log_entry)
-
-        val editor = findViewById<EditText>(R.id.quick_log_editor)
-        val cancelButton = findViewById<Button>(R.id.quick_log_cancel_button)
-        val saveButton = findViewById<Button>(R.id.quick_log_save_button)
-
-        cancelButton.setOnClickListener {
-            finish()
-        }
-
-        saveButton.setOnClickListener {
-            val content = editor.text?.toString().orEmpty().trim()
-            if (content.isEmpty()) {
-                editor.error = getString(R.string.quick_log_content_required)
-                return@setOnClickListener
-            }
-            runCatching {
-                QuickLogService(this).addLog(
-                    content = content,
-                    source = QuickLogService.SOURCE_WIDGET
-                )
-            }.onSuccess {
-                Toast.makeText(
-                    this,
-                    getString(R.string.quick_log_save_success),
-                    Toast.LENGTH_SHORT
-                ).show()
-                finish()
-            }.onFailure {
-                Toast.makeText(
-                    this,
-                    getString(R.string.quick_log_save_failed),
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
+        QuickLogEditorScreen.bind(this, intent)
     }
 }

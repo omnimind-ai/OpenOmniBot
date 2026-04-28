@@ -6,13 +6,13 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.view.View
+import android.net.Uri
 import android.widget.RemoteViews
+import cn.com.omnimind.baselib.i18n.AppLocaleManager
+import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.R
+import cn.com.omnimind.bot.activity.LauncherActivity
 import cn.com.omnimind.bot.activity.QuickLogEntryActivity
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class QuickLogWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(
@@ -30,13 +30,72 @@ class QuickLogWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == AppWidgetManager.ACTION_APPWIDGET_UPDATE) {
-            QuickLogWidgetUpdater.updateAll(context)
+        when (intent.action) {
+            AppWidgetManager.ACTION_APPWIDGET_UPDATE -> {
+                OmniLog.d(TAG, "Received APPWIDGET_UPDATE")
+                QuickLogWidgetUpdater.updateAll(context)
+            }
+            Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                OmniLog.d(TAG, "Received MY_PACKAGE_REPLACED")
+                QuickLogWidgetUpdater.updateAll(context)
+            }
+            ACTION_ADD_LOG -> {
+                OmniLog.d(TAG, "Received widget add action")
+                context.startActivity(
+                    Intent(context, QuickLogEntryActivity::class.java).apply {
+                        action = ACTION_ADD_LOG
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    }
+                )
+            }
+            ACTION_EDIT_LOG -> {
+                val logId = intent.getStringExtra(EXTRA_LOG_ID)?.trim().orEmpty()
+                OmniLog.d(TAG, "Received widget edit action for logId=$logId")
+                context.startActivity(
+                    Intent(context, QuickLogEntryActivity::class.java).apply {
+                        action = "$ACTION_EDIT_LOG.$logId"
+                        putExtra(QuickLogEntryActivity.EXTRA_LOG_ID, logId)
+                        putExtra(
+                            QuickLogEntryActivity.EXTRA_LOG_CONTENT,
+                            intent.getStringExtra(EXTRA_LOG_CONTENT)
+                        )
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    }
+                )
+            }
+            ACTION_OPEN_SHORT_MEMORIES -> {
+                OmniLog.d(TAG, "Received widget open memories action")
+                context.startActivity(
+                    Intent(context, LauncherActivity::class.java).apply {
+                        action = ACTION_OPEN_SHORT_MEMORIES
+                        putExtra("route", "/memory/memory_center_page")
+                        putExtra("needClear", false)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    }
+                )
+            }
+            ACTION_DELETE_LOG -> {
+                val logId = intent.getStringExtra(EXTRA_LOG_ID)?.trim().orEmpty()
+                if (logId.isNotEmpty()) {
+                    OmniLog.d(TAG, "Received widget delete action for logId=$logId")
+                    runCatching {
+                        QuickLogService(context).deleteLog(logId)
+                    }
+                }
+            }
         }
     }
 
     companion object {
-        private val widgetTimeFormat = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+        private const val TAG = "QuickLogWidget"
+        const val ACTION_OPEN_SHORT_MEMORIES =
+            "cn.com.omnimind.bot.quicklog.action.OPEN_SHORT_MEMORIES"
+        const val ACTION_ADD_LOG = "cn.com.omnimind.bot.quicklog.action.ADD_LOG"
+        const val ACTION_EDIT_LOG = "cn.com.omnimind.bot.quicklog.action.EDIT_LOG"
+        const val ACTION_DELETE_LOG = "cn.com.omnimind.bot.quicklog.action.DELETE_LOG"
+        const val EXTRA_LOG_ID = "extra_quick_log_id"
+        const val EXTRA_LOG_CONTENT = "extra_quick_log_content"
+        const val EXTRA_APP_WIDGET_ID = "extra_app_widget_id"
 
         fun updateWidgets(
             context: Context,
@@ -49,79 +108,98 @@ class QuickLogWidgetProvider : AppWidgetProvider() {
             appWidgetIds.forEach { appWidgetId ->
                 appWidgetManager.updateAppWidget(
                     appWidgetId,
-                    buildRemoteViews(context, service)
+                    buildRemoteViews(context, service, appWidgetId)
+                )
+            }
+            if (appWidgetIds.isNotEmpty()) {
+                appWidgetManager.notifyAppWidgetViewDataChanged(
+                    appWidgetIds,
+                    R.id.quick_log_widget_list
                 )
             }
         }
 
         private fun buildRemoteViews(
             context: Context,
-            service: QuickLogService
+            service: QuickLogService,
+            appWidgetId: Int
         ): RemoteViews {
+            val localizedContext = AppLocaleManager.localizedContext(context)
             val views = RemoteViews(context.packageName, R.layout.widget_quick_log)
-            val records = service.latestLogsForWidget(limit = 3)
             val totalCount = service.countLogs()
+            val addPendingIntent = buildQuickAddPendingIntent(context)
+            val openPendingIntent = buildOpenShortMemoriesPendingIntent(context)
 
-            views.setOnClickPendingIntent(
-                R.id.quick_log_widget_add_button,
-                buildQuickAddPendingIntent(context)
-            )
-            views.setOnClickPendingIntent(
-                R.id.quick_log_widget_open_button,
-                buildOpenLogsPendingIntent(context)
-            )
-            views.setOnClickPendingIntent(
-                R.id.quick_log_widget_root,
-                buildOpenLogsPendingIntent(context)
-            )
+            bindStaticTexts(views, localizedContext)
 
-            val summary = if (records.isEmpty()) {
-                context.getString(R.string.quick_log_widget_empty_summary)
+            views.setOnClickPendingIntent(R.id.quick_log_widget_add_action, addPendingIntent)
+            views.setOnClickPendingIntent(R.id.quick_log_widget_add_button, addPendingIntent)
+            views.setOnClickPendingIntent(R.id.quick_log_widget_open_action, openPendingIntent)
+            views.setOnClickPendingIntent(R.id.quick_log_widget_open_button, openPendingIntent)
+            views.setOnClickPendingIntent(R.id.quick_log_widget_empty_state, addPendingIntent)
+            views.setOnClickPendingIntent(R.id.quick_log_widget_empty_text, addPendingIntent)
+
+            val summary = if (totalCount == 0) {
+                localizedContext.getString(R.string.quick_log_widget_empty_summary)
             } else {
-                context.getString(
-                    R.string.quick_log_widget_summary,
-                    totalCount
-                )
+                localizedContext.getString(R.string.quick_log_widget_summary, totalCount)
             }
             views.setTextViewText(R.id.quick_log_widget_summary, summary)
 
-            val itemViewIds = listOf(
-                R.id.quick_log_widget_item_1,
-                R.id.quick_log_widget_item_2,
-                R.id.quick_log_widget_item_3
-            )
-
-            itemViewIds.forEachIndexed { index, viewId ->
-                val record = records.getOrNull(index)
-                if (record == null) {
-                    views.setViewVisibility(viewId, if (index == 0) View.VISIBLE else View.GONE)
-                    if (index == 0) {
-                        views.setTextViewText(
-                            viewId,
-                            context.getString(R.string.quick_log_widget_empty_hint)
-                        )
-                    }
-                } else {
-                    views.setViewVisibility(viewId, View.VISIBLE)
-                    val timestamp = widgetTimeFormat.format(Date(record.updatedAtMillis))
-                    val preview = record.content.replace(Regex("\\s+"), " ").trim()
-                    views.setTextViewText(
-                        viewId,
-                        "$timestamp  $preview"
-                    )
-                }
-                views.setOnClickPendingIntent(viewId, buildOpenLogsPendingIntent(context))
+            val adapterIntent = Intent(context, QuickLogWidgetService::class.java).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                putExtra(EXTRA_APP_WIDGET_ID, appWidgetId)
+                data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
             }
+            views.setRemoteAdapter(R.id.quick_log_widget_list, adapterIntent)
+            views.setEmptyView(R.id.quick_log_widget_list, R.id.quick_log_widget_empty_state)
+            views.setPendingIntentTemplate(
+                R.id.quick_log_widget_list,
+                buildCollectionItemTemplatePendingIntent(context)
+            )
 
             return views
         }
 
-        private fun buildOpenLogsPendingIntent(context: Context): PendingIntent {
-            val intent = Intent()
-                .setClassName(context, "cn.com.omnimind.bot.activity.LauncherActivity")
-                .putExtra("route", "/home/quick_logs")
-                .putExtra("needClear", false)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        private fun bindStaticTexts(
+            views: RemoteViews,
+            context: Context
+        ) {
+            views.setTextViewText(
+                R.id.quick_log_widget_title,
+                context.getString(R.string.quick_log_widget_title)
+            )
+            views.setTextViewText(
+                R.id.quick_log_widget_empty_text,
+                context.getString(R.string.quick_log_widget_empty_hint)
+            )
+            views.setTextViewText(
+                R.id.quick_log_widget_open_button,
+                context.getString(R.string.quick_log_widget_open)
+            )
+            views.setTextViewText(
+                R.id.quick_log_widget_add_button,
+                context.getString(R.string.quick_log_widget_add)
+            )
+        }
+
+        private fun buildCollectionItemTemplatePendingIntent(context: Context): PendingIntent {
+            val intent = Intent(context, QuickLogWidgetProvider::class.java)
+            return PendingIntent.getBroadcast(
+                context,
+                3101,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            )
+        }
+
+        private fun buildOpenShortMemoriesPendingIntent(context: Context): PendingIntent {
+            val intent = Intent(context, LauncherActivity::class.java).apply {
+                action = ACTION_OPEN_SHORT_MEMORIES
+                putExtra("route", "/memory/memory_center_page")
+                putExtra("needClear", false)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
             return PendingIntent.getActivity(
                 context,
                 3001,
@@ -132,11 +210,12 @@ class QuickLogWidgetProvider : AppWidgetProvider() {
 
         private fun buildQuickAddPendingIntent(context: Context): PendingIntent {
             val intent = Intent(context, QuickLogEntryActivity::class.java).apply {
+                action = ACTION_ADD_LOG
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
             return PendingIntent.getActivity(
                 context,
-                3002,
+                3102,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )

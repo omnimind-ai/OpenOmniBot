@@ -1,7 +1,6 @@
 package cn.com.omnimind.bot.quicklog
 
 import android.content.Context
-import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.WorkspaceMemoryService
 import com.google.gson.Gson
@@ -57,21 +56,19 @@ class QuickLogService(private val context: Context) {
         require(normalized.isNotEmpty()) { "log content is empty" }
 
         val now = System.currentTimeMillis()
+        val recordId = UUID.randomUUID().toString()
         val synced = runCatching {
-            val memoryText = normalized.replace(Regex("\\s+"), " ").trim()
-            val prefix = if (AppLocaleManager.isEnglish(context)) {
-                "Quick log: "
-            } else {
-                "\u65e5\u5fd7\u901f\u8bb0\uff1a"
-            }
-            WorkspaceMemoryService(context).appendDailyMemory("$prefix$memoryText")
+            WorkspaceMemoryService(context).appendQuickLogMemory(
+                logId = recordId,
+                content = normalized
+            )
             true
         }.onFailure { error ->
             OmniLog.w(TAG, "Failed to sync quick log to short memory: ${error.message}")
         }.getOrDefault(false)
 
         val record = QuickLogRecord(
-            id = UUID.randomUUID().toString(),
+            id = recordId,
             content = normalized,
             createdAtMillis = now,
             updatedAtMillis = now,
@@ -96,13 +93,29 @@ class QuickLogService(private val context: Context) {
         require(normalized.isNotEmpty()) { "log content is empty" }
 
         val current = loadRecords()
+        val existing = current.firstOrNull { it.id == targetId } ?: return null
+        val synced = runCatching {
+            val service = WorkspaceMemoryService(context)
+            service.updateQuickLogMemory(
+                logId = targetId,
+                previousContent = existing.content,
+                newContent = normalized
+            ) ?: service.appendQuickLogMemory(
+                logId = targetId,
+                content = normalized
+            )
+            true
+        }.onFailure { error ->
+            OmniLog.w(TAG, "Failed to update synced short memory: ${error.message}")
+        }.getOrDefault(false)
         val updated = current.map { record ->
             if (record.id != targetId) {
                 record
             } else {
                 record.copy(
                     content = normalized,
-                    updatedAtMillis = System.currentTimeMillis()
+                    updatedAtMillis = System.currentTimeMillis(),
+                    shortMemorySynced = synced
                 )
             }
         }
@@ -117,6 +130,15 @@ class QuickLogService(private val context: Context) {
         require(targetId.isNotEmpty()) { "log id is empty" }
 
         val current = loadRecords()
+        val existing = current.firstOrNull { it.id == targetId } ?: return false
+        runCatching {
+            WorkspaceMemoryService(context).deleteQuickLogMemory(
+                logId = targetId,
+                contentHint = existing.content
+            )
+        }.onFailure { error ->
+            OmniLog.w(TAG, "Failed to delete synced short memory: ${error.message}")
+        }
         val next = current.filterNot { it.id == targetId }
         if (next.size == current.size) {
             return false
@@ -130,6 +152,14 @@ class QuickLogService(private val context: Context) {
         return loadRecords()
             .sortedByDescending { it.updatedAtMillis }
             .take(limit.coerceAtLeast(1))
+    }
+
+    fun getLog(id: String): QuickLogRecord? {
+        val targetId = id.trim()
+        if (targetId.isEmpty()) {
+            return null
+        }
+        return loadRecords().firstOrNull { it.id == targetId }
     }
 
     private fun loadRecords(): List<QuickLogRecord> {

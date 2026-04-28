@@ -8,6 +8,7 @@
     android:padding="24dp">
 
     <TextView
+        android:id="@+id/quick_log_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/quick_log_entry_title"
@@ -16,6 +17,7 @@
         android:textStyle="bold" />
 
     <TextView
+        android:id="@+id/quick_log_subtitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
@@ -58,6 +60,21 @@
             android:text="@string/quick_log_cancel"
             android:textAllCaps="false"
             android:textColor="#334155" />
+
+        <Button
+            android:id="@+id/quick_log_delete_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:background="@drawable/quick_log_widget_button_secondary"
+            android:paddingLeft="18dp"
+            android:paddingTop="10dp"
+            android:paddingRight="18dp"
+            android:paddingBottom="10dp"
+            android:text="@string/quick_log_delete"
+            android:textAllCaps="false"
+            android:textColor="#B91C1C"
+            android:visibility="gone" />
 
         <Button
             android:id="@+id/quick_log_save_button"

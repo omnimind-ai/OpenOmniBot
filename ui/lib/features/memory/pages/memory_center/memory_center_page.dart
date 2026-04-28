@@ -517,14 +517,15 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           .WorkspaceMemoryService.getShortMemories(days: 14, limit: 300);
       final cards = items.map((item) {
         final text = _normalizeShortMemoryText(item.content);
-        final title = text.length <= 26 ? text : '${text.substring(0, 26)}...';
+        final isTruncated = text.length > 26;
+        final title = isTruncated ? '${text.substring(0, 26)}...' : text;
         final timestamp = item.timestampMillis > 0
             ? item.timestampMillis
             : DateTime.now().millisecondsSinceEpoch;
         return MemoryCardModel(
           id: item.id.hashCode,
           title: title,
-          description: text,
+          description: isTruncated ? text : null,
           createdAt: timestamp,
           updatedAt: timestamp,
           appName: context.l10n.memoryShortTermTitle,

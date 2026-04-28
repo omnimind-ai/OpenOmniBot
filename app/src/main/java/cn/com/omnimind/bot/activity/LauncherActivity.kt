@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.bot.quicklog.QuickLogWidgetActionRouter
 import kotlin.math.abs
 
 /**
@@ -30,6 +31,10 @@ class LauncherActivity : Activity() {
         applyResponsiveOrientation()
         super.onCreate(savedInstanceState)
         OmniLog.d(TAG, "LauncherActivity onCreate")
+        if (QuickLogWidgetActionRouter.consumeInto(this, intent)) {
+            finish()
+            return
+        }
         showLoadingAndStartMain()
     }
 

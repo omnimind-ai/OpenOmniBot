@@ -3164,64 +3164,21 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         workJob.launch {
             try {
                 val service = WorkspaceMemoryService(context)
-                val now = LocalDate.now()
-                val timePattern = Regex("^\\[([0-2]\\d:[0-5]\\d:[0-5]\\d)]\\s*(.*)$")
-                val zoneId = ZoneId.systemDefault()
-                val payload = mutableListOf<Map<String, Any?>>()
-
-                for (offset in 0 until days) {
-                    val date = now.minusDays(offset.toLong())
-                    val dateText = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                    val content = service.readDailyMemory(date)
-                    if (content.isBlank()) {
-                        continue
-                    }
-                    var lineIndex = 0
-                    content.lineSequence().forEach { raw ->
-                        val line = raw.trim()
-                        if (!line.startsWith("- ")) {
-                            return@forEach
-                        }
-                        val item = line.removePrefix("- ").trim()
-                        if (item.isEmpty()) {
-                            return@forEach
-                        }
-                        val match = timePattern.find(item)
-                        val timeText = match?.groupValues?.getOrNull(1)?.trim()
-                        val body = (match?.groupValues?.getOrNull(2) ?: item).trim()
-                        if (body.isEmpty() || isWorkspaceRollupMetadataLine(body)) {
-                            return@forEach
-                        }
-                        val localTime = runCatching {
-                            LocalTime.parse(timeText ?: "00:00:00")
-                        }.getOrNull() ?: LocalTime.MIDNIGHT
-                        val timestampMillis = LocalDateTime.of(date, localTime)
-                            .atZone(zoneId)
-                            .toInstant()
-                            .toEpochMilli()
-                        val stableKey = "$dateText|$lineIndex|$body"
-                        payload += mapOf(
-                            "id" to stableKey.hashCode().toString(),
-                            "date" to dateText,
-                            "time" to (timeText ?: "00:00:00"),
-                            "content" to body,
-                            "timestampMillis" to timestampMillis
+                val payload = service.listShortMemoryEntries(days = days, limit = limit)
+                    .map { entry ->
+                        mapOf(
+                            "id" to entry.id,
+                            "date" to entry.date,
+                            "time" to entry.time,
+                            "content" to entry.content,
+                            "timestampMillis" to entry.timestampMillis,
+                            "quickLogId" to entry.quickLogId
                         )
-                        lineIndex += 1
                     }
-                }
-
-                val sorted = payload.sortedWith(
-                    compareByDescending<Map<String, Any?>> {
-                        (it["timestampMillis"] as? Long) ?: 0L
-                    }.thenByDescending {
-                        (it["id"] as? String) ?: ""
-                    }
-                ).take(limit)
                 withContext(Dispatchers.Main) {
                     result.success(
                         mapOf(
-                            "items" to sorted
+                            "items" to payload
                         )
                     )
                 }

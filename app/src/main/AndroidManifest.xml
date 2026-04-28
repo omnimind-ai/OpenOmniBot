@@ -115,9 +115,18 @@
 
         <activity
             android:name=".activity.QuickLogEntryActivity"
-            android:exported="false"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
             android:theme="@style/Theme.OmnibotApp"
             android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".activity.QuickLogWidgetBridgeActivity"
+            android:exported="true"
+            android:theme="@style/Theme.OmnibotApp.Transparent"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="" />
 
         <activity
             android:name=".activity.TerminalActivity"
@@ -181,11 +190,20 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/quick_log_widget_info" />
         </receiver>
+        <service
+            android:name=".quicklog.QuickLogWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.widget.RemoteViewsService" />
+            </intent-filter>
+        </service>
         <service
             android:name="cn.com.omnimind.bot.agent.AgentAlarmRingingService"
             android:enabled="true"

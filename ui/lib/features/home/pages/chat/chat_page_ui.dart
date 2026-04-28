@@ -199,91 +199,6 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     }
   }
 
-  Widget _buildQuickLogShortcut({
-    required AppBackgroundVisualProfile visualProfile,
-    required bool backgroundActive,
-  }) {
-    final palette = context.omniPalette;
-    final surfaceColor = backgroundActive
-        ? palette.surfacePrimary.withValues(
-            alpha: context.isDarkTheme ? 0.54 : 0.72,
-          )
-        : (context.isDarkTheme ? palette.surfaceSecondary : Colors.white);
-    final borderColor = backgroundActive
-        ? visualProfile.islandBorderColor
-        : palette.borderSubtle.withValues(alpha: 0.72);
-    final accentColor = context.isDarkTheme
-        ? const Color(0xFF7DD3FC)
-        : const Color(0xFF0284C7);
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(18),
-            onTap: () {
-              _cancelNormalSurfaceModelReveal();
-              GoRouterManager.push('/home/quick_logs');
-            },
-            child: Ink(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: surfaceColor,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: borderColor),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: accentColor.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.edit_note_rounded,
-                      size: 18,
-                      color: accentColor,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        LegacyTextLocalizer.isEnglish ? 'Quick log' : '日志速记',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: palette.textPrimary,
-                        ),
-                      ),
-                      Text(
-                        LegacyTextLocalizer.isEnglish
-                            ? 'Sync to short memories'
-                            : '随手记，自动进短期记忆',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: visualProfile.secondaryTextColor,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildSlashCommandDrawerSurface({
     required Widget child,
     bool bodyHasOwnPadding = false,
@@ -918,11 +833,6 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               isPureChatSelected: _isPureChatSelected,
               isPureChatToggleLocked: _isPureChatToggleLocked,
             ),
-            if (_activeMode == ChatPageMode.normal)
-              _buildQuickLogShortcut(
-                visualProfile: visualProfile,
-                backgroundActive: backgroundActive,
-              ),
             if (_isCompanionModeEnabled && _showCompanionCountdown)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
