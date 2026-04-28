@@ -94,7 +94,8 @@ class OmniAgentExecutor(
             val discoveredServers = RemoteMcpDiscoveryRegistry.discoverEnabledServers()
             val toolRegistry = AgentToolRegistry(
                 context = context,
-                discoveredServers = discoveredServers
+                discoveredServers = discoveredServers,
+                conversationMode = conversationMode
             )
             val initialMessages = buildInitialMessages(
                 promptSeed = historyRepository.buildPromptSeed(

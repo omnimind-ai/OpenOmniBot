@@ -218,9 +218,7 @@ class _AuthorizeSettingPageState extends State<AuthorizeSettingPage>
 
   Future<void> _checkPermissions() async {
     try {
-      final backgroundRunning =
-          await spePermission.invokeMethod('isIgnoringBatteryOptimizations') ??
-          false;
+      final backgroundRunning = await isBackgroundRunAllowed();
       final overlayPermission =
           await spePermission.invokeMethod('isOverlayPermission') ?? false;
       final installedAppsPermission =

@@ -55,6 +55,7 @@ class AgentConversationHistoryRepository(
             text = text,
             attachments = attachments,
             isError = false,
+            streamMeta = null,
             createdAt = createdAt
         )
         upsertMessageEntry(
@@ -76,6 +77,7 @@ class AgentConversationHistoryRepository(
         text: String,
         isError: Boolean = false,
         attachments: List<Map<String, Any?>> = emptyList(),
+        streamMeta: Map<String, Any?>? = null,
         createdAt: Long = System.currentTimeMillis()
     ) {
         val payload = buildTextMessagePayload(
@@ -84,6 +86,7 @@ class AgentConversationHistoryRepository(
             text = text,
             attachments = attachments,
             isError = isError,
+            streamMeta = streamMeta,
             createdAt = createdAt
         )
         upsertMessageEntry(
@@ -103,12 +106,14 @@ class AgentConversationHistoryRepository(
         conversationMode: String,
         entryId: String,
         cardData: Map<String, Any?>,
+        streamMeta: Map<String, Any?>? = null,
         createdAt: Long = System.currentTimeMillis()
     ) {
         val payload = buildCardMessagePayload(
             messageId = entryId,
             cardData = cardData,
             isError = false,
+            streamMeta = streamMeta,
             createdAt = createdAt
         )
         upsertMessageEntry(
@@ -472,6 +477,7 @@ class AgentConversationHistoryRepository(
         text: String,
         attachments: List<Map<String, Any?>>,
         isError: Boolean,
+        streamMeta: Map<String, Any?>?,
         createdAt: Long
     ): Map<String, Any?> {
         val safeText = AgentTextSanitizer.sanitizeUtf16(text)
@@ -491,14 +497,16 @@ class AgentConversationHistoryRepository(
             "isFirst" to false,
             "isError" to isError,
             "isSummarizing" to false,
+            "streamMeta" to streamMeta,
             "createAt" to Instant.ofEpochMilli(createdAt).toString()
-        )
+        ).filterValues { it != null }
     }
 
     private fun buildCardMessagePayload(
         messageId: String,
         cardData: Map<String, Any?>,
         isError: Boolean,
+        streamMeta: Map<String, Any?>?,
         createdAt: Long
     ): Map<String, Any?> {
         return linkedMapOf(
@@ -513,8 +521,9 @@ class AgentConversationHistoryRepository(
             "isFirst" to false,
             "isError" to isError,
             "isSummarizing" to false,
+            "streamMeta" to streamMeta,
             "createAt" to Instant.ofEpochMilli(createdAt).toString()
-        )
+        ).filterValues { it != null }
     }
 
     private fun entryToMessagePayload(entry: AgentConversationEntry): Map<String, Any?>? {
@@ -563,6 +572,7 @@ class AgentConversationHistoryRepository(
             messageId = messageId,
             cardData = cardData,
             isError = entry.status == STATUS_ERROR,
+            streamMeta = toStringAnyMap(payload["streamMeta"]).takeIf { it.isNotEmpty() },
             createdAt = entry.createdAt
         )
     }

@@ -1,12 +1,14 @@
 package cn.com.omnimind.bot.util
 
 import cn.com.omnimind.accessibility.action.ScreenCaptureManager
+import android.app.AppOpsManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Process
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
@@ -17,6 +19,7 @@ import cn.com.omnimind.assists.api.interfaces.OnMessagePushListener
 import cn.com.omnimind.assists.task.scheduled.worker.ScheduledParams
 import cn.com.omnimind.assists.task.scheduled.worker.ScheduledStates
 import cn.com.omnimind.baselib.util.APPPackageUtil
+import cn.com.omnimind.baselib.util.MobileManufacturerUtil
 import cn.com.omnimind.baselib.util.exception.PermissionException
 import cn.com.omnimind.bot.App
 import cn.com.omnimind.bot.manager.OmniForegroundService
@@ -392,11 +395,76 @@ class AssistsUtil {
 
         }
 
+        fun isBackgroundRunAllowed(context: Context): Boolean {
+            if (isIgnoringBatteryOptimizations(context)) {
+                return true
+            }
+            if (!MobileManufacturerUtil.isXiaomiSeries()) {
+                return false
+            }
+            val compatibilityAllowed = isXiaomiBackgroundRunAllowed(context)
+            Log.d(TAG, "Xiaomi background run compatibility result=$compatibilityAllowed")
+            return compatibilityAllowed
+        }
+
+        private fun isXiaomiBackgroundRunAllowed(context: Context): Boolean {
+            val appOpsManager =
+                context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
+                    ?: return false
+            val uid = context.applicationInfo.uid.takeIf { it > 0 } ?: Process.myUid()
+            val packageName = context.packageName
+            val runAnyMode = readAppOpMode(
+                appOpsManager = appOpsManager,
+                operation = OPSTR_RUN_ANY_IN_BACKGROUND,
+                uid = uid,
+                packageName = packageName
+            )
+            val runMode = readAppOpMode(
+                appOpsManager = appOpsManager,
+                operation = OPSTR_RUN_IN_BACKGROUND,
+                uid = uid,
+                packageName = packageName
+            )
+            Log.d(TAG, "Xiaomi background run app ops: runAny=$runAnyMode, run=$runMode")
+            val knownModes = listOf(runAnyMode, runMode).filterNotNull()
+            if (knownModes.isEmpty()) {
+                return false
+            }
+            val explicitlyBlocked = knownModes.any { mode ->
+                mode == AppOpsManager.MODE_IGNORED ||
+                        mode == AppOpsManager.MODE_ERRORED ||
+                        mode == AppOpsManager.MODE_FOREGROUND
+            }
+            if (explicitlyBlocked) {
+                return false
+            }
+            return knownModes.all { mode ->
+                mode == AppOpsManager.MODE_ALLOWED || mode == AppOpsManager.MODE_DEFAULT
+            }
+        }
+
+        private fun readAppOpMode(
+            appOpsManager: AppOpsManager,
+            operation: String,
+            uid: Int,
+            packageName: String
+        ): Int? {
+            return runCatching {
+                appOpsManager.unsafeCheckOpNoThrow(operation, uid, packageName)
+            }.getOrElse { error ->
+                Log.d(TAG, "readAppOpMode failed for $operation: ${error.message}")
+                null
+            }
+        }
+
         /**
          * 打开电池优化设置页面
          * @param context 上下文
          * @param result 方法调用结果
          */
+        private const val OPSTR_RUN_ANY_IN_BACKGROUND = "android:run_any_in_background"
+        private const val OPSTR_RUN_IN_BACKGROUND = "android:run_in_background"
+
         fun openBatteryOptimizationSettings(context: Context) {
             val intent =
                 Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {

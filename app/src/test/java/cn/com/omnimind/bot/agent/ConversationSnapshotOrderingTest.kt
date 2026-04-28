@@ -161,6 +161,51 @@ class ConversationSnapshotOrderingTest {
     }
 
     @Test
+    fun `prepareForStorage prefers stream meta sequence for new agent entries`() {
+        val messages = listOf(
+            toolMessage(
+                id = "1711872000100-ai-tool-1",
+                createAt = "2026-03-31T18:00:00.140",
+                taskId = "1711872000100-ai",
+                summary = "工具执行",
+                streamSeq = 3L,
+                roundIndex = 1,
+                kind = "tool_completed"
+            ),
+            assistantMessage(
+                id = "1711872000100-ai-text",
+                createAt = "2026-03-31T18:00:00.150",
+                text = "正文",
+                streamSeq = 2L,
+                roundIndex = 1,
+                kind = "text_snapshot"
+            ),
+            deepThinkingMessage(
+                id = "1711872000100-ai-thinking",
+                createAt = "2026-03-31T18:00:00.160",
+                taskId = "1711872000100-ai",
+                startTime = localMillis("2026-03-31T18:00:00.100"),
+                thinking = "思考",
+                streamSeq = 1L,
+                roundIndex = 1,
+                kind = "thinking_snapshot"
+            )
+        )
+
+        val orderedIds = ConversationSnapshotOrdering.prepareForStorage(messages)
+            .map { it.payload["id"] }
+
+        assertEquals(
+            listOf(
+                "1711872000100-ai-thinking",
+                "1711872000100-ai-text",
+                "1711872000100-ai-tool-1"
+            ),
+            orderedIds
+        )
+    }
+
+    @Test
     fun `sortForDisplay preserves interleaved thinking rounds by timestamp within one reply`() {
         val messages = listOf(
             deepThinkingMessage(
@@ -223,7 +268,10 @@ class ConversationSnapshotOrderingTest {
     private fun assistantMessage(
         id: String,
         createAt: String,
-        text: String
+        text: String,
+        streamSeq: Long? = null,
+        roundIndex: Int? = null,
+        kind: String? = null
     ): Map<String, Any?> {
         return linkedMapOf(
             "id" to id,
@@ -233,6 +281,7 @@ class ConversationSnapshotOrderingTest {
                 "id" to id,
                 "text" to text
             ),
+            "streamMeta" to streamMeta(streamSeq, roundIndex, kind, id),
             "createAt" to createAt
         )
     }
@@ -242,7 +291,10 @@ class ConversationSnapshotOrderingTest {
         createAt: String,
         taskId: String,
         startTime: Long,
-        thinking: String
+        thinking: String,
+        streamSeq: Long? = null,
+        roundIndex: Int? = null,
+        kind: String? = null
     ): Map<String, Any?> {
         return linkedMapOf(
             "id" to id,
@@ -260,7 +312,51 @@ class ConversationSnapshotOrderingTest {
                     "isLoading" to false
                 )
             ),
+            "streamMeta" to streamMeta(streamSeq, roundIndex, kind, taskId),
             "createAt" to createAt
+        )
+    }
+
+    private fun toolMessage(
+        id: String,
+        createAt: String,
+        taskId: String,
+        summary: String,
+        streamSeq: Long,
+        roundIndex: Int,
+        kind: String
+    ): Map<String, Any?> {
+        return linkedMapOf(
+            "id" to id,
+            "type" to 2,
+            "user" to 3,
+            "content" to linkedMapOf(
+                "id" to id,
+                "cardData" to linkedMapOf(
+                    "type" to "agent_tool_summary",
+                    "taskId" to taskId,
+                    "summary" to summary
+                )
+            ),
+            "streamMeta" to streamMeta(streamSeq, roundIndex, kind, taskId),
+            "createAt" to createAt
+        )
+    }
+
+    private fun streamMeta(
+        streamSeq: Long?,
+        roundIndex: Int?,
+        kind: String?,
+        taskId: String
+    ): Map<String, Any?>? {
+        if (streamSeq == null && roundIndex == null && kind == null) {
+            return null
+        }
+        return linkedMapOf(
+            "seq" to streamSeq,
+            "roundIndex" to roundIndex,
+            "kind" to kind,
+            "parentTaskId" to taskId
         )
     }
 

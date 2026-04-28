@@ -947,3 +947,13 @@ Future<Map<String, dynamic>> downloadAndInstallTermuxApk(
   );
   return Map<String, dynamic>.from(result ?? const {});
 }
+
+Future<bool> isBackgroundRunAllowed() async {
+  try {
+    return await spePermission.invokeMethod<bool>('isBackgroundRunAllowed') ??
+        false;
+  } catch (e) {
+    debugPrint('检查后台运行权限失败: $e');
+    return false;
+  }
+}

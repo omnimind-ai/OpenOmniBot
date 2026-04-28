@@ -32,6 +32,9 @@ class ChatMessageModel {
   /// 是否为总结中状态
   final bool isSummarizing;
 
+  /// 原生流式排序元数据
+  final Map<String, dynamic>? streamMeta;
+
   /// 创建时间
   final DateTime createAt;
 
@@ -44,6 +47,7 @@ class ChatMessageModel {
     this.isFirst = false,
     this.isError = false,
     this.isSummarizing = false,
+    this.streamMeta,
     DateTime? createAt,
   }) : createAt = createAt ?? DateTime.now();
 
@@ -107,6 +111,9 @@ class ChatMessageModel {
       isFirst: json['isFirst'] as bool? ?? false,
       isError: json['isError'] as bool? ?? false,
       isSummarizing: json['isSummarizing'] as bool? ?? false,
+      streamMeta: _normalizeDynamic(json['streamMeta']) is Map<String, dynamic>
+          ? _normalizeDynamic(json['streamMeta']) as Map<String, dynamic>
+          : null,
       createAt: _parseCreateAt(json['createAt']),
     );
   }
@@ -122,6 +129,7 @@ class ChatMessageModel {
       'isFirst': isFirst,
       'isError': isError,
       'isSummarizing': isSummarizing,
+      if (streamMeta != null) 'streamMeta': streamMeta,
       'createAt': createAt.toIso8601String(),
     };
   }
@@ -157,6 +165,7 @@ class ChatMessageModel {
   factory ChatMessageModel.cardMessage(
     Map<String, dynamic> cardData, {
     String? id,
+    Map<String, dynamic>? streamMeta,
   }) {
     final messageId = id ?? DateTime.now().millisecondsSinceEpoch.toString();
     return ChatMessageModel(
@@ -164,6 +173,7 @@ class ChatMessageModel {
       type: 2, // 卡片消息
       user: 3, // 系统
       content: {'cardData': cardData, 'id': messageId},
+      streamMeta: streamMeta,
     );
   }
 
@@ -177,6 +187,7 @@ class ChatMessageModel {
     bool? isFirst,
     bool? isError,
     bool? isSummarizing,
+    Map<String, dynamic>? streamMeta,
     DateTime? createAt,
   }) {
     return ChatMessageModel(
@@ -188,6 +199,7 @@ class ChatMessageModel {
       isFirst: isFirst ?? this.isFirst,
       isError: isError ?? this.isError,
       isSummarizing: isSummarizing ?? this.isSummarizing,
+      streamMeta: streamMeta ?? this.streamMeta,
       createAt: createAt ?? this.createAt,
     );
   }

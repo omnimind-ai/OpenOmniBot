@@ -50,7 +50,7 @@ android {
         minSdk = 29
         targetSdk = 34
         versionCode = 1
-        versionName = "0.3.8"
+        versionName = "0.3.8.3"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a"))

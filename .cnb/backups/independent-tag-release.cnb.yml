@@ -1,0 +1,204 @@
+# Backup of the original CNB tag release pipeline before switching CNB to a
+# GitHub-built release mirror. Restore this file's `$: tag_push:` block into
+# `.cnb.yml` if we want CNB to resume building signed release artifacts.
+$:
+  tag_push:
+    - name: release-build
+      git:
+        submodules: false
+      runner:
+        cpus: 8
+      docker:
+        image: ghcr.io/cirruslabs/flutter:3.38.7
+        volumes:
+          - gradle-cache:/root/.gradle:rw
+          - pub-cache:/root/.pub-cache:rw
+          - android-sdk-ndk:/opt/android-sdk-linux/ndk:rw
+          - android-sdk-licenses:/opt/android-sdk-linux/licenses:rw
+          - android-sdk-cmake:/opt/android-sdk-linux/cmake:rw
+      env:
+        JAVA_VERSION: "17"
+        FLUTTER_VERSION: "3.38.7"
+        NDK_VERSION: "28.2.13676358"
+        GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8 --enable-native-access=ALL-UNNAMED
+      stages:
+        - name: init-submodules
+          script: |
+            git config --global url."https://github.com/".insteadOf "git@github.com:"
+            git submodule update --init third_party/omniinfer
+            git -C third_party/omniinfer submodule update --init framework/mnn framework/llama.cpp
+        - name: build-release
+          imports:
+            - https://cnb.cool/o.k/secrets/-/blob/main/omnibot-release.yml
+          exports:
+            RELEASE_APK_NAME: RELEASE_APK_NAME
+            RELEASE_APK_PATH: RELEASE_APK_PATH
+            RELEASE_SHA256_PATH: RELEASE_SHA256_PATH
+          script: |
+            RELEASE_STORE_PASSWORD_VALUE="${SECRETS_RELEASE_PASSWORD:-}"
+            RELEASE_KEY_ALIAS_VALUE="${SECRETS_RELEASE_KEY_ALIAS:-}"
+            RELEASE_KEYSTORE_VALUE="${SECRETS_RELEASE_KEYSTORE:-}"
+            if [ -z "${RELEASE_STORE_PASSWORD_VALUE:-}" ] || [ -z "${RELEASE_KEY_ALIAS_VALUE:-}" ] || [ -z "${RELEASE_KEYSTORE_VALUE:-}" ]; then
+              echo "release signing secrets are missing from omnibot-release.yml" >&2
+              exit 1
+            fi
+            RELEASE_KEY_PASSWORD_VALUE="${SECRETS_RELEASE_KEY_PASSWORD:-$RELEASE_STORE_PASSWORD_VALUE}"
+            export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-/opt/android-sdk-linux}"
+            yes | sdkmanager --licenses >/dev/null || true
+            if [ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]; then
+              sdkmanager "ndk;$NDK_VERSION"
+            fi
+            export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+            export ANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+            (
+              cd ui
+              flutter pub get --enforce-lockfile
+            )
+            CLEAN_RELEASE_KEYSTORE_VALUE="$(printf '%s' "$RELEASE_KEYSTORE_VALUE" | tr -d ' \t\r\n%')"
+            if [ -z "$CLEAN_RELEASE_KEYSTORE_VALUE" ]; then
+              echo "release keystore is empty after normalization in omnibot-release.yml" >&2
+              exit 1
+            fi
+            if ! printf '%s' "$CLEAN_RELEASE_KEYSTORE_VALUE" | base64 -d > "$CNB_BUILD_WORKSPACE/release.jks" 2>/dev/null; then
+              echo "release keystore is not valid base64 in omnibot-release.yml" >&2
+              exit 1
+            fi
+            if ! keytool -list -keystore "$CNB_BUILD_WORKSPACE/release.jks" -storepass "$RELEASE_STORE_PASSWORD_VALUE" -alias "$RELEASE_KEY_ALIAS_VALUE" >/dev/null 2>&1; then
+              echo "release keystore, alias, or password is invalid in omnibot-release.yml" >&2
+              exit 1
+            fi
+            SHARED_GRADLE_HOME="/root/.gradle"
+            export GRADLE_USER_HOME="$CNB_BUILD_WORKSPACE/.gradle-release"
+            mkdir -p "$GRADLE_USER_HOME"
+            if [ -d "$SHARED_GRADLE_HOME/wrapper" ] && [ ! -d "$GRADLE_USER_HOME/wrapper" ]; then
+              mkdir -p "$GRADLE_USER_HOME"
+              cp -a "$SHARED_GRADLE_HOME/wrapper" "$GRADLE_USER_HOME/" || true
+            fi
+            CPU_COUNT="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)"
+            if [ "$CPU_COUNT" -ge 8 ]; then
+              MAX_WORKERS=8
+            elif [ "$CPU_COUNT" -ge 4 ]; then
+              MAX_WORKERS=4
+            elif [ "$CPU_COUNT" -ge 2 ]; then
+              MAX_WORKERS="$CPU_COUNT"
+            else
+              MAX_WORKERS=2
+            fi
+            echo "Using Gradle max workers: ${MAX_WORKERS}"
+            ./gradlew --no-daemon --build-cache --max-workers="${MAX_WORKERS}" assembleProductionRelease \
+              -POMNI_RELEASE_STORE_FILE="$CNB_BUILD_WORKSPACE/release.jks" \
+              -POMNI_RELEASE_STORE_PWD="$RELEASE_STORE_PASSWORD_VALUE" \
+              -POMNI_RELEASE_KEY_ALIAS="$RELEASE_KEY_ALIAS_VALUE" \
+              -POMNI_RELEASE_KEY_PWD="$RELEASE_KEY_PASSWORD_VALUE"
+            RELEASE_DIR="app/build/outputs/apk/production/release"
+            SAFE_REF_NAME="$(printf '%s' "$CNB_BRANCH" | sed 's#[^A-Za-z0-9._-]#-#g')"
+            RELEASE_APK_NAME="OpenOmniBot-${SAFE_REF_NAME}.apk"
+            sha256sum "${RELEASE_DIR}/app-production-release.apk" > "${RELEASE_DIR}/app-production-release.apk.sha256"
+            mv "${RELEASE_DIR}/app-production-release.apk" "${RELEASE_DIR}/${RELEASE_APK_NAME}"
+            mv "${RELEASE_DIR}/app-production-release.apk.sha256" "${RELEASE_DIR}/${RELEASE_APK_NAME}.sha256"
+            echo "##[set-output RELEASE_APK_NAME=${RELEASE_APK_NAME}]"
+            echo "##[set-output RELEASE_APK_PATH=${RELEASE_DIR}/${RELEASE_APK_NAME}]"
+            echo "##[set-output RELEASE_SHA256_PATH=${RELEASE_DIR}/${RELEASE_APK_NAME}.sha256]"
+        - name: prepare-release-metadata
+          exports:
+            RELEASE_TRACK: RELEASE_TRACK
+            RELEASE_DRAFT: RELEASE_DRAFT
+            RELEASE_PRERELEASE: RELEASE_PRERELEASE
+            RELEASE_MAKE_LATEST: RELEASE_MAKE_LATEST
+            RELEASE_NAME: RELEASE_NAME
+            RELEASE_BODY: RELEASE_BODY
+          script: |
+            NORMALIZED_REF="${CNB_BRANCH#v}"
+            RELEASE_TRACK="custom"
+            RELEASE_DRAFT="true"
+            RELEASE_PRERELEASE="false"
+            RELEASE_MAKE_LATEST="false"
+            if printf '%s' "$NORMALIZED_REF" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+              RELEASE_TRACK="beta"
+              RELEASE_DRAFT="false"
+              RELEASE_PRERELEASE="true"
+            elif printf '%s' "$NORMALIZED_REF" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              RELEASE_TRACK="stable"
+              RELEASE_DRAFT="true"
+              RELEASE_PRERELEASE="false"
+            fi
+            RELEASE_NAME="$CNB_BRANCH"
+            RELEASE_BODY="Automated release build for $CNB_BRANCH"
+            echo "##[set-output RELEASE_TRACK=${RELEASE_TRACK}]"
+            echo "##[set-output RELEASE_DRAFT=${RELEASE_DRAFT}]"
+            echo "##[set-output RELEASE_PRERELEASE=${RELEASE_PRERELEASE}]"
+            echo "##[set-output RELEASE_MAKE_LATEST=${RELEASE_MAKE_LATEST}]"
+            echo "##[set-output RELEASE_NAME=${RELEASE_NAME}]"
+            echo "##[set-output RELEASE_BODY=${RELEASE_BODY}]"
+        - name: create-release
+          image: node:22-bullseye
+          script: |
+            EXISTING_RELEASE_JSON="$(mktemp)"
+            CREATED_RELEASE_JSON="$(mktemp)"
+            npx -y @cnbcool/cnb-cli releases get-release-by-tag \
+              --repo "$CNB_REPO_SLUG" \
+              --tag "$CNB_BRANCH" \
+              --verbose > "$EXISTING_RELEASE_JSON"
+            EXISTING_RELEASE_STATUS="$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(String(d.status || ""));' "$EXISTING_RELEASE_JSON")"
+            if [ "$EXISTING_RELEASE_STATUS" = "200" ]; then
+              EXISTING_RELEASE_ID="$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(String((d.data && d.data.id) || ""));' "$EXISTING_RELEASE_JSON")"
+              if [ -n "$EXISTING_RELEASE_ID" ]; then
+                npx -y @cnbcool/cnb-cli releases delete-release \
+                  --repo "$CNB_REPO_SLUG" \
+                  --release-id "$EXISTING_RELEASE_ID"
+              fi
+            elif [ "$EXISTING_RELEASE_STATUS" != "404" ]; then
+              cat "$EXISTING_RELEASE_JSON" >&2
+              echo "Failed to inspect existing release metadata for $CNB_BRANCH" >&2
+              exit 1
+            fi
+            set -- releases post-release \
+              --repo "$CNB_REPO_SLUG" \
+              --tag-name "$CNB_BRANCH" \
+              --target-commitish "$CNB_COMMIT" \
+              --name "$RELEASE_NAME" \
+              --body "$RELEASE_BODY" \
+              --make-latest "$RELEASE_MAKE_LATEST"
+            if [ "$RELEASE_DRAFT" = "true" ]; then
+              set -- "$@" --draft
+            fi
+            if [ "$RELEASE_PRERELEASE" = "true" ]; then
+              set -- "$@" --prerelease
+            fi
+            npx -y @cnbcool/cnb-cli "$@" --verbose > "$CREATED_RELEASE_JSON"
+            CREATED_RELEASE_STATUS="$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(String(d.status || ""));' "$CREATED_RELEASE_JSON")"
+            if [ "$CREATED_RELEASE_STATUS" != "201" ] && [ "$CREATED_RELEASE_STATUS" != "200" ]; then
+              cat "$CREATED_RELEASE_JSON" >&2
+              echo "Failed to create release for $CNB_BRANCH" >&2
+              exit 1
+            fi
+        - name: upload-release-assets
+          image: cnbcool/attachments:latest
+          settings:
+            attachments:
+              - $RELEASE_APK_PATH
+              - $RELEASE_SHA256_PATH
+        - name: sync-tag-to-github
+          imports:
+            - https://cnb.cool/o.k/secrets/-/blob/main/sync-env.yml
+          script: |
+            GITHUB_SYNC_USERNAME="${GIT_USERNAME:-${SECRETS_GIT_USERNAME:-${GITHUB_USERNAME:-}}}"
+            GITHUB_SYNC_TOKEN="${GIT_ACCESS_TOKEN:-${SECRETS_GIT_ACCESS_TOKEN:-${SECRETS_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}}}"
+            if [ -z "${GITHUB_SYNC_USERNAME:-}" ] || [ -z "${GITHUB_SYNC_TOKEN:-}" ]; then
+              echo "GitHub sync credentials are not configured; skipping CNB tag -> GitHub sync."
+              exit 0
+            fi
+            GITHUB_BASIC_AUTH="$(printf '%s:%s' "${GITHUB_SYNC_USERNAME}" "${GITHUB_SYNC_TOKEN}" | base64 | tr -d '\n')"
+            GITHUB_REMOTE_URL="https://github.com/omnimind-ai/OpenOmniBot.git"
+            for attempt in 1 2 3; do
+              if git -c http.extraheader="Authorization: Basic ${GITHUB_BASIC_AUTH}" -c http.version=HTTP/1.1 \
+                push --force "${GITHUB_REMOTE_URL}" "refs/tags/${CNB_BRANCH}:refs/tags/${CNB_BRANCH}"; then
+                exit 0
+              fi
+              status=$?
+              if [ "$attempt" -eq 3 ]; then
+                exit "$status"
+              fi
+              echo "GitHub tag sync attempt ${attempt} failed, retrying..."
+              sleep $((attempt * 5))
+            done

@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -164,13 +165,28 @@ class HttpAgentLlmClient(
         val reasoningLock = Any()
         var lastContent = ""
         var eventSource: EventSource? = null
+        val emissionQueue = Channel<suspend () -> Unit>(Channel.UNLIMITED)
+        val emissionJob = scope.launch {
+            for (block in emissionQueue) {
+                runCatching { block.invoke() }
+                    .onFailure { OmniLog.w(tag, "stream emission failed: ${it.message}") }
+            }
+        }
+        var hasPublishedReasoningForTurn = false
+
+        fun enqueueEmission(block: suspend () -> Unit) {
+            if (emissionQueue.isClosedForSend) {
+                return
+            }
+            emissionQueue.trySend(block)
+        }
 
         fun dispatchReasoningSnapshot(reasoning: String) {
             lastReasoning = reasoning
+            hasPublishedReasoningForTurn = true
             if (onReasoningUpdate != null) {
-                scope.launch {
-                    runCatching { onReasoningUpdate.invoke(reasoning) }
-                        .onFailure { OmniLog.w(tag, "emit reasoning update failed: ${it.message}") }
+                enqueueEmission {
+                    onReasoningUpdate.invoke(reasoning)
                 }
             }
         }
@@ -231,11 +247,13 @@ class HttpAgentLlmClient(
         fun emitContent() {
             val content = accumulator.currentContent()
             if (content.isEmpty() || content == lastContent) return
+            if (!hasPublishedReasoningForTurn && accumulator.currentReasoningLength() > 0) {
+                emitReasoning(force = true)
+            }
             lastContent = content
             if (onContentUpdate != null) {
-                scope.launch {
-                    runCatching { onContentUpdate.invoke(content) }
-                        .onFailure { OmniLog.w(tag, "emit content update failed: ${it.message}") }
+                enqueueEmission {
+                    onContentUpdate.invoke(content)
                 }
             }
         }
@@ -314,6 +332,8 @@ class HttpAgentLlmClient(
         } finally {
             reasoningEmitJob?.cancel()
             eventSource?.cancel()
+            emissionQueue.close()
+            runCatching { emissionJob.join() }
         }
     }
 

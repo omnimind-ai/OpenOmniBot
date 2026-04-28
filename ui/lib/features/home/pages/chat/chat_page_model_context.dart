@@ -1026,6 +1026,8 @@ class _ConversationModelSelectorPopupEntryState
                 ),
                 decoration: InputDecoration(
                   isDense: true,
+                  filled: false,
+                  fillColor: Colors.transparent,
                   hintText: LegacyTextLocalizer.localize('搜索模型 ID'),
                   hintStyle: TextStyle(
                     fontSize: 13,

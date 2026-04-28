@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/l10n/generated/app_localizations.dart';
+import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/l10n/l10n.dart';
@@ -791,18 +792,8 @@ class _WebChatHomeState extends State<_WebChatHome> {
           }
         }
         break;
-      case 'agent_tool_complete':
-        if ((data['toolType'] ?? '').toString().trim() == 'browser') {
-          unawaited(_refreshBrowserSnapshot(reportError: false));
-        }
-        break;
-      case 'agent_complete':
-      case 'agent_error':
-        if (mounted) {
-          setState(() {
-            _activeClarifyTaskId = null;
-          });
-        }
+      case 'agent_stream_event':
+        _handleAgentStreamEventPayload(data);
         break;
       case 'browser_snapshot_updated':
         final snapshot = Map<String, dynamic>.from(
@@ -820,10 +811,42 @@ class _WebChatHomeState extends State<_WebChatHome> {
           unawaited(_reloadWorkspace(reportError: false));
         }
         break;
-      case 'agent_clarify_required':
+    }
+  }
+
+  void _handleAgentStreamEventPayload(Map<String, dynamic> payload) {
+    late final AgentStreamEvent event;
+    try {
+      event = AgentStreamEvent.fromMap(payload);
+    } catch (_) {
+      return;
+    }
+
+    switch (event.kind) {
+      case AgentStreamEventKind.toolCompleted:
+        if ((event.raw['toolType'] ?? '').toString().trim() == 'browser') {
+          unawaited(_refreshBrowserSnapshot(reportError: false));
+        }
+        break;
+      case AgentStreamEventKind.clarifyRequired:
         setState(() {
-          _activeClarifyTaskId = data['taskId']?.toString();
+          _activeClarifyTaskId = event.taskId;
         });
+        break;
+      case AgentStreamEventKind.completed:
+      case AgentStreamEventKind.error:
+        if (mounted) {
+          setState(() {
+            _activeClarifyTaskId = null;
+          });
+        }
+        break;
+      case AgentStreamEventKind.thinkingStarted:
+      case AgentStreamEventKind.thinkingSnapshot:
+      case AgentStreamEventKind.textSnapshot:
+      case AgentStreamEventKind.toolStarted:
+      case AgentStreamEventKind.toolProgress:
+      case AgentStreamEventKind.permissionRequired:
         break;
     }
   }

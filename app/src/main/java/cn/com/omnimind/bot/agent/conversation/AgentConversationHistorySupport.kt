@@ -324,6 +324,7 @@ internal object AgentConversationHistorySupport {
 
         return linkedMapOf<String, Any?>(
             "taskId" to chooseAny("taskId"),
+            "streamMeta" to chooseAny("streamMeta"),
             "cardId" to chooseText("cardId"),
             "toolName" to chooseText("toolName"),
             "displayName" to chooseText("displayName"),
@@ -524,6 +525,7 @@ internal object AgentConversationHistorySupport {
 
         val rawPayload = linkedMapOf<String, Any?>(
             "taskId" to cardData["taskId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() },
+            "streamMeta" to toStringAnyMap(message["streamMeta"]).takeIf { it.isNotEmpty() },
             "cardId" to cardData["cardId"]?.toString()?.trim().orEmpty(),
             "toolName" to toolName,
             "displayName" to cardData["displayName"]?.toString()?.trim().orEmpty(),

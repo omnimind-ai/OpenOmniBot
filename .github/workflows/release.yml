@@ -158,3 +158,50 @@ jobs:
           files: |
             app/build/outputs/apk/production/release/${{ env.RELEASE_APK_NAME }}
             app/build/outputs/apk/production/release/${{ env.RELEASE_APK_NAME }}.sha256
+
+      - name: Set up Node.js for CNB CLI
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install CNB CLI
+        if: startsWith(github.ref, 'refs/tags/')
+        run: npm install --global @cnbcool/cnb-cli
+
+      - name: Mirror GitHub release to CNB
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN != '' && secrets.CNB_TOKEN || secrets.GIT_PASSWORD }}
+          CNB_API_ENDPOINT: ${{ secrets.CNB_API_ENDPOINT != '' && secrets.CNB_API_ENDPOINT || 'https://api.cnb.cool' }}
+          CNB_REPO_SLUG: o.a/OpenOmniBot
+          CNB_RELEASE_BODY: |
+            Mirrored from GitHub release:
+            https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+
+            Commit: ${{ github.sha }}
+        run: |
+          if [[ -z "${CNB_TOKEN}" ]]; then
+            echo "CNB mirror token is empty. Configure repository or organization secret CNB_TOKEN, or provide GIT_PASSWORD as a fallback." >&2
+            exit 1
+          fi
+
+          ARGS=(
+            --repo "${CNB_REPO_SLUG}"
+            --tag "${GITHUB_REF_NAME}"
+            --target-commitish "${GITHUB_SHA}"
+            --name "${GITHUB_REF_NAME}"
+            --body "${CNB_RELEASE_BODY}"
+            --make-latest false
+            --asset "app/build/outputs/apk/production/release/${RELEASE_APK_NAME}"
+            --asset "app/build/outputs/apk/production/release/${RELEASE_APK_NAME}.sha256"
+          )
+
+          if [[ "${{ steps.release_mode.outputs.draft }}" == 'true' ]]; then
+            ARGS+=(--draft)
+          fi
+          if [[ "${{ steps.release_mode.outputs.prerelease }}" == 'true' ]]; then
+            ARGS+=(--prerelease)
+          fi
+
+          python3 scripts/mirror_github_release_to_cnb.py "${ARGS[@]}"

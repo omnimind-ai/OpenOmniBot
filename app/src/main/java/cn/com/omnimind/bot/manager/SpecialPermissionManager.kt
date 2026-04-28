@@ -57,6 +57,16 @@ class SpecialPermissionManager(private val context: Context) {
         }
     }
 
+    fun isBackgroundRunAllowed(result: MethodChannel.Result) {
+        try {
+            val value = AssistsUtil.Setting.isBackgroundRunAllowed(context)
+            result.success(value)
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "Error checking background run permission", e)
+            result.error("CHECK_FAILED", "Failed to check background run permission.", e.message)
+        }
+    }
+
     fun openBatteryOptimizationSettings(result: MethodChannel.Result) {
         try {
             AssistsUtil.Setting.openBatteryOptimizationSettings(context)

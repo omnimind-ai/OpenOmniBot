@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/models/chat_link_preview.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/models/conversation_model.dart';
@@ -329,82 +330,9 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     // 页面关闭回调
     ScreenDialogService.setOnBeforeCloseChatBotDialog(_onDialogClose);
 
-    // Agent 回调（使用 AgentStreamHandler mixin）
-    AssistsMessageService.setOnAgentThinkingStartCallback((_) {
-      if (!mounted) return;
-      handleAgentThinkingStart();
-    });
-
-    AssistsMessageService.setOnAgentThinkingUpdateCallback((_, thinking) {
-      if (!mounted) return;
-      handleAgentThinkingUpdate(thinking);
-    });
-
-    AssistsMessageService.setOnAgentToolCallStartCallback((event) {
-      if (!mounted) return;
-      handleAgentToolCallStart(event);
-    });
-
-    AssistsMessageService.setOnAgentToolCallProgressCallback((event) {
-      if (!mounted) return;
-      handleAgentToolCallProgress(event);
-    });
-
-    AssistsMessageService.setOnAgentToolCallCompleteCallback((event) {
-      if (!mounted) return;
-      handleAgentToolCallComplete(event);
-    });
-
-    AssistsMessageService.setOnAgentChatMessageCallback((
-      _,
-      message, {
-      bool isFinal = true,
-      double? prefillTokensPerSecond,
-      double? decodeTokensPerSecond,
-    }) {
-      if (!mounted) return;
-      handleAgentChatMessage(
-        message,
-        isFinal: isFinal,
-        prefillTokensPerSecond: prefillTokensPerSecond,
-        decodeTokensPerSecond: decodeTokensPerSecond,
-      );
-    });
-
-    AssistsMessageService.setOnAgentClarifyCallback((
-      _,
-      question,
-      missingFields,
-    ) {
-      if (!mounted) return;
-      handleAgentClarifyRequired(question, missingFields);
-    });
-
-    AssistsMessageService.setOnAgentCompleteCallback((
-      _,
-      success,
-      outputKind,
-      hasUserVisibleOutput,
-      _latestPromptTokens,
-      _promptTokenThreshold,
-    ) {
-      if (!mounted) return;
-      handleAgentComplete(
-        success,
-        outputKind: outputKind,
-        hasUserVisibleOutput: hasUserVisibleOutput,
-      );
-    });
-
-    AssistsMessageService.setOnAgentErrorCallback((_, error) {
-      if (!mounted) return;
-      handleAgentError(error);
-    });
-
-    AssistsMessageService.setOnAgentPermissionRequiredCallback((_, missing) {
-      if (!mounted) return;
-      handleAgentPermissionRequired(missing);
-    });
+    AssistsMessageService.setOnAgentStreamEventCallback(
+      _handleIncomingAgentStreamEvent,
+    );
   }
 
   Future<void> _loadOpenClawConfig() async {
@@ -931,6 +859,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     _saveConversationToDb(generateSummary: true, markComplete: true);
   }
 
+  void _handleIncomingAgentStreamEvent(AgentStreamEvent event) {
+    if (!mounted) return;
+    handleAgentStreamEvent(event);
+  }
+
   @override
   void dispose() {
     _messageController.removeListener(_handleSlashCommandInput);
@@ -950,17 +883,9 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     // 清理任务完成回调
     AssistsMessageService.removeOnVLMTaskFinishCallBack(_onTaskFinish);
     AssistsMessageService.removeOnCommonTaskFinishCallBack(_onCommonTaskFinish);
-    // 清理 Agent 回调
-    AssistsMessageService.setOnAgentThinkingStartCallback(null);
-    AssistsMessageService.setOnAgentThinkingUpdateCallback(null);
-    AssistsMessageService.setOnAgentToolCallStartCallback(null);
-    AssistsMessageService.setOnAgentToolCallProgressCallback(null);
-    AssistsMessageService.setOnAgentToolCallCompleteCallback(null);
-    AssistsMessageService.setOnAgentChatMessageCallback(null);
-    AssistsMessageService.setOnAgentClarifyCallback(null);
-    AssistsMessageService.setOnAgentCompleteCallback(null);
-    AssistsMessageService.setOnAgentErrorCallback(null);
-    AssistsMessageService.setOnAgentPermissionRequiredCallback(null);
+    AssistsMessageService.removeOnAgentStreamEventCallback(
+      _handleIncomingAgentStreamEvent,
+    );
     super.dispose();
   }
 

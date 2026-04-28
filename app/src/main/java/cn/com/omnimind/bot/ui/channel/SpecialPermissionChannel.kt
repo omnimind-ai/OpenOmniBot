@@ -64,6 +64,10 @@ class SpecialPermissionChannel {
                         result
                     )
 
+                    "isBackgroundRunAllowed" -> specialPermissionManager!!.isBackgroundRunAllowed(
+                        result
+                    )
+
                     "openBatteryOptimizationSettings" -> specialPermissionManager!!.openBatteryOptimizationSettings(
                         result
                     )
