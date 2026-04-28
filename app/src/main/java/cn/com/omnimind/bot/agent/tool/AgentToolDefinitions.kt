@@ -520,6 +520,10 @@ object AgentToolDefinitions {
         "需要并行执行的子任务列表。" to "List of subtasks to execute in parallel.",
         "并发度，默认 2，范围 1-6。" to "Concurrency level. Default 2, range 1-6.",
         "结果聚合要求，可选。" to "Optional instructions for result aggregation.",
+        "创建新的定时任务。执行后等待工具结果，再决定是否回复用户。若 `targetKind=subagent`，`subagentPrompt` 必须写成任务触发时要立即执行的动作，不要重复填写“每天几点提醒我/定时去做”这类调度描述。" to
+            "Create a new scheduled task. Wait for the tool result before replying. When `targetKind=subagent`, `subagentPrompt` must describe the concrete action to execute at trigger time instead of repeating scheduling phrasing such as daily at a given time or remind me to do it.",
+        "修改已有定时任务的时间、标题、每日重复或启停状态。若 `targetKind=subagent`，更新后的 `subagentPrompt` 仍应描述触发时真正执行的动作，而不是再次描述调度本身。" to
+            "Update an existing scheduled task's time, title, daily repeat, or enabled state. When `targetKind=subagent`, the updated `subagentPrompt` should still describe the real action to execute at trigger time rather than restating the schedule itself.",
         "subagent 被触发时要立即执行的任务说明。不要把“每天/几点/定时/提醒/闹钟/创建任务”等调度话术写进去，而要写成到点后此刻真正要完成的动作。" to
             "The task instructions that the subagent should execute immediately when triggered. Do not include scheduling phrases such as daily, at a specific time, scheduled, remind me, alarm, or create a task. Describe the real action that should be carried out at execution time."
     )
@@ -1473,7 +1477,7 @@ object AgentToolDefinitions {
             put("name", "schedule_task_create")
             put("displayName", "创建定时任务")
             put("toolType", "schedule")
-            put("description", "创建新的定时任务。执行后等待工具结果，再决定是否回复用户。")
+            put("description", "创建新的定时任务。执行后等待工具结果，再决定是否回复用户。若 `targetKind=subagent`，`subagentPrompt` 必须写成任务触发时要立即执行的动作，不要重复填写“每天几点提醒我/定时去做”这类调度描述。")
             put("postToolRule", "创建完成后不要在同一轮继续调用其他工具；请等待工具结果，并通过 response 输出最终答复。")
             putJsonObject("parameters") {
                 put("type", "object")
@@ -1540,7 +1544,7 @@ object AgentToolDefinitions {
             put("name", "schedule_task_update")
             put("displayName", "修改定时任务")
             put("toolType", "schedule")
-            put("description", "修改已有定时任务的时间、标题、每日重复或启停状态。")
+            put("description", "修改已有定时任务的时间、标题、每日重复或启停状态。若 `targetKind=subagent`，更新后的 `subagentPrompt` 仍应描述触发时真正执行的动作，而不是再次描述调度本身。")
             put("postToolRule", "修改完成后不要同轮回复，等待工具结果。")
             putJsonObject("parameters") {
                 put("type", "object")

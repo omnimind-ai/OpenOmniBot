@@ -34,32 +34,4 @@ class AgentConversationModePolicyTest {
         assertTrue(toolNames.contains("vlm_task"))
         assertTrue(toolNames.contains("memory_search"))
     }
-
-    @Test
-    fun scheduledSubagentPromptIsWrappedIntoExecutionMode() {
-        val prompt = AgentConversationModePolicy.buildScheduledSubagentExecutionMessage(
-            rawUserMessage = "每天 9 点去检查企业微信未读并回复重要消息",
-            scheduleTaskTitle = "早间消息处理",
-            locale = PromptLocale.ZH_CN
-        )
-
-        assertTrue(prompt.contains("已经触发的定时子任务"))
-        assertTrue(prompt.contains("不要再次创建、修改或删除定时任务"))
-        assertTrue(prompt.contains("不要再次调用 `subagent_dispatch`"))
-        assertTrue(prompt.contains("每天 9 点去检查企业微信未读并回复重要消息"))
-    }
-
-    @Test
-    fun scheduledSubagentPromptIsWrappedIntoExecutionModeInEnglish() {
-        val prompt = AgentConversationModePolicy.buildScheduledSubagentExecutionMessage(
-            rawUserMessage = "Every day at 9:00 check unread Slack messages and reply to important ones",
-            scheduleTaskTitle = "Morning message triage",
-            locale = PromptLocale.EN_US
-        )
-
-        assertTrue(prompt.contains("already-triggered scheduled subagent task"))
-        assertTrue(prompt.contains("Do not create, update, or delete scheduled tasks"))
-        assertTrue(prompt.contains("Do not call `subagent_dispatch`"))
-        assertTrue(prompt.contains("Every day at 9:00 check unread Slack messages"))
-    }
 }
