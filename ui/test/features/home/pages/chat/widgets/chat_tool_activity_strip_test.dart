@@ -195,6 +195,73 @@ void main() {
     expect(snapshot.messages, isEmpty);
   });
 
+  test(
+    'active run without tool cards does not reuse previous tool history',
+    () {
+      final messages = [
+        ChatMessageModel(
+          id: 'task-active-text',
+          type: 1,
+          user: 2,
+          content: const {'text': '新的回复', 'id': 'task-active-text'},
+          streamMeta: const {
+            'parentTaskId': 'task-active',
+            'kind': 'text_snapshot',
+            'seq': 10,
+            'isFinal': false,
+          },
+        ),
+        ChatMessageModel.cardMessage(
+          {
+            'type': 'deep_thinking',
+            'taskID': 'task-active',
+            'thinkingContent': '思考中',
+          },
+          id: 'task-active-thinking',
+          streamMeta: const {
+            'parentTaskId': 'task-active',
+            'kind': 'thinking_snapshot',
+            'seq': 9,
+          },
+        ),
+        ChatMessageModel.cardMessage(
+          {
+            'type': 'agent_tool_summary',
+            'taskId': 'task-old',
+            'status': 'success',
+            'toolTitle': '旧工具',
+          },
+          id: 'task-old-tool',
+          streamMeta: const {
+            'parentTaskId': 'task-old',
+            'kind': 'tool_completed',
+            'seq': 3,
+          },
+        ),
+        ChatMessageModel(
+          id: 'task-old-text',
+          type: 1,
+          user: 2,
+          content: const {'text': '旧回答', 'id': 'task-old-text'},
+          streamMeta: const {
+            'parentTaskId': 'task-old',
+            'kind': 'completed',
+            'isFinal': true,
+            'seq': 4,
+          },
+        ),
+      ];
+
+      final snapshot = resolveAgentToolActivitySnapshot(
+        messages,
+        activeTaskIds: const {'task-active'},
+      );
+
+      expect(snapshot.isActiveRun, isTrue);
+      expect(snapshot.messages, isEmpty);
+    },
+  );
+
   testWidgets(
     'renders current tool title and expands history without duplicating current item',
     (tester) async {

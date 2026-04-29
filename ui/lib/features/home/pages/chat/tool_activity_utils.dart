@@ -66,13 +66,23 @@ AgentToolActivitySnapshot resolveAgentToolActivitySnapshot(
   List<ChatMessageModel> messages, {
   Set<String> activeTaskIds = const <String>{},
 }) {
+  final normalizedActiveTaskIds = activeTaskIds
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty)
+      .toSet();
   final activeMessages = filterAgentToolMessagesByTaskIds(
     messages,
-    activeTaskIds,
+    normalizedActiveTaskIds,
   );
   if (activeMessages.isNotEmpty) {
     return AgentToolActivitySnapshot(
       messages: activeMessages,
+      isActiveRun: true,
+    );
+  }
+  if (normalizedActiveTaskIds.isNotEmpty) {
+    return const AgentToolActivitySnapshot(
+      messages: <ChatMessageModel>[],
       isActiveRun: true,
     );
   }

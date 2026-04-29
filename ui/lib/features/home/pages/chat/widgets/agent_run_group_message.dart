@@ -254,7 +254,7 @@ class _AgentRunSummaryHeader extends StatelessWidget {
     final isEnglish =
         Localizations.maybeLocaleOf(context)?.languageCode == 'en';
     final palette = context.omniPalette;
-    final label = isEnglish ? 'Run trace' : '运行过程';
+    final label = isEnglish ? 'Run trace' : '已思考';
     final labelColor = expanded ? palette.textSecondary : palette.textTertiary;
     final lineColor = expanded
         ? palette.textSecondary.withValues(

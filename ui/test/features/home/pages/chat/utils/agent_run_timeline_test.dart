@@ -21,6 +21,7 @@ void main() {
         taskId: 'task-2',
         kind: 'text_snapshot',
         seq: 22,
+        isFinal: null,
       ),
       _assistantMessage(
         id: 'task-2-text-1',
@@ -28,6 +29,7 @@ void main() {
         taskId: 'task-2',
         kind: 'text_snapshot',
         seq: 21,
+        isFinal: null,
       ),
       _thinkingCard(id: 'task-2-thinking', taskId: 'task-2', seq: 12),
     ];
@@ -50,6 +52,39 @@ void main() {
     expect(entries, hasLength(4));
     expect(entries.where((entry) => entry.group != null), isEmpty);
   });
+
+  test('keeps final text snapshot ungrouped until task becomes inactive', () {
+    final entries = buildAgentRunTimelineEntries(
+      _buildCompletedRunMessages(isFinal: true),
+      activeTaskIds: const <String>{'task-1'},
+    );
+
+    expect(entries, hasLength(4));
+    expect(entries.where((entry) => entry.group != null), isEmpty);
+  });
+
+  test(
+    'does not fold persisted partial snapshot with explicit non-final flag',
+    () {
+      final messages = <ChatMessageModel>[
+        _assistantMessage(
+          id: 'task-4-text',
+          text: '未完成回答',
+          taskId: 'task-4',
+          kind: 'text_snapshot',
+          seq: 22,
+          isFinal: false,
+        ),
+        _thinkingCard(id: 'task-4-thinking', taskId: 'task-4', seq: 12),
+        ChatMessageModel.userMessage('用户问题', id: 'user-4'),
+      ];
+
+      final entries = buildAgentRunTimelineEntries(messages);
+
+      expect(entries, hasLength(3));
+      expect(entries.where((entry) => entry.group != null), isEmpty);
+    },
+  );
 
   test('keeps permission card visible alongside final permission text', () {
     final messages = <ChatMessageModel>[
@@ -121,7 +156,7 @@ ChatMessageModel _assistantMessage({
   required String taskId,
   required String kind,
   required int seq,
-  bool isFinal = false,
+  bool? isFinal = false,
 }) {
   return ChatMessageModel(
     id: id,
@@ -133,7 +168,7 @@ ChatMessageModel _assistantMessage({
       'kind': kind,
       'seq': seq,
       'entryId': id,
-      'isFinal': isFinal,
+      if (isFinal != null) 'isFinal': isFinal,
     },
   );
 }

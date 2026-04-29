@@ -184,6 +184,10 @@ ChatMessageModel? _resolvePrimaryVisibleMessage(
     return null;
   }
 
+  if (isActive) {
+    return null;
+  }
+
   final directFinalMatches = aiTextMessages
       .where((message) => _isTerminalVisibleTextMessage(message))
       .toList(growable: false);
@@ -191,12 +195,8 @@ ChatMessageModel? _resolvePrimaryVisibleMessage(
     return _newestBySequence(directFinalMatches);
   }
 
-  if (isActive) {
-    return null;
-  }
-
   final fallbackTextSnapshots = aiTextMessages
-      .where((message) => agentRunKind(message) == 'text_snapshot')
+      .where(_isLegacyTextSnapshotFallbackCandidate)
       .toList(growable: false);
   if (fallbackTextSnapshots.isEmpty) {
     return null;
@@ -213,6 +213,17 @@ bool _isTerminalVisibleTextMessage(ChatMessageModel message) {
       kind == 'permission_required' ||
       kind == 'error' ||
       message.isError;
+}
+
+bool _isLegacyTextSnapshotFallbackCandidate(ChatMessageModel message) {
+  if (agentRunKind(message) != 'text_snapshot') {
+    return false;
+  }
+  final streamMeta = message.streamMeta;
+  if (streamMeta == null || !streamMeta.containsKey('isFinal')) {
+    return true;
+  }
+  return streamMeta['isFinal'] == true;
 }
 
 List<ChatMessageModel> _resolveVisibleMessages(

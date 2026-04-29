@@ -492,7 +492,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('运行过程'), findsOneWidget);
+    expect(find.text('已思考'), findsOneWidget);
     expect(find.text('最终回答'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('agent-run-avatar-task-1')),
