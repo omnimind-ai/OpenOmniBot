@@ -225,6 +225,10 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     ChatPageMode.normal: <String>{},
     ChatPageMode.openclaw: <String>{},
   };
+  final Map<ChatPageMode, List<String>> _expandedAgentRunTaskOrderByMode = {
+    ChatPageMode.normal: <String>[],
+    ChatPageMode.openclaw: <String>[],
+  };
   final Map<ChatPageMode, double> _inputAreaHeightByMode = {
     ChatPageMode.normal: 0,
     ChatPageMode.openclaw: 0,
@@ -593,6 +597,14 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       _toolActivityExpandedByMode[_activeMode] ?? false;
   Set<String> _expandedAgentRunTaskIdsForMode(ChatPageMode mode) =>
       _expandedAgentRunTaskIdsByMode[mode] ?? const <String>{};
+  String? _latestExpandedAgentRunTaskIdForMode(ChatPageMode mode) {
+    final orderedTaskIds = _expandedAgentRunTaskOrderByMode[mode];
+    if (orderedTaskIds == null || orderedTaskIds.isEmpty) {
+      return null;
+    }
+    return orderedTaskIds.last;
+  }
+
   double get _inputAreaHeight => _inputAreaHeightByMode[_activeMode] ?? 0;
   bool get _isAiResponding =>
       _activeRuntime?.isAiResponding ??
@@ -988,14 +1000,26 @@ abstract class _ChatPageStateBase extends State<ChatPage>
         .where((item) => item.isNotEmpty)
         .toSet();
     final currentTaskIds = _expandedAgentRunTaskIdsForMode(mode);
+    final currentOrder =
+        _expandedAgentRunTaskOrderByMode[mode] ?? const <String>[];
     final hasChanged =
         currentTaskIds.length != normalizedTaskIds.length ||
         !currentTaskIds.containsAll(normalizedTaskIds);
     if (!hasChanged || !mounted) {
       return;
     }
+    final nextOrderedTaskIds = currentOrder
+        .where(normalizedTaskIds.contains)
+        .toList(growable: true);
+    for (final taskId in normalizedTaskIds) {
+      if (!currentTaskIds.contains(taskId)) {
+        nextOrderedTaskIds.remove(taskId);
+        nextOrderedTaskIds.add(taskId);
+      }
+    }
     setState(() {
       _expandedAgentRunTaskIdsByMode[mode] = normalizedTaskIds;
+      _expandedAgentRunTaskOrderByMode[mode] = nextOrderedTaskIds;
     });
   }
 

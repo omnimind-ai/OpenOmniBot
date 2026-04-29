@@ -88,11 +88,14 @@ List<ChatMessageModel> filterAgentToolMessagesByTaskIds(
 AgentToolActivitySnapshot resolveAgentToolActivitySnapshot(
   List<ChatMessageModel> messages, {
   Set<String> activeTaskIds = const <String>{},
+  String? preferredCompletedTaskId,
 }) {
   final normalizedActiveTaskIds = activeTaskIds
       .map((item) => item.trim())
       .where((item) => item.isNotEmpty)
       .toSet();
+  final normalizedPreferredCompletedTaskId =
+      preferredCompletedTaskId?.trim() ?? '';
   final activeMessages = filterAgentToolMessagesByTaskIds(
     messages,
     normalizedActiveTaskIds,
@@ -117,6 +120,16 @@ AgentToolActivitySnapshot resolveAgentToolActivitySnapshot(
           : null,
     );
   }
+  if (normalizedPreferredCompletedTaskId.isNotEmpty) {
+    return AgentToolActivitySnapshot(
+      messages: resolveAgentToolMessagesForTask(
+        messages,
+        normalizedPreferredCompletedTaskId,
+      ),
+      isActiveRun: false,
+      taskId: normalizedPreferredCompletedTaskId,
+    );
+  }
   final latestCompletedRun = _resolveLatestCompletedAgentToolRun(messages);
   return AgentToolActivitySnapshot(
     messages: latestCompletedRun?.messages ?? const <ChatMessageModel>[],
@@ -130,6 +143,29 @@ List<ChatMessageModel> resolveLatestCompletedAgentToolMessages(
 ) {
   return _resolveLatestCompletedAgentToolRun(messages)?.messages ??
       const <ChatMessageModel>[];
+}
+
+List<ChatMessageModel> resolveAgentToolMessagesForTask(
+  List<ChatMessageModel> messages,
+  String taskId,
+) {
+  final normalizedTaskId = taskId.trim();
+  if (normalizedTaskId.isEmpty || messages.isEmpty) {
+    return const <ChatMessageModel>[];
+  }
+  final timelineEntries = buildAgentRunTimelineEntries(messages);
+  for (final entry in timelineEntries) {
+    final group = entry.group;
+    if (group == null ||
+        group.taskId != normalizedTaskId ||
+        group.toolCount == 0) {
+      continue;
+    }
+    return group.processMessagesNewestFirst
+        .where(_isAgentToolSummaryMessage)
+        .toList(growable: false);
+  }
+  return const <ChatMessageModel>[];
 }
 
 String? resolveAgentToolTaskId(ChatMessageModel message) {

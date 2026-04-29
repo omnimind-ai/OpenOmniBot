@@ -642,6 +642,7 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     final toolActivitySnapshot = resolveAgentToolActivitySnapshot(
       List<ChatMessageModel>.from(resolvedMessages),
       activeTaskIds: activeAgentTaskIds,
+      preferredCompletedTaskId: _latestExpandedAgentRunTaskIdForMode(mode),
     );
     final showToolActivityStrip = _shouldShowToolActivityStripForMode(
       mode: mode,
@@ -783,6 +784,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     final toolActivitySnapshot = resolveAgentToolActivitySnapshot(
       List<ChatMessageModel>.from(_messages),
       activeTaskIds: _activeRuntime?.activeAgentTaskIds ?? const <String>{},
+      preferredCompletedTaskId: _latestExpandedAgentRunTaskIdForMode(
+        _activeMode,
+      ),
     );
     final toolActivityMessages = toolActivitySnapshot.messages;
     final toolActivityCards = extractAgentToolCards(toolActivityMessages);

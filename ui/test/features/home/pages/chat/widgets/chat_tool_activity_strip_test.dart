@@ -211,6 +211,85 @@ void main() {
     },
   );
 
+  test(
+    'preferred expanded run shows its own tool history instead of latest run',
+    () {
+      final messages = [
+        ChatMessageModel.userMessage('更新的用户问题', id: 'user-latest'),
+        ChatMessageModel(
+          id: 'task-latest-text',
+          type: 1,
+          user: 2,
+          content: const {'text': '最新回答', 'id': 'task-latest-text'},
+          streamMeta: const {
+            'parentTaskId': 'task-latest',
+            'kind': 'completed',
+            'isFinal': true,
+            'seq': 8,
+          },
+        ),
+        ChatMessageModel.cardMessage(
+          {
+            'type': 'agent_tool_summary',
+            'taskId': 'task-latest',
+            'status': 'success',
+            'toolTitle': '最新工具',
+          },
+          id: 'task-latest-tool',
+          streamMeta: const {
+            'parentTaskId': 'task-latest',
+            'kind': 'tool_completed',
+            'seq': 7,
+          },
+        ),
+        ChatMessageModel(
+          id: 'task-older-text',
+          type: 1,
+          user: 2,
+          content: const {'text': '更早回答', 'id': 'task-older-text'},
+          streamMeta: const {
+            'parentTaskId': 'task-older',
+            'kind': 'completed',
+            'isFinal': true,
+            'seq': 4,
+          },
+        ),
+        ChatMessageModel.cardMessage(
+          {
+            'type': 'agent_tool_summary',
+            'taskId': 'task-older',
+            'status': 'success',
+            'toolTitle': '更早工具',
+          },
+          id: 'task-older-tool',
+          streamMeta: const {
+            'parentTaskId': 'task-older',
+            'kind': 'tool_completed',
+            'seq': 3,
+          },
+        ),
+      ];
+
+      final snapshot = resolveAgentToolActivitySnapshot(
+        messages,
+        preferredCompletedTaskId: 'task-older',
+      );
+
+      expect(snapshot.isActiveRun, isFalse);
+      expect(snapshot.taskId, 'task-older');
+      expect(snapshot.messages.map((message) => message.id), [
+        'task-older-tool',
+      ]);
+      expect(
+        shouldShowAgentToolActivitySnapshot(
+          snapshot,
+          expandedTaskIds: const {'task-older'},
+        ),
+        isTrue,
+      );
+    },
+  );
+
   test('newer user turn clears pinned tool history from prior agent run', () {
     final messages = [
       ChatMessageModel.userMessage('新的用户问题', id: 'user-latest'),
