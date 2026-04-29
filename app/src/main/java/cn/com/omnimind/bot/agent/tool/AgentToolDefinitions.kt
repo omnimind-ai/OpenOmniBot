@@ -21,13 +21,6 @@ object AgentToolDefinitions {
     
     private fun currentLocale(): PromptLocale = AppLocaleManager.currentPromptLocale()
 
-    private fun toolTitleRule(locale: PromptLocale): String = when (locale) {
-        PromptLocale.ZH_CN ->
-            "调用时必须提供 tool_title，作为展示给用户的简洁标题，建议 4-12 个字并使用与用户相同的语言。"
-        PromptLocale.EN_US ->
-            "Every tool call must include `tool_title`, a short user-visible title for the chat UI. Keep it concise, roughly 4-12 words, and use the same language as the user."
-    }
-
     private fun toolTitlePropertySchema(locale: PromptLocale): JsonObject = buildJsonObject {
         put("type", "string")
         put(
@@ -39,20 +32,6 @@ object AgentToolDefinitions {
                     "A concise title describing what this tool call is doing. It is shown to the user, should stay short, and should use the same language as the user."
             }
         )
-    }
-
-    private fun ensureToolTitleDescription(
-        description: String,
-        locale: PromptLocale
-    ): String {
-        val trimmed = description.trim()
-        if (trimmed.contains(TOOL_TITLE_FIELD)) {
-            return trimmed
-        }
-        if (trimmed.isEmpty()) {
-            return toolTitleRule(locale)
-        }
-        return "$trimmed ${toolTitleRule(locale)}"
     }
 
     fun decorateParameterSchema(
@@ -130,13 +109,7 @@ object AgentToolDefinitions {
                 buildJsonObject {
                     function.forEach { (key, value) ->
                         when (key) {
-                            "description" -> put(
-                                "description",
-                                ensureToolTitleDescription(
-                                    value.jsonPrimitive.contentOrNull.orEmpty(),
-                                    locale
-                                )
-                            )
+                            "description" -> put("description", value)
 
                             "parameters" -> put(
                                 "parameters",
@@ -146,9 +119,8 @@ object AgentToolDefinitions {
                             else -> put(key, value)
                         }
                     }
-                    if (function["description"] == null) {
-                        put("description", toolTitleRule(locale))
-                    }
+                    // no fallback description needed; tool_title is already
+                    // a required parameter with its own schema description.
                     if (function["parameters"] == null) {
                         put("parameters", decorateParameterSchema(parameters, locale))
                     }
