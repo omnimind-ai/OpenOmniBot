@@ -98,7 +98,7 @@ class _OnboardingChoicePageState extends ConsumerState<OnboardingChoicePage> {
               const SizedBox(height: 8),
               // Subtitle
               Text(
-                context.trLegacy('选择一种方式开始使用智能助手'),
+                context.trLegacy('选择一种方式开始使用小万'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 15,
@@ -125,7 +125,7 @@ class _OnboardingChoicePageState extends ConsumerState<OnboardingChoicePage> {
               OnboardingChoiceCard(
                 svgIcon: _kDeviceSvg,
                 title: context.trLegacy('本地模型'),
-                subtitle: context.trLegacy('在设备上运行 AI，离线可用，隐私安全'),
+                subtitle: context.trLegacy('在设备上运行本地AI，离线可用，隐私安全'),
                 completed: state.localModelReady,
                 onTap: () => GoRouterManager.push('/welcome/local_intro'),
               ),

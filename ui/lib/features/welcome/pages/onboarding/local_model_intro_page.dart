@@ -84,7 +84,7 @@ class LocalModelIntroPage extends StatelessWidget {
                     const SizedBox(height: 20),
                     Center(
                       child: Text(
-                        context.trLegacy('在设备上运行 AI'),
+                        context.trLegacy('在设备上运行本地 AI'),
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.w700,

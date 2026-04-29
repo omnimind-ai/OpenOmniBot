@@ -342,13 +342,13 @@ class LegacyTextLocalizer {
     '等待龙虾烹饪': 'Waiting for OpenClaw processing',
     // Onboarding
     '配置你的 AI 助手': 'Configure Your AI Assistant',
-    '选择一种方式开始使用智能助手': 'Choose a way to start using the assistant',
+    '选择一种方式开始使用小万': 'Choose a way to start using the assistant',
     '云 AI 服务': 'Cloud AI Service',
     '连接 OpenAI、Anthropic 或兼容的 API 服务':
         'Connect to OpenAI, Anthropic, or compatible APIs',
     '本地模型': 'Local Model',
-    '在设备上运行 AI，离线可用，隐私安全':
-        'Run AI on your device, offline and private',
+    '在设备上运行本地 AI，离线可用，隐私安全':
+        'Run local AI on your device, offline and private',
     '继续': 'Continue',
     '跳过，稍后在设置中配置': 'Skip, configure later in Settings',
     '云 AI 服务配置': 'Cloud AI Setup',
@@ -364,7 +364,7 @@ class LegacyTextLocalizer {
     '连接失败': 'Connection failed',
     '保存': 'Save',
     '保存失败': 'Save failed',
-    '在设备上运行 AI': 'Run AI on Your Device',
+    '在设备上运行本地 AI': 'Run Local AI on Your Device',
     '优势': 'Advantages',
     '隐私安全': 'Privacy',
     '数据完全留在设备上，不会发送到任何服务器':
