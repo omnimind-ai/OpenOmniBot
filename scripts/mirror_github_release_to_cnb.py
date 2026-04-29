@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -11,6 +9,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any, Dict, List, NoReturn, Optional, Set, Tuple
 from urllib.parse import unquote, urlparse
 
 
@@ -64,7 +63,7 @@ def print_step(message: str) -> None:
     print(message, flush=True)
 
 
-def fail(message: str, *, stdout: str = "", stderr: str = "") -> "NoReturn":
+def fail(message: str, *, stdout: str = "", stderr: str = "") -> NoReturn:
     print(message, file=sys.stderr)
     if stdout.strip():
         print("stdout:", file=sys.stderr)
@@ -81,11 +80,11 @@ def require_tools() -> None:
         fail(f"Missing required tools in PATH: {', '.join(missing)}")
 
 
-def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
+def run_command(command: List[str]) -> subprocess.CompletedProcess:
     return subprocess.run(command, capture_output=True, text=True, check=False)
 
 
-def run_cnb_json(arguments: list[str], expected_statuses: set[int]) -> dict:
+def run_cnb_json(arguments: List[str], expected_statuses: Set[int]) -> Dict[str, Any]:
     command = ["cnb", *arguments, "--verbose"]
     result = run_command(command)
     if result.returncode != 0:
@@ -143,7 +142,7 @@ def wait_for_tag(args: argparse.Namespace) -> None:
     )
 
 
-def get_existing_release_id(repo: str, tag: str) -> str | None:
+def get_existing_release_id(repo: str, tag: str) -> Optional[str]:
     payload = run_cnb_json(
         ["releases", "get-release-by-tag", "--repo", repo, "--tag", tag],
         {200, 404},
@@ -194,7 +193,7 @@ def create_release(args: argparse.Namespace) -> str:
     return str(release_id)
 
 
-def parse_verify_url(verify_url: str) -> tuple[str, str]:
+def parse_verify_url(verify_url: str) -> Tuple[str, str]:
     parsed = urlparse(verify_url)
     segments = [segment for segment in parsed.path.split("/") if segment]
     if len(segments) < 2:
