@@ -248,6 +248,15 @@ jobs:
             exit 1
           fi
 
+          if ! command -v python3.11 >/dev/null 2>&1; then
+            echo "python3.11 is required for scripts/mirror_github_release_to_cnb.py. Install Python 3.11 on the self-hosted runner." >&2
+            exit 1
+          fi
+
+          PYTHON_BIN=python3.11
+          echo "Using Python interpreter: ${PYTHON_BIN}"
+          "${PYTHON_BIN}" --version
+
           ARGS=(
             --repo "${CNB_REPO_SLUG}"
             --tag "${GITHUB_REF_NAME}"
@@ -266,4 +275,4 @@ jobs:
             ARGS+=(--prerelease)
           fi
 
-          python3 scripts/mirror_github_release_to_cnb.py "${ARGS[@]}"
+          "${PYTHON_BIN}" scripts/mirror_github_release_to_cnb.py "${ARGS[@]}"
