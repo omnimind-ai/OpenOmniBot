@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/command_overlay/services/tool_card_detail_gesture_gate.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
@@ -71,7 +72,11 @@ class DeepThinkingCard extends StatefulWidget {
   State<DeepThinkingCard> createState() => _DeepThinkingCardState();
 }
 
-class _DeepThinkingCardState extends State<DeepThinkingCard> {
+class _DeepThinkingCardState extends State<DeepThinkingCard>
+    with SingleTickerProviderStateMixin {
+  static const Duration _collapseDuration = Duration(milliseconds: 170);
+  static const Cubic _collapseCurve = Cubic(0.22, 1.0, 0.36, 1.0);
+  static const Cubic _expandCurve = Cubic(0.2, 0.8, 0.2, 1.0);
   Timer? _timer;
   int _elapsedSeconds = 0;
   final ScrollController _scrollController = ScrollController();
@@ -82,6 +87,10 @@ class _DeepThinkingCardState extends State<DeepThinkingCard> {
   bool _isCollapsed = false;
   bool _autoScrollToLatest = true;
   bool _hasAutoCollapsedForCurrentCompletion = false;
+  bool _followParentDuringCollapseAnimation = false;
+  late final AnimationController _collapseController;
+  late Animation<double> _collapseSizeFactor;
+  late Animation<double> _collapseOpacity;
   static const double _bottomTolerance = 1.0;
 
   @override
@@ -89,6 +98,17 @@ class _DeepThinkingCardState extends State<DeepThinkingCard> {
     super.initState();
     _hasAutoCollapsedForCurrentCompletion = _shouldAutoCollapse(widget);
     _isCollapsed = _hasAutoCollapsedForCurrentCompletion;
+    _collapseController = AnimationController(
+      vsync: this,
+      duration: _collapseDuration,
+      reverseDuration: _collapseDuration,
+      value: _isCollapsed ? 0.0 : 1.0,
+    );
+    _rebuildCollapseAnimations();
+    _collapseController.addListener(_handleCollapseAnimationTick);
+    _collapseController.addStatusListener(
+      _handleCollapseAnimationStatusChanged,
+    );
     _updateElapsedTime(notify: false);
     // 如果正在进行中（未完成且未取消），启动计时器
     if (widget.stage != 4 && widget.stage != 5) {
@@ -108,7 +128,7 @@ class _DeepThinkingCardState extends State<DeepThinkingCard> {
     _updateElapsedTime();
 
     final becameCompleted =
-        !_isCompletedStage(oldWidget.stage) && widget.stage == 4;
+        !_isCompletedStage(oldWidget.stage) && _isCompletedStage(widget.stage);
     final becameThinking =
         _isCompletedStage(oldWidget.stage) && !_isCompletedStage(widget.stage);
     final completionSettled =
@@ -117,7 +137,7 @@ class _DeepThinkingCardState extends State<DeepThinkingCard> {
             oldWidget.isLoading != widget.isLoading ||
             oldWidget.isCollapsible != widget.isCollapsible);
 
-    // 如果从非完成状态变为完成状态（stage 变为 4）
+    // 如果从非完成状态变为完成/取消状态，停止计时
     if (becameCompleted) {
       _stopTimer();
     }
@@ -130,7 +150,11 @@ class _DeepThinkingCardState extends State<DeepThinkingCard> {
     }
 
     if (completionSettled && !_hasAutoCollapsedForCurrentCompletion) {
-      _setCollapsed(true, markCompletionHandled: true);
+      _setCollapsed(
+        true,
+        markCompletionHandled: true,
+        followParentDuringAnimation: true,
+      );
     } else if (becameThinking && _isCollapsed) {
       _setCollapsed(false);
     }
@@ -267,7 +291,11 @@ class _DeepThinkingCardState extends State<DeepThinkingCard> {
     );
   }
 
-  void _setCollapsed(bool collapsed, {bool markCompletionHandled = false}) {
+  void _setCollapsed(
+    bool collapsed, {
+    bool markCompletionHandled = false,
+    bool followParentDuringAnimation = false,
+  }) {
     if (_isCollapsed == collapsed) {
       if (markCompletionHandled) {
         _hasAutoCollapsedForCurrentCompletion = true;
@@ -282,6 +310,16 @@ class _DeepThinkingCardState extends State<DeepThinkingCard> {
       }
     });
 
+    _followParentDuringCollapseAnimation =
+        collapsed && followParentDuringAnimation;
+    _collapseController.stop();
+    _rebuildCollapseAnimations();
+    if (collapsed) {
+      _collapseController.reverse();
+    } else {
+      _collapseController.forward();
+    }
+
     if (!collapsed && _shouldResetScrollPositionOnExpand()) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !_scrollController.hasClients) {
@@ -293,17 +331,41 @@ class _DeepThinkingCardState extends State<DeepThinkingCard> {
           _scrollController.jumpTo(top);
         }
         _checkOverflow();
-        widget.onStreamingTextLayoutChanged?.call();
       });
+    }
+  }
+
+  void _rebuildCollapseAnimations() {
+    _collapseSizeFactor = CurvedAnimation(
+      parent: _collapseController,
+      curve: _isCollapsed ? _collapseCurve : _expandCurve,
+      reverseCurve: _collapseCurve,
+    );
+    _collapseOpacity = CurvedAnimation(
+      parent: _collapseController,
+      curve: _isCollapsed
+          ? const Interval(0.0, 0.72, curve: Curves.easeOut)
+          : const Interval(0.16, 1.0, curve: Curves.easeOut),
+      reverseCurve: const Interval(0.16, 1.0, curve: Curves.easeOut),
+    );
+  }
+
+  void _handleCollapseAnimationTick() {
+    if (!mounted || !_followParentDuringCollapseAnimation) {
       return;
     }
+    widget.onStreamingTextLayoutChanged?.call();
+  }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
+  void _handleCollapseAnimationStatusChanged(AnimationStatus status) {
+    if (status == AnimationStatus.completed ||
+        status == AnimationStatus.dismissed) {
+      final shouldNotifyParent = _followParentDuringCollapseAnimation;
+      _followParentDuringCollapseAnimation = false;
+      if (mounted && shouldNotifyParent) {
+        widget.onStreamingTextLayoutChanged?.call();
       }
-      widget.onStreamingTextLayoutChanged?.call();
-    });
+    }
   }
 
   bool _shouldAutoCollapse(DeepThinkingCard widget) {
@@ -320,6 +382,10 @@ class _DeepThinkingCardState extends State<DeepThinkingCard> {
   void dispose() {
     _timer?.cancel();
     _releaseHeldPointers();
+    _collapseController
+      ..removeListener(_handleCollapseAnimationTick)
+      ..removeStatusListener(_handleCollapseAnimationStatusChanged)
+      ..dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -437,12 +503,19 @@ class _DeepThinkingCardState extends State<DeepThinkingCard> {
                       ),
                     ),
                     const SizedBox(width: 2),
-                    Icon(
-                      _isCollapsed
-                          ? Icons.keyboard_arrow_down_rounded
-                          : Icons.keyboard_arrow_up_rounded,
-                      size: 16,
-                      color: secondaryTextColor,
+                    AnimatedBuilder(
+                      animation: _collapseController,
+                      builder: (context, child) {
+                        return Transform.rotate(
+                          angle: (1 - _collapseController.value) * math.pi,
+                          child: child,
+                        );
+                      },
+                      child: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 16,
+                        color: secondaryTextColor,
+                      ),
                     ),
                   ],
                 ),
@@ -466,8 +539,7 @@ class _DeepThinkingCardState extends State<DeepThinkingCard> {
               letterSpacing: 0.33,
             ),
           );
-    final contentChild =
-        (hasContent && widget.stage != 5 && (!canCollapse || !_isCollapsed))
+    final contentChild = (hasContent && widget.stage != 5)
         ? Container(
             width: double.infinity,
             constraints: BoxConstraints(maxHeight: widget.maxHeight),
@@ -553,11 +625,26 @@ class _DeepThinkingCardState extends State<DeepThinkingCard> {
           )
         : const SizedBox.shrink();
     final content = canCollapse
-        ? AnimatedSize(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeInOut,
-            alignment: Alignment.topLeft,
-            child: contentChild,
+        ? AnimatedBuilder(
+            animation: _collapseController,
+            child: RepaintBoundary(child: contentChild),
+            builder: (context, child) {
+              final sizeFactor = _collapseSizeFactor.value.clamp(0.0, 1.0);
+              final opacity = _collapseOpacity.value.clamp(0.0, 1.0);
+              if (sizeFactor <= 0.001 && !_collapseController.isAnimating) {
+                return const SizedBox.shrink();
+              }
+              return ClipRect(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  heightFactor: sizeFactor,
+                  child: IgnorePointer(
+                    ignoring: sizeFactor <= 0.001,
+                    child: Opacity(opacity: opacity, child: child),
+                  ),
+                ),
+              );
+            },
           )
         : contentChild;
     final footer = widget.stage == 4 && widget.isExecutable

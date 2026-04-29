@@ -267,8 +267,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.byType(TextField), findsOneWidget);
-    expect(find.text('Cancel'), findsOneWidget);
-    expect(find.text('Save & send'), findsOneWidget);
+    expect(find.text('取消'), findsOneWidget);
+    expect(find.text('保存并发送'), findsOneWidget);
     expect(find.byIcon(Icons.edit_outlined), findsNothing);
   });
 
@@ -402,6 +402,53 @@ void main() {
       expect(
         controller.offset,
         closeTo(controller.position.maxScrollExtent, 1),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'expanding an older thinking card does not snap the list back to latest',
+    (tester) async {
+      final controller = ScrollController();
+      final messages = _buildToggleRegressionThinkingMessages();
+
+      await tester.pumpWidget(
+        _buildLocalizedApp(
+          child: SizedBox(
+            width: 400,
+            height: 520,
+            child: ChatMessageList(
+              messages: messages,
+              scrollController: controller,
+              onBeforeTaskExecute: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        controller.offset,
+        closeTo(controller.position.maxScrollExtent, 1),
+      );
+
+      final inkWells = find.byType(InkWell);
+      expect(inkWells, findsNWidgets(2));
+
+      final offsetBefore = controller.offset;
+      final maxBefore = controller.position.maxScrollExtent;
+
+      await tester.tap(inkWells.first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+      await tester.pumpAndSettle();
+
+      expect(controller.position.maxScrollExtent, greaterThan(maxBefore + 40));
+      expect(controller.offset, closeTo(offsetBefore, 8));
+      expect(
+        controller.offset,
+        lessThan(controller.position.maxScrollExtent - 40),
       );
       expect(tester.takeException(), isNull);
     },
@@ -570,6 +617,42 @@ List<ChatMessageModel> _buildStreamingThinkingMessages({
           (line) => '较早消息 ${index + 1} - 第 ${line + 1} 行',
         ).join('\n'),
         id: 'streaming-older-$index',
+      );
+    }),
+  ];
+}
+
+List<ChatMessageModel> _buildToggleRegressionThinkingMessages() {
+  return <ChatMessageModel>[
+    ChatMessageModel.cardMessage(<String, dynamic>{
+      'type': 'deep_thinking',
+      'thinkingContent': List.generate(
+        3,
+        (index) => '最新思考卡第 ${index + 1} 行，保持可见。',
+      ).join('\n'),
+      'stage': 4,
+      'isLoading': false,
+      'isCollapsible': true,
+      'taskID': 'latest-thinking-card',
+    }, id: 'latest-thinking-card'),
+    ChatMessageModel.cardMessage(<String, dynamic>{
+      'type': 'deep_thinking',
+      'thinkingContent': List.generate(
+        60,
+        (index) => '较早思考卡第 ${index + 1} 行，展开后高度明显增加。',
+      ).join('\n'),
+      'stage': 4,
+      'isLoading': false,
+      'isCollapsible': true,
+      'taskID': 'older-thinking-card',
+    }, id: 'older-thinking-card'),
+    ...List.generate(6, (index) {
+      return ChatMessageModel.assistantMessage(
+        List.generate(
+          3,
+          (line) => '普通消息 ${index + 1} - 第 ${line + 1} 行',
+        ).join('\n'),
+        id: 'toggle-regression-$index',
       );
     }),
   ];

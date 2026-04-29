@@ -14,6 +14,7 @@ import 'package:ui/features/home/pages/command_overlay/services/chat_service.dar
 import 'package:ui/features/home/pages/command_overlay/constants/messages.dart';
 import 'package:ui/features/home/pages/command_overlay/utils/deep_thinking_parser.dart';
 import 'package:ui/features/home/pages/chat/utils/stream_text_merge.dart';
+import 'package:ui/features/home/pages/chat/utils/agent_thinking_card_locator.dart';
 import 'package:ui/features/home/pages/chat/utils/deep_thinking_persistence.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/services/voice_playback_coordinator.dart';
@@ -1566,17 +1567,6 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     _resetDispatchState();
   }
 
-  /// 移除thinking卡片
-  void _removeThinkingCard(String taskID) {
-    setState(() {
-      _messages.removeWhere(
-        (msg) =>
-            msg.id == '$taskID-thinking' ||
-            msg.id.startsWith('$taskID-thinking-'),
-      );
-    });
-  }
-
   /// 重置dispatch状态
   void _resetDispatchState() {
     _currentDispatchTaskId = null;
@@ -1842,12 +1832,16 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     try {
       // 检查是否有任何正在进行的活动
       if (_currentDispatchTaskId != null ||
+          _currentAiMessages.isNotEmpty ||
           _isCheckingExecutableTask ||
           _isExecutingTask) {
         interruptActiveToolCard();
-        AssistsMessageService.cancelRunningTask(taskId: _currentDispatchTaskId);
-        if (_currentDispatchTaskId != null) {
-          _removeThinkingCard(_currentDispatchTaskId!);
+        final taskId =
+            _currentDispatchTaskId ??
+            (_currentAiMessages.isEmpty ? null : _currentAiMessages.keys.first);
+        AssistsMessageService.cancelRunningTask(taskId: taskId);
+        if (taskId != null) {
+          _updateThinkingCardToCancelled(taskId);
         }
         _resetDispatchState();
       } else {
@@ -1874,9 +1868,6 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   void _onCancelTaskFromCard(String taskId) {
     try {
       interruptActiveToolCard();
-      if (_isDeepThinking) {
-        AssistsMessageService.cancelRunningTask(taskId: taskId);
-      }
       AssistsMessageService.cancelRunningTask(taskId: taskId);
       _updateThinkingCardToCancelled(taskId);
       _resetDispatchState();
@@ -1892,22 +1883,18 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   }
 
   void _updateThinkingCardToCancelled(String taskID) {
-    final thinkingCards = _messages
-        .where(
-          (msg) =>
-              msg.id == '$taskID-thinking' ||
-              msg.id.startsWith('$taskID-thinking-'),
-        )
-        .toList();
-    if (thinkingCards.isEmpty) return;
-
-    final thinkingCard = thinkingCards.first;
+    final thinkingCard = resolveAgentThinkingCardForTask(
+      _messages,
+      taskId: taskID,
+    );
+    if (thinkingCard == null) return;
     final thinkingCardId = thinkingCard.id;
     final index = _messages.indexWhere((msg) => msg.id == thinkingCardId);
     if (index == -1) return;
 
     final cardData = Map<String, dynamic>.from(thinkingCard.cardData ?? {});
     cardData['stage'] = 5;
+    cardData['isLoading'] = false;
     if (cardData['endTime'] == null) {
       cardData['endTime'] = DateTime.now().millisecondsSinceEpoch;
     }

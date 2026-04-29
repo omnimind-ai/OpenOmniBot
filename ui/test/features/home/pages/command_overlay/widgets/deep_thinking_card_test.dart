@@ -3,8 +3,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/command_overlay/services/tool_card_detail_gesture_gate.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/card_widget_factory.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/deep_thinking_card.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/widgets/agent_avatar.dart';
 
 void main() {
+  setUp(() {
+    LegacyTextLocalizer.setResolvedLocale(const Locale('zh'));
+  });
+
+  tearDown(() {
+    LegacyTextLocalizer.clearResolvedLocale();
+  });
+
   testWidgets(
     'historical completed thinking card stays visible after restore',
     (tester) async {
@@ -42,9 +52,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final animatedSize = tester.widget<AnimatedSize>(find.byType(AnimatedSize));
+    final alignedClip = find.descendant(
+      of: find.byType(ClipRect),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is Align && widget.alignment == Alignment.topCenter,
+      ),
+    );
 
-    expect(animatedSize.alignment, Alignment.topLeft);
+    expect(alignedClip, findsWidgets);
   });
 
   testWidgets('card factory restores persisted deep thinking payloads', (
@@ -122,6 +137,101 @@ void main() {
 
     expect(find.text('思考完成'), findsOneWidget);
     expect(find.textContaining('流式思考内容'), findsNothing);
+  });
+
+  testWidgets(
+    'automatic collapse keeps reporting layout updates while folding',
+    (tester) async {
+      var layoutUpdateCount = 0;
+      final longThinkingText = List.generate(
+        50,
+        (index) => '第 ${index + 1} 行思考内容，用于验证自动折叠期间的父列表跟随。',
+      ).join('\n');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DeepThinkingCard(
+              thinkingText: longThinkingText,
+              stage: 3,
+              isLoading: true,
+              isCollapsible: false,
+              maxHeight: 120,
+              onStreamingTextLayoutChanged: () {
+                layoutUpdateCount += 1;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DeepThinkingCard(
+              thinkingText: longThinkingText,
+              stage: 4,
+              isLoading: false,
+              isCollapsible: true,
+              maxHeight: 120,
+              onStreamingTextLayoutChanged: () {
+                layoutUpdateCount += 1;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final countAfterKickoff = layoutUpdateCount;
+      expect(countAfterKickoff, greaterThan(0));
+
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(layoutUpdateCount, greaterThan(countAfterKickoff));
+
+      await tester.pumpAndSettle();
+      expect(layoutUpdateCount, greaterThan(2));
+    },
+  );
+
+  testWidgets('manual thinking toggles stay quiet for parent list syncing', (
+    tester,
+  ) async {
+    var layoutUpdateCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DeepThinkingCard(
+            thinkingText: '第一行\n第二行\n第三行',
+            stage: 4,
+            isLoading: false,
+            isCollapsible: true,
+            onStreamingTextLayoutChanged: () {
+              layoutUpdateCount += 1;
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(layoutUpdateCount, 0);
+
+    await tester.tap(find.byType(InkWell));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pumpAndSettle();
+
+    expect(layoutUpdateCount, 0);
+
+    await tester.tap(find.byType(InkWell));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pumpAndSettle();
+
+    expect(layoutUpdateCount, 0);
   });
 
   testWidgets('nested thinking scroll hands off leftover drag at bottom edge', (
@@ -382,6 +492,47 @@ void main() {
       innerState.position.pixels,
       closeTo(innerState.position.minScrollExtent, 1),
     );
+  });
+
+  testWidgets('cancelled thinking keeps avatar and shows cancelled footer', (
+    tester,
+  ) async {
+    const thinkingText = '这是一段会被手动终止的思考内容';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DeepThinkingCard(
+            thinkingText: thinkingText,
+            stage: 1,
+            isLoading: true,
+            startTime: 1711711711000,
+            showStatusAvatar: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: DeepThinkingCard(
+            thinkingText: thinkingText,
+            stage: 5,
+            isLoading: false,
+            startTime: 1711711711000,
+            endTime: 1711711719000,
+            showStatusAvatar: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AgentAvatarButton), findsOneWidget);
+    expect(find.text('任务已取消'), findsOneWidget);
+    expect(find.text('思考完成'), findsOneWidget);
   });
 }
 

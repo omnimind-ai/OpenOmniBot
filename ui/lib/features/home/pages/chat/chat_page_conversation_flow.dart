@@ -844,6 +844,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
   void _onCancelTask() {
     try {
       if (_currentDispatchTaskId != null ||
+          _activeRuntime?.lastAgentTaskId != null ||
           _isCheckingExecutableTask ||
           _isExecutingTask) {
         _cancelDispatchTask();
@@ -874,12 +875,12 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
 
   @override
   void _cancelDispatchTask() {
-    final taskId = _currentDispatchTaskId;
+    final taskId = _currentDispatchTaskId ?? _activeRuntime?.lastAgentTaskId;
     interruptActiveToolCard();
     AssistsMessageService.cancelRunningTask(taskId: taskId);
     if (taskId != null) {
+      _updateThinkingCardToCancelled(taskId);
       _runtimeCoordinator.unregisterTask(taskId);
-      removeThinkingCard(taskId);
     }
     clearAgentStreamSessionState();
     resetDispatchState();
@@ -889,9 +890,6 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
   void _onCancelTaskFromCard(String taskId) {
     try {
       interruptActiveToolCard();
-      if (_isDeepThinking) {
-        AssistsMessageService.cancelRunningTask(taskId: taskId);
-      }
       AssistsMessageService.cancelRunningTask(taskId: taskId);
       _runtimeCoordinator.unregisterTask(taskId);
       _updateThinkingCardToCancelled(taskId);
@@ -913,16 +911,12 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
 
   @override
   void _updateThinkingCardToCancelled(String taskId) {
-    final thinkingCards = _messages
-        .where(
-          (msg) =>
-              msg.id == '$taskId-thinking' ||
-              msg.id.startsWith('$taskId-thinking-'),
-        )
-        .toList();
-    if (thinkingCards.isEmpty) return;
-
-    final thinkingCard = thinkingCards.first;
+    final thinkingCard = resolveAgentThinkingCardForTask(
+      _messages,
+      taskId: taskId,
+      preferredCardId: _activeRuntime?.activeThinkingCardId,
+    );
+    if (thinkingCard == null) return;
     final thinkingCardId = thinkingCard.id;
     final index = _messages.indexWhere((msg) => msg.id == thinkingCardId);
     if (index == -1) return;
