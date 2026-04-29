@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:ui/constants/storage_keys.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/welcome/state/onboarding_state.dart';
 import 'package:ui/l10n/l10n.dart';
+import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 import 'package:ui/widgets/gradient_button.dart';
@@ -176,9 +178,14 @@ class LocalModelIntroPage extends StatelessWidget {
                 width: screenWidth - 48,
                 height: 48,
                 text: context.trLegacy('浏览模型市场'),
-                onTap: () => GoRouterManager.push(
-                  '/home/local_models?tab=market&pinned=$kOnboardingRecommendedModelId',
-                ),
+                onTap: () async {
+                  // Complete onboarding so user won't return to guide
+                  await StorageService.setBool(
+                      StorageKeys.welcomeCompleted, true);
+                  GoRouterManager.clearAndNavigateTo(
+                    '/home/local_models?tab=market&pinned=$kOnboardingRecommendedModelId',
+                  );
+                },
               ),
             ),
           ],

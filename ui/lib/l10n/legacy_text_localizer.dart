@@ -400,6 +400,7 @@ class LegacyTextLocalizer {
     '开始体验': 'Get Started',
     'API Key（可选）': 'API Key (optional)',
     '浏览模型市场': 'Browse Model Market',
+    '推荐': 'Recommended',
   };
 
   static final List<(RegExp, _TextRewriter)>

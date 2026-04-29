@@ -1479,6 +1479,12 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     );
   }
 
+  bool _isPinnedModel(MnnLocalModel model) {
+    final pinId = widget.pinnedModelId;
+    if (pinId == null || pinId.isEmpty) return false;
+    return model.id.contains(pinId) || model.name.contains(pinId);
+  }
+
   Widget _buildMarketCard(MnnLocalModel model) {
     final download = model.download;
     final isCompleted = download?.isCompleted == true;
@@ -1558,6 +1564,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
             spacing: 8,
             runSpacing: 8,
             children: [
+              if (_isPinnedModel(model)) _buildAccentTag(context.trLegacy('推荐')),
               _buildTag(model.category.toUpperCase()),
               if (model.source.isNotEmpty) _buildTag(model.source),
               if (model.vendor.isNotEmpty) _buildTag(model.vendor),
@@ -1853,6 +1860,27 @@ class _LocalModelsPageState extends State<LocalModelsPage>
             icon: const Icon(Icons.refresh_rounded, size: 18),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAccentTag(String value) {
+    final accentColor = _palette.accentPrimary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: accentColor.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accentColor.withOpacity(0.3)),
+      ),
+      child: Text(
+        value,
+        style: TextStyle(
+          fontSize: 12,
+          color: accentColor,
+          fontWeight: FontWeight.w700,
+          fontFamily: AppTextStyles.fontFamily,
+        ),
       ),
     );
   }

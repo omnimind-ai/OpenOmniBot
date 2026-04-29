@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:ui/constants/storage_keys.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/welcome/state/onboarding_state.dart';
 import 'package:ui/features/welcome/widgets/onboarding_choice_card.dart';
 import 'package:ui/l10n/l10n.dart';
+import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/widgets/gradient_button.dart';
 
@@ -112,7 +114,7 @@ class _OnboardingChoicePageState extends ConsumerState<OnboardingChoicePage> {
                 title: context.trLegacy('云 AI 服务'),
                 subtitle: context.trLegacy('连接 OpenAI、Anthropic 或兼容的 API 服务'),
                 completed: state.cloudConfigured,
-                onTap: () => GoRouterManager.push('/welcome/cloud_config'),
+                onTap: () => GoRouterManager.push('/home/vlm_model_setting'),
               ),
               const SizedBox(height: 16),
               OnboardingChoiceCard(
@@ -123,19 +125,13 @@ class _OnboardingChoicePageState extends ConsumerState<OnboardingChoicePage> {
                 onTap: () => GoRouterManager.push('/welcome/local_intro'),
               ),
               const Spacer(flex: 2),
-              // Continue button
-              GradientButton(
-                width: screenWidth - 48,
-                height: 48,
-                text: context.trLegacy('继续'),
-                onTap: () =>
-                    GoRouterManager.push('/welcome/permissions'),
-              ),
-              const SizedBox(height: 12),
               // Skip text
               GestureDetector(
-                onTap: () =>
-                    GoRouterManager.push('/welcome/permissions'),
+                onTap: () async {
+                  await StorageService.setBool(
+                      StorageKeys.welcomeCompleted, true);
+                  GoRouterManager.clearAndNavigateTo('/home/chat');
+                },
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Text(

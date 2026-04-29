@@ -15,7 +15,7 @@ class _WeeklyTokenData {
   int localTokens = 0;
   int cloudTokens = 0;
   int cachedTokens = 0;
-  int get totalTokens => localTokens + cloudTokens + cachedTokens;
+  int get totalTokens => localTokens + cloudTokens;
   _WeeklyTokenData({required this.weekStart});
 }
 
@@ -183,18 +183,16 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
         final weekIndex = daysSinceStart ~/ 7;
         if (weekIndex >= totalWeeks) continue;
         final tokens = record.totalTokens;
-        final cached = record.cachedTokens.clamp(0, tokens);
-        final nonCached = tokens - cached;
 
-        weeklyData[weekIndex].cachedTokens += cached;
-        totalCached += cached;
+        weeklyData[weekIndex].cachedTokens += record.cachedTokens;
+        totalCached += record.cachedTokens;
 
         if (record.isLocal) {
-          weeklyData[weekIndex].localTokens += nonCached;
-          totalLocal += nonCached;
+          weeklyData[weekIndex].localTokens += tokens;
+          totalLocal += tokens;
         } else {
-          weeklyData[weekIndex].cloudTokens += nonCached;
-          totalCloud += nonCached;
+          weeklyData[weekIndex].cloudTokens += tokens;
+          totalCloud += tokens;
         }
       }
 
@@ -227,7 +225,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
   //  Helpers
   // -----------------------------------------------------------------------
 
-  int get _totalTokens => _totalLocal + _totalCloud + _totalCached;
+  int get _totalTokens => _totalLocal + _totalCloud;
 
   String _dateKey(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -811,10 +809,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
             final week = _weeklyData[index];
             final totalH = maxWeekTotal > 0 ? (week.totalTokens / maxWeekTotal) * barAreaHeight : 0.0;
             final localH = week.totalTokens > 0 ? totalH * (week.localTokens / week.totalTokens) : 0.0;
-            final cloudH = week.totalTokens > 0 ? totalH * (week.cloudTokens / week.totalTokens) : 0.0;
-            final cachedH = totalH - localH - cloudH;
-            final hasAboveLocal = cloudH > 0 || cachedH > 0;
-            final hasAboveCloud = cachedH > 0;
+            final cloudH = totalH - localH;
             return Padding(
               padding: EdgeInsets.only(right: index < _weeklyData.length - 1 ? barGap : 0),
               child: Tooltip(
@@ -832,9 +827,8 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      if (cachedH > 0) Container(width: barWidth, height: cachedH.clamp(0, barAreaHeight), decoration: BoxDecoration(color: _cachedColor(isDark), borderRadius: BorderRadius.only(topLeft: const Radius.circular(2), topRight: const Radius.circular(2)))),
-                      if (cloudH > 0) Container(width: barWidth, height: cloudH.clamp(0, barAreaHeight), decoration: BoxDecoration(color: _cloudColor(isDark), borderRadius: BorderRadius.only(topLeft: hasAboveCloud ? Radius.zero : const Radius.circular(2), topRight: hasAboveCloud ? Radius.zero : const Radius.circular(2)))),
-                      if (localH > 0) Container(width: barWidth, height: localH.clamp(0, barAreaHeight), decoration: BoxDecoration(color: _localColor(isDark), borderRadius: hasAboveLocal ? BorderRadius.zero : const BorderRadius.only(topLeft: Radius.circular(2), topRight: Radius.circular(2)))),
+                      if (cloudH > 0) Container(width: barWidth, height: cloudH.clamp(0, barAreaHeight), decoration: BoxDecoration(color: _cloudColor(isDark), borderRadius: BorderRadius.only(topLeft: const Radius.circular(2), topRight: const Radius.circular(2)))),
+                      if (localH > 0) Container(width: barWidth, height: localH.clamp(0, barAreaHeight), decoration: BoxDecoration(color: _localColor(isDark), borderRadius: cloudH > 0 ? BorderRadius.zero : const BorderRadius.only(topLeft: Radius.circular(2), topRight: Radius.circular(2)))),
                       if (week.totalTokens == 0) Container(width: barWidth, height: 2, decoration: BoxDecoration(color: palette.surfaceElevated, borderRadius: BorderRadius.circular(1))),
                     ],
                   ),
