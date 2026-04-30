@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.agent
 
+import cn.com.omnimind.bot.agent.AgentImageAttachmentSupport
 import android.content.Context
 import cn.com.omnimind.baselib.database.AgentConversationEntry
 import cn.com.omnimind.baselib.database.Conversation
@@ -481,12 +482,15 @@ class AgentConversationHistoryRepository(
         createdAt: Long
     ): Map<String, Any?> {
         val safeText = AgentTextSanitizer.sanitizeUtf16(text)
+        val historyAttachments = AgentImageAttachmentSupport
+            .prepareAttachments(attachments)
+            .historyAttachments
         val content = linkedMapOf<String, Any?>(
             "text" to safeText,
             "id" to messageId
         )
-        if (attachments.isNotEmpty()) {
-            content["attachments"] = attachments
+        if (historyAttachments.isNotEmpty()) {
+            content["attachments"] = historyAttachments
         }
         return linkedMapOf(
             "id" to messageId,

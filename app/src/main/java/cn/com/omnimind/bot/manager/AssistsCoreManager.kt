@@ -56,6 +56,7 @@ import cn.com.omnimind.bot.agent.AgentCallback
 import cn.com.omnimind.bot.agent.AgentAlarmToolService
 import cn.com.omnimind.bot.agent.AgentAiCapabilityConfigSync
 import cn.com.omnimind.bot.agent.AgentConversationContextCompactor
+import cn.com.omnimind.bot.agent.AgentImageAttachmentSupport
 import cn.com.omnimind.bot.agent.AgentStreamEvent
 import cn.com.omnimind.bot.agent.AgentTextSanitizer
 import cn.com.omnimind.bot.agent.AgentModelOverride
@@ -3708,6 +3709,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             call.argument<List<Map<String, Any?>>>("conversationHistory") ?: emptyList()
         val attachments = (call.argument<List<Map<String, Any?>>>("attachments") ?: emptyList())
             .map(::sanitizeInteropMap)
+        val modelAttachments = AgentImageAttachmentSupport
+            .prepareAttachments(attachments)
+            .modelAttachments
         val userMessageCreatedAt = call.argument<Number>("userMessageCreatedAt")?.toLong()
         val conversationId = call.argument<Number>("conversationId")?.toLong()?.takeIf { it > 0L }
         val requestedConversationMode =
@@ -4822,7 +4826,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     legacyConversationHistory,
                     runtimeContextRepository,
                     currentPackageName,
-                    attachments,
+                    modelAttachments,
                     conversationId,
                     resolvedConversationMode,
                     modelOverride,

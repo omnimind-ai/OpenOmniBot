@@ -609,18 +609,7 @@ internal object AgentConversationHistorySupport {
     }
 
     private fun resolveImageAttachmentUrl(attachment: Map<String, Any?>): String {
-        val dataUrl = attachment["dataUrl"]?.toString()?.trim().orEmpty()
-        if (dataUrl.startsWith("data:")) return dataUrl
-        val remoteUrl = attachment["url"]?.toString()?.trim().orEmpty()
-        return if (
-            remoteUrl.startsWith("https://") ||
-            remoteUrl.startsWith("http://") ||
-            remoteUrl.startsWith("data:")
-        ) {
-            remoteUrl
-        } else {
-            ""
-        }
+        return AgentImageAttachmentSupport.resolveImageAttachmentUrl(attachment)
     }
 
     private fun readMap(json: String): Map<String, Any?> {
