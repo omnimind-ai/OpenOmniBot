@@ -17,8 +17,20 @@ const String _kCloudSvg = '''
 
 const String _kDeviceSvg = '''
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <rect width="14" height="20" x="5" y="2" rx="2" ry="2"/>
-  <path d="M12 18h.01"/>
+  <path d="M12 20v2"/>
+  <path d="M12 2v2"/>
+  <path d="M17 20v2"/>
+  <path d="M17 2v2"/>
+  <path d="M2 12h2"/>
+  <path d="M2 17h2"/>
+  <path d="M2 7h2"/>
+  <path d="M20 12h2"/>
+  <path d="M20 17h2"/>
+  <path d="M20 7h2"/>
+  <path d="M7 20v2"/>
+  <path d="M7 2v2"/>
+  <rect x="4" y="4" width="16" height="16" rx="2"/>
+  <rect x="8" y="8" width="8" height="8" rx="1"/>
 </svg>
 ''';
 
@@ -135,11 +147,17 @@ class _OnboardingChoicePageState extends ConsumerState<OnboardingChoicePage>
                         children: [
                           ShaderMask(
                             shaderCallback: (bounds) =>
-                                const LinearGradient(
-                              colors: [
-                                Color(0xFF1930D9),
-                                Color(0xFF2DA5F0),
-                              ],
+                                LinearGradient(
+                              colors: context.isDarkTheme
+                                  ? [
+                                      palette.accentPrimary,
+                                      Color.lerp(palette.accentPrimary,
+                                          palette.textPrimary, 0.3)!,
+                                    ]
+                                  : const [
+                                      Color(0xFF1930D9),
+                                      Color(0xFF2DA5F0),
+                                    ],
                             ).createShader(bounds),
                             child: Text(
                               context.trLegacy('Hi，我是小万'),

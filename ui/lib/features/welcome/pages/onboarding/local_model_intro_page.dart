@@ -203,11 +203,17 @@ class _LocalModelIntroPageState extends State<LocalModelIntroPage>
                               children: [
                                 ShaderMask(
                                   shaderCallback: (bounds) =>
-                                      const LinearGradient(
-                                    colors: [
-                                      Color(0xFF1930D9),
-                                      Color(0xFF2DA5F0),
-                                    ],
+                                      LinearGradient(
+                                    colors: context.isDarkTheme
+                                        ? [
+                                            palette.accentPrimary,
+                                            Color.lerp(palette.accentPrimary,
+                                                palette.textPrimary, 0.3)!,
+                                          ]
+                                        : const [
+                                            Color(0xFF1930D9),
+                                            Color(0xFF2DA5F0),
+                                          ],
                                   ).createShader(bounds),
                                   child: Text(
                                     context.trLegacy('在设备上运行本地 AI'),
@@ -338,6 +344,14 @@ class _LocalModelIntroPageState extends State<LocalModelIntroPage>
                       width: screenWidth - 48,
                       height: 48,
                       text: context.trLegacy('浏览模型市场'),
+                      gradientColors: context.isDarkTheme
+                          ? [
+                              Color.lerp(palette.surfaceElevated,
+                                  palette.accentPrimary, 0.55)!,
+                              Color.lerp(palette.surfaceSecondary,
+                                  palette.accentPrimary, 0.70)!,
+                            ]
+                          : const [Color(0xFF1930D9), Color(0xFF2DA5F0)],
                       onTap: () async {
                         await StorageService.setBool(
                           StorageKeys.welcomeCompleted,
