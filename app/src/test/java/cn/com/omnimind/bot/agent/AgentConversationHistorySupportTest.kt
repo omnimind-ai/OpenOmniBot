@@ -4,15 +4,21 @@ import cn.com.omnimind.baselib.database.AgentConversationEntry
 import cn.com.omnimind.baselib.llm.AssistantToolCall
 import cn.com.omnimind.baselib.llm.AssistantToolCallFunction
 import cn.com.omnimind.baselib.llm.ChatCompletionMessage
+import com.google.gson.Gson
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.File
 
 class AgentConversationHistorySupportTest {
+    private val gson = Gson()
+
     @Test
     fun `mergeToolPayload keeps args and final status across tool lifecycle`() {
         val startPayload = mapOf(
@@ -380,6 +386,57 @@ class AgentConversationHistorySupportTest {
     }
 
     @Test
+    fun `buildPromptSeedFromEntries rebuilds image blocks from local path when available`() {
+        AgentImageAttachmentSupport.backend = object : AgentImageAttachmentSupport.Backend {
+            override fun readFileAsDataUrl(file: File, mimeTypeHint: String?): String {
+                return "data:image/png;base64,LOCAL_FILE"
+            }
+
+            override fun compressDataUrl(
+                dataUrl: String,
+                scale: Float,
+                quality: Int
+            ): AgentImageAttachmentSupport.ResolvedImageData {
+                return AgentImageAttachmentSupport.ResolvedImageData(
+                    dataUrl = "data:image/jpeg;base64,MODEL_FROM_PATH",
+                    mimeType = "image/jpeg",
+                    originalWidth = 1200,
+                    originalHeight = 800,
+                    compressedWidth = 900,
+                    compressedHeight = 600
+                )
+            }
+        }
+        try {
+            val entry = buildUserEntry(
+                id = 1,
+                entryId = "u-image",
+                text = "看一下这张图",
+                attachments = listOf(
+                    mapOf(
+                        "path" to "/tmp/photo.png",
+                        "dataUrl" to "data:image/jpeg;base64,STORED_PREVIEW",
+                        "mimeType" to "image/png",
+                        "isImage" to true
+                    )
+                )
+            )
+
+            val seed = AgentConversationHistorySupport.buildPromptSeedFromEntries(listOf(entry))
+            val content = seed.historyMessages.single().content as JsonArray
+            val imageBlock = content[1].jsonObject
+
+            assertEquals("image_url", imageBlock["type"]?.jsonPrimitive?.content)
+            assertEquals(
+                "data:image/jpeg;base64,MODEL_FROM_PATH",
+                imageBlock["image_url"]?.jsonObject?.get("url")?.jsonPrimitive?.content
+            )
+        } finally {
+            AgentImageAttachmentSupport.resetBackendForTests()
+        }
+    }
+
+    @Test
     fun `selectEntriesToCompact includes historical tool context before latest user`() {
         val entries = listOf(
             buildUserEntry(id = 1, entryId = "u1", text = "第一轮问题"),
@@ -654,7 +711,17 @@ class AgentConversationHistorySupportTest {
         assertEquals("browser_use", rebuilt[3].toolCalls?.single()?.function?.name)
     }
 
-    private fun buildUserEntry(id: Long, entryId: String, text: String): AgentConversationEntry {
+    private fun buildUserEntry(
+        id: Long,
+        entryId: String,
+        text: String,
+        attachments: List<Map<String, Any?>> = emptyList()
+    ): AgentConversationEntry {
+        val attachmentsJson = if (attachments.isEmpty()) {
+            ""
+        } else {
+            ""","attachments":${gson.toJson(attachments)}"""
+        }
         return AgentConversationEntry(
             id = id,
             conversationId = 1,
@@ -664,7 +731,7 @@ class AgentConversationHistorySupportTest {
             status = AgentConversationHistoryRepository.STATUS_SUCCESS,
             summary = text,
             payloadJson = """
-                {"id":"$entryId","type":1,"user":1,"content":{"text":"$text","id":"$entryId"},"createAt":"2026-03-27T00:00:00Z"}
+                {"id":"$entryId","type":1,"user":1,"content":{"text":"$text","id":"$entryId"$attachmentsJson},"createAt":"2026-03-27T00:00:00Z"}
             """.trimIndent(),
             createdAt = id,
             updatedAt = id

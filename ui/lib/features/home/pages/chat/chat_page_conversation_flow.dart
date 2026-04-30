@@ -732,7 +732,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       _registerActiveTaskBinding(aiMessageId);
 
       final userMessage = latestUserUtterance();
-      final attachments = await _latestUserAttachments();
+      final attachments = _latestUserAgentAttachments();
 
       final success = await AssistsMessageService.createAgentTask(
         taskId: aiMessageId,
@@ -792,6 +792,14 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       return normalized;
     }
     return const [];
+  }
+
+  List<Map<String, dynamic>> _latestUserAgentAttachments() {
+    for (final message in _messages) {
+      if (message.user != 1) continue;
+      return buildAgentRuntimeAttachmentsFromMessageContent(message.content);
+    }
+    return const <Map<String, dynamic>>[];
   }
 
   @override

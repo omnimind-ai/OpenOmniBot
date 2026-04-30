@@ -1201,7 +1201,7 @@ object AgentToolDefinitions {
             put("name", "file_read")
             put("displayName", "读取文件")
             put("toolType", "workspace")
-            put("description", "读取 workspace 或 Omnibot 白名单目录中的文件内容。")
+            put("description", "读取 workspace 或 Omnibot 白名单目录中的文件内容。自动支持图片/截图，图片会返回元数据与可视预览。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {

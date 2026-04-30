@@ -68,36 +68,54 @@ class FileToolHandler(
             val offset = args["offset"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(0) ?: 0
             val lineStart = args["lineStart"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(1)
             val lineCount = args["lineCount"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(1)
-            val content = file.readText()
-            val sliced = when {
-                lineStart != null -> {
-                    val lines = content.lines()
-                    val from = (lineStart - 1).coerceAtMost(lines.size)
-                    val until = if (lineCount != null) {
-                        (from + lineCount).coerceAtMost(lines.size)
-                    } else {
-                        lines.size
-                    }
-                    lines.subList(from, until).joinToString("\n")
-                }
-                offset > 0 -> content.drop(offset)
-                else -> content
-            }
             val artifact = workspaceManager.buildArtifactForFile(file, toolName)
-            val payload = linkedMapOf<String, Any?>(
-                "path" to (workspaceManager.shellPathForAndroid(file) ?: file.absolutePath),
-                "androidPath" to file.absolutePath,
-                "uri" to artifact.uri,
-                "content" to helper.truncateText(sliced, maxChars),
-                "size" to file.length(),
-                "mimeType" to workspaceManager.guessMimeType(file)
-            )
+            val shellPath = workspaceManager.shellPathForAndroid(file) ?: file.absolutePath
+            val mimeType = workspaceManager.guessMimeType(file)
+            val imageReadResult = if (isImageFile(file, mimeType)) {
+                AgentImageAttachmentSupport.buildFileReadImageResult(
+                    file = file,
+                    shellPath = shellPath,
+                    mimeTypeHint = mimeType,
+                    uri = artifact.uri,
+                    sizeBytes = file.length()
+                )
+            } else {
+                null
+            }
+            val payload = if (imageReadResult != null) {
+                imageReadResult.payload
+            } else {
+                val content = file.readText()
+                val sliced = when {
+                    lineStart != null -> {
+                        val lines = content.lines()
+                        val from = (lineStart - 1).coerceAtMost(lines.size)
+                        val until = if (lineCount != null) {
+                            (from + lineCount).coerceAtMost(lines.size)
+                        } else {
+                            lines.size
+                        }
+                        lines.subList(from, until).joinToString("\n")
+                    }
+                    offset > 0 -> content.drop(offset)
+                    else -> content
+                }
+                linkedMapOf<String, Any?>(
+                    "path" to shellPath,
+                    "androidPath" to file.absolutePath,
+                    "uri" to artifact.uri,
+                    "content" to helper.truncateText(sliced, maxChars),
+                    "size" to file.length(),
+                    "mimeType" to mimeType
+                )
+            }
             ToolExecutionResult.ContextResult(
                 toolName = toolName,
                 summaryText = helper.localized("已读取文件：${file.name}"),
                 previewJson = helper.encodeLocalizedPayload(payload),
                 rawResultJson = helper.encodeLocalizedPayload(payload),
                 success = true,
+                imageDataUrl = imageReadResult?.imageDataUrl,
                 artifacts = listOf(artifact),
                 workspaceId = workspace.id
             )
@@ -107,6 +125,21 @@ class FileToolHandler(
             helper.workspacePermissionResult(e, callback)?.let { return it }
             helper.errorResult(toolName, e.message, "读取文件失败")
         }
+    }
+
+    private fun isImageFile(file: File, mimeType: String): Boolean {
+        if (mimeType.startsWith("image/", ignoreCase = true)) {
+            return true
+        }
+        val lowerName = file.name.lowercase()
+        return lowerName.endsWith(".png") ||
+            lowerName.endsWith(".jpg") ||
+            lowerName.endsWith(".jpeg") ||
+            lowerName.endsWith(".webp") ||
+            lowerName.endsWith(".gif") ||
+            lowerName.endsWith(".bmp") ||
+            lowerName.endsWith(".heic") ||
+            lowerName.endsWith(".heif")
     }
 
     private suspend fun executeFileWrite(
