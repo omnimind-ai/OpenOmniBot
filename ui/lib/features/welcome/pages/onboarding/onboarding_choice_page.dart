@@ -35,7 +35,6 @@ class _OnboardingChoicePageState extends ConsumerState<OnboardingChoicePage>
 
   // Staggered animations
   late final Animation<double> _logoScale;
-  late final Animation<double> _logoOpacity;
   late final Animation<double> _titleOffset;
   late final Animation<double> _titleOpacity;
   late final Animation<double> _subtitleOffset;
@@ -66,13 +65,6 @@ class _OnboardingChoicePageState extends ConsumerState<OnboardingChoicePage>
         curve: const Interval(0.0, 0.5, curve: Curves.elasticOut),
       ),
     );
-    _logoOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.0, 0.25, curve: Curves.easeOut),
-      ),
-    );
-
     // Title: 150ms-650ms, slide up 24px + fade
     _titleOffset = Tween<double>(begin: 24.0, end: 0.0).animate(
       CurvedAnimation(
@@ -153,172 +145,169 @@ class _OnboardingChoicePageState extends ConsumerState<OnboardingChoicePage>
 
     return Scaffold(
       backgroundColor: palette.pageBackground,
-      body: SafeArea(
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
+      body: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Column(
-              children: [
-                const Spacer(flex: 3),
+                  children: [
+                    const Spacer(flex: 3),
 
-                // Logo — scale + fade
-                Opacity(
-                  opacity: _logoOpacity.value,
-                  child: Transform.scale(
-                    scale: _logoScale.value,
-                    child: Container(
-                      width: 88,
-                      height: 88,
-                      decoration: BoxDecoration(
-                        color: palette.surfacePrimary,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: palette.shadowColor,
-                            blurRadius: 24,
-                            spreadRadius: 0,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
+                    // Title with inline logo
+                    Transform.translate(
+                      offset: Offset(0, _titleOffset.value),
+                      child: Opacity(
+                        opacity: _titleOpacity.value,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ShaderMask(
+                              shaderCallback: (bounds) =>
+                                  const LinearGradient(
+                                colors: [
+                                  Color(0xFF1930D9),
+                                  Color(0xFF2DA5F0),
+                                ],
+                              ).createShader(bounds),
+                              child: Text(
+                                context.trLegacy('Hi，我是小万'),
+                                style: const TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  height: 1.4,
+                                  letterSpacing: -0.5,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Transform.scale(
+                              scale: _logoScale.value,
+                              child: SizedBox(
+                                width: 48,
+                                height: 48,
+                                child: ClipRect(
+                                  child: Transform.scale(
+                                    scale: 1.8,
+                                    child: Image.asset(
+                                      'assets/loading/loading_icon3x.png',
+                                      width: 48,
+                                      height: 48,
+                                      fit: BoxFit.contain,
+                                      errorBuilder: (_, __, ___) => Icon(
+                                        Icons.smart_toy_outlined,
+                                        size: 24,
+                                        color: palette.accentPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: Image.asset(
-                          'assets/loading/loading_icon.png',
-                          width: 88,
-                          height: 88,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Icon(
-                            Icons.smart_toy_outlined,
-                            size: 40,
-                            color: palette.accentPrimary,
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Subtitle
+                    Transform.translate(
+                      offset: Offset(0, _subtitleOffset.value),
+                      child: Opacity(
+                        opacity: _subtitleOpacity.value,
+                        child: Text(
+                          context.trLegacy('你的 AI 助手，随时准备就绪'),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: palette.textSecondary,
+                            height: 1.5,
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 28),
 
-                // Title — slide up + fade
-                Transform.translate(
-                  offset: Offset(0, _titleOffset.value),
-                  child: Opacity(
-                    opacity: _titleOpacity.value,
-                    child: Text(
-                      context.trLegacy('Hi，我是小万'),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        color: palette.textPrimary,
-                        height: 1.2,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
+                    const Spacer(flex: 2),
 
-                // Subtitle — slide up + fade
-                Transform.translate(
-                  offset: Offset(0, _subtitleOffset.value),
-                  child: Opacity(
-                    opacity: _subtitleOpacity.value,
-                    child: Text(
-                      context.trLegacy('你的 AI 助手，随时准备就绪'),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w400,
-                        color: palette.textSecondary,
-                        height: 1.5,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const Spacer(flex: 2),
-
-                // Card 1 — Cloud AI — slide up + fade
-                Transform.translate(
-                  offset: Offset(0, _card1Offset.value),
-                  child: Opacity(
-                    opacity: _card1Opacity.value,
-                    child: OnboardingChoiceCard(
-                      svgIcon: _kCloudSvg,
-                      title: context.trLegacy('云 AI 服务'),
-                      subtitle: context.trLegacy(
-                        '连接 OpenAI、Anthropic 或兼容的 API 服务',
-                      ),
-                      gradientColors: const [
-                        Color(0xFF2C7FEB),
-                        Color(0xFF64B5F6),
-                      ],
-                      completed: state.cloudConfigured,
-                      onTap: () async {
-                        await StorageService.setBool(
-                          StorageKeys.welcomeCompleted,
-                          true,
-                        );
-                        GoRouterManager.clearAndNavigateTo('/home/chat');
-                        GoRouterManager.push('/home/vlm_model_setting');
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                // Card 2 — Local Model — slide up + fade
-                Transform.translate(
-                  offset: Offset(0, _card2Offset.value),
-                  child: Opacity(
-                    opacity: _card2Opacity.value,
-                    child: OnboardingChoiceCard(
-                      svgIcon: _kDeviceSvg,
-                      title: context.trLegacy('本地模型'),
-                      subtitle: context.trLegacy(
-                        '在设备上运行本地 AI，离线可用，隐私安全',
-                      ),
-                      gradientColors: const [
-                        Color(0xFF7C4DFF),
-                        Color(0xFFB388FF),
-                      ],
-                      completed: state.localModelReady,
-                      onTap: () =>
-                          GoRouterManager.push('/welcome/local_intro'),
-                    ),
-                  ),
-                ),
-
-                const Spacer(flex: 3),
-
-                // Skip text — fade only
-                Opacity(
-                  opacity: _skipOpacity.value,
-                  child: GestureDetector(
-                    onTap: () async {
-                      await StorageService.setBool(
-                        StorageKeys.welcomeCompleted,
-                        true,
-                      );
-                      GoRouterManager.clearAndNavigateTo('/home/chat');
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        context.trLegacy('跳过，稍后在设置中配置'),
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: palette.textTertiary,
-                          height: 1.5,
+                    // Card 1 — Cloud AI
+                    Transform.translate(
+                      offset: Offset(0, _card1Offset.value),
+                      child: Opacity(
+                        opacity: _card1Opacity.value,
+                        child: OnboardingChoiceCard(
+                          svgIcon: _kCloudSvg,
+                          title: context.trLegacy('云 AI 服务'),
+                          subtitle: context.trLegacy(
+                            '连接 OpenAI、Anthropic 或兼容的 API 服务',
+                          ),
+                          gradientColors: const [
+                            Color(0xFF2C7FEB),
+                            Color(0xFF64B5F6),
+                          ],
+                          completed: state.cloudConfigured,
+                          onTap: () async {
+                            await StorageService.setBool(
+                              StorageKeys.welcomeCompleted,
+                              true,
+                            );
+                            GoRouterManager.clearAndNavigateTo('/home/chat');
+                            GoRouterManager.push('/home/vlm_model_setting');
+                          },
                         ),
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 28),
+                    const SizedBox(height: 14),
+
+                    // Card 2 — Local Model
+                    Transform.translate(
+                      offset: Offset(0, _card2Offset.value),
+                      child: Opacity(
+                        opacity: _card2Opacity.value,
+                        child: OnboardingChoiceCard(
+                          svgIcon: _kDeviceSvg,
+                          title: context.trLegacy('本地模型'),
+                          subtitle: context.trLegacy(
+                            '在设备上运行本地 AI，离线可用，隐私安全',
+                          ),
+                          gradientColors: const [
+                            Color(0xFF7C4DFF),
+                            Color(0xFFB388FF),
+                          ],
+                          completed: state.localModelReady,
+                          onTap: () =>
+                              GoRouterManager.push('/welcome/local_intro'),
+                        ),
+                      ),
+                    ),
+
+                    const Spacer(flex: 3),
+
+                    // Skip text
+                    Opacity(
+                      opacity: _skipOpacity.value,
+                      child: GestureDetector(
+                        onTap: () async {
+                          await StorageService.setBool(
+                            StorageKeys.welcomeCompleted,
+                            true,
+                          );
+                          GoRouterManager.clearAndNavigateTo('/home/chat');
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            context.trLegacy('跳过，稍后在设置中配置'),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: palette.textTertiary,
+                              height: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 28),
               ],
             ),
           ),

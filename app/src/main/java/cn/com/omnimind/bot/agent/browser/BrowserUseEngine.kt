@@ -46,6 +46,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -1785,7 +1786,12 @@ class BrowserUseEngine(
         val waiter = CompletableDeferred<LoadSnapshot>()
         tab.loadWaiter = waiter
         withContext(Dispatchers.Main.immediate) { tab.webView.goBack() }
-        withTimeout(NAVIGATION_TIMEOUT_MS) { waiter.await() }
+        try {
+            withTimeout(NAVIGATION_TIMEOUT_MS) { waiter.await() }
+        } catch (_: TimeoutCancellationException) {
+            withContext(Dispatchers.Main.immediate) { tab.webView.stopLoading(); tab.isLoading = false }
+            throw IllegalStateException("页面后退加载超时（${NAVIGATION_TIMEOUT_MS / 1000}秒）")
+        }
         return simpleOutcome(
             request,
             buildCommonPayload(
@@ -1805,7 +1811,12 @@ class BrowserUseEngine(
         val waiter = CompletableDeferred<LoadSnapshot>()
         tab.loadWaiter = waiter
         withContext(Dispatchers.Main.immediate) { tab.webView.goForward() }
-        withTimeout(NAVIGATION_TIMEOUT_MS) { waiter.await() }
+        try {
+            withTimeout(NAVIGATION_TIMEOUT_MS) { waiter.await() }
+        } catch (_: TimeoutCancellationException) {
+            withContext(Dispatchers.Main.immediate) { tab.webView.stopLoading(); tab.isLoading = false }
+            throw IllegalStateException("页面前进加载超时（${NAVIGATION_TIMEOUT_MS / 1000}秒）")
+        }
         return simpleOutcome(
             request,
             buildCommonPayload(
@@ -2160,7 +2171,19 @@ class BrowserUseEngine(
             layoutWebView(tab.webView)
             tab.webView.loadUrl(resolvedUrl)
         }
-        val snapshot = withTimeout(NAVIGATION_TIMEOUT_MS) { waiter.await() }
+        val snapshot = try {
+            withTimeout(NAVIGATION_TIMEOUT_MS) { waiter.await() }
+        } catch (_: TimeoutCancellationException) {
+            withContext(Dispatchers.Main.immediate) {
+                tab.webView.stopLoading()
+                tab.isLoading = false
+            }
+            LoadSnapshot(
+                url = resolvedUrl,
+                title = tab.title,
+                errorMessage = "页面加载超时（${NAVIGATION_TIMEOUT_MS / 1000}秒），请检查网络连接或稍后重试"
+            )
+        }
         if (!snapshot.errorMessage.isNullOrBlank()) {
             throw IllegalStateException(snapshot.errorMessage)
         }
@@ -2171,7 +2194,11 @@ class BrowserUseEngine(
         delay(ACTION_SETTLE_DELAY_MS)
         val waiter = tab.loadWaiter
         if (tab.isLoading && waiter != null && !waiter.isCompleted) {
-            withTimeout(NAVIGATION_TIMEOUT_MS) { waiter.await() }
+            try {
+                withTimeout(NAVIGATION_TIMEOUT_MS) { waiter.await() }
+            } catch (_: TimeoutCancellationException) {
+                withContext(Dispatchers.Main.immediate) { tab.webView.stopLoading(); tab.isLoading = false }
+            }
         }
     }
 

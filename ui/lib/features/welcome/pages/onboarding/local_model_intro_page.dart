@@ -59,7 +59,6 @@ class _LocalModelIntroPageState extends State<LocalModelIntroPage>
   late final AnimationController _controller;
 
   // Animations
-  late final Animation<double> _bgOpacity;
   late final Animation<double> _backOpacity;
   late final Animation<double> _titleOffset;
   late final Animation<double> _titleOpacity;
@@ -81,13 +80,6 @@ class _LocalModelIntroPageState extends State<LocalModelIntroPage>
     _controller = AnimationController(
       duration: const Duration(milliseconds: 1300),
       vsync: this,
-    );
-
-    _bgOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.0, 0.3, curve: Curves.easeOut),
-      ),
     );
 
     _backOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -187,49 +179,18 @@ class _LocalModelIntroPageState extends State<LocalModelIntroPage>
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
-    final isDark = context.isDarkTheme;
     final screenWidth = MediaQuery.of(context).size.width;
 
     return Scaffold(
       backgroundColor: palette.pageBackground,
       body: AnimatedBuilder(
         animation: _controller,
-        builder: (context, _) => Stack(
-          children: [
-            // Gradient background
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: MediaQuery.of(context).size.height * 0.4,
-              child: Opacity(
-                opacity: _bgOpacity.value,
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: isDark
-                          ? [
-                              const Color(0xFF1930D9).withOpacity(0.15),
-                              palette.pageBackground,
-                            ]
-                          : [
-                              const Color(0xFF2DA5F0).withOpacity(0.12),
-                              palette.pageBackground,
-                            ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // Main content
-            SafeArea(
-              child: Column(
-                children: [
-                  // Floating back button
-                  Align(
+        builder: (context, _) {
+          return SafeArea(
+            child: Column(
+              children: [
+                // Floating back button
+                Align(
                     alignment: Alignment.centerLeft,
                     child: Opacity(
                       opacity: _backOpacity.value,
@@ -354,15 +315,10 @@ class _LocalModelIntroPageState extends State<LocalModelIntroPage>
                           // Limitation note
                           Opacity(
                             opacity: _noteOpacity.value,
-                            child: Container(
-                              width: double.infinity,
+                            child: Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 14,
                                 vertical: 12,
-                              ),
-                              decoration: BoxDecoration(
-                                color: palette.surfaceSecondary,
-                                borderRadius: BorderRadius.circular(12),
                               ),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -427,11 +383,10 @@ class _LocalModelIntroPageState extends State<LocalModelIntroPage>
                       ),
                     ),
                   ),
-                ],
-              ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
