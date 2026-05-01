@@ -20,6 +20,14 @@ enum class ShizukuStatusCode {
 }
 
 @Serializable
+enum class ShizukuInputTextMode {
+    AUTO,
+    ADB_KEYBOARD,
+    INPUT_TEXT,
+    CLIPBOARD_PASTE
+}
+
+@Serializable
 data class ShizukuStatus(
     val code: ShizukuStatusCode,
     val backend: ShizukuBackend = ShizukuBackend.NONE,

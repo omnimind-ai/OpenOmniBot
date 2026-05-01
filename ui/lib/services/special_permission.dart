@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:ui/core/router/go_router_manager.dart';
+import 'package:ui/features/home/pages/authorize/authorize_page_args.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/utils/ui.dart';
 
@@ -730,6 +732,77 @@ Future<bool> ensureShizukuPermission(BuildContext context) async {
     return false;
   }
   return requestShizukuPermission();
+}
+
+Future<bool> isVlmAutomationPermissionGranted() async {
+  final shizukuStatus = await getShizukuStatus();
+  if (shizukuStatus.isGranted) {
+    return true;
+  }
+  try {
+    return await spePermission.invokeMethod<bool>(
+          'isAccessibilityServiceEnabled',
+        ) ??
+        false;
+  } catch (e) {
+    debugPrint('检查 VLM 操作权限失败: $e');
+    return false;
+  }
+}
+
+Future<bool> ensureVlmAutomationPermission(BuildContext context) async {
+  if (await isVlmAutomationPermissionGranted()) {
+    return true;
+  }
+  if (!context.mounted) {
+    return false;
+  }
+
+  final choice = await AppDialog.select(
+    context,
+    title: LegacyTextLocalizer.isEnglish ? 'VLM Automation' : 'VLM 操作权限',
+    content: LegacyTextLocalizer.isEnglish
+        ? 'VLM tasks can use either Shizuku or Accessibility for taps, typing, swipes, screenshots, and app launching.'
+        : 'VLM 任务可通过 Shizuku 或无障碍执行点击、输入、滑动、截图和打开应用。',
+    options: LegacyTextLocalizer.isEnglish
+        ? const ['Authorize Shizuku', 'Open Accessibility']
+        : const ['授权 Shizuku', '开启无障碍'],
+  );
+  if (!context.mounted || choice == null) {
+    return false;
+  }
+  if (choice == 0) {
+    return ensureShizukuPermission(context);
+  }
+  await spePermission.invokeMethod('openAccessibilitySettings');
+  return false;
+}
+
+Future<bool> checkVlmAutomationPermission(BuildContext context) async {
+  if (await isVlmAutomationPermissionGranted()) {
+    return true;
+  }
+  if (!context.mounted) {
+    return false;
+  }
+  final result = await AppDialog.confirm(
+    context,
+    title: LegacyTextLocalizer.isEnglish ? 'VLM Automation' : 'VLM 操作权限',
+    content: LegacyTextLocalizer.isEnglish
+        ? 'Please grant Shizuku or Accessibility before starting VLM tasks.'
+        : '开始 VLM 任务前，请先授权 Shizuku 或无障碍任一方案。',
+    cancelText: LegacyTextLocalizer.isEnglish ? 'Cancel' : '取消',
+    confirmText: LegacyTextLocalizer.isEnglish ? 'Authorize' : '去授权',
+  );
+  if (result == true && context.mounted) {
+    GoRouterManager.push(
+      '/home/authorize',
+      extra: const AuthorizePageArgs(
+        requiredPermissionIds: <String>[kVlmAutomationPermissionId],
+      ),
+    );
+  }
+  return false;
 }
 
 /// 检查无障碍权限，如果没有权限则弹出授权对话框

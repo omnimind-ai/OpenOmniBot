@@ -1,6 +1,8 @@
 package cn.com.omnimind.baselib.shizuku
 
 import android.os.Process
+import android.os.ParcelFileDescriptor
+import android.util.Base64
 import cn.com.omnimind.baselib.util.OmniLog
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
@@ -79,6 +81,9 @@ internal object PrivilegedCommandExecutor {
 
         val result = when (action) {
             PrivilegedActionPolicy.ACTION_SHELL_EXEC -> executeRawShell(request, backend)
+            PrivilegedActionPolicy.ACTION_DEVICE_SCREENSHOT ->
+                executeScreenshot(request, backend)
+
             PrivilegedActionPolicy.ACTION_SESSION_START ->
                 PrivilegedShellSessionManager.startSession(request, backend)
 
@@ -101,12 +106,56 @@ internal object PrivilegedCommandExecutor {
         PrivilegedShellSessionManager.shutdown()
     }
 
+    fun openScreenshotPngPipe(): ParcelFileDescriptor {
+        val backend = currentBackend()
+        require(
+            PrivilegedActionPolicy.isSupported(
+                action = PrivilegedActionPolicy.ACTION_DEVICE_SCREENSHOT,
+                backend = backend,
+                includeInternal = true
+            )
+        ) {
+            "Screenshot is not available for the current Shizuku backend."
+        }
+
+        val command = screenshotCommand()
+        val pipe = ParcelFileDescriptor.createPipe()
+        val readFd = pipe[0]
+        val writeFd = pipe[1]
+        thread(start = true, isDaemon = true, name = "omnibot-shizuku-screencap") {
+            ParcelFileDescriptor.AutoCloseOutputStream(writeFd).use { output ->
+                val result = exec(
+                    command = command,
+                    timeoutSeconds = DEFAULT_TYPED_TIMEOUT_SECONDS
+                )
+                if (result.success && result.stdoutBytes.isNotEmpty()) {
+                    output.write(result.stdoutBytes)
+                    output.flush()
+                } else {
+                    OmniLog.e(
+                        TAG,
+                        "Shizuku screenshot stream failed: code=${if (result.timedOut) "timeout" else "command_failed"}, exit=${result.exitCode}, stderr=${trimOutput(result.stderr)}"
+                    )
+                }
+            }
+        }
+        OmniLog.i(
+            TAG,
+            "Shizuku privileged audit: action=${PrivilegedActionPolicy.ACTION_DEVICE_SCREENSHOT}, success=true, code=stream_opened"
+        )
+        return readFd
+    }
+
     private fun executeTypedAction(
         request: PrivilegedRequest,
         backend: ShizukuBackend,
         action: String,
         arguments: Map<String, String>,
     ): PrivilegedResult {
+        if (action == PrivilegedActionPolicy.ACTION_DEVICE_INPUT_TEXT) {
+            return executeInputTextAction(request, backend, arguments)
+        }
+
         val command = runCatching {
             buildCommand(action, arguments, backend)
         }.getOrElse { error ->
@@ -259,10 +308,10 @@ internal object PrivilegedCommandExecutor {
                 val activityName = arguments["activityName"]?.trim().orEmpty()
                 if (activityName.isNotEmpty()) {
                     requireSafeComponent(activityName)
-                    listOf("am", "start", "-n", "$packageName/$activityName")
+                    listOf("/system/bin/am", "start", "-n", "$packageName/$activityName")
                 } else {
                     listOf(
-                        "monkey",
+                        "/system/bin/monkey",
                         "-p",
                         packageName,
                         "-c",
@@ -319,7 +368,7 @@ internal object PrivilegedCommandExecutor {
                 )
             }
             PrivilegedActionPolicy.ACTION_DEVICE_KEYEVENT -> {
-                listOf("input", "keyevent", requireKeyEvent(arguments["key"]))
+                inputCommand("keyevent", requireKeyEvent(arguments["key"]))
             }
             PrivilegedActionPolicy.ACTION_DEVICE_EXPAND_NOTIFICATIONS -> {
                 listOf("cmd", "statusbar", "expand-notifications")
@@ -335,7 +384,24 @@ internal object PrivilegedCommandExecutor {
                 listOf("svc", "data", if (isEnabled(arguments)) "enable" else "disable")
             }
             PrivilegedActionPolicy.ACTION_DEVICE_INPUT_TEXT -> {
-                listOf("input", "text", encodeInputText(requireNotBlank(arguments["text"], "text")))
+                inputCommand("text", encodeInputText(requireNotBlank(arguments["text"], "text")))
+            }
+            PrivilegedActionPolicy.ACTION_DEVICE_TAP -> {
+                inputCommand(
+                    "tap",
+                    requireCoordinate(arguments["x"], "x").toString(),
+                    requireCoordinate(arguments["y"], "y").toString()
+                )
+            }
+            PrivilegedActionPolicy.ACTION_DEVICE_SWIPE -> {
+                inputCommand(
+                    "swipe",
+                    requireCoordinate(arguments["x1"], "x1").toString(),
+                    requireCoordinate(arguments["y1"], "y1").toString(),
+                    requireCoordinate(arguments["x2"], "x2").toString(),
+                    requireCoordinate(arguments["y2"], "y2").toString(),
+                    requireDurationMillis(arguments["durationMs"]).toString()
+                )
             }
             PrivilegedActionPolicy.ACTION_DIAGNOSTICS_GETPROP -> {
                 val name = arguments["name"]?.trim()
@@ -365,6 +431,175 @@ internal object PrivilegedCommandExecutor {
                 listOf("logcat", "-d", "-b", buffer, "-t", lines.toString())
             }
             else -> error("Unsupported action.")
+        }
+    }
+
+    private fun executeInputTextAction(
+        request: PrivilegedRequest,
+        backend: ShizukuBackend,
+        arguments: Map<String, String>
+    ): PrivilegedResult {
+        val text = runCatching {
+            requireNotBlank(arguments["text"], "text")
+        }.getOrElse { error ->
+            return failure(
+                request = request,
+                backend = backend,
+                code = "invalid_arguments",
+                message = error.message ?: "Invalid input text arguments."
+            )
+        }
+        val mode = runCatching {
+            ShizukuInputTextMode.valueOf(
+                arguments["mode"]?.trim()?.uppercase().orEmpty().ifBlank { ShizukuInputTextMode.AUTO.name }
+            )
+        }.getOrDefault(ShizukuInputTextMode.AUTO)
+        val script = buildInputTextShellScript(text, mode)
+        val result = exec(
+            command = listOf("/system/bin/sh", "-lc", script),
+            timeoutSeconds = DEFAULT_TYPED_TIMEOUT_SECONDS + 4L
+        )
+        val stdout = trimOutput(result.stdout)
+        val stderr = trimOutput(result.stderr)
+        return if (result.success) {
+            PrivilegedResult(
+                requestId = request.requestId,
+                action = request.action,
+                success = true,
+                code = "ok",
+                message = "Text input executed successfully.",
+                backend = backend,
+                output = combineOutput(stdout, stderr),
+                stdout = stdout,
+                stderr = stderr,
+                exitCode = result.exitCode,
+                availableActions = PrivilegedActionPolicy.visibleAgentActions(backend),
+                data = mapOf("mode" to mode.name),
+                command = "/system/bin/sh -lc ${shellQuote(inputTextCommandPreview(text, mode))}",
+                timeoutSeconds = (DEFAULT_TYPED_TIMEOUT_SECONDS + 4L).toInt()
+            )
+        } else {
+            val adbKeyboardRequired = result.exitCode == INPUT_TEXT_COMPLEX_EXIT_CODE
+            failure(
+                request = request,
+                backend = backend,
+                code = if (result.timedOut) {
+                    "timeout"
+                } else if (adbKeyboardRequired) {
+                    "adb_keyboard_required"
+                } else {
+                    "command_failed"
+                },
+                message = if (result.timedOut) {
+                    "Text input timed out."
+                } else if (adbKeyboardRequired) {
+                    "ADB Keyboard is required for this text because the default Shizuku input methods cannot safely enter it."
+                } else {
+                    "Text input failed."
+                },
+                stdout = stdout,
+                stderr = stderr,
+                exitCode = result.exitCode,
+                command = "/system/bin/sh -lc ${shellQuote(inputTextCommandPreview(text, mode))}",
+                timeoutSeconds = (DEFAULT_TYPED_TIMEOUT_SECONDS + 4L).toInt()
+            )
+        }
+    }
+
+    private fun buildInputTextShellScript(text: String, mode: ShizukuInputTextMode): String {
+        val adbIme = "com.android.adbkeyboard/.AdbIME"
+        val textBase64 = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val inputText = encodeInputText(text)
+        val simpleInput = isSimpleInputText(text)
+        return buildString {
+            appendLine("set +e")
+            appendLine("ADB_IME=${shellQuote(adbIme)}")
+            appendLine("MODE=${shellQuote(mode.name)}")
+            appendLine("TEXT_B64=${shellQuote(textBase64)}")
+            appendLine("TEXT_VALUE=${shellQuote(text)}")
+            appendLine("INPUT_VALUE=${shellQuote(inputText)}")
+            appendLine("HAS_ADB_IME=0")
+            appendLine("if /system/bin/ime list -s 2>/dev/null | /system/bin/grep -Fxq \"\$ADB_IME\"; then HAS_ADB_IME=1; fi")
+            appendLine("if [ \"\$HAS_ADB_IME\" != \"1\" ] && /system/bin/ime list -a 2>/dev/null | /system/bin/grep -Fq \"\$ADB_IME\"; then HAS_ADB_IME=1; fi")
+            appendLine("if [ \"\$MODE\" = \"ADB_KEYBOARD\" ] || { [ \"\$MODE\" = \"AUTO\" ] && [ \"\$HAS_ADB_IME\" = \"1\" ]; }; then")
+            appendLine("  if [ \"\$HAS_ADB_IME\" != \"1\" ]; then echo \"ADB Keyboard IME is not installed\" >&2; exit $INPUT_TEXT_COMPLEX_EXIT_CODE; fi")
+            appendLine("  OLD_IME=\$(/system/bin/settings get secure default_input_method 2>/dev/null)")
+            appendLine("  restore_ime() { if [ -n \"\$OLD_IME\" ] && [ \"\$OLD_IME\" != \"null\" ]; then /system/bin/ime set \"\$OLD_IME\" >/dev/null 2>&1; fi; }")
+            appendLine("  trap restore_ime EXIT")
+            appendLine("  /system/bin/ime enable \"\$ADB_IME\" >/dev/null 2>&1")
+            appendLine("  /system/bin/ime set \"\$ADB_IME\" >/dev/null 2>&1 || exit 1")
+            appendLine("  /system/bin/am broadcast -a ADB_INPUT_B64 --es msg \"\$TEXT_B64\" --user 0 >/dev/null")
+            appendLine("  exit \$?")
+            appendLine("fi")
+            appendLine("if [ \"\$MODE\" = \"INPUT_TEXT\" ] || { [ \"\$MODE\" = \"AUTO\" ] && ${if (simpleInput) "true" else "false"}; }; then")
+            appendLine("  /system/bin/input text \"\$INPUT_VALUE\"")
+            appendLine("  exit \$?")
+            appendLine("fi")
+            appendLine("if [ \"\$MODE\" = \"CLIPBOARD_PASTE\" ] || [ \"\$MODE\" = \"AUTO\" ]; then")
+            appendLine("  if /system/bin/cmd clipboard set text omnibot \"\$TEXT_VALUE\" >/dev/null 2>&1; then")
+            appendLine("    /system/bin/input keyevent KEYCODE_PASTE")
+            appendLine("    exit \$?")
+            appendLine("  fi")
+            appendLine("fi")
+            appendLine("echo \"Complex text input requires ADB Keyboard (com.android.adbkeyboard/.AdbIME).\" >&2")
+            appendLine("exit $INPUT_TEXT_COMPLEX_EXIT_CODE")
+        }
+    }
+
+    private fun isSimpleInputText(text: String): Boolean {
+        if (text.isEmpty()) return false
+        return text.all { ch ->
+            ch.code in 0x20..0x7E && ch != '"' && ch != '\'' && ch != '\\'
+        }
+    }
+
+    private fun inputTextCommandPreview(text: String, mode: ShizukuInputTextMode): String {
+        val preview = if (text.length <= 40) text else text.take(40) + "..."
+        return "device input text mode=${mode.name} text=${preview}"
+    }
+
+    private fun executeScreenshot(
+        request: PrivilegedRequest,
+        backend: ShizukuBackend,
+    ): PrivilegedResult {
+        val command = screenshotCommand()
+        val result = exec(
+            command = command,
+            timeoutSeconds = DEFAULT_TYPED_TIMEOUT_SECONDS
+        )
+        val stderr = trimOutput(result.stderr)
+        return if (result.success && result.stdoutBytes.isNotEmpty()) {
+            val base64Png = Base64.encodeToString(result.stdoutBytes, Base64.NO_WRAP)
+            PrivilegedResult(
+                requestId = request.requestId,
+                action = request.action,
+                success = true,
+                code = "ok",
+                message = "Screenshot captured successfully.",
+                backend = backend,
+                stdout = "",
+                stderr = stderr,
+                exitCode = result.exitCode,
+                availableActions = PrivilegedActionPolicy.visibleAgentActions(backend),
+                data = mapOf("base64Png" to base64Png),
+                command = command.joinToString(" "),
+                timeoutSeconds = DEFAULT_TYPED_TIMEOUT_SECONDS.toInt()
+            )
+        } else {
+            failure(
+                request = request,
+                backend = backend,
+                code = if (result.timedOut) "timeout" else "command_failed",
+                message = if (result.timedOut) {
+                    "Screenshot capture timed out."
+                } else {
+                    "Screenshot capture failed."
+                },
+                stderr = stderr,
+                exitCode = result.exitCode,
+                command = command.joinToString(" "),
+                timeoutSeconds = DEFAULT_TYPED_TIMEOUT_SECONDS.toInt()
+            )
         }
     }
 
@@ -414,6 +649,7 @@ internal object PrivilegedCommandExecutor {
                 timedOut = true,
                 exitCode = null,
                 stdout = stdoutBuffer.toString(),
+                stdoutBytes = stdoutBuffer.toByteArray(),
                 stderr = stderrBuffer.toString()
             )
         }
@@ -424,6 +660,7 @@ internal object PrivilegedCommandExecutor {
             timedOut = false,
             exitCode = process.exitValue(),
             stdout = stdoutBuffer.toString(),
+            stdoutBytes = stdoutBuffer.toByteArray(),
             stderr = stderrBuffer.toString()
         )
     }
@@ -442,6 +679,14 @@ internal object PrivilegedCommandExecutor {
             stdout.isNotBlank() -> stdout
             else -> stderr
         }
+    }
+
+    private fun inputCommand(vararg args: String): List<String> {
+        return listOf("/system/bin/input", *args)
+    }
+
+    private fun screenshotCommand(): List<String> {
+        return listOf("/system/bin/screencap", "-p")
     }
 
     private fun failure(
@@ -531,6 +776,18 @@ internal object PrivilegedCommandExecutor {
         }
     }
 
+    private fun requireCoordinate(value: String?, fieldName: String): Int {
+        val number = requireNotBlank(value, fieldName).toFloatOrNull()
+            ?: error("$fieldName must be a number.")
+        require(number.isFinite()) { "$fieldName must be finite." }
+        return number.toInt().coerceIn(0, 100_000)
+    }
+
+    private fun requireDurationMillis(value: String?): Int {
+        val duration = value?.trim()?.toLongOrNull() ?: 500L
+        return duration.coerceIn(1L, 60_000L).toInt()
+    }
+
     private fun requireSafeComponent(value: String) {
         require(Regex("^[A-Za-z0-9_.$]+$").matches(value)) { "Invalid activityName." }
     }
@@ -565,6 +822,9 @@ internal object PrivilegedCommandExecutor {
         val timedOut: Boolean,
         val exitCode: Int?,
         val stdout: String,
+        val stdoutBytes: ByteArray,
         val stderr: String,
     )
+
+    private const val INPUT_TEXT_COMPLEX_EXIT_CODE = 65
 }

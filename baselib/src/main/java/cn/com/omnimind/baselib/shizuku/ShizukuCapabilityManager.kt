@@ -6,7 +6,9 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import android.os.RemoteException
+import android.util.Base64
 import cn.com.omnimind.baselib.util.OmniLog
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +36,13 @@ class ShizukuCapabilityManager private constructor(
     private var remoteService: IOmnibotPrivilegedUserService? = null
 
     @Volatile
+    private var screenCaptureService: IOmnibotScreenCaptureService? = null
+
+    @Volatile
     private var pendingBind: CompletableDeferred<IOmnibotPrivilegedUserService?>? = null
+
+    @Volatile
+    private var pendingScreenBind: CompletableDeferred<IOmnibotScreenCaptureService?>? = null
 
     @Volatile
     private var lastBinderDead = false
@@ -49,6 +57,14 @@ class ShizukuCapabilityManager private constructor(
         .processNameSuffix("omnibot_privileged")
         .tag(USER_SERVICE_TAG)
         .version(USER_SERVICE_VERSION)
+
+    private val screenCaptureServiceArgs = Shizuku.UserServiceArgs(
+        ComponentName(appContext, OmnibotScreenCaptureUserService::class.java)
+    )
+        .daemon(false)
+        .processNameSuffix("omnibot_screen_capture")
+        .tag(SCREEN_CAPTURE_SERVICE_TAG)
+        .version(SCREEN_CAPTURE_SERVICE_VERSION)
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -78,6 +94,37 @@ class ShizukuCapabilityManager private constructor(
             remoteService = null
             pendingBind?.takeIf { !it.isCompleted }?.complete(null)
             OmniLog.w(TAG, "Shizuku user service null binding")
+        }
+    }
+
+    private val screenCaptureServiceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val captureService = if (service != null) {
+                IOmnibotScreenCaptureService.Stub.asInterface(service)
+            } else {
+                null
+            }
+            screenCaptureService = captureService
+            pendingScreenBind?.takeIf { !it.isCompleted }?.complete(captureService)
+            OmniLog.i(TAG, "Shizuku screen capture service connected: ${name?.className}")
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            screenCaptureService = null
+            pendingScreenBind?.takeIf { !it.isCompleted }?.complete(null)
+            OmniLog.w(TAG, "Shizuku screen capture service disconnected")
+        }
+
+        override fun onBindingDied(name: ComponentName?) {
+            screenCaptureService = null
+            pendingScreenBind?.takeIf { !it.isCompleted }?.complete(null)
+            OmniLog.w(TAG, "Shizuku screen capture service binding died")
+        }
+
+        override fun onNullBinding(name: ComponentName?) {
+            screenCaptureService = null
+            pendingScreenBind?.takeIf { !it.isCompleted }?.complete(null)
+            OmniLog.w(TAG, "Shizuku screen capture service null binding")
         }
     }
 
@@ -356,11 +403,151 @@ class ShizukuCapabilityManager private constructor(
         )
     }
 
-    suspend fun inputText(text: String): PrivilegedResult {
+    suspend fun inputText(
+        text: String,
+        mode: ShizukuInputTextMode = ShizukuInputTextMode.AUTO
+    ): PrivilegedResult {
         return executeAgentAction(
             action = PrivilegedActionPolicy.ACTION_DEVICE_INPUT_TEXT,
-            arguments = mapOf("text" to text)
+            arguments = mapOf(
+                "text" to text,
+                "mode" to mode.name
+            )
         )
+    }
+
+    suspend fun tap(x: Int, y: Int): PrivilegedResult {
+        return executeAgentAction(
+            action = PrivilegedActionPolicy.ACTION_DEVICE_TAP,
+            arguments = mapOf(
+                "x" to x.toString(),
+                "y" to y.toString()
+            )
+        )
+    }
+
+    suspend fun swipe(
+        x1: Int,
+        y1: Int,
+        x2: Int,
+        y2: Int,
+        durationMs: Long,
+    ): PrivilegedResult {
+        return executeAgentAction(
+            action = PrivilegedActionPolicy.ACTION_DEVICE_SWIPE,
+            arguments = mapOf(
+                "x1" to x1.toString(),
+                "y1" to y1.toString(),
+                "x2" to x2.toString(),
+                "y2" to y2.toString(),
+                "durationMs" to durationMs.toString()
+            )
+        )
+    }
+
+    suspend fun captureScreenshotBase64Png(): PrivilegedResult {
+        val requestId = UUID.randomUUID().toString()
+        val action = PrivilegedActionPolicy.ACTION_DEVICE_SCREENSHOT
+        val status = getStatus()
+        if (!status.isGranted()) {
+            return PrivilegedResult(
+                requestId = requestId,
+                action = action,
+                success = false,
+                code = status.code.name.lowercase(),
+                message = status.message,
+                backend = status.backend,
+                availableActions = suggestedAgentActions(status.backend)
+            )
+        }
+        val service = ensureUserServiceBound() ?: return PrivilegedResult(
+            requestId = requestId,
+            action = action,
+            success = false,
+            code = "service_bind_failed",
+            message = "Failed to bind Shizuku user service.",
+            backend = status.backend,
+            availableActions = suggestedAgentActions(status.backend)
+        )
+
+        val bytes = runCatching {
+            readScreenshotPngBytes(service)
+        }.recoverCatching { error ->
+            if (error is RemoteException) {
+                remoteService = null
+            }
+            val reboundService = ensureUserServiceBound()
+                ?: error("Failed to rebind Shizuku user service.")
+            readScreenshotPngBytes(reboundService)
+        }.getOrElse { error ->
+            return PrivilegedResult(
+                requestId = requestId,
+                action = action,
+                success = false,
+                code = "service_call_failed",
+                message = error.message ?: "Failed to read Shizuku screenshot stream.",
+                backend = status.backend,
+                availableActions = suggestedAgentActions(status.backend)
+            )
+        }
+
+        if (bytes.isEmpty()) {
+            return PrivilegedResult(
+                requestId = requestId,
+                action = action,
+                success = false,
+                code = "empty_screenshot",
+                message = "Shizuku screenshot stream returned no data.",
+                backend = status.backend,
+                availableActions = suggestedAgentActions(status.backend),
+                command = "/system/bin/screencap -p",
+                timeoutSeconds = (SCREENSHOT_STREAM_TIMEOUT_MS / 1000L).toInt()
+            )
+        }
+
+        return PrivilegedResult(
+            requestId = requestId,
+            action = action,
+            success = true,
+            code = "ok",
+            message = "Screenshot captured successfully.",
+            backend = status.backend,
+            availableActions = suggestedAgentActions(status.backend),
+            data = mapOf("base64Png" to Base64.encodeToString(bytes, Base64.NO_WRAP)),
+            command = "/system/bin/screencap -p",
+            timeoutSeconds = (SCREENSHOT_STREAM_TIMEOUT_MS / 1000L).toInt()
+        )
+    }
+
+    suspend fun captureScreen(
+        maxWidth: Int,
+        maxHeight: Int,
+        quality: Int
+    ): ShizukuScreenCaptureResult {
+        val status = getStatus()
+        if (!status.isGranted()) {
+            return ShizukuScreenCaptureResult.error(status.message, elapsedMs = 0L)
+        }
+        val service = ensureScreenCaptureServiceBound() ?: return ShizukuScreenCaptureResult.error(
+            message = "Failed to bind Shizuku screen capture service.",
+            elapsedMs = 0L
+        )
+
+        return runCatching {
+            callCaptureScreen(service, maxWidth, maxHeight, quality)
+        }.recoverCatching { error ->
+            if (error is RemoteException) {
+                screenCaptureService = null
+            }
+            val reboundService = ensureScreenCaptureServiceBound()
+                ?: error("Failed to rebind Shizuku screen capture service.")
+            callCaptureScreen(reboundService, maxWidth, maxHeight, quality)
+        }.getOrElse { error ->
+            ShizukuScreenCaptureResult.error(
+                message = error.message ?: "Failed to call Shizuku screen capture service.",
+                elapsedMs = 0L
+            )
+        }
     }
 
     suspend fun launchApp(packageName: String): PrivilegedResult {
@@ -454,6 +641,36 @@ class ShizukuCapabilityManager private constructor(
         }
     }
 
+    private suspend fun readScreenshotPngBytes(
+        service: IOmnibotPrivilegedUserService
+    ): ByteArray {
+        return withTimeoutOrNull(SCREENSHOT_STREAM_TIMEOUT_MS) {
+            withContext(Dispatchers.IO) {
+                val descriptor = service.captureScreenshotPng()
+                    ?: error("Failed to open Shizuku screenshot stream.")
+                ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input ->
+                    input.readBytes()
+                }
+            }
+        } ?: error("Timed out waiting for Shizuku screenshot stream.")
+    }
+
+    private suspend fun callCaptureScreen(
+        service: IOmnibotScreenCaptureService,
+        maxWidth: Int,
+        maxHeight: Int,
+        quality: Int
+    ): ShizukuScreenCaptureResult {
+        return withTimeoutOrNull(SCREEN_CAPTURE_TIMEOUT_MS) {
+            withContext(Dispatchers.IO) {
+                service.captureScreen(maxWidth, maxHeight, quality)
+            }
+        } ?: ShizukuScreenCaptureResult.error(
+            message = "Timed out waiting for Shizuku screen capture service.",
+            elapsedMs = SCREEN_CAPTURE_TIMEOUT_MS
+        )
+    }
+
     private suspend fun ensureUserServiceBound(): IOmnibotPrivilegedUserService? {
         remoteService?.let { return it }
         return bindMutex.withLock {
@@ -490,6 +707,42 @@ class ShizukuCapabilityManager private constructor(
         }
     }
 
+    private suspend fun ensureScreenCaptureServiceBound(): IOmnibotScreenCaptureService? {
+        screenCaptureService?.let { return it }
+        return bindMutex.withLock {
+            screenCaptureService?.let { return@withLock it }
+            if (!getStatus().isGranted()) {
+                return@withLock null
+            }
+            val connected = pendingScreenBind?.takeIf { !it.isCompleted }
+                ?: CompletableDeferred<IOmnibotScreenCaptureService?>().also {
+                    pendingScreenBind = it
+                }
+            withContext(Dispatchers.Main) {
+                try {
+                    Shizuku.bindUserService(screenCaptureServiceArgs, screenCaptureServiceConnection)
+                } catch (error: Throwable) {
+                    if (!connected.isCompleted) {
+                        connected.complete(null)
+                    }
+                    return@withContext
+                }
+                screenCaptureService?.let { service ->
+                    if (!connected.isCompleted) {
+                        connected.complete(service)
+                    }
+                }
+            }
+            val result = withTimeoutOrNull(3_000) {
+                connected.await()
+            }
+            if (pendingScreenBind === connected) {
+                pendingScreenBind = null
+            }
+            result
+        }
+    }
+
     private fun registerListenersIfNeeded() {
         if (listenersRegistered) {
             return
@@ -505,7 +758,9 @@ class ShizukuCapabilityManager private constructor(
                 Shizuku.addBinderDeadListener {
                     lastBinderDead = true
                     remoteService = null
+                    screenCaptureService = null
                     pendingBind?.takeIf { !it.isCompleted }?.complete(null)
+                    pendingScreenBind?.takeIf { !it.isCompleted }?.complete(null)
                 }
             }
             listenersRegistered = true
@@ -550,7 +805,11 @@ class ShizukuCapabilityManager private constructor(
         private const val TAG = "ShizukuCapabilityMgr"
         private const val SHIZUKU_PACKAGE_NAME = "moe.shizuku.privileged.api"
         private const val USER_SERVICE_TAG = "omnibot-privileged-agent"
-        private const val USER_SERVICE_VERSION = 3
+        private const val USER_SERVICE_VERSION = 4
+        private const val SCREEN_CAPTURE_SERVICE_TAG = "omnibot-screen-capture"
+        private const val SCREEN_CAPTURE_SERVICE_VERSION = 1
+        private const val SCREENSHOT_STREAM_TIMEOUT_MS = 20_000L
+        private const val SCREEN_CAPTURE_TIMEOUT_MS = 20_000L
 
         @Volatile
         private var instance: ShizukuCapabilityManager? = null

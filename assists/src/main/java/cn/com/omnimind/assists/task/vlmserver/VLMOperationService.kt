@@ -574,6 +574,7 @@ class VLMOperationService(
         // 内部传递都用 scene.xxx 格式，只在需要判断模型类型或发送请求时才解析
 
         val maxRetries = 3
+        val actionProtocol = deviceOperator.actionProtocol()
         // 创建可变的工作变量
         var _context = context
 
@@ -590,7 +591,11 @@ class VLMOperationService(
                 ensureTaskActive("before_screenshot_$stabilityAttempt")
                 val screenshot = deviceOperator.captureScreenshot()
                 safePauseCheck("after_screenshot_$stabilityAttempt")
-                val beforeXml = captureCurrentXml()
+                val beforeXml = if (deviceOperator.supportsAccessibilityTree()) {
+                    captureCurrentXml()
+                } else {
+                    null
+                }
                 safePauseCheck("after_capture_xml_$stabilityAttempt")
 
                 // Note: Compactor 已移至 executeTask 主循环，在超时计时之外执行
@@ -611,7 +616,8 @@ class VLMOperationService(
                         screenshot = screenshot,
                         conversationState = conversationState,
                         model = model,
-                        retryState = retryState
+                        retryState = retryState,
+                        actionProtocol = actionProtocol
                     )
                     currentUserTextSnapshot = requestEnvelope.currentUserText
                     OmniLog.i(
@@ -670,7 +676,11 @@ class VLMOperationService(
                     }
 
                     // 解析链路统一由主场景解析器处理
-                    vlmResult = vlmClient.parseVLMResponse(streamedTurn, model)
+                    vlmResult = vlmClient.parseVLMResponse(
+                        response = streamedTurn,
+                        modelOrScene = model,
+                        actionProtocol = actionProtocol
+                    )
                     safePauseCheck("after_parse_${stabilityAttempt}_retry_$toolCallRetryCount")
 
                     if (
@@ -689,7 +699,11 @@ class VLMOperationService(
                             failureReason = vlmResult.error
                         )
                         val retryReason = vlmResult.error?.takeIf { it.isNotBlank() }
-                            ?: "模型未返回标准 tool_calls"
+                            ?: if (actionProtocol == VlmActionProtocol.DO_TEXT) {
+                                "模型未返回可解析 Shizuku 文本动作"
+                            } else {
+                                "模型未返回标准 tool_calls"
+                            }
                         OmniLog.w(
                             Tag,
                             "$retryReason，进入协议纠偏重试 $toolCallRetryCount/$maxToolCallRetries; finish_reason=${vlmResult.thinking?.finishReason.orEmpty()}"
@@ -702,7 +716,7 @@ class VLMOperationService(
 
                 if (!vlmResult.success || vlmResult.step == null) {
                     parseFailureCount++
-                    val resolvedError = resolveVlmFailureMessage(vlmResult)
+                    val resolvedError = resolveVlmFailureMessage(vlmResult, actionProtocol)
                     OmniLog.e(
                         Tag,
                         "Parse VLM response failed (#$parseFailureCount): $resolvedError"
@@ -746,7 +760,8 @@ class VLMOperationService(
                             vlmClient.buildConversationRound(
                                 currentUserText = currentUserTextSnapshot,
                                 assistantTurn = completedTurn,
-                                executedStep = feedbackStep
+                                executedStep = feedbackStep,
+                                actionProtocol = actionProtocol
                             )
                         )
                     }
@@ -781,10 +796,15 @@ class VLMOperationService(
                         position = listOf(processedStep.action.x, processedStep.action.y)
                     )
 
+                    is DoubleTapAction -> processedStep = updateActionWithCoordinates(
+                        processedStep,
+                        position = listOf(processedStep.action.x, processedStep.action.y)
+                    )
+
                     else -> {}
                 }
 
-                if (needsPreciseLocation(processedStep.action)) {
+                if (needsPreciseLocation(processedStep.action) && deviceOperator.supportsAccessibilityTree()) {
                     val afterXml = captureCurrentXml()
                     if (!isPageStableByXml(beforeXml, afterXml)) {
                         OmniLog.d(Tag, "页面不稳定，第${stabilityAttempt + 1}次重试")
@@ -797,7 +817,7 @@ class VLMOperationService(
                 } else {
                     OmniLog.d(
                         Tag,
-                        "Action ${processedStep.action.name} does not require precise location, skipping stability check"
+                        "Action ${processedStep.action.name} does not require accessibility stability check"
                     )
                 }
 
@@ -838,7 +858,8 @@ class VLMOperationService(
                         vlmClient.buildConversationRound(
                             currentUserText = currentUserTextSnapshot,
                             assistantTurn = completedTurn,
-                            executedStep = finalStep
+                            executedStep = finalStep,
+                            actionProtocol = actionProtocol
                         )
                     )
                 }
@@ -933,12 +954,18 @@ class VLMOperationService(
         }
     }
 
-    private fun resolveVlmFailureMessage(vlmResult: VLMResult): String {
+    private fun resolveVlmFailureMessage(
+        vlmResult: VLMResult,
+        actionProtocol: VlmActionProtocol
+    ): String {
         if (vlmResult.shouldRetryForToolCall) {
             val finishReasonSuffix = vlmResult.thinking?.finishReason
                 ?.takeIf { it.isNotBlank() }
                 ?.let { "（finish_reason=$it）" }
                 .orEmpty()
+            if (actionProtocol == VlmActionProtocol.DO_TEXT) {
+                return "模型多次未返回可解析的 Shizuku 文本动作，期望格式为 do(...) 或 finish(...)$finishReasonSuffix"
+            }
             return "模型多次未返回标准 tool_calls，可能仍停留在思考阶段或不支持标准工具调用$finishReasonSuffix"
         }
         return vlmResult.error ?: "VLM推理失败"
@@ -967,7 +994,7 @@ class VLMOperationService(
 
     private fun needsPreciseLocation(action: UIAction): Boolean {
         return when (action) {
-            is ClickAction, is ScrollAction, is LongPressAction -> true
+            is ClickAction, is ScrollAction, is LongPressAction, is DoubleTapAction -> true
             else -> false
         }
     }
@@ -1071,6 +1098,16 @@ class VLMOperationService(
                             encodedHeight
                         )
                     }), encoded=${encodedWidth}x${encodedHeight}, mapped=(${absoluteX}, ${absoluteY}), display=${displayWidth}x${displayHeight}"
+                )
+                action.copy(x = absoluteX.toFloat(), y = absoluteY.toFloat())
+            }
+
+            is DoubleTapAction -> {
+                val absoluteX = toScreenCoord(position[0], encodedWidth, scaleX, displayWidth)
+                val absoluteY = toScreenCoord(position[1], encodedHeight, scaleY, displayHeight)
+                OmniLog.d(
+                    Tag,
+                    "Coord mapping(double_tap): raw=(${position[0]}, ${position[1]}), encoded=${encodedWidth}x${encodedHeight}, mapped=(${absoluteX}, ${absoluteY}), display=${displayWidth}x${displayHeight}"
                 )
                 action.copy(x = absoluteX.toFloat(), y = absoluteY.toFloat())
             }

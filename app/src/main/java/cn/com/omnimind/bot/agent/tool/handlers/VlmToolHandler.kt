@@ -1,6 +1,5 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
-import android.provider.Settings
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.*
 import cn.com.omnimind.bot.agent.AgentCallback
@@ -191,9 +190,6 @@ class VlmToolHandler(
     }
 
     private fun checkExecutionPrerequisites(): List<String> {
-        val missing = mutableListOf<String>()
-        if (!AssistsUtil.Core.isAccessibilityServiceEnabled()) { missing.add("无障碍权限") }
-        if (!Settings.canDrawOverlays(helper.context)) { missing.add("悬浮窗权限") }
-        return missing
+        return AssistsUtil.Core.getMissingVlmExecutionPermissions(helper.context)
     }
 }

@@ -13,6 +13,7 @@ import kotlinx.serialization.json.encodeToJsonElement
 
 interface DeviceOperator {
     suspend fun clickCoordinate(x: Float, y: Float): OperationResult
+    suspend fun doubleTapCoordinate(x: Float, y: Float): OperationResult
     suspend fun longClickCoordinate(x: Float, y: Float, duration: Long = 1000L): OperationResult
     suspend fun inputText(text: String): OperationResult
     suspend fun pressHotKey(key: String): OperationResult
@@ -27,6 +28,8 @@ interface DeviceOperator {
     fun getLastScreenshotHeight(): Int // 获取最后一次截图的高度
     fun getDisplayWidth(): Int // 设备实际屏幕宽度
     fun getDisplayHeight(): Int // 设备实际屏幕高度
+    fun supportsAccessibilityTree(): Boolean
+    fun actionProtocol(): VlmActionProtocol
     suspend fun showInfo(message: String)
 
 }
@@ -69,6 +72,10 @@ class ActionExecutor(
 
             is LongPressAction -> {
                 deviceOperator.longClickCoordinate(action.x.toFloat(), action.y.toFloat())
+            }
+
+            is DoubleTapAction -> {
+                deviceOperator.doubleTapCoordinate(action.x.toFloat(), action.y.toFloat())
             }
 
             is TypeAction -> {
@@ -184,6 +191,7 @@ class ActionExecutor(
         val needsPostDelay = when (vlmStep.action) {
             is ClickAction,
             is LongPressAction,
+            is DoubleTapAction,
             is ScrollAction,
             is OpenAppAction,
             is PressHomeAction,

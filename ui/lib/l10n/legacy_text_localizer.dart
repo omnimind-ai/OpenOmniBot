@@ -57,6 +57,7 @@ class LegacyTextLocalizer {
     '当前平台暂不支持浏览器工具视图':
         'Browser tool view is not supported on this platform yet',
     '无障碍权限': 'Accessibility',
+    'VLM 操作权限': 'VLM Automation',
     '悬浮窗权限': 'Overlay',
     '应用列表读取权限': 'Installed Apps Access',
     'Shizuku 权限': 'Shizuku Permission',

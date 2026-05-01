@@ -172,7 +172,8 @@ class TaskManager(
         (runningTask as ScheduledVLMOperationTask).start(
             context, params.goal, params.model, params.maxSteps, params.packageName,
             onTaskFinishListener = {},
-            skipGoHome = false  // 定时任务默认从主页开始
+            skipGoHome = false,  // 定时任务默认从主页开始
+            automationBackend = params.automationBackend
         )
     }
 
@@ -271,7 +272,8 @@ class TaskManager(
             params.packageName,
             params.onTaskFinishListener,
             params.skipGoHome,
-            params.stepSkillGuidance
+            params.stepSkillGuidance,
+            params.automationBackend
         )
     }
 

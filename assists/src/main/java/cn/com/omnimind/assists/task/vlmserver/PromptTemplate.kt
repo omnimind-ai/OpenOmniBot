@@ -24,8 +24,14 @@ object PromptTemplate {
         return buildTurnUserPrompt(context, sceneId)
     }
 
-    fun buildSystemPrompt(sceneId: String? = null): String {
+    fun buildSystemPrompt(
+        sceneId: String? = null,
+        actionProtocol: VlmActionProtocol = VlmActionProtocol.OPENAI_TOOL_CALLS
+    ): String {
         val locale = currentLocale()
+        if (actionProtocol == VlmActionProtocol.DO_TEXT) {
+            return buildDoTextSystemPrompt(locale)
+        }
         val resolvedSceneId = if (sceneId.isNullOrBlank()) {
             "scene.vlm.operation.primary"
         } else {
@@ -62,7 +68,11 @@ object PromptTemplate {
         )
     }
 
-    fun buildTurnUserPrompt(context: UIContext, sceneId: String? = null): String {
+    fun buildTurnUserPrompt(
+        context: UIContext,
+        sceneId: String? = null,
+        actionProtocol: VlmActionProtocol = VlmActionProtocol.OPENAI_TOOL_CALLS
+    ): String {
         val locale = currentLocale()
         val resolvedSceneId = if (sceneId.isNullOrBlank()) {
             "scene.vlm.operation.primary"
@@ -76,7 +86,11 @@ object PromptTemplate {
         } else {
             t(locale, "暂无历史操作", "No prior execution history yet")
         }
-        val installedApps = if (context.installedApplications.isNotEmpty()) {
+        val installedApps = if (context.installedApplications.isNotEmpty() && actionProtocol == VlmActionProtocol.DO_TEXT) {
+            context.installedApplications.entries
+                .take(80)
+                .joinToString(", ") { (packageName, appName) -> "$appName($packageName)" }
+        } else if (context.installedApplications.isNotEmpty()) {
             context.installedApplications.values.joinToString(", ")
         } else {
             t(locale, "暂无数据", "No data")
@@ -101,11 +115,19 @@ object PromptTemplate {
                 appendLine(context.priorityEvent)
                 if (context.suggestCompletion) {
                     appendLine(
-                        t(
-                            locale,
-                            "如果已经确认任务完成，请尽快调用 finished 工具结束任务。",
-                            "If the task has already been confirmed complete, call the finished tool as soon as possible."
-                        )
+                        if (actionProtocol == VlmActionProtocol.DO_TEXT) {
+                            t(
+                                locale,
+                                "如果已经确认任务完成，请尽快输出 finish(message=\"...\") 结束任务。",
+                                "If the task has already been confirmed complete, output finish(message=\"...\") as soon as possible."
+                            )
+                        } else {
+                            t(
+                                locale,
+                                "如果已经确认任务完成，请尽快调用 finished 工具结束任务。",
+                                "If the task has already been confirmed complete, call the finished tool as soon as possible."
+                            )
+                        }
                     )
                 }
                 appendLine()
@@ -140,27 +162,129 @@ object PromptTemplate {
             appendLine("${t(locale, "已安装应用", "Installed apps")}: $installedApps")
             appendLine()
             appendLine("${t(locale, "输出要求", "Output requirements")}:")
+            if (actionProtocol == VlmActionProtocol.DO_TEXT) {
+                appendLine(
+                    t(
+                        locale,
+                        "1. 每轮只输出一个动作，格式必须是 do(action=\"...\") 或 finish(message=\"...\")。",
+                        "1. Output exactly one action per turn. The format must be do(action=\"...\") or finish(message=\"...\")."
+                    )
+                )
+                appendLine(
+                    t(
+                        locale,
+                        "2. Tap/Long Press/Double Tap 使用 element=[x,y]；Swipe 使用 start=[x,y], end=[x,y]；坐标为 0-1000 相对坐标。",
+                        "2. Use element=[x,y] for Tap/Long Press/Double Tap and start=[x,y], end=[x,y] for Swipe. Coordinates are relative 0-1000 values."
+                    )
+                )
+                appendLine(
+                    t(
+                        locale,
+                        "3. 支付、转账、删除、授权等敏感操作不要直接点击，使用 do(action=\"Take_over\", message=\"...\") 让用户接管。",
+                        "3. For sensitive operations such as payment, transfer, deletion, or authorization, do not tap directly. Use do(action=\"Take_over\", message=\"...\")."
+                    )
+                )
+            } else {
+                appendLine(
+                    t(
+                        locale,
+                        "1. 直接从 tools 列表中选择下一步动作，每轮只调用一个工具。",
+                        "1. Pick the next action directly from the tools list, and call exactly one tool per turn."
+                    )
+                )
+                appendLine(
+                    t(
+                        locale,
+                        "2. click/long_press 只填 x、y；scroll 只填 x1、y1、x2、y2；每个坐标字段都必须是单个数值。",
+                        "2. For click and long_press, only fill x and y. For scroll, only fill x1, y1, x2, and y2. Every coordinate field must be a single numeric scalar."
+                    )
+                )
+                appendLine(
+                    t(
+                        locale,
+                        "3. assistant.content 只写 observation/thought/summary 元信息；只有真正完成任务时才调用 finished。",
+                        "3. assistant.content may only contain observation / thought / summary metadata. Call finished only when the task is truly complete."
+                    )
+                )
+            }
+        }.trim()
+    }
+
+    private fun buildDoTextSystemPrompt(locale: PromptLocale): String {
+        return t(
+            locale,
+            """
+你是一个手机 Agent，可以通过 Shizuku 操控用户当前手机屏幕来完成任务。每轮你会收到当前截图和任务上下文，你必须基于当前看到的屏幕选择下一步，只输出一步动作。
+
+## 行为原则
+1. 不要假设上一轮操作成功；每轮都重新观察当前截图。
+2. 找不到目标元素时，可以滑动、返回或换一种路径。
+3. 需要登录、验证码、支付、转账、删除、授权确认等敏感步骤时，使用 Take_over 请求用户接管。
+4. 坐标采用相对坐标系，取值 0-1000；(0,0) 是左上角，(1000,1000) 是右下角。
+
+## 可用动作
+- Launch: do(action="Launch", app="微信")
+- Tap: do(action="Tap", element=[500,500])
+- Type: do(action="Type", text="你好")
+- Swipe: do(action="Swipe", start=[500,800], end=[500,200])
+- Back: do(action="Back")
+- Home: do(action="Home")
+- Long Press: do(action="Long Press", element=[500,500])
+- Double Tap: do(action="Double Tap", element=[500,500])
+- Wait: do(action="Wait", duration="2 seconds")
+- Take_over: do(action="Take_over", message="需要登录或用户确认")
+- finish: finish(message="已完成")
+
+## 输出格式
+可以先用极短自然语言说明判断，但最后必须包含且只包含一个 do(...) 或 finish(...) 动作。不要输出 JSON，不要输出 OpenAI tool_calls。
+""".trimIndent(),
+            """
+You are a Phone Agent controlling the user's current Android screen through Shizuku. Each turn includes a screenshot and task context. Choose exactly one next step based on the current screen.
+
+## Principles
+1. Do not assume the previous action succeeded. Re-check the screenshot every turn.
+2. If the target is missing, scroll, go back, or try another path.
+3. For login, captcha, payment, transfer, deletion, or authorization confirmation, use Take_over so the user can handle it.
+4. Coordinates are relative 0-1000 values. (0,0) is top-left and (1000,1000) is bottom-right.
+
+## Actions
+- Launch: do(action="Launch", app="WeChat")
+- Tap: do(action="Tap", element=[500,500])
+- Type: do(action="Type", text="Hello")
+- Swipe: do(action="Swipe", start=[500,800], end=[500,200])
+- Back: do(action="Back")
+- Home: do(action="Home")
+- Long Press: do(action="Long Press", element=[500,500])
+- Double Tap: do(action="Double Tap", element=[500,500])
+- Wait: do(action="Wait", duration="2 seconds")
+- Take_over: do(action="Take_over", message="User confirmation is required")
+- finish: finish(message="Done")
+
+## Output Format
+You may briefly state your observation, but the final answer must contain exactly one do(...) or finish(...) action. Do not output JSON or OpenAI tool_calls.
+""".trimIndent()
+        )
+    }
+
+    fun buildDoTextRetryPrompt(context: UIContext, retryState: VLMToolCallRetryState): String {
+        val locale = currentLocale()
+        return buildString {
             appendLine(
                 t(
                     locale,
-                    "1. 直接从 tools 列表中选择下一步动作，每轮只调用一个工具。",
-                    "1. Pick the next action directly from the tools list, and call exactly one tool per turn."
+                    "系统无法解析你上一轮的 Shizuku 文本动作：${retryState.failureReason.orEmpty().ifBlank { "缺少 do(...) 或 finish(...)" }}",
+                    "The system could not parse your previous Shizuku text action: ${retryState.failureReason.orEmpty().ifBlank { "missing do(...) or finish(...)" }}"
                 )
             )
             appendLine(
                 t(
                     locale,
-                    "2. click/long_press 只填 x、y；scroll 只填 x1、y1、x2、y2；每个坐标字段都必须是单个数值。",
-                    "2. For click and long_press, only fill x and y. For scroll, only fill x1, y1, x2, and y2. Every coordinate field must be a single numeric scalar."
+                    "请本轮严格输出一个动作，例如 do(action=\"Tap\", element=[500,500]) 或 finish(message=\"已完成\")。",
+                    "In this turn, output exactly one action, for example do(action=\"Tap\", element=[500,500]) or finish(message=\"Done\")."
                 )
             )
-            appendLine(
-                t(
-                    locale,
-                    "3. assistant.content 只写 observation/thought/summary 元信息；只有真正完成任务时才调用 finished。",
-                    "3. assistant.content may only contain observation / thought / summary metadata. Call finished only when the task is truly complete."
-                )
-            )
+            appendLine("${t(locale, "用户任务", "User task")}: ${context.overallTask}")
+            appendLine("${t(locale, "当前子目标", "Current sub-goal")}: ${context.activeGoal()}")
         }.trim()
     }
 

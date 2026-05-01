@@ -6,14 +6,13 @@ package cn.com.omnimind.assists.task.vlmserver
 
 import android.content.Context
 import android.content.Intent
-import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.assists.api.eventapi.ExecutionTaskEventApi
-import cn.com.omnimind.baselib.shizuku.ShizukuCapabilityManager
+import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
+import cn.com.omnimind.baselib.util.APPPackageUtil
+import cn.com.omnimind.baselib.util.ImageQuality
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.baselib.util.exception.PrivacyBlockedException
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
-import cn.com.omnimind.baselib.util.ImageQuality
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
@@ -22,16 +21,42 @@ import kotlin.math.sqrt
 
 class AndroidDeviceOperator(
     private val executionTaskEventApi: ExecutionTaskEventApi?,
-    private val context: Context? = null
+    private val context: Context? = null,
+    private val backend: VlmAutomationBackend = VlmAutomationBackend.ACCESSIBILITY
 ) : DeviceOperator {
 
     private val Tag = "AndroidDeviceOperator"
+    private val shizukuDriverInstance by lazy { context?.let { ShizukuVlmAutomationDriver(it) } }
 
     // 存储最后一次截图的尺寸（传给VLM的图片）以及设备实际尺寸
     private var lastScreenshotWidth: Int = 1080
     private var lastScreenshotHeight: Int = 1920
     private var lastDisplayWidth: Int = 1080
     private var lastDisplayHeight: Int = 1920
+
+    override fun supportsAccessibilityTree(): Boolean = backend == VlmAutomationBackend.ACCESSIBILITY
+
+    override fun actionProtocol(): VlmActionProtocol {
+        return if (backend == VlmAutomationBackend.SHIZUKU) {
+            VlmActionProtocol.DO_TEXT
+        } else {
+            VlmActionProtocol.OPENAI_TOOL_CALLS
+        }
+    }
+
+    private fun shizukuDriver(): ShizukuVlmAutomationDriver? {
+        return shizukuDriverInstance
+    }
+
+    private fun checkLaunchPrivacy(packageName: String) {
+        if (APPPackageUtil.isPackageAuthorized(packageName)) {
+            return
+        }
+        val appName = context?.let { APPPackageUtil.getAppName(it, packageName) }
+            ?.takeIf { it.isNotBlank() }
+            ?: packageName
+        throw PrivacyBlockedException("应用 $appName 未授权，已被隐私设置限制")
+    }
 
     companion object {
         private var clipboardResultCallback: ((Boolean) -> Unit)? = null
@@ -58,29 +83,67 @@ class AndroidDeviceOperator(
 
     override suspend fun clickCoordinate(x: Float, y: Float): OperationResult {
         return try {
-            if (executionTaskEventApi != null) {
-                executionTaskEventApi.clickCoordinate(x, y) {
-                    AccessibilityController.clickCoordinate(x, y)
+            val result = when (backend) {
+                VlmAutomationBackend.SHIZUKU -> {
+                    shizukuDriver()?.tap(x, y)
+                        ?: OperationResult(false, "Shizuku driver unavailable", null)
                 }
-            } else {
-                AccessibilityController.clickCoordinate(x, y)
+                VlmAutomationBackend.ACCESSIBILITY -> {
+                    if (executionTaskEventApi != null) {
+                        executionTaskEventApi.clickCoordinate(x, y) {
+                            AccessibilityController.clickCoordinate(x, y)
+                        }
+                    } else {
+                        AccessibilityController.clickCoordinate(x, y)
+                    }
+                    OperationResult(true, "点击坐标 ($x, $y) 成功", null)
+                }
             }
-            OperationResult(true, "点击坐标 ($x, $y) 成功", null)
+            if (result.success) result.copy(message = "点击坐标 ($x, $y) 成功") else result
         } catch (e: Exception) {
             OperationResult(false, "点击失败: ${e.message}", null)
         }
     }
 
+    override suspend fun doubleTapCoordinate(x: Float, y: Float): OperationResult {
+        return try {
+            val result = when (backend) {
+                VlmAutomationBackend.SHIZUKU -> {
+                    shizukuDriver()?.doubleTap(x, y)
+                        ?: OperationResult(false, "Shizuku driver unavailable", null)
+                }
+                VlmAutomationBackend.ACCESSIBILITY -> {
+                    AccessibilityController.clickCoordinate(x, y)
+                    kotlinx.coroutines.delay(80L)
+                    AccessibilityController.clickCoordinate(x, y)
+                    OperationResult(true, "双击坐标 ($x, $y) 成功", null)
+                }
+            }
+            if (result.success) result.copy(message = "双击坐标 ($x, $y) 成功") else result
+        } catch (e: Exception) {
+            OperationResult(false, "双击失败: ${e.message}", null)
+        }
+    }
+
     override suspend fun longClickCoordinate(x: Float, y: Float, duration: Long): OperationResult {
         return try {
-            if (executionTaskEventApi != null) {
-                executionTaskEventApi.longClickCoordinate(x, y) {
-                    AccessibilityController.longClickCoordinate(x, y, duration)
+            val result = when (backend) {
+                VlmAutomationBackend.SHIZUKU -> {
+                    shizukuDriver()?.longPress(x, y, duration)
+                        ?: OperationResult(false, "Shizuku driver unavailable", null)
                 }
-            } else {
-                AccessibilityController.longClickCoordinate(x, y, duration)
+                VlmAutomationBackend.ACCESSIBILITY -> {
+                    if (executionTaskEventApi != null) {
+                        executionTaskEventApi.longClickCoordinate(x, y) {
+                            AccessibilityController.longClickCoordinate(x, y, duration)
+                        }
+                    } else {
+                        AccessibilityController.longClickCoordinate(x, y, duration)
+                    }
+                    OperationResult(true, "长按坐标 ($x, $y) 成功", null)
+                }
             }
-            OperationResult(true, "长按坐标 ($x, $y) 成功", null)
+            if (result.success) result.copy(message = "长按坐标 ($x, $y) 成功") else result
         } catch (e: Exception) {
             OperationResult(false, "长按失败: ${e.message}", null)
         }
@@ -88,23 +151,42 @@ class AndroidDeviceOperator(
 
     override suspend fun inputText(text: String): OperationResult {
         return try {
-            if (executionTaskEventApi != null) {
-                executionTaskEventApi.inputText() {
-                    AccessibilityController.inputTextToFocusedNode(text)
+            val result = when (backend) {
+                VlmAutomationBackend.SHIZUKU -> {
+                    val driver = shizukuDriver()
+                        ?: return OperationResult(false, "Shizuku driver unavailable", null)
+                    val primaryResult = driver.inputText(text)
+                    if (primaryResult.success) {
+                        primaryResult
+                    } else if (primaryResult.message.contains("ADB Keyboard", ignoreCase = true)) {
+                        val clipboardResult = copyToClipboard(text)
+                        if (!clipboardResult.success) {
+                            primaryResult
+                        } else {
+                            val pasteResult = driver.keyEvent("KEYCODE_PASTE")
+                            if (pasteResult.success) {
+                                OperationResult(true, "输入文本成功: $text", null)
+                            } else {
+                                pasteResult
+                            }
+                        }
+                    } else {
+                        primaryResult
+                    }
                 }
-            } else {
-                AccessibilityController.inputTextToFocusedNode(text)
+                VlmAutomationBackend.ACCESSIBILITY -> {
+                    if (executionTaskEventApi != null) {
+                        executionTaskEventApi.inputText {
+                            AccessibilityController.inputTextToFocusedNode(text)
+                        }
+                    } else {
+                        AccessibilityController.inputTextToFocusedNode(text)
+                    }
+                    OperationResult(true, "输入文本成功: $text", null)
+                }
             }
-            OperationResult(true, "输入文本成功: $text", null)
+            if (result.success) result.copy(message = "输入文本成功: $text") else result
         } catch (e: Exception) {
-            val shizukuFallback = inputTextViaShizuku(text)
-            if (shizukuFallback.success) {
-                return shizukuFallback
-            }
-            val shellFallback = inputTextViaShell(text)
-            if (shellFallback.success) {
-                return shellFallback
-            }
             OperationResult(false, "输入失败: ${e.message}", null)
         }
     }
@@ -112,104 +194,19 @@ class AndroidDeviceOperator(
     override suspend fun pressHotKey(key: String): OperationResult {
         val normalized = key.trim().uppercase()
         return try {
-            AccessibilityController.pressHotKey(normalized)
-            OperationResult(true, "按下热键 $normalized 成功", null)
+            val result = when (backend) {
+                VlmAutomationBackend.SHIZUKU -> {
+                    shizukuDriver()?.keyEvent(normalized)
+                        ?: OperationResult(false, "Shizuku driver unavailable", null)
+                }
+                VlmAutomationBackend.ACCESSIBILITY -> {
+                    AccessibilityController.pressHotKey(normalized)
+                    OperationResult(true, "按下热键 $normalized 成功", null)
+                }
+            }
+            if (result.success) result.copy(message = "按下热键 $normalized 成功") else result
         } catch (primaryError: Exception) {
-            if (normalized == "ENTER") {
-                val shizukuFallback = pressEnterViaShizuku()
-                if (shizukuFallback.success) {
-                    return shizukuFallback
-                }
-                val fallback = pressEnterViaShell()
-                if (fallback.success) {
-                    return fallback
-                }
-            }
             OperationResult(false, "热键执行失败: ${primaryError.message}", null)
-        }
-    }
-
-    private suspend fun inputTextViaShizuku(text: String): OperationResult {
-        val ctx = context ?: return OperationResult(false, "Shizuku 不可用", null)
-        return try {
-            val result = ShizukuCapabilityManager.get(ctx).inputText(text)
-            if (result.success) {
-                OperationResult(true, "通过 Shizuku 输入文本成功", null)
-            } else {
-                OperationResult(false, "Shizuku 输入失败: ${result.message}", null)
-            }
-        } catch (e: Exception) {
-            OmniLog.e(Tag, "inputTextViaShizuku failed: ${e.message}", e)
-            OperationResult(false, "Shizuku 输入失败: ${e.message}", null)
-        }
-    }
-
-    /**
-     * 通过Shell命令输入文本（非接口方法，仅作为备用）
-     */
-    suspend fun inputTextViaShell(text: String): OperationResult {
-        return try {
-            OmniLog.d(Tag, "inputTextViaShell: $text")
-            // 使用 shell 命令直接输入文本
-            val escapedText = text
-                .replace("\\", "\\\\")
-                .replace(" ", "%s")
-                .replace("'", "\\'")
-                .replace("\"", "\\\"")
-                .replace("&", "\\&")
-                .replace("<", "\\<")
-                .replace(">", "\\>")
-                .replace("|", "\\|")
-                .replace(";", "\\;")
-                .replace("(", "\\(")
-                .replace(")", "\\)")
-                .replace("\n", " ")
-
-            val process = Runtime.getRuntime().exec(
-                arrayOf(
-                    "sh", "-c",
-                    "input text '$escapedText'"
-                )
-            )
-            val exitCode = process.waitFor()
-            OmniLog.d(Tag, "input text shell exit code: $exitCode")
-
-            if (exitCode == 0) {
-                OperationResult(true, "Shell输入文本成功: $text", null)
-            } else {
-                OperationResult(false, "Shell输入失败, exit code: $exitCode", null)
-            }
-        } catch (e: Exception) {
-            OmniLog.e(Tag, "inputTextViaShell failed: ${e.message}", e)
-            OperationResult(false, "Shell输入失败: ${e.message}", null)
-        }
-    }
-
-    private suspend fun pressEnterViaShizuku(): OperationResult {
-        val ctx = context ?: return OperationResult(false, "Shizuku 不可用", null)
-        return try {
-            val result = ShizukuCapabilityManager.get(ctx).pressKeyEvent("ENTER")
-            if (result.success) {
-                OperationResult(true, "通过 Shizuku 按下 ENTER 成功", null)
-            } else {
-                OperationResult(false, "Shizuku 按下 ENTER 失败: ${result.message}", null)
-            }
-        } catch (e: Exception) {
-            OperationResult(false, "Shizuku 按下 ENTER 失败: ${e.message}", null)
-        }
-    }
-
-    private suspend fun pressEnterViaShell(): OperationResult {
-        return try {
-            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", "input keyevent 66"))
-            val exitCode = process.waitFor()
-            if (exitCode == 0) {
-                OperationResult(true, "通过Shell按下ENTER键成功", null)
-            } else {
-                OperationResult(false, "Shell按下ENTER失败, exit code: $exitCode", null)
-            }
-        } catch (e: Exception) {
-            OperationResult(false, "Shell按下ENTER失败: ${e.message}", null)
         }
     }
 
@@ -298,31 +295,40 @@ class AndroidDeviceOperator(
             }
 
             val distance = sqrt((dx * dx + dy * dy).toDouble()).toFloat()
-            if (executionTaskEventApi != null) {
-                executionTaskEventApi.scrollCoordinate(
-                    x1,
-                    y1,
-                    scrollDirection,
-                    distance.toInt()
-                ) {
-                    AccessibilityController.scrollCoordinate(
-                        x1,
-                        y1,
-                        scrollDirection,
-                        distance,
-                        duration = duration
-                    )
+            val result = when (backend) {
+                VlmAutomationBackend.SHIZUKU -> {
+                    shizukuDriver()?.swipe(x1, y1, x2, y2, duration)
+                        ?: OperationResult(false, "Shizuku driver unavailable", null)
                 }
-            } else {
-                AccessibilityController.scrollCoordinate(
-                    x1,
-                    y1,
-                    scrollDirection,
-                    distance,
-                    duration = duration
-                )
+                VlmAutomationBackend.ACCESSIBILITY -> {
+                    if (executionTaskEventApi != null) {
+                        executionTaskEventApi.scrollCoordinate(
+                            x1,
+                            y1,
+                            scrollDirection,
+                            distance.toInt()
+                        ) {
+                            AccessibilityController.scrollCoordinate(
+                                x1,
+                                y1,
+                                scrollDirection,
+                                distance,
+                                duration = duration
+                            )
+                        }
+                    } else {
+                        AccessibilityController.scrollCoordinate(
+                            x1,
+                            y1,
+                            scrollDirection,
+                            distance,
+                            duration = duration
+                        )
+                    }
+                    OperationResult(true, "滑动 ($x1, $y1) → ($x2, $y2) 成功", null)
+                }
             }
-            OperationResult(true, "滑动 ($x1, $y1) → ($x2, $y2) 成功", null)
+            if (result.success) result.copy(message = "滑动 ($x1, $y1) → ($x2, $y2) 成功") else result
         } catch (e: Exception) {
             OperationResult(false, "滑动失败: ${e.message}", null)
         }
@@ -330,17 +336,23 @@ class AndroidDeviceOperator(
 
     override suspend fun goHome(): OperationResult {
         return try {
-
-
-            if (executionTaskEventApi != null) {
-                executionTaskEventApi.goHome {
-                    AccessibilityController.goHome()
+            val result = when (backend) {
+                VlmAutomationBackend.SHIZUKU -> {
+                    shizukuDriver()?.keyEvent("HOME")
+                        ?: OperationResult(false, "Shizuku driver unavailable", null)
                 }
-            } else {
-                AccessibilityController.goHome()
+                VlmAutomationBackend.ACCESSIBILITY -> {
+                    if (executionTaskEventApi != null) {
+                        executionTaskEventApi.goHome {
+                            AccessibilityController.goHome()
+                        }
+                    } else {
+                        AccessibilityController.goHome()
+                    }
+                    OperationResult(true, "返回桌面成功", null)
+                }
             }
-
-            OperationResult(true, "返回桌面成功", null)
+            if (result.success) result.copy(message = "返回桌面成功") else result
         } catch (e: Exception) {
             OperationResult(false, "返回桌面失败: ${e.message}", null)
         }
@@ -348,14 +360,23 @@ class AndroidDeviceOperator(
 
     override suspend fun goBack(): OperationResult {
         return try {
-            if (executionTaskEventApi != null) {
-                executionTaskEventApi.goBack {
-                    AccessibilityController.goBack()
+            val result = when (backend) {
+                VlmAutomationBackend.SHIZUKU -> {
+                    shizukuDriver()?.keyEvent("BACK")
+                        ?: OperationResult(false, "Shizuku driver unavailable", null)
                 }
-            } else {
-                AccessibilityController.goBack()
+                VlmAutomationBackend.ACCESSIBILITY -> {
+                    if (executionTaskEventApi != null) {
+                        executionTaskEventApi.goBack {
+                            AccessibilityController.goBack()
+                        }
+                    } else {
+                        AccessibilityController.goBack()
+                    }
+                    OperationResult(true, "返回上一级成功", null)
+                }
             }
-            OperationResult(true, "返回上一级成功", null)
+            if (result.success) result.copy(message = "返回上一级成功") else result
         } catch (e: Exception) {
             OperationResult(false, "返回上一级失败: ${e.message}", null)
         }
@@ -366,41 +387,31 @@ class AndroidDeviceOperator(
      */
     override suspend fun launchApplication(packageName: String): OperationResult {
         return try {
-
-            AccessibilityController.launchApplication(packageName) { x, y ->
-
-                if (executionTaskEventApi != null) {
-                    executionTaskEventApi.clickCoordinate(x, y) {
-                        AccessibilityController.clickCoordinate(x, y)
+            val result = when (backend) {
+                VlmAutomationBackend.SHIZUKU -> {
+                    checkLaunchPrivacy(packageName)
+                    shizukuDriver()?.launch(packageName)
+                        ?: OperationResult(false, "Shizuku driver unavailable", null)
+                }
+                VlmAutomationBackend.ACCESSIBILITY -> {
+                    AccessibilityController.launchApplication(packageName) { x, y ->
+                        if (executionTaskEventApi != null) {
+                            executionTaskEventApi.clickCoordinate(x, y) {
+                                AccessibilityController.clickCoordinate(x, y)
+                            }
+                        } else {
+                            AccessibilityController.clickCoordinate(x, y)
+                        }
                     }
-                } else {
-                    AccessibilityController.clickCoordinate(x, y)
+                    OperationResult(true, "启动应用 $packageName 成功", null)
                 }
             }
-            OperationResult(true, "启动应用 $packageName 成功", null)
+            if (result.success) result.copy(message = "启动应用 $packageName 成功") else result
         } catch (e: PrivacyBlockedException) {
             // 隐私限制异常需要终止任务，重新抛出
             throw e
         } catch (e: Exception) {
-            val shizukuFallback = launchApplicationViaShizuku(packageName)
-            if (shizukuFallback.success) {
-                return shizukuFallback
-            }
             OperationResult(false, "启动应用失败: ${e.message}", null)
-        }
-    }
-
-    private suspend fun launchApplicationViaShizuku(packageName: String): OperationResult {
-        val ctx = context ?: return OperationResult(false, "Shizuku 不可用", null)
-        return try {
-            val result = ShizukuCapabilityManager.get(ctx).launchApp(packageName)
-            if (result.success) {
-                OperationResult(true, "通过 Shizuku 启动应用成功", null)
-            } else {
-                OperationResult(false, "Shizuku 启动应用失败: ${result.message}", null)
-            }
-        } catch (e: Exception) {
-            OperationResult(false, "Shizuku 启动应用失败: ${e.message}", null)
         }
     }
 
@@ -410,36 +421,13 @@ class AndroidDeviceOperator(
     override suspend fun captureScreenshot(): String {
         return try {
             val start = System.currentTimeMillis()
-            val payload = AccessibilityController.captureScreenshotImage(
-                isFilterOverlay = true,
-                isBase64 = true,
-                compressQuality = ImageQuality.MEDIUM
-            )
-            if (!payload.isSuccess) {
-                throw RuntimeException("截图数据为空")
+            val finalBase64 = when (backend) {
+                VlmAutomationBackend.SHIZUKU -> captureScreenshotViaShizuku()
+                VlmAutomationBackend.ACCESSIBILITY -> captureScreenshotViaAccessibility()
             }
-            val finalBase64 = payload.imageBase64!!
-            val appliedScale = payload.appliedScale
-
-            // 直接使用 CaptureData 中的尺寸信息
-            lastScreenshotWidth = payload.compressedWidth
-            lastScreenshotHeight = payload.compressedHeight
-
-            val displayMetrics = context?.resources?.displayMetrics
-            val metricsWidth = displayMetrics?.widthPixels ?: payload.originalWidth
-            val metricsHeight = displayMetrics?.heightPixels ?: payload.originalHeight
-
-            // 取更大的值避免低估（屏幕实测/截图原始值）
-            lastDisplayWidth = maxOf(payload.originalWidth, metricsWidth)
-            lastDisplayHeight = maxOf(payload.originalHeight, metricsHeight)
-
             OmniLog.d(
                 Tag,
-                "captureScreenshot cost ${System.currentTimeMillis() - start}ms, scale=$appliedScale"
-            )
-            OmniLog.d(
-                Tag,
-                "screenshot=${lastScreenshotWidth}x${lastScreenshotHeight}, originalDisplay=${payload.originalWidth}x${payload.originalHeight},metrics=${metricsWidth}x${metricsHeight}, chosenDisplay=${lastDisplayWidth}x${lastDisplayHeight}"
+                "captureScreenshot cost ${System.currentTimeMillis() - start}ms, backend=$backend"
             )
 
             finalBase64
@@ -447,6 +435,48 @@ class AndroidDeviceOperator(
             OmniLog.e("Assists", "captureScreenshot failed: ${e.message}", e)
             throw RuntimeException("截图失败: ${e.message}")
         }
+    }
+
+    private suspend fun captureScreenshotViaAccessibility(): String {
+        val payload = AccessibilityController.captureScreenshotImage(
+            isFilterOverlay = true,
+            isBase64 = true,
+            compressQuality = ImageQuality.MEDIUM
+        )
+        if (!payload.isSuccess) {
+            throw RuntimeException("截图数据为空")
+        }
+
+        lastScreenshotWidth = payload.compressedWidth
+        lastScreenshotHeight = payload.compressedHeight
+
+        val displayMetrics = context?.resources?.displayMetrics
+        val metricsWidth = displayMetrics?.widthPixels ?: payload.originalWidth
+        val metricsHeight = displayMetrics?.heightPixels ?: payload.originalHeight
+
+        lastDisplayWidth = maxOf(payload.originalWidth, metricsWidth)
+        lastDisplayHeight = maxOf(payload.originalHeight, metricsHeight)
+
+        OmniLog.d(
+            Tag,
+            "accessibility screenshot=${lastScreenshotWidth}x${lastScreenshotHeight}, originalDisplay=${payload.originalWidth}x${payload.originalHeight}, metrics=${metricsWidth}x${metricsHeight}, chosenDisplay=${lastDisplayWidth}x${lastDisplayHeight}, scale=${payload.appliedScale}"
+        )
+
+        return payload.imageBase64!!
+    }
+
+    private suspend fun captureScreenshotViaShizuku(): String {
+        val screenshot = shizukuDriver()?.captureScreenshot()
+            ?: throw RuntimeException("Shizuku driver unavailable")
+        lastScreenshotWidth = screenshot.width
+        lastScreenshotHeight = screenshot.height
+        lastDisplayWidth = screenshot.displayWidth
+        lastDisplayHeight = screenshot.displayHeight
+        OmniLog.d(
+            Tag,
+            "shizuku screenshot=${screenshot.width}x${screenshot.height}, display=${screenshot.displayWidth}x${screenshot.displayHeight}, method=${screenshot.method}, elapsed=${screenshot.elapsedMs}ms"
+        )
+        return screenshot.dataUri
     }
 
     override fun getLastScreenshotWidth(): Int = lastScreenshotWidth

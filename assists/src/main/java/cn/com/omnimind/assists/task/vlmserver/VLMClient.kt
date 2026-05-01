@@ -34,10 +34,18 @@ class VLMClient {
         screenshot: String,
         conversationState: VLMConversationState,
         model: String = "scene.vlm.operation.primary",
-        retryState: VLMToolCallRetryState? = null
+        retryState: VLMToolCallRetryState? = null,
+        actionProtocol: VlmActionProtocol = VlmActionProtocol.OPENAI_TOOL_CALLS
     ): VLMRequestEnvelope {
-        val systemPrompt = PromptTemplate.buildSystemPrompt(sceneId = model)
-        val currentUserText = PromptTemplate.buildTurnUserPrompt(context, sceneId = model)
+        val systemPrompt = PromptTemplate.buildSystemPrompt(
+            sceneId = model,
+            actionProtocol = actionProtocol
+        )
+        val currentUserText = PromptTemplate.buildTurnUserPrompt(
+            context = context,
+            sceneId = model,
+            actionProtocol = actionProtocol
+        )
         val historyMessages = conversationState.historyMessages()
         val messages = buildMessages(
             systemPrompt = systemPrompt,
@@ -45,13 +53,15 @@ class VLMClient {
             currentUserText = currentUserText,
             screenshot = screenshot,
             context = context,
-            retryState = retryState
+            retryState = retryState,
+            actionProtocol = actionProtocol
         )
 
         OmniLog.i(
             TAG,
-            "buildUIOperationRequest scene=$model historyRounds=${conversationState.roundCount()} historyMessages=${historyMessages.size} totalMessages=${messages.size} currentImages=1 retry=${retryState?.retryIndex ?: 0}"
+            "buildUIOperationRequest scene=$model protocol=$actionProtocol historyRounds=${conversationState.roundCount()} historyMessages=${historyMessages.size} totalMessages=${messages.size} currentImages=1 retry=${retryState?.retryIndex ?: 0}"
         )
+        val useTools = actionProtocol == VlmActionProtocol.OPENAI_TOOL_CALLS
 
         return VLMRequestEnvelope(
             request = ChatCompletionRequest(
@@ -61,15 +71,22 @@ class VLMClient {
                 temperature = 0.2,
                 stream = true,
                 streamOptions = ChatCompletionStreamOptions(includeUsage = true),
-                tools = VLMToolDefinitions.tools(),
-                toolChoice = JsonPrimitive("required"),
-                parallelToolCalls = false
+                tools = if (useTools) VLMToolDefinitions.tools() else emptyList(),
+                toolChoice = if (useTools) JsonPrimitive("required") else null,
+                parallelToolCalls = if (useTools) false else null
             ),
             currentUserText = currentUserText
         )
     }
 
-    fun parseVLMResponse(response: SceneChatCompletionTurn, modelOrScene: String): VLMResult {
+    fun parseVLMResponse(
+        response: SceneChatCompletionTurn,
+        modelOrScene: String,
+        actionProtocol: VlmActionProtocol = VlmActionProtocol.OPENAI_TOOL_CALLS
+    ): VLMResult {
+        if (actionProtocol == VlmActionProtocol.DO_TEXT) {
+            return parseDoTextResponse(response)
+        }
         return when (response.parser) {
             ModelSceneRegistry.ResponseParser.OPENAI_TOOL_ACTIONS -> parseToolActionResponse(response)
             ModelSceneRegistry.ResponseParser.JSON_CONTENT ->
@@ -82,14 +99,14 @@ class VLMClient {
     fun buildConversationRound(
         currentUserText: String,
         assistantTurn: SceneChatCompletionTurn,
-        executedStep: UIStep
+        executedStep: UIStep,
+        actionProtocol: VlmActionProtocol = VlmActionProtocol.OPENAI_TOOL_CALLS
     ): VLMConversationRound {
         val assistantMessage = ChatCompletionMessage(
             role = "assistant",
             content = assistantTurn.turn.message.content,
             toolCalls = assistantTurn.turn.message.toolCalls
         )
-        val toolCallId = assistantTurn.turn.message.toolCalls?.firstOrNull()?.id.orEmpty()
         val toolPayload = buildJsonObject {
             put("success", JsonPrimitive(!(executedStep.result?.startsWith("执行失败") == true)))
             put("action", JsonPrimitive(executedStep.action.name))
@@ -107,11 +124,19 @@ class VLMClient {
                 content = JsonPrimitive(currentUserText)
             ),
             assistantMessage = assistantMessage,
-            toolMessage = ChatCompletionMessage(
-                role = "tool",
-                content = JsonPrimitive(toolPayload),
-                toolCallId = toolCallId.ifBlank { null }
-            )
+            toolMessage = if (actionProtocol == VlmActionProtocol.DO_TEXT) {
+                ChatCompletionMessage(
+                    role = "user",
+                    content = JsonPrimitive("上一轮动作执行结果: $toolPayload")
+                )
+            } else {
+                val toolCallId = assistantTurn.turn.message.toolCalls?.firstOrNull()?.id.orEmpty()
+                ChatCompletionMessage(
+                    role = "tool",
+                    content = JsonPrimitive(toolPayload),
+                    toolCallId = toolCallId.ifBlank { null }
+                )
+            }
         )
     }
 
@@ -167,13 +192,49 @@ class VLMClient {
         }
     }
 
+    private fun parseDoTextResponse(response: SceneChatCompletionTurn): VLMResult {
+        val content = response.turn.message.contentText()
+        val responseText = listOf(content, response.turn.reasoning)
+            .filter { it.isNotBlank() }
+            .joinToString(separator = "\n")
+            .ifBlank { content }
+        val parseResult = VlmDoActionParser.parse(responseText)
+        val thinking = VLMThinkingContext(
+            observation = "",
+            thought = parseResult.step?.thought.orEmpty().ifBlank { response.turn.reasoning.trim() },
+            summary = "",
+            reasoning = response.turn.reasoning.trim(),
+            rawContent = parseResult.normalizedText.ifBlank { responseText.trim() },
+            finishReason = response.turn.finishReason?.trim()?.takeIf { it.isNotEmpty() }
+        )
+
+        val step = parseResult.step
+        return if (parseResult.success && step != null) {
+            VLMResult(
+                success = true,
+                step = step,
+                error = null,
+                thinking = thinking
+            )
+        } else {
+            VLMResult(
+                success = false,
+                step = null,
+                error = parseResult.error ?: "DO_TEXT 动作解析失败",
+                thinking = thinking,
+                shouldRetryForToolCall = true
+            )
+        }
+    }
+
     private fun buildMessages(
         systemPrompt: String,
         historyMessages: List<ChatCompletionMessage>,
         currentUserText: String,
         screenshot: String,
         context: UIContext,
-        retryState: VLMToolCallRetryState?
+        retryState: VLMToolCallRetryState?,
+        actionProtocol: VlmActionProtocol
     ): List<ChatCompletionMessage> {
         val messages = mutableListOf<ChatCompletionMessage>()
         messages += ChatCompletionMessage(
@@ -192,7 +253,13 @@ class VLMClient {
             }
             messages += ChatCompletionMessage(
                 role = "user",
-                content = JsonPrimitive(PromptTemplate.buildToolCallRetryPrompt(context, retryState))
+                content = JsonPrimitive(
+                    if (actionProtocol == VlmActionProtocol.DO_TEXT) {
+                        PromptTemplate.buildDoTextRetryPrompt(context, retryState)
+                    } else {
+                        PromptTemplate.buildToolCallRetryPrompt(context, retryState)
+                    }
+                )
             )
         }
         return messages

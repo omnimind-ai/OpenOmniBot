@@ -1,6 +1,7 @@
 package cn.com.omnimind.baselib.shizuku
 
 import android.content.Context
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.annotation.Keep
 import kotlinx.serialization.json.Json
@@ -34,6 +35,15 @@ class OmnibotPrivilegedUserService() : IOmnibotPrivilegedUserService.Stub() {
             )
         }
         return json.encodeToString(PrivilegedResult.serializer(), result)
+    }
+
+    override fun captureScreenshotPng(): ParcelFileDescriptor? {
+        return runCatching {
+            PrivilegedCommandExecutor.openScreenshotPngPipe()
+        }.getOrElse { error ->
+            Log.e(TAG, "Failed to open screenshot pipe: ${error.message}", error)
+            null
+        }
     }
 
     override fun destroy() {

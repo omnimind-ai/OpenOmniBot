@@ -53,6 +53,7 @@ class SharedHelper(
         "无障碍权限" to "Accessibility",
         "悬浮窗权限" to "Overlay",
         "Shizuku 权限" to "Shizuku Permission",
+        "VLM 操作权限" to "VLM Automation",
         "精确闹钟权限(SCHEDULE_EXACT_ALARM)" to "Exact alarm permission (SCHEDULE_EXACT_ALARM)",
         "通知权限(POST_NOTIFICATIONS)" to "Notification permission (POST_NOTIFICATIONS)",
         "日历权限(READ/WRITE_CALENDAR)" to "Calendar permission (READ/WRITE_CALENDAR)",

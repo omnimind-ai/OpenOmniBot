@@ -163,8 +163,8 @@ class _ExecutableTaskCardState extends State<ExecutableTaskCard> {
       return;
     }
 
-    // 检查无障碍权限
-    final hasPermission = await checkAccessibilityPermission(context);
+    // 检查 VLM 操作权限（Shizuku 或无障碍任一授权即可）
+    final hasPermission = await checkVlmAutomationPermission(context);
     if (!hasPermission) {
       return;
     }

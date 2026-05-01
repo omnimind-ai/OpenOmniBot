@@ -18,6 +18,7 @@ import cn.com.omnimind.assists.api.bean.TaskParams
 import cn.com.omnimind.assists.api.interfaces.OnMessagePushListener
 import cn.com.omnimind.assists.task.scheduled.worker.ScheduledParams
 import cn.com.omnimind.assists.task.scheduled.worker.ScheduledStates
+import cn.com.omnimind.assists.task.vlmserver.VlmAutomationBackend
 import cn.com.omnimind.baselib.util.APPPackageUtil
 import cn.com.omnimind.baselib.util.MobileManufacturerUtil
 import cn.com.omnimind.baselib.util.exception.PermissionException
@@ -52,6 +53,39 @@ class AssistsUtil {
          */
         fun isAccessibilityServiceEnabled() = AssistsCore.isAccessibilityServiceEnabled()
 
+        fun resolveVlmAutomationBackend(context: Context): VlmAutomationBackend? {
+            return VlmAutomationBackend.resolve(context)
+        }
+
+        fun getMissingVlmExecutionPermissions(context: Context): List<String> {
+            val missing = mutableListOf<String>()
+            if (resolveVlmAutomationBackend(context) == null) {
+                missing.add("VLM 操作权限")
+            }
+            if (!Settings.canDrawOverlays(context)) {
+                missing.add("悬浮窗权限")
+            }
+            return missing
+        }
+
+        private suspend fun ensureVlmExecutionPrerequisites(context: Context): VlmAutomationBackend {
+            val backend = resolveVlmAutomationBackend(context)
+                ?: throw PermissionException("请先开启 Shizuku 或无障碍权限!")
+            if (!Settings.canDrawOverlays(context)) {
+                throw PermissionException("请先开启悬浮窗权限!")
+            }
+            if (backend == VlmAutomationBackend.ACCESSIBILITY && Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                if (!ScreenCaptureManager.getInstance().hasPermission()) {
+                    val hasPermission =
+                        ScreenCaptureManager.getInstance().requestScreenCapturePermission()
+                    if (!hasPermission) {
+                        throw PermissionException("请先授予屏幕截图权限!")
+                    }
+                }
+            }
+            return backend
+        }
+
 
         /**
          * 创建陪伴任务
@@ -63,21 +97,7 @@ class AssistsUtil {
             context: Context,
             onMessagePushListener: OnMessagePushListener
         ) {
-            if (!AssistsCore.isAccessibilityServiceEnabled()) {
-                throw PermissionException("请先开无障碍服务!")
-            }
-            if (!Settings.canDrawOverlays(context)) {
-                throw PermissionException("请先开启悬浮窗权限!")
-            }
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-                if (!ScreenCaptureManager.getInstance().hasPermission()) {
-                    val hasPermission =
-                        ScreenCaptureManager.getInstance().requestScreenCapturePermission()
-                    if (!hasPermission) {
-                        throw PermissionException("请先授予屏幕截图权限!")
-                    }
-                }
-            }
+            ensureVlmExecutionPrerequisites(context)
             AssistsCore.startTask(TaskParams.CompanionTaskParams {
                 // startForegroundService(context)
                 onMessagePushListener.onTaskFinish()
@@ -202,21 +222,7 @@ class AssistsUtil {
             stepSkillGuidance: String = ""
         ) {
 
-            if (!AssistsCore.isAccessibilityServiceEnabled()) {
-                throw PermissionException("请先开无障碍服务!")
-            }
-            if (!Settings.canDrawOverlays(context)) {
-                throw PermissionException("请先开启悬浮窗权限!")
-            }
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-                if (!ScreenCaptureManager.getInstance().hasPermission()) {
-                    val hasPermission =
-                        ScreenCaptureManager.getInstance().requestScreenCapturePermission()
-                    if (!hasPermission) {
-                        throw PermissionException("请先授予屏幕截图权限!")
-                    }
-                }
-            }
+            val automationBackend = ensureVlmExecutionPrerequisites(context)
             AssistsCore.startTask(
                 TaskParams.VLMOperationTaskParams(
                     goal,
@@ -229,7 +235,8 @@ class AssistsUtil {
                     needSummary,
                     onMessagePushListener,
                     skipGoHome,
-                    stepSkillGuidance
+                    stepSkillGuidance,
+                    automationBackend
                 )
             )
         }
@@ -277,21 +284,7 @@ class AssistsUtil {
             onMessagePushListener: OnMessagePushListener,
             needSummary: Boolean = false
         ) {
-            if (!AssistsCore.isAccessibilityServiceEnabled()) {
-                throw PermissionException("请先开无障碍服务!")
-            }
-            if (!Settings.canDrawOverlays(context)) {
-                throw PermissionException("请先开启悬浮窗权限!")
-            }
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-                if (!ScreenCaptureManager.getInstance().hasPermission()) {
-                    val hasPermission =
-                        ScreenCaptureManager.getInstance().requestScreenCapturePermission()
-                    if (!hasPermission) {
-                        throw PermissionException("请先授予屏幕截图权限!")
-                    }
-                }
-            }
+            val automationBackend = ensureVlmExecutionPrerequisites(context)
             val taskParams =
                 TaskParams.ScheduledVLMOperationTaskParams(
                     title,
@@ -303,7 +296,8 @@ class AssistsUtil {
                     packageName,
                     "",
                     needSummary = needSummary,
-                    onMessagePushListener = onMessagePushListener
+                    onMessagePushListener = onMessagePushListener,
+                    automationBackend = automationBackend
                 )
             AssistsCore.startTask(
                 TaskParams.ScheduledTaskParams(taskParams, times, TimeUnit.SECONDS) {

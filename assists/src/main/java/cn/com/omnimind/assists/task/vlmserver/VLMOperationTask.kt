@@ -1,6 +1,7 @@
 package cn.com.omnimind.assists.task.vlmserver
 
 import android.content.Context
+import android.content.pm.PackageManager
 import cn.com.omnimind.assists.TaskManager
 import cn.com.omnimind.assists.api.bean.VlmTaskTerminalResult
 import cn.com.omnimind.assists.api.bean.VlmTaskTerminalStatus
@@ -44,6 +45,7 @@ open class VLMOperationTask(
     private lateinit var vlmOperationService: VLMOperationService
     private lateinit var androidDeviceOperator: AndroidDeviceOperator
     private lateinit var onTaskFinishListener: () -> Unit?
+    private var automationBackend: VlmAutomationBackend = VlmAutomationBackend.ACCESSIBILITY
     
     /** 
      * 取消请求标记，用于在 delay 期间检查取消状态
@@ -112,7 +114,7 @@ open class VLMOperationTask(
             isSubTask = isSubTask
 
         )
-        androidDeviceOperator = AndroidDeviceOperator(executionTaskEventApi, taskContext)
+        androidDeviceOperator = AndroidDeviceOperator(executionTaskEventApi, taskContext, automationBackend)
     }
 
     /**
@@ -126,7 +128,7 @@ open class VLMOperationTask(
             question
         }
         val infoMessage = "小万需要你的帮助：$mQuestion"
-        AccessibilityController.restoreKeyboard()
+        restoreKeyboardIfAccessibility()
 
         onTaskStop(TaskFinishType.WAITING_INPUT, infoMessage)
         notifyTerminalResult(
@@ -151,7 +153,7 @@ open class VLMOperationTask(
         val userConfirmation = userInputChannel.receive()
         OmniLog.d(Tag, "收到用户确认：$userConfirmation")
 
-        AccessibilityController.hideKeyboard()
+        hideKeyboardIfAccessibility()
         setStartWithNotShowReadFlag = true
         onTaskStarted()
         taskStartTime = System.currentTimeMillis()
@@ -186,7 +188,7 @@ open class VLMOperationTask(
         onTaskStop(TaskFinishType.USER_PAUSED, "")
         executionTaskEventApi?.onVlmTaskPaused(this)
         // 不推送按钮卡片，直接通知UI层切换小猫状态
-        AccessibilityController.Companion.restoreKeyboard()
+        restoreKeyboardIfAccessibility()
         if (onMessagePushListener != null) {
             try {
                 onMessagePushListener.onVLMRequestUserInput("已接管控制，完成操作后点击继续")
@@ -195,7 +197,7 @@ open class VLMOperationTask(
             }
         }
         userPauseChannel.receive() // 阻塞等待用户点击继续
-        AccessibilityController.Companion.hideKeyboard()
+        hideKeyboardIfAccessibility()
         setStartWithNotShowReadFlag = true
         onTaskStarted()
         taskStartTime = System.currentTimeMillis()
@@ -227,6 +229,61 @@ open class VLMOperationTask(
         OmniLog.d(Tag, "收到总结Sheet准备就绪通知")
         taskScope.launch {
             summarySheetReadyChannel.send(Unit)
+        }
+    }
+
+    override fun supportsAccessibilityTree(): Boolean {
+        return this::androidDeviceOperator.isInitialized &&
+            androidDeviceOperator.supportsAccessibilityTree()
+    }
+
+    override fun actionProtocol(): VlmActionProtocol {
+        return if (this::androidDeviceOperator.isInitialized) {
+            androidDeviceOperator.actionProtocol()
+        } else {
+            VlmActionProtocol.OPENAI_TOOL_CALLS
+        }
+    }
+
+    private fun hideKeyboardIfAccessibility() {
+        if (supportsAccessibilityTree()) {
+            AccessibilityController.hideKeyboard()
+        }
+    }
+
+    private fun restoreKeyboardIfAccessibility() {
+        if (supportsAccessibilityTree()) {
+            AccessibilityController.restoreKeyboard()
+        }
+    }
+
+    private fun currentPackageNameOrEmpty(): String {
+        return if (supportsAccessibilityTree()) {
+            AccessibilityController.getPackageName().orEmpty()
+        } else {
+            ""
+        }
+    }
+
+    private fun resolveRequiredAutomationBackend(context: Context): VlmAutomationBackend {
+        return VlmAutomationBackend.resolve(context)
+            ?: throw IllegalStateException("VLM automation requires Shizuku or Accessibility permission")
+    }
+
+    private suspend fun mapInstalledApplications(context: Context): Map<String, String> {
+        if (supportsAccessibilityTree()) {
+            return AccessibilityController.mapInstalledApplications()
+        }
+        return runCatching {
+            val packageManager = context.packageManager
+            packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+                .asSequence()
+                .filter { packageManager.getLaunchIntentForPackage(it.packageName) != null }
+                .sortedBy { it.loadLabel(packageManager).toString() }
+                .associate { it.packageName to it.loadLabel(packageManager).toString() }
+        }.getOrElse { error ->
+            OmniLog.w(Tag, "Failed to list installed applications without accessibility: ${error.message}")
+            emptyMap()
         }
     }
 
@@ -262,15 +319,18 @@ open class VLMOperationTask(
         packageName: String?,
         onTaskFinishListener: () -> Unit,
         skipGoHome: Boolean = false,  // 是否跳过回到主页，从当前页面开始执行
-        stepSkillGuidance: String = ""
+        stepSkillGuidance: String = "",
+        automationBackend: VlmAutomationBackend? = null
     ) {
         this.goal = goal;
         this.taskContext = context
         this.onTaskFinishListener = onTaskFinishListener
+        this.automationBackend = automationBackend
+            ?: resolveRequiredAutomationBackend(context)
         super.start {
-            AccessibilityController.Companion.hideKeyboard()
-            val currentPackageName = packageName ?: (AccessibilityController.Companion.getPackageName() ?: "")
-            val installedApps = AccessibilityController.Companion.mapInstalledApplications()
+            hideKeyboardIfAccessibility()
+            val currentPackageName = packageName ?: currentPackageNameOrEmpty()
+            val installedApps = mapInstalledApplications(context)
             val shouldSummary = (needSummary || hasSummaryIntent(goal))
 
             executionRecordId = DatabaseHelper.saveExecutionRecord(
@@ -436,11 +496,12 @@ open class VLMOperationTask(
         this.onTaskFinishListener = onTaskFinishListener
         this.isSubTask = true  // 标记为子任务
         this.taskContext = BaseApplication.instance
+        this.automationBackend = resolveRequiredAutomationBackend(BaseApplication.instance)
 
         super.start {
             taskStartTime = System.currentTimeMillis()
-            AccessibilityController.Companion.hideKeyboard()
-            val installedApps = AccessibilityController.Companion.mapInstalledApplications()
+            hideKeyboardIfAccessibility()
+            val installedApps = mapInstalledApplications(BaseApplication.instance)
             OmniLog.d(Tag, "VLM Operation Sequence Sub Task Is Running !")
             try {
                 val report = vlmOperationService.executeTask(
@@ -494,7 +555,7 @@ open class VLMOperationTask(
             return null
         }
 
-        val currentPackage = AccessibilityController.getPackageName().orEmpty()
+        val currentPackage = currentPackageNameOrEmpty()
         if (currentPackage == packageName) {
             OmniLog.i(Tag, "Open-app fast path hit: already in target package=$packageName")
             return TaskExecutionReport(
@@ -512,8 +573,8 @@ open class VLMOperationTask(
         }
 
         val launchResult = androidDeviceOperator.launchApplication(packageName)
-        val afterLaunchPackage = AccessibilityController.getPackageName().orEmpty()
-        if (launchResult.success && afterLaunchPackage == packageName) {
+        val afterLaunchPackage = currentPackageNameOrEmpty()
+        if (launchResult.success && (!supportsAccessibilityTree() || afterLaunchPackage == packageName)) {
             OmniLog.i(Tag, "Open-app fast path hit: launched target package=$packageName")
             return TaskExecutionReport(
                 success = true,
@@ -725,6 +786,10 @@ $goal
         return androidDeviceOperator.clickCoordinate(x, y)
     }
 
+    override suspend fun doubleTapCoordinate(x: Float, y: Float): OperationResult {
+        return androidDeviceOperator.doubleTapCoordinate(x, y)
+    }
+
     override suspend fun longClickCoordinate(x: Float, y: Float, duration: Long): OperationResult {
         return androidDeviceOperator.longClickCoordinate(x, y, duration)
     }
@@ -735,10 +800,6 @@ $goal
 
     override suspend fun pressHotKey(key: String): OperationResult {
         return androidDeviceOperator.pressHotKey(key)
-    }
-
-    suspend fun inputTextViaShell(text: String): OperationResult {
-        return androidDeviceOperator.inputTextViaShell(text)
     }
 
     override suspend fun copyToClipboard(text: String): OperationResult {
@@ -824,7 +885,7 @@ $goal
     }
 
     override suspend fun onTaskDestroy() {
-        AccessibilityController.Companion.restoreKeyboard()
+        restoreKeyboardIfAccessibility()
         onTaskFinishListener.invoke()
         super.onTaskDestroy()
     }

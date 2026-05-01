@@ -484,6 +484,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 t("应用列表读取权限", "Installed Apps Access")
             "Shizuku 权限", "Shizuku Permission" ->
                 t("Shizuku 权限", "Shizuku Permission")
+            "VLM 操作权限", "VLM Automation" ->
+                t("VLM 操作权限", "VLM Automation")
             "公共文件访问", "Public Storage Access" ->
                 t("公共文件访问", "Public Storage Access")
             else -> trimmed
@@ -1202,6 +1204,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             "Installed Apps Access" to "installed_apps",
             "Shizuku 权限" to "shizuku",
             "Shizuku Permission" to "shizuku",
+            "VLM 操作权限" to "vlm_automation",
+            "VLM Automation" to "vlm_automation",
             WorkspaceStorageAccess.REQUIRED_PERMISSION_NAME to "workspace_storage",
             PublicStorageAccess.REQUIRED_PERMISSION_NAME to "public_storage",
             "Public Storage Access" to "public_storage"

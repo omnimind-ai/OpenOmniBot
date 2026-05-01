@@ -21,6 +21,9 @@ object PrivilegedActionPolicy {
     const val ACTION_DEVICE_SET_WIFI_ENABLED = "device_control.set_wifi_enabled"
     const val ACTION_DEVICE_SET_MOBILE_DATA_ENABLED = "device_control.set_mobile_data_enabled"
     const val ACTION_DEVICE_INPUT_TEXT = "device_control.input_text"
+    const val ACTION_DEVICE_TAP = "device_control.tap"
+    const val ACTION_DEVICE_SWIPE = "device_control.swipe"
+    const val ACTION_DEVICE_SCREENSHOT = "device_control.screenshot"
 
     const val ACTION_DIAGNOSTICS_GETPROP = "diagnostics.getprop"
     const val ACTION_DIAGNOSTICS_DUMPSYS = "diagnostics.dumpsys"
@@ -60,6 +63,9 @@ object PrivilegedActionPolicy {
 
     private val internalOnlyActions = linkedSetOf(
         ACTION_DEVICE_INPUT_TEXT,
+        ACTION_DEVICE_TAP,
+        ACTION_DEVICE_SWIPE,
+        ACTION_DEVICE_SCREENSHOT,
         ACTION_SESSION_START,
         ACTION_SESSION_EXEC,
         ACTION_SESSION_READ,

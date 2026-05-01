@@ -7,7 +7,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
 import android.util.Base64
 import android.widget.Toast
 import cn.com.omnimind.baselib.database.Conversation
@@ -261,13 +260,7 @@ class WorkspaceScheduledTaskScheduler(
         val goal = task.goal?.trim().orEmpty()
         require(goal.isNotEmpty()) { "vlm goal is empty" }
 
-        val missingPermissions = mutableListOf<String>()
-        if (!AssistsUtil.Core.isAccessibilityServiceEnabled()) {
-            missingPermissions.add("无障碍权限")
-        }
-        if (!Settings.canDrawOverlays(appContext)) {
-            missingPermissions.add("悬浮窗权限")
-        }
+        val missingPermissions = AssistsUtil.Core.getMissingVlmExecutionPermissions(appContext)
         if (missingPermissions.isNotEmpty()) {
             val msg = "定时任务「${task.title}」执行失败，缺少权限：${missingPermissions.joinToString("、")}"
             Handler(Looper.getMainLooper()).post {

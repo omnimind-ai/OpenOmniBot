@@ -186,6 +186,8 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       <String, String>{
         '无障碍权限': kAccessibilityPermissionId,
         'Accessibility': kAccessibilityPermissionId,
+        'VLM 操作权限': kVlmAutomationPermissionId,
+        'VLM Automation': kVlmAutomationPermissionId,
         '悬浮窗权限': kOverlayPermissionId,
         'Overlay': kOverlayPermissionId,
         '应用列表读取权限': kInstalledAppsPermissionId,

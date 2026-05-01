@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/features/home/pages/authorize/authorize_page_args.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/constants/storage_keys.dart';
@@ -94,7 +95,7 @@ class PermissionRegistry {
     // 基础权限列表（所有品牌通用）
     final basePermissions = [
       PermissionSpec(
-        id: 'overlay',
+        id: kOverlayPermissionId,
         iconPath: 'assets/welcome/permission_overlay.svg',
         iconWidth: 32.0,
         iconHeight: 32.0,
@@ -120,7 +121,7 @@ class PermissionRegistry {
         checkMethod: 'isBackgroundRunAllowed',
       ),
       PermissionSpec(
-        id: 'installed_apps',
+        id: kInstalledAppsPermissionId,
         iconPath: 'assets/welcome/permission_installed_apps.svg',
         iconWidth: 32.0,
         iconHeight: 32.0,
@@ -134,7 +135,7 @@ class PermissionRegistry {
         checkMethod: 'isInstalledAppsPermissionGranted',
       ),
       PermissionSpec(
-        id: 'accessibility',
+        id: kAccessibilityPermissionId,
         iconPath: 'assets/welcome/permission_accessibility.svg',
         iconWidth: 30.0,
         iconHeight: 30.0,
@@ -149,7 +150,7 @@ class PermissionRegistry {
     ];
     final optionalPermissions = <PermissionSpec>[
       PermissionSpec(
-        id: 'shizuku',
+        id: kShizukuPermissionId,
         iconPath: 'assets/welcome/permission_installed_apps.svg',
         iconWidth: 32.0,
         iconHeight: 32.0,
@@ -233,18 +234,38 @@ class PermissionRegistry {
     }
   }
 
+  static List<PermissionSpec> _getLevelOnlyPermissions() {
+    return [
+      PermissionSpec(
+        id: kVlmAutomationPermissionId,
+        iconPath: 'assets/welcome/permission_accessibility.svg',
+        iconWidth: 30.0,
+        iconHeight: 30.0,
+        name: LegacyTextLocalizer.isEnglish ? 'VLM Automation' : 'VLM 操作权限',
+        description: LegacyTextLocalizer.isEnglish
+            ? 'Grant Shizuku or Accessibility for taps, typing, and swipes'
+            : '可通过 Shizuku 或无障碍授权，用于点击、输入、滑动等自动操作',
+        openMethod: '',
+        customCheckMethod: isVlmAutomationPermissionGranted,
+        customAuthMethod: (BuildContext context) async {
+          await ensureVlmAutomationPermission(context);
+        },
+      ),
+    ];
+  }
+
   /// 各权限层级对应的权限ID列表
   static const Map<PermissionLevel, List<String>> _levelPermissionIds = {
     PermissionLevel.companionAutomation: [
-      'overlay',
+      kOverlayPermissionId,
       'battery',
-      'accessibility',
+      kVlmAutomationPermissionId,
     ],
     PermissionLevel.fullExecution: [
-      'overlay',
+      kOverlayPermissionId,
       'battery',
-      'installed_apps',
-      'accessibility',
+      kInstalledAppsPermissionId,
+      kVlmAutomationPermissionId,
     ],
   };
 
@@ -258,10 +279,13 @@ class PermissionRegistry {
     required PermissionLevel level,
     bool includeOptionalAdvanced = false,
   }) {
-    final allPermissions = getPermissions(
-      brand: brand,
-      includeOptionalAdvanced: includeOptionalAdvanced,
-    );
+    final allPermissions = [
+      ...getPermissions(
+        brand: brand,
+        includeOptionalAdvanced: includeOptionalAdvanced,
+      ),
+      ..._getLevelOnlyPermissions(),
+    ];
     final requiredIds = _levelPermissionIds[level] ?? [];
     return allPermissions
         .where(

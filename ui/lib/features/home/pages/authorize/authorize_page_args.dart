@@ -1,5 +1,6 @@
 const String kOverlayPermissionId = 'overlay';
 const String kAccessibilityPermissionId = 'accessibility';
+const String kVlmAutomationPermissionId = 'vlm_automation';
 const String kInstalledAppsPermissionId = 'installed_apps';
 const String kShizukuPermissionId = 'shizuku';
 const String kWorkspaceStoragePermissionId = 'workspace_storage';
@@ -7,7 +8,7 @@ const String kPublicStoragePermissionId = 'public_storage';
 
 const List<String> kTaskExecutionRequiredPermissionIds = <String>[
   kOverlayPermissionId,
-  kAccessibilityPermissionId,
+  kVlmAutomationPermissionId,
 ];
 
 List<String> normalizeRequiredPermissionIds(Iterable<dynamic>? rawIds) {

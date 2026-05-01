@@ -57,6 +57,16 @@ data class LongPressAction(
 ) : UIAction()
 
 @Serializable
+@SerialName("double_tap")
+data class DoubleTapAction(
+    override val name: String = "double_tap",
+    @SerialName("target_description")
+    val targetDescription: String,
+    var x: Float,
+    var y: Float
+) : UIAction()
+
+@Serializable
 @SerialName("open_app")
 data class OpenAppAction(
     override val name: String = "open_app",
@@ -254,7 +264,7 @@ data class VLMToolCallRetryState(
 data class VLMConversationRound(
     val userMessage: ChatCompletionMessage,
     val assistantMessage: ChatCompletionMessage,
-    val toolMessage: ChatCompletionMessage
+    val toolMessage: ChatCompletionMessage? = null
 )
 
 class VLMConversationState(
@@ -286,7 +296,7 @@ class VLMConversationState(
         completedRounds.forEach { round ->
             messages += round.userMessage
             messages += round.assistantMessage
-            messages += round.toolMessage
+            round.toolMessage?.let { messages += it }
         }
         return messages
     }

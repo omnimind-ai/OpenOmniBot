@@ -49,6 +49,16 @@ class PermissionService {
             ? 'Optional advanced system actions for the agent'
             : '可选的高级系统能力，用于扩展 agent 的系统级操作边界',
       ),
+      kVlmAutomationPermissionId => _PermissionDisplaySpec(
+        id: kVlmAutomationPermissionId,
+        iconPath: 'assets/welcome/permission_accessibility.svg',
+        iconWidth: 30,
+        iconHeight: 30,
+        name: LegacyTextLocalizer.isEnglish ? 'VLM Automation' : 'VLM 操作权限',
+        description: LegacyTextLocalizer.isEnglish
+            ? 'Grant Shizuku or Accessibility for VLM task taps, typing, and swipes'
+            : '可通过 Shizuku 或无障碍授权，用于 VLM 任务点击、输入、滑动',
+      ),
       _ => null,
     };
   }
@@ -260,6 +270,14 @@ class PermissionService {
             final status = await getShizukuStatus();
             return status.isGranted;
           },
+        );
+      case kVlmAutomationPermissionId:
+        return _buildDisplayPermissionData(
+          spec,
+          onAuthorize: () async {
+            await ensureVlmAutomationPermission(context);
+          },
+          checkAuthorization: isVlmAutomationPermissionGranted,
         );
     }
     return null;

@@ -366,7 +366,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       final brand = (deviceInfo?['brand'] as String?)?.toLowerCase() ?? 'other';
       final checkedSpecs = PermissionRegistry.getPermissionsByLevel(
         brand: brand,
-        level: PermissionLevel.fullExecution,
+        level: PermissionLevel.companionAutomation,
       );
       final permissionDataList = PermissionService.specsToPermissionData(
         checkedSpecs,

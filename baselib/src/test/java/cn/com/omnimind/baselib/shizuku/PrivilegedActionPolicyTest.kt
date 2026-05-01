@@ -79,4 +79,49 @@ class PrivilegedActionPolicyTest {
             ) != null
         )
     }
+
+    @Test
+    fun vlmDeviceActionsAreInternalOnly() {
+        val visibleActions = PrivilegedActionPolicy.visibleAgentActions(ShizukuBackend.ADB)
+
+        assertFalse(visibleActions.contains(PrivilegedActionPolicy.ACTION_DEVICE_TAP))
+        assertFalse(visibleActions.contains(PrivilegedActionPolicy.ACTION_DEVICE_SWIPE))
+        assertFalse(visibleActions.contains(PrivilegedActionPolicy.ACTION_DEVICE_SCREENSHOT))
+        assertFalse(visibleActions.contains(PrivilegedActionPolicy.ACTION_DEVICE_INPUT_TEXT))
+
+        assertFalse(
+            PrivilegedActionPolicy.isSupported(
+                action = PrivilegedActionPolicy.ACTION_DEVICE_TAP,
+                backend = ShizukuBackend.ADB
+            )
+        )
+        assertTrue(
+            PrivilegedActionPolicy.isSupported(
+                action = PrivilegedActionPolicy.ACTION_DEVICE_TAP,
+                backend = ShizukuBackend.ADB,
+                includeInternal = true
+            )
+        )
+        assertTrue(
+            PrivilegedActionPolicy.isSupported(
+                action = PrivilegedActionPolicy.ACTION_DEVICE_SWIPE,
+                backend = ShizukuBackend.ROOT,
+                includeInternal = true
+            )
+        )
+        assertTrue(
+            PrivilegedActionPolicy.isSupported(
+                action = PrivilegedActionPolicy.ACTION_DEVICE_SCREENSHOT,
+                backend = ShizukuBackend.ADB,
+                includeInternal = true
+            )
+        )
+    }
+
+    @Test
+    fun vlmDeviceActionsDoNotRequireConfirmation() {
+        assertFalse(PrivilegedActionPolicy.requiresConfirmation(PrivilegedActionPolicy.ACTION_DEVICE_TAP))
+        assertFalse(PrivilegedActionPolicy.requiresConfirmation(PrivilegedActionPolicy.ACTION_DEVICE_SWIPE))
+        assertFalse(PrivilegedActionPolicy.requiresConfirmation(PrivilegedActionPolicy.ACTION_DEVICE_SCREENSHOT))
+    }
 }
