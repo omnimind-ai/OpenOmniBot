@@ -21,6 +21,9 @@ class AboutPage extends StatefulWidget {
 }
 
 class _AboutPageState extends State<AboutPage> {
+  static const String _userManualUrl =
+      'https://omnimind-ai.github.io/OmniBot-Docs/';
+
   String _version = '';
   AppUpdateStatus? _updateStatus;
   bool _betaOptIn = false;
@@ -232,8 +235,8 @@ class _AboutPageState extends State<AboutPage> {
     return Column(
       children: [
         SizedBox(
-          width: compact ? 112 : 144,
-          height: compact ? 80 : 102,
+          width: compact ? 104 : 144,
+          height: compact ? 72 : 102,
           child: Image.asset(
             'assets/my/about_icon.png',
             fit: BoxFit.contain,
@@ -246,7 +249,7 @@ class _AboutPageState extends State<AboutPage> {
             },
           ),
         ),
-        SizedBox(height: compact ? 8 : 14),
+        SizedBox(height: compact ? 6 : 14),
         Text(
           context.l10n.brandName,
           textAlign: TextAlign.center,
@@ -258,7 +261,7 @@ class _AboutPageState extends State<AboutPage> {
             color: context.isDarkTheme ? palette.textPrimary : AppColors.text,
           ),
         ),
-        SizedBox(height: compact ? 8 : 14),
+        SizedBox(height: compact ? 6 : 14),
         ConstrainedBox(
           constraints: BoxConstraints(maxWidth: compact ? 300 : 320),
           child: Text(
@@ -329,7 +332,7 @@ class _AboutPageState extends State<AboutPage> {
                     ? context.trLegacy('查看新版本')
                     : context.trLegacy('检查更新')),
           width: 180,
-          height: 44,
+          height: compact ? 40 : 44,
           gradientColors: updateButtonGradient,
           textStyle: TextStyle(
             color: updateButtonTextColor,
@@ -342,7 +345,7 @@ class _AboutPageState extends State<AboutPage> {
           enabled: !_isCheckingUpdate,
           onTap: _handlePrimaryAction,
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: compact ? 8 : 12),
         OutlinedButton.icon(
           onPressed: () {
             GoRouterManager.push('/my/about/request-logs');
@@ -350,7 +353,46 @@ class _AboutPageState extends State<AboutPage> {
           icon: const Icon(Icons.receipt_long_outlined, size: 18),
           label: Text(context.trLegacy('请求日志')),
           style: OutlinedButton.styleFrom(
-            minimumSize: const Size(180, 44),
+            minimumSize: Size(180, compact ? 40 : 44),
+            foregroundColor: context.isDarkTheme
+                ? palette.textPrimary
+                : AppColors.text,
+            side: BorderSide(
+              color: context.isDarkTheme
+                  ? const Color(0xFF2B3444)
+                  : const Color(0xFFD6E0EE),
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            textStyle: const TextStyle(
+              fontFamily: AppTextStyles.fontFamily,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              height: 1.4,
+            ),
+          ),
+        ),
+        SizedBox(height: compact ? 6 : 8),
+        OutlinedButton.icon(
+          onPressed: () {
+            final manualTitle = context.trLegacy('使用手册');
+            GoRouterManager.push(
+              '/webview/webview_page',
+              extra: {
+                'url': _userManualUrl,
+                'title': manualTitle,
+                'showAppBar': true,
+                'enableJavaScript': true,
+                'enableZoom': true,
+                'showRefreshButton': true,
+              },
+            );
+          },
+          icon: const Icon(Icons.menu_book_outlined, size: 18),
+          label: Text(context.trLegacy('使用手册')),
+          style: OutlinedButton.styleFrom(
+            minimumSize: Size(180, compact ? 40 : 44),
             foregroundColor: context.isDarkTheme
                 ? palette.textPrimary
                 : AppColors.text,
@@ -630,9 +672,9 @@ class _AboutPageState extends State<AboutPage> {
             return Padding(
               padding: EdgeInsets.fromLTRB(
                 24,
-                compact ? 8 : 18,
+                compact ? 4 : 18,
                 24,
-                compact ? 12 : 22,
+                compact ? 8 : 22,
               ),
               child: Center(
                 child: ConstrainedBox(
@@ -640,15 +682,15 @@ class _AboutPageState extends State<AboutPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SizedBox(height: compact ? 4 : 12),
+                      SizedBox(height: compact ? 0 : 12),
                       _buildHero(compact),
-                      SizedBox(height: compact ? 16 : 20),
+                      SizedBox(height: compact ? 12 : 20),
                       _buildUpdateSection(
                         compact,
                         updateButtonGradient,
                         updateButtonTextColor,
                       ),
-                      SizedBox(height: compact ? 18 : 24),
+                      SizedBox(height: compact ? 12 : 24),
                       _buildPreferenceSection(compact),
                       const Spacer(),
                     ],

@@ -140,5 +140,6 @@ void main() {
     expect(find.text('已是最新版'), findsNothing);
     expect(find.text('检查更新'), findsOneWidget);
     expect(find.text('请求日志'), findsOneWidget);
+    expect(find.text('使用手册'), findsOneWidget);
   });
 }
