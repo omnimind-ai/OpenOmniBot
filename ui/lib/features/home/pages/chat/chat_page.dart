@@ -614,7 +614,6 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     if (!mounted) {
       return;
     }
-    showToast(LegacyTextLocalizer.localize('已进入 Agent 模式'));
   }
 
   Future<void> _handlePureChatModeShortcutTap() async {
@@ -626,7 +625,6 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       if (!mounted) {
         return;
       }
-      showToast(LegacyTextLocalizer.localize('已进入仅聊天模式'));
       return;
     }
     await _togglePureChatConversationMode();
@@ -661,11 +659,9 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       mode: nextMode,
     );
     await ConversationService.setCurrentConversationTarget(nextTarget);
-    showToast(
-      LegacyTextLocalizer.localize(
-        nextMode == ConversationMode.chatOnly ? '已进入仅聊天模式' : '已退出仅聊天模式',
-      ),
-    );
+    if (nextMode != ConversationMode.chatOnly) {
+      showToast(LegacyTextLocalizer.localize('已退出仅聊天模式'));
+    }
   }
 
   String get _expectedBrowserWorkspaceId => chatConversationWorkspaceId(
