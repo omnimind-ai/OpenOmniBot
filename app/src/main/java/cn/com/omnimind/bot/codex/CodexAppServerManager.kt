@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.codex
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.ai.assistance.operit.terminal.TerminalManager
 import com.ai.assistance.operit.terminal.setup.EnvironmentSetupLogic
 import cn.com.omnimind.baselib.database.DatabaseHelper
@@ -214,6 +215,10 @@ class CodexAppServerManager private constructor(
             if (!shouldRecoverMissingThread(error)) {
                 throw error
             }
+            Log.w(
+                "CodexAppServerManager",
+                "Codex turn/start hit a missing thread; creating a fresh thread binding."
+            )
             val retryResponse = startThread(args + mapOf("cwd" to cwd))
             threadId = retryResponse["threadId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 ?: throw error
