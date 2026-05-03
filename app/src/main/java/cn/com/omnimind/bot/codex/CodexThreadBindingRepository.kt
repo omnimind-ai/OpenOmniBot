@@ -35,11 +35,29 @@ internal class CodexThreadBindingRepository(
 
         val existingBinding = DatabaseHelper.getCodexThreadBindingByThreadId(normalizedThreadId)
         if (existingBinding != null) {
+            if (conversationId != null && conversationId != existingBinding.conversationId) {
+                val reboundConversation = rebindExistingThread(
+                    existingBinding = existingBinding,
+                    conversationId = conversationId,
+                    cwd = cwd,
+                    title = title,
+                    archived = archived,
+                    updatedAt = now
+                )
+                if (reboundConversation != null) {
+                    return reboundConversation
+                }
+            }
             val conversation = DatabaseHelper.getConversationById(existingBinding.conversationId)
             val updatedConversation = conversation?.let {
+                val titleForUpdate = if (conversationId != null && it.title.isNotBlank()) {
+                    null
+                } else {
+                    title
+                }
                 buildUpdatedConversation(
                     conversation = it,
-                    title = title,
+                    title = titleForUpdate,
                     archived = archived,
                     updatedAt = now
                 )
@@ -86,6 +104,45 @@ internal class CodexThreadBindingRepository(
         )
         DatabaseHelper.upsertCodexThreadBinding(binding)
         return targetConversation.id
+    }
+
+    private suspend fun rebindExistingThread(
+        existingBinding: CodexThreadBinding,
+        conversationId: Long,
+        cwd: String,
+        title: String?,
+        archived: Boolean?,
+        updatedAt: Long
+    ): Long? {
+        val targetConversation = DatabaseHelper.getConversationById(conversationId) ?: return null
+        val normalizedTitle = title?.trim().orEmpty()
+        val updatedTarget = targetConversation.copy(
+            mode = CODEX_CONVERSATION_MODE,
+            title = if (targetConversation.title.isBlank() && normalizedTitle.isNotEmpty()) {
+                normalizedTitle
+            } else {
+                targetConversation.title
+            },
+            isArchived = archived ?: targetConversation.isArchived,
+            updatedAt = updatedAt
+        )
+        if (updatedTarget != targetConversation) {
+            DatabaseHelper.updateConversation(updatedTarget)
+            publishConversationEvent("conversation_updated", updatedTarget)
+        }
+
+        DatabaseHelper.upsertCodexThreadBinding(
+            existingBinding.copy(
+                conversationId = conversationId,
+                cwd = cwd.ifBlank { existingBinding.cwd },
+                updatedAt = updatedAt
+            )
+        )
+        cleanupGeneratedEmptyConversation(
+            conversationId = existingBinding.conversationId,
+            expectedTitle = defaultConversationTitle(existingBinding.threadId)
+        )
+        return conversationId
     }
 
     suspend fun updateTitle(threadId: String, title: String?) {
@@ -177,6 +234,31 @@ internal class CodexThreadBindingRepository(
     private fun defaultConversationTitle(threadId: String): String {
         val suffix = threadId.takeLast(6).ifBlank { "thread" }
         return "Codex $suffix"
+    }
+
+    private suspend fun cleanupGeneratedEmptyConversation(
+        conversationId: Long,
+        expectedTitle: String
+    ) {
+        val conversation = DatabaseHelper.getConversationById(conversationId) ?: return
+        if (conversation.mode != CODEX_CONVERSATION_MODE) {
+            return
+        }
+        if (conversation.title != expectedTitle) {
+            return
+        }
+        if (conversation.messageCount != 0 || !conversation.lastMessage.isNullOrBlank()) {
+            return
+        }
+        val entryCount = DatabaseHelper.countAgentConversationThreadEntries(
+            conversationId = conversationId,
+            conversationMode = CODEX_CONVERSATION_MODE
+        )
+        if (entryCount != 0) {
+            return
+        }
+        DatabaseHelper.deleteConversationById(conversationId)
+        publishConversationEvent("conversation_deleted", conversation)
     }
 
     companion object {

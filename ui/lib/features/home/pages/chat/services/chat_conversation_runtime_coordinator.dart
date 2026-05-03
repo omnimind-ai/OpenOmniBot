@@ -167,6 +167,7 @@ class _PendingPersistenceRequest {
     required this.timer,
     this.generateSummary = false,
     this.markComplete = false,
+    this.persistMessages = false,
   });
 
   final int conversationId;
@@ -174,6 +175,7 @@ class _PendingPersistenceRequest {
   final Timer timer;
   final bool generateSummary;
   final bool markComplete;
+  final bool persistMessages;
 }
 
 class ChatConversationRuntimeCoordinator extends ChangeNotifier {
@@ -447,6 +449,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       schedulePersistRuntimeConversation(
         conversationId: conversationId,
         mode: kChatRuntimeModeCodex,
+        persistMessages: true,
       );
     }
     return result;
@@ -585,6 +588,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     required String mode,
     bool generateSummary = false,
     bool markComplete = false,
+    bool persistMessages = false,
   }) async {
     _cancelPendingPersistence(conversationId: conversationId, mode: mode);
     final runtime = runtimeFor(conversationId: conversationId, mode: mode);
@@ -647,6 +651,13 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     );
 
     await ConversationService.updateConversation(updatedConversation);
+    if (persistMessages) {
+      await ConversationHistoryService.saveConversationMessages(
+        conversationId,
+        snapshotMessages,
+        mode: conversationMode,
+      );
+    }
     runtime.conversation = updatedConversation;
     if (markComplete) {
       await ConversationService.completeConversation(
@@ -661,18 +672,26 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     required String mode,
     bool generateSummary = false,
     bool markComplete = false,
+    bool persistMessages = false,
     Duration delay = const Duration(milliseconds: 350),
   }) {
     final key = _runtimeKey(conversationId: conversationId, mode: mode);
-    _pendingPersistence[key]?.timer.cancel();
+    final previous = _pendingPersistence[key];
+    previous?.timer.cancel();
+    final nextGenerateSummary =
+        generateSummary || (previous?.generateSummary ?? false);
+    final nextMarkComplete = markComplete || (previous?.markComplete ?? false);
+    final nextPersistMessages =
+        persistMessages || (previous?.persistMessages ?? false);
     final timer = Timer(delay, () {
       _pendingPersistence.remove(key);
       unawaited(
         persistRuntimeConversation(
           conversationId: conversationId,
           mode: mode,
-          generateSummary: generateSummary,
-          markComplete: markComplete,
+          generateSummary: nextGenerateSummary,
+          markComplete: nextMarkComplete,
+          persistMessages: nextPersistMessages,
         ),
       );
     });
@@ -680,8 +699,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       conversationId: conversationId,
       mode: mode,
       timer: timer,
-      generateSummary: generateSummary,
-      markComplete: markComplete,
+      generateSummary: nextGenerateSummary,
+      markComplete: nextMarkComplete,
+      persistMessages: nextPersistMessages,
     );
   }
 
@@ -700,6 +720,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       mode: request.mode,
       generateSummary: request.generateSummary,
       markComplete: request.markComplete,
+      persistMessages: request.persistMessages,
     );
   }
 
@@ -713,6 +734,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         mode: request.mode,
         generateSummary: request.generateSummary,
         markComplete: request.markComplete,
+        persistMessages: request.persistMessages,
       );
     }
   }

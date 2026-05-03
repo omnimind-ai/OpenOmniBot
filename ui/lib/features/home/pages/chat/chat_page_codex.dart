@@ -175,6 +175,11 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
       conversationId: conversationId,
       mode: _modeKey(_activeMode),
     );
+    await ConversationHistoryService.saveConversationMessages(
+      conversationId,
+      List<ChatMessageModel>.from(_messages),
+      mode: ConversationMode.codex,
+    );
 
     try {
       CodexStatus status = _codexStatus;
@@ -202,14 +207,22 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
       if (localConversationId != null &&
           localConversationId !=
               _currentConversationIdByMode[ChatPageMode.codex]) {
-        _currentConversationIdByMode[ChatPageMode.codex] = localConversationId;
-        await _prepareConversationModeState(
-          ChatPageMode.codex,
-          ConversationThreadTarget.existing(
-            conversationId: localConversationId,
-            mode: ConversationMode.codex,
-          ),
-        );
+        if (_currentConversationIdByMode[ChatPageMode.codex] == null) {
+          _currentConversationIdByMode[ChatPageMode.codex] =
+              localConversationId;
+          await _prepareConversationModeState(
+            ChatPageMode.codex,
+            ConversationThreadTarget.existing(
+              conversationId: localConversationId,
+              mode: ConversationMode.codex,
+            ),
+          );
+        } else {
+          debugPrint(
+            '[Codex] keeping active conversation ${_currentConversationIdByMode[ChatPageMode.codex]} '
+            'instead of mismatched native conversation $localConversationId',
+          );
+        }
       }
     } catch (error) {
       if (!mounted) return;

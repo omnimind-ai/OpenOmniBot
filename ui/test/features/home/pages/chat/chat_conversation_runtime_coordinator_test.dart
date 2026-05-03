@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/chat/chat_page_models.dart';
 import 'package:ui/features/home/pages/chat/services/chat_conversation_runtime_coordinator.dart';
+import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/ai_chat_service.dart';
 import 'package:ui/services/voice_playback_coordinator.dart';
 
@@ -403,6 +404,61 @@ void main() {
     expect(runtimeA.messages.first.content?['prefillTokensPerSecond'], 123.4);
     expect(runtimeA.messages.first.content?['decodeTokensPerSecond'], 56.7);
     expect(runtimeB.messages, isEmpty);
+  });
+
+  test('persists codex runtime messages back to native history', () async {
+    const conversationId = 2001;
+    final runtime = coordinator.ensureRuntime(
+      conversationId: conversationId,
+      mode: kChatRuntimeModeCodex,
+    );
+    runtime.messages.insert(0, ChatMessageModel.userMessage('第一句标题应该保留'));
+
+    await coordinator.applyCodexEvent(
+      conversationId: conversationId,
+      event: {
+        'message': {
+          'method': 'item/agentMessage/delta',
+          'params': {'turnId': 'turn-1', 'delta': 'Codex reply'},
+        },
+      },
+    );
+    await coordinator.flushPendingPersistence(
+      conversationId: conversationId,
+      mode: kChatRuntimeModeCodex,
+    );
+
+    final replaceCalls = recordedMethodCalls
+        .where((call) => call.method == 'replaceConversationMessages')
+        .toList();
+    expect(replaceCalls, isNotEmpty);
+
+    final args = Map<String, dynamic>.from(
+      (replaceCalls.last.arguments as Map).cast<String, dynamic>(),
+    );
+    expect(args['conversationId'], conversationId);
+    expect(args['mode'], 'codex');
+
+    final messages = (args['messages'] as List)
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item.cast<String, dynamic>()))
+        .toList();
+    expect(
+      messages.any(
+        (message) =>
+            message['user'] == 1 &&
+            ((message['content'] as Map?)?['text'] == '第一句标题应该保留'),
+      ),
+      isTrue,
+    );
+    expect(
+      messages.any(
+        (message) =>
+            message['user'] == 2 &&
+            ((message['content'] as Map?)?['text'] == 'Codex reply'),
+      ),
+      isTrue,
+    );
   });
 
   test('replaces divergent agent snapshots instead of concatenating', () async {

@@ -15,7 +15,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentLinkedQueue
 
 class CodexAppServerManager private constructor(
     private val context: Context
@@ -23,10 +22,13 @@ class CodexAppServerManager private constructor(
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val sessionMutex = Mutex()
+    private val threadStartMutex = Mutex()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val bindingRepository = CodexThreadBindingRepository(appContext)
     private val activeTurnsByThreadId = ConcurrentHashMap<String, String>()
-    private val pendingThreadStartConversationIds = ConcurrentLinkedQueue<Long>()
+
+    @Volatile
+    private var pendingThreadStartConversationId: Long? = null
 
     @Volatile
     private var session: CodexAppServerSession? = null
@@ -109,7 +111,7 @@ class CodexAppServerManager private constructor(
         }
     }
 
-    private suspend fun startThread(args: Map<String, Any?>): Map<String, Any?> {
+    private suspend fun startThread(args: Map<String, Any?>): Map<String, Any?> = threadStartMutex.withLock {
         val cwd = sanitizeCodexAbsolutePath(args.stringValue("cwd")) ?: resolveDefaultCwd()
         val conversationId = args.longValue("conversationId")
         val params = linkedMapOf<String, Any?>(
@@ -121,26 +123,26 @@ class CodexAppServerManager private constructor(
             params["approvalsReviewer"] = it
         }
         if (conversationId != null) {
-            pendingThreadStartConversationIds.add(conversationId)
+            pendingThreadStartConversationId = conversationId
         }
-        val response = try {
-            request("thread/start", params) as Map<String, Any?>
+        try {
+            val response = request("thread/start", params) as Map<String, Any?>
+            val threadId = extractThreadId(response) ?: response.stringValue("id")
+            var localConversationId: Long? = null
+            if (!threadId.isNullOrBlank()) {
+                localConversationId = bindingRepository.ensureBinding(
+                    threadId = threadId,
+                    conversationId = conversationId,
+                    cwd = cwd,
+                    title = extractThreadTitle(response)
+                )
+            }
+            response.withLocalIds(threadId = threadId, conversationId = localConversationId)
         } finally {
-            if (conversationId != null) {
-                pendingThreadStartConversationIds.remove(conversationId)
+            if (pendingThreadStartConversationId == conversationId) {
+                pendingThreadStartConversationId = null
             }
         }
-        val threadId = extractThreadId(response) ?: response.stringValue("id")
-        var localConversationId: Long? = null
-        if (!threadId.isNullOrBlank()) {
-            localConversationId = bindingRepository.ensureBinding(
-                threadId = threadId,
-                conversationId = conversationId,
-                cwd = cwd,
-                title = extractThreadTitle(response)
-            )
-        }
-        return response.withLocalIds(threadId = threadId, conversationId = localConversationId)
     }
 
     private suspend fun listThreads(args: Map<String, Any?>): Map<String, Any?> {
@@ -386,7 +388,7 @@ class CodexAppServerManager private constructor(
                 } else {
                     bindingRepository.ensureBinding(
                         threadId = resolvedThreadId,
-                        conversationId = pendingThreadStartConversationIds.poll(),
+                        conversationId = pendingThreadStartConversationId,
                         cwd = sanitizeCodexAbsolutePath(thread.stringValue("cwd"))
                             ?: sanitizeCodexAbsolutePath(params.stringValue("cwd"))
                             ?: resolveDefaultCwd(),
