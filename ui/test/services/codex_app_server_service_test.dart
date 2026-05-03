@@ -71,6 +71,9 @@ void main() {
     expect(args['threadId'], 'thread-1');
     expect(args['approvalPolicy'], 'on-request');
     expect(args['approvalsReviewer'], 'guardian_subagent');
+    expect(args['target'], const <String, dynamic>{
+      'type': 'uncommittedChanges',
+    });
     expect(args['model'], 'gpt-5-codex');
     expect(args['collaborationMode'], 'plan');
   });

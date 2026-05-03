@@ -176,6 +176,7 @@ class CodexAppServerService {
     String? threadId,
     int? conversationId,
     String? cwd,
+    Map<String, dynamic>? target,
     String? approvalPolicy,
     String? approvalsReviewer,
     Map<String, dynamic>? sandboxPolicy,
@@ -187,6 +188,7 @@ class CodexAppServerService {
       if (threadId != null) 'threadId': threadId,
       if (conversationId != null) 'conversationId': conversationId,
       if (cwd != null && cwd.trim().isNotEmpty) 'cwd': cwd.trim(),
+      'target': target ?? <String, dynamic>{'type': 'uncommittedChanges'},
       if (approvalPolicy != null && approvalPolicy.trim().isNotEmpty)
         'approvalPolicy': approvalPolicy.trim(),
       if (approvalsReviewer != null && approvalsReviewer.trim().isNotEmpty)

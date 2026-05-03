@@ -367,6 +367,8 @@ class CodexAppServerManager private constructor(
     ): MutableMap<String, Any?> {
         val params = linkedMapOf<String, Any?>(
             "threadId" to threadId,
+            "target" to resolveCodexReviewTarget(args["target"]),
+            "delivery" to (args.stringValue("delivery") ?: "inline"),
             "cwd" to cwd,
             "approvalPolicy" to (args.stringValue("approvalPolicy") ?: "on-request"),
             "sandboxPolicy" to (args["sandboxPolicy"] ?: buildDefaultCodexSandboxPolicy(cwd))
@@ -877,6 +879,18 @@ private fun asBooleanOrNull(value: Any?): Boolean? {
         }
         else -> null
     }
+}
+
+internal fun resolveCodexReviewTarget(value: Any?): Map<String, Any?> {
+    val target = value as? Map<*, *>
+    if (target.isNullOrEmpty()) {
+        return mapOf("type" to "uncommittedChanges")
+    }
+    return target.entries.mapNotNull { (key, nestedValue) ->
+        val normalizedKey = key?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return@mapNotNull null
+        normalizedKey to nestedValue
+    }.toMap().ifEmpty { mapOf("type" to "uncommittedChanges") }
 }
 
 private val THREAD_ITEM_COLLECTION_KEYS = setOf(

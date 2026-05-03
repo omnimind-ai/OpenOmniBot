@@ -65,4 +65,24 @@ class CodexAppServerProtocolPayloadTest {
         assertEquals("plan", params["collaborationMode"])
         assertEquals("auto", params["serviceTier"])
     }
+
+    @Test
+    fun resolveCodexReviewTargetDefaultsToUncommittedChanges() {
+        val target = resolveCodexReviewTarget(null)
+
+        assertEquals("uncommittedChanges", target["type"])
+    }
+
+    @Test
+    fun resolveCodexReviewTargetPreservesExplicitTarget() {
+        val target = resolveCodexReviewTarget(
+            mapOf(
+                "type" to "baseBranch",
+                "branch" to "main"
+            )
+        )
+
+        assertEquals("baseBranch", target["type"])
+        assertEquals("main", target["branch"])
+    }
 }
