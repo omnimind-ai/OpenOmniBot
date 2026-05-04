@@ -615,9 +615,7 @@ class _AboutPageState extends State<AboutPage> {
         : Colors.white;
 
     return Scaffold(
-      backgroundColor: context.isDarkTheme
-          ? palette.pageBackground
-          : Colors.white,
+      backgroundColor: palette.pageBackground,
       appBar: CommonAppBar(
         title: context.l10n.settingsAboutTitle,
         primary: true,
