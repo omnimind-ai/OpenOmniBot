@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -1733,6 +1734,133 @@ class _ChatMessageListState extends State<ChatMessageList> {
     return false;
   }
 
+  ValueListenable<ChatMessageModel>? _messageListenableFor(
+    ObservableChatMessageList messages,
+    String messageId,
+  ) {
+    final index = messages.indexWhere((message) => message.id == messageId);
+    if (index == -1) {
+      return null;
+    }
+    return messages.listenableAt(index);
+  }
+
+  List<Listenable> _groupMessageListenablesFor(
+    ObservableChatMessageList messages,
+    AgentRunTimelineGroup group,
+  ) {
+    final seenIds = <String>{};
+    final listenables = <Listenable>[];
+    for (final message in [
+      ...group.visibleMessagesNewestFirst,
+      ...group.processMessagesNewestFirst,
+    ]) {
+      if (!seenIds.add(message.id)) {
+        continue;
+      }
+      final listenable = _messageListenableFor(messages, message.id);
+      if (listenable != null) {
+        listenables.add(listenable);
+      }
+    }
+    return listenables;
+  }
+
+  AgentRunTimelineGroup _refreshTimelineGroup(
+    ObservableChatMessageList messages,
+    AgentRunTimelineGroup group,
+  ) {
+    final latestById = <String, ChatMessageModel>{
+      for (final message in messages) message.id: message,
+    };
+    List<ChatMessageModel> refresh(List<ChatMessageModel> source) {
+      return source
+          .map((message) => latestById[message.id] ?? message)
+          .toList(growable: false);
+    }
+
+    return AgentRunTimelineGroup(
+      taskId: group.taskId,
+      visibleMessagesNewestFirst: refresh(group.visibleMessagesNewestFirst),
+      processMessagesNewestFirst: refresh(group.processMessagesNewestFirst),
+    );
+  }
+
+  Widget _buildTimelineListRow({
+    required List<ChatMessageModel> messageSource,
+    required AgentRunTimelineEntry entry,
+    required String? latestUserMessageId,
+    required EdgeInsets padding,
+  }) {
+    final rowKey = ValueKey('chat-message-list-item-${entry.key}');
+
+    Widget buildRow(AgentRunTimelineEntry rowEntry, {Key? key}) {
+      return _ChatTimelineListRow(
+        key: key,
+        entry: rowEntry,
+        latestUserMessageId: latestUserMessageId,
+        editingUserMessageId: widget.editingUserMessageId,
+        userMessageEditController: widget.userMessageEditController,
+        onUserMessageEditCancelled: widget.onUserMessageEditCancelled,
+        onUserMessageEditSaved: widget.onUserMessageEditSaved,
+        padding: padding,
+        onBeforeTaskExecute: widget.onBeforeTaskExecute,
+        onCancelTask: widget.onCancelTask,
+        parentScrollController: widget.scrollController,
+        onParentScrollHandoff: _handleParentScrollHandoff,
+        onRequestAuthorize: widget.onRequestAuthorize,
+        onUserMessageLongPressStart: widget.onUserMessageLongPressStart,
+        onStreamingTextLayoutChanged: _handleStreamingTextLayoutChanged,
+        onToggleAgentRunGroup: _toggleAgentRunGroup,
+        expandedAgentRunTaskIds: _expandedAgentRunTaskIds,
+        visualProfile: widget.visualProfile,
+        appearanceConfig: widget.appearanceConfig,
+      );
+    }
+
+    final observableMessages = messageSource is ObservableChatMessageList
+        ? messageSource
+        : null;
+    if (observableMessages == null) {
+      return buildRow(entry, key: rowKey);
+    }
+
+    final message = entry.message;
+    if (message != null) {
+      final listenable = _messageListenableFor(observableMessages, message.id);
+      if (listenable == null) {
+        return buildRow(entry, key: rowKey);
+      }
+      return ValueListenableBuilder<ChatMessageModel>(
+        key: rowKey,
+        valueListenable: listenable,
+        builder: (context, latestMessage, _) {
+          return buildRow(AgentRunTimelineEntry.message(latestMessage));
+        },
+      );
+    }
+
+    final group = entry.group;
+    if (group == null) {
+      return buildRow(entry, key: rowKey);
+    }
+    final listenables = _groupMessageListenablesFor(observableMessages, group);
+    if (listenables.isEmpty) {
+      return buildRow(entry, key: rowKey);
+    }
+    return AnimatedBuilder(
+      key: rowKey,
+      animation: Listenable.merge(listenables),
+      builder: (context, _) {
+        return buildRow(
+          AgentRunTimelineEntry.group(
+            _refreshTimelineGroup(observableMessages, group),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final reservedBottomInset = widget.bottomOverlayInset
@@ -1790,26 +1918,11 @@ class _ChatMessageListState extends State<ChatMessageList> {
           final entry = timelineEntries[dataIndex];
           final isOldestEntry = dataIndex == timelineEntries.length - 1;
           final needTopPadding = isOldestEntry && !entry.isUserMessage;
-          return _ChatTimelineListRow(
-            key: ValueKey('chat-message-list-item-${entry.key}'),
+          return _buildTimelineListRow(
+            messageSource: messageSource,
             entry: entry,
             latestUserMessageId: latestUserMessageId,
-            editingUserMessageId: widget.editingUserMessageId,
-            userMessageEditController: widget.userMessageEditController,
-            onUserMessageEditCancelled: widget.onUserMessageEditCancelled,
-            onUserMessageEditSaved: widget.onUserMessageEditSaved,
             padding: EdgeInsets.only(top: needTopPadding ? 24.0 : 0.0),
-            onBeforeTaskExecute: widget.onBeforeTaskExecute,
-            onCancelTask: widget.onCancelTask,
-            parentScrollController: widget.scrollController,
-            onParentScrollHandoff: _handleParentScrollHandoff,
-            onRequestAuthorize: widget.onRequestAuthorize,
-            onUserMessageLongPressStart: widget.onUserMessageLongPressStart,
-            onStreamingTextLayoutChanged: _handleStreamingTextLayoutChanged,
-            onToggleAgentRunGroup: _toggleAgentRunGroup,
-            expandedAgentRunTaskIds: _expandedAgentRunTaskIds,
-            visualProfile: widget.visualProfile,
-            appearanceConfig: widget.appearanceConfig,
           );
         },
       );

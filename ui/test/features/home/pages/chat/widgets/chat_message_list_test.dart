@@ -6,7 +6,7 @@ import 'package:ui/features/home/pages/chat/widgets/chat_widgets.dart';
 import 'package:ui/l10n/generated/app_localizations.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/widgets/agent_avatar.dart';
-import 'package:ui/widgets/agent_avatar.dart';
+import 'package:ui/widgets/streaming_text.dart';
 
 void main() {
   testWidgets('empty chat state offsets with bottom overlay inset', (
@@ -405,6 +405,74 @@ void main() {
       expect(
         controller.offset,
         closeTo(controller.position.maxScrollExtent, 1),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'observable agent text updates rebuild the visible streaming bubble',
+    (tester) async {
+      final controller = ScrollController();
+      final messages = ObservableChatMessageList()
+        ..replaceAllMessages([
+          ChatMessageModel(
+            id: 'agent-task-text',
+            type: 1,
+            user: 2,
+            content: {
+              'text': '第一段回复',
+              'id': 'agent-task-text',
+              'renderMarkdown': true,
+            },
+            streamMeta: const {
+              'parentTaskId': 'agent-task',
+              'kind': 'text_snapshot',
+              'seq': 1,
+              'isFinal': false,
+            },
+          ),
+        ]);
+
+      await tester.pumpWidget(
+        _buildLocalizedApp(
+          child: SizedBox(
+            width: 400,
+            height: 520,
+            child: ChatMessageList(
+              messages: messages,
+              scrollController: controller,
+              activeAgentTaskIds: const {'agent-task'},
+              onBeforeTaskExecute: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        tester.widget<StreamingText>(find.byType(StreamingText)).fullText,
+        '第一段回复',
+      );
+
+      final existing = messages[0];
+      final content = Map<String, dynamic>.from(existing.content ?? const {});
+      content['text'] = '第一段回复\n第二段已经流式到达';
+      messages[0] = existing.copyWith(
+        content: content,
+        streamMeta: const {
+          'parentTaskId': 'agent-task',
+          'kind': 'text_snapshot',
+          'seq': 2,
+          'isFinal': false,
+        },
+      );
+
+      await tester.pump();
+
+      expect(
+        tester.widget<StreamingText>(find.byType(StreamingText)).fullText,
+        '第一段回复\n第二段已经流式到达',
       );
       expect(tester.takeException(), isNull);
     },
