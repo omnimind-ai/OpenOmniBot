@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/widgets/omnibot_markdown_body.dart';
+import 'package:ui/widgets/omnibot_resource_widgets.dart';
 
 /// 思考中的加载文案（原始中文值，用于数据比较）
 const String kThinkingText = '小万正在思考...';
@@ -48,6 +49,9 @@ class StreamingText extends StatefulWidget {
   /// 尾随在文本末尾的内联组件
   final Widget? trailing;
 
+  /// 自定义聊天内资源打开方式。
+  final OmnibotResourceOpenCallback? onResourceOpen;
+
   /// 已完成 Markdown 渲染的文本长度（字符数）。
   ///
   /// 当流式输出时，每 N 个 chunk 才执行一次 Markdown 渲染。该值表示上次
@@ -67,6 +71,7 @@ class StreamingText extends StatefulWidget {
     this.selectable = false,
     this.onDisplayedTextChanged,
     this.trailing,
+    this.onResourceOpen,
     this.markdownRenderedLength,
   });
 
@@ -86,6 +91,7 @@ class _StreamingTextState extends State<StreamingText> {
   // 变化的 trailing（纯文本尾部）通过 ValueNotifier 独立更新。
   String? _cachedMdPrefixText;
   TextStyle? _cachedMdPrefixStyle;
+  OmnibotResourceOpenCallback? _cachedMdPrefixOnResourceOpen;
   Widget? _cachedMdPrefixWidget;
   final ValueNotifier<Widget?> _trailingInlineNotifier = ValueNotifier(null);
 
@@ -152,6 +158,7 @@ class _StreamingTextState extends State<StreamingText> {
               data: localizedText,
               baseStyle: widget.style,
               inlineResourcePlainStyle: true,
+              onResourceOpen: widget.onResourceOpen,
             )
           : Text(localizedText, style: widget.style);
 
@@ -210,17 +217,20 @@ class _StreamingTextState extends State<StreamingText> {
         // 仅通过 ValueNotifier 更新 trailing
         if (_cachedMdPrefixText == mdText &&
             _cachedMdPrefixStyle == widget.style &&
+            identical(_cachedMdPrefixOnResourceOpen, widget.onResourceOpen) &&
             _cachedMdPrefixWidget != null) {
           _trailingInlineNotifier.value = inlineTrailing;
         } else {
           // 缓存未命中：重建 OmnibotMarkdownBody 并缓存
           _cachedMdPrefixText = mdText;
           _cachedMdPrefixStyle = widget.style;
+          _cachedMdPrefixOnResourceOpen = widget.onResourceOpen;
           _trailingInlineNotifier.value = inlineTrailing;
           _cachedMdPrefixWidget = OmnibotMarkdownBody(
             data: mdText,
             baseStyle: widget.style,
             inlineResourcePlainStyle: true,
+            onResourceOpen: widget.onResourceOpen,
             trailingInline: ValueListenableBuilder<Widget?>(
               valueListenable: _trailingInlineNotifier,
               builder: (_, child, __) => child ?? const SizedBox.shrink(),
@@ -282,6 +292,7 @@ class _StreamingTextState extends State<StreamingText> {
             data: displayText,
             baseStyle: widget.style,
             inlineResourcePlainStyle: true,
+            onResourceOpen: widget.onResourceOpen,
             trailingInline: widget.trailing,
           );
 

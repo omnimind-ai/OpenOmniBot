@@ -272,6 +272,10 @@ class OmnibotResourceService {
     return result == true;
   }
 
+  static Future<bool> ensureResourceAccess({String? path, String? uri}) {
+    return _ensureResourceAccess(path: path, uri: uri);
+  }
+
   static Future<bool> _ensureResourceAccess({String? path, String? uri}) async {
     final requiredPermissionId = _requiredPermissionIdForPathOrUri(
       path: path,

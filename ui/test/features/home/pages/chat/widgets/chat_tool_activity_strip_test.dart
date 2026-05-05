@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/chat/widgets/chat_tool_activity_strip.dart';
 import 'package:ui/features/home/pages/command_overlay/services/tool_card_detail_gesture_gate.dart';
+import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/models/chat_message_model.dart';
 
@@ -660,45 +661,45 @@ void main() {
     await tester.tap(find.byKey(kChatToolActivityPreviewKey));
     await tester.pumpAndSettle();
 
-    final dialog = find.byType(Dialog);
+    final sheet = find.byKey(kAgentToolDetailSheetKey);
 
     expect(
-      find.descendant(of: dialog, matching: find.text('查看日志')),
+      find.descendant(of: sheet, matching: find.text('查看日志')),
       findsOneWidget,
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining('tail -n 2 app.log', findRichText: true),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining('line 2', findRichText: true),
       ),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: dialog, matching: find.text('打开官网')),
+      find.descendant(of: sheet, matching: find.text('打开官网')),
       findsNothing,
     );
     expect(
-      find.descendant(of: dialog, matching: find.text('页面已加载')),
+      find.descendant(of: sheet, matching: find.text('页面已加载')),
       findsNothing,
     );
     expect(find.byIcon(Icons.close_rounded), findsNothing);
     expect(
-      find.descendant(of: dialog, matching: find.text('终端')),
+      find.descendant(of: sheet, matching: find.text('终端')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: dialog, matching: find.text('成功')),
+      find.descendant(of: sheet, matching: find.text('成功')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: dialog, matching: find.textContaining('终端 · 成功')),
+      find.descendant(of: sheet, matching: find.textContaining('终端 · 成功')),
       findsNothing,
     );
   });
@@ -749,15 +750,15 @@ void main() {
       await tester.tap(find.text('查看日志'));
       await tester.pumpAndSettle();
 
-      final dialog = find.byType(Dialog);
+      final sheet = find.byKey(kAgentToolDetailSheetKey);
 
       expect(
-        find.descendant(of: dialog, matching: find.text('查看日志')),
+        find.descendant(of: sheet, matching: find.text('查看日志')),
         findsOneWidget,
       );
       expect(
         find.descendant(
-          of: dialog,
+          of: sheet,
           matching: find.textContaining(
             'tail -n 2 app.log',
             findRichText: true,
@@ -767,7 +768,7 @@ void main() {
       );
       expect(
         find.descendant(
-          of: dialog,
+          of: sheet,
           matching: find.textContaining('line 2', findRichText: true),
         ),
         findsOneWidget,
@@ -929,15 +930,15 @@ void main() {
     await tester.tap(find.text('打开官网'));
     await tester.pumpAndSettle();
 
-    final dialog = find.byType(Dialog);
+    final sheet = find.byKey(kAgentToolDetailSheetKey);
 
     expect(
-      find.descendant(of: dialog, matching: find.text('打开官网')),
+      find.descendant(of: sheet, matching: find.text('打开官网')),
       findsOneWidget,
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining(
           'browser_use --url https://omnimind.ai/docs --query docs',
           findRichText: true,
@@ -947,7 +948,7 @@ void main() {
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining(
           'currentUrl: https://omnimind.ai/docs',
           findRichText: true,
@@ -957,7 +958,7 @@ void main() {
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining(
           'title: Omnimind Docs',
           findRichText: true,
@@ -967,22 +968,22 @@ void main() {
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining('line 2', findRichText: true),
       ),
       findsNothing,
     );
     expect(
-      find.descendant(of: dialog, matching: find.text('浏览器')),
+      find.descendant(of: sheet, matching: find.text('浏览器')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: dialog, matching: find.text('成功')),
+      find.descendant(of: sheet, matching: find.text('成功')),
       findsOneWidget,
     );
   });
 
-  testWidgets('timeout thumbnail and detail dialog render dedicated status', (
+  testWidgets('timeout thumbnail and detail sheet render dedicated status', (
     tester,
   ) async {
     final messages = [
@@ -1019,22 +1020,22 @@ void main() {
     await tester.tap(find.byKey(kChatToolActivityPreviewKey));
     await tester.pumpAndSettle();
 
-    final dialog = find.byType(Dialog);
+    final sheet = find.byKey(kAgentToolDetailSheetKey);
 
     expect(
-      find.descendant(of: dialog, matching: find.text('超时')),
+      find.descendant(of: sheet, matching: find.text('超时')),
       findsOneWidget,
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining('sleep 10', findRichText: true),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining('still running', findRichText: true),
       ),
       findsOneWidget,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
@@ -67,51 +69,69 @@ class AgentToolSummaryCard extends StatelessWidget {
           ),
           child: Container(
             margin: const EdgeInsets.only(top: 6, bottom: 2),
-            padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
-            decoration: BoxDecoration(
-              color: cardBackgroundColor,
+            child: Material(
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: cardBorderColor),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _StatusIcon(status: status, toolType: cardData['toolType']),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: titleColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      height: 1.15,
+              clipBehavior: Clip.antiAlias,
+              child: Ink(
+                decoration: BoxDecoration(
+                  color: cardBackgroundColor,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: cardBorderColor),
+                ),
+                child: InkWell(
+                  onTap: () => unawaited(
+                    showAgentToolDetailSheet(context, cardData: cardData),
+                  ),
+                  borderRadius: BorderRadius.circular(999),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _StatusIcon(
+                          status: status,
+                          toolType: cardData['toolType'],
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: titleColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              height: 1.15,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: statusTagBackgroundColor,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            status == 'running' ? typeLabel : statusLabel,
+                            style: TextStyle(
+                              color: statusTagTextColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusTagBackgroundColor,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    status == 'running' ? typeLabel : statusLabel,
-                    style: TextStyle(
-                      color: statusTagTextColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      height: 1,
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

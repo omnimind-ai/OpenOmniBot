@@ -167,7 +167,7 @@ class _ChatToolActivityStripState extends State<ChatToolActivityStrip> {
                     : () => _handleStopToolCall(activeCard),
                 isStopPending: _pendingStopCardId == activeCardId,
                 onOpenCard: (cardData) =>
-                    _openCardDetailDialog(context, cardData: cardData),
+                    _openCardDetailSheet(context, cardData: cardData),
                 onHistoryPointerDown: _handleHistoryPointerDown,
                 onHistoryPointerEnd: _handleHistoryPointerEnd,
               ),
@@ -194,7 +194,7 @@ class _ChatToolActivityStripState extends State<ChatToolActivityStrip> {
                       ? _TerminalThumbnail(
                           key: kChatToolActivityPreviewKey,
                           transcript: activeTranscript,
-                          onTap: () => _openCardDetailDialog(
+                          onTap: () => _openCardDetailSheet(
                             context,
                             cardData: activeCard,
                           ),
@@ -385,11 +385,11 @@ class _ChatToolActivityStripState extends State<ChatToolActivityStrip> {
     });
   }
 
-  Future<void> _openCardDetailDialog(
+  Future<void> _openCardDetailSheet(
     BuildContext context, {
     required Map<String, dynamic> cardData,
   }) {
-    return showAgentToolDetailDialog(context, cardData: cardData);
+    return showAgentToolDetailSheet(context, cardData: cardData);
   }
 }
 

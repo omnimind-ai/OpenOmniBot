@@ -3,10 +3,20 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_summary_card.dart';
+import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/terminal_output_utils.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/app_background_service.dart';
 
 void main() {
+  setUp(() {
+    LegacyTextLocalizer.setResolvedLocale(const Locale('zh'));
+  });
+
+  tearDown(() {
+    LegacyTextLocalizer.clearResolvedLocale();
+  });
+
   test('TerminalOutputUtils builds readable output from result json', () {
     final output = TerminalOutputUtils.buildDisplayOutput(
       terminalOutput: '',
@@ -63,6 +73,49 @@ void main() {
 
     expect(find.text('检查仓库状态'), findsOneWidget);
     expect(find.text('终端执行'), findsNothing);
+  });
+
+  testWidgets('tool card opens detail sheet when tapped', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: AgentToolSummaryCard(
+              cardData: {
+                'status': 'success',
+                'displayName': '终端执行',
+                'toolTitle': '检查仓库状态',
+                'toolType': 'terminal',
+                'summary': '终端命令执行成功',
+                'argsJson': jsonEncode({
+                  'command': 'git status',
+                  'workingDirectory': '/workspace',
+                }),
+                'terminalOutput': 'On branch main',
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('检查仓库状态'));
+    await tester.pumpAndSettle();
+
+    final sheet = find.byKey(kAgentToolDetailSheetKey);
+    expect(sheet, findsOneWidget);
+    expect(
+      find.descendant(
+        of: sheet,
+        matching: find.textContaining('git status', findRichText: true),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tapAt(const Offset(12, 12));
+    await tester.pumpAndSettle();
+
+    expect(sheet, findsNothing);
   });
 
   testWidgets(

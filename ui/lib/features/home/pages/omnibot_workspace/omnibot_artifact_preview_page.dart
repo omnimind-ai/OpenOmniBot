@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:ui/services/assists_core_service.dart';
@@ -22,6 +23,10 @@ class OmnibotArtifactPreviewPage extends StatefulWidget {
   final String? shellPath;
   final bool exists;
   final bool startInEditMode;
+  final bool showPathBar;
+  final bool appBarPrimary;
+  final bool showLeading;
+  final VoidCallback? onClose;
 
   const OmnibotArtifactPreviewPage({
     super.key,
@@ -33,6 +38,10 @@ class OmnibotArtifactPreviewPage extends StatefulWidget {
     this.uri,
     this.exists = true,
     this.startInEditMode = false,
+    this.showPathBar = true,
+    this.appBarPrimary = true,
+    this.showLeading = true,
+    this.onClose,
   });
 
   @override
@@ -239,49 +248,49 @@ class _OmnibotArtifactPreviewPageState
   }
 
   Future<void> _handleOpenWithSystem() async {
+    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
     try {
       final opened = await OmnibotResourceService.openWithSystem(
         sourcePath: widget.path,
         mimeType: widget.mimeType,
       );
+      if (!mounted) return;
       if (!opened) {
         showToast(
-          Localizations.localeOf(context).languageCode == 'en'
+          isEnglish
               ? 'Open with system failed. Please try again later.'
               : '系统打开失败，请稍后重试',
           type: ToastType.error,
         );
       }
     } catch (error) {
+      if (!mounted) return;
       showToast(
-        Localizations.localeOf(context).languageCode == 'en'
-            ? 'Open with system failed: $error'
-            : '系统打开失败：$error',
+        isEnglish ? 'Open with system failed: $error' : '系统打开失败：$error',
         type: ToastType.error,
       );
     }
   }
 
   Future<void> _handleShareFile() async {
+    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
     try {
       final shared = await OmnibotResourceService.shareFile(
         sourcePath: widget.path,
         fileName: widget.title,
         mimeType: widget.mimeType,
       );
+      if (!mounted) return;
       if (!shared) {
         showToast(
-          Localizations.localeOf(context).languageCode == 'en'
-              ? 'Share failed. Please try again later.'
-              : '分享失败，请稍后重试',
+          isEnglish ? 'Share failed. Please try again later.' : '分享失败，请稍后重试',
           type: ToastType.error,
         );
       }
     } catch (error) {
+      if (!mounted) return;
       showToast(
-        Localizations.localeOf(context).languageCode == 'en'
-            ? 'Share failed: $error'
-            : '分享失败：$error',
+        isEnglish ? 'Share failed: $error' : '分享失败：$error',
         type: ToastType.error,
       );
     }
@@ -610,24 +619,185 @@ class _OmnibotArtifactPreviewPageState
         backgroundColor: palette.pageBackground,
         appBar: CommonAppBar(
           title: widget.title,
-          primary: true,
+          primary: widget.appBarPrimary,
+          showLeading: widget.showLeading,
+          onBackPressed: widget.onClose,
           actions: _buildActions(),
         ),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              key: const ValueKey('artifact-preview-path-bar'),
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              color: palette.surfaceSecondary,
-              child: Text(
-                widget.path,
-                style: TextStyle(fontSize: 12, color: palette.textSecondary),
+            if (widget.showPathBar)
+              Container(
+                key: const ValueKey('artifact-preview-path-bar'),
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                color: palette.surfaceSecondary,
+                child: Text(
+                  widget.path,
+                  style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                ),
               ),
-            ),
             Expanded(child: _buildBody()),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> showOmnibotArtifactPreviewSheet(
+  BuildContext context,
+  OmnibotResourceMetadata metadata,
+) async {
+  await OmnibotResourceService.ensureWorkspacePathsLoaded();
+  final uriMetadata = metadata.uri == null
+      ? null
+      : OmnibotResourceService.resolveUri(metadata.uri!);
+  final sourceMetadata = uriMetadata ?? metadata;
+  final resolvedMetadata = OmnibotResourceService.describePath(
+    sourceMetadata.path,
+    uri: sourceMetadata.uri,
+    shellPath: sourceMetadata.shellPath,
+    title: sourceMetadata.title,
+    previewKind: sourceMetadata.previewKind,
+    mimeType: sourceMetadata.mimeType,
+  );
+  if (!await OmnibotResourceService.ensureResourceAccess(
+    path: resolvedMetadata.path,
+    uri: resolvedMetadata.uri,
+  )) {
+    return;
+  }
+  if (resolvedMetadata.isDirectory) {
+    await OmnibotResourceService.openWorkspace(
+      absolutePath: resolvedMetadata.path,
+      shellPath: resolvedMetadata.shellPath,
+      uri: resolvedMetadata.uri,
+    );
+    return;
+  }
+  if (!context.mounted) {
+    return;
+  }
+
+  await showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    isDismissible: true,
+    enableDrag: false,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.28),
+    builder: (sheetContext) {
+      return _OmnibotArtifactPreviewSheetFrame(metadata: resolvedMetadata);
+    },
+  );
+}
+
+class _OmnibotArtifactPreviewSheetFrame extends StatefulWidget {
+  const _OmnibotArtifactPreviewSheetFrame({required this.metadata});
+
+  final OmnibotResourceMetadata metadata;
+
+  @override
+  State<_OmnibotArtifactPreviewSheetFrame> createState() =>
+      _OmnibotArtifactPreviewSheetFrameState();
+}
+
+class _OmnibotArtifactPreviewSheetFrameState
+    extends State<_OmnibotArtifactPreviewSheetFrame> {
+  static const double _minHeightFactor = 0.36;
+  static const double _maxHeightFactor = 0.94;
+
+  double? _heightFactor;
+
+  double _initialHeightFactor(double viewportHeight) {
+    return viewportHeight < 720 ? 0.72 : 0.62;
+  }
+
+  void _handleDragUpdate(DragUpdateDetails details, double availableHeight) {
+    if (availableHeight <= 0) {
+      return;
+    }
+    final delta = details.primaryDelta ?? details.delta.dy;
+    setState(() {
+      final current =
+          _heightFactor ??
+          _initialHeightFactor(MediaQuery.sizeOf(context).height);
+      _heightFactor = (current - delta / availableHeight).clamp(
+        _minHeightFactor,
+        _maxHeightFactor,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final mediaQuery = MediaQuery.of(context);
+    final availableHeight = math.max(
+      320.0,
+      mediaQuery.size.height -
+          mediaQuery.padding.top -
+          mediaQuery.viewInsets.bottom,
+    );
+    final heightFactor =
+        _heightFactor ?? _initialHeightFactor(mediaQuery.size.height);
+    return SafeArea(
+      top: false,
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+        child: SizedBox(
+          height: availableHeight * heightFactor,
+          width: double.infinity,
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            child: Material(
+              color: palette.pageBackground,
+              child: Column(
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onVerticalDragUpdate: (details) =>
+                        _handleDragUpdate(details, availableHeight),
+                    child: SizedBox(
+                      height: 22,
+                      width: double.infinity,
+                      child: Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: palette.textSecondary.withValues(
+                              alpha: 0.28,
+                            ),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: OmnibotArtifactPreviewPage(
+                      path: widget.metadata.path,
+                      uri: widget.metadata.uri,
+                      title: widget.metadata.title,
+                      previewKind: widget.metadata.previewKind,
+                      mimeType: widget.metadata.mimeType,
+                      shellPath: widget.metadata.shellPath,
+                      exists: widget.metadata.exists,
+                      showPathBar: false,
+                      appBarPrimary: false,
+                      showLeading: false,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
