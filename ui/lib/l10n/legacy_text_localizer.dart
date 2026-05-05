@@ -234,6 +234,7 @@ class LegacyTextLocalizer {
     '检查更新': 'Check for updates',
     '已关闭思考': 'Thinking disabled',
     '请求日志': 'Request logs',
+    '使用手册': 'User guide',
     '概览': 'Overview',
     '最近记录': 'Recent logs',
     '最近 10 条 AI 请求，按时间倒序展示。':

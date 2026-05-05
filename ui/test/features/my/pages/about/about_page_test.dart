@@ -76,7 +76,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(SingleChildScrollView), findsNothing);
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
     expect(find.text('Version 0.0.1'), findsOneWidget);
     expect(find.text('Omnibot'), findsNothing);
     expect(find.text('加入 beta 测试'), findsOneWidget);
@@ -85,9 +85,11 @@ void main() {
     expect(find.textContaining('发现新版本'), findsOneWidget);
     expect(find.text('查看新版本'), findsOneWidget);
 
-    await tester.tap(
-      find.byKey(const ValueKey('about-download-source-dropdown')),
+    final downloadSourceDropdown = find.byKey(
+      const ValueKey('about-download-source-dropdown'),
     );
+    await tester.ensureVisible(downloadSourceDropdown);
+    await tester.tap(downloadSourceDropdown);
     await tester.pumpAndSettle();
 
     expect(find.text('国内网络优先'), findsOneWidget);
@@ -140,5 +142,6 @@ void main() {
     expect(find.text('已是最新版'), findsNothing);
     expect(find.text('检查更新'), findsOneWidget);
     expect(find.text('请求日志'), findsOneWidget);
+    expect(find.text('使用手册'), findsOneWidget);
   });
 }

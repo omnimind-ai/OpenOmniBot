@@ -21,6 +21,9 @@ class AboutPage extends StatefulWidget {
 }
 
 class _AboutPageState extends State<AboutPage> {
+  static const String _userGuideUrl =
+      'https://omnimind-ai.github.io/OmniBot-Docs';
+
   String _version = '';
   AppUpdateStatus? _updateStatus;
   bool _betaOptIn = false;
@@ -209,6 +212,16 @@ class _AboutPageState extends State<AboutPage> {
     return '${context.trLegacy('发现新版本')} ${status!.latestVersionLabel}';
   }
 
+  void _openUserGuide() {
+    GoRouterManager.push(
+      '/webview/webview_page',
+      extra: <String, dynamic>{
+        'url': _userGuideUrl,
+        'title': context.trLegacy('使用手册'),
+      },
+    );
+  }
+
   String _downloadSourceLabel(AppUpdateDownloadSource source) {
     switch (source) {
       case AppUpdateDownloadSource.cnb:
@@ -329,11 +342,11 @@ class _AboutPageState extends State<AboutPage> {
                     ? context.trLegacy('查看新版本')
                     : context.trLegacy('检查更新')),
           width: 180,
-          height: 44,
+          height: compact ? 40 : 44,
           gradientColors: updateButtonGradient,
           textStyle: TextStyle(
             color: updateButtonTextColor,
-            fontSize: 16,
+            fontSize: compact ? 15 : 16,
             fontFamily: AppTextStyles.fontFamily,
             fontWeight: FontWeight.w500,
             height: 1.5,
@@ -343,34 +356,54 @@ class _AboutPageState extends State<AboutPage> {
           onTap: _handlePrimaryAction,
         ),
         const SizedBox(height: 12),
-        OutlinedButton.icon(
+        _buildAboutActionButton(
+          icon: Icons.receipt_long_outlined,
+          label: context.trLegacy('请求日志'),
+          compact: compact,
           onPressed: () {
             GoRouterManager.push('/my/about/request-logs');
           },
-          icon: const Icon(Icons.receipt_long_outlined, size: 18),
-          label: Text(context.trLegacy('请求日志')),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size(180, 44),
-            foregroundColor: context.isDarkTheme
-                ? palette.textPrimary
-                : AppColors.text,
-            side: BorderSide(
-              color: context.isDarkTheme
-                  ? const Color(0xFF2B3444)
-                  : const Color(0xFFD6E0EE),
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-            textStyle: const TextStyle(
-              fontFamily: AppTextStyles.fontFamily,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              height: 1.4,
-            ),
-          ),
+        ),
+        SizedBox(height: compact ? 6 : 8),
+        _buildAboutActionButton(
+          icon: Icons.menu_book_outlined,
+          label: context.trLegacy('使用手册'),
+          compact: compact,
+          onPressed: _openUserGuide,
         ),
       ],
+    );
+  }
+
+  Widget _buildAboutActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    required bool compact,
+  }) {
+    final palette = context.omniPalette;
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        minimumSize: Size(180, compact ? 40 : 44),
+        foregroundColor: context.isDarkTheme
+            ? palette.textPrimary
+            : AppColors.text,
+        side: BorderSide(
+          color: context.isDarkTheme
+              ? const Color(0xFF2B3444)
+              : const Color(0xFFD6E0EE),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: const TextStyle(
+          fontFamily: AppTextStyles.fontFamily,
+          fontSize: 14.5,
+          fontWeight: FontWeight.w500,
+          height: 1.4,
+        ),
+      ),
     );
   }
 
@@ -635,21 +668,23 @@ class _AboutPageState extends State<AboutPage> {
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 420),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SizedBox(height: compact ? 4 : 12),
-                      _buildHero(compact),
-                      SizedBox(height: compact ? 16 : 20),
-                      _buildUpdateSection(
-                        compact,
-                        updateButtonGradient,
-                        updateButtonTextColor,
-                      ),
-                      SizedBox(height: compact ? 18 : 24),
-                      _buildPreferenceSection(compact),
-                      const Spacer(),
-                    ],
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(height: compact ? 4 : 12),
+                        _buildHero(compact),
+                        SizedBox(height: compact ? 16 : 20),
+                        _buildUpdateSection(
+                          compact,
+                          updateButtonGradient,
+                          updateButtonTextColor,
+                        ),
+                        SizedBox(height: compact ? 18 : 24),
+                        _buildPreferenceSection(compact),
+                        SizedBox(height: compact ? 8 : 16),
+                      ],
+                    ),
                   ),
                 ),
               ),
