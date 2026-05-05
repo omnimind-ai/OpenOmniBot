@@ -16,11 +16,18 @@ import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+typedef OmnibotResourceOpenCallback =
+    Future<void> Function(
+      BuildContext context,
+      OmnibotResourceMetadata metadata,
+    );
+
 class OmnibotInlineResourceEmbed extends StatelessWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
   final double? maxWidth;
   final double? preferredHeight;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const OmnibotInlineResourceEmbed({
     super.key,
@@ -28,6 +35,7 @@ class OmnibotInlineResourceEmbed extends StatelessWidget {
     this.plainStyle = false,
     this.maxWidth,
     this.preferredHeight,
+    this.onOpen,
   });
 
   @override
@@ -40,32 +48,39 @@ class OmnibotInlineResourceEmbed extends StatelessWidget {
         'image' => _OmnibotInlineImageCard(
           metadata: metadata,
           plainStyle: plainStyle,
+          onOpen: onOpen,
         ),
         'audio' => _OmnibotInlineAudioPlayer(
           metadata: metadata,
           plainStyle: plainStyle,
+          onOpen: onOpen,
         ),
         'video' => _OmnibotInlineVideoPlayer(
           metadata: metadata,
           plainStyle: plainStyle,
+          onOpen: onOpen,
         ),
         'pdf' => _OmnibotInlinePdfCard(
           metadata: metadata,
           plainStyle: plainStyle,
           preferredHeight: preferredHeight,
+          onOpen: onOpen,
         ),
         'html' => _OmnibotInlineHtmlCard(
           metadata: metadata,
           plainStyle: plainStyle,
           preferredHeight: preferredHeight,
+          onOpen: onOpen,
         ),
         'office' => _OmnibotInlineOfficePreviewCard(
           metadata: metadata,
           plainStyle: plainStyle,
+          onOpen: onOpen,
         ),
         _ => OmnibotResourceLinkCard(
           metadata: metadata,
           plainStyle: plainStyle,
+          onOpen: onOpen,
         ),
       },
     );
@@ -75,11 +90,13 @@ class OmnibotInlineResourceEmbed extends StatelessWidget {
 class OmnibotResourceLinkCard extends StatelessWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const OmnibotResourceLinkCard({
     super.key,
     required this.metadata,
     this.plainStyle = false,
+    this.onOpen,
   });
 
   @override
@@ -96,7 +113,7 @@ class OmnibotResourceLinkCard extends StatelessWidget {
       _ => Icons.insert_drive_file_outlined,
     };
     return InkWell(
-      onTap: () => _openMetadata(metadata),
+      onTap: () => _openMetadata(context, metadata, onOpen: onOpen),
       borderRadius: BorderRadius.circular(14),
       child: Ink(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -174,10 +191,12 @@ class OmnibotResourceLinkCard extends StatelessWidget {
 class _OmnibotInlineImageCard extends StatelessWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotInlineImageCard({
     required this.metadata,
     this.plainStyle = false,
+    this.onOpen,
   });
 
   @override
@@ -192,7 +211,7 @@ class _OmnibotInlineImageCard extends StatelessWidget {
             heroTag: heroTag,
           );
         } else {
-          _openMetadata(metadata);
+          _openMetadata(context, metadata, onOpen: onOpen);
         }
       },
       borderRadius: BorderRadius.circular(16),
@@ -219,6 +238,7 @@ class _OmnibotInlineImageCard extends StatelessWidget {
                           ? 'Failed to load image'
                           : '图片加载失败',
                       plainStyle: plainStyle,
+                      onOpen: onOpen,
                     ),
                   ),
                 )
@@ -229,6 +249,7 @@ class _OmnibotInlineImageCard extends StatelessWidget {
                       ? 'Image does not exist or is not readable'
                       : '图片不存在或暂不可读',
                   plainStyle: plainStyle,
+                  onOpen: onOpen,
                 ),
         ),
       ),
@@ -239,10 +260,12 @@ class _OmnibotInlineImageCard extends StatelessWidget {
 class _OmnibotInlineAudioPlayer extends StatefulWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotInlineAudioPlayer({
     required this.metadata,
     this.plainStyle = false,
+    this.onOpen,
   });
 
   @override
@@ -311,6 +334,7 @@ class _OmnibotInlineAudioPlayerState extends State<_OmnibotInlineAudioPlayer> {
                   ? 'Failed to load audio'
                   : '音频加载失败'),
         plainStyle: widget.plainStyle,
+        onOpen: widget.onOpen,
       );
     }
     return StreamBuilder<PlayerState>(
@@ -376,7 +400,11 @@ class _OmnibotInlineAudioPlayerState extends State<_OmnibotInlineAudioPlayer> {
                 tooltip: LegacyTextLocalizer.isEnglish
                     ? 'Open preview'
                     : '打开预览',
-                onPressed: () => _openMetadata(widget.metadata),
+                onPressed: () => _openMetadata(
+                  context,
+                  widget.metadata,
+                  onOpen: widget.onOpen,
+                ),
                 icon: const Icon(Icons.open_in_new_rounded),
               ),
             ],
@@ -390,10 +418,12 @@ class _OmnibotInlineAudioPlayerState extends State<_OmnibotInlineAudioPlayer> {
 class _OmnibotInlineVideoPlayer extends StatefulWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotInlineVideoPlayer({
     required this.metadata,
     this.plainStyle = false,
+    this.onOpen,
   });
 
   @override
@@ -484,6 +514,7 @@ class _OmnibotInlineVideoPlayerState extends State<_OmnibotInlineVideoPlayer> {
                   ? 'Failed to load video'
                   : '视频加载失败'),
         plainStyle: widget.plainStyle,
+        onOpen: widget.onOpen,
       );
     }
     final controller = _controller;
@@ -919,11 +950,13 @@ class _OmnibotInlinePdfCard extends StatelessWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
   final double? preferredHeight;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotInlinePdfCard({
     required this.metadata,
     this.plainStyle = false,
     this.preferredHeight,
+    this.onOpen,
   });
 
   @override
@@ -936,12 +969,14 @@ class _OmnibotInlinePdfCard extends StatelessWidget {
             ? 'PDF does not exist or is not readable'
             : 'PDF 不存在或暂不可读',
         plainStyle: plainStyle,
+        onOpen: onOpen,
       );
     }
     return _OmnibotPdfScrollablePreview(
       metadata: metadata,
       plainStyle: plainStyle,
       preferredHeight: preferredHeight,
+      onOpen: onOpen,
     );
   }
 }
@@ -950,11 +985,13 @@ class _OmnibotPdfScrollablePreview extends StatefulWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
   final double? preferredHeight;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotPdfScrollablePreview({
     required this.metadata,
     this.plainStyle = false,
     this.preferredHeight,
+    this.onOpen,
   });
 
   @override
@@ -1068,6 +1105,7 @@ class _OmnibotPdfScrollablePreviewState
                         ? 'PDF preview failed'
                         : 'PDF 预览失败',
                     plainStyle: widget.plainStyle,
+                    onOpen: widget.onOpen,
                   );
                 }
                 final info = snapshot.data!;
@@ -1223,11 +1261,13 @@ class _OmnibotInlineHtmlCard extends StatefulWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
   final double? preferredHeight;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotInlineHtmlCard({
     required this.metadata,
     this.plainStyle = false,
     this.preferredHeight,
+    this.onOpen,
   });
 
   @override
@@ -1407,6 +1447,7 @@ class _OmnibotInlineHtmlCardState extends State<_OmnibotInlineHtmlCard> {
             ? 'HTML file does not exist or is not readable'
             : 'HTML 文件不存在或暂不可读',
         plainStyle: widget.plainStyle,
+        onOpen: widget.onOpen,
       );
     }
 
@@ -1468,10 +1509,12 @@ class _OmnibotInlineHtmlCardState extends State<_OmnibotInlineHtmlCard> {
 class _OmnibotInlineOfficePreviewCard extends StatefulWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotInlineOfficePreviewCard({
     required this.metadata,
     this.plainStyle = false,
+    this.onOpen,
   });
 
   @override
@@ -1515,6 +1558,7 @@ class _OmnibotInlineOfficePreviewCardState
             ? 'File does not exist or is not readable'
             : '文件不存在或暂不可读',
         plainStyle: widget.plainStyle,
+        onOpen: widget.onOpen,
       );
     }
 
@@ -1586,7 +1630,11 @@ class _OmnibotInlineOfficePreviewCardState
                   tooltip: LegacyTextLocalizer.isEnglish
                       ? 'Open preview'
                       : '打开预览',
-                  onPressed: () => _openMetadata(widget.metadata),
+                  onPressed: () => _openMetadata(
+                    context,
+                    widget.metadata,
+                    onOpen: widget.onOpen,
+                  ),
                   icon: const Icon(Icons.open_in_new_rounded),
                 ),
               ],
@@ -1614,7 +1662,11 @@ class _OmnibotInlineOfficePreviewCardState
                           (LegacyTextLocalizer.isEnglish
                               ? 'Office preview failed'
                               : 'Office 预览失败'),
-                      onOpen: () => _openMetadata(widget.metadata),
+                      onOpen: () => _openMetadata(
+                        context,
+                        widget.metadata,
+                        onOpen: widget.onOpen,
+                      ),
                     );
                   }
                   return _OfficePreviewBody(data: snapshot.data!);
@@ -1849,18 +1901,20 @@ class _MissingResourceCard extends StatelessWidget {
   final IconData icon;
   final String subtitle;
   final bool plainStyle;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _MissingResourceCard({
     required this.metadata,
     required this.icon,
     required this.subtitle,
     this.plainStyle = false,
+    this.onOpen,
   });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () => _openMetadata(metadata),
+      onTap: () => _openMetadata(context, metadata, onOpen: onOpen),
       borderRadius: BorderRadius.circular(14),
       child: Ink(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1913,7 +1967,15 @@ class _MissingResourceCard extends StatelessWidget {
   }
 }
 
-Future<void> _openMetadata(OmnibotResourceMetadata metadata) async {
+Future<void> _openMetadata(
+  BuildContext context,
+  OmnibotResourceMetadata metadata, {
+  OmnibotResourceOpenCallback? onOpen,
+}) async {
+  if (onOpen != null) {
+    await onOpen(context, metadata);
+    return;
+  }
   if (metadata.isDirectory) {
     await OmnibotResourceService.openWorkspace(
       absolutePath: metadata.path,

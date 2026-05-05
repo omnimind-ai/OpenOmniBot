@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:ui/features/home/pages/omnibot_workspace/omnibot_artifact_preview_page.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/models/chat_link_preview.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
@@ -513,7 +514,7 @@ class MessageBubble extends StatelessWidget {
           if (preview.url.isEmpty) {
             return;
           }
-          OmnibotResourceService.handleLinkTap(preview.url);
+          _handleChatLinkTap(context, preview.url);
         },
         borderRadius: BorderRadius.circular(14),
         child: Container(
@@ -651,7 +652,7 @@ class MessageBubble extends StatelessWidget {
           if (preview.url.isEmpty) {
             return;
           }
-          OmnibotResourceService.handleLinkTap(preview.url);
+          _handleChatLinkTap(context, preview.url);
         },
         borderRadius: BorderRadius.circular(8),
         child: Container(
@@ -764,6 +765,19 @@ class MessageBubble extends StatelessWidget {
         color: visualProfile.primaryTextColor.withValues(alpha: 0.72),
       ),
     );
+  }
+
+  Future<void> _handleChatLinkTap(BuildContext context, String url) async {
+    if (url.startsWith('omnibot://')) {
+      await OmnibotResourceService.ensureWorkspacePathsLoaded();
+      if (!context.mounted) return;
+      final metadata = OmnibotResourceService.resolveUri(url);
+      if (metadata != null) {
+        await showOmnibotArtifactPreviewSheet(context, metadata);
+        return;
+      }
+    }
+    await OmnibotResourceService.handleLinkTap(url);
   }
 
   Widget _buildLinkPreviewImageFallback() {
@@ -987,6 +1001,7 @@ class MessageBubble extends StatelessWidget {
             fullText: text,
             selectable: true,
             onDisplayedTextChanged: onStreamingTextLayoutChanged,
+            onResourceOpen: showOmnibotArtifactPreviewSheet,
             trailing: trailing,
             style: TextStyle(
               fontSize: _chatTextSize,
@@ -1004,6 +1019,7 @@ class MessageBubble extends StatelessWidget {
       fullText: text,
       selectable: true,
       onDisplayedTextChanged: onStreamingTextLayoutChanged,
+      onResourceOpen: showOmnibotArtifactPreviewSheet,
       trailing: trailing,
       style: TextStyle(
         fontSize: _chatTextSize,

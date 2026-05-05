@@ -20,6 +20,7 @@ class OmnibotMarkdownBody extends StatelessWidget {
   final bool selectable;
   final bool inlineResourcePlainStyle;
   final Widget? trailingInline;
+  final OmnibotResourceOpenCallback? onResourceOpen;
 
   const OmnibotMarkdownBody({
     super.key,
@@ -28,6 +29,7 @@ class OmnibotMarkdownBody extends StatelessWidget {
     this.selectable = false,
     this.inlineResourcePlainStyle = false,
     this.trailingInline,
+    this.onResourceOpen,
   });
 
   @override
@@ -39,7 +41,7 @@ class OmnibotMarkdownBody extends StatelessWidget {
       selectable: selectable,
       onTapLink: (text, href, title) {
         if (href == null) return;
-        OmnibotResourceService.handleLinkTap(href);
+        _handleMarkdownLinkTap(context, href, onResourceOpen);
       },
       blockSyntaxes: const <md.BlockSyntax>[
         OmnibotTableSyntax(),
@@ -56,6 +58,7 @@ class OmnibotMarkdownBody extends StatelessWidget {
         inlineResourcePlainStyle: inlineResourcePlainStyle,
         codeTapHandler: codeTapHandler,
         trailingInline: trailingInline,
+        onResourceOpen: onResourceOpen,
       ),
       sizedImageBuilder: (config) {
         final uri = config.uri;
@@ -65,6 +68,7 @@ class OmnibotMarkdownBody extends StatelessWidget {
             return OmnibotInlineResourceEmbed(
               metadata: metadata,
               plainStyle: inlineResourcePlainStyle,
+              onOpen: onResourceOpen,
             );
           }
         }
@@ -145,6 +149,7 @@ Map<String, MarkdownElementBuilder> buildOmnibotMarkdownBuilders({
   required bool inlineResourcePlainStyle,
   required OmnibotCodeTapHandler codeTapHandler,
   Widget? trailingInline,
+  OmnibotResourceOpenCallback? onResourceOpen,
 }) {
   return <String, MarkdownElementBuilder>{
     'code': OmnibotInlineCodeBuilder(onCopy: codeTapHandler.copy),
@@ -155,9 +160,11 @@ Map<String, MarkdownElementBuilder> buildOmnibotMarkdownBuilders({
       baseStyle: baseStyle,
       selectable: selectable,
       inlineResourcePlainStyle: inlineResourcePlainStyle,
+      onResourceOpen: onResourceOpen,
     ),
     'omnibot-link': OmnibotInlineLinkBuilder(
       inlineResourcePlainStyle: inlineResourcePlainStyle,
+      onResourceOpen: onResourceOpen,
     ),
     if (trailingInline != null)
       'omnibot-trailing-inline': OmnibotTrailingInlineBuilder(
@@ -436,11 +443,13 @@ class OmnibotTableBuilder extends MarkdownElementBuilder {
     required this.baseStyle,
     required this.selectable,
     required this.inlineResourcePlainStyle,
+    this.onResourceOpen,
   });
 
   final TextStyle baseStyle;
   final bool selectable;
   final bool inlineResourcePlainStyle;
+  final OmnibotResourceOpenCallback? onResourceOpen;
 
   @override
   bool isBlockElement() => true;
@@ -528,6 +537,7 @@ class OmnibotTableBuilder extends MarkdownElementBuilder {
                   baseStyle: cellStyle,
                   selectable: selectable,
                   inlineResourcePlainStyle: inlineResourcePlainStyle,
+                  onResourceOpen: onResourceOpen,
                   textAlign: textAlign,
                 ),
               ),
@@ -655,6 +665,7 @@ class _OmnibotMarkdownTableCell extends StatelessWidget {
     required this.baseStyle,
     required this.selectable,
     required this.inlineResourcePlainStyle,
+    required this.onResourceOpen,
     required this.textAlign,
   });
 
@@ -662,6 +673,7 @@ class _OmnibotMarkdownTableCell extends StatelessWidget {
   final TextStyle baseStyle;
   final bool selectable;
   final bool inlineResourcePlainStyle;
+  final OmnibotResourceOpenCallback? onResourceOpen;
   final TextAlign textAlign;
 
   @override
@@ -674,6 +686,7 @@ class _OmnibotMarkdownTableCell extends StatelessWidget {
         baseStyle: baseStyle,
         selectable: selectable,
         inlineResourcePlainStyle: inlineResourcePlainStyle,
+        onResourceOpen: onResourceOpen,
       ),
     );
   }
@@ -927,9 +940,13 @@ class OmnibotBlockMathBuilder extends MarkdownElementBuilder {
 }
 
 class OmnibotInlineLinkBuilder extends MarkdownElementBuilder {
-  OmnibotInlineLinkBuilder({this.inlineResourcePlainStyle = false});
+  OmnibotInlineLinkBuilder({
+    this.inlineResourcePlainStyle = false,
+    this.onResourceOpen,
+  });
 
   final bool inlineResourcePlainStyle;
+  final OmnibotResourceOpenCallback? onResourceOpen;
 
   @override
   Widget visitElementAfterWithContext(
@@ -949,7 +966,7 @@ class OmnibotInlineLinkBuilder extends MarkdownElementBuilder {
           child: InkWell(
             onTap: href == null
                 ? null
-                : () => OmnibotResourceService.handleLinkTap(href),
+                : () => _handleMarkdownLinkTap(context, href, onResourceOpen),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Text(
@@ -971,11 +988,29 @@ class OmnibotInlineLinkBuilder extends MarkdownElementBuilder {
           child: OmnibotInlineResourceEmbed(
             metadata: metadata,
             plainStyle: inlineResourcePlainStyle,
+            onOpen: onResourceOpen,
           ),
         ),
       ),
     );
   }
+}
+
+Future<void> _handleMarkdownLinkTap(
+  BuildContext context,
+  String href,
+  OmnibotResourceOpenCallback? onResourceOpen,
+) async {
+  if (href.startsWith('omnibot://') && onResourceOpen != null) {
+    await OmnibotResourceService.ensureWorkspacePathsLoaded();
+    if (!context.mounted) return;
+    final metadata = OmnibotResourceService.resolveUri(href);
+    if (metadata != null) {
+      await onResourceOpen(context, metadata);
+      return;
+    }
+  }
+  await OmnibotResourceService.handleLinkTap(href);
 }
 
 class OmnibotTrailingInlineSyntax extends md.InlineSyntax {
