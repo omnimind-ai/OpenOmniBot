@@ -167,12 +167,19 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
 
   @override
   Future<void> _bootstrapConversationThread() async {
+    final requestId = _beginConversationTargetRequest();
     await _loadOpenClawConfig();
+    if (!_isConversationTargetRequestCurrent(requestId)) return;
     await _loadTerminalEnvironmentVariables();
+    if (!_isConversationTargetRequestCurrent(requestId)) return;
     final target = await _resolveConversationThreadTarget(widget.threadTarget);
-    if (!mounted) return;
-    await _applyConversationThreadTarget(target, syncPage: false);
-    if (!mounted) return;
+    if (!_isConversationTargetRequestCurrent(requestId)) return;
+    await _applyConversationThreadTarget(
+      target,
+      syncPage: false,
+      requestId: requestId,
+    );
+    if (!_isConversationTargetRequestCurrent(requestId)) return;
     unawaited(_loadNormalChatModelContext());
     unawaited(_refreshLiveBrowserSessionSnapshot(syncRuntime: true));
     _notifySummarySheetReadyIfNeeded();
@@ -180,10 +187,11 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
 
   @override
   Future<void> _reloadConversationForCurrentTarget() async {
+    final requestId = _beginConversationTargetRequest();
     final target = await _resolveConversationThreadTarget(widget.threadTarget);
-    if (!mounted) return;
-    await _applyConversationThreadTarget(target);
-    if (!mounted) return;
+    if (!_isConversationTargetRequestCurrent(requestId)) return;
+    await _applyConversationThreadTarget(target, requestId: requestId);
+    if (!_isConversationTargetRequestCurrent(requestId)) return;
     _notifySummarySheetReadyIfNeeded();
   }
 
@@ -191,14 +199,21 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   Future<void> _applyConversationThreadTarget(
     ConversationThreadTarget target, {
     bool syncPage = true,
+    int? requestId,
   }) async {
+    final activeRequestId = requestId ?? _beginConversationTargetRequest();
+    bool isStaleRequest() =>
+        !_isConversationTargetRequestCurrent(activeRequestId);
+    invalidateConversationLifecycle();
+    final lifecycleToken = captureConversationLifecycleToken();
     final effectiveTarget = await _overrideTargetWithSharedDraftIfNeeded(
       target,
     );
+    if (isStaleRequest()) return;
     final targetMode = _pageModeForConversationMode(effectiveTarget.mode);
     _storeDraftForActiveConversationMode();
     _cancelNormalSurfaceModelReveal();
-    if (!mounted) return;
+    if (isStaleRequest()) return;
     setState(() {
       _resolvedThreadTarget = effectiveTarget;
       _activeConversationMode = targetMode;
@@ -213,12 +228,16 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     _resetLocalConversationState(targetMode);
     _vlmAnswerController.clear();
     _applyDraftForConversationMode(targetMode);
-    await initializeConversation();
+    await initializeConversation(lifecycleToken: lifecycleToken);
+    if (isStaleRequest()) return;
     if (_activeConversationMode == ChatPageMode.codex) {
       await _refreshCodexCommandPreferences();
+      if (isStaleRequest()) return;
     }
     await _applyStagedSharedDraftIfNeeded(effectiveTarget);
+    if (isStaleRequest()) return;
     await _persistVisibleThreadTargetIfNeeded();
+    if (isStaleRequest()) return;
     if (syncPage) {
       _jumpToCurrentModePage(animate: false);
     }
@@ -253,6 +272,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     ChatPageMode mode,
     ConversationThreadTarget target,
   ) async {
+    final lifecycleToken = captureConversationLifecycleToken();
     if (target.isNewConversation) {
       return;
     }
@@ -273,7 +293,9 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     final conversations = await ConversationService.getAllConversations(
       includeArchived: true,
     );
-    if (!mounted) return;
+    if (!mounted || !isConversationLifecycleTokenCurrent(lifecycleToken)) {
+      return;
+    }
 
     ConversationModel? conversation;
     try {
@@ -294,7 +316,9 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
           mode: _conversationModeForPageMode(mode),
           expectedMessageCount: resolvedConversation?.messageCount,
         );
-    if (!mounted) return;
+    if (!mounted || !isConversationLifecycleTokenCurrent(lifecycleToken)) {
+      return;
+    }
 
     _currentConversationIdByMode[mode] = conversationId;
     _currentConversationByMode[mode] = resolvedConversation;
@@ -534,31 +558,46 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   }
 
   Future<void> _handleDidPopNext() async {
-    await checkConversationExists();
-    if (!mounted) return;
+    final lifecycleToken = captureConversationLifecycleToken();
+    await checkConversationExists(lifecycleToken: lifecycleToken);
+    if (!mounted || !isConversationLifecycleTokenCurrent(lifecycleToken)) {
+      return;
+    }
     await _loadNormalChatModelContext();
-    if (!mounted) return;
+    if (!mounted || !isConversationLifecycleTokenCurrent(lifecycleToken)) {
+      return;
+    }
     await _refreshLiveBrowserSessionSnapshot(syncRuntime: true);
   }
 
   Future<void> _handleExternalConversationListChanged() async {
+    final lifecycleToken = captureConversationLifecycleToken();
     final conversationId = _currentConversationId;
-    await checkConversationExists();
-    if (!mounted || conversationId == null) {
+    await checkConversationExists(lifecycleToken: lifecycleToken);
+    if (!mounted ||
+        !isConversationLifecycleTokenCurrent(lifecycleToken) ||
+        conversationId == null ||
+        conversationId != _currentConversationId) {
       return;
     }
     final runtime = _runtimeForMode(_activeMode);
     await loadConversation(
       conversationId,
       preferInMemory: runtime?.hasInFlightTask == true,
+      lifecycleToken: lifecycleToken,
     );
-    if (!mounted) return;
+    if (!mounted ||
+        !isConversationLifecycleTokenCurrent(lifecycleToken) ||
+        conversationId != _currentConversationId) {
+      return;
+    }
     setState(() {});
   }
 
   Future<void> _handleExternalConversationMessagesChanged(
     Map<String, dynamic> event,
   ) async {
+    final lifecycleToken = captureConversationLifecycleToken();
     final conversationId = _currentConversationId;
     if (conversationId == null) {
       return;
@@ -575,8 +614,13 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     await loadConversation(
       conversationId,
       preferInMemory: runtime?.hasInFlightTask == true,
+      lifecycleToken: lifecycleToken,
     );
-    if (!mounted) return;
+    if (!mounted ||
+        !isConversationLifecycleTokenCurrent(lifecycleToken) ||
+        conversationId != _currentConversationId) {
+      return;
+    }
     setState(() {});
   }
 

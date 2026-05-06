@@ -50,6 +50,9 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
   set isLoadingMore(bool value);
   int get messageOffset;
   set messageOffset(int value);
+  int captureConversationLifecycleToken();
+  bool isConversationLifecycleTokenCurrent(int token);
+  void invalidateConversationLifecycle();
   List<ChatMessageModel>? getInMemoryMessagesForConversation(
     int conversationId,
     ConversationMode mode,
@@ -73,15 +76,26 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
     List<ChatMessageModel> messages,
   ) {}
 
+  bool _isConversationOperationCurrent(int token) =>
+      mounted && isConversationLifecycleTokenCurrent(token);
+
   // ===================== 对话初始化 =====================
 
   /// 初始化对话
-  Future<void> initializeConversation() async {
+  Future<void> initializeConversation({int? lifecycleToken}) async {
+    final token = lifecycleToken ?? captureConversationLifecycleToken();
+    if (!_isConversationOperationCurrent(token)) {
+      return;
+    }
     final target = routeThreadTarget;
+    final operationMode = target?.mode ?? activeConversationModeValue;
 
     // 多引擎/跨隔离场景下，仅在原生路由携带 conversationId 时刷新缓存
     if (target?.fromNativeRoute == true) {
       await ConversationHistoryService.reloadLocalCache();
+      if (!_isConversationOperationCurrent(token)) {
+        return;
+      }
     }
 
     if (target != null) {
@@ -91,6 +105,9 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
           target,
           mode: target.mode,
         );
+        if (!_isConversationOperationCurrent(token)) {
+          return;
+        }
         setState(() {
           messages.clear();
           currentConversationId = null;
@@ -106,13 +123,22 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
 
       final conversationId = target.conversationId;
       if (conversationId != null) {
-        await loadConversation(conversationId);
+        await loadConversation(conversationId, lifecycleToken: token);
+        if (!_isConversationOperationCurrent(token)) {
+          return;
+        }
         await ConversationService.setCurrentConversationTarget(target);
+        if (!_isConversationOperationCurrent(token)) {
+          return;
+        }
         await ConversationHistoryService.saveCurrentConversationTarget(
           target,
           mode: target.mode,
         );
-        verifyConversationExists();
+        if (!_isConversationOperationCurrent(token)) {
+          return;
+        }
+        verifyConversationExists(lifecycleToken: token);
         return;
       }
     }
@@ -120,15 +146,21 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
     // 如果没有传入conversationId，尝试恢复上次的对话
     final savedTarget =
         await ConversationHistoryService.getCurrentConversationTarget(
-          mode: activeConversationModeValue,
+          mode: operationMode,
         );
+    if (!_isConversationOperationCurrent(token)) {
+      return;
+    }
     if (savedTarget != null) {
       if (savedTarget.isNewConversation || savedTarget.conversationId == null) {
         await ConversationService.setCurrentConversationTarget(savedTarget);
         await ConversationHistoryService.saveCurrentConversationTarget(
           savedTarget,
-          mode: activeConversationModeValue,
+          mode: operationMode,
         );
+        if (!_isConversationOperationCurrent(token)) {
+          return;
+        }
         setState(() {
           messages.clear();
           currentConversationId = null;
@@ -142,42 +174,70 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
         return;
       }
 
-      await loadConversation(savedTarget.conversationId!);
+      await loadConversation(
+        savedTarget.conversationId!,
+        lifecycleToken: token,
+      );
+      if (!_isConversationOperationCurrent(token)) {
+        return;
+      }
       await ConversationService.setCurrentConversationTarget(savedTarget);
+      if (!_isConversationOperationCurrent(token)) {
+        return;
+      }
       await ConversationHistoryService.saveCurrentConversationTarget(
         savedTarget,
-        mode: activeConversationModeValue,
+        mode: operationMode,
       );
+      if (!_isConversationOperationCurrent(token)) {
+        return;
+      }
 
       // 恢复对话后，再次验证对话是否仍然存在
-      verifyConversationExists();
+      verifyConversationExists(lifecycleToken: token);
       return;
     }
 
-    await _restoreLatestConversationOrReset();
+    await _restoreLatestConversationOrReset(lifecycleToken: token);
   }
 
-  Future<void> _restoreLatestConversationOrReset() async {
+  Future<void> _restoreLatestConversationOrReset({int? lifecycleToken}) async {
+    final token = lifecycleToken ?? captureConversationLifecycleToken();
+    final operationMode = activeConversationModeValue;
     try {
       final latestConversation =
-          await ConversationService.getLatestConversation(
-            mode: activeConversationModeValue,
-          );
+          await ConversationService.getLatestConversation(mode: operationMode);
+      if (!_isConversationOperationCurrent(token)) {
+        return;
+      }
       if (latestConversation != null) {
-        await loadConversation(latestConversation.id);
+        await loadConversation(latestConversation.id, lifecycleToken: token);
+        if (!_isConversationOperationCurrent(token)) {
+          return;
+        }
         await ConversationService.setCurrentConversationId(
           latestConversation.id,
           mode: latestConversation.mode,
         );
+        if (!_isConversationOperationCurrent(token)) {
+          return;
+        }
         await ConversationHistoryService.saveCurrentConversationId(
           latestConversation.id,
           mode: latestConversation.mode,
         );
-        verifyConversationExists();
+        if (!_isConversationOperationCurrent(token)) {
+          return;
+        }
+        verifyConversationExists(lifecycleToken: token);
         return;
       }
     } catch (e) {
       debugPrint('恢复最近对话失败: $e');
+    }
+
+    if (!_isConversationOperationCurrent(token)) {
+      return;
     }
 
     if (mounted) {
@@ -202,12 +262,15 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
 
     onConversationReset(activeConversationModeValue);
     final blankTarget = ConversationThreadTarget.newConversation(
-      mode: activeConversationModeValue,
+      mode: operationMode,
     );
     await ConversationService.setCurrentConversationTarget(blankTarget);
+    if (!_isConversationOperationCurrent(token)) {
+      return;
+    }
     await ConversationHistoryService.saveCurrentConversationTarget(
       blankTarget,
-      mode: activeConversationModeValue,
+      mode: operationMode,
     );
   }
 
@@ -215,28 +278,33 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
   Future<void> loadConversation(
     int conversationId, {
     bool preferInMemory = true,
+    int? lifecycleToken,
   }) async {
+    final token = lifecycleToken ?? captureConversationLifecycleToken();
+    if (!_isConversationOperationCurrent(token)) {
+      return;
+    }
+    final operationMode = activeConversationModeValue;
     try {
       final inMemoryConversation = preferInMemory
           ? getInMemoryConversationForConversation(
               conversationId,
-              activeConversationModeValue,
+              operationMode,
             )
           : null;
       final inMemoryMessages = preferInMemory
-          ? getInMemoryMessagesForConversation(
-              conversationId,
-              activeConversationModeValue,
-            )
+          ? getInMemoryMessagesForConversation(conversationId, operationMode)
           : null;
       final conversations = await ConversationService.getAllConversations(
         includeArchived: true,
       );
+      if (!_isConversationOperationCurrent(token)) {
+        return;
+      }
       ConversationModel? conversation;
       try {
         conversation = conversations.firstWhere(
-          (c) =>
-              c.id == conversationId && c.mode == activeConversationModeValue,
+          (c) => c.id == conversationId && c.mode == operationMode,
         );
       } catch (_) {
         conversation = null;
@@ -244,12 +312,18 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
       final resolvedConversation = inMemoryConversation ?? conversation;
 
       if (resolvedConversation != null) {
+        if (!_isConversationOperationCurrent(token)) {
+          return;
+        }
         setState(() {
           currentConversationId = resolvedConversation.id;
           currentConversation = resolvedConversation;
           _hasSavedConversation = false;
         });
       } else {
+        if (!_isConversationOperationCurrent(token)) {
+          return;
+        }
         setState(() {
           currentConversationId = conversationId;
           currentConversation = null;
@@ -270,11 +344,14 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
         final pagedResult =
             await ConversationHistoryService.getConversationMessagesPaged(
               conversationId,
-              mode: activeConversationModeValue,
+              mode: operationMode,
               limit: 50,
               offset: 0,
               expectedMessageCount: resolvedConversation?.messageCount,
             );
+        if (!_isConversationOperationCurrent(token)) {
+          return;
+        }
         savedMessages = pagedResult.messages;
         setState(() {
           hasMoreMessages = pagedResult.hasMore;
@@ -284,7 +361,7 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
         });
       }
       onConversationLoaded(
-        activeConversationModeValue,
+        operationMode,
         conversationId,
         resolvedConversation,
         List<ChatMessageModel>.from(messages),
@@ -297,8 +374,13 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
   // ===================== 分页加载更多 =====================
 
   /// 加载更多历史消息
-  Future<void> loadMoreMessages() async {
+  Future<void> loadMoreMessages({int? lifecycleToken}) async {
+    final token = lifecycleToken ?? captureConversationLifecycleToken();
     if (!hasMoreMessages || isLoadingMore) return;
+    if (!_isConversationOperationCurrent(token)) {
+      return;
+    }
+    final operationMode = activeConversationModeValue;
     final conversationId = currentConversationId;
     if (conversationId == null) return;
 
@@ -310,12 +392,12 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
       final pagedResult =
           await ConversationHistoryService.getConversationMessagesPaged(
             conversationId,
-            mode: activeConversationModeValue,
+            mode: operationMode,
             limit: 50,
             offset: messageOffset,
             expectedMessageCount: currentConversation?.messageCount,
           );
-      if (mounted) {
+      if (_isConversationOperationCurrent(token)) {
         setState(() {
           messages.addAll(pagedResult.messages);
           hasMoreMessages = pagedResult.hasMore;
@@ -325,7 +407,7 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
       }
     } catch (e) {
       debugPrint('加载更多消息失败: $e');
-      if (mounted) {
+      if (_isConversationOperationCurrent(token)) {
         setState(() {
           isLoadingMore = false;
         });
@@ -336,42 +418,55 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
   // ===================== 对话存在性检查 =====================
 
   /// 检查当前对话是否还存在，如果不存在则切换到新对话
-  Future<void> checkConversationExists() async {
-    if (currentConversationId == null) return;
+  Future<void> checkConversationExists({int? lifecycleToken}) async {
+    final token = lifecycleToken ?? captureConversationLifecycleToken();
+    final operationMode = activeConversationModeValue;
+    final activeConversationId = currentConversationId;
+    if (activeConversationId == null) return;
 
     try {
       final allConversations = await ConversationService.getAllConversations(
         includeArchived: true,
       );
+      if (!_isConversationOperationCurrent(token)) {
+        return;
+      }
       final exists = allConversations.any(
         (conversation) =>
-            conversation.id == currentConversationId &&
-            conversation.mode == activeConversationModeValue,
+            conversation.id == activeConversationId &&
+            conversation.mode == operationMode,
       );
 
       if (!exists) {
-        final missingConversationId = currentConversationId!;
+        final missingConversationId = activeConversationId;
         final restored = await _restoreConversationFromMessages(
           missingConversationId,
+          mode: operationMode,
+          lifecycleToken: token,
         );
+        if (!_isConversationOperationCurrent(token)) {
+          return;
+        }
         if (restored) {
           debugPrint('当前对话不在列表中，已从消息记录恢复: $currentConversationId');
           return;
         }
-        onConversationMissing(
-          activeConversationModeValue,
-          missingConversationId,
-        );
+        invalidateConversationLifecycle();
+        final transitionToken = captureConversationLifecycleToken();
+        onConversationMissing(operationMode, missingConversationId);
 
         final sameModeConversations = allConversations
-            .where(
-              (conversation) =>
-                  conversation.mode == activeConversationModeValue,
-            )
+            .where((conversation) => conversation.mode == operationMode)
             .toList();
         if (sameModeConversations.isNotEmpty) {
           final fallbackConversation = sameModeConversations.first;
-          await loadConversation(fallbackConversation.id);
+          await loadConversation(
+            fallbackConversation.id,
+            lifecycleToken: transitionToken,
+          );
+          if (!_isConversationOperationCurrent(transitionToken)) {
+            return;
+          }
           final fallbackTarget = ConversationThreadTarget.existing(
             conversationId: fallbackConversation.id,
             mode: fallbackConversation.mode,
@@ -379,6 +474,9 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
           await ConversationService.setCurrentConversationTarget(
             fallbackTarget,
           );
+          if (!_isConversationOperationCurrent(transitionToken)) {
+            return;
+          }
           await ConversationHistoryService.saveCurrentConversationTarget(
             fallbackTarget,
             mode: fallbackConversation.mode,
@@ -387,7 +485,7 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
           return;
         }
 
-        if (mounted) {
+        if (_isConversationOperationCurrent(transitionToken)) {
           // 对话已被删除，切换到新对话
           setState(() {
             messages.clear();
@@ -398,21 +496,19 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
             isLoadingMore = false;
           });
         } else {
-          messages.clear();
-          currentConversationId = null;
-          currentConversation = null;
-          hasMoreMessages = false;
-          messageOffset = 0;
-          isLoadingMore = false;
+          return;
         }
-        onConversationReset(activeConversationModeValue);
+        onConversationReset(operationMode);
         final blankTarget = ConversationThreadTarget.newConversation(
-          mode: activeConversationModeValue,
+          mode: operationMode,
         );
         await ConversationService.setCurrentConversationTarget(blankTarget);
+        if (!_isConversationOperationCurrent(transitionToken)) {
+          return;
+        }
         await ConversationHistoryService.saveCurrentConversationTarget(
           blankTarget,
-          mode: activeConversationModeValue,
+          mode: operationMode,
         );
         debugPrint('当前对话已被删除，已切换到新对话');
       }
@@ -421,14 +517,22 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
     }
   }
 
-  Future<bool> _restoreConversationFromMessages(int conversationId) async {
+  Future<bool> _restoreConversationFromMessages(
+    int conversationId, {
+    required ConversationMode mode,
+    int? lifecycleToken,
+  }) async {
+    final token = lifecycleToken ?? captureConversationLifecycleToken();
     try {
       final savedMessages =
           await ConversationHistoryService.getConversationMessages(
             conversationId,
-            mode: activeConversationModeValue,
+            mode: mode,
             expectedMessageCount: currentConversation?.messageCount,
           );
+      if (!_isConversationOperationCurrent(token)) {
+        return false;
+      }
       if (savedMessages.isEmpty) return false;
 
       final firstUserMessage = savedMessages.firstWhere(
@@ -450,7 +554,7 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
 
       final recovered = ConversationModel(
         id: conversationId,
-        mode: activeConversationModeValue,
+        mode: mode,
         title: title,
         summary: currentConversation?.summary,
         status: currentConversation?.status ?? 0,
@@ -461,17 +565,26 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
       );
 
       await ConversationService.updateConversation(recovered);
+      if (!_isConversationOperationCurrent(token)) {
+        return false;
+      }
       final restoredTarget = ConversationThreadTarget.existing(
         conversationId: conversationId,
-        mode: activeConversationModeValue,
+        mode: mode,
       );
       await ConversationService.setCurrentConversationTarget(restoredTarget);
+      if (!_isConversationOperationCurrent(token)) {
+        return false;
+      }
       await ConversationHistoryService.saveCurrentConversationTarget(
         restoredTarget,
-        mode: activeConversationModeValue,
+        mode: mode,
       );
+      if (!_isConversationOperationCurrent(token)) {
+        return false;
+      }
 
-      if (mounted) {
+      if (_isConversationOperationCurrent(token)) {
         setState(() {
           currentConversation = recovered;
           if (messages.isEmpty) {
@@ -480,15 +593,7 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
               ..addAll(savedMessages);
           }
         });
-      } else {
-        currentConversation = recovered;
-        if (messages.isEmpty) {
-          messages
-            ..clear()
-            ..addAll(savedMessages);
-        }
       }
-
       return true;
     } catch (e) {
       debugPrint('从消息记录恢复对话失败: $e');
@@ -497,22 +602,24 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
   }
 
   /// 验证对话是否存在（延迟执行，避免阻塞初始化）
-  void verifyConversationExists() {
+  void verifyConversationExists({int? lifecycleToken}) {
+    final token = lifecycleToken ?? captureConversationLifecycleToken();
     // 延迟检查，给 UI 渲染留出时间
     Future.delayed(const Duration(milliseconds: 100), () async {
-      if (!mounted) return;
-      await checkConversationExists();
+      if (!_isConversationOperationCurrent(token)) return;
+      await checkConversationExists(lifecycleToken: token);
     });
   }
 
   /// 检查并处理已删除的对话（用于 drawer 关闭时）
-  void checkAndHandleDeletedConversation() {
+  void checkAndHandleDeletedConversation({int? lifecycleToken}) {
+    final token = lifecycleToken ?? captureConversationLifecycleToken();
     if (currentConversationId == null) return;
 
     // 延迟检查，确保 drawer 关闭动画完成且路由导航完成
     Future.delayed(const Duration(milliseconds: 300), () async {
-      if (!mounted) return;
-      await checkConversationExists();
+      if (!_isConversationOperationCurrent(token)) return;
+      await checkConversationExists(lifecycleToken: token);
     });
   }
 
@@ -542,8 +649,10 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
   Future<void> persistConversationSnapshot({
     bool generateSummary = false,
     bool markComplete = false,
+    int? lifecycleToken,
   }) async {
     if (messages.isEmpty) return;
+    final token = lifecycleToken ?? captureConversationLifecycleToken();
 
     // 立即捕获状态，防止异步操作期间上下文切换导致的脏读
     final snapshotMessages = List<ChatMessageModel>.from(messages);
@@ -594,7 +703,8 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
         if (newConversationId != null) {
           targetId = newConversationId;
 
-          if (mounted && currentConversationId == snapshotConversationId) {
+          if (_isConversationOperationCurrent(token) &&
+              currentConversationId == snapshotConversationId) {
             setState(() {
               currentConversationId = newConversationId;
               currentConversation = ConversationModel(
@@ -614,7 +724,8 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
           // After setState above, currentConversationId is now newConversationId.
           // Use targetId for subsequent guard checks so that service calls are
           // not accidentally skipped after a successful create.
-          if (currentConversationId == targetId) {
+          if (_isConversationOperationCurrent(token) &&
+              currentConversationId == targetId) {
             await ConversationService.setCurrentConversationId(
               newConversationId,
               mode: snapshotMode,
@@ -629,7 +740,8 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
 
       if (targetId != null) {
         // 只有当前上下文仍然是该对话时，才更新全局当前对话ID
-        if (currentConversationId == targetId) {
+        if (_isConversationOperationCurrent(token) &&
+            currentConversationId == targetId) {
           await ConversationService.setCurrentConversationId(
             targetId,
             mode: snapshotMode,
@@ -669,18 +781,21 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
           snapshotMode,
         );
 
-        if (mounted && currentConversationId == targetId) {
+        if (_isConversationOperationCurrent(token) &&
+            currentConversationId == targetId) {
           setState(() {
             currentConversation = updatedConversation;
           });
         }
 
-        onConversationPersisted(
-          snapshotMode,
-          targetId,
-          updatedConversation,
-          List<ChatMessageModel>.from(snapshotMessages),
-        );
+        if (_isConversationOperationCurrent(token)) {
+          onConversationPersisted(
+            snapshotMode,
+            targetId,
+            updatedConversation,
+            List<ChatMessageModel>.from(snapshotMessages),
+          );
+        }
 
         if (markComplete) {
           await ConversationService.completeConversation(
@@ -715,6 +830,11 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
 
   /// 创建新对话
   Future<void> createNewConversation() async {
+    invalidateConversationLifecycle();
+    final token = captureConversationLifecycleToken();
+    if (!_isConversationOperationCurrent(token)) {
+      return;
+    }
     setState(() {
       messages.clear();
       currentConversationId = null;
@@ -730,6 +850,9 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
       mode: activeConversationModeValue,
     );
     await ConversationService.setCurrentConversationTarget(blankTarget);
+    if (!_isConversationOperationCurrent(token)) {
+      return;
+    }
     await ConversationHistoryService.saveCurrentConversationTarget(
       blankTarget,
       mode: activeConversationModeValue,

@@ -22,6 +22,7 @@ import '../command_overlay/widgets/chat_input_area.dart';
 import '../command_overlay/services/tool_card_detail_gesture_gate.dart';
 import '../common/openclaw_connection_checker.dart';
 import '../omnibot_workspace/widgets/omnibot_workspace_browser.dart';
+import 'services/chat_conversation_lifecycle_guard.dart';
 import 'services/chat_conversation_runtime_coordinator.dart';
 import 'package:ui/constants/openclaw/openclaw_keys.dart';
 import 'package:ui/core/router/go_router_manager.dart';
@@ -130,9 +131,12 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   bool _isPopupVisible = false;
   final ChatConversationRuntimeCoordinator _runtimeCoordinator =
       ChatConversationRuntimeCoordinator.instance;
+  final ChatConversationLifecycleGuard _conversationLifecycleGuard =
+      ChatConversationLifecycleGuard();
   ConversationThreadTarget? _resolvedThreadTarget;
   SharedOpenDraftPayload? _stagedSharedOpenDraft;
   int? _stagedSharedOpenDraftExpiresAt;
+  int _conversationTargetRequestId = 0;
 
   // OpenClaw 配置与开关
   bool _openClawEnabled = false;
@@ -450,6 +454,20 @@ abstract class _ChatPageStateBase extends State<ChatPage>
 
   ChatConversationRuntimeState? get _activeRuntime =>
       _runtimeForMode(_activeMode);
+  int _beginConversationTargetRequest() => ++_conversationTargetRequestId;
+  bool _isConversationTargetRequestCurrent(int requestId) =>
+      mounted && requestId == _conversationTargetRequestId;
+  @override
+  int captureConversationLifecycleToken() =>
+      _conversationLifecycleGuard.capture();
+  @override
+  bool isConversationLifecycleTokenCurrent(int token) =>
+      _conversationLifecycleGuard.isCurrent(token);
+  @override
+  void invalidateConversationLifecycle() {
+    _conversationLifecycleGuard.invalidate();
+  }
+
   ChatIslandDisplayLayer _chatIslandDisplayLayerForMode(ChatPageMode mode) =>
       _runtimeForMode(mode)?.chatIslandDisplayLayer ??
       (_chatIslandDisplayLayerByMode[mode] ??
@@ -1687,6 +1705,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   Future<void> _applyConversationThreadTarget(
     ConversationThreadTarget target, {
     bool syncPage = true,
+    int? requestId,
   });
 
   Future<void> _ensureConversationModeReady(ChatPageMode mode);
