@@ -1,4 +1,4 @@
-part of 'chat_input_area.dart';
+﻿part of 'chat_input_area.dart';
 
 const List<Color> _kLightComposerFlowGradientColors = <Color>[
   Color(0xFFFF6A01),
@@ -102,7 +102,7 @@ mixin _ChatInputAreaComposerMixin
     );
   }
 
-  /// 构建输入框内容区域（按钮、文本框等）
+  /// 鏋勫缓杈撳叆妗嗗唴瀹瑰尯鍩燂紙鎸夐挳銆佹枃鏈绛夛級
   Widget _buildInputContent(ThemeData theme) {
     return ValueListenableBuilder<bool>(
       valueListenable: _hasTextNotifier,
@@ -206,6 +206,10 @@ mixin _ChatInputAreaComposerMixin
     );
   }
 
+  String _composerText({required String zh, required String en}) {
+    return AppAccessibility.localizedText(context, zh: zh, en: en);
+  }
+
   Widget _buildSelectedModelOverrideChip() {
     final modelId = (widget.selectedModelOverrideId ?? '').trim();
     final palette = context.omniPalette;
@@ -244,17 +248,27 @@ mixin _ChatInputAreaComposerMixin
             ),
             if (widget.onClearSelectedModelOverride != null) ...[
               const SizedBox(width: 4),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: widget.onClearSelectedModelOverride,
-                child: Container(
-                  width: 14,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: textColor.withValues(alpha: 0.16),
-                    shape: BoxShape.circle,
+              Tooltip(
+                message: _composerText(
+                  zh: '清除已选模型',
+                  en: 'Clear selected model',
+                ),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onClearSelectedModelOverride,
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: textColor.withValues(alpha: 0.16),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 10,
+                      color: textColor,
+                    ),
                   ),
-                  child: Icon(Icons.close_rounded, size: 10, color: textColor),
                 ),
               ),
             ],
@@ -269,6 +283,7 @@ mixin _ChatInputAreaComposerMixin
       padding: EdgeInsets.zero,
       iconSize: 20,
       icon: _addSvg,
+      tooltip: _composerText(zh: '添加附件', en: 'Add attachment'),
       onPressed: () {
         if (widget.useAttachmentPickerForPlus &&
             widget.onPickAttachment != null) {
@@ -294,7 +309,7 @@ mixin _ChatInputAreaComposerMixin
       padding: EdgeInsets.zero,
       iconSize: iconSize,
       icon: _commandSvg,
-      tooltip: '命令',
+      tooltip: _composerText(zh: '命令', en: 'Command'),
       onPressed: widget.onTriggerSlashCommand == null
           ? null
           : () {
@@ -320,6 +335,9 @@ mixin _ChatInputAreaComposerMixin
       child: IconButton(
         padding: EdgeInsets.zero,
         iconSize: 20,
+        tooltip: isProcessing
+            ? _composerText(zh: '停止生成', en: 'Stop generating')
+            : _composerText(zh: '发送消息', en: 'Send message'),
         icon: AnimatedSwitcher(
           duration: _buttonAnimationDuration,
           switchInCurve: _buttonAnimationCurve,
@@ -504,48 +522,55 @@ mixin _ChatInputAreaComposerMixin
   ) {
     final heroTag = heroTags[tappedIndex];
     final palette = context.omniPalette;
-    return GestureDetector(
-      onTap: () => ImagePreviewOverlay.showAll(
-        context,
-        sources: allSources,
-        initialIndex: tappedIndex.clamp(0, allSources.length - 1),
-        heroTags: heroTags,
+    return Semantics(
+      button: true,
+      label: _composerText(
+        zh: '预览图片 ${item.name}',
+        en: 'Preview image ${item.name}',
       ),
-      child: Stack(
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
+      child: GestureDetector(
+        onTap: () => ImagePreviewOverlay.showAll(
+          context,
+          sources: allSources,
+          initialIndex: tappedIndex.clamp(0, allSources.length - 1),
+          heroTags: heroTags,
+        ),
+        child: Stack(
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: context.isDarkTheme
+                      ? palette.borderSubtle
+                      : const Color(0xFFD3E3FB),
+                  width: 1,
+                ),
                 color: context.isDarkTheme
-                    ? palette.borderSubtle
-                    : const Color(0xFFD3E3FB),
-                width: 1,
+                    ? palette.surfaceSecondary
+                    : const Color(0xFFF1F6FF),
               ),
-              color: context.isDarkTheme
-                  ? palette.surfaceSecondary
-                  : const Color(0xFFF1F6FF),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Hero(
-              tag: heroTag,
-              child: Image.file(
-                File(item.path),
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Center(
-                  child: Icon(
-                    Icons.image_not_supported_outlined,
-                    size: 20,
-                    color: Color(0xFF6A83AA),
+              clipBehavior: Clip.antiAlias,
+              child: Hero(
+                tag: heroTag,
+                child: Image.file(
+                  File(item.path),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Center(
+                    child: Icon(
+                      Icons.image_not_supported_outlined,
+                      size: 20,
+                      color: Color(0xFF6A83AA),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          _buildAttachmentRemoveButton(item.id),
-        ],
+            _buildAttachmentRemoveButton(item.id),
+          ],
+        ),
       ),
     );
   }
@@ -565,43 +590,51 @@ mixin _ChatInputAreaComposerMixin
     final iconColor = context.isDarkTheme
         ? palette.accentPrimary
         : const Color(0xFF3B6FD6);
-    return Stack(
-      children: [
-        Container(
-          width: 160,
-          height: 72,
-          padding: const EdgeInsets.fromLTRB(10, 8, 28, 8),
-          decoration: BoxDecoration(
-            color: tileColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: tileBorderColor, width: 1),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.insert_drive_file_outlined,
-                size: 18,
-                color: iconColor,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  sizeText.isEmpty ? item.name : '${item.name}\n$sizeText',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: textColor,
-                    fontWeight: FontWeight.w500,
-                    height: 1.3,
+    return Semantics(
+      label: sizeText.isEmpty
+          ? item.name
+          : _composerText(
+              zh: '${item.name}，大小 $sizeText',
+              en: '${item.name}, size $sizeText',
+            ),
+      child: Stack(
+        children: [
+          Container(
+            width: 160,
+            height: 72,
+            padding: const EdgeInsets.fromLTRB(10, 8, 28, 8),
+            decoration: BoxDecoration(
+              color: tileColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: tileBorderColor, width: 1),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.insert_drive_file_outlined,
+                  size: 18,
+                  color: iconColor,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    sizeText.isEmpty ? item.name : '${item.name}\n$sizeText',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: textColor,
+                      fontWeight: FontWeight.w500,
+                      height: 1.3,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        _buildAttachmentRemoveButton(item.id),
-      ],
+          _buildAttachmentRemoveButton(item.id),
+        ],
+      ),
     );
   }
 
@@ -612,17 +645,24 @@ mixin _ChatInputAreaComposerMixin
     return Positioned(
       right: 4,
       top: 4,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => widget.onRemoveAttachment?.call(attachmentId),
-        child: Container(
-          width: 18,
-          height: 18,
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.62),
-            shape: BoxShape.circle,
+      child: Tooltip(
+        message: _composerText(zh: '移除附件', en: 'Remove attachment'),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => widget.onRemoveAttachment?.call(attachmentId),
+          child: Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.62),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.close_rounded,
+              size: 12,
+              color: Colors.white,
+            ),
           ),
-          child: const Icon(Icons.close_rounded, size: 12, color: Colors.white),
         ),
       ),
     );
@@ -635,7 +675,7 @@ mixin _ChatInputAreaComposerMixin
     return '${(size / (1024 * 1024)).toStringAsFixed(1)}MB';
   }
 
-  /// 构建带动画的按钮行
+  /// 鏋勫缓甯﹀姩鐢荤殑鎸夐挳琛?
   Widget _buildAnimatedButtonRow({
     required ThemeData theme,
     required bool hasText,
@@ -646,7 +686,7 @@ mixin _ChatInputAreaComposerMixin
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // OpenClaw 按钮 - 始终显示在固定位置
+        // OpenClaw 鎸夐挳 - 濮嬬粓鏄剧ず鍦ㄥ浐瀹氫綅缃?
         if (openClawButton != null) ...[
           openClawButton,
           const SizedBox(width: 2),
@@ -673,13 +713,13 @@ mixin _ChatInputAreaComposerMixin
           child: _buildMicButtonAnimated(theme: theme),
         ),
         const SizedBox(width: 2),
-        // 发送/添加按钮
+        // 鍙戦€?娣诲姞鎸夐挳
         _buildSendButton(theme: theme, hasText: hasText, isFocused: isFocused),
       ],
     );
   }
 
-  /// 构建带动画的麦克风按钮（点击开始/停止录音）
+  /// 鏋勫缓甯﹀姩鐢荤殑楹﹀厠椋庢寜閽紙鐐瑰嚮寮€濮?鍋滄褰曢煶锛?
   Widget? _buildMicButtonAnimated({required ThemeData theme}) {
     return _buildMicControlButton(iconSize: 18);
   }
@@ -692,6 +732,9 @@ mixin _ChatInputAreaComposerMixin
     return IconButton(
       padding: EdgeInsets.zero,
       iconSize: iconSize,
+      tooltip: recordingActive
+          ? _composerText(zh: '停止录音', en: 'Stop recording')
+          : _composerText(zh: '开始录音', en: 'Start recording'),
       icon: AnimatedContainer(
         duration: _buttonAnimationDuration,
         curve: _buttonAnimationCurve,
@@ -725,7 +768,7 @@ mixin _ChatInputAreaComposerMixin
     );
   }
 
-  /// 统一的输入框组件（录音模式和输入模式共用）
+  /// 缁熶竴鐨勮緭鍏ユ缁勪欢锛堝綍闊虫ā寮忓拰杈撳叆妯″紡鍏辩敤锛?
   Widget _buildTextField({bool multiline = false}) {
     final palette = context.omniPalette;
     final keyboardType = multiline
@@ -749,7 +792,7 @@ mixin _ChatInputAreaComposerMixin
     return GestureDetector(
       onTap: () {
         if (isRecording) {
-          // 录音模式下点击，停止录音并切换到输入模式
+          // 褰曢煶妯″紡涓嬬偣鍑伙紝鍋滄褰曢煶骞跺垏鎹㈠埌杈撳叆妯″紡
           _onTranscriptTap();
         } else {
           widget.focusNode.requestFocus();
@@ -812,8 +855,8 @@ mixin _ChatInputAreaComposerMixin
     );
   }
 
-  /// OpenClaw 开关按钮（位于语音按钮左侧）
-  /// 点击切换开关，长按唤出配置面板
+  /// OpenClaw 寮€鍏虫寜閽紙浣嶄簬璇煶鎸夐挳宸︿晶锛?
+  /// 鐐瑰嚮鍒囨崲寮€鍏筹紝闀挎寜鍞ゅ嚭閰嶇疆闈㈡澘
   Widget? _buildOpenClawButton() {
     if (widget.openClawEnabled == null || widget.onToggleOpenClaw == null) {
       return null;
@@ -829,6 +872,9 @@ mixin _ChatInputAreaComposerMixin
         child: IconButton(
           padding: EdgeInsets.zero,
           iconSize: 20,
+          tooltip: isEnabled
+              ? _composerText(zh: '关闭 OpenClaw', en: 'Turn off OpenClaw')
+              : _composerText(zh: '开启 OpenClaw', en: 'Turn on OpenClaw'),
           icon: AnimatedSwitcher(
             duration: _buttonAnimationDuration,
             transitionBuilder: (child, animation) {
@@ -852,7 +898,7 @@ mixin _ChatInputAreaComposerMixin
     );
   }
 
-  /// 右侧发送/添加按钮
+  /// 鍙充晶鍙戦€?娣诲姞鎸夐挳
   Widget _buildSendButton({
     required ThemeData theme,
     required bool hasText,
@@ -904,6 +950,11 @@ mixin _ChatInputAreaComposerMixin
       child: IconButton(
         padding: EdgeInsets.zero,
         iconSize: 20,
+        tooltip: widget.isProcessing
+            ? _composerText(zh: '停止生成', en: 'Stop generating')
+            : hasText
+            ? _composerText(zh: '发送消息', en: 'Send message')
+            : _composerText(zh: '添加附件', en: 'Add attachment'),
         icon: AnimatedSwitcher(
           duration: _buttonAnimationDuration,
           switchInCurve: _buttonAnimationCurve,

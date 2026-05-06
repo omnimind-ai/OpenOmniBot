@@ -9,4 +9,10 @@
     <string name="task_continue">继续</string>
     <string name="user_action">用户操作中...</string>
     <string name="suggestion_loading">容我想想...</string>
+    <string name="accessibility_floating_assistant">悬浮助手</string>
+    <string name="accessibility_floating_assistant_hint">双击展开或收起助手面板</string>
+    <string name="accessibility_overlay_home">返回主页</string>
+    <string name="accessibility_overlay_resume">继续任务</string>
+    <string name="accessibility_overlay_takeover">接管任务</string>
+    <string name="accessibility_overlay_stop">结束任务</string>
 </resources>

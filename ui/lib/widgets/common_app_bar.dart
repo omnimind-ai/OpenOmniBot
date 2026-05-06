@@ -91,12 +91,14 @@ class CommonAppBar extends StatelessWidget implements PreferredSizeWidget {
         leading ??
         (showLeading
             ? Center(
-                child: GestureDetector(
-                  onTap: onBackPressed ?? () => GoRouterManager.pop(),
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: SvgPicture.asset(
+                child: Tooltip(
+                  message: MaterialLocalizations.of(context).backButtonTooltip,
+                  child: IconButton(
+                    onPressed: onBackPressed ?? () => GoRouterManager.pop(),
+                    iconSize: 24,
+                    splashRadius: 20,
+                    padding: EdgeInsets.zero,
+                    icon: SvgPicture.asset(
                       'assets/common/chevron_left.svg',
                       width: 24,
                       height: 24,

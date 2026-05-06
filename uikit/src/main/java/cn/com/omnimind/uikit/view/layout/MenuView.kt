@@ -35,6 +35,10 @@ class MenuView @JvmOverloads constructor(
         myRoot = findViewById(R.id.myRoot)
         myRoot.clipChildren = false
         myRoot.clipToPadding = false
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        homeButton.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        homeButton.isFocusable = true
+        homeButton.contentDescription = context.getString(R.string.accessibility_overlay_home)
         homeButton.setOnClickListener {
             doClose()
             menuApi?.onOpenHomeParams(null)

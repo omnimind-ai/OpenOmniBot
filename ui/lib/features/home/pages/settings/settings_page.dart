@@ -14,6 +14,7 @@ import 'package:ui/services/storage_service.dart';
 import 'package:ui/services/workspace_memory_service.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/theme_context.dart';
+import 'package:ui/utils/accessibility_utils.dart';
 import 'package:ui/utils/cache_util.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
@@ -36,6 +37,19 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _workspaceMemoryLoaded = false;
   WorkspaceMemoryEmbeddingConfig? _embeddingConfig;
   StreamSubscription<AgentAiConfigChangedEvent>? _configChangedSubscription;
+
+  String _localizedText({required String zh, required String en}) {
+    return AppAccessibility.localizedText(context, zh: zh, en: en);
+  }
+
+  Future<void> _announceSettingState(String title, bool enabled) async {
+    await AppAccessibility.announce(
+      context,
+      AppAccessibility.isEnglish(context)
+          ? '$title ${enabled ? 'on' : 'off'}'
+          : '$title已${enabled ? '开启' : '关闭'}',
+    );
+  }
 
   @override
   void initState() {
@@ -107,7 +121,13 @@ class _SettingsPageState extends State<SettingsPage> {
         hideFromRecentsEnabled = !value;
       });
       showToast(context.l10n.settingsHideRecentsFailed, type: ToastType.error);
+      await AppAccessibility.announce(
+        context,
+        context.l10n.settingsHideRecentsFailed,
+      );
+      return;
     }
+    await _announceSettingState(context.l10n.settingsHideRecentsTitle, value);
   }
 
   Future<void> _loadAutoBackToChatAfterTaskState() async {
@@ -140,9 +160,11 @@ class _SettingsPageState extends State<SettingsPage> {
             ? context.l10n.settingsAutoBackEnabledToast
             : context.l10n.settingsAutoBackDisabledToast,
       );
+      await _announceSettingState(context.l10n.settingsAutoBackTitle, value);
     } catch (e) {
       if (!mounted) return;
       showToast(context.l10n.settingsSaveFailed, type: ToastType.error);
+      await AppAccessibility.announce(context, context.l10n.settingsSaveFailed);
     }
   }
 
@@ -208,6 +230,7 @@ class _SettingsPageState extends State<SettingsPage> {
       } else {
         showToast(context.l10n.settingsMcpDisabledToast);
       }
+      await _announceSettingState(context.l10n.settingsLocalServiceTitle, enable);
     } on PlatformException catch (e) {
       if (!mounted) return;
       showToast(
@@ -217,12 +240,20 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() {
         _mcpEnabled = !enable;
       });
+      await AppAccessibility.announce(
+        context,
+        e.message ?? context.l10n.settingsMcpToggleFailed,
+      );
     } catch (e) {
       if (!mounted) return;
       showToast(context.l10n.settingsMcpToggleFailed, type: ToastType.error);
       setState(() {
         _mcpEnabled = !enable;
       });
+      await AppAccessibility.announce(
+        context,
+        context.l10n.settingsMcpToggleFailed,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -239,73 +270,78 @@ class _SettingsPageState extends State<SettingsPage> {
     showModalBottomSheet<void>(
       context: context,
       builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                context.l10n.settingsMcpLocalService,
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 12),
-              Text(context.l10n.settingsMcpAddress),
-              SelectableText(info.endpoint),
-              const SizedBox(height: 8),
-              Text(context.l10n.settingsMcpToken),
-              SelectableText(
-                info.token.isEmpty
-                    ? context.l10n.settingsNotGenerated
-                    : info.token,
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  TextButton(
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: info.endpoint));
-                      Navigator.of(context).pop();
-                      showToast(context.l10n.settingsCopiedAddress);
-                    },
-                    child: Text(context.l10n.settingsCopyAddress),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: info.token));
-                      Navigator.of(context).pop();
-                      showToast(context.l10n.settingsCopiedToken);
-                    },
-                    child: Text(context.l10n.settingsCopyToken),
-                  ),
-                  TextButton(
-                    onPressed: () async {
-                      Navigator.of(context).pop();
-                      try {
-                        final refreshed = await McpServerService.refreshToken();
-                        if (!mounted) return;
-                        setState(() {
-                          _mcpInfo = refreshed ?? _mcpInfo;
-                        });
-                        showToast(context.l10n.settingsTokenRefreshed);
-                      } catch (_) {
-                        showToast(
-                          context.l10n.settingsTokenRefreshFailed,
-                          type: ToastType.error,
-                        );
-                      }
-                    },
-                    child: Text(context.l10n.settingsRefreshToken),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                context.l10n.settingsMcpSecurityNotice,
-                style: TextStyle(fontSize: 12, color: Colors.black54),
-              ),
-              const SizedBox(height: 8),
-            ],
+        return Semantics(
+          scopesRoute: true,
+          namesRoute: true,
+          label: context.l10n.settingsMcpLocalService,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  context.l10n.settingsMcpLocalService,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 12),
+                Text(context.l10n.settingsMcpAddress),
+                SelectableText(info.endpoint),
+                const SizedBox(height: 8),
+                Text(context.l10n.settingsMcpToken),
+                SelectableText(
+                  info.token.isEmpty
+                      ? context.l10n.settingsNotGenerated
+                      : info.token,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: info.endpoint));
+                        Navigator.of(context).pop();
+                        showToast(context.l10n.settingsCopiedAddress);
+                      },
+                      child: Text(context.l10n.settingsCopyAddress),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: info.token));
+                        Navigator.of(context).pop();
+                        showToast(context.l10n.settingsCopiedToken);
+                      },
+                      child: Text(context.l10n.settingsCopyToken),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        Navigator.of(context).pop();
+                        try {
+                          final refreshed = await McpServerService.refreshToken();
+                          if (!mounted) return;
+                          setState(() {
+                            _mcpInfo = refreshed ?? _mcpInfo;
+                          });
+                          showToast(context.l10n.settingsTokenRefreshed);
+                        } catch (_) {
+                          showToast(
+                            context.l10n.settingsTokenRefreshFailed,
+                            type: ToastType.error,
+                          );
+                        }
+                      },
+                      child: Text(context.l10n.settingsRefreshToken),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  context.l10n.settingsMcpSecurityNotice,
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         );
       },
@@ -323,17 +359,22 @@ class _SettingsPageState extends State<SettingsPage> {
         : context.l10n.settingsWorkspaceMemoryLexical;
     final sections = _buildSections(workspaceMemorySubtitle);
 
-    return Scaffold(
-      backgroundColor: palette.pageBackground,
-      appBar: CommonAppBar(title: context.l10n.settingsTitle, primary: true),
-      body: SafeArea(
-        child: ListView.separated(
-          padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
-          itemCount: sections.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 24),
-          itemBuilder: (context, index) {
-            return _buildSettingsSection(sections[index]);
-          },
+    return Semantics(
+      scopesRoute: true,
+      namesRoute: true,
+      label: context.l10n.settingsTitle,
+      child: Scaffold(
+        backgroundColor: palette.pageBackground,
+        appBar: CommonAppBar(title: context.l10n.settingsTitle, primary: true),
+        body: SafeArea(
+          child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
+            itemCount: sections.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 24),
+            itemBuilder: (context, index) {
+              return _buildSettingsSection(sections[index]);
+            },
+          ),
         ),
       ),
     );
@@ -402,6 +443,14 @@ class _SettingsPageState extends State<SettingsPage> {
             iconSvg: 'assets/home/local_mcp_service_setting_icon.svg',
             title: context.l10n.settingsLocalServiceTitle,
             subtitle: context.l10n.settingsLocalServiceSubtitle,
+            toggled: _mcpEnabled,
+            semanticValue: _mcpLoaded
+                ? AppAccessibility.toggleStateLabel(context, _mcpEnabled)
+                : _localizedText(zh: '加载中', en: 'Loading'),
+            semanticHint: _localizedText(
+              zh: '双击切换本地服务',
+              en: 'Double tap to toggle the local service',
+            ),
             trailing: _buildSwitchTrailing(
               value: _mcpEnabled,
               enabled: _mcpLoaded && !_mcpBusy,
@@ -427,6 +476,15 @@ class _SettingsPageState extends State<SettingsPage> {
             iconSvg: 'assets/home/hide_recents_setting_icon.svg',
             title: context.l10n.settingsHideRecentsTitle,
             subtitle: context.l10n.settingsHideRecentsSubtitle,
+            toggled: hideFromRecentsEnabled,
+            semanticValue: AppAccessibility.toggleStateLabel(
+              context,
+              hideFromRecentsEnabled,
+            ),
+            semanticHint: _localizedText(
+              zh: '双击切换最近任务隐藏开关',
+              en: 'Double tap to toggle hide from recents',
+            ),
             trailing: _buildSwitchTrailing(
               value: hideFromRecentsEnabled,
               onToggle: _onHideFromRecentsChanged,
@@ -458,6 +516,15 @@ class _SettingsPageState extends State<SettingsPage> {
             iconSvg: 'assets/home/vibration_icon.svg',
             title: context.l10n.settingsVibrationTitle,
             subtitle: context.l10n.settingsVibrationSubtitle,
+            toggled: vibrationEnabled,
+            semanticValue: AppAccessibility.toggleStateLabel(
+              context,
+              vibrationEnabled,
+            ),
+            semanticHint: _localizedText(
+              zh: '双击切换振动反馈',
+              en: 'Double tap to toggle vibration feedback',
+            ),
             trailing: _buildSwitchTrailing(
               value: vibrationEnabled,
               onToggle: (val) async {
@@ -465,6 +532,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 setState(() {
                   vibrationEnabled = val;
                 });
+                await _announceSettingState(
+                  context.l10n.settingsVibrationTitle,
+                  val,
+                );
               },
             ),
           ),
@@ -473,6 +544,15 @@ class _SettingsPageState extends State<SettingsPage> {
             iconSvg: 'assets/home/auto_back_chat_setting_icon.svg',
             title: context.l10n.settingsAutoBackTitle,
             subtitle: context.l10n.settingsAutoBackSubtitle,
+            toggled: _autoBackToChatAfterTaskEnabled,
+            semanticValue: AppAccessibility.toggleStateLabel(
+              context,
+              _autoBackToChatAfterTaskEnabled,
+            ),
+            semanticHint: _localizedText(
+              zh: '双击切换任务结束后返回聊天页',
+              en: 'Double tap to toggle returning to chat after tasks',
+            ),
             trailing: _buildSwitchTrailing(
               value: _autoBackToChatAfterTaskEnabled,
               onToggle: _onAutoBackToChatAfterTaskChanged,
@@ -588,62 +668,74 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget _buildSettingTile(_SettingItem item, {required bool isLast}) {
     final palette = context.omniPalette;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: item.onTap,
-        borderRadius: BorderRadius.circular(14),
-        splashColor: palette.accentPrimary.withValues(alpha: 0.08),
-        highlightColor: Colors.transparent,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(4, 14, 2, isLast ? 14 : 13),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _buildLeadingIcon(item),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      context.trLegacy(item.title),
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: palette.textPrimary,
-                        height: 1.5,
-                        fontFamily: 'PingFang SC',
+    return Semantics(
+      container: true,
+      button: item.toggled == null && item.onTap != null,
+      enabled: item.onTap != null,
+      toggled: item.toggled,
+      label: context.trLegacy(item.title),
+      value: item.semanticValue ??
+          (item.subtitle == null ? null : context.trLegacy(item.subtitle!)),
+      hint: item.semanticHint,
+      child: ExcludeSemantics(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: item.onTap,
+            borderRadius: BorderRadius.circular(14),
+            splashColor: palette.accentPrimary.withValues(alpha: 0.08),
+            highlightColor: Colors.transparent,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(4, 14, 2, isLast ? 14 : 13),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _buildLeadingIcon(item),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          context.trLegacy(item.title),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: palette.textPrimary,
+                            height: 1.5,
+                            fontFamily: 'PingFang SC',
+                          ),
+                        ),
+                        if (item.subtitle != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            context.trLegacy(item.subtitle!),
+                            style: TextStyle(
+                              color: palette.textSecondary,
+                              fontSize: 11,
+                              fontFamily: 'PingFang SC',
+                              fontWeight: FontWeight.w400,
+                              height: 1.55,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (item.trailing != null)
+                    item.trailing!
+                  else if (item.onTap != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12),
+                      child: Icon(
+                        Icons.chevron_right_rounded,
+                        size: 18,
+                        color: palette.textTertiary,
                       ),
                     ),
-                    if (item.subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        context.trLegacy(item.subtitle!),
-                        style: TextStyle(
-                          color: palette.textSecondary,
-                          fontSize: 11,
-                          fontFamily: 'PingFang SC',
-                          fontWeight: FontWeight.w400,
-                          height: 1.55,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+                ],
               ),
-              if (item.trailing != null)
-                item.trailing!
-              else if (item.onTap != null)
-                Padding(
-                  padding: const EdgeInsets.only(left: 12),
-                  child: Icon(
-                    Icons.chevron_right_rounded,
-                    size: 18,
-                    color: palette.textTertiary,
-                  ),
-                ),
-            ],
+            ),
           ),
         ),
       ),
@@ -676,36 +768,38 @@ class _SettingsPageState extends State<SettingsPage> {
     bool loading = false,
   }) {
     final palette = context.omniPalette;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: enabled && !loading ? () => onToggle(!value) : null,
-      child: Padding(
-        padding: const EdgeInsets.only(left: 12),
-        child: loading
-            ? Container(
-                width: 32,
-                height: 18.67,
-                decoration: BoxDecoration(
-                  color: palette.borderStrong,
-                  borderRadius: BorderRadius.circular(28.75),
-                ),
-              )
-            : AbsorbPointer(
-                child: Opacity(
-                  opacity: enabled ? 1 : 0.5,
-                  child: FlutterSwitch(
-                    width: 32,
-                    height: 18.67,
-                    toggleSize: 11.3,
-                    padding: 3,
-                    activeColor: palette.accentPrimary,
-                    inactiveColor: palette.borderStrong,
-                    borderRadius: 28.75,
-                    value: value,
-                    onToggle: onToggle,
+    return ExcludeSemantics(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: enabled && !loading ? () => onToggle(!value) : null,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: loading
+              ? Container(
+                  width: 32,
+                  height: 18.67,
+                  decoration: BoxDecoration(
+                    color: palette.borderStrong,
+                    borderRadius: BorderRadius.circular(28.75),
+                  ),
+                )
+              : AbsorbPointer(
+                  child: Opacity(
+                    opacity: enabled ? 1 : 0.5,
+                    child: FlutterSwitch(
+                      width: 32,
+                      height: 18.67,
+                      toggleSize: 11.3,
+                      padding: 3,
+                      activeColor: palette.accentPrimary,
+                      inactiveColor: palette.borderStrong,
+                      borderRadius: 28.75,
+                      value: value,
+                      onToggle: onToggle,
+                    ),
                   ),
                 ),
-              ),
+        ),
       ),
     );
   }
@@ -724,6 +818,9 @@ class _SettingItem {
   final Color? iconColor;
   final String title;
   final String? subtitle;
+  final bool? toggled;
+  final String? semanticValue;
+  final String? semanticHint;
   final Widget? trailing;
   final VoidCallback? onTap;
 
@@ -733,6 +830,9 @@ class _SettingItem {
     this.iconColor,
     required this.title,
     this.subtitle,
+    this.toggled,
+    this.semanticValue,
+    this.semanticHint,
     this.trailing,
     this.onTap,
   });

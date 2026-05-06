@@ -28,13 +28,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * ShowInfoView - 显示信息视图
- * 支持从矩形方框到圆形状态条的流畅动画转换
+ * ShowInfoView - 閺勫墽銇氭穱鈩冧紖鐟欏棗娴?
+ * 閺€顖涘瘮娴犲海鐓╄ぐ銏℃煙濡楀棗鍩岄崷鍡楄埌閻樿埖鈧焦娼惃鍕ウ閻ｅ懎濮╅悽鏄忔祮閹?
  */
 class ShowInfoView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : BaseFrameLayout(context, attrs, defStyleAttr) {
-    // 边框颜色类型
+    // 鏉堣顢嬫０婊嗗缁鐎?
     var borderColorType: GradientBorderContainerView.BorderColor =
         GradientBorderContainerView.BorderColor.BLUE
         set(value) {
@@ -42,18 +42,18 @@ class ShowInfoView @JvmOverloads constructor(
             gradientBorderContainer?.setBorderColorType(value)
         }
 
-    // 子视图引用
+    // 鐎涙劘顫嬮崶鎯х穿閻?
     private var gradientBorderContainer: GradientBorderContainerView? = null
     private var gradientTextView: GradientTextView? = null
     private var llTakeOver: View? = null
     private var llResume: View? = null
     private var llStop: View? = null
     private var executingTextView: TextView? = null
-    private var executingTextViewContainer: View? = null // executingTextView 所在的容器
+    private var executingTextViewContainer: View? = null // executingTextView 閹碘偓閸︺劎娈戠€圭懓娅?
     private var contentContainer: View? = null
     private var innerRelativeLayout: View? = null
-    private var bottomContentLayout: View? = null // 包含 contentContainer 的 RelativeLayout
-    private var llResumeTextView: TextView? = null // llResume 中的文字
+    private var bottomContentLayout: View? = null // 閸栧懎鎯?contentContainer 閻?RelativeLayout
+    private var llResumeTextView: TextView? = null // llResume 娑擃厾娈戦弬鍥х摟
     private var ivResume: ImageView? = null
 
     var delayTask: CoroutineScope = CoroutineScope(Dispatchers.IO)
@@ -63,42 +63,51 @@ class ShowInfoView @JvmOverloads constructor(
     var readyDoingTaskAnimator: AnimatorSet? = null
 
     init {
-        // 从XML加载布局
+        // 娴犲逗ML閸旂姾娴囩敮鍐ㄧ湰
         LayoutInflater.from(context).inflate(R.layout.layout_show_info_view, this, true)
-        // 初始化视图引用
+        // 閸掓繂顫愰崠鏍潒閸ユ儳绱╅悽?
         gradientBorderContainer = findViewById(R.id.gradientBorderContainer)
         gradientTextView = findViewById(R.id.gradientTextView)
         llTakeOver = findViewById(R.id.llTakeOver)
         llResume = findViewById(R.id.llResume)
         llStop = findViewById(R.id.llStop)
         executingTextView = findViewById(R.id.executingTextView)
-        // 通过id获取 executingTextView 的父容器（LinearLayout）
+        // 闁俺绻僫d閼惧嘲褰?executingTextView 閻ㄥ嫮鍩楃€圭懓娅掗敍鍦爄nearLayout閿?
         executingTextViewContainer = findViewById(R.id.executingTextViewContainer)
         contentContainer = findViewById(R.id.contentContainer)
-        // 通过id获取包含 contentContainer 的 RelativeLayout（底部内容容器）
+        // 闁俺绻僫d閼惧嘲褰囬崠鍛儓 contentContainer 閻?RelativeLayout閿涘牆绨抽柈銊ュ敶鐎圭懓顔愰崳顭掔礆
         bottomContentLayout = findViewById(R.id.bottomContentLayout)
-        // 通过id获取内部 RelativeLayout（rlContent）
+        // 闁俺绻僫d閼惧嘲褰囬崘鍛村劥 RelativeLayout閿涘澁lContent閿?
         innerRelativeLayout = findViewById(R.id.rlContent)
-        // 通过id获取 llResume 中的 TextView（"继续"文字）
+        // 闁俺绻僫d閼惧嘲褰?llResume 娑擃厾娈?TextView閿?缂佈呯敾"閺傚洤鐡ч敍?
         llResumeTextView = findViewById(R.id.llResumeTextView)
-        //收起后展示的继续按钮
+        //閺€鎯版崳閸氬骸鐫嶇粈铏规畱缂佈呯敾閹稿鎸?
         ivResume = findViewById(R.id.ivResume)
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        llResume?.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        llTakeOver?.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        llStop?.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        ivResume?.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        llResume?.contentDescription = context.getString(R.string.accessibility_overlay_resume)
+        llTakeOver?.contentDescription = context.getString(R.string.accessibility_overlay_takeover)
+        llStop?.contentDescription = context.getString(R.string.accessibility_overlay_stop)
+        ivResume?.contentDescription = context.getString(R.string.accessibility_overlay_resume)
 //        ShapeBuilder.roundedRectangle("#F3F4F5".toColorInt(), 30.dpToPxF()).applyTo(ivResume!!)
-        // 设置初始值
+        // 鐠佸墽鐤嗛崚婵嗩潗閸?
         gradientBorderContainer?.setBorderColorType(borderColorType)
-        // 设置按钮点击监听
+        // 鐠佸墽鐤嗛幐澶愭尦閻愮懓鍤惄鎴濇儔
         llTakeOver?.setOnClickListener {
             catStepLayoutApi?.onPauseClick()
         }
         llStop?.setOnClickListener {
             val deferred = isUserActionCompleted
             if (deferred != null) {
-                // 只调用 complete，不要立即设置为 null
-                // 让 await() 在 finally 块中处理清理
+                // 閸欘亣鐨熼悽?complete閿涘奔绗夌憰浣虹彌閸楀疇顔曠純顔昏礋 null
+                // 鐠?await() 閸?finally 閸фぞ鑵戞径鍕倞濞撳懐鎮?
                 try {
                     deferred.complete(false)
                 } catch (e: IllegalStateException) {
-                    // 如果已经完成，忽略异常
+                    // 婵″倹鐏夊鑼病鐎瑰本鍨氶敍灞芥嫹閻ｃ儱绱撶敮?
                 }
                 return@setOnClickListener
             }
@@ -108,12 +117,12 @@ class ShowInfoView @JvmOverloads constructor(
         ivResume?.setOnClickListener {
             val deferred = isUserActionCompleted
             if (deferred != null) {
-                // 只调用 complete，不要立即设置为 null
-                // 让 await() 在 finally 块中处理清理
+                // 閸欘亣鐨熼悽?complete閿涘奔绗夌憰浣虹彌閸楀疇顔曠純顔昏礋 null
+                // 鐠?await() 閸?finally 閸фぞ鑵戞径鍕倞濞撳懐鎮?
                 try {
                     deferred.complete(true)
                 } catch (e: IllegalStateException) {
-                    // 如果已经完成，忽略异常
+                    // 婵″倹鐏夊鑼病鐎瑰本鍨氶敍灞芥嫹閻ｃ儱绱撶敮?
                 }
                 return@setOnClickListener
             }
@@ -122,12 +131,12 @@ class ShowInfoView @JvmOverloads constructor(
         llResume?.setOnClickListener {
             val deferred = isUserActionCompleted
             if (deferred != null) {
-                // 只调用 complete，不要立即设置为 null
-                // 让 await() 在 finally 块中处理清理
+                // 閸欘亣鐨熼悽?complete閿涘奔绗夌憰浣虹彌閸楀疇顔曠純顔昏礋 null
+                // 鐠?await() 閸?finally 閸фぞ鑵戞径鍕倞濞撳懐鎮?
                 try {
                     deferred.complete(true)
                 } catch (e: IllegalStateException) {
-                    // 如果已经完成，忽略异常
+                    // 婵″倹鐏夊鑼病鐎瑰本鍨氶敍灞芥嫹閻ｃ儱绱撶敮?
                 }
                 return@setOnClickListener
             }
@@ -165,10 +174,10 @@ class ShowInfoView @JvmOverloads constructor(
                 val (startW, startH) = CatDialogStateData.getTaskDoingWH()
                 val (endW, endH) = CatDialogStateData.getUserInfoWH()
                 post {
-                    // 创建宽度动画，使用 OvershootInterpolator 让动画有轻微的弹跳效果，更生动自然
+                    // 閸掓稑缂撶€硅棄瀹抽崝銊ф暰閿涘奔濞囬悽?OvershootInterpolator 鐠佲晛濮╅悽缁樻箒鏉炶浜曢惃鍕剨鐠鸿櫕鏅ラ弸婊愮礉閺囧鏁撻崝銊ㄥ殰閻?
                     val widthAnimator = ValueAnimator.ofInt(startW, endW).apply {
-                        duration = 1000L // 动画时长 500ms
-                        interpolator = OvershootInterpolator(1.2f) // 超调插值器，轻微超过目标值再回弹，与项目中其他动画保持一致
+                        duration = 1000L // 閸斻劎鏁鹃弮鍫曟毐 500ms
+                        interpolator = OvershootInterpolator(1.2f) // 鐡掑懓鐨熼幓鎺戔偓鐓庢珤閿涘矁浜ゅ顔跨Т鏉╁洨娲伴弽鍥р偓鐓庡晙閸ョ偛鑴婇敍灞肩瑢妞ゅ湱娲版稉顓炲従娴犳牕濮╅悽璁崇箽閹镐椒绔撮懛?
                         addUpdateListener { animation ->
                             val animatedValue = animation.animatedValue as Int
                             val params = layoutParams
@@ -177,10 +186,10 @@ class ShowInfoView @JvmOverloads constructor(
 
                         }
                     }
-                    // 创建高度动画，使用相同的插值器保持动画协调
+                    // 閸掓稑缂撴妯哄閸斻劎鏁鹃敍灞煎▏閻劎娴夐崥宀€娈戦幓鎺戔偓鐓庢珤娣囨繃瀵旈崝銊ф暰閸楀繗鐨?
                     val heightAnimator = ValueAnimator.ofInt(startH, endH).apply {
-                        duration = 1000L // 动画时长 500ms
-                        interpolator = OvershootInterpolator(1.2f) // 超调插值器，轻微超过目标值再回弹
+                        duration = 1000L // 閸斻劎鏁鹃弮鍫曟毐 500ms
+                        interpolator = OvershootInterpolator(1.2f) // 鐡掑懓鐨熼幓鎺戔偓鐓庢珤閿涘矁浜ゅ顔跨Т鏉╁洨娲伴弽鍥р偓鐓庡晙閸ョ偛鑴?
                         addUpdateListener { animation ->
                             val animatedValue = animation.animatedValue as Int
                             val params = layoutParams
@@ -188,20 +197,20 @@ class ShowInfoView @JvmOverloads constructor(
                             catDialogShowInfoViewParams.height = animatedValue
                         }
                     }
-                    // 创建x坐标动画
+                    // 閸掓稑缂搙閸ф劖鐖ｉ崝銊ф暰
                     val xAnimator = ValueAnimator.ofInt(startX, endX).apply {
-                        duration = 1000L // 动画时长 500ms
-                        interpolator = OvershootInterpolator(1.2f) // 超调插值器，轻微超过目标值再回弹
+                        duration = 1000L // 閸斻劎鏁鹃弮鍫曟毐 500ms
+                        interpolator = OvershootInterpolator(1.2f) // 鐡掑懓鐨熼幓鎺戔偓鐓庢珤閿涘矁浜ゅ顔跨Т鏉╁洨娲伴弽鍥р偓鐓庡晙閸ョ偛鑴?
                         addUpdateListener { animation ->
                             val animatedValue = animation.animatedValue as Int
                             catDialogShowInfoViewParams.x = animatedValue
 
                         }
                     }
-                    // 创建x坐标动画
+                    // 閸掓稑缂搙閸ф劖鐖ｉ崝銊ф暰
                     val yAnimator = ValueAnimator.ofInt(startY, endY).apply {
-                        duration = 1000L // 动画时长 500ms
-                        interpolator = OvershootInterpolator(1.2f) // 超调插值器，轻微超过目标值再回弹
+                        duration = 1000L // 閸斻劎鏁鹃弮鍫曟毐 500ms
+                        interpolator = OvershootInterpolator(1.2f) // 鐡掑懓鐨熼幓鎺戔偓鐓庢珤閿涘矁浜ゅ顔跨Т鏉╁洨娲伴弽鍥р偓鐓庡晙閸ョ偛鑴?
                         addUpdateListener { animation ->
                             val animatedValue = animation.animatedValue as Int
                             catDialogShowInfoViewParams.y = animatedValue
@@ -209,14 +218,14 @@ class ShowInfoView @JvmOverloads constructor(
                         }
                     }
                     val dongingAnimator = ValueAnimator.ofInt(1, 100).apply {
-                        duration = 1000L // 动画时长 500ms
+                        duration = 1000L // 閸斻劎鏁鹃弮鍫曟毐 500ms
                         addUpdateListener { animation ->
                             windowManager.updateViewLayout(
                                 catDialogShowInfoView, catDialogShowInfoViewParams
                             )
                         }
                     }
-                    // 同时执行宽度和高度动画
+                    // 閸氬本妞傞幍褑顢戠€硅棄瀹抽崪宀勭彯鎼达箑濮╅悽?
                     readyDoingTaskAnimator = AnimatorSet()
                     readyDoingTaskAnimator!!.playTogether(
                         widthAnimator, heightAnimator, xAnimator, yAnimator, dongingAnimator
@@ -246,7 +255,7 @@ class ShowInfoView @JvmOverloads constructor(
             try {
                 deferred.await()
             } finally {
-                // 确保在 await 完成后才设置为 null
+                // 绾喕绻氶崷?await 鐎瑰本鍨氶崥搴㈠鐠佸墽鐤嗘稉?null
                 if (isUserActionCompleted == deferred) {
                     isUserActionCompleted = null
                 }
@@ -268,10 +277,10 @@ class ShowInfoView @JvmOverloads constructor(
     fun doingAnimatorWithWH(startW: Int, startH: Int, endW: Int, endH: Int) {
         post {
             visibility = VISIBLE
-            // 创建宽度动画，使用 OvershootInterpolator 让动画有轻微的弹跳效果，更生动自然
+            // 閸掓稑缂撶€硅棄瀹抽崝銊ф暰閿涘奔濞囬悽?OvershootInterpolator 鐠佲晛濮╅悽缁樻箒鏉炶浜曢惃鍕剨鐠鸿櫕鏅ラ弸婊愮礉閺囧鏁撻崝銊ㄥ殰閻?
             val widthAnimator = ValueAnimator.ofInt(startW, endW).apply {
-                duration = 1000L // 动画时长 500ms
-                interpolator = OvershootInterpolator(1.2f) // 超调插值器，轻微超过目标值再回弹，与项目中其他动画保持一致
+                duration = 1000L // 閸斻劎鏁鹃弮鍫曟毐 500ms
+                interpolator = OvershootInterpolator(1.2f) // 鐡掑懓鐨熼幓鎺戔偓鐓庢珤閿涘矁浜ゅ顔跨Т鏉╁洨娲伴弽鍥р偓鐓庡晙閸ョ偛鑴婇敍灞肩瑢妞ゅ湱娲版稉顓炲従娴犳牕濮╅悽璁崇箽閹镐椒绔撮懛?
                 addUpdateListener { animation ->
                     val animatedValue = animation.animatedValue as Int
                     val params = layoutParams
@@ -279,10 +288,10 @@ class ShowInfoView @JvmOverloads constructor(
                     layoutParams = params
                 }
             }
-            // 创建高度动画，使用相同的插值器保持动画协调
+            // 閸掓稑缂撴妯哄閸斻劎鏁鹃敍灞煎▏閻劎娴夐崥宀€娈戦幓鎺戔偓鐓庢珤娣囨繃瀵旈崝銊ф暰閸楀繗鐨?
             val heightAnimator = ValueAnimator.ofInt(startH, endH).apply {
-                duration = 1000L // 动画时长 500ms
-                interpolator = OvershootInterpolator(1.2f) // 超调插值器，轻微超过目标值再回弹
+                duration = 1000L // 閸斻劎鏁鹃弮鍫曟毐 500ms
+                interpolator = OvershootInterpolator(1.2f) // 鐡掑懓鐨熼幓鎺戔偓鐓庢珤閿涘矁浜ゅ顔跨Т鏉╁洨娲伴弽鍥р偓鐓庡晙閸ョ偛鑴?
                 addUpdateListener { animation ->
                     val animatedValue = animation.animatedValue as Int
                     val params = layoutParams
@@ -290,7 +299,7 @@ class ShowInfoView @JvmOverloads constructor(
                     layoutParams = params
                 }
             }
-            // 同时执行宽度和高度动画
+            // 閸氬本妞傞幍褑顢戠€硅棄瀹抽崪宀勭彯鎼达箑濮╅悽?
             readyDoingTaskAnimator = AnimatorSet()
             readyDoingTaskAnimator!!.playTogether(widthAnimator, heightAnimator)
             readyDoingTaskAnimator!!.start()
@@ -311,10 +320,10 @@ class ShowInfoView @JvmOverloads constructor(
         windowManager: WindowManager
     ) {
         post {
-            // 创建宽度动画，使用 OvershootInterpolator 让动画有轻微的弹跳效果，更生动自然
+            // 閸掓稑缂撶€硅棄瀹抽崝銊ф暰閿涘奔濞囬悽?OvershootInterpolator 鐠佲晛濮╅悽缁樻箒鏉炶浜曢惃鍕剨鐠鸿櫕鏅ラ弸婊愮礉閺囧鏁撻崝銊ㄥ殰閻?
             val widthAnimator = ValueAnimator.ofInt(startW, endW).apply {
-                duration = 1000L // 动画时长 500ms
-                interpolator = OvershootInterpolator(1.2f) // 超调插值器，轻微超过目标值再回弹，与项目中其他动画保持一致
+                duration = 1000L // 閸斻劎鏁鹃弮鍫曟毐 500ms
+                interpolator = OvershootInterpolator(1.2f) // 鐡掑懓鐨熼幓鎺戔偓鐓庢珤閿涘矁浜ゅ顔跨Т鏉╁洨娲伴弽鍥р偓鐓庡晙閸ョ偛鑴婇敍灞肩瑢妞ゅ湱娲版稉顓炲従娴犳牕濮╅悽璁崇箽閹镐椒绔撮懛?
                 addUpdateListener { animation ->
                     val animatedValue = animation.animatedValue as Int
                     val params = layoutParams
@@ -323,10 +332,10 @@ class ShowInfoView @JvmOverloads constructor(
 
                 }
             }
-            // 创建高度动画，使用相同的插值器保持动画协调
+            // 閸掓稑缂撴妯哄閸斻劎鏁鹃敍灞煎▏閻劎娴夐崥宀€娈戦幓鎺戔偓鐓庢珤娣囨繃瀵旈崝銊ф暰閸楀繗鐨?
             val heightAnimator = ValueAnimator.ofInt(startH, endH).apply {
-                duration = 1000L // 动画时长 500ms
-                interpolator = OvershootInterpolator(1.2f) // 超调插值器，轻微超过目标值再回弹
+                duration = 1000L // 閸斻劎鏁鹃弮鍫曟毐 500ms
+                interpolator = OvershootInterpolator(1.2f) // 鐡掑懓鐨熼幓鎺戔偓鐓庢珤閿涘矁浜ゅ顔跨Т鏉╁洨娲伴弽鍥р偓鐓庡晙閸ョ偛鑴?
                 addUpdateListener { animation ->
                     val animatedValue = animation.animatedValue as Int
                     val params = layoutParams
@@ -334,20 +343,20 @@ class ShowInfoView @JvmOverloads constructor(
                     catDialogShowInfoViewLayoutParams.height = animatedValue
                 }
             }
-            // 创建x坐标动画
+            // 閸掓稑缂搙閸ф劖鐖ｉ崝銊ф暰
             val xAnimator = ValueAnimator.ofInt(startX, endX).apply {
-                duration = 1000L // 动画时长 500ms
-                interpolator = OvershootInterpolator(1.2f) // 超调插值器，轻微超过目标值再回弹
+                duration = 1000L // 閸斻劎鏁鹃弮鍫曟毐 500ms
+                interpolator = OvershootInterpolator(1.2f) // 鐡掑懓鐨熼幓鎺戔偓鐓庢珤閿涘矁浜ゅ顔跨Т鏉╁洨娲伴弽鍥р偓鐓庡晙閸ョ偛鑴?
                 addUpdateListener { animation ->
                     val animatedValue = animation.animatedValue as Int
                     catDialogShowInfoViewLayoutParams.x = animatedValue
 
                 }
             }
-            // 创建x坐标动画
+            // 閸掓稑缂搙閸ф劖鐖ｉ崝銊ф暰
             val yAnimator = ValueAnimator.ofInt(startY, endY).apply {
-                duration = 1000L // 动画时长 500ms
-                interpolator = OvershootInterpolator(1.2f) // 超调插值器，轻微超过目标值再回弹
+                duration = 1000L // 閸斻劎鏁鹃弮鍫曟毐 500ms
+                interpolator = OvershootInterpolator(1.2f) // 鐡掑懓鐨熼幓鎺戔偓鐓庢珤閿涘矁浜ゅ顔跨Т鏉╁洨娲伴弽鍥р偓鐓庡晙閸ョ偛鑴?
                 addUpdateListener { animation ->
                     val animatedValue = animation.animatedValue as Int
                     catDialogShowInfoViewLayoutParams.y = animatedValue
@@ -355,14 +364,14 @@ class ShowInfoView @JvmOverloads constructor(
                 }
             }
             val dongingAnimator = ValueAnimator.ofInt(1, 100).apply {
-                duration = 1000L // 动画时长 500ms
+                duration = 1000L // 閸斻劎鏁鹃弮鍫曟毐 500ms
                 addUpdateListener { animation ->
                     windowManager.updateViewLayout(
                         catDialogShowInfoView, catDialogShowInfoViewLayoutParams
                     )
                 }
             }
-            // 同时执行宽度和高度动画
+            // 閸氬本妞傞幍褑顢戠€硅棄瀹抽崪宀勭彯鎼达箑濮╅悽?
             readyDoingTaskAnimator = AnimatorSet()
             readyDoingTaskAnimator!!.playTogether(
                 widthAnimator, heightAnimator, xAnimator, yAnimator, dongingAnimator
@@ -447,24 +456,25 @@ class ShowInfoView @JvmOverloads constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        // 尺寸变化时更新形状
+        // 鐏忓搫顕崣妯哄閺冭埖娲块弬鏉胯埌閻?
     }
 
     fun setMessage(message: String) {
         gradientTextView?.setText(message)
-
+        updateAccessibilityAnnouncement()
     }
 
     fun setSubMessage(message: String) {
         executingTextView?.setText(message)
+        updateAccessibilityAnnouncement()
     }
 
     fun finishDoingTask() {
     }
 
     /**
-     * 准备执行任务，显示动画效果
-     * 宽高从 40dp 动画到 80dp
+     * 閸戝棗顦幍褑顢戞禒璇插閿涘本妯夌粈鍝勫З閻㈢粯鏅ラ弸?
+     * 鐎逛粙鐝禒?40dp 閸斻劎鏁鹃崚?80dp
      */
     fun readyDoingTask() {
         bottomContentLayout?.visibility = GONE
@@ -477,7 +487,7 @@ class ShowInfoView @JvmOverloads constructor(
         clearAllAminAndDelay()
         val (startW, startH) = CatDialogStateData.getMessageInfoStartWH()
         val (endW, endH) = CatDialogStateData.getMessageInfoWH()
-        // 获取当前的 layoutParams
+        // 閼惧嘲褰囪ぐ鎾冲閻?layoutParams
         layoutParams.width = startW
         layoutParams.height = startH
         doingAnimatorWithWH(startW, startH, endW, endH)
@@ -489,6 +499,19 @@ class ShowInfoView @JvmOverloads constructor(
         readyDoingTaskAnimator?.cancel()
         readyDoingTaskAnimator = null
         delayTask = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    }
+
+    private fun updateAccessibilityAnnouncement() {
+        val primary = gradientTextView?.getText().orEmpty().trim()
+        val secondary = executingTextView?.text?.toString().orEmpty().trim()
+        val announcement = listOf(primary, secondary)
+            .filter { it.isNotEmpty() }
+            .joinToString(",")
+        if (announcement.isEmpty()) {
+            return
+        }
+        contentDescription = announcement
+        announceForAccessibility(announcement)
     }
 }
 

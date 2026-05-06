@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_switch/flutter_switch.dart';
 import 'package:ui/features/home/widgets/home_drawer_search_field.dart';
@@ -7,6 +7,7 @@ import 'package:ui/models/agent_skill_item.dart';
 import 'package:ui/services/agent_skill_store_service.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/theme_context.dart';
+import 'package:ui/utils/accessibility_utils.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 
@@ -36,6 +37,10 @@ class _SkillStorePageState extends State<SkillStorePage> {
   bool _loading = true;
   final Set<String> _busyIds = <String>{};
   List<AgentSkillItem> _skills = [];
+
+  String _localizedText({required String zh, required String en}) {
+    return AppAccessibility.localizedText(context, zh: zh, en: en);
+  }
 
   String get _searchQuery => _searchController.text.trim();
 
@@ -91,10 +96,18 @@ class _SkillStorePageState extends State<SkillStorePage> {
         _skills = skills;
         _loading = false;
       });
+      await AppAccessibility.announce(
+        context,
+        _localizedText(
+          zh: '技能列表已更新，共 ${skills.length} 项',
+          en: 'Skill list updated with ${skills.length} items',
+        ),
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
       showToast(context.l10n.skillLoadFailed, type: ToastType.error);
+      await AppAccessibility.announce(context, context.l10n.skillLoadFailed);
     }
   }
 
@@ -131,8 +144,15 @@ class _SkillStorePageState extends State<SkillStorePage> {
             ? context.l10n.skillEnabledMsg(item.name)
             : context.l10n.skillDisabledMsg(item.name),
       );
+      await AppAccessibility.announce(
+        context,
+        enabled
+            ? context.l10n.skillEnabledMsg(item.name)
+            : context.l10n.skillDisabledMsg(item.name),
+      );
     } catch (_) {
       showToast(context.l10n.skillToggleFailed, type: ToastType.error);
+      await AppAccessibility.announce(context, context.l10n.skillToggleFailed);
     } finally {
       _setBusy(item.id, false);
     }
@@ -167,8 +187,13 @@ class _SkillStorePageState extends State<SkillStorePage> {
         context.l10n.skillInstalledMsg(item.name),
         type: ToastType.success,
       );
+      await AppAccessibility.announce(
+        context,
+        context.l10n.skillInstalledMsg(item.name),
+      );
     } catch (_) {
       showToast(context.l10n.skillInstallFailed, type: ToastType.error);
+      await AppAccessibility.announce(context, context.l10n.skillInstallFailed);
     } finally {
       _setBusy(item.id, false);
     }
@@ -208,9 +233,11 @@ class _SkillStorePageState extends State<SkillStorePage> {
       await _loadSkills();
       if (!mounted) return;
       showToast(context.l10n.skillDeleted, type: ToastType.success);
+      await AppAccessibility.announce(context, context.l10n.skillDeleted);
     } catch (_) {
       if (!mounted) return;
       showToast(context.l10n.skillDeleteFailed, type: ToastType.error);
+      await AppAccessibility.announce(context, context.l10n.skillDeleteFailed);
     } finally {
       _setBusy(item.id, false);
     }
@@ -221,37 +248,45 @@ class _SkillStorePageState extends State<SkillStorePage> {
     final palette = context.omniPalette;
     final visibleSkills = _visibleSkills;
 
-    return Scaffold(
-      backgroundColor: context.isDarkTheme
-          ? palette.pageBackground
-          : AppColors.background,
-      appBar: CommonAppBar(title: context.l10n.skillStoreTitle, primary: true),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-                    child: HomeDrawerSearchField(
-                      controller: _searchController,
-                      focusNode: _searchFocusNode,
-                      isSearching: false,
-                      textColor: context.isDarkTheme
-                          ? palette.textPrimary
-                          : AppColors.text,
-                      hintText: context.trLegacy('搜索技能名称或描述'),
+    return Semantics(
+      scopesRoute: true,
+      namesRoute: true,
+      label: context.l10n.skillStoreTitle,
+      child: Scaffold(
+        backgroundColor: context.isDarkTheme
+            ? palette.pageBackground
+            : AppColors.background,
+        appBar: CommonAppBar(
+          title: context.l10n.skillStoreTitle,
+          primary: true,
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : SafeArea(
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                      child: HomeDrawerSearchField(
+                        controller: _searchController,
+                        focusNode: _searchFocusNode,
+                        isSearching: false,
+                        textColor: context.isDarkTheme
+                            ? palette.textPrimary
+                            : AppColors.text,
+                        hintText: context.trLegacy('搜索技能名称或描述'),
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    child: RefreshIndicator(
-                      onRefresh: _loadSkills,
-                      child: _buildScrollableContent(visibleSkills),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: _loadSkills,
+                        child: _buildScrollableContent(visibleSkills),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 
@@ -327,101 +362,117 @@ class _SkillStorePageState extends State<SkillStorePage> {
         : item.description;
     final statusSummary = _buildStatusSummary(item);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 14, 2, 14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildSkillTitle(item),
-                const SizedBox(height: 2),
-                Text(
-                  description,
-                  style: TextStyle(
-                    color: palette.textSecondary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w400,
-                    height: 1.55,
-                    fontFamily: 'PingFang SC',
-                  ),
-                ),
-                if (statusSummary.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+    return Semantics(
+      container: true,
+      label: item.name,
+      value: statusSummary.isEmpty ? description : '$statusSummary. $description',
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 14, 2, 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSkillTitle(item),
+                  const SizedBox(height: 2),
                   Text(
-                    statusSummary,
+                    description,
                     style: TextStyle(
+                      color: palette.textSecondary,
                       fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: item.installed && item.enabled
-                          ? palette.accentPrimary
-                          : palette.textTertiary,
-                      height: 1.45,
+                      fontWeight: FontWeight.w400,
+                      height: 1.55,
                       fontFamily: 'PingFang SC',
                     ),
                   ),
-                ],
-                if (!item.installed && item.isBuiltin) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    context.l10n.skillBuiltinRemovedDesc,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: palette.textTertiary,
-                      height: 1.5,
-                      fontFamily: 'PingFang SC',
+                  if (statusSummary.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      statusSummary,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: item.installed && item.enabled
+                            ? palette.accentPrimary
+                            : palette.textTertiary,
+                        height: 1.45,
+                        fontFamily: 'PingFang SC',
+                      ),
                     ),
-                  ),
-                ],
-                if (item.installed) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          item.shellSkillFilePath,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: palette.textTertiary,
-                            height: 1.45,
-                            fontFamily: 'PingFang SC',
+                  ],
+                  if (!item.installed && item.isBuiltin) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      context.l10n.skillBuiltinRemovedDesc,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: palette.textTertiary,
+                        height: 1.5,
+                        fontFamily: 'PingFang SC',
+                      ),
+                    ),
+                  ],
+                  if (item.installed) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.shellSkillFilePath,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: palette.textTertiary,
+                              height: 1.45,
+                              fontFamily: 'PingFang SC',
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      TextButton(
-                        onPressed: busy ? null : () => _deleteSkill(item),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.alertRed,
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(0, 28),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        const SizedBox(width: 12),
+                        Semantics(
+                          button: true,
+                          enabled: !busy,
+                          label: _localizedText(
+                            zh: '删除技能 ${item.name}',
+                            en: 'Delete skill ${item.name}',
+                          ),
+                          child: ExcludeSemantics(
+                            child: TextButton(
+                              onPressed: busy ? null : () => _deleteSkill(item),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.alertRed,
+                                padding: EdgeInsets.zero,
+                                minimumSize: const Size(0, 28),
+                                tapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: Text(
+                                context.l10n.skillDelete,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ),
                         ),
-                        child: Text(
-                          context.l10n.skillDelete,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: _kSkillTileTrailingWidth,
-            height: _kSkillTileTrailingHeight,
-            child: Align(
-              alignment: Alignment.topRight,
-              child: _buildTrailingControl(item, busy: busy),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: _kSkillTileTrailingWidth,
+              height: _kSkillTileTrailingHeight,
+              child: Align(
+                alignment: Alignment.topRight,
+                child: _buildTrailingControl(item, busy: busy),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -479,7 +530,7 @@ class _SkillStorePageState extends State<SkillStorePage> {
         item.enabled ? context.l10n.skillEnabled : context.l10n.skillDisabled,
       );
     }
-    return labels.join(' · ');
+    return labels.join(' / ');
   }
 
   Widget _buildTrailingControl(AgentSkillItem item, {required bool busy}) {
@@ -491,24 +542,39 @@ class _SkillStorePageState extends State<SkillStorePage> {
         child: Stack(
           alignment: Alignment.centerRight,
           children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: busy ? null : () => _toggleSkill(item, !item.enabled),
-              child: AbsorbPointer(
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  opacity: busy ? 0.4 : 1,
-                  child: FlutterSwitch(
-                    width: 32,
-                    height: 18.67,
-                    toggleSize: 11.3,
-                    padding: 3,
-                    activeColor: palette.accentPrimary,
-                    inactiveColor: palette.borderStrong,
-                    borderRadius: 28.75,
-                    value: item.enabled,
-                    onToggle: (_) {},
+            Semantics(
+              button: true,
+              enabled: !busy,
+              toggled: item.enabled,
+              label: item.name,
+              value: busy
+                  ? _localizedText(zh: '更新中', en: 'Updating')
+                  : _buildStatusSummary(item),
+              hint: _localizedText(
+                zh: '双击切换技能启用状态',
+                en: 'Double tap to toggle this skill',
+              ),
+              child: ExcludeSemantics(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: busy ? null : () => _toggleSkill(item, !item.enabled),
+                  child: AbsorbPointer(
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      opacity: busy ? 0.4 : 1,
+                      child: FlutterSwitch(
+                        width: 32,
+                        height: 18.67,
+                        toggleSize: 11.3,
+                        padding: 3,
+                        activeColor: palette.accentPrimary,
+                        inactiveColor: palette.borderStrong,
+                        borderRadius: 28.75,
+                        value: item.enabled,
+                        onToggle: (_) {},
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -536,27 +602,37 @@ class _SkillStorePageState extends State<SkillStorePage> {
       child: Stack(
         alignment: Alignment.centerRight,
         children: [
-          AnimatedOpacity(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            opacity: busy ? 0.4 : 1,
-            child: TextButton(
-              onPressed: busy
-                  ? null
-                  : item.isBuiltin
-                  ? () => _installBuiltinSkill(item)
-                  : null,
-              style: TextButton.styleFrom(
-                foregroundColor: palette.accentPrimary,
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(44, 28),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text(
-                context.l10n.skillInstall,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+          Semantics(
+            button: true,
+            enabled: !busy && item.isBuiltin,
+            label: _localizedText(
+              zh: '安装技能 ${item.name}',
+              en: 'Install skill ${item.name}',
+            ),
+            child: ExcludeSemantics(
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                opacity: busy ? 0.4 : 1,
+                child: TextButton(
+                  onPressed: busy
+                      ? null
+                      : item.isBuiltin
+                      ? () => _installBuiltinSkill(item)
+                      : null,
+                  style: TextButton.styleFrom(
+                    foregroundColor: palette.accentPrimary,
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(44, 28),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    context.l10n.skillInstall,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),
