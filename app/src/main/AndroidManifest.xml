@@ -118,8 +118,14 @@
             android:exported="true"
             android:excludeFromRecents="true"
             android:taskAffinity=""
-            android:theme="@style/Theme.OmnibotApp"
+            android:theme="@style/Theme.OmnibotApp.BottomSheet"
             android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".activity.QuickLogWidgetSettingsActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.OmnibotApp.BottomSheet" />
         <activity
             android:name=".activity.QuickLogWidgetBridgeActivity"
             android:exported="true"

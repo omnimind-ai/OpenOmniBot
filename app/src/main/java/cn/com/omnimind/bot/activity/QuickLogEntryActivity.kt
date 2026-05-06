@@ -1,11 +1,11 @@
 package cn.com.omnimind.bot.activity
 
-import android.app.Activity
 import android.content.Context
 import android.os.Bundle
+import androidx.activity.ComponentActivity
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 
-class QuickLogEntryActivity : Activity() {
+class QuickLogEntryActivity : ComponentActivity() {
     companion object {
         const val EXTRA_LOG_ID = "extra_quick_log_id"
         const val EXTRA_LOG_CONTENT = "extra_quick_log_content"
