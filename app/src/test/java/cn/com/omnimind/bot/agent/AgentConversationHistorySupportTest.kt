@@ -258,6 +258,117 @@ class AgentConversationHistorySupportTest {
     }
 
     @Test
+    fun `buildDisplaySafeToolCardData compacts oversized historical tool payloads`() {
+        val longScript = "print('hello')\n".repeat(900)
+        val longRaw = "raw-result".repeat(900)
+        val longTerminal = (1..2000).joinToString("\n") { "line-$it" }
+        val entry = AgentConversationEntry(
+            id = 7,
+            conversationId = 1,
+            conversationMode = "normal",
+            entryId = "task-1-tool-1",
+            entryType = AgentConversationHistoryRepository.ENTRY_TYPE_TOOL_EVENT,
+            status = AgentConversationHistoryRepository.STATUS_SUCCESS,
+            summary = "脚本执行完成",
+            payloadJson = "",
+            createdAt = 1,
+            updatedAt = 1
+        )
+        val payload = mapOf<String, Any?>(
+            "taskId" to "task-1",
+            "cardId" to "task-1-tool-1",
+            "toolName" to "terminal_execute",
+            "displayName" to "执行命令",
+            "toolType" to "terminal",
+            "argsJson" to gson.toJson(mapOf("command" to longScript)),
+            "resultPreviewJson" to gson.toJson(mapOf("message" to "done")),
+            "rawResultJson" to gson.toJson(mapOf("stdout" to longRaw)),
+            "terminalOutput" to longTerminal,
+            "terminalOutputDelta" to "latest delta",
+            "artifacts" to (1..20).map { index ->
+                mapOf("path" to "/tmp/file-$index.txt", "content" to "x".repeat(2000))
+            },
+            "success" to true
+        )
+
+        val cardData = AgentConversationHistorySupport.buildDisplaySafeToolCardData(
+            entry = entry,
+            payload = payload
+        )
+
+        assertEquals("agent_tool_summary", cardData["type"])
+        assertEquals(true, cardData["isHistorical"])
+        assertEquals("compact", cardData["historyRenderMode"])
+        assertEquals("", cardData["terminalOutputDelta"])
+        assertEquals(true, cardData["payloadCompacted"])
+        assertTrue((cardData["argsJson"] as String).length < longScript.length)
+        assertTrue((cardData["rawResultJson"] as String).length < longRaw.length)
+        assertTrue((cardData["terminalOutput"] as String).startsWith("[Earlier content omitted]"))
+        assertTrue((cardData["terminalOutput"] as String).contains("line-2000"))
+        assertEquals(8, (cardData["artifacts"] as List<*>).size)
+    }
+
+    @Test
+    fun `buildDisplaySafeUiCardMessage compacts historical deep thinking cards`() {
+        val longThinking = "思考过程 ".repeat(6000)
+        val payload = mapOf<String, Any?>(
+            "id" to "task-1-thinking",
+            "type" to 2,
+            "user" to 3,
+            "content" to mapOf(
+                "id" to "task-1-thinking",
+                "cardData" to mapOf(
+                    "type" to "deep_thinking",
+                    "taskID" to "task-1",
+                    "cardId" to "task-1-thinking",
+                    "thinkingContent" to longThinking,
+                    "startTime" to 1000,
+                    "stage" to 1,
+                    "isLoading" to true,
+                    "streamMeta" to mapOf("nested" to "metadata".repeat(2000))
+                )
+            ),
+            "streamMeta" to mapOf(
+                "seq" to 1,
+                "roundIndex" to 1,
+                "kind" to "thinking",
+                "parentTaskId" to "task-1",
+                "entryId" to "task-1-thinking",
+                "raw" to mapOf("large" to "metadata".repeat(2000))
+            )
+        )
+        val entry = AgentConversationEntry(
+            id = 9,
+            conversationId = 1,
+            conversationMode = "normal",
+            entryId = "task-1-thinking",
+            entryType = AgentConversationHistoryRepository.ENTRY_TYPE_UI_CARD,
+            status = AgentConversationHistoryRepository.STATUS_SUCCESS,
+            summary = "",
+            payloadJson = gson.toJson(payload),
+            createdAt = 1000,
+            updatedAt = 2000
+        )
+
+        val message = AgentConversationHistorySupport.buildDisplaySafeUiCardMessage(
+            entry = entry,
+            payload = payload
+        )
+        val content = message["content"] as Map<*, *>
+        val cardData = content["cardData"] as Map<*, *>
+        val streamMeta = message["streamMeta"] as Map<*, *>
+
+        assertEquals("deep_thinking", cardData["type"])
+        assertEquals(false, cardData["isLoading"])
+        assertEquals(4, cardData["stage"])
+        assertEquals(true, cardData["thinkingContentTruncated"])
+        assertTrue((cardData["thinkingContent"] as String).length <= 8 * 1024)
+        assertEquals("task-1", streamMeta["parentTaskId"])
+        assertFalse(streamMeta.containsKey("raw"))
+        assertFalse(cardData.containsKey("streamMeta"))
+    }
+
+    @Test
     fun `normalizeInterruptedEntries converts running tools to interrupted`() {
         val runningEntry = AgentConversationEntry(
             id = 1,

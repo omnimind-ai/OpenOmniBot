@@ -534,8 +534,11 @@ class AgentConversationHistoryRepository(
         return when (entry.entryType) {
             ENTRY_TYPE_TOOL_EVENT -> buildToolCardMessage(entry)
             ENTRY_TYPE_USER_MESSAGE,
-            ENTRY_TYPE_ASSISTANT_MESSAGE,
-            ENTRY_TYPE_UI_CARD -> readMap(entry.payloadJson)
+            ENTRY_TYPE_ASSISTANT_MESSAGE -> readMap(entry.payloadJson)
+            ENTRY_TYPE_UI_CARD -> AgentConversationHistorySupport.buildDisplaySafeUiCardMessage(
+                entry = entry,
+                payload = readMap(entry.payloadJson)
+            )
             else -> null
         }
     }
@@ -543,40 +546,17 @@ class AgentConversationHistoryRepository(
     private fun buildToolCardMessage(entry: AgentConversationEntry): Map<String, Any?> {
         val payload = readMap(entry.payloadJson)
         val messageId = entry.entryId
-        val cardData = linkedMapOf<String, Any?>(
-            "type" to "agent_tool_summary",
-            "taskId" to payload["taskId"],
-            "cardId" to payload["cardId"]?.toString().orEmpty().ifEmpty { messageId },
-            "toolName" to payload["toolName"]?.toString().orEmpty(),
-            "displayName" to payload["displayName"]?.toString().orEmpty(),
-            "toolTitle" to payload["toolTitle"]?.toString().orEmpty(),
-            "toolType" to payload["toolType"]?.toString().orEmpty().ifEmpty { "builtin" },
-            "serverName" to payload["serverName"],
-            "status" to entry.status,
-            "summary" to payload["summary"]?.toString().orEmpty().ifEmpty { entry.summary },
-            "progress" to payload["progress"]?.toString().orEmpty(),
-            "argsJson" to payload["argsJson"]?.toString().orEmpty(),
-            "resultPreviewJson" to payload["resultPreviewJson"]?.toString().orEmpty(),
-            "rawResultJson" to payload["rawResultJson"]?.toString().orEmpty(),
-            "terminalOutput" to payload["terminalOutput"]?.toString().orEmpty(),
-            "terminalOutputDelta" to payload["terminalOutputDelta"]?.toString().orEmpty(),
-            "terminalSessionId" to payload["terminalSessionId"],
-            "terminalStreamState" to payload["terminalStreamState"]?.toString().orEmpty(),
-            "interruptedBy" to payload["interruptedBy"]?.toString(),
-            "interruptionReason" to payload["interruptionReason"]?.toString(),
-            "timedOut" to (payload["timedOut"] == true),
-            "workspaceId" to payload["workspaceId"],
-            "artifacts" to toListOfStringAnyMap(payload["artifacts"]),
-            "actions" to toListOfStringAnyMap(payload["actions"]),
-            "success" to (payload["success"] ?: (entry.status == STATUS_SUCCESS)),
-            "showScheduleAction" to (payload["toolType"]?.toString() == "schedule"),
-            "showAlarmAction" to (payload["toolType"]?.toString() == "alarm")
+        val cardData = AgentConversationHistorySupport.buildDisplaySafeToolCardData(
+            entry = entry,
+            payload = payload
         )
         return buildCardMessagePayload(
             messageId = messageId,
             cardData = cardData,
             isError = entry.status == STATUS_ERROR,
-            streamMeta = toStringAnyMap(payload["streamMeta"]).takeIf { it.isNotEmpty() },
+            streamMeta = AgentConversationHistorySupport.compactDisplayStreamMeta(
+                payload["streamMeta"]
+            ),
             createdAt = entry.createdAt
         )
     }
