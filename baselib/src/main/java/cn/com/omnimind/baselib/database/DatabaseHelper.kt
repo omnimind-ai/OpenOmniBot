@@ -787,6 +787,20 @@ object DatabaseHelper {
         )
     }
 
+    suspend fun getAgentConversationEntriesAscSafe(
+        conversationId: Long,
+        conversationMode: String,
+        payloadLimit: Int,
+        summaryLimit: Int
+    ): List<AgentConversationEntryRecord> {
+        return getDatabase().agentConversationEntryDao().getThreadEntriesAscSafe(
+            conversationId = conversationId,
+            conversationMode = conversationMode,
+            payloadLimit = payloadLimit,
+            summaryLimit = summaryLimit
+        )
+    }
+
     suspend fun getAgentConversationEntriesDesc(
         conversationId: Long,
         conversationMode: String
@@ -794,6 +808,20 @@ object DatabaseHelper {
         return getDatabase().agentConversationEntryDao().getThreadEntriesDesc(
             conversationId = conversationId,
             conversationMode = conversationMode
+        )
+    }
+
+    suspend fun getAgentConversationEntriesDescSafe(
+        conversationId: Long,
+        conversationMode: String,
+        payloadLimit: Int,
+        summaryLimit: Int
+    ): List<AgentConversationEntryRecord> {
+        return getDatabase().agentConversationEntryDao().getThreadEntriesDescSafe(
+            conversationId = conversationId,
+            conversationMode = conversationMode,
+            payloadLimit = payloadLimit,
+            summaryLimit = summaryLimit
         )
     }
 
@@ -806,6 +834,22 @@ object DatabaseHelper {
             conversationId = conversationId,
             conversationMode = conversationMode,
             entryId = entryId
+        )
+    }
+
+    suspend fun getAgentConversationEntryByThreadAndIdSafe(
+        conversationId: Long,
+        conversationMode: String,
+        entryId: String,
+        payloadLimit: Int,
+        summaryLimit: Int
+    ): AgentConversationEntryRecord? {
+        return getDatabase().agentConversationEntryDao().getByThreadAndEntryIdSafe(
+            conversationId = conversationId,
+            conversationMode = conversationMode,
+            entryId = entryId,
+            payloadLimit = payloadLimit,
+            summaryLimit = summaryLimit
         )
     }
 
@@ -827,12 +871,36 @@ object DatabaseHelper {
         return getDatabase().agentConversationEntryDao().getLatestConversationEntry(conversationId)
     }
 
+    suspend fun getLatestAgentConversationEntryHeader(
+        conversationId: Long
+    ): AgentConversationEntryHeader? {
+        return getDatabase().agentConversationEntryDao().getLatestConversationEntryHeader(
+            conversationId
+        )
+    }
+
     suspend fun getLatestAgentConversationUpdate(conversationId: Long): AgentConversationEntry? {
         return getDatabase().agentConversationEntryDao().getLatestConversationUpdate(conversationId)
     }
 
+    suspend fun getLatestAgentConversationUpdateHeader(
+        conversationId: Long
+    ): AgentConversationEntryHeader? {
+        return getDatabase().agentConversationEntryDao().getLatestConversationUpdateHeader(
+            conversationId
+        )
+    }
+
     suspend fun getEarliestAgentConversationEntry(conversationId: Long): AgentConversationEntry? {
         return getDatabase().agentConversationEntryDao().getEarliestConversationEntry(conversationId)
+    }
+
+    suspend fun getEarliestAgentConversationEntryHeader(
+        conversationId: Long
+    ): AgentConversationEntryHeader? {
+        return getDatabase().agentConversationEntryDao().getEarliestConversationEntryHeader(
+            conversationId
+        )
     }
 
     suspend fun countAgentConversationEntries(conversationId: Long): Int {
@@ -850,6 +918,24 @@ object DatabaseHelper {
             conversationMode = conversationMode,
             limit = limit,
             offset = offset
+        )
+    }
+
+    suspend fun getAgentConversationEntriesDescPagedSafe(
+        conversationId: Long,
+        conversationMode: String,
+        limit: Int,
+        offset: Int,
+        payloadLimit: Int,
+        summaryLimit: Int
+    ): List<AgentConversationEntryRecord> {
+        return getDatabase().agentConversationEntryDao().getThreadEntriesDescPagedSafe(
+            conversationId = conversationId,
+            conversationMode = conversationMode,
+            limit = limit,
+            offset = offset,
+            payloadLimit = payloadLimit,
+            summaryLimit = summaryLimit
         )
     }
 

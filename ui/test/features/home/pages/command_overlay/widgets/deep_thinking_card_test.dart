@@ -89,6 +89,26 @@ void main() {
     expect(find.byType(DeepThinkingCard), findsOneWidget);
   });
 
+  testWidgets('card factory renders omitted historical process cards', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CardWidgetFactory.createCard(<String, dynamic>{
+            'type': 'history_omitted_card',
+            'originalType': 'ui_card',
+            'summary': '历史过程卡片已折叠',
+          }),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('历史过程卡片已折叠'), findsOneWidget);
+    expect(find.text('ui_card'), findsOneWidget);
+  });
+
   testWidgets('auto-collapses when completion settles after staged updates', (
     tester,
   ) async {
