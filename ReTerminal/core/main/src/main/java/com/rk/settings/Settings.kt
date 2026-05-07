@@ -54,7 +54,7 @@ object Settings {
     var alpine_package_mirror
         get() = Preference.getInt(
             key = "alpine_package_mirror",
-            default = AlpinePackageMirror.OFFICIAL
+            default = AlpinePackageMirror.TSINGHUA
         )
         set(value) = Preference.setInt(key = "alpine_package_mirror", value)
 
