@@ -457,8 +457,22 @@ jobs:
 
       - name: Prepare workspace for unprivileged Codex user
         shell: bash
+        env:
+          CODEX_RUNNER_USER: ${{ vars.CODEX_RUNNER_USER || 'cicd' }}
         run: |
           set -euo pipefail
+          if ! id "$CODEX_RUNNER_USER" >/dev/null 2>&1; then
+            {
+              echo "The Codex runner user '$CODEX_RUNNER_USER' does not exist on this self-hosted runner."
+              echo "Create it once on the runner host, or set the CODEX_RUNNER_USER repository variable to an existing unprivileged account."
+              echo "Example:"
+              echo "  sudo useradd --system --create-home --shell /usr/sbin/nologin cicd-codex"
+              echo "  sudo mkdir -p /home/cicd-codex/.codex"
+              echo "  sudo chown -R cicd-codex:cicd-codex /home/cicd-codex"
+              echo "  Then set CODEX_RUNNER_USER=cicd-codex."
+            } >&2
+            exit 1
+          fi
           git config core.fileMode false
           chmod -R a+rwX "$GITHUB_WORKSPACE"
 
@@ -472,7 +486,7 @@ jobs:
           output-schema-file: .codex/result.schema.json
           sandbox: ${{ needs.guard.outputs.sandbox }}
           safety-strategy: unprivileged-user
-          codex-user: ${{ vars.CODEX_RUNNER_USER || 'codex' }}
+          codex-user: ${{ vars.CODEX_RUNNER_USER || 'cicd' }}
           allow-users: "*"
           model: ${{ vars.CODEX_MODEL }}
           effort: ${{ vars.CODEX_REASONING_EFFORT }}

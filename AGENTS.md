@@ -165,8 +165,6 @@ OMNI_RELEASE_KEY_PWD=***
 
 ### GitHub Codex Bot Rules
 - The self-hosted GitHub Actions Codex bot is configured in `.github/workflows/codex-bot.yml`.
-- Required GitHub secret: `OPENAI_API_KEY`. Optional variables: `CODEX_MODEL`, `CODEX_REASONING_EFFORT`, and `CODEX_RUNNER_USER` (defaults to `codex`).
-- The self-hosted runner must have an unprivileged `codex` user, or `CODEX_RUNNER_USER` must point to an equivalent account that can read and write the Actions workspace.
 - Supported maintainer command format is `@codex <natural-language task>` in issue, PR, or review comments.
 - External issues run Codex automatically in read-only analysis mode. A maintainer must add the `codex-run` label or comment with `@codex <task>` before Codex can prepare code changes.
 - Codex-created issue fixes should use a bot branch and draft PR targeting the default branch, usually `main`; branch protection and maintainer review control the merge.
