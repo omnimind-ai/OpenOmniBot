@@ -45,6 +45,7 @@ import cn.com.omnimind.baselib.llm.SceneVoiceConfig
 import cn.com.omnimind.baselib.llm.SceneVoiceConfigStore
 import cn.com.omnimind.baselib.util.APPPackageUtil
 import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.baselib.util.RuntimeLogStore
 import cn.com.omnimind.baselib.util.exception.PermissionException
 import cn.com.omnimind.bot.R
 import cn.com.omnimind.bot.activity.MainActivity
@@ -2671,6 +2672,39 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 OmniLog.e(TAG, "listRecentAiRequestLogs error: ${e.message}")
                 withContext(Dispatchers.Main) {
                     result.error("LIST_RECENT_AI_REQUEST_LOGS_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun listRuntimeLogs(call: MethodCall, result: MethodChannel.Result) {
+        val limit = call.argument<Int>("limit") ?: 100
+        workJob.launch {
+            try {
+                val logs = RuntimeLogStore.listRecent(limit)
+                withContext(Dispatchers.Main) {
+                    result.success(logs.map { it.toMap() })
+                }
+            } catch (e: Exception) {
+                OmniLog.e(TAG, "listRuntimeLogs error: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    result.error("LIST_RUNTIME_LOGS_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun clearRuntimeLogs(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            try {
+                RuntimeLogStore.clear()
+                withContext(Dispatchers.Main) {
+                    result.success(true)
+                }
+            } catch (e: Exception) {
+                OmniLog.e(TAG, "clearRuntimeLogs error: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    result.error("CLEAR_RUNTIME_LOGS_ERROR", e.message, null)
                 }
             }
         }

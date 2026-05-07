@@ -4,6 +4,8 @@ import BaseApplication
 import cn.com.omnimind.baselib.database.DatabaseHelper
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.baselib.util.RuntimeLogEntry
+import cn.com.omnimind.baselib.util.RuntimeLogStore
 import cn.com.omnimind.bot.agent.AgentAiCapabilityConfigSync
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.agent.SkillIndexService
@@ -92,6 +94,7 @@ class App : BaseApplication() {
             "App super.onCreate cost: ${System.currentTimeMillis() - appStartTime}ms"
         )
         instance = this
+        setupUncaughtExceptionHandler()
         StartupThemeResolver.applyStoredApplicationNightMode(this)
         AppLocaleManager.applyAppLocale(this)
         com.rk.libcommons.application = this
@@ -144,6 +147,32 @@ class App : BaseApplication() {
             "AppStartup",
             "App onCreate total cost: ${System.currentTimeMillis() - appStartTime}ms"
         )
+    }
+
+    private fun setupUncaughtExceptionHandler() {
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            val stack = buildString {
+                appendLine(throwable.toString())
+                throwable.stackTrace.forEach { appendLine("    at $it") }
+                var cause = throwable.cause
+                while (cause != null) {
+                    appendLine("Caused by: $cause")
+                    cause.stackTrace.forEach { appendLine("    at $it") }
+                    cause = cause.cause
+                }
+            }
+            RuntimeLogStore.append(
+                RuntimeLogEntry(
+                    level = "ERROR",
+                    tag = "UncaughtException",
+                    message = "Thread: ${thread.name}",
+                    stackTrace = stack,
+                    isCrash = true,
+                )
+            )
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
     }
 
     fun initSDKsAfterPrivacyConsent() {

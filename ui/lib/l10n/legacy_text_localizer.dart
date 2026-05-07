@@ -234,6 +234,7 @@ class LegacyTextLocalizer {
     '检查更新': 'Check for updates',
     '已关闭思考': 'Thinking disabled',
     '请求日志': 'Request logs',
+    '运行日志': 'Runtime logs',
     '使用手册': 'User guide',
     '概览': 'Overview',
     '最近记录': 'Recent logs',
@@ -241,6 +242,11 @@ class LegacyTextLocalizer {
         'The latest 10 AI requests are shown in reverse chronological order.',
     '点击条目展开查看请求与响应正文。':
         'Tap an entry to expand the request and response payloads.',
+    '最近 100 条运行日志，按时间倒序展示。':
+        'The latest 100 runtime logs are shown in reverse chronological order.',
+    '点击条目展开查看堆栈信息。':
+        'Tap an entry to expand the stack trace.',
+    '崩溃': 'Crash',
     '总数': 'Total',
     '最近一条': 'Latest entry',
     '基础信息': 'Basic info',
@@ -310,6 +316,9 @@ class LegacyTextLocalizer {
     '重试': 'Retry',
     '加载请求日志失败': 'Failed to load request logs',
     '最近还没有 AI 请求日志': 'No AI request logs yet',
+    '加载运行日志失败': 'Failed to load runtime logs',
+    '暂无运行日志': 'No runtime logs yet',
+    '清除': 'Clear',
     'AI 请求': 'AI Request',
     '次对话': 'conversations',
     '天连续': 'day streak',

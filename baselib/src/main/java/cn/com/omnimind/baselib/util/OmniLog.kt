@@ -51,6 +51,41 @@ object OmniLog {
     }
 
     /**
+     * Whether to mirror INFO and above logs to [RuntimeLogStore].
+     */
+    @Volatile
+    var runtimeLogEnabled: Boolean = true
+
+    private fun storeRuntimeLog(level: String, tag: String, message: String, throwable: Throwable?, isCrash: Boolean = false) {
+        if (!runtimeLogEnabled) return
+        if (tag == "RuntimeLogStore") return
+        if (tag == "[AssistsCoreChannel]") return
+        val stack = throwable?.let { buildStackTraceString(it) }
+        RuntimeLogStore.append(
+            RuntimeLogEntry(
+                level = level,
+                tag = tag,
+                message = message,
+                stackTrace = stack,
+                isCrash = isCrash,
+            )
+        )
+    }
+
+    private fun buildStackTraceString(throwable: Throwable): String {
+        return buildString {
+            appendLine(throwable.toString())
+            throwable.stackTrace.forEach { appendLine("    at $it") }
+            var cause = throwable.cause
+            while (cause != null) {
+                appendLine("Caused by: $cause")
+                cause.stackTrace.forEach { appendLine("    at $it") }
+                cause = cause.cause
+            }
+        }
+    }
+
+    /**
      * log verbose
      * Place at the beginning of each function call to monitor function invocation
      */
@@ -96,6 +131,7 @@ object OmniLog {
         val actualTag = globalTag + tag
         Log.i(actualTag, message, throwable)
         notifyReporter(tag, message, "INFO")
+        storeRuntimeLog("INFO", tag, message, throwable)
     }
 
     /**
@@ -112,6 +148,7 @@ object OmniLog {
         val actualTag = globalTag + tag
         Log.w(actualTag, message, throwable)
         notifyReporter(tag, message, "WARN")
+        storeRuntimeLog("WARN", tag, message, throwable)
     }
 
     /**
@@ -128,6 +165,7 @@ object OmniLog {
         val actualTag = globalTag + tag
         Log.e(actualTag, message, throwable)
         notifyReporter(tag, message, "ERROR")
+        storeRuntimeLog("ERROR", tag, message, throwable)
     }
 
     /**
@@ -144,5 +182,6 @@ object OmniLog {
         val actualTag = globalTag + tag
         Log.wtf(actualTag, message, throwable)
         notifyReporter(tag, message, "ASSERT")
+        storeRuntimeLog("ASSERT", tag, message, throwable)
     }
 }

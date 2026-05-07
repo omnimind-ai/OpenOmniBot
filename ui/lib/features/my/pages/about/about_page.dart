@@ -370,6 +370,15 @@ class _AboutPageState extends State<AboutPage> {
         ),
         SizedBox(height: compact ? 6 : 8),
         _buildAboutActionButton(
+          icon: Icons.bug_report_outlined,
+          label: context.trLegacy('运行日志'),
+          compact: compact,
+          onPressed: () {
+            GoRouterManager.push('/my/about/runtime-logs');
+          },
+        ),
+        SizedBox(height: compact ? 6 : 8),
+        _buildAboutActionButton(
           icon: Icons.menu_book_outlined,
           label: context.trLegacy('使用手册'),
           compact: compact,
