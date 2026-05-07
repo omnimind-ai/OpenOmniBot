@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import cn.com.omnimind.bot.omniinfer.OmniInferLocalRuntime
+import cn.com.omnimind.bot.omniinfer.OmniInferLiteRtModelsManager
 import cn.com.omnimind.bot.omniinfer.OmniInferMnnModelsManager
 import cn.com.omnimind.bot.omniinfer.OmniInferModelsManager
 import cn.com.omnimind.bot.omniinfer.OmniInferQnnModelsManager
@@ -29,6 +30,7 @@ private object OmniInferLocalModelFeature : LocalModelFeatureDelegate {
         OmniInferModelsManager.setContext(applicationContext)
         OmniInferMnnModelsManager.setContext(applicationContext)
         OmniInferQnnModelsManager.setContext(applicationContext)
+        OmniInferLiteRtModelsManager.setContext(applicationContext)
     }
 
     override fun onChannelManagerCreate(context: Context) {
@@ -75,6 +77,12 @@ private object OmniInferLocalModelFeature : LocalModelFeatureDelegate {
             OmniInferMnnModelsManager.ensureModelReady(modelId)
         }.getOrDefault(false)
         if (mnnReady) {
+            return true
+        }
+        val liteRtReady = runCatching {
+            OmniInferLiteRtModelsManager.ensureModelReady(modelId)
+        }.getOrDefault(false)
+        if (liteRtReady) {
             return true
         }
         return runCatching {

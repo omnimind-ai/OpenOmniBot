@@ -195,6 +195,7 @@ class AgentWorkspaceManager(
         private const val DIR_MODELS_LLAMA = "OmniInfer-llama"
         private const val DIR_MODELS_MNN = "OmniInfer-mnn"
         private const val DIR_MODELS_QNN = "OmniInfer-qnn"
+        private const val DIR_MODELS_LITERT = "OmniInfer-litert"
 
         fun rootDirectory(context: Context): File {
             return File(context.applicationInfo.dataDir, ROOT_DIR_NAME)
@@ -218,6 +219,10 @@ class AgentWorkspaceManager(
 
         fun modelsQnnDirectory(context: Context): File {
             return File(modelsDirectory(context), DIR_MODELS_QNN)
+        }
+
+        fun modelsLiteRtDirectory(context: Context): File {
+            return File(modelsDirectory(context), DIR_MODELS_LITERT)
         }
 
         fun androidRootPath(context: Context): String {
@@ -326,6 +331,7 @@ class AgentWorkspaceManager(
     private val modelsLlamaDir = File(modelsDir, DIR_MODELS_LLAMA)
     private val modelsMnnDir = File(modelsDir, DIR_MODELS_MNN)
     private val modelsQnnDir = File(modelsDir, DIR_MODELS_QNN)
+    private val modelsLiteRtDir = File(modelsDir, DIR_MODELS_LITERT)
     private val migrationMarker = File(internalDir, WORKSPACE_MIGRATION_MARKER)
     private val legacyRootDir = File(LEGACY_EXTERNAL_ROOT_PATH)
     private val publicStorageRootDir = File(PUBLIC_STORAGE_ROOT_PATH)
@@ -353,7 +359,8 @@ class AgentWorkspaceManager(
             modelsDir,
             modelsLlamaDir,
             modelsMnnDir,
-            modelsQnnDir
+            modelsQnnDir,
+            modelsLiteRtDir
         ).forEach { directory ->
             if (!directory.exists()) {
                 directory.mkdirs()

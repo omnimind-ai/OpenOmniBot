@@ -11,6 +11,7 @@ object OmniInferLocalRuntime {
     const val BACKEND_LLAMA_CPP = "llama.cpp"
     const val BACKEND_OMNIINFER_MNN = "omniinfer-mnn"
     const val BACKEND_EXECUTORCH_QNN = "executorch-qnn"
+    const val BACKEND_LITERT = "litert"
 
     private const val MMKV_ID = "omniinfer_config"
     private const val KEY_API_PORT = "apiPort"
@@ -36,6 +37,7 @@ object OmniInferLocalRuntime {
         return when (rawBackend?.trim()) {
             BACKEND_OMNIINFER_MNN, "mnn" -> BACKEND_OMNIINFER_MNN
             BACKEND_EXECUTORCH_QNN, "qnn" -> BACKEND_EXECUTORCH_QNN
+            BACKEND_LITERT, "litert-lm", "litertlm" -> BACKEND_LITERT
             else -> BACKEND_LLAMA_CPP
         }
     }
@@ -103,6 +105,7 @@ object OmniInferLocalRuntime {
         modelPath: String,
         backend: String,
         extraConfig: Map<String, String>? = null,
+        nCtx: Int = 16384,
     ): Boolean {
         val normalizedModelId = modelId.trim()
         if (normalizedModelId.isEmpty() || modelPath.isBlank()) {
@@ -113,6 +116,7 @@ object OmniInferLocalRuntime {
         val serverBackend = when (normalizedBackend) {
             BACKEND_OMNIINFER_MNN -> "mnn"
             BACKEND_EXECUTORCH_QNN -> "executorch-qnn"
+            BACKEND_LITERT -> "litert"
             else -> BACKEND_LLAMA_CPP
         }
         val port = getPort()
@@ -120,12 +124,13 @@ object OmniInferLocalRuntime {
             TAG,
             "[loadModel] >> OmniInferServer.loadModel(" +
                 "modelId=$normalizedModelId, modelPath=$modelPath, " +
-                "backend=$serverBackend, port=$port, extraConfig=$extraConfig)"
+                "backend=$serverBackend, port=$port, nCtx=$nCtx, extraConfig=$extraConfig)"
         )
         val success = OmniInferServer.loadModel(
             modelPath = modelPath,
             backend = serverBackend,
             port = port,
+            nCtx = nCtx,
             extraConfig = extraConfig,
         )
         OmniLog.i(TAG, "[loadModel] << OmniInferServer.loadModel result=$success")
@@ -151,6 +156,7 @@ object OmniInferLocalRuntime {
         when (getSelectedBackend()) {
             BACKEND_OMNIINFER_MNN -> OmniInferMnnModelsManager.handleAppOpen()
             BACKEND_EXECUTORCH_QNN -> OmniInferQnnModelsManager.handleAppOpen()
+            BACKEND_LITERT -> OmniInferLiteRtModelsManager.handleAppOpen()
             else -> OmniInferModelsManager.handleAppOpen()
         }
     }
@@ -159,7 +165,8 @@ object OmniInferLocalRuntime {
         val combined = LinkedHashMap<String, Map<String, Any?>>()
         (OmniInferModelsManager.listInstalledModels() +
             OmniInferMnnModelsManager.listInstalledModels() +
-            OmniInferQnnModelsManager.listInstalledModels())
+            OmniInferQnnModelsManager.listInstalledModels() +
+            OmniInferLiteRtModelsManager.listInstalledModels())
             .forEach { model ->
                 val modelId = model["id"]?.toString()?.trim().orEmpty()
                 if (modelId.isNotEmpty()) {

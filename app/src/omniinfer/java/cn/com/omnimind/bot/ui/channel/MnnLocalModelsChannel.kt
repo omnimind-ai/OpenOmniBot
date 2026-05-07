@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import cn.com.omnimind.bot.omniinfer.OmniInferLocalRuntime
+import cn.com.omnimind.bot.omniinfer.OmniInferLiteRtModelsManager
 import cn.com.omnimind.bot.omniinfer.OmniInferMnnModelsManager
 import cn.com.omnimind.bot.omniinfer.OmniInferModelsManager
 import cn.com.omnimind.bot.omniinfer.OmniInferQnnModelsManager
@@ -41,6 +42,8 @@ class MnnLocalModelsChannel {
 
         @Volatile
         private var pendingImportResult: MethodChannel.Result? = null
+        @Volatile
+        private var pendingImportBackend: String = DEFAULT_BACKEND
 
         fun onActivityResult(
             activity: Activity,
@@ -53,7 +56,9 @@ class MnnLocalModelsChannel {
             }
 
             val result = pendingImportResult
+            val backend = pendingImportBackend
             pendingImportResult = null
+            pendingImportBackend = DEFAULT_BACKEND
             if (result == null) return true
 
             if (resultCode != Activity.RESULT_OK || data?.data == null) {
@@ -68,6 +73,8 @@ class MnnLocalModelsChannel {
                 val importResult = runCatching {
                     if (isTree) {
                         OmniInferMnnModelsManager.importModelFromUri(activity, uri)
+                    } else if (backend == OmniInferLocalRuntime.BACKEND_LITERT) {
+                        OmniInferLiteRtModelsManager.importModelFromUri(activity, uri)
                     } else {
                         OmniInferModelsManager.importModelFromUri(activity, uri)
                     }
@@ -96,6 +103,7 @@ class MnnLocalModelsChannel {
         OmniInferModelsManager.setContext(context)
         OmniInferMnnModelsManager.setContext(context)
         OmniInferQnnModelsManager.setContext(context)
+        OmniInferLiteRtModelsManager.setContext(context)
     }
 
     fun setChannel(flutterEngine: FlutterEngine) {
@@ -112,6 +120,7 @@ class MnnLocalModelsChannel {
                 OmniInferModelsManager.setEventDispatcher(dispatcher)
                 OmniInferMnnModelsManager.setEventDispatcher(dispatcher)
                 OmniInferQnnModelsManager.setEventDispatcher(dispatcher)
+                OmniInferLiteRtModelsManager.setEventDispatcher(dispatcher)
             }
 
             override fun onCancel(arguments: Any?) {
@@ -119,6 +128,7 @@ class MnnLocalModelsChannel {
                 OmniInferModelsManager.setEventDispatcher(null)
                 OmniInferMnnModelsManager.setEventDispatcher(null)
                 OmniInferQnnModelsManager.setEventDispatcher(null)
+                OmniInferLiteRtModelsManager.setEventDispatcher(null)
             }
         })
     }
@@ -126,6 +136,8 @@ class MnnLocalModelsChannel {
     fun clear() {
         OmniInferModelsManager.setEventDispatcher(null)
         OmniInferMnnModelsManager.setEventDispatcher(null)
+        OmniInferQnnModelsManager.setEventDispatcher(null)
+        OmniInferLiteRtModelsManager.setEventDispatcher(null)
         eventSink = null
         methodChannel?.setMethodCallHandler(null)
         methodChannel = null
@@ -166,6 +178,7 @@ class MnnLocalModelsChannel {
                 pendingImportResult = result
                 try {
                     val backend = getSelectedBackend()
+                    pendingImportBackend = backend
                     val isTreePicker = backend == OmniInferLocalRuntime.BACKEND_OMNIINFER_MNN
                     if (isTreePicker) {
                         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
@@ -179,6 +192,7 @@ class MnnLocalModelsChannel {
                     }
                 } catch (e: Exception) {
                     pendingImportResult = null
+                    pendingImportBackend = DEFAULT_BACKEND
                     result.error(ERROR_CODE, e.message ?: "Failed to open file picker", null)
                 }
                 return
@@ -205,6 +219,12 @@ class MnnLocalModelsChannel {
                                 ensureActive()
                                 success = runCatching {
                                     OmniInferMnnModelsManager.ensureModelReady(modelId)
+                                }.getOrDefault(false)
+                            }
+                            if (!success) {
+                                ensureActive()
+                                success = runCatching {
+                                    OmniInferLiteRtModelsManager.ensureModelReady(modelId)
                                 }.getOrDefault(false)
                             }
                             if (!success) {
@@ -245,6 +265,7 @@ class MnnLocalModelsChannel {
         when (getSelectedBackend()) {
             OmniInferLocalRuntime.BACKEND_OMNIINFER_MNN -> handleMnnCall(call, result)
             OmniInferLocalRuntime.BACKEND_EXECUTORCH_QNN -> handleQnnCall(call, result)
+            OmniInferLocalRuntime.BACKEND_LITERT -> handleLiteRtCall(call, result)
             else -> handleLlamaCppCall(call, result)
         }
     }
@@ -513,6 +534,74 @@ class MnnLocalModelsChannel {
             "deleteModel" -> runSuspend(result) {
                 val modelId = call.argument<String>("modelId") ?: error("modelId is required")
                 OmniInferQnnModelsManager.deleteModel(modelId)
+            }
+
+            else -> result.notImplemented()
+        }
+    }
+
+    private fun handleLiteRtCall(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "getOverview" -> runSuspend(result) {
+                OmniInferLiteRtModelsManager.getOverview(
+                    installedQuery = call.argument<String>("installedQuery"),
+                    marketQuery = call.argument<String>("marketQuery"),
+                    marketCategory = call.argument<String>("marketCategory"),
+                )
+            }
+
+            "listInstalledModels" -> runSuspend(result) {
+                OmniInferLiteRtModelsManager.listInstalledModels(
+                    query = call.argument<String>("query"),
+                    category = call.argument<String>("category"),
+                )
+            }
+
+            "refreshInstalledModels" -> runSuspend(result) {
+                OmniInferLiteRtModelsManager.refreshInstalledModels()
+            }
+
+            "listMarketModels" -> runSuspend(result) {
+                OmniInferLiteRtModelsManager.listMarketModels(
+                    query = call.argument<String>("query"),
+                    category = call.argument<String>("category"),
+                    refresh = call.argument<Boolean>("refresh") == true,
+                )
+            }
+
+            "refreshMarketModels" -> runSuspend(result) {
+                OmniInferLiteRtModelsManager.refreshMarketModels(
+                    query = call.argument<String>("query"),
+                    category = call.argument<String>("category"),
+                )
+            }
+
+            "getConfig" -> result.success(OmniInferLiteRtModelsManager.getConfig())
+
+            "saveConfig" -> {
+                val args = (call.arguments as? Map<*, *>) ?: emptyMap<String, Any?>()
+                result.success(OmniInferLiteRtModelsManager.saveConfig(args))
+            }
+
+            "setActiveModel" -> {
+                result.success(OmniInferLiteRtModelsManager.setActiveModel(call.argument<String>("modelId")))
+            }
+
+            "startApiService" -> {
+                val modelId = call.argument<String>("modelId")
+                scope.launch(Dispatchers.IO) {
+                    val config = OmniInferLiteRtModelsManager.startApiService(modelId)
+                    mainHandler.post { result.success(config) }
+                }
+            }
+
+            "stopApiService" -> result.success(OmniInferLiteRtModelsManager.stopApiService())
+
+            "startDownload", "pauseDownload" -> result.success(false)
+
+            "deleteModel" -> runSuspend(result) {
+                val modelId = call.argument<String>("modelId") ?: error("modelId is required")
+                OmniInferLiteRtModelsManager.deleteModel(modelId)
             }
 
             else -> result.notImplemented()

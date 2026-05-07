@@ -18,6 +18,7 @@ enum _AccentTone { neutral, accent, success, info, warning, danger }
 const String _llamaCppBackend = 'llama.cpp';
 const String _omniinferMnnBackend = 'omniinfer-mnn';
 const String _omniinferQnnBackend = 'executorch-qnn';
+const String _omniinferLiteRtBackend = 'litert';
 
 class LocalModelsPage extends StatefulWidget {
   const LocalModelsPage({
@@ -1103,6 +1104,10 @@ class _LocalModelsPageState extends State<LocalModelsPage>
           value: _omniinferQnnBackend,
           child: Text('omniinfer-npu'),
         ),
+        DropdownMenuItem(
+          value: _omniinferLiteRtBackend,
+          child: Text('LiteRT-LM'),
+        ),
       ],
       onChanged: (value) async {
         if (value == null || value == backend) return;
@@ -1296,30 +1301,32 @@ class _LocalModelsPageState extends State<LocalModelsPage>
             subtitle: context.l10n.localModelsFilterAndSourceDesc,
           ),
           _buildBackendDropdown(backend: config?.backend ?? _llamaCppBackend),
-          const SizedBox(height: 12),
-          _buildDropdownField(
-            key: ValueKey(
-              'download-provider-${config?.downloadProvider ?? 'ModelScope'}',
+          if (config?.availableSources.isNotEmpty == true) ...[
+            const SizedBox(height: 12),
+            _buildDropdownField(
+              key: ValueKey(
+                'download-provider-${config?.downloadProvider ?? 'ModelScope'}',
+              ),
+              label: context.l10n.localModelsDownloadSource,
+              icon: Icons.public_rounded,
+              value: config?.downloadProvider.isNotEmpty == true
+                  ? config!.downloadProvider
+                  : null,
+              hintText: context.l10n.localModelsSelectDownloadSource,
+              items: config!.availableSources
+                  .map(
+                    (value) => DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                _changeDownloadProvider(value);
+              },
             ),
-            label: context.l10n.localModelsDownloadSource,
-            icon: Icons.public_rounded,
-            value: config?.downloadProvider.isNotEmpty == true
-                ? config!.downloadProvider
-                : null,
-            hintText: context.l10n.localModelsSelectDownloadSource,
-            items: (config?.availableSources ?? const <String>[])
-                .map(
-                  (value) => DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) {
-              if (value == null) return;
-              _changeDownloadProvider(value);
-            },
-          ),
+          ],
           const SizedBox(height: 24),
           SettingsSectionTitle(
             label: context.l10n.localModelsMarketModels,
@@ -1959,6 +1966,8 @@ class _LocalModelsPageState extends State<LocalModelsPage>
         return 'omniinfer-mnn';
       case _omniinferQnnBackend:
         return 'omniinfer-npu';
+      case _omniinferLiteRtBackend:
+        return 'LiteRT-LM';
       case _llamaCppBackend:
       default:
         return 'OmniInfer-llama';
