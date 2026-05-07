@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/runtime_log_service.dart';
 import 'package:ui/theme/app_colors.dart';
@@ -8,6 +10,8 @@ import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 import 'package:ui/widgets/settings_section_title.dart';
+
+const int _runtimeLogLimit = 200;
 
 class RuntimeLogsPage extends StatefulWidget {
   const RuntimeLogsPage({super.key});
@@ -34,7 +38,7 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
       _errorMessage = '';
     });
     try {
-      final logs = await RuntimeLogService.listRecent(limit: 100);
+      final logs = await RuntimeLogService.listRecent(limit: _runtimeLogLimit);
       if (!mounted) return;
       final validKeys = <String>{};
       for (var index = 0; index < logs.length; index++) {
@@ -55,6 +59,32 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _exportLogs() async {
+    try {
+      final logs = await RuntimeLogService.listRecent(limit: _runtimeLogLimit);
+      if (!mounted) return;
+      if (logs.isEmpty) {
+        showToast(
+          LegacyTextLocalizer.localize('暂无运行日志'),
+          type: ToastType.warning,
+        );
+        return;
+      }
+      await Clipboard.setData(ClipboardData(text: _buildExportText(logs)));
+      if (!mounted) return;
+      showToast(
+        LegacyTextLocalizer.localize('已复制全部运行日志'),
+        type: ToastType.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showToast(
+        LegacyTextLocalizer.localize('导出运行日志失败'),
+        type: ToastType.error,
+      );
     }
   }
 
@@ -106,6 +136,27 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
     );
   }
 
+  String _buildExportText(List<RuntimeLogEntry> logs) {
+    return logs.map(_formatLogForExport).join('\n\n---\n\n');
+  }
+
+  String _formatLogForExport(RuntimeLogEntry log) {
+    final buffer = StringBuffer()
+      ..writeln('Time: ${_formatDateTime(log.createdAt)}')
+      ..writeln('Level: ${log.level}${log.isCrash ? ' (CRASH)' : ''}')
+      ..writeln('Tag: ${log.tag.trim().isEmpty ? '-' : log.tag.trim()}')
+      ..writeln(
+        'Message: ${log.message.trim().isEmpty ? '-' : log.message.trim()}',
+      );
+    final stackTrace = log.stackTrace?.trim();
+    if (stackTrace != null && stackTrace.isNotEmpty) {
+      buffer
+        ..writeln('StackTrace:')
+        ..write(stackTrace);
+    }
+    return buffer.toString().trimRight();
+  }
+
   String _formatDateTime(DateTime value) {
     String pad(int number) => number.toString().padLeft(2, '0');
     return '${value.year}-${pad(value.month)}-${pad(value.day)} '
@@ -146,7 +197,7 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
       children: [
         SettingsSectionTitle(
           label: LegacyTextLocalizer.localize('概览'),
-          subtitle: LegacyTextLocalizer.localize('最近 100 条错误和崩溃日志，按时间倒序展示。'),
+          subtitle: LegacyTextLocalizer.localize('最近 200 条错误和崩溃日志，按时间倒序展示。'),
         ),
         Row(
           children: [
@@ -569,6 +620,45 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
     );
   }
 
+  Widget _buildAppBarLeading(BuildContext context) {
+    final palette = context.omniPalette;
+    return Row(
+      children: [
+        SizedBox(
+          width: 56,
+          child: Center(
+            child: GestureDetector(
+              onTap: () => GoRouterManager.pop(),
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: SvgPicture.asset(
+                  'assets/common/chevron_left.svg',
+                  width: 24,
+                  height: 24,
+                  colorFilter: ColorFilter.mode(
+                    palette.textPrimary,
+                    BlendMode.srcIn,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          onPressed: _exportLogs,
+          icon: const Icon(Icons.content_copy_rounded),
+          tooltip: LegacyTextLocalizer.localize('导出运行日志'),
+          color: palette.textPrimary,
+          iconSize: 18,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+          visualDensity: VisualDensity.compact,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
@@ -576,6 +666,8 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
       backgroundColor: palette.pageBackground,
       appBar: CommonAppBar(
         title: LegacyTextLocalizer.localize('运行日志'),
+        leading: _buildAppBarLeading(context),
+        leadingWidth: 96,
         primary: true,
         actions: [
           IconButton(

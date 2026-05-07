@@ -242,9 +242,12 @@ class LegacyTextLocalizer {
         'The latest 10 AI requests are shown in reverse chronological order.',
     '点击条目展开查看请求与响应正文。':
         'Tap an entry to expand the request and response payloads.',
-    '最近 100 条错误和崩溃日志，按时间倒序展示。':
-        'The latest 100 error and crash logs are shown in reverse chronological order.',
+    '最近 200 条错误和崩溃日志，按时间倒序展示。':
+        'The latest 200 error and crash logs are shown in reverse chronological order.',
     '含堆栈的条目可展开查看。': 'Entries with stack traces can be expanded for details.',
+    '导出运行日志': 'Export runtime logs',
+    '已复制全部运行日志': 'All runtime logs copied',
+    '导出运行日志失败': 'Failed to export runtime logs',
     '崩溃': 'Crash',
     '总数': 'Total',
     '最近一条': 'Latest entry',
