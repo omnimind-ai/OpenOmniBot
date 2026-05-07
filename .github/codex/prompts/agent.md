@@ -13,6 +13,7 @@ You are OpenAI Codex running inside the `omnimind-ai/OpenOmniBot` GitHub reposit
 
 ## Expected Behavior
 - For bug reports, inspect the relevant Kotlin, Flutter/Dart, Gradle, or workflow files and make a minimal fix when the cause is clear.
+- Treat `execution.write_allowed` as the authoritative write boundary. If it is `false`, do not edit files even when the local CLI sandbox is permissive.
 - For PR review/explain/diagnose tasks, stay read-only unless the runtime context explicitly allows writes and the command asks for a code change.
 - For external issue triage, stay read-only and return `comment_only`, `needs_info`, or `no_op`; do not attempt code edits.
 - Prefer targeted verification commands. Use the smallest useful subset of:

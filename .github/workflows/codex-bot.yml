@@ -452,6 +452,7 @@ jobs:
           CODEX_HEAD_REPO: ${{ needs.guard.outputs.head_repo }}
           CODEX_BRANCH_NAME: ${{ needs.guard.outputs.branch_name }}
           CODEX_ACTOR_PERMISSION: ${{ needs.guard.outputs.actor_permission }}
+          CODEX_CLI_SANDBOX: ${{ vars.CODEX_CLI_SANDBOX || 'danger-full-access' }}
           CODEX_CONFIG_DIR: ${{ runner.temp }}/codex-config
         run: node "$RUNNER_TEMP/codex-config/scripts/build-prompt.js"
 
@@ -491,6 +492,7 @@ jobs:
           CODEX_MODEL: ${{ vars.CODEX_MODEL }}
           CODEX_REASONING_EFFORT: ${{ vars.CODEX_REASONING_EFFORT }}
           CODEX_SANDBOX: ${{ needs.guard.outputs.sandbox }}
+          CODEX_CLI_SANDBOX: ${{ vars.CODEX_CLI_SANDBOX || 'danger-full-access' }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -euo pipefail
@@ -500,11 +502,13 @@ jobs:
             exit 1
           fi
           "$CODEX_BIN" --version
+          echo "Logical Codex mode: $CODEX_SANDBOX"
+          echo "Codex CLI sandbox: $CODEX_CLI_SANDBOX"
 
           args=(
             exec
             --cd "$GITHUB_WORKSPACE"
-            --sandbox "$CODEX_SANDBOX"
+            --sandbox "$CODEX_CLI_SANDBOX"
             --output-schema "$GITHUB_WORKSPACE/.codex/result.schema.json"
             --output-last-message "$GITHUB_WORKSPACE/.codex/final.json"
           )

@@ -93,7 +93,8 @@ const runtimeContext = {
   },
   task: env('CODEX_TASK'),
   execution: {
-    sandbox: env('CODEX_SANDBOX'),
+    logical_sandbox: env('CODEX_SANDBOX'),
+    cli_sandbox: env('CODEX_CLI_SANDBOX'),
     write_allowed: env('CODEX_WRITE_ALLOWED') === 'true',
     publish_mode: env('CODEX_PUBLISH_MODE'),
     bot_branch: env('CODEX_BRANCH_NAME'),
