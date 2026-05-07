@@ -392,7 +392,6 @@ jobs:
     permissions:
       contents: read
     outputs:
-      final_message: ${{ steps.run_codex.outputs.final-message }}
       result_status: ${{ steps.prepare.outputs.result_status }}
       has_patch: ${{ steps.prepare.outputs.has_patch }}
     steps:
@@ -523,23 +522,26 @@ jobs:
 
           args+=(-)
 
+          set +e
           "$CODEX_BIN" "${args[@]}" < "$GITHUB_WORKSPACE/.codex/prompt.md"
+          codex_status=$?
+          set -e
 
-          delimiter="codex_final_$(date +%s)_$RANDOM"
-          {
-            echo "final-message<<$delimiter"
-            if [[ -f "$GITHUB_WORKSPACE/.codex/final.json" ]]; then
-              cat "$GITHUB_WORKSPACE/.codex/final.json"
+          echo "$codex_status" > "$GITHUB_WORKSPACE/.codex/codex-exit-code"
+          if (( codex_status != 0 )); then
+            workspace_changes="$(git status --porcelain --untracked-files=all -- . ':(exclude).codex' || true)"
+            if [[ -s "$GITHUB_WORKSPACE/.codex/final.json" || -n "$workspace_changes" ]]; then
+              echo "codex exec exited with code $codex_status, but produced result artifacts or repository changes; continuing to publish handling."
+            else
+              echo "codex exec exited with code $codex_status and did not produce a result artifact or repository changes." >&2
+              exit "$codex_status"
             fi
-            echo "$delimiter"
-          } >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Prepare Codex artifacts
         id: prepare
         if: always()
         shell: bash
-        env:
-          CODEX_FINAL_MESSAGE: ${{ steps.run_codex.outputs.final-message }}
         run: node "$RUNNER_TEMP/codex-config/scripts/prepare-artifacts.js"
 
       - name: Upload Codex artifacts
