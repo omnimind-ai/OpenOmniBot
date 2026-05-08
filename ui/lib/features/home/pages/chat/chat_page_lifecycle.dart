@@ -216,8 +216,12 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       target,
     );
     if (isStaleRequest()) return;
+    final isOpeningExistingConversation =
+        !effectiveTarget.isNewConversation &&
+        effectiveTarget.conversationId != null;
     if (_isLocalModelPureChatLocked &&
-        effectiveTarget.mode != ConversationMode.chatOnly) {
+        effectiveTarget.mode != ConversationMode.chatOnly &&
+        !isOpeningExistingConversation) {
       _showLocalModelPureChatLockToast();
       if (syncPage) {
         _jumpToCurrentModePage(animate: false);
@@ -532,7 +536,6 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_runtimeCoordinator.flushAllPendingPersistence());
-    unawaited(_persistVisibleThreadTargetIfNeeded());
     _cancelNormalSurfaceModelReveal();
     _conversationListChangedSubscription?.cancel();
     _conversationMessagesChangedSubscription?.cancel();

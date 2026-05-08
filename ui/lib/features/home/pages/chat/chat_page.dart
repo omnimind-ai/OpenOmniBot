@@ -604,18 +604,6 @@ abstract class _ChatPageStateBase extends State<ChatPage>
 
   ConversationThreadTarget? get _visibleThreadTarget =>
       _isWorkspaceSurface ? null : _threadTargetForMode;
-  bool get _hasStartedNormalThread {
-    final runtime = _runtimeForMode(ChatPageMode.normal);
-    if ((runtime?.messages.isNotEmpty ?? false)) {
-      return true;
-    }
-    if (_messagesByMode[ChatPageMode.normal]!.isNotEmpty) {
-      return true;
-    }
-    return (_currentConversationByMode[ChatPageMode.normal]?.messageCount ??
-            0) >
-        0;
-  }
 
   bool get _isPureChatSelected =>
       _conversationModeForPageMode(ChatPageMode.normal) ==

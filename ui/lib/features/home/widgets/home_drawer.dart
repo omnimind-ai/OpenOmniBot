@@ -369,7 +369,22 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       return;
     }
     _maybeCloseDrawer();
-    GoRouterManager.pushReplacement('/home/chat', extra: target);
+    GoRouterManager.push(
+      '/home/chat',
+      extra: target,
+      queryParams: _threadTargetQueryParams(target),
+    );
+  }
+
+  Map<String, dynamic> _threadTargetQueryParams(
+    ConversationThreadTarget target,
+  ) {
+    return <String, dynamic>{
+      'conversationId': target.conversationId?.toString() ?? 'new',
+      'mode': target.mode.storageValue,
+      'requestKey':
+          target.requestKey ?? DateTime.now().microsecondsSinceEpoch.toString(),
+    };
   }
 
   void _navigateTo(String route) {
@@ -1399,10 +1414,9 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     if (threadKey == null) return;
 
     final newTitle = _titleEditingController.text.trim();
-    final conversation = _allConversations.cast<ConversationModel?>().firstWhere(
-      (c) => c!.threadKey == threadKey,
-      orElse: () => null,
-    );
+    final conversation = _allConversations
+        .cast<ConversationModel?>()
+        .firstWhere((c) => c!.threadKey == threadKey, orElse: () => null);
 
     setState(() {
       _editingThreadKey = null;
@@ -1429,10 +1443,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       setState(() {
         _replaceConversationInState(conversation);
       });
-      showToast(
-        context.trLegacy('重命名失败'),
-        type: ToastType.error,
-      );
+      showToast(context.trLegacy('重命名失败'), type: ToastType.error);
     }
   }
 
@@ -1688,7 +1699,9 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
                                   controller: _titleEditingController,
                                   focusNode: _titleEditingFocusNode,
                                   maxLines: 1,
-                                  cursorColor: _drawerTextColor.withValues(alpha: 0.6),
+                                  cursorColor: _drawerTextColor.withValues(
+                                    alpha: 0.6,
+                                  ),
                                   cursorWidth: 1.5,
                                   style: TextStyle(
                                     fontSize: 13,

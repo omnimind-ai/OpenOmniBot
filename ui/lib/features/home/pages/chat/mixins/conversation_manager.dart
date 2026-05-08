@@ -123,7 +123,11 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
 
       final conversationId = target.conversationId;
       if (conversationId != null) {
-        await loadConversation(conversationId, lifecycleToken: token);
+        await loadConversation(
+          conversationId,
+          mode: target.mode,
+          lifecycleToken: token,
+        );
         if (!_isConversationOperationCurrent(token)) {
           return;
         }
@@ -176,6 +180,7 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
 
       await loadConversation(
         savedTarget.conversationId!,
+        mode: savedTarget.mode,
         lifecycleToken: token,
       );
       if (!_isConversationOperationCurrent(token)) {
@@ -211,7 +216,11 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
         return;
       }
       if (latestConversation != null) {
-        await loadConversation(latestConversation.id, lifecycleToken: token);
+        await loadConversation(
+          latestConversation.id,
+          mode: latestConversation.mode,
+          lifecycleToken: token,
+        );
         if (!_isConversationOperationCurrent(token)) {
           return;
         }
@@ -277,6 +286,7 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
   /// 加载对话
   Future<void> loadConversation(
     int conversationId, {
+    ConversationMode? mode,
     bool preferInMemory = true,
     int? lifecycleToken,
   }) async {
@@ -284,7 +294,7 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
     if (!_isConversationOperationCurrent(token)) {
       return;
     }
-    final operationMode = activeConversationModeValue;
+    final operationMode = mode ?? activeConversationModeValue;
     try {
       final inMemoryConversation = preferInMemory
           ? getInMemoryConversationForConversation(
@@ -462,6 +472,7 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
           final fallbackConversation = sameModeConversations.first;
           await loadConversation(
             fallbackConversation.id,
+            mode: fallbackConversation.mode,
             lifecycleToken: transitionToken,
           );
           if (!_isConversationOperationCurrent(transitionToken)) {
