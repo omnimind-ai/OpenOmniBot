@@ -552,11 +552,15 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
         LegacyTextLocalizer.localize('模型加载中...'),
       );
       try {
+        await _waitForLocalModelLoadingStatusFrame();
+        if (!mounted ||
+            selectionSerial != _dispatchSceneModelSelectionSerial) {
+          return;
+        }
         final result = await localModelFeature.preloadModelIfNeeded(
           providerProfileId: providerProfileId,
           modelId: modelId,
         );
-        loadingToast.dismiss();
         if (!mounted ||
             selectionSerial != _dispatchSceneModelSelectionSerial ||
             result == null) {
@@ -578,7 +582,6 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
           );
         }
       } catch (e) {
-        loadingToast.dismiss();
         if (!mounted ||
             selectionSerial != _dispatchSceneModelSelectionSerial) {
           return;
@@ -587,6 +590,8 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
           LegacyTextLocalizer.localize('模型加载失败：$e'),
           type: ToastType.error,
         );
+      } finally {
+        loadingToast.dismiss();
       }
     } catch (e) {
       if (!mounted ||
@@ -598,6 +603,11 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
         type: ToastType.error,
       );
     }
+  }
+
+  Future<void> _waitForLocalModelLoadingStatusFrame() async {
+    await SchedulerBinding.instance.endOfFrame;
+    await Future<void>.delayed(Duration.zero);
   }
 
   @override

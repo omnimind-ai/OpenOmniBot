@@ -58,6 +58,7 @@ object HttpController {
     private const val ROUTE_CUSTOM_OPENAI_COMPAT = "custom_openai_compat"
     private const val ANTHROPIC_EPHEMERAL_CACHE_TYPE = "ephemeral"
     private const val ANTHROPIC_MAX_CACHE_BREAKPOINTS = 4
+    private const val LOCAL_BACKEND_MAX_COMPLETION_TOKENS = 4096
 
     private data class ResolvedSceneRequest(
         val requestedModel: String,
@@ -1491,11 +1492,28 @@ object HttpController {
             includeLegacyMirrors = includeLegacyMirrors,
             mirrorLegacyTokenFields = mirrorLegacyTokenFields
         )
+        val localReadyBody = applyLocalBackendMaxCompletionTokens(
+            requestBodyJson = baseBody,
+            apiBase = apiBase
+        )
         return if (DeepSeekProvider.shouldUseOfficialAdapter(protocolType, apiBase)) {
-            applyOfficialDeepSeekThinkingMode(baseBody)
+            applyOfficialDeepSeekThinkingMode(localReadyBody)
         } else {
-            baseBody
+            localReadyBody
         }
+    }
+
+    private fun applyLocalBackendMaxCompletionTokens(
+        requestBodyJson: String,
+        apiBase: String?
+    ): String {
+        if (!LocalModelProviderBridge.isBuiltinLocalProvider(null, apiBase)) {
+            return requestBodyJson
+        }
+        return JSONObject(requestBodyJson).apply {
+            put("max_completion_tokens", LOCAL_BACKEND_MAX_COMPLETION_TOKENS)
+            remove("max_tokens")
+        }.toString()
     }
 
     private fun applyOfficialDeepSeekThinkingMode(requestBodyJson: String): String {
