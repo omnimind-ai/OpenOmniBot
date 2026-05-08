@@ -120,14 +120,24 @@ function normalizeResult(result) {
 
 fs.mkdirSync(outputDir, { recursive: true });
 
-const trackedChangedFiles = runGit(['diff', '--name-only', '--']).split('\n').filter(Boolean);
+const stagedChangedFiles = runGit(['diff', '--cached', '--name-only', '--']).split('\n').filter(Boolean);
+const unstagedChangedFiles = runGit(['diff', '--name-only', '--']).split('\n').filter(Boolean);
 const untracked = runGit(['ls-files', '--others', '--exclude-standard', '-z'], { encoding: 'buffer' });
 const untrackedFiles = untracked
   .toString('utf8')
   .split('\0')
   .filter((file) => file && !file.startsWith('.codex/'));
-const changedFiles = Array.from(new Set([...trackedChangedFiles, ...untrackedFiles]));
-const patchParts = [runGit(['diff', '--binary', '--no-ext-diff', '--'])];
+const stagedChangedFileSet = new Set(stagedChangedFiles);
+// If a path has staged changes, treat the index as Codex's intended result.
+// This prevents index-only gitlink fixes from being canceled by submodule worktree state.
+const unstagedOnlyFiles = unstagedChangedFiles.filter((file) => !stagedChangedFileSet.has(file));
+const changedFiles = Array.from(new Set([...stagedChangedFiles, ...unstagedOnlyFiles, ...untrackedFiles]));
+const patchParts = [
+  runGit(['diff', '--cached', '--binary', '--no-ext-diff', '--']),
+];
+if (unstagedOnlyFiles.length > 0) {
+  patchParts.push(runGit(['diff', '--binary', '--no-ext-diff', '--', ...unstagedOnlyFiles]));
+}
 for (const file of untrackedFiles) {
   patchParts.push(runGitDiffAllowDifference(['diff', '--no-index', '--binary', '--no-ext-diff', '--', '/dev/null', file]));
 }
