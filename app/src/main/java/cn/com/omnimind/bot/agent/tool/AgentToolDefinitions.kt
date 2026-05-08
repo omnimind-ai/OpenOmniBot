@@ -1172,6 +1172,198 @@ object AgentToolDefinitions {
         }
     }
 
+    val workbenchProjectCreateTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_create")
+            put("displayName", "创建 Workbench Project")
+            put("toolType", "workbench")
+            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是控制面能力，不会出现在 Project 自己的业务 API 列表里。v1 支持 templateId=todo_log_demo；不要直接写 registry 文件，也不要生成 HTML/WebView。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("projectId") {
+                        put("type", "string")
+                        put("description", "Project id，例如 oob-workbench-todo-log。只能包含字母、数字、下划线和连字符。")
+                    }
+                    putJsonObject("templateId") {
+                        put("type", "string")
+                        put("description", "Project 模板 id。v1 只支持 todo_log_demo。")
+                    }
+                    putJsonObject("name") {
+                        put("type", "string")
+                        put("description", "Project 展示名称。")
+                    }
+                    putJsonObject("prompt") {
+                        put("type", "string")
+                        put("description", "用户原始需求。Workbench 会把它写入 Project 源码规格，用于后续编辑和拆分复盘。")
+                    }
+                    putJsonObject("initialTodos") {
+                        put("type", "array")
+                        put("description", "可选初始 todo 标题数组，仅 todo_log_demo 使用。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("projectId")
+                    add("templateId")
+                }
+            }
+        }
+    }
+
+    val workbenchApiListTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_api_list")
+            put("displayName", "列出 Workbench API")
+            put("toolType", "workbench")
+            put("description", "列出已注册的 Project 业务 API。返回的是 Project API Registry，不包含 workbench_project_create 这类 OOB 控制面接口。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("projectId") {
+                        put("type", "string")
+                        put("description", "可选 Project id；为空时返回所有 Workbench API。")
+                    }
+                }
+            }
+        }
+    }
+
+    val workbenchProjectListTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_list")
+            put("displayName", "列出 Workbench Project")
+            put("toolType", "workbench")
+            put("description", "列出 OOB Workbench 已注册 Project。它是 OOB 控制面能力，用于管理已有 Project，不属于 Project API Registry。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {}
+            }
+        }
+    }
+
+    val workbenchProjectGetTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_get")
+            put("displayName", "读取 Workbench Project")
+            put("toolType", "workbench")
+            put("description", "读取某个 OOB Workbench Project 的注册信息、业务 API 和当前持久化状态。打开或管理已有 Project 前应先调用它。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("projectId") {
+                        put("type", "string")
+                        put("description", "Project id。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("projectId")
+                }
+            }
+        }
+    }
+
+    val workbenchApiCallTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_api_call")
+            put("displayName", "调用 Workbench API")
+            put("toolType", "workbench")
+            put("description", "调用某个 Project 已注册的业务 API。AI 层必须通过这个接口调用 Project API，和前端 Tool List 使用同一个 native executor。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("projectId") {
+                        put("type", "string")
+                        put("description", "Project id。")
+                    }
+                    putJsonObject("apiId") {
+                        put("type", "string")
+                        put("description", "业务 API id，例如 todo.add 或 todo.finish。")
+                    }
+                    putJsonObject("inputs") {
+                        put("type", "object")
+                        put("description", "API 输入对象。例如 todo.add 需要 {title}，todo.finish 需要 {todo_id}。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("projectId")
+                    add("apiId")
+                    add("inputs")
+                }
+            }
+        }
+    }
+
+    val workbenchProjectExportTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_export")
+            put("displayName", "导出 Workbench Project")
+            put("toolType", "workbench")
+            put("description", "把某个 Workbench Project 注册成可分发包并导出 zip。导出内容包括 Project 记录、业务 API、Workspace 项目文件、持久化数据、API 调用日志和内置 skill 契约。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("projectId") {
+                        put("type", "string")
+                        put("description", "Project id。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("projectId")
+                }
+            }
+        }
+    }
+
+    val workbenchProjectOpenTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_open")
+            put("displayName", "打开 Workbench Project")
+            put("toolType", "workbench")
+            put("description", "打开某个 Workbench Project 的 OOB 原生页面。用于完成 Project 创建和 API 调用后把结果展示给用户。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("projectId") {
+                        put("type", "string")
+                        put("description", "Project id。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("projectId")
+                }
+            }
+        }
+    }
+
+    val workbenchProjectDeleteTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_delete")
+            put("displayName", "删除 Workbench Project")
+            put("toolType", "workbench")
+            put("description", "删除某个 Workbench Project 的 OOB 注册记录、业务 API 注册记录和 Workspace 项目文件。它是 OOB 控制面能力，不属于 Project API Registry。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("projectId") {
+                        put("type", "string")
+                        put("description", "Project id。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("projectId")
+                }
+            }
+        }
+    }
+
     val scheduleTaskCreateTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -1740,7 +1932,15 @@ object AgentToolDefinitions {
         fileStatTool,
         fileMoveTool,
         skillsListTool,
-        skillsReadTool
+        skillsReadTool,
+        workbenchProjectCreateTool,
+        workbenchProjectListTool,
+        workbenchProjectGetTool,
+        workbenchApiListTool,
+        workbenchApiCallTool,
+        workbenchProjectExportTool,
+        workbenchProjectOpenTool,
+        workbenchProjectDeleteTool
     )
 
     private val scheduleToolDefinitions: List<JsonObject> = listOf(

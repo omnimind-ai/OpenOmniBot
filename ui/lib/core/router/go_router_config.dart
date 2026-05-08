@@ -4,6 +4,7 @@ import '../../features/task/router_config.dart';
 import '../../features/welcome/router_config.dart';
 import '../../features/memory/router_config.dart';
 import '../../features/my/router_config.dart';
+import '../../features/workbench/router_config.dart';
 
 class AppRouterConfig {
   static List<GoRoute> getAllRoutes() {
@@ -13,6 +14,7 @@ class AppRouterConfig {
       ...welcomeRoutes,
       ...memoryRoutes,
       ...myRoutes,
+      ...workbenchRoutes,
     ];
   }
 }

@@ -87,6 +87,7 @@ import cn.com.omnimind.bot.webchat.ConversationDomainService
 import cn.com.omnimind.bot.webchat.FlutterChatSyncBridge
 import cn.com.omnimind.bot.webchat.RealtimeHub
 import cn.com.omnimind.bot.workspace.PublicStorageAccess
+import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import cn.com.omnimind.bot.workspace.WorkspaceStorageAccess
 import cn.com.omnimind.uikit.UIKit
 import cn.com.omnimind.uikit.loader.ScreenMaskLoader
@@ -668,6 +669,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     private val chatTaskPersistenceStates: MutableMap<String, ChatTaskPersistenceState> =
         mutableMapOf()
     private val conversationDomainService by lazy { ConversationDomainService(context) }
+    private val workbenchProjectStore by lazy { WorkbenchProjectStore(context) }
 
     // 当前活跃的对话ID
     private var currentConversationId: Long? = null
@@ -1120,7 +1122,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
      * Args:
      *     call: Method-call payload carrying the originating `taskId`.
      *     result: Flutter result callback receiving
-     *         `{success, run_id, run_log_path, ...}`.
+     *         `{success, run_id, run_file_path, ...}`.
      */
     fun getVlmTaskRunLog(
         call: MethodCall, result: MethodChannel.Result,
@@ -1190,26 +1192,29 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 val baseUrl = call.argument<String>("baseUrl")?.trim()
                 val isAllowedRequest =
                     (method == "GET" && routePath == "/health") ||
+                        // VLM / compile gate
+                        (method == "POST" && routePath == "/vlm/pre_hook") ||
                         // Function APIs
                         (method == "GET" && routePath == "/functions") ||
+                        (method == "GET" && Regex("^/functions/[^/]+$").matches(routePath)) ||
                         (method == "DELETE" && Regex("^/functions/[^/]+$").matches(routePath)) ||
-                        (method == "POST" && Regex("^/functions/[^/]+/distill$").matches(routePath)) ||
+                        (method == "POST" && Regex("^/functions/[^/]+/update$").matches(routePath)) ||
+                        (method == "POST" && Regex("^/functions/[^/]+/enrich$").matches(routePath)) ||
+                        (method == "POST" && Regex("^/functions/[^/]+/split$").matches(routePath)) ||
                         (method == "GET" && Regex("^/functions/[^/]+/bundle$").matches(routePath)) ||
-                        (method == "POST" && routePath == "/functions/import_bundle") ||
                         (method == "POST" && routePath == "/functions/execute") ||
                         (method == "POST" && routePath == "/functions/pull") ||
                         (method == "POST" && routePath == "/functions/push") ||
                         // Run Log APIs
                         (method == "GET" && routePath == "/run_logs") ||
                         (method == "GET" && Regex("^/run_logs/[^/]+$").matches(routePath)) ||
-                        (method == "POST" && routePath == "/run_logs/import_trace") ||
+                        (method == "GET" && Regex("^/run_logs/[^/]+/timeline_payload$").matches(routePath)) ||
                         (method == "POST" && routePath == "/run_logs/import") ||
                         (method == "POST" && routePath == "/run_logs/replay") ||
+                        // Provider management
+                        (method == "POST" && routePath == "/provider/reset") ||
                         // Update APIs
-                        (method == "GET" && routePath == "/update/check") ||
-                        (method == "POST" && routePath == "/update/download") ||
-                        (method == "POST" && routePath == "/update/install") ||
-                        (method == "POST" && routePath == "/update/apply")
+                        (method == "GET" && routePath == "/update/check")
                 if (!isAllowedRequest) {
                     throw IllegalArgumentException("unsupported_utg_debug_route")
                 }
@@ -1298,6 +1303,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         // 可以通过 EventChannel 发送进度，暂时简化处理
                     }
                 }
+                if (installResult.success) {
+                    UtgBridge.setUseEmbeddedProvider(true)
+                }
                 withContext(Dispatchers.Main) {
                     result.success(mapOf(
                         "success" to installResult.success,
@@ -1325,6 +1333,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             try {
                 val success = withContext(Dispatchers.IO) {
                     EmbeddedProviderManager.start(context, port)
+                }
+                if (success) {
+                    UtgBridge.setUseEmbeddedProvider(true)
                 }
                 withContext(Dispatchers.Main) {
                     result.success(mapOf("success" to success))
@@ -1370,6 +1381,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 val success = withContext(Dispatchers.IO) {
                     EmbeddedProviderManager.uninstall(context)
                 }
+                if (success) {
+                    UtgBridge.setUseEmbeddedProvider(false)
+                }
                 withContext(Dispatchers.Main) {
                     result.success(mapOf("success" to success))
                 }
@@ -1382,70 +1396,79 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     }
 
     /**
-     * 更新 OmniFlow 包（从 GitHub 下载并安装最新 wheel）
+     * 更新当前设备里的 OmniFlow 包。
      *
-     * 仅支持内置 Provider 模式（Android + Alpine 环境）。
-     * 如果使用主机 Provider，应通过 git pull 手动更新。
+     * 更新当前设备上的 OmniFlow Alpine wheel；当前 provider 连接模式只影响是否自动重启内置 Provider。
+     * 当前这条更新链只服务内置 Provider 的设备侧 Alpine wheel 分发。
      */
     fun updateOmniFlowPackage(
         call: MethodCall, result: MethodChannel.Result,
     ) {
         mainJob.launch {
             try {
-                val isEmbedded = UtgBridge.isUseEmbeddedProvider()
-                OmniLog.i("AssistsCoreManager", "updateOmniFlowPackage: isEmbedded=$isEmbedded")
-
-                // 检查是否使用内置 Provider
-                if (!isEmbedded) {
-                    withContext(Dispatchers.Main) {
-                        result.success(mapOf(
-                            "success" to false,
-                            "error" to "自动更新仅支持内置 Provider。主机 Provider 请使用 git pull 手动更新。"
-                        ))
-                    }
-                    return@launch
-                }
+                val connectionMode = if (UtgBridge.isUseEmbeddedProvider()) "embedded" else "bridge"
+                val shouldRestartEmbedded = connectionMode == "embedded"
+                OmniLog.i("AssistsCoreManager", "updateOmniFlowPackage: connectionMode=$connectionMode")
 
                 // 获取更新前的版本
-                val previousStatus = OmniFlowPackageManager.getStatusSummary(context)
-                OmniLog.i("AssistsCoreManager", "updateOmniFlowPackage: previousStatus=$previousStatus")
-                val previousHash = previousStatus["installedHash"]?.toString()
-
-                // 停止正在运行的 Provider
-                val wasRunning = withContext(Dispatchers.IO) {
-                    OmniFlowPackageManager.isProviderRunning(context)
+                val previousStatus = withContext(Dispatchers.IO) {
+                    OmniFlowPackageManager.getStatusSummary(context)
                 }
+                OmniLog.i("AssistsCoreManager", "updateOmniFlowPackage: previousStatus=$previousStatus")
+                val previousVersion = previousStatus["installedVersion"]?.toString()?.takeIf { it.isNotBlank() }
+                    ?: previousStatus["installedHash"]?.toString()
+
+                // 当前连接如果是内置模式，更新前先停掉 embedded provider，避免旧进程继续占着旧 wheel。
+                val wasRunning = if (shouldRestartEmbedded) withContext(Dispatchers.IO) {
+                    OmniFlowPackageManager.isProviderRunning(context)
+                } else false
                 if (wasRunning) {
                     withContext(Dispatchers.IO) {
                         OmniFlowPackageManager.stopProvider(context)
                     }
                 }
 
-                // 强制从 GitHub 下载并安装
-                OmniLog.i("AssistsCoreManager", "updateOmniFlowPackage: starting download and install...")
+                // 更新当前设备包：优先使用当前设备上已推送的兼容 wheel，其次再按设备 ABI 拉取远端 release。
+                OmniLog.i("AssistsCoreManager", "updateOmniFlowPackage: starting device package install...")
                 val installResult = withContext(Dispatchers.IO) {
                     OmniFlowPackageManager.ensureInstalled(
                         context,
-                        force = true,
-                        preferGitHub = true
+                        force = true
                     )
                 }
                 OmniLog.i("AssistsCoreManager", "updateOmniFlowPackage: installResult=${installResult.success}, message=${installResult.message}")
 
-                // 如果之前在运行，重新启动
+                var providerRestarted = false
                 if (wasRunning && installResult.success) {
-                    withContext(Dispatchers.IO) {
+                    val restartResult = withContext(Dispatchers.IO) {
                         OmniFlowPackageManager.startProvider(context, UtgBridge.EMBEDDED_PROVIDER_PORT)
                     }
+                    providerRestarted = restartResult.started || restartResult.alreadyRunning
                 }
+
+                val latestStatus = withContext(Dispatchers.IO) {
+                    OmniFlowPackageManager.getStatusSummary(context)
+                }
+                val installedVersion = latestStatus["installedVersion"]?.toString()?.takeIf { it.isNotBlank() }
+                    ?: installResult.hash
+                val restartRequired = shouldRestartEmbedded && wasRunning && installResult.success && !providerRestarted
 
                 withContext(Dispatchers.Main) {
                     result.success(mapOf(
                         "success" to installResult.success,
-                        "previous_version" to previousHash,
-                        "installed_version" to installResult.hash,
+                        "connection_mode" to connectionMode,
+                        "previous_version" to previousVersion,
+                        "installed_version" to installedVersion,
+                        "install_source" to installResult.source,
                         "message" to installResult.message,
-                        "restart_required" to wasRunning,
+                        "provider_restarted" to providerRestarted,
+                        "restart_required" to restartRequired,
+                        "hint" to if (!installResult.success) null else when {
+                            connectionMode == "bridge" -> "bridge_connection_active"
+                            restartRequired -> "embedded_provider_restart_required"
+                            providerRestarted -> "embedded_provider_restarted"
+                            else -> "device_package_updated"
+                        },
                         "error" to if (!installResult.success) installResult.message else null
                     ))
                 }
@@ -3981,6 +4004,131 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
+    fun workbenchProjectCreate(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                val args = normalizeMethodCallMap(call.arguments)
+                val config = normalizeMethodCallMap(args["config"]).ifEmpty { args }
+                workbenchProjectStore.createProject(config)
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_CREATE_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
+    fun workbenchProjectGet(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                val projectId = call.argument<String>("projectId")?.trim().orEmpty()
+                workbenchProjectStore.getProject(projectId)
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_GET_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
+    fun workbenchProjectList(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                workbenchProjectStore.listProjects()
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_LIST_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
+    fun workbenchProjectOpen(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                val projectId = call.argument<String>("projectId")?.trim().orEmpty()
+                val route = workbenchProjectStore.routeForProject(projectId)
+                TaskCompletionNavigator.navigateToMainRoute(context, route, needClear = false)
+                mapOf("success" to true, "projectId" to projectId, "route" to route)
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_OPEN_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
+    fun workbenchProjectDelete(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                val projectId = call.argument<String>("projectId")?.trim().orEmpty()
+                workbenchProjectStore.deleteProject(projectId)
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_DELETE_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
+    fun workbenchProjectExport(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                val projectId = call.argument<String>("projectId")?.trim().orEmpty()
+                workbenchProjectStore.exportProject(projectId)
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_EXPORT_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
+    fun workbenchApiList(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                workbenchProjectStore.listApis(call.argument<String>("projectId"))
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_API_LIST_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
+    fun workbenchApiCall(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                val projectId = call.argument<String>("projectId")?.trim().orEmpty()
+                val apiId = call.argument<String>("apiId")?.trim()
+                    ?: call.argument<String>("toolId")?.trim().orEmpty()
+                val inputs = normalizeMethodCallMap(call.argument<Any>("inputs"))
+                val caller = call.argument<String>("caller")?.trim().orEmpty().ifBlank { "ui" }
+                workbenchProjectStore.callApi(projectId, apiId, inputs, caller)
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_API_CALL_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
     /**
      * 跳转到主引擎路由
      */
@@ -4000,6 +4148,21 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             }
         } else {
             result.error("NAVIGATE_ERROR", "Route is empty", null)
+        }
+    }
+
+    private fun normalizeMethodCallMap(value: Any?): Map<String, Any?> {
+        val raw = value as? Map<*, *> ?: return emptyMap()
+        return raw.entries.associate { (key, item) ->
+            key.toString() to normalizeMethodCallValue(item)
+        }
+    }
+
+    private fun normalizeMethodCallValue(value: Any?): Any? {
+        return when (value) {
+            is Map<*, *> -> normalizeMethodCallMap(value)
+            is List<*> -> value.map(::normalizeMethodCallValue)
+            else -> value
         }
     }
 

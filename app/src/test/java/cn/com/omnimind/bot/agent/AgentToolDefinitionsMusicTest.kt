@@ -24,6 +24,37 @@ class AgentToolDefinitionsMusicTest {
     }
 
     @Test
+    fun `workbench delete tool is exposed as control tool`() {
+        val toolNames = AgentToolDefinitions.staticTools()
+            .mapNotNull { definition ->
+                ((definition["function"] as? JsonObject)
+                    ?.get("name")
+                    ?.jsonPrimitive
+                    ?.contentOrNull)
+            }
+
+        assertTrue(toolNames.contains("workbench_project_delete"))
+        assertTrue(toolNames.contains("workbench_project_list"))
+        assertTrue(toolNames.contains("workbench_project_get"))
+    }
+
+    @Test
+    fun `workbench create tool accepts source prompt`() {
+        val createTool = AgentToolDefinitions.staticTools()
+            .first { definition ->
+                ((definition["function"] as? JsonObject)
+                    ?.get("name")
+                    ?.jsonPrimitive
+                    ?.contentOrNull) == "workbench_project_create"
+            }
+        val function = createTool["function"] as JsonObject
+        val parameters = function["parameters"] as JsonObject
+        val properties = parameters["properties"] as JsonObject
+
+        assertTrue(properties.containsKey("prompt"))
+    }
+
+    @Test
     fun `english browser tool metadata is localized`() {
         val browserTool = AgentToolDefinitions.staticTools(PromptLocale.EN_US)
             .first { ((it["function"] as JsonObject)["name"]?.jsonPrimitive?.contentOrNull) == "browser_use" }

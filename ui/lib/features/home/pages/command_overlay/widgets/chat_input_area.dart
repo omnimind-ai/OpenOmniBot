@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/speech_channel_service.dart';
 import 'package:ui/services/special_permission.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -109,6 +110,7 @@ class ChatInputArea extends StatefulWidget {
   final List<ChatInputAttachment> attachments;
   final ValueChanged<String>? onRemoveAttachment;
   final VoidCallback? onTriggerSlashCommand;
+  final VoidCallback? onOpenWorkbenchProject;
   final String? selectedModelOverrideId;
   final VoidCallback? onClearSelectedModelOverride;
   final double? contextUsageRatio;
@@ -135,6 +137,7 @@ class ChatInputArea extends StatefulWidget {
     this.attachments = const [],
     this.onRemoveAttachment,
     this.onTriggerSlashCommand,
+    this.onOpenWorkbenchProject,
     this.selectedModelOverrideId,
     this.onClearSelectedModelOverride,
     this.contextUsageRatio,

@@ -1,0 +1,865 @@
+package cn.com.omnimind.bot.workbench
+
+import android.content.Context
+import cn.com.omnimind.bot.agent.AgentWorkspaceManager
+import com.google.gson.Gson
+import com.google.gson.GsonBuilder
+import com.google.gson.reflect.TypeToken
+import java.io.File
+import java.time.Instant
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+
+const val WORKBENCH_TODO_TEMPLATE_ID = "todo_log_demo"
+const val WORKBENCH_DEFAULT_PROJECT_ID = "oob-workbench-todo-log"
+const val WORKBENCH_TODO_ADD_TOOL_ID = "todo.add"
+const val WORKBENCH_TODO_FINISH_TOOL_ID = "todo.finish"
+
+data class WorkbenchProjectRecord(
+    val projectId: String,
+    val name: String,
+    val templateId: String,
+    val route: String,
+    val spacePath: String,
+    val apiIds: List<String>,
+    val createdAt: String,
+    val updatedAt: String
+) {
+    fun toPayload(): Map<String, Any?> = linkedMapOf(
+        "projectId" to projectId,
+        "name" to name,
+        "templateId" to templateId,
+        "route" to route,
+        "spacePath" to spacePath,
+        "apiIds" to apiIds,
+        "createdAt" to createdAt,
+        "updatedAt" to updatedAt
+    )
+}
+
+data class WorkbenchApiRecord(
+    val apiId: String,
+    val projectId: String,
+    val toolId: String,
+    val displayName: String,
+    val description: String,
+    val inputSchema: Map<String, Any?>,
+    val outputSchema: Map<String, Any?>,
+    val executorKind: String
+) {
+    fun toPayload(executionCount: Int = 0): Map<String, Any?> = linkedMapOf(
+        "apiId" to apiId,
+        "projectId" to projectId,
+        "toolId" to toolId,
+        "displayName" to displayName,
+        "description" to description,
+        "inputSchema" to inputSchema,
+        "outputSchema" to outputSchema,
+        "executorKind" to executorKind,
+        "kind" to executorKind,
+        "inputKeys" to inputSchema.keys.toList(),
+        "outputKeys" to outputSchema.keys.toList(),
+        "executionCount" to executionCount
+    )
+}
+
+data class WorkbenchTodoRecord(
+    val id: String,
+    val title: String,
+    val status: String,
+    val createdAt: String,
+    val finishedAt: String? = null
+) {
+    fun toPayload(): Map<String, Any?> = linkedMapOf(
+        "id" to id,
+        "title" to title,
+        "status" to status,
+        "createdAt" to createdAt,
+        "finishedAt" to finishedAt
+    )
+}
+
+/**
+ * Stores OOB Workbench projects and their registered Project APIs under the shared workspace.
+ *
+ * @param workspaceRoot Android-side workspace root that is bind-mounted as `/workspace` in Alpine.
+ */
+class WorkbenchProjectStore(
+    private val workspaceRoot: File,
+    private val appContext: Context? = null
+) {
+    constructor(context: Context) : this(
+        AgentWorkspaceManager.rootDirectory(context),
+        context.applicationContext
+    )
+
+    private val gson: Gson = GsonBuilder().disableHtmlEscaping().setPrettyPrinting().create()
+    private val logGson: Gson = Gson()
+    private val projectRecordListType =
+        object : TypeToken<List<WorkbenchProjectRecord>>() {}.type
+    private val apiRecordListType = object : TypeToken<List<WorkbenchApiRecord>>() {}.type
+    private val todoRecordListType = object : TypeToken<List<WorkbenchTodoRecord>>() {}.type
+    private val mapType = object : TypeToken<Map<String, Any?>>() {}.type
+
+    private val projectsRoot: File
+        get() = File(workspaceRoot, "projects")
+    private val registryFile: File
+        get() = File(projectsRoot, "registry.json")
+    private val apiRegistryFile: File
+        get() = File(projectsRoot, "api_registry.json")
+    private val exportsRoot: File
+        get() = File(projectsRoot, "exports")
+
+    /**
+     * Creates a Workbench project from a template config, or returns an existing project unchanged.
+     *
+     * @param config Project creation config from AI tools or Flutter. v1 supports `templateId=todo_log_demo`.
+     * @return Full project payload including registered business APIs and persisted state.
+     */
+    @Synchronized
+    fun createProject(config: Map<String, Any?>): Map<String, Any?> {
+        val templateId = config["templateId"]?.toString()?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: WORKBENCH_TODO_TEMPLATE_ID
+        require(templateId == WORKBENCH_TODO_TEMPLATE_ID) {
+            "Unsupported workbench template: $templateId"
+        }
+        val projectId = sanitizeProjectId(
+            config["projectId"]?.toString()?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: WORKBENCH_DEFAULT_PROJECT_ID
+        )
+        val name = config["name"]?.toString()?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: config["displayName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "Todo Log Workbench"
+        val sourcePrompt = config["prompt"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        val now = nowIso()
+        val existing = readProjectRegistry().firstOrNull { it.projectId == projectId }
+        val apis = todoTemplateApis(projectId)
+        val record = existing
+            ?: WorkbenchProjectRecord(
+                projectId = projectId,
+                name = name,
+                templateId = templateId,
+                route = "/workbench/todo_log?projectId=$projectId",
+                spacePath = "${AgentWorkspaceManager.SHELL_ROOT_PATH}/projects/$projectId",
+                apiIds = apis.map { it.apiId },
+                createdAt = now,
+                updatedAt = now
+            )
+        if (existing == null) {
+            writeProjectRegistry(readProjectRegistry() + record)
+            writeApiRegistry(readApiRegistry() + apis)
+        } else {
+            val apiRegistry = readApiRegistry()
+            val existingApiIds = apiRegistry
+                .filter { it.projectId == projectId }
+                .map { it.apiId }
+                .toSet()
+            val missingApis = apis.filterNot { existingApiIds.contains(it.apiId) }
+            if (missingApis.isNotEmpty()) {
+                writeApiRegistry(apiRegistry + missingApis)
+            }
+        }
+        val projectDir = projectDir(projectId)
+        File(projectDir, "data").mkdirs()
+        File(projectDir, "logs").mkdirs()
+        val todoFile = todosFile(projectId)
+        if (!todoFile.exists()) {
+            writeTodos(projectId, initialTodos(config))
+        }
+        val creationPrompt = if (existing == null) sourcePrompt else null
+        ensureProjectSourceFiles(record, apis, creationPrompt)
+        writeProjectJson(record, apis, readTodos(projectId), creationPrompt)
+        return projectPayload(record)
+    }
+
+    /**
+     * Lists project records currently registered in the Workbench project registry.
+     *
+     * @return Project payloads with their current API list and persisted state.
+     */
+    @Synchronized
+    fun listProjects(): List<Map<String, Any?>> {
+        return readProjectRegistry().map { record -> projectPayload(record) }
+    }
+
+    /**
+     * Loads one registered project.
+     *
+     * @param projectId Stable project id stored in `/workspace/projects/registry.json`.
+     * @return Project payload backed by the project package on disk.
+     */
+    @Synchronized
+    fun getProject(projectId: String): Map<String, Any?> {
+        val record = findProject(projectId)
+        return projectPayload(record)
+    }
+
+    /**
+     * Deletes one registered Workbench project and removes its registered APIs and files.
+     *
+     * @param projectId Project id stored in the registry. The same normalization as create/get is
+     * used, so callers may pass the raw id from UI or AI tool inputs.
+     * @return Deletion result including the removed project id and remaining project count.
+     */
+    @Synchronized
+    fun deleteProject(projectId: String): Map<String, Any?> {
+        val record = findProject(projectId)
+        val projectPath = projectDir(record.projectId)
+        val remainingProjects = readProjectRegistry().filterNot { it.projectId == record.projectId }
+        val remainingApis = readApiRegistry().filterNot { it.projectId == record.projectId }
+        writeProjectRegistry(remainingProjects)
+        writeApiRegistry(remainingApis)
+        if (projectPath.exists()) {
+            projectPath.deleteRecursively()
+        }
+        return linkedMapOf(
+            "success" to true,
+            "projectId" to record.projectId,
+            "projectPath" to projectPath.absolutePath,
+            "spacePath" to record.spacePath,
+            "remainingProjectCount" to remainingProjects.size
+        )
+    }
+
+    /**
+     * Lists registered business APIs. Control APIs such as project creation are intentionally excluded.
+     *
+     * @param projectId Optional project id filter. Null or blank returns all Project APIs.
+     * @return API registry entries suitable for AI tool calls and Flutter Tool List rendering.
+     */
+    @Synchronized
+    fun listApis(projectId: String? = null): List<Map<String, Any?>> {
+        val normalizedProjectId = projectId?.trim().orEmpty()
+        val counts = if (normalizedProjectId.isEmpty()) {
+            emptyMap()
+        } else {
+            apiExecutionCounts(normalizedProjectId)
+        }
+        return readApiRegistry()
+            .filter { normalizedProjectId.isEmpty() || it.projectId == normalizedProjectId }
+            .map { it.toPayload(counts[it.apiId] ?: 0) }
+    }
+
+    /**
+     * Calls a registered Project API through the native executor.
+     *
+     * @param projectId Project owning the API.
+     * @param apiId API id or tool id, for example `todo.add`.
+     * @param inputs User or AI supplied API inputs. Shape is validated by the executor.
+     * @param caller Caller label such as `ai` or `ui`, persisted in the API call log.
+     * @return Tool-style result payload plus the refreshed project state.
+     */
+    @Synchronized
+    fun callApi(
+        projectId: String,
+        apiId: String,
+        inputs: Map<String, Any?>,
+        caller: String
+    ): Map<String, Any?> {
+        val api = findApi(projectId, apiId)
+        val result = when (api.toolId) {
+            WORKBENCH_TODO_ADD_TOOL_ID -> addTodo(projectId, inputs)
+            WORKBENCH_TODO_FINISH_TOOL_ID -> finishTodo(projectId, inputs)
+            else -> apiError(api, "UNKNOWN_API", "Unknown workbench API: ${api.toolId}")
+        }
+        appendApiCall(projectId, api, inputs, caller, result)
+        writeProjectJson(findProject(projectId), projectApis(projectId), readTodos(projectId))
+        return result + ("project" to getProject(projectId))
+    }
+
+    /**
+     * Resolves the native Flutter route for a project.
+     *
+     * @param projectId Project to open.
+     * @return OOB route that renders the project in the native Workbench UI.
+     */
+    fun routeForProject(projectId: String): String {
+        return findProject(projectId).route
+    }
+
+    /**
+     * Exports a registered Workbench project as a distributable zip package.
+     *
+     * @param projectId Project id whose metadata, APIs, workspace files, logs, and skill contract
+     * should be captured. The id is normalized the same way as project creation.
+     * @return Export metadata including Android path, Alpine `/workspace` path, package name, and
+     * the zip entries that were written for auditing or UI display.
+     */
+    @Synchronized
+    fun exportProject(projectId: String): Map<String, Any?> {
+        val record = findProject(projectId)
+        val apis = projectApis(record.projectId)
+        val timestamp = nowIso().replace(Regex("[^A-Za-z0-9]+"), "-").trim('-')
+        val packageName = "${record.projectId}-$timestamp.zip"
+        exportsRoot.mkdirs()
+        val packageFile = File(exportsRoot, packageName)
+        val includedFiles = mutableListOf<String>()
+        val counts = apiExecutionCounts(record.projectId)
+        val skillEntry = linkedMapOf<String, Any?>(
+            "skillId" to "oob-native-workbench",
+            "source" to "builtin_asset",
+            "path" to "skills/oob-native-workbench/SKILL.md"
+        )
+        val manifest = linkedMapOf<String, Any?>(
+            "formatVersion" to 1,
+            "source" to "oob-native-workbench",
+            "exportedAt" to nowIso(),
+            "packageName" to packageName,
+            "projectId" to record.projectId,
+            "project" to record.toPayload(),
+            "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
+            "skills" to listOf(skillEntry),
+            "workspaceShellPath" to record.spacePath
+        )
+
+        ZipOutputStream(packageFile.outputStream()).use { zip ->
+            addTextZipEntry(zip, "manifest.json", gson.toJson(manifest), includedFiles)
+            addTextZipEntry(
+                zip,
+                "registry/project_record.json",
+                gson.toJson(record.toPayload()),
+                includedFiles
+            )
+            addTextZipEntry(
+                zip,
+                "registry/api_records.json",
+                gson.toJson(apis.map { it.toPayload(counts[it.apiId] ?: 0) }),
+                includedFiles
+            )
+            addFileTreeZipEntries(
+                zip = zip,
+                rootDir = projectDir(record.projectId),
+                current = projectDir(record.projectId),
+                entryPrefix = "project",
+                includedFiles = includedFiles
+            )
+            readBuiltinWorkbenchSkill()?.let { skillBody ->
+                addTextZipEntry(
+                    zip,
+                    "skills/oob-native-workbench/SKILL.md",
+                    skillBody,
+                    includedFiles
+                )
+            }
+        }
+
+        return linkedMapOf(
+            "success" to true,
+            "projectId" to record.projectId,
+            "packageName" to packageName,
+            "exportPath" to packageFile.absolutePath,
+            "exportShellPath" to
+                "${AgentWorkspaceManager.SHELL_ROOT_PATH}/projects/exports/$packageName",
+            "includedFiles" to includedFiles
+        )
+    }
+
+    private fun projectPayload(record: WorkbenchProjectRecord): Map<String, Any?> {
+        val apis = projectApis(record.projectId)
+        ensureProjectSourceFiles(record, apis)
+        val todos = readTodos(record.projectId)
+        val counts = apiExecutionCounts(record.projectId)
+        return linkedMapOf(
+            "projectId" to record.projectId,
+            "name" to record.name,
+            "templateId" to record.templateId,
+            "route" to record.route,
+            "spacePath" to record.spacePath,
+            "pageIds" to listOf("todo-log-page"),
+            "apiIds" to record.apiIds,
+            "tools" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
+            "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
+            "flows" to emptyList<Map<String, Any?>>(),
+            "todos" to todos.map { it.toPayload() },
+            "createdAt" to record.createdAt,
+            "updatedAt" to record.updatedAt
+        )
+    }
+
+    private fun writeProjectJson(
+        record: WorkbenchProjectRecord,
+        apis: List<WorkbenchApiRecord>,
+        todos: List<WorkbenchTodoRecord>,
+        sourcePrompt: String? = null
+    ) {
+        val counts = apiExecutionCounts(record.projectId)
+        val prompt = sourcePrompt?.trim()?.takeIf { it.isNotEmpty() }
+            ?: readProjectSourcePrompt(record.projectId)
+        val payload = linkedMapOf<String, Any?>(
+            "project" to record.toPayload(),
+            "generation" to linkedMapOf(
+                "skillId" to "oob-native-workbench",
+                "prompt" to prompt,
+                "decomposition" to listOf(
+                    "Project registry",
+                    "OOB native Flutter frontend",
+                    "Project business APIs",
+                    "Persistent data and API logs"
+                )
+            ),
+            "page" to linkedMapOf(
+                "pageId" to "todo-log-page",
+                "renderer" to "oob_native_schema",
+                "route" to record.route
+            ),
+            "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
+            "state" to linkedMapOf(
+                "todoCount" to todos.size,
+                "openTodoCount" to todos.count { it.status != "finished" },
+                "finishedTodoCount" to todos.count { it.status == "finished" }
+            )
+        )
+        val file = File(projectDir(record.projectId), "project.json")
+        file.parentFile?.mkdirs()
+        file.writeText(gson.toJson(payload))
+    }
+
+    /**
+     * Creates the editable source-spec files that make a project understandable outside memory.
+     *
+     * @param record Stable project registry record used for route, workspace path, and display name.
+     * @param apis Business API records owned by this project. Control APIs are intentionally excluded.
+     */
+    private fun ensureProjectSourceFiles(
+        record: WorkbenchProjectRecord,
+        apis: List<WorkbenchApiRecord>,
+        sourcePrompt: String? = null
+    ) {
+        val projectDir = projectDir(record.projectId)
+        projectDir.mkdirs()
+        val readme = File(projectDir, "README.md")
+        if (!readme.exists()) {
+            readme.writeText(
+                """
+                |# ${record.name}
+                |
+                |This is an OOB Native Workbench project.
+                |${sourcePrompt?.let { "\n## Source Prompt\n$it\n" } ?: ""}
+                |
+                |## Runtime
+                |- Project id: `${record.projectId}`
+                |- Template: `${record.templateId}`
+                |- Native display route: `${record.route}`
+                |- Workspace path: `${record.spacePath}`
+                |
+                |## Frontend
+                |The frontend is rendered by OOB's native Flutter Display. This demo stores the
+                |editable page contract in `frontend/page_spec.json`; the current template host code
+                |lives in OOB and binds controls to Project APIs through `workbenchApiCall`.
+                |
+                |## Backend
+                |Business APIs are declared in `backend/api_spec.json`. The current demo executor is
+                |the native Workbench runtime; future projects may replace `executorKind` with a
+                |workspace script or provider executor without changing the frontend call path.
+                |
+                |## Data
+                |- `data/todos.json`: persistent todo state
+                |- `logs/api_calls.jsonl`: append-only AI/UI API call log
+                |
+                """.trimMargin()
+            )
+        }
+
+        val frontendDir = File(projectDir, "frontend")
+        val backendDir = File(projectDir, "backend")
+        frontendDir.mkdirs()
+        backendDir.mkdirs()
+        val pageSpec = File(frontendDir, "page_spec.json")
+        if (!pageSpec.exists()) {
+            pageSpec.writeText(
+                gson.toJson(
+                    linkedMapOf<String, Any?>(
+                        "pageId" to "todo-log-page",
+                        "renderer" to "oob_native_flutter_display",
+                        "route" to record.route,
+                        "sourcePrompt" to sourcePrompt,
+                        "decomposition" to listOf(
+                            "Prompt requirement -> Project registry",
+                            "Frontend display -> OOB native Flutter route",
+                            "Controls -> Project API calls",
+                            "State -> project data and logs"
+                        ),
+                        "state" to linkedMapOf(
+                            "todos" to "data/todos.json"
+                        ),
+                        "bindings" to listOf(
+                            linkedMapOf(
+                                "controlId" to "add-todo-button",
+                                "apiId" to WORKBENCH_TODO_ADD_TOOL_ID,
+                                "inputs" to linkedMapOf("title" to "page.todo_input")
+                            ),
+                            linkedMapOf(
+                                "controlId" to "finish-todo-button",
+                                "apiId" to WORKBENCH_TODO_FINISH_TOOL_ID,
+                                "inputs" to linkedMapOf("todo_id" to "todo.id")
+                            )
+                        )
+                    )
+                )
+            )
+        }
+        val apiSpec = File(backendDir, "api_spec.json")
+        if (!apiSpec.exists()) {
+            apiSpec.writeText(
+                gson.toJson(
+                    linkedMapOf<String, Any?>(
+                        "executorBoundary" to "oob_native_workbench",
+                        "sourcePrompt" to sourcePrompt,
+                        "promptDecomposition" to linkedMapOf(
+                            "addTodo" to WORKBENCH_TODO_ADD_TOOL_ID,
+                            "archiveTodo" to WORKBENCH_TODO_FINISH_TOOL_ID,
+                            "frontend" to "frontend/page_spec.json",
+                            "data" to "data/todos.json",
+                            "logs" to "logs/api_calls.jsonl"
+                        ),
+                        "apis" to apis.map { api ->
+                            linkedMapOf(
+                                "apiId" to api.apiId,
+                                "displayName" to api.displayName,
+                                "description" to api.description,
+                                "inputSchema" to api.inputSchema,
+                                "outputSchema" to api.outputSchema,
+                                "executorKind" to api.executorKind,
+                                "persistence" to listOf("data/todos.json", "logs/api_calls.jsonl"),
+                                "frontendBinding" to "frontend/page_spec.json",
+                                "aiUsage" to "Call through workbench_api_call with this projectId."
+                            )
+                        }
+                    )
+                )
+            )
+        }
+    }
+
+    /**
+     * Writes a UTF-8 text entry into the export zip.
+     *
+     * @param zip Open zip stream owned by `exportProject`; the caller keeps lifecycle control.
+     * @param entryName Package-relative path to write, using `/` separators.
+     * @param text Text payload to encode and store.
+     * @param includedFiles Mutable audit list that records every written entry.
+     */
+    private fun addTextZipEntry(
+        zip: ZipOutputStream,
+        entryName: String,
+        text: String,
+        includedFiles: MutableList<String>
+    ) {
+        zip.putNextEntry(ZipEntry(entryName))
+        zip.write(text.toByteArray(Charsets.UTF_8))
+        zip.closeEntry()
+        includedFiles.add(entryName)
+    }
+
+    /**
+     * Copies a project file tree into the export zip while preserving project-relative paths.
+     *
+     * @param zip Open zip stream owned by `exportProject`.
+     * @param rootDir Project directory that defines the relative path boundary.
+     * @param current Current file or directory being visited.
+     * @param entryPrefix Top-level zip directory where project files should be placed.
+     * @param includedFiles Mutable audit list that records every written file entry.
+     */
+    private fun addFileTreeZipEntries(
+        zip: ZipOutputStream,
+        rootDir: File,
+        current: File,
+        entryPrefix: String,
+        includedFiles: MutableList<String>
+    ) {
+        if (!current.exists()) return
+        if (current.isDirectory) {
+            current.listFiles()
+                ?.sortedWith(compareBy({ !it.isDirectory }, { it.name }))
+                ?.forEach { child ->
+                    addFileTreeZipEntries(zip, rootDir, child, entryPrefix, includedFiles)
+                }
+            return
+        }
+        val relative = rootDir.toPath().relativize(current.toPath()).toString()
+            .replace(File.separatorChar, '/')
+        if (relative.isBlank() || relative.contains("..")) return
+        val entryName = "$entryPrefix/$relative"
+        zip.putNextEntry(ZipEntry(entryName))
+        current.inputStream().use { input -> input.copyTo(zip) }
+        zip.closeEntry()
+        includedFiles.add(entryName)
+    }
+
+    /**
+     * Reads the bundled Workbench skill so exported packages include the prompt contract.
+     *
+     * @return SKILL.md body when the store was created from Android context; null in pure unit tests
+     * or if the asset is unavailable.
+     */
+    private fun readBuiltinWorkbenchSkill(): String? {
+        val context = appContext ?: return null
+        return runCatching {
+            context.assets.open("builtin_skills/oob-native-workbench/SKILL.md")
+                .bufferedReader(Charsets.UTF_8)
+                .use { it.readText() }
+        }.getOrNull()
+    }
+
+    /**
+     * Preserves the original prompt stored in `project.json` when an existing project is reopened.
+     *
+     * @param projectId Project directory id whose current metadata should be inspected.
+     * @return Prompt text previously stored under `generation.prompt`, or null when absent.
+     */
+    private fun readProjectSourcePrompt(projectId: String): String? {
+        val file = File(projectDir(projectId), "project.json")
+        if (!file.exists()) return null
+        return runCatching {
+            val root = gson.fromJson<Map<String, Any?>>(file.readText(), mapType)
+            val generation = root["generation"] as? Map<*, *>
+            generation?.get("prompt")?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        }.getOrNull()
+    }
+
+    /**
+     * Counts persisted Project API executions from the append-only API call log.
+     *
+     * @param projectId Project directory whose `logs/api_calls.jsonl` should be read.
+     * @return Number of log records per API id. Both successful and failed calls count as executions.
+     */
+    private fun apiExecutionCounts(projectId: String): Map<String, Int> {
+        val file = File(projectDir(projectId), "logs/api_calls.jsonl")
+        if (!file.exists()) return emptyMap()
+        val counts = linkedMapOf<String, Int>()
+        Regex("\"apiId\"\\s*:\\s*\"([^\"]+)\"")
+            .findAll(file.readText())
+            .forEach { match ->
+                val apiId = match.groupValues[1].trim()
+                if (apiId.isNotEmpty()) {
+                    counts[apiId] = (counts[apiId] ?: 0) + 1
+                }
+        }
+        return counts
+    }
+
+    private fun addTodo(projectId: String, inputs: Map<String, Any?>): Map<String, Any?> {
+        val api = findApi(projectId, WORKBENCH_TODO_ADD_TOOL_ID)
+        val title = inputs["title"]?.toString()?.trim().orEmpty()
+        if (title.isEmpty()) {
+            return apiError(api, "EMPTY_TODO_TITLE", "Todo title is required.")
+        }
+        val todos = readTodos(projectId).toMutableList()
+        val now = nowIso()
+        val todo = WorkbenchTodoRecord(
+            id = "todo-${System.currentTimeMillis()}-${todos.size + 1}",
+            title = title,
+            status = "open",
+            createdAt = now
+        )
+        todos.add(0, todo)
+        writeTodos(projectId, todos)
+        return apiSuccess(api, mapOf("todo" to todo.toPayload()))
+    }
+
+    private fun finishTodo(projectId: String, inputs: Map<String, Any?>): Map<String, Any?> {
+        val api = findApi(projectId, WORKBENCH_TODO_FINISH_TOOL_ID)
+        val todoId = inputs["todo_id"]?.toString()?.trim()
+            ?: inputs["todoId"]?.toString()?.trim()
+            ?: ""
+        if (todoId.isEmpty()) {
+            return apiError(api, "MISSING_TODO_ID", "todo_id is required.")
+        }
+        val todos = readTodos(projectId)
+        val index = todos.indexOfFirst { it.id == todoId }
+        if (index < 0) {
+            return apiError(api, "TODO_NOT_FOUND", "Todo not found: $todoId")
+        }
+        val current = todos[index]
+        val finished = if (current.status == "finished") {
+            current
+        } else {
+            current.copy(status = "finished", finishedAt = nowIso())
+        }
+        val updated = todos.toMutableList()
+        updated[index] = finished
+        writeTodos(projectId, updated)
+        return apiSuccess(api, mapOf("todo" to finished.toPayload()))
+    }
+
+    private fun apiSuccess(
+        api: WorkbenchApiRecord,
+        outputs: Map<String, Any?>
+    ): Map<String, Any?> = linkedMapOf(
+        "success" to true,
+        "apiId" to api.apiId,
+        "toolId" to api.toolId,
+        "outputs" to outputs
+    )
+
+    private fun apiError(
+        api: WorkbenchApiRecord,
+        errorCode: String,
+        errorMessage: String
+    ): Map<String, Any?> = linkedMapOf(
+        "success" to false,
+        "apiId" to api.apiId,
+        "toolId" to api.toolId,
+        "outputs" to emptyMap<String, Any?>(),
+        "errorCode" to errorCode,
+        "errorMessage" to errorMessage
+    )
+
+    private fun appendApiCall(
+        projectId: String,
+        api: WorkbenchApiRecord,
+        inputs: Map<String, Any?>,
+        caller: String,
+        result: Map<String, Any?>
+    ) {
+        val file = File(projectDir(projectId), "logs/api_calls.jsonl")
+        file.parentFile?.mkdirs()
+        val row = linkedMapOf<String, Any?>(
+            "timestamp" to nowIso(),
+            "projectId" to projectId,
+            "apiId" to api.apiId,
+            "toolId" to api.toolId,
+            "caller" to caller.ifBlank { "unknown" },
+            "inputs" to inputs,
+            "success" to (result["success"] == true),
+            "errorCode" to result["errorCode"]
+        )
+        file.appendText(logGson.toJson(row) + "\n")
+    }
+
+    private fun initialTodos(config: Map<String, Any?>): List<WorkbenchTodoRecord> {
+        val raw = config["initialTodos"]
+        val titles = when (raw) {
+            is Iterable<*> -> raw.mapNotNull { item ->
+                when (item) {
+                    is Map<*, *> -> item["title"]?.toString()
+                    else -> item?.toString()
+                }?.trim()?.takeIf { it.isNotEmpty() }
+            }
+            else -> emptyList()
+        }
+        val now = nowIso()
+        return titles.mapIndexed { index, title ->
+            WorkbenchTodoRecord(
+                id = "todo-initial-${index + 1}",
+                title = title,
+                status = "open",
+                createdAt = now
+            )
+        }
+    }
+
+    private fun todoTemplateApis(projectId: String): List<WorkbenchApiRecord> {
+        return listOf(
+            WorkbenchApiRecord(
+                apiId = WORKBENCH_TODO_ADD_TOOL_ID,
+                projectId = projectId,
+                toolId = WORKBENCH_TODO_ADD_TOOL_ID,
+                displayName = "Add todo",
+                description = "Create a todo item in the project state.",
+                inputSchema = linkedMapOf("title" to "string"),
+                outputSchema = linkedMapOf("todo" to "object"),
+                executorKind = "native_template"
+            ),
+            WorkbenchApiRecord(
+                apiId = WORKBENCH_TODO_FINISH_TOOL_ID,
+                projectId = projectId,
+                toolId = WORKBENCH_TODO_FINISH_TOOL_ID,
+                displayName = "Archive todo",
+                description = "Archive an existing todo item.",
+                inputSchema = linkedMapOf("todo_id" to "string"),
+                outputSchema = linkedMapOf("todo" to "object"),
+                executorKind = "native_template"
+            )
+        )
+    }
+
+    private fun projectApis(projectId: String): List<WorkbenchApiRecord> {
+        return readApiRegistry().filter { it.projectId == projectId }
+    }
+
+    private fun findProject(projectId: String): WorkbenchProjectRecord {
+        val normalized = sanitizeProjectId(projectId)
+        return readProjectRegistry().firstOrNull { it.projectId == normalized }
+            ?: throw IllegalArgumentException("Workbench project not found: $projectId")
+    }
+
+    private fun findApi(projectId: String, apiIdOrToolId: String): WorkbenchApiRecord {
+        val normalized = apiIdOrToolId.trim()
+        return projectApis(projectId).firstOrNull { api ->
+            api.apiId == normalized || api.toolId == normalized
+        } ?: throw IllegalArgumentException("Workbench API not found: $apiIdOrToolId")
+    }
+
+    private fun readProjectRegistry(): List<WorkbenchProjectRecord> {
+        if (!registryFile.exists()) return emptyList()
+        return runCatching {
+            gson.fromJson<List<WorkbenchProjectRecord>>(
+                registryFile.readText(),
+                projectRecordListType
+            ) ?: emptyList()
+        }.getOrElse { emptyList() }
+    }
+
+    private fun writeProjectRegistry(records: List<WorkbenchProjectRecord>) {
+        projectsRoot.mkdirs()
+        registryFile.writeText(gson.toJson(records.sortedBy { it.projectId }))
+    }
+
+    private fun readApiRegistry(): List<WorkbenchApiRecord> {
+        if (!apiRegistryFile.exists()) return emptyList()
+        return runCatching {
+            gson.fromJson<List<WorkbenchApiRecord>>(
+                apiRegistryFile.readText(),
+                apiRecordListType
+            ) ?: emptyList()
+        }.getOrElse { emptyList() }
+    }
+
+    private fun writeApiRegistry(records: List<WorkbenchApiRecord>) {
+        projectsRoot.mkdirs()
+        apiRegistryFile.writeText(
+            gson.toJson(records.sortedWith(compareBy({ it.projectId }, { it.apiId })))
+        )
+    }
+
+    private fun readTodos(projectId: String): List<WorkbenchTodoRecord> {
+        val file = todosFile(projectId)
+        if (!file.exists()) return emptyList()
+        return runCatching {
+            gson.fromJson<List<WorkbenchTodoRecord>>(
+                file.readText(),
+                todoRecordListType
+            ) ?: emptyList()
+        }.getOrElse { emptyList() }
+    }
+
+    private fun writeTodos(projectId: String, todos: List<WorkbenchTodoRecord>) {
+        val file = todosFile(projectId)
+        file.parentFile?.mkdirs()
+        file.writeText(gson.toJson(todos))
+    }
+
+    private fun todosFile(projectId: String): File {
+        return File(projectDir(projectId), "data/todos.json")
+    }
+
+    private fun projectDir(projectId: String): File {
+        return File(projectsRoot, sanitizeProjectId(projectId))
+    }
+
+    private fun sanitizeProjectId(projectId: String): String {
+        val sanitized = projectId.trim()
+            .lowercase()
+            .replace(Regex("[^a-z0-9._-]+"), "-")
+            .trim('-', '.', '_')
+        require(sanitized.isNotEmpty()) { "Workbench projectId is required." }
+        require(!sanitized.contains("..")) { "Workbench projectId cannot contain path traversal." }
+        return sanitized
+    }
+
+    private fun nowIso(): String = Instant.now().toString()
+}

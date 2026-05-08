@@ -20,9 +20,11 @@ import cn.com.omnimind.bot.termux.TermuxCommandBuilder
 import cn.com.omnimind.bot.termux.TermuxCommandRunner
 import cn.com.omnimind.bot.utg.UtgBridge
 import cn.com.omnimind.bot.util.AssistsUtil
+import cn.com.omnimind.bot.util.TaskCompletionNavigator
 import cn.com.omnimind.bot.vlm.VlmToolCoordinator
 import cn.com.omnimind.bot.vlm.VlmToolOutcomeStatus
 import cn.com.omnimind.bot.workspace.PublicStorageAccess
+import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import cn.com.omnimind.bot.workspace.WorkspaceStorageAccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -78,6 +80,7 @@ class AgentToolRouter(
     private val musicToolService = AgentMusicToolService(context, workspaceManager)
     private val skillIndexService = SkillIndexService(context, workspaceManager)
     private val skillLoader = SkillLoader(workspaceManager)
+    private val workbenchProjectStore = WorkbenchProjectStore(context)
     private val terminalSessionRegistry = EmbeddedTerminalSessionRegistry(context)
     private val terminalEnvKeyPattern = Regex("^[A-Za-z_][A-Za-z0-9_]*$")
     companion object {
@@ -524,6 +527,14 @@ class AgentToolRouter(
             "file_move" -> executeFileMove(args, env.workspaceDescriptor, callback)
             "skills_list" -> executeSkillsList(args, env.workspaceDescriptor, callback)
             "skills_read" -> executeSkillsRead(args, env.workspaceDescriptor, callback)
+            "workbench_project_create" -> executeWorkbenchProjectCreate(args, env.workspaceDescriptor)
+            "workbench_project_list" -> executeWorkbenchProjectList(args, env.workspaceDescriptor)
+            "workbench_project_get" -> executeWorkbenchProjectGet(args, env.workspaceDescriptor)
+            "workbench_api_list" -> executeWorkbenchApiList(args, env.workspaceDescriptor)
+            "workbench_api_call" -> executeWorkbenchApiCall(args, env.workspaceDescriptor)
+            "workbench_project_export" -> executeWorkbenchProjectExport(args, env.workspaceDescriptor)
+            "workbench_project_open" -> executeWorkbenchProjectOpen(args, env.workspaceDescriptor)
+            "workbench_project_delete" -> executeWorkbenchProjectDelete(args, env.workspaceDescriptor)
             "schedule_task_create",
             "schedule_task_list",
             "schedule_task_update",
@@ -1775,6 +1786,221 @@ class AgentToolRouter(
         } catch (e: Exception) {
             workspacePermissionResult(e, callback)?.let { return it }
             errorResult(toolName, e.message, "读取 skill 失败")
+        }
+    }
+
+    private fun executeWorkbenchProjectCreate(
+        args: JsonObject,
+        workspace: AgentWorkspaceDescriptor
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_create"
+        return try {
+            val config = jsonObjectToMap(args)
+            val project = workbenchProjectStore.createProject(config)
+            val payload = linkedMapOf<String, Any?>(
+                "success" to true,
+                "project" to project,
+                "registryPath" to "/workspace/projects/registry.json",
+                "apiRegistryPath" to "/workspace/projects/api_registry.json"
+            )
+            val payloadJson = encodeLocalizedPayload(payload)
+            ToolExecutionResult.ContextResult(
+                toolName = toolName,
+                summaryText = "Workbench project created",
+                previewJson = payloadJson,
+                rawResultJson = payloadJson,
+                success = true,
+                workspaceId = workspace.id
+            )
+        } catch (e: Exception) {
+            errorResult(toolName, e.message, "Workbench project create failed")
+        }
+    }
+
+    private fun executeWorkbenchApiList(
+        args: JsonObject,
+        workspace: AgentWorkspaceDescriptor
+    ): ToolExecutionResult {
+        val toolName = "workbench_api_list"
+        return try {
+            val projectId = args["projectId"]?.jsonPrimitive?.contentOrNull
+            val apis = workbenchProjectStore.listApis(projectId)
+            val payload = linkedMapOf<String, Any?>(
+                "success" to true,
+                "projectId" to projectId,
+                "count" to apis.size,
+                "apis" to apis
+            )
+            val payloadJson = encodeLocalizedPayload(payload)
+            ToolExecutionResult.ContextResult(
+                toolName = toolName,
+                summaryText = "Workbench APIs listed",
+                previewJson = payloadJson,
+                rawResultJson = payloadJson,
+                success = true,
+                workspaceId = workspace.id
+            )
+        } catch (e: Exception) {
+            errorResult(toolName, e.message, "Workbench API list failed")
+        }
+    }
+
+    private fun executeWorkbenchProjectList(
+        args: JsonObject,
+        workspace: AgentWorkspaceDescriptor
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_list"
+        return try {
+            val projects = workbenchProjectStore.listProjects()
+            val payload = linkedMapOf<String, Any?>(
+                "success" to true,
+                "count" to projects.size,
+                "projects" to projects
+            )
+            val payloadJson = encodeLocalizedPayload(payload)
+            ToolExecutionResult.ContextResult(
+                toolName = toolName,
+                summaryText = "Workbench projects listed",
+                previewJson = payloadJson,
+                rawResultJson = payloadJson,
+                success = true,
+                workspaceId = workspace.id
+            )
+        } catch (e: Exception) {
+            errorResult(toolName, e.message, "Workbench project list failed")
+        }
+    }
+
+    private fun executeWorkbenchProjectGet(
+        args: JsonObject,
+        workspace: AgentWorkspaceDescriptor
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_get"
+        return try {
+            val projectId = args["projectId"]?.jsonPrimitive?.content?.trim().orEmpty()
+            val project = workbenchProjectStore.getProject(projectId)
+            val payload = linkedMapOf<String, Any?>(
+                "success" to true,
+                "project" to project
+            )
+            val payloadJson = encodeLocalizedPayload(payload)
+            ToolExecutionResult.ContextResult(
+                toolName = toolName,
+                summaryText = "Workbench project loaded",
+                previewJson = payloadJson,
+                rawResultJson = payloadJson,
+                success = true,
+                workspaceId = workspace.id
+            )
+        } catch (e: Exception) {
+            errorResult(toolName, e.message, "Workbench project get failed")
+        }
+    }
+
+    private fun executeWorkbenchApiCall(
+        args: JsonObject,
+        workspace: AgentWorkspaceDescriptor
+    ): ToolExecutionResult {
+        val toolName = "workbench_api_call"
+        return try {
+            val projectId = args["projectId"]?.jsonPrimitive?.content?.trim().orEmpty()
+            val apiId = args["apiId"]?.jsonPrimitive?.content?.trim().orEmpty()
+            val inputs = (args["inputs"] as? JsonObject)
+                ?.let(::jsonObjectToMap)
+                ?: emptyMap()
+            val payload = workbenchProjectStore.callApi(
+                projectId = projectId,
+                apiId = apiId,
+                inputs = inputs,
+                caller = "ai"
+            )
+            val payloadJson = encodeLocalizedPayload(payload)
+            ToolExecutionResult.ContextResult(
+                toolName = toolName,
+                summaryText = if (payload["success"] == true) {
+                    "Workbench API called"
+                } else {
+                    payload["errorMessage"]?.toString() ?: "Workbench API call failed"
+                },
+                previewJson = payloadJson,
+                rawResultJson = payloadJson,
+                success = payload["success"] == true,
+                workspaceId = workspace.id
+            )
+        } catch (e: Exception) {
+            errorResult(toolName, e.message, "Workbench API call failed")
+        }
+    }
+
+    private fun executeWorkbenchProjectExport(
+        args: JsonObject,
+        workspace: AgentWorkspaceDescriptor
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_export"
+        return try {
+            val projectId = args["projectId"]?.jsonPrimitive?.content?.trim().orEmpty()
+            val payload = workbenchProjectStore.exportProject(projectId)
+            val payloadJson = encodeLocalizedPayload(payload)
+            ToolExecutionResult.ContextResult(
+                toolName = toolName,
+                summaryText = "Workbench project exported",
+                previewJson = payloadJson,
+                rawResultJson = payloadJson,
+                success = payload["success"] == true,
+                workspaceId = workspace.id
+            )
+        } catch (e: Exception) {
+            errorResult(toolName, e.message, "Workbench project export failed")
+        }
+    }
+
+    private fun executeWorkbenchProjectOpen(
+        args: JsonObject,
+        workspace: AgentWorkspaceDescriptor
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_open"
+        return try {
+            val projectId = args["projectId"]?.jsonPrimitive?.content?.trim().orEmpty()
+            val route = workbenchProjectStore.routeForProject(projectId)
+            TaskCompletionNavigator.navigateToMainRoute(context, route, needClear = false)
+            val payload = linkedMapOf<String, Any?>(
+                "success" to true,
+                "projectId" to projectId,
+                "route" to route
+            )
+            val payloadJson = encodeLocalizedPayload(payload)
+            ToolExecutionResult.ContextResult(
+                toolName = toolName,
+                summaryText = "Workbench project opened",
+                previewJson = payloadJson,
+                rawResultJson = payloadJson,
+                success = true,
+                workspaceId = workspace.id
+            )
+        } catch (e: Exception) {
+            errorResult(toolName, e.message, "Workbench project open failed")
+        }
+    }
+
+    private fun executeWorkbenchProjectDelete(
+        args: JsonObject,
+        workspace: AgentWorkspaceDescriptor
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_delete"
+        return try {
+            val projectId = args["projectId"]?.jsonPrimitive?.content?.trim().orEmpty()
+            val payload = workbenchProjectStore.deleteProject(projectId)
+            val payloadJson = encodeLocalizedPayload(payload)
+            ToolExecutionResult.ContextResult(
+                toolName = toolName,
+                summaryText = "Workbench project deleted",
+                previewJson = payloadJson,
+                rawResultJson = payloadJson,
+                success = payload["success"] == true,
+                workspaceId = workspace.id
+            )
+        } catch (e: Exception) {
+            errorResult(toolName, e.message, "Workbench project delete failed")
         }
     }
 

@@ -2189,6 +2189,69 @@ class AppLocalizationsEn extends AppLocalizations {
   String get functionLibraryTestStarted => 'Test execution started';
 
   @override
+  String get functionLibraryViewDetails => 'View Details';
+
+  @override
+  String get functionLibraryDetailCompileSurface => 'Compile Surface';
+
+  @override
+  String get functionLibraryDetailGraphAnchors => 'Graph Anchors';
+
+  @override
+  String get functionLibraryDetailRunUsage => 'Run Usage';
+
+  @override
+  String get functionLibraryDetailLifecycle => 'Lifecycle';
+
+  @override
+  String get functionLibraryDetailExamples => 'Parameter Examples';
+
+  @override
+  String get functionLibraryDetailDerivedFrom => 'Derived Raw Function';
+
+  @override
+  String get functionLibraryDetailRuns => 'Run Count';
+
+  @override
+  String get functionLibraryDetailSuccessFail => 'Success / Fail';
+
+  @override
+  String get functionLibraryDetailUpdatedAt => 'Updated At';
+
+  @override
+  String get functionLibraryDetailBundleBacking => 'Bundle Backing Asset';
+
+  @override
+  String get functionLibraryDetailActionCount => 'Action Count';
+
+  @override
+  String get functionLibraryDetailActionPreview => 'Action Preview';
+
+  @override
+  String get functionLibraryDetailNoActionPreview => 'No actions';
+
+  @override
+  String functionLibraryDetailStepIndex(String index) {
+    return 'Step $index';
+  }
+
+  @override
+  String get functionLibraryDetailBundleFunction => 'Bundle Function';
+
+  @override
+  String get functionLibraryDetailInternalBlocks => 'Internal Function Blocks';
+
+  @override
+  String get functionLibraryDetailNoBlocks =>
+      'No internal function blocks are available';
+
+  @override
+  String get functionLibraryDetailNoBundle => 'No bundle function is available';
+
+  @override
+  String get functionLibraryDetailFunctionSchema => 'Function Schema';
+
+  @override
   String get executionCompileHit => 'Reuse Skill';
 
   @override
@@ -2521,6 +2584,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get omniflowProviderUpdate => 'Provider Update';
 
   @override
+  String get omniflowConnectionMode => 'Connection Mode';
+
+  @override
+  String get omniflowConnectionModeBridge => 'Bridge Connection';
+
+  @override
+  String get omniflowConnectionModeEmbedded => 'Local Embedded';
+
+  @override
+  String get omniflowProviderVersion => 'Provider Version';
+
+  @override
+  String get omniflowProviderPort => 'Provider Port';
+
+  @override
+  String get omniflowProviderStore => 'Provider Store';
+
+  @override
   String get omniflowCurrentVersion => 'Current Version';
 
   @override
@@ -2528,6 +2609,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get omniflowUpdateAvailable => 'Update Available';
+
+  @override
+  String get omniflowUpdateNotSupported =>
+      'Update available, but host Provider does not support auto-update (use git pull)';
 
   @override
   String get omniflowStartProviderFirst =>
@@ -2554,13 +2639,396 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get omniflowPackageNotInstalled => 'Not installed on this device';
+
+  @override
   String get omniflowAlreadyLatest => 'Already up to date';
 
   @override
   String omniflowUpdateSuccess(String version) {
-    return 'Update successful: $version. Restart Provider to apply.';
+    return 'Updated current device to $version';
   }
 
   @override
+  String get omniflowUpdateBridgeModeHint =>
+      'Current connection remains Bridge; only the device package was updated.';
+
+  @override
+  String get omniflowUpdateRestartRequired =>
+      'Device package updated; restart the local embedded Provider to apply it.';
+
+  @override
   String get omniflowUpdateFailed => 'Update failed';
+
+  @override
+  String get executionRouteMemorized => '⚡ Memorized';
+
+  @override
+  String get executionRouteAiPlanning => '🤔 AI Planning';
+
+  @override
+  String get runLogTimelineTitle => 'Execution Steps';
+
+  @override
+  String get runLogTimelineViewSteps => 'View Steps';
+
+  @override
+  String runLogTimelineStepCount(int count) {
+    return '$count steps';
+  }
+
+  @override
+  String get runLogTimelineLoadFailed => 'Failed to load steps';
+
+  @override
+  String get runLogTimelineEmpty => 'No step data';
+
+  @override
+  String get runLogTimelineUnknown => 'Unknown';
+
+  @override
+  String get chatInputCommandTooltip => 'Command';
+
+  @override
+  String get workbenchTitle => 'Workbench';
+
+  @override
+  String get workbenchWorkspaceTitle => 'Workspace';
+
+  @override
+  String get workbenchWorkspaceOpenWorkbench => 'Open Workbench';
+
+  @override
+  String get workbenchSubtitle =>
+      'A native OOB project example that registers Project APIs, persists state, and renders inside the Workbench.';
+
+  @override
+  String get workbenchVibeSubtitle =>
+      'Prompt-built native frontend, project APIs, and workspace files stay connected inside OOB.';
+
+  @override
+  String get workbenchGeneratedTodoSubtitle =>
+      'This is the generated Todo frontend. It is separate from the Project control surface and calls the registered APIs directly.';
+
+  @override
+  String get workbenchMockProjectName => 'Todo Log Mock';
+
+  @override
+  String get workbenchTemplateProjectName => 'Todo Log Workbench';
+
+  @override
+  String get workbenchNativeUi => 'OOB native UI';
+
+  @override
+  String get workbenchProjectSection => 'Project';
+
+  @override
+  String get workbenchProjectIdLabel => 'Project ID';
+
+  @override
+  String get workbenchTemplateIdLabel => 'Template ID';
+
+  @override
+  String get workbenchRouteLabel => 'Route';
+
+  @override
+  String get workbenchSpacePathLabel => 'Space path';
+
+  @override
+  String get workbenchPageIdsLabel => 'Pages';
+
+  @override
+  String get workbenchDevelopmentMode => 'Development mode';
+
+  @override
+  String get workbenchProjectRegistryPath => 'Project registry';
+
+  @override
+  String get workbenchApiRegistryPath => 'API registry';
+
+  @override
+  String get workbenchProjectFilePath => 'Project file';
+
+  @override
+  String get workbenchDataFilePath => 'Data file';
+
+  @override
+  String get workbenchLogFilePath => 'API log';
+
+  @override
+  String get workbenchBackendTools => 'Backend tools';
+
+  @override
+  String get workbenchFrontendBinding => 'Frontend binding';
+
+  @override
+  String get workbenchTodoLog => 'Todo log';
+
+  @override
+  String get workbenchCallApi => 'Call API';
+
+  @override
+  String get workbenchGeneratedFrontend => 'Generated frontend';
+
+  @override
+  String get workbenchGeneratedFrontendSubtitle =>
+      'Open the OOB-native preview that a prompt-generated page should target. It uses the same Project APIs and persistent data as the AI layer.';
+
+  @override
+  String get workbenchOpenGeneratedFrontend => 'Open generated frontend';
+
+  @override
+  String get workbenchPreviewClose => 'Close preview';
+
+  @override
+  String get workbenchToolList => 'Project APIs';
+
+  @override
+  String get workbenchProjectControlSubtitle =>
+      'Only registered business APIs are shown here. Project create/open stays in the OOB Workbench control surface.';
+
+  @override
+  String get workbenchOpenWorkspace => 'Open Workspace';
+
+  @override
+  String get workbenchApiEmpty => 'No registered Project APIs';
+
+  @override
+  String get workbenchToolListDefaultTodo =>
+      'Project API clicked the shared backend';
+
+  @override
+  String workbenchToolExecutionCount(int count) {
+    return 'Executed $count';
+  }
+
+  @override
+  String get workbenchToolAddTodoTitle => 'Add todo';
+
+  @override
+  String get workbenchToolAddTodoDesc =>
+      'Creates a todo item through the registered native Project API.';
+
+  @override
+  String get workbenchToolFinishTodoTitle => 'Archive todo';
+
+  @override
+  String get workbenchToolFinishTodoDesc =>
+      'Archives a todo item through the registered native Project API.';
+
+  @override
+  String get workbenchFlowAddTodo => 'Page input -> todo.add -> todo list';
+
+  @override
+  String get workbenchFlowFinishTodo =>
+      'Finish button -> todo.finish -> completed list';
+
+  @override
+  String get workbenchAddTodoHint => 'Add a todo';
+
+  @override
+  String get workbenchAddTodo => 'Add todo';
+
+  @override
+  String get workbenchTodoEmpty => 'No todo yet';
+
+  @override
+  String get workbenchTodoOpen => 'Open';
+
+  @override
+  String get workbenchTodoFinished => 'Archived';
+
+  @override
+  String get workbenchFinishTodo => 'Archive todo';
+
+  @override
+  String get workbenchTodoAdded => 'Todo added';
+
+  @override
+  String get workbenchTodoFinishedToast => 'Todo archived';
+
+  @override
+  String get workbenchTodoInputRequired => 'Enter a todo first';
+
+  @override
+  String get workbenchNoOpenTodo => 'No open todo to finish';
+
+  @override
+  String get workbenchLoadFailed => 'Load failed';
+
+  @override
+  String get workbenchUnknownTool => 'Workbench tool failed';
+
+  @override
+  String get workbenchStatusOpen => 'Waiting';
+
+  @override
+  String get workbenchStatusFinished => 'Archived';
+
+  @override
+  String get workbenchProjectModeTitle => 'Workbench Mode';
+
+  @override
+  String get workbenchFlutterDisplay => 'Flutter Display';
+
+  @override
+  String get workbenchProjectSwitcher => 'Switch Project';
+
+  @override
+  String get workbenchProjectGenerateTitle => 'Project generation mode';
+
+  @override
+  String get workbenchProjectGenerateSubtitle =>
+      'Enter one requirement. OOB splits it into a Project, generated frontend, business APIs, and persistent data through the built-in skill, then creates it through the real Workbench backend.';
+
+  @override
+  String get workbenchProjectPromptHint => 'Describe the Project you want';
+
+  @override
+  String get workbenchProjectDefaultPrompt =>
+      'I want to create a simple todolist management system that can add todos and archive todos';
+
+  @override
+  String get workbenchProjectGenerateButton => 'Create and open frontend';
+
+  @override
+  String get workbenchInputProjectTooltip => 'Open Project Workbench';
+
+  @override
+  String get workbenchGeneratedTodoProjectName => 'Todo List Workbench';
+
+  @override
+  String get workbenchPromptSeedAddTodo => 'Verify adding a todo';
+
+  @override
+  String get workbenchPromptSeedArchiveTodo => 'Verify archiving a todo';
+
+  @override
+  String get workbenchProjectPlanTitle => 'Decomposition plan';
+
+  @override
+  String get workbenchProjectPlanProject =>
+      'Create Project registry and editable Workspace';
+
+  @override
+  String get workbenchProjectPlanFrontend =>
+      'Generate an OOB-native Flutter frontend';
+
+  @override
+  String get workbenchProjectPlanApi =>
+      'Register business APIs shared by AI and UI';
+
+  @override
+  String get workbenchProjectPlanData => 'Persist data and API call logs';
+
+  @override
+  String get workbenchProjectCurrentTitle => 'Current Project';
+
+  @override
+  String get workbenchProjectCurrentSubtitle =>
+      'Manage the created Project here; its frontend, Workspace, export, and delete actions all use the same registered state.';
+
+  @override
+  String get workbenchProjectModeCreateTitle => 'Vibe project entry';
+
+  @override
+  String get workbenchProjectModeSubtitle =>
+      'Open Project info, generated frontend, Workspace, and distribution package here. Business APIs still run through the same backend.';
+
+  @override
+  String get workbenchProjectModeCreateButton => 'Create Todo demo';
+
+  @override
+  String get workbenchProjectModeProjectsTitle => 'Project APIs';
+
+  @override
+  String get workbenchProjectModeOpen => 'Open project';
+
+  @override
+  String get workbenchProjectModeEmpty => 'No Workbench projects yet';
+
+  @override
+  String get workbenchProjectModeLoadFailed => 'Project mode failed to load';
+
+  @override
+  String get workbenchProjectPromptRequired =>
+      'Enter a Project requirement first';
+
+  @override
+  String get workbenchProjectGenerated => 'Project generated';
+
+  @override
+  String get workbenchDeleteProject => 'Delete Project';
+
+  @override
+  String get workbenchDeleteProjectTitle => 'Delete Project';
+
+  @override
+  String workbenchDeleteProjectMessage(String projectId) {
+    return 'Delete $projectId? This removes its Project registry entry, business API registrations, and Workspace project files.';
+  }
+
+  @override
+  String get workbenchDeleteProjectCancel => 'Cancel';
+
+  @override
+  String get workbenchDeleteProjectConfirm => 'Delete';
+
+  @override
+  String get workbenchDeleteProjectFailed => 'Project delete failed';
+
+  @override
+  String get workbenchProjectDeleted => 'Project deleted';
+
+  @override
+  String get workbenchProjectIdRequired => 'Enter a project ID';
+
+  @override
+  String get workbenchProjectCreated => 'Project created';
+
+  @override
+  String get workbenchProjectInfoTitle => 'Project info';
+
+  @override
+  String get workbenchProjectInfoDisplayTitle => 'Display route';
+
+  @override
+  String get workbenchProjectInfoSourceTitle => 'Source specs';
+
+  @override
+  String get workbenchProjectInfoSourceValue =>
+      'README.md / frontend/page_spec.json / backend/api_spec.json';
+
+  @override
+  String get workbenchProjectInfoRuntimeTitle => 'Runtime state';
+
+  @override
+  String get workbenchProjectInfoRuntimeValue =>
+      'data/todos.json / logs/api_calls.jsonl';
+
+  @override
+  String get workbenchExportProjectPackage => 'Export package';
+
+  @override
+  String get workbenchProjectExportFailed => 'Project export failed';
+
+  @override
+  String workbenchProjectExported(String packageName) {
+    return 'Exported $packageName';
+  }
+
+  @override
+  String workbenchProjectExportPath(String path) {
+    return 'Export path: $path';
+  }
+
+  @override
+  String workbenchTodoCount(int openCount, int finishedCount) {
+    return '$openCount open / $finishedCount finished';
+  }
+
+  @override
+  String workbenchApiCount(int count) {
+    return '$count APIs';
+  }
 }

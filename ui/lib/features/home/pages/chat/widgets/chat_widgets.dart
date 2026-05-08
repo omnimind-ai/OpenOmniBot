@@ -247,24 +247,28 @@ class ChatAppBar extends StatelessWidget {
                               : _chatAppBarPureChatIconSvg,
                           tooltip: isPureChatToggleLocked
                               ? (isPureChatSelected
-                                    ? (Localizations.localeOf(context)
-                                                  .languageCode ==
+                                    ? (Localizations.localeOf(
+                                                context,
+                                              ).languageCode ==
                                               'en'
                                           ? 'Current thread is locked to pure chat'
                                           : '当前线程已锁定为纯聊天')
-                                    : (Localizations.localeOf(context)
-                                                  .languageCode ==
+                                    : (Localizations.localeOf(
+                                                context,
+                                              ).languageCode ==
                                               'en'
                                           ? 'Current thread mode is locked'
                                           : '当前线程模式已锁定'))
                               : (isPureChatSelected
-                                    ? (Localizations.localeOf(context)
-                                                  .languageCode ==
+                                    ? (Localizations.localeOf(
+                                                context,
+                                              ).languageCode ==
                                               'en'
                                           ? 'Disable pure chat'
                                           : '关闭纯聊天')
-                                    : (Localizations.localeOf(context)
-                                                  .languageCode ==
+                                    : (Localizations.localeOf(
+                                                context,
+                                              ).languageCode ==
                                               'en'
                                           ? 'Enable pure chat'
                                           : '开启纯聊天')),
@@ -842,7 +846,9 @@ class _ChatToolSlider extends StatelessWidget {
                     key: const ValueKey('chat-island-terminal-button'),
                     isSelected: _isTerminalActive,
                     isEnabled: true,
-                    tooltip: LegacyTextLocalizer.isEnglish ? 'Open terminal' : '打开终端',
+                    tooltip: LegacyTextLocalizer.isEnglish
+                        ? 'Open terminal'
+                        : '打开终端',
                     onTap: onTerminalTap,
                     child: SvgPicture.string(
                       terminalIconSvg,
@@ -858,8 +864,12 @@ class _ChatToolSlider extends StatelessWidget {
                     isSelected: _isBrowserActive,
                     isEnabled: isBrowserEnabled,
                     tooltip: isBrowserEnabled
-                        ? (LegacyTextLocalizer.isEnglish ? 'Open browser for current session' : '打开当前会话浏览器')
-                        : (LegacyTextLocalizer.isEnglish ? 'No browser session available' : '当前会话还没有可用的浏览器会话'),
+                        ? (LegacyTextLocalizer.isEnglish
+                              ? 'Open browser for current session'
+                              : '打开当前会话浏览器')
+                        : (LegacyTextLocalizer.isEnglish
+                              ? 'No browser session available'
+                              : '当前会话还没有可用的浏览器会话'),
                     onTap: onBrowserTap,
                     child: SvgPicture.string(
                       browserIconSvg,
@@ -884,8 +894,8 @@ class _ChatToolSlider extends StatelessWidget {
       builder: (anchorContext) {
         return Tooltip(
           message: LegacyTextLocalizer.isEnglish
-            ? 'Manage terminal environment variables'
-            : '管理终端环境变量',
+              ? 'Manage terminal environment variables'
+              : '管理终端环境变量',
           child: InkWell(
             key: const ValueKey('chat-island-terminal-env-button'),
             onTap: () {
@@ -1482,6 +1492,7 @@ class ChatInputWrapper extends StatelessWidget {
   final List<ChatInputAttachment> attachments;
   final ValueChanged<String>? onRemoveAttachment;
   final VoidCallback? onTriggerSlashCommand;
+  final VoidCallback? onOpenWorkbenchProject;
   final Widget? topBanner;
   final String? selectedModelOverrideId;
   final VoidCallback? onClearSelectedModelOverride;
@@ -1509,6 +1520,7 @@ class ChatInputWrapper extends StatelessWidget {
     this.attachments = const [],
     this.onRemoveAttachment,
     this.onTriggerSlashCommand,
+    this.onOpenWorkbenchProject,
     this.topBanner,
     this.selectedModelOverrideId,
     this.onClearSelectedModelOverride,
@@ -1546,6 +1558,7 @@ class ChatInputWrapper extends StatelessWidget {
             attachments: attachments,
             onRemoveAttachment: onRemoveAttachment,
             onTriggerSlashCommand: onTriggerSlashCommand,
+            onOpenWorkbenchProject: onOpenWorkbenchProject,
             selectedModelOverrideId: selectedModelOverrideId,
             onClearSelectedModelOverride: onClearSelectedModelOverride,
             contextUsageRatio: contextUsageRatio,

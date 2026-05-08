@@ -66,6 +66,16 @@ const String _kDrawerTaskHistoryIconSvg =
     '<rect x="18.5" y="0" width="5" height="5" rx="1.5" fill="currentColor"/>'
     '</svg>';
 
+const String _kDrawerWorkbenchIconSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+    'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round">'
+    '<rect width="7" height="9" x="3" y="3" rx="1"/>'
+    '<rect width="7" height="5" x="14" y="3" rx="1"/>'
+    '<rect width="7" height="9" x="14" y="12" rx="1"/>'
+    '<rect width="7" height="5" x="3" y="16" rx="1"/>'
+    '</svg>';
+
 /// 首页侧边栏
 class HomeDrawer extends ConsumerStatefulWidget {
   const HomeDrawer({
@@ -115,67 +125,127 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
 
     if (hour >= 2 && hour < 6) {
       final greetings = [
-        {'title': context.l10n.homeDrawerDawnGreeting, 'subtitle': context.l10n.homeDrawerDawnSub},
-        {'title': context.l10n.homeDrawerDawnGreeting2, 'subtitle': context.l10n.homeDrawerDawnSub2},
-        {'title': context.l10n.homeDrawerDawnGreeting3, 'subtitle': context.l10n.homeDrawerDawnSub3},
+        {
+          'title': context.l10n.homeDrawerDawnGreeting,
+          'subtitle': context.l10n.homeDrawerDawnSub,
+        },
+        {
+          'title': context.l10n.homeDrawerDawnGreeting2,
+          'subtitle': context.l10n.homeDrawerDawnSub2,
+        },
+        {
+          'title': context.l10n.homeDrawerDawnGreeting3,
+          'subtitle': context.l10n.homeDrawerDawnSub3,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 6 && hour < 8) {
       final greetings = [
-        {'title': context.l10n.homeDrawerMorningGreeting, 'subtitle': context.l10n.homeDrawerMorningSub},
-        {'title': context.l10n.homeDrawerMorningGreeting2, 'subtitle': context.l10n.homeDrawerMorningSub2},
+        {
+          'title': context.l10n.homeDrawerMorningGreeting,
+          'subtitle': context.l10n.homeDrawerMorningSub,
+        },
+        {
+          'title': context.l10n.homeDrawerMorningGreeting2,
+          'subtitle': context.l10n.homeDrawerMorningSub2,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 8 && hour < 12) {
       final greetings = [
-        {'title': context.l10n.homeDrawerForenoonGreeting, 'subtitle': context.l10n.homeDrawerForenoonSub},
-        {'title': context.l10n.homeDrawerForenoonGreeting2, 'subtitle': context.l10n.homeDrawerForenoonSub2},
+        {
+          'title': context.l10n.homeDrawerForenoonGreeting,
+          'subtitle': context.l10n.homeDrawerForenoonSub,
+        },
+        {
+          'title': context.l10n.homeDrawerForenoonGreeting2,
+          'subtitle': context.l10n.homeDrawerForenoonSub2,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 12 && hour < 14) {
       final greetings = [
-        {'title': context.l10n.homeDrawerLunchGreeting, 'subtitle': context.l10n.homeDrawerLunchSub},
-        {'title': context.l10n.homeDrawerLunchGreeting2, 'subtitle': context.l10n.homeDrawerLunchSub2},
-        {'title': context.l10n.homeDrawerLunchGreeting3, 'subtitle': context.l10n.homeDrawerLunchSub3},
+        {
+          'title': context.l10n.homeDrawerLunchGreeting,
+          'subtitle': context.l10n.homeDrawerLunchSub,
+        },
+        {
+          'title': context.l10n.homeDrawerLunchGreeting2,
+          'subtitle': context.l10n.homeDrawerLunchSub2,
+        },
+        {
+          'title': context.l10n.homeDrawerLunchGreeting3,
+          'subtitle': context.l10n.homeDrawerLunchSub3,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 14 && hour < 18) {
       final greetings = [
-        {'title': context.l10n.homeDrawerAfternoonGreeting, 'subtitle': context.l10n.homeDrawerAfternoonSub},
-        {'title': context.l10n.homeDrawerAfternoonGreeting2, 'subtitle': context.l10n.homeDrawerAfternoonSub2},
+        {
+          'title': context.l10n.homeDrawerAfternoonGreeting,
+          'subtitle': context.l10n.homeDrawerAfternoonSub,
+        },
+        {
+          'title': context.l10n.homeDrawerAfternoonGreeting2,
+          'subtitle': context.l10n.homeDrawerAfternoonSub2,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 18 && hour < 20) {
       final greetings = [
-        {'title': context.l10n.homeDrawerEveningGreeting, 'subtitle': context.l10n.homeDrawerEveningSub},
-        {'title': context.l10n.homeDrawerEveningGreeting2, 'subtitle': context.l10n.homeDrawerEveningSub2},
-        {'title': context.l10n.homeDrawerEveningGreeting3, 'subtitle': context.l10n.homeDrawerEveningSub3},
+        {
+          'title': context.l10n.homeDrawerEveningGreeting,
+          'subtitle': context.l10n.homeDrawerEveningSub,
+        },
+        {
+          'title': context.l10n.homeDrawerEveningGreeting2,
+          'subtitle': context.l10n.homeDrawerEveningSub2,
+        },
+        {
+          'title': context.l10n.homeDrawerEveningGreeting3,
+          'subtitle': context.l10n.homeDrawerEveningSub3,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 20 && hour < 22) {
       final greetings = [
-        {'title': context.l10n.homeDrawerNightGreeting, 'subtitle': context.l10n.homeDrawerNightSub},
-        {'title': context.l10n.homeDrawerNightGreeting2, 'subtitle': context.l10n.homeDrawerNightSub2},
-        {'title': context.l10n.homeDrawerNightGreeting3, 'subtitle': context.l10n.homeDrawerNightSub3},
+        {
+          'title': context.l10n.homeDrawerNightGreeting,
+          'subtitle': context.l10n.homeDrawerNightSub,
+        },
+        {
+          'title': context.l10n.homeDrawerNightGreeting2,
+          'subtitle': context.l10n.homeDrawerNightSub2,
+        },
+        {
+          'title': context.l10n.homeDrawerNightGreeting3,
+          'subtitle': context.l10n.homeDrawerNightSub3,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     final greetings = [
-      {'title': context.l10n.homeDrawerLateNightGreeting, 'subtitle': context.l10n.homeDrawerLateNightSub},
-      {'title': context.l10n.homeDrawerLateNightGreeting2, 'subtitle': context.l10n.homeDrawerLateNightSub2},
+      {
+        'title': context.l10n.homeDrawerLateNightGreeting,
+        'subtitle': context.l10n.homeDrawerLateNightSub,
+      },
+      {
+        'title': context.l10n.homeDrawerLateNightGreeting2,
+        'subtitle': context.l10n.homeDrawerLateNightSub2,
+      },
     ];
     return greetings[DateTime.now().minute % greetings.length];
   }
@@ -237,7 +307,9 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       final loadedConversations = await ConversationService.getAllConversations(
         includeArchived: true,
       );
-      debugPrint('[HomeDrawer] Loaded ${loadedConversations.length} conversations');
+      debugPrint(
+        '[HomeDrawer] Loaded ${loadedConversations.length} conversations',
+      );
       if (!mounted) return;
       final visibleThreadKeys = loadedConversations
           .map((conversation) => conversation.threadKey)
@@ -1132,6 +1204,11 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
         onTap: () => _navigateTo('/home/skill_store'),
       ),
       _DrawerShortcutAction(
+        label: context.l10n.workbenchTitle,
+        svgString: _kDrawerWorkbenchIconSvg,
+        onTap: () => _navigateTo('/workbench/projects'),
+      ),
+      _DrawerShortcutAction(
         label: context.l10n.trajectoryTitle,
         svgString: _kDrawerTaskHistoryIconSvg,
         onTap: () => _navigateTo('/task/execution_history'),
@@ -1266,9 +1343,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     });
 
     showToast(
-      deleted
-          ? context.trLegacy('已删除')
-          : context.trLegacy('删除失败'),
+      deleted ? context.trLegacy('已删除') : context.trLegacy('删除失败'),
       type: deleted ? ToastType.success : ToastType.error,
     );
   }
@@ -1310,9 +1385,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     });
 
     showToast(
-      archived
-          ? context.trLegacy('已归档')
-          : context.trLegacy('归档失败'),
+      archived ? context.trLegacy('已归档') : context.trLegacy('归档失败'),
       type: archived ? ToastType.success : ToastType.error,
     );
   }
@@ -1354,9 +1427,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     });
 
     showToast(
-      restored
-          ? context.trLegacy('已取消归档')
-          : context.trLegacy('取消归档失败'),
+      restored ? context.trLegacy('已取消归档') : context.trLegacy('取消归档失败'),
       type: restored ? ToastType.success : ToastType.error,
     );
   }
@@ -1416,9 +1487,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       return title;
     }
     final summary = (conversation.summary ?? '').trim();
-    return summary.isNotEmpty
-        ? summary
-        : context.trLegacy('未命名对话');
+    return summary.isNotEmpty ? summary : context.trLegacy('未命名对话');
   }
 
   Widget _buildSwipeConversationItem(

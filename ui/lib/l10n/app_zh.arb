@@ -675,6 +675,33 @@
   "functionLibraryTest": "测试",
   "functionLibraryTestNeedParams": "需要输入参数：{params}",
   "functionLibraryTestStarted": "已发起测试执行",
+  "functionLibraryViewDetails": "查看详情",
+  "functionLibraryDetailCompileSurface": "编译面",
+  "functionLibraryDetailGraphAnchors": "图锚点",
+  "functionLibraryDetailRunUsage": "运行统计",
+  "functionLibraryDetailLifecycle": "生命周期",
+  "functionLibraryDetailExamples": "参数示例",
+  "functionLibraryDetailDerivedFrom": "来源 raw function",
+  "functionLibraryDetailRuns": "执行次数",
+  "functionLibraryDetailSuccessFail": "成功 / 失败",
+  "functionLibraryDetailUpdatedAt": "更新时间",
+  "functionLibraryDetailBundleBacking": "Bundle 资产",
+  "functionLibraryDetailActionCount": "动作数",
+  "functionLibraryDetailActionPreview": "动作预览",
+  "functionLibraryDetailNoActionPreview": "无动作",
+  "functionLibraryDetailStepIndex": "步骤 {index}",
+  "@functionLibraryDetailStepIndex": {
+    "placeholders": {
+      "index": {
+        "type": "String"
+      }
+    }
+  },
+  "functionLibraryDetailBundleFunction": "Bundle Function",
+  "functionLibraryDetailInternalBlocks": "内部 function block",
+  "functionLibraryDetailNoBlocks": "当前没有展开的内部 function block",
+  "functionLibraryDetailNoBundle": "当前没有可展示的 bundle function",
+  "functionLibraryDetailFunctionSchema": "Function Schema",
 
   "executionCompileHit": "复用技能",
   "executionCompileHitWithFunction": "复用技能 · {functionId}",
@@ -852,9 +879,16 @@
   "actionTypeDefault": "动作",
 
   "omniflowProviderUpdate": "Provider 更新",
+  "omniflowConnectionMode": "当前连接",
+  "omniflowConnectionModeBridge": "Bridge 连接",
+  "omniflowConnectionModeEmbedded": "本地内置",
+  "omniflowProviderVersion": "Provider 版本",
+  "omniflowProviderPort": "Provider 端口",
+  "omniflowProviderStore": "Provider Store",
   "omniflowCurrentVersion": "当前版本",
   "omniflowLatestVersion": "最新版本",
   "omniflowUpdateAvailable": "有新版本可用",
+  "omniflowUpdateNotSupported": "有新版本，但主机 Provider 不支持自动更新（请手动 git pull）",
   "omniflowStartProviderFirst": "请先启动 Provider 后再检查更新",
   "omniflowCheckUpdate": "检查更新",
   "omniflowCheckingUpdate": "检查中...",
@@ -869,8 +903,11 @@
       }
     }
   },
+  "omniflowPackageNotInstalled": "当前设备未安装",
   "omniflowAlreadyLatest": "已是最新版本",
-  "omniflowUpdateSuccess": "更新成功: {version}。需要重启 Provider。",
+  "omniflowUpdateSuccess": "当前设备已更新到 {version}",
+  "omniflowUpdateBridgeModeHint": "当前连接仍是 Bridge；这次只更新了设备里的 OmniFlow 包。",
+  "omniflowUpdateRestartRequired": "设备包已更新；请手动重启本地内置 Provider 后生效。",
   "@omniflowUpdateSuccess": {
     "placeholders": {
       "version": {
@@ -878,5 +915,166 @@
       }
     }
   },
-  "omniflowUpdateFailed": "更新失败"
+  "omniflowUpdateFailed": "更新失败",
+  "executionRouteMemorized": "⚡ 已记忆",
+  "executionRouteAiPlanning": "🤔 AI规划",
+  "runLogTimelineTitle": "执行步骤",
+  "runLogTimelineViewSteps": "查看步骤",
+  "runLogTimelineStepCount": "{count} 步",
+  "@runLogTimelineStepCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "runLogTimelineLoadFailed": "加载步骤失败",
+  "runLogTimelineEmpty": "暂无步骤数据",
+  "runLogTimelineUnknown": "未知",
+  "chatInputCommandTooltip": "命令",
+  "workbenchTitle": "工作台",
+  "workbenchWorkspaceTitle": "Workspace",
+  "workbenchWorkspaceOpenWorkbench": "打开 Workbench",
+  "workbenchSubtitle": "一个 OOB 原生 Project 示例，用来验证 Project API 注册、状态持久化和 Workbench 内显示。",
+  "workbenchVibeSubtitle": "Prompt 生成的原生前端、Project API 和 Workspace 文件在 OOB 内保持关联。",
+  "workbenchGeneratedTodoSubtitle": "这是生成出来的 Todo 前端。它和 Project 控制面分开，并直接调用已注册的业务 API。",
+  "workbenchMockProjectName": "Todo 日志 Mock",
+  "workbenchTemplateProjectName": "Todo 日志 Workbench",
+  "workbenchNativeUi": "OOB 原生显示",
+  "workbenchProjectSection": "项目",
+  "workbenchProjectIdLabel": "项目 ID",
+  "workbenchTemplateIdLabel": "模板 ID",
+  "workbenchRouteLabel": "路由",
+  "workbenchSpacePathLabel": "Space 路径",
+  "workbenchPageIdsLabel": "页面",
+  "workbenchDevelopmentMode": "开发模式",
+  "workbenchProjectRegistryPath": "Project 注册表",
+  "workbenchApiRegistryPath": "API 注册表",
+  "workbenchProjectFilePath": "Project 文件",
+  "workbenchDataFilePath": "数据文件",
+  "workbenchLogFilePath": "API 日志",
+  "workbenchBackendTools": "后端工具",
+  "workbenchFrontendBinding": "前后端绑定",
+  "workbenchTodoLog": "Todo 日志",
+  "workbenchCallApi": "调用 API",
+  "workbenchGeneratedFrontend": "生成的前端",
+  "workbenchGeneratedFrontendSubtitle": "打开 prompt 生成页面应该挂载的 OOB 原生预览容器。它和 AI 层共用同一组 Project API 与持久化数据。",
+  "workbenchOpenGeneratedFrontend": "打开生成前端",
+  "workbenchPreviewClose": "关闭预览",
+  "workbenchToolList": "Project API",
+  "workbenchProjectControlSubtitle": "这里只展示已注册的业务 API。Project 创建和打开仍属于 OOB Workbench 控制面。",
+  "workbenchOpenWorkspace": "打开 Workspace",
+  "workbenchApiEmpty": "暂无已注册 Project API",
+  "workbenchToolListDefaultTodo": "Project API 点击了同一个后端",
+  "workbenchToolExecutionCount": "已执行 {count} 次",
+  "@workbenchToolExecutionCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchToolAddTodoTitle": "新增 Todo",
+  "workbenchToolAddTodoDesc": "通过已注册的原生 Project API 创建一条 todo。",
+  "workbenchToolFinishTodoTitle": "归档 Todo",
+  "workbenchToolFinishTodoDesc": "通过已注册的原生 Project API 把一条 todo 归档。",
+  "workbenchFlowAddTodo": "页面输入 -> todo.add -> todo 列表",
+  "workbenchFlowFinishTodo": "完成按钮 -> todo.finish -> 完成列表",
+  "workbenchAddTodoHint": "添加一条 todo",
+  "workbenchAddTodo": "添加 Todo",
+  "workbenchTodoEmpty": "暂无 todo",
+  "workbenchTodoOpen": "待完成",
+  "workbenchTodoFinished": "已归档",
+  "workbenchFinishTodo": "归档 todo",
+  "workbenchTodoAdded": "Todo 已添加",
+  "workbenchTodoFinishedToast": "Todo 已归档",
+  "workbenchTodoInputRequired": "请先输入 todo",
+  "workbenchNoOpenTodo": "没有可完成的 todo",
+  "workbenchLoadFailed": "加载失败",
+  "workbenchUnknownTool": "Workbench 工具执行失败",
+  "workbenchStatusOpen": "等待处理",
+  "workbenchStatusFinished": "已归档",
+  "workbenchProjectModeTitle": "工作台模式",
+  "workbenchFlutterDisplay": "Flutter 显示器",
+  "workbenchProjectSwitcher": "切换 Project",
+  "workbenchProjectGenerateTitle": "Project 生成模式",
+  "workbenchProjectGenerateSubtitle": "输入一句需求，OOB 会按内置 skill 拆成 Project、生成前端、业务 API 和持久化数据，并通过真实 Workbench 后端创建。",
+  "workbenchProjectPromptHint": "描述你想创建的 Project",
+  "workbenchProjectDefaultPrompt": "我想创建一个简单的 todolist 管理系统，要求可以增加 todo，归档 todo",
+  "workbenchProjectGenerateButton": "创建并打开前端",
+  "workbenchInputProjectTooltip": "打开 Project 工作台",
+  "workbenchGeneratedTodoProjectName": "Todo List 工作台",
+  "workbenchPromptSeedAddTodo": "验证可以增加 todo",
+  "workbenchPromptSeedArchiveTodo": "验证可以归档 todo",
+  "workbenchProjectPlanTitle": "拆分计划",
+  "workbenchProjectPlanProject": "创建 Project 注册和可编辑 Workspace",
+  "workbenchProjectPlanFrontend": "生成 OOB 原生 Flutter 前端",
+  "workbenchProjectPlanApi": "注册 AI/UI 共用业务 API",
+  "workbenchProjectPlanData": "写入持久化数据和 API 日志",
+  "workbenchProjectCurrentTitle": "当前 Project",
+  "workbenchProjectCurrentSubtitle": "这里管理已创建 Project；业务前端、Workspace、导出和删除都从同一个注册状态进入。",
+  "workbenchProjectModeCreateTitle": "Vibe Project 入口",
+  "workbenchProjectModeSubtitle": "在这里打开 Project 信息、生成前端、Workspace 和分发包；业务 API 仍通过同一个后端执行。",
+  "workbenchProjectModeCreateButton": "创建 Todo demo",
+  "workbenchProjectModeProjectsTitle": "Project API",
+  "workbenchProjectModeOpen": "打开 Project",
+  "workbenchProjectModeEmpty": "暂无 Workbench Project",
+  "workbenchProjectModeLoadFailed": "Project 模式加载失败",
+  "workbenchProjectPromptRequired": "请先输入 Project 需求",
+  "workbenchProjectGenerated": "Project 已生成",
+  "workbenchDeleteProject": "删除 Project",
+  "workbenchDeleteProjectTitle": "删除 Project",
+  "workbenchDeleteProjectMessage": "确定删除 {projectId}？它会移除 Project 注册、业务 API 注册和 Workspace 项目文件。",
+  "@workbenchDeleteProjectMessage": {
+    "placeholders": {
+      "projectId": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchDeleteProjectCancel": "取消",
+  "workbenchDeleteProjectConfirm": "删除",
+  "workbenchDeleteProjectFailed": "Project 删除失败",
+  "workbenchProjectDeleted": "Project 已删除",
+  "workbenchProjectIdRequired": "请输入 Project ID",
+  "workbenchProjectCreated": "Project 已创建",
+  "workbenchProjectInfoTitle": "Project 信息",
+  "workbenchProjectInfoDisplayTitle": "显示入口",
+  "workbenchProjectInfoSourceTitle": "源码规格",
+  "workbenchProjectInfoSourceValue": "README.md / frontend/page_spec.json / backend/api_spec.json",
+  "workbenchProjectInfoRuntimeTitle": "运行态",
+  "workbenchProjectInfoRuntimeValue": "data/todos.json / logs/api_calls.jsonl",
+  "workbenchExportProjectPackage": "导出分发包",
+  "workbenchProjectExportFailed": "Project 导出失败",
+  "workbenchProjectExported": "已导出 {packageName}",
+  "@workbenchProjectExported": {
+    "placeholders": {
+      "packageName": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchProjectExportPath": "导出位置：{path}",
+  "@workbenchProjectExportPath": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchTodoCount": "{openCount} 条待完成 / {finishedCount} 条已完成",
+  "@workbenchTodoCount": {
+    "placeholders": {
+      "openCount": {
+        "type": "int"
+      },
+      "finishedCount": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchApiCount": "{count} 个 API",
+  "@workbenchApiCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

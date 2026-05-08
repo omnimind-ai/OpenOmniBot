@@ -675,6 +675,33 @@
   "functionLibraryTest": "Test",
   "functionLibraryTestNeedParams": "Parameters needed: {params}",
   "functionLibraryTestStarted": "Test execution started",
+  "functionLibraryViewDetails": "View Details",
+  "functionLibraryDetailCompileSurface": "Compile Surface",
+  "functionLibraryDetailGraphAnchors": "Graph Anchors",
+  "functionLibraryDetailRunUsage": "Run Usage",
+  "functionLibraryDetailLifecycle": "Lifecycle",
+  "functionLibraryDetailExamples": "Parameter Examples",
+  "functionLibraryDetailDerivedFrom": "Derived Raw Function",
+  "functionLibraryDetailRuns": "Run Count",
+  "functionLibraryDetailSuccessFail": "Success / Fail",
+  "functionLibraryDetailUpdatedAt": "Updated At",
+  "functionLibraryDetailBundleBacking": "Bundle Backing Asset",
+  "functionLibraryDetailActionCount": "Action Count",
+  "functionLibraryDetailActionPreview": "Action Preview",
+  "functionLibraryDetailNoActionPreview": "No actions",
+  "functionLibraryDetailStepIndex": "Step {index}",
+  "@functionLibraryDetailStepIndex": {
+    "placeholders": {
+      "index": {
+        "type": "String"
+      }
+    }
+  },
+  "functionLibraryDetailBundleFunction": "Bundle Function",
+  "functionLibraryDetailInternalBlocks": "Internal Function Blocks",
+  "functionLibraryDetailNoBlocks": "No internal function blocks are available",
+  "functionLibraryDetailNoBundle": "No bundle function is available",
+  "functionLibraryDetailFunctionSchema": "Function Schema",
 
   "executionCompileHit": "Reuse Skill",
   "executionCompileHitWithFunction": "Reuse Skill · {functionId}",
@@ -852,9 +879,16 @@
   "actionTypeDefault": "Action",
 
   "omniflowProviderUpdate": "Provider Update",
+  "omniflowConnectionMode": "Connection Mode",
+  "omniflowConnectionModeBridge": "Bridge Connection",
+  "omniflowConnectionModeEmbedded": "Local Embedded",
+  "omniflowProviderVersion": "Provider Version",
+  "omniflowProviderPort": "Provider Port",
+  "omniflowProviderStore": "Provider Store",
   "omniflowCurrentVersion": "Current Version",
   "omniflowLatestVersion": "Latest Version",
   "omniflowUpdateAvailable": "Update Available",
+  "omniflowUpdateNotSupported": "Update available, but host Provider does not support auto-update (use git pull)",
   "omniflowStartProviderFirst": "Please start Provider first to check for updates",
   "omniflowCheckUpdate": "Check Update",
   "omniflowCheckingUpdate": "Checking...",
@@ -869,8 +903,11 @@
       }
     }
   },
+  "omniflowPackageNotInstalled": "Not installed on this device",
   "omniflowAlreadyLatest": "Already up to date",
-  "omniflowUpdateSuccess": "Update successful: {version}. Restart Provider to apply.",
+  "omniflowUpdateSuccess": "Updated current device to {version}",
+  "omniflowUpdateBridgeModeHint": "Current connection remains Bridge; only the device package was updated.",
+  "omniflowUpdateRestartRequired": "Device package updated; restart the local embedded Provider to apply it.",
   "@omniflowUpdateSuccess": {
     "placeholders": {
       "version": {
@@ -878,5 +915,166 @@
       }
     }
   },
-  "omniflowUpdateFailed": "Update failed"
+  "omniflowUpdateFailed": "Update failed",
+  "executionRouteMemorized": "⚡ Memorized",
+  "executionRouteAiPlanning": "🤔 AI Planning",
+  "runLogTimelineTitle": "Execution Steps",
+  "runLogTimelineViewSteps": "View Steps",
+  "runLogTimelineStepCount": "{count} steps",
+  "@runLogTimelineStepCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "runLogTimelineLoadFailed": "Failed to load steps",
+  "runLogTimelineEmpty": "No step data",
+  "runLogTimelineUnknown": "Unknown",
+  "chatInputCommandTooltip": "Command",
+  "workbenchTitle": "Workbench",
+  "workbenchWorkspaceTitle": "Workspace",
+  "workbenchWorkspaceOpenWorkbench": "Open Workbench",
+  "workbenchSubtitle": "A native OOB project example that registers Project APIs, persists state, and renders inside the Workbench.",
+  "workbenchVibeSubtitle": "Prompt-built native frontend, project APIs, and workspace files stay connected inside OOB.",
+  "workbenchGeneratedTodoSubtitle": "This is the generated Todo frontend. It is separate from the Project control surface and calls the registered APIs directly.",
+  "workbenchMockProjectName": "Todo Log Mock",
+  "workbenchTemplateProjectName": "Todo Log Workbench",
+  "workbenchNativeUi": "OOB native UI",
+  "workbenchProjectSection": "Project",
+  "workbenchProjectIdLabel": "Project ID",
+  "workbenchTemplateIdLabel": "Template ID",
+  "workbenchRouteLabel": "Route",
+  "workbenchSpacePathLabel": "Space path",
+  "workbenchPageIdsLabel": "Pages",
+  "workbenchDevelopmentMode": "Development mode",
+  "workbenchProjectRegistryPath": "Project registry",
+  "workbenchApiRegistryPath": "API registry",
+  "workbenchProjectFilePath": "Project file",
+  "workbenchDataFilePath": "Data file",
+  "workbenchLogFilePath": "API log",
+  "workbenchBackendTools": "Backend tools",
+  "workbenchFrontendBinding": "Frontend binding",
+  "workbenchTodoLog": "Todo log",
+  "workbenchCallApi": "Call API",
+  "workbenchGeneratedFrontend": "Generated frontend",
+  "workbenchGeneratedFrontendSubtitle": "Open the OOB-native preview that a prompt-generated page should target. It uses the same Project APIs and persistent data as the AI layer.",
+  "workbenchOpenGeneratedFrontend": "Open generated frontend",
+  "workbenchPreviewClose": "Close preview",
+  "workbenchToolList": "Project APIs",
+  "workbenchProjectControlSubtitle": "Only registered business APIs are shown here. Project create/open stays in the OOB Workbench control surface.",
+  "workbenchOpenWorkspace": "Open Workspace",
+  "workbenchApiEmpty": "No registered Project APIs",
+  "workbenchToolListDefaultTodo": "Project API clicked the shared backend",
+  "workbenchToolExecutionCount": "Executed {count}",
+  "@workbenchToolExecutionCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchToolAddTodoTitle": "Add todo",
+  "workbenchToolAddTodoDesc": "Creates a todo item through the registered native Project API.",
+  "workbenchToolFinishTodoTitle": "Archive todo",
+  "workbenchToolFinishTodoDesc": "Archives a todo item through the registered native Project API.",
+  "workbenchFlowAddTodo": "Page input -> todo.add -> todo list",
+  "workbenchFlowFinishTodo": "Finish button -> todo.finish -> completed list",
+  "workbenchAddTodoHint": "Add a todo",
+  "workbenchAddTodo": "Add todo",
+  "workbenchTodoEmpty": "No todo yet",
+  "workbenchTodoOpen": "Open",
+  "workbenchTodoFinished": "Archived",
+  "workbenchFinishTodo": "Archive todo",
+  "workbenchTodoAdded": "Todo added",
+  "workbenchTodoFinishedToast": "Todo archived",
+  "workbenchTodoInputRequired": "Enter a todo first",
+  "workbenchNoOpenTodo": "No open todo to finish",
+  "workbenchLoadFailed": "Load failed",
+  "workbenchUnknownTool": "Workbench tool failed",
+  "workbenchStatusOpen": "Waiting",
+  "workbenchStatusFinished": "Archived",
+  "workbenchProjectModeTitle": "Workbench Mode",
+  "workbenchFlutterDisplay": "Flutter Display",
+  "workbenchProjectSwitcher": "Switch Project",
+  "workbenchProjectGenerateTitle": "Project generation mode",
+  "workbenchProjectGenerateSubtitle": "Enter one requirement. OOB splits it into a Project, generated frontend, business APIs, and persistent data through the built-in skill, then creates it through the real Workbench backend.",
+  "workbenchProjectPromptHint": "Describe the Project you want",
+  "workbenchProjectDefaultPrompt": "I want to create a simple todolist management system that can add todos and archive todos",
+  "workbenchProjectGenerateButton": "Create and open frontend",
+  "workbenchInputProjectTooltip": "Open Project Workbench",
+  "workbenchGeneratedTodoProjectName": "Todo List Workbench",
+  "workbenchPromptSeedAddTodo": "Verify adding a todo",
+  "workbenchPromptSeedArchiveTodo": "Verify archiving a todo",
+  "workbenchProjectPlanTitle": "Decomposition plan",
+  "workbenchProjectPlanProject": "Create Project registry and editable Workspace",
+  "workbenchProjectPlanFrontend": "Generate an OOB-native Flutter frontend",
+  "workbenchProjectPlanApi": "Register business APIs shared by AI and UI",
+  "workbenchProjectPlanData": "Persist data and API call logs",
+  "workbenchProjectCurrentTitle": "Current Project",
+  "workbenchProjectCurrentSubtitle": "Manage the created Project here; its frontend, Workspace, export, and delete actions all use the same registered state.",
+  "workbenchProjectModeCreateTitle": "Vibe project entry",
+  "workbenchProjectModeSubtitle": "Open Project info, generated frontend, Workspace, and distribution package here. Business APIs still run through the same backend.",
+  "workbenchProjectModeCreateButton": "Create Todo demo",
+  "workbenchProjectModeProjectsTitle": "Project APIs",
+  "workbenchProjectModeOpen": "Open project",
+  "workbenchProjectModeEmpty": "No Workbench projects yet",
+  "workbenchProjectModeLoadFailed": "Project mode failed to load",
+  "workbenchProjectPromptRequired": "Enter a Project requirement first",
+  "workbenchProjectGenerated": "Project generated",
+  "workbenchDeleteProject": "Delete Project",
+  "workbenchDeleteProjectTitle": "Delete Project",
+  "workbenchDeleteProjectMessage": "Delete {projectId}? This removes its Project registry entry, business API registrations, and Workspace project files.",
+  "@workbenchDeleteProjectMessage": {
+    "placeholders": {
+      "projectId": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchDeleteProjectCancel": "Cancel",
+  "workbenchDeleteProjectConfirm": "Delete",
+  "workbenchDeleteProjectFailed": "Project delete failed",
+  "workbenchProjectDeleted": "Project deleted",
+  "workbenchProjectIdRequired": "Enter a project ID",
+  "workbenchProjectCreated": "Project created",
+  "workbenchProjectInfoTitle": "Project info",
+  "workbenchProjectInfoDisplayTitle": "Display route",
+  "workbenchProjectInfoSourceTitle": "Source specs",
+  "workbenchProjectInfoSourceValue": "README.md / frontend/page_spec.json / backend/api_spec.json",
+  "workbenchProjectInfoRuntimeTitle": "Runtime state",
+  "workbenchProjectInfoRuntimeValue": "data/todos.json / logs/api_calls.jsonl",
+  "workbenchExportProjectPackage": "Export package",
+  "workbenchProjectExportFailed": "Project export failed",
+  "workbenchProjectExported": "Exported {packageName}",
+  "@workbenchProjectExported": {
+    "placeholders": {
+      "packageName": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchProjectExportPath": "Export path: {path}",
+  "@workbenchProjectExportPath": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchTodoCount": "{openCount} open / {finishedCount} finished",
+  "@workbenchTodoCount": {
+    "placeholders": {
+      "openCount": {
+        "type": "int"
+      },
+      "finishedCount": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchApiCount": "{count} APIs",
+  "@workbenchApiCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

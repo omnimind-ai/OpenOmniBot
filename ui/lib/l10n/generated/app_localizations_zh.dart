@@ -2070,6 +2070,68 @@ class AppLocalizationsZh extends AppLocalizations {
   String get functionLibraryTestStarted => '已发起测试执行';
 
   @override
+  String get functionLibraryViewDetails => '查看详情';
+
+  @override
+  String get functionLibraryDetailCompileSurface => '编译面';
+
+  @override
+  String get functionLibraryDetailGraphAnchors => '图锚点';
+
+  @override
+  String get functionLibraryDetailRunUsage => '运行统计';
+
+  @override
+  String get functionLibraryDetailLifecycle => '生命周期';
+
+  @override
+  String get functionLibraryDetailExamples => '参数示例';
+
+  @override
+  String get functionLibraryDetailDerivedFrom => '来源 raw function';
+
+  @override
+  String get functionLibraryDetailRuns => '执行次数';
+
+  @override
+  String get functionLibraryDetailSuccessFail => '成功 / 失败';
+
+  @override
+  String get functionLibraryDetailUpdatedAt => '更新时间';
+
+  @override
+  String get functionLibraryDetailBundleBacking => 'Bundle 资产';
+
+  @override
+  String get functionLibraryDetailActionCount => '动作数';
+
+  @override
+  String get functionLibraryDetailActionPreview => '动作预览';
+
+  @override
+  String get functionLibraryDetailNoActionPreview => '无动作';
+
+  @override
+  String functionLibraryDetailStepIndex(String index) {
+    return '步骤 $index';
+  }
+
+  @override
+  String get functionLibraryDetailBundleFunction => 'Bundle Function';
+
+  @override
+  String get functionLibraryDetailInternalBlocks => '内部 function block';
+
+  @override
+  String get functionLibraryDetailNoBlocks => '当前没有展开的内部 function block';
+
+  @override
+  String get functionLibraryDetailNoBundle => '当前没有可展示的 bundle function';
+
+  @override
+  String get functionLibraryDetailFunctionSchema => 'Function Schema';
+
+  @override
   String get executionCompileHit => '复用技能';
 
   @override
@@ -2399,6 +2461,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get omniflowProviderUpdate => 'Provider 更新';
 
   @override
+  String get omniflowConnectionMode => '当前连接';
+
+  @override
+  String get omniflowConnectionModeBridge => 'Bridge 连接';
+
+  @override
+  String get omniflowConnectionModeEmbedded => '本地内置';
+
+  @override
+  String get omniflowProviderVersion => 'Provider 版本';
+
+  @override
+  String get omniflowProviderPort => 'Provider 端口';
+
+  @override
+  String get omniflowProviderStore => 'Provider Store';
+
+  @override
   String get omniflowCurrentVersion => '当前版本';
 
   @override
@@ -2406,6 +2486,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get omniflowUpdateAvailable => '有新版本可用';
+
+  @override
+  String get omniflowUpdateNotSupported =>
+      '有新版本，但主机 Provider 不支持自动更新（请手动 git pull）';
 
   @override
   String get omniflowStartProviderFirst => '请先启动 Provider 后再检查更新';
@@ -2431,13 +2515,387 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get omniflowPackageNotInstalled => '当前设备未安装';
+
+  @override
   String get omniflowAlreadyLatest => '已是最新版本';
 
   @override
   String omniflowUpdateSuccess(String version) {
-    return '更新成功: $version。需要重启 Provider。';
+    return '当前设备已更新到 $version';
   }
 
   @override
+  String get omniflowUpdateBridgeModeHint =>
+      '当前连接仍是 Bridge；这次只更新了设备里的 OmniFlow 包。';
+
+  @override
+  String get omniflowUpdateRestartRequired => '设备包已更新；请手动重启本地内置 Provider 后生效。';
+
+  @override
   String get omniflowUpdateFailed => '更新失败';
+
+  @override
+  String get executionRouteMemorized => '⚡ 已记忆';
+
+  @override
+  String get executionRouteAiPlanning => '🤔 AI规划';
+
+  @override
+  String get runLogTimelineTitle => '执行步骤';
+
+  @override
+  String get runLogTimelineViewSteps => '查看步骤';
+
+  @override
+  String runLogTimelineStepCount(int count) {
+    return '$count 步';
+  }
+
+  @override
+  String get runLogTimelineLoadFailed => '加载步骤失败';
+
+  @override
+  String get runLogTimelineEmpty => '暂无步骤数据';
+
+  @override
+  String get runLogTimelineUnknown => '未知';
+
+  @override
+  String get chatInputCommandTooltip => '命令';
+
+  @override
+  String get workbenchTitle => '工作台';
+
+  @override
+  String get workbenchWorkspaceTitle => 'Workspace';
+
+  @override
+  String get workbenchWorkspaceOpenWorkbench => '打开 Workbench';
+
+  @override
+  String get workbenchSubtitle =>
+      '一个 OOB 原生 Project 示例，用来验证 Project API 注册、状态持久化和 Workbench 内显示。';
+
+  @override
+  String get workbenchVibeSubtitle =>
+      'Prompt 生成的原生前端、Project API 和 Workspace 文件在 OOB 内保持关联。';
+
+  @override
+  String get workbenchGeneratedTodoSubtitle =>
+      '这是生成出来的 Todo 前端。它和 Project 控制面分开，并直接调用已注册的业务 API。';
+
+  @override
+  String get workbenchMockProjectName => 'Todo 日志 Mock';
+
+  @override
+  String get workbenchTemplateProjectName => 'Todo 日志 Workbench';
+
+  @override
+  String get workbenchNativeUi => 'OOB 原生显示';
+
+  @override
+  String get workbenchProjectSection => '项目';
+
+  @override
+  String get workbenchProjectIdLabel => '项目 ID';
+
+  @override
+  String get workbenchTemplateIdLabel => '模板 ID';
+
+  @override
+  String get workbenchRouteLabel => '路由';
+
+  @override
+  String get workbenchSpacePathLabel => 'Space 路径';
+
+  @override
+  String get workbenchPageIdsLabel => '页面';
+
+  @override
+  String get workbenchDevelopmentMode => '开发模式';
+
+  @override
+  String get workbenchProjectRegistryPath => 'Project 注册表';
+
+  @override
+  String get workbenchApiRegistryPath => 'API 注册表';
+
+  @override
+  String get workbenchProjectFilePath => 'Project 文件';
+
+  @override
+  String get workbenchDataFilePath => '数据文件';
+
+  @override
+  String get workbenchLogFilePath => 'API 日志';
+
+  @override
+  String get workbenchBackendTools => '后端工具';
+
+  @override
+  String get workbenchFrontendBinding => '前后端绑定';
+
+  @override
+  String get workbenchTodoLog => 'Todo 日志';
+
+  @override
+  String get workbenchCallApi => '调用 API';
+
+  @override
+  String get workbenchGeneratedFrontend => '生成的前端';
+
+  @override
+  String get workbenchGeneratedFrontendSubtitle =>
+      '打开 prompt 生成页面应该挂载的 OOB 原生预览容器。它和 AI 层共用同一组 Project API 与持久化数据。';
+
+  @override
+  String get workbenchOpenGeneratedFrontend => '打开生成前端';
+
+  @override
+  String get workbenchPreviewClose => '关闭预览';
+
+  @override
+  String get workbenchToolList => 'Project API';
+
+  @override
+  String get workbenchProjectControlSubtitle =>
+      '这里只展示已注册的业务 API。Project 创建和打开仍属于 OOB Workbench 控制面。';
+
+  @override
+  String get workbenchOpenWorkspace => '打开 Workspace';
+
+  @override
+  String get workbenchApiEmpty => '暂无已注册 Project API';
+
+  @override
+  String get workbenchToolListDefaultTodo => 'Project API 点击了同一个后端';
+
+  @override
+  String workbenchToolExecutionCount(int count) {
+    return '已执行 $count 次';
+  }
+
+  @override
+  String get workbenchToolAddTodoTitle => '新增 Todo';
+
+  @override
+  String get workbenchToolAddTodoDesc => '通过已注册的原生 Project API 创建一条 todo。';
+
+  @override
+  String get workbenchToolFinishTodoTitle => '归档 Todo';
+
+  @override
+  String get workbenchToolFinishTodoDesc => '通过已注册的原生 Project API 把一条 todo 归档。';
+
+  @override
+  String get workbenchFlowAddTodo => '页面输入 -> todo.add -> todo 列表';
+
+  @override
+  String get workbenchFlowFinishTodo => '完成按钮 -> todo.finish -> 完成列表';
+
+  @override
+  String get workbenchAddTodoHint => '添加一条 todo';
+
+  @override
+  String get workbenchAddTodo => '添加 Todo';
+
+  @override
+  String get workbenchTodoEmpty => '暂无 todo';
+
+  @override
+  String get workbenchTodoOpen => '待完成';
+
+  @override
+  String get workbenchTodoFinished => '已归档';
+
+  @override
+  String get workbenchFinishTodo => '归档 todo';
+
+  @override
+  String get workbenchTodoAdded => 'Todo 已添加';
+
+  @override
+  String get workbenchTodoFinishedToast => 'Todo 已归档';
+
+  @override
+  String get workbenchTodoInputRequired => '请先输入 todo';
+
+  @override
+  String get workbenchNoOpenTodo => '没有可完成的 todo';
+
+  @override
+  String get workbenchLoadFailed => '加载失败';
+
+  @override
+  String get workbenchUnknownTool => 'Workbench 工具执行失败';
+
+  @override
+  String get workbenchStatusOpen => '等待处理';
+
+  @override
+  String get workbenchStatusFinished => '已归档';
+
+  @override
+  String get workbenchProjectModeTitle => '工作台模式';
+
+  @override
+  String get workbenchFlutterDisplay => 'Flutter 显示器';
+
+  @override
+  String get workbenchProjectSwitcher => '切换 Project';
+
+  @override
+  String get workbenchProjectGenerateTitle => 'Project 生成模式';
+
+  @override
+  String get workbenchProjectGenerateSubtitle =>
+      '输入一句需求，OOB 会按内置 skill 拆成 Project、生成前端、业务 API 和持久化数据，并通过真实 Workbench 后端创建。';
+
+  @override
+  String get workbenchProjectPromptHint => '描述你想创建的 Project';
+
+  @override
+  String get workbenchProjectDefaultPrompt =>
+      '我想创建一个简单的 todolist 管理系统，要求可以增加 todo，归档 todo';
+
+  @override
+  String get workbenchProjectGenerateButton => '创建并打开前端';
+
+  @override
+  String get workbenchInputProjectTooltip => '打开 Project 工作台';
+
+  @override
+  String get workbenchGeneratedTodoProjectName => 'Todo List 工作台';
+
+  @override
+  String get workbenchPromptSeedAddTodo => '验证可以增加 todo';
+
+  @override
+  String get workbenchPromptSeedArchiveTodo => '验证可以归档 todo';
+
+  @override
+  String get workbenchProjectPlanTitle => '拆分计划';
+
+  @override
+  String get workbenchProjectPlanProject => '创建 Project 注册和可编辑 Workspace';
+
+  @override
+  String get workbenchProjectPlanFrontend => '生成 OOB 原生 Flutter 前端';
+
+  @override
+  String get workbenchProjectPlanApi => '注册 AI/UI 共用业务 API';
+
+  @override
+  String get workbenchProjectPlanData => '写入持久化数据和 API 日志';
+
+  @override
+  String get workbenchProjectCurrentTitle => '当前 Project';
+
+  @override
+  String get workbenchProjectCurrentSubtitle =>
+      '这里管理已创建 Project；业务前端、Workspace、导出和删除都从同一个注册状态进入。';
+
+  @override
+  String get workbenchProjectModeCreateTitle => 'Vibe Project 入口';
+
+  @override
+  String get workbenchProjectModeSubtitle =>
+      '在这里打开 Project 信息、生成前端、Workspace 和分发包；业务 API 仍通过同一个后端执行。';
+
+  @override
+  String get workbenchProjectModeCreateButton => '创建 Todo demo';
+
+  @override
+  String get workbenchProjectModeProjectsTitle => 'Project API';
+
+  @override
+  String get workbenchProjectModeOpen => '打开 Project';
+
+  @override
+  String get workbenchProjectModeEmpty => '暂无 Workbench Project';
+
+  @override
+  String get workbenchProjectModeLoadFailed => 'Project 模式加载失败';
+
+  @override
+  String get workbenchProjectPromptRequired => '请先输入 Project 需求';
+
+  @override
+  String get workbenchProjectGenerated => 'Project 已生成';
+
+  @override
+  String get workbenchDeleteProject => '删除 Project';
+
+  @override
+  String get workbenchDeleteProjectTitle => '删除 Project';
+
+  @override
+  String workbenchDeleteProjectMessage(String projectId) {
+    return '确定删除 $projectId？它会移除 Project 注册、业务 API 注册和 Workspace 项目文件。';
+  }
+
+  @override
+  String get workbenchDeleteProjectCancel => '取消';
+
+  @override
+  String get workbenchDeleteProjectConfirm => '删除';
+
+  @override
+  String get workbenchDeleteProjectFailed => 'Project 删除失败';
+
+  @override
+  String get workbenchProjectDeleted => 'Project 已删除';
+
+  @override
+  String get workbenchProjectIdRequired => '请输入 Project ID';
+
+  @override
+  String get workbenchProjectCreated => 'Project 已创建';
+
+  @override
+  String get workbenchProjectInfoTitle => 'Project 信息';
+
+  @override
+  String get workbenchProjectInfoDisplayTitle => '显示入口';
+
+  @override
+  String get workbenchProjectInfoSourceTitle => '源码规格';
+
+  @override
+  String get workbenchProjectInfoSourceValue =>
+      'README.md / frontend/page_spec.json / backend/api_spec.json';
+
+  @override
+  String get workbenchProjectInfoRuntimeTitle => '运行态';
+
+  @override
+  String get workbenchProjectInfoRuntimeValue =>
+      'data/todos.json / logs/api_calls.jsonl';
+
+  @override
+  String get workbenchExportProjectPackage => '导出分发包';
+
+  @override
+  String get workbenchProjectExportFailed => 'Project 导出失败';
+
+  @override
+  String workbenchProjectExported(String packageName) {
+    return '已导出 $packageName';
+  }
+
+  @override
+  String workbenchProjectExportPath(String path) {
+    return '导出位置：$path';
+  }
+
+  @override
+  String workbenchTodoCount(int openCount, int finishedCount) {
+    return '$openCount 条待完成 / $finishedCount 条已完成';
+  }
+
+  @override
+  String workbenchApiCount(int count) {
+    return '$count 个 API';
+  }
 }

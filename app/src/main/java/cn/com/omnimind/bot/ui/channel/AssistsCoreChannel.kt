@@ -310,6 +310,30 @@ class AssistsCoreChannel {
                 "navigateToMainEngineRoute" -> {
                     assistsCoreManager!!.navigateToMainEngineRoute(call, result)
                 }
+                "workbenchProjectCreate" -> {
+                    assistsCoreManager!!.workbenchProjectCreate(call, result)
+                }
+                "workbenchProjectGet" -> {
+                    assistsCoreManager!!.workbenchProjectGet(call, result)
+                }
+                "workbenchProjectList" -> {
+                    assistsCoreManager!!.workbenchProjectList(call, result)
+                }
+                "workbenchProjectOpen" -> {
+                    assistsCoreManager!!.workbenchProjectOpen(call, result)
+                }
+                "workbenchProjectDelete" -> {
+                    assistsCoreManager!!.workbenchProjectDelete(call, result)
+                }
+                "workbenchProjectExport" -> {
+                    assistsCoreManager!!.workbenchProjectExport(call, result)
+                }
+                "workbenchApiList" -> {
+                    assistsCoreManager!!.workbenchApiList(call, result)
+                }
+                "workbenchApiCall" -> {
+                    assistsCoreManager!!.workbenchApiCall(call, result)
+                }
                 "reopenChatBotAfterAuth" -> {
                     assistsCoreManager!!.reopenChatBotAfterAuth(result)
                 }
