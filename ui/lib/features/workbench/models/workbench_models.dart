@@ -348,6 +348,37 @@ class WorkbenchProjectDeleteResult {
   }
 }
 
+class WorkbenchProjectHotUpdateResult {
+  const WorkbenchProjectHotUpdateResult({
+    required this.success,
+    required this.projectId,
+    required this.prompt,
+    required this.appliedActionCount,
+    this.project,
+    this.hotUpdateLogPath = '',
+  });
+
+  final bool success;
+  final String projectId;
+  final String prompt;
+  final int appliedActionCount;
+  final WorkbenchProject? project;
+  final String hotUpdateLogPath;
+
+  factory WorkbenchProjectHotUpdateResult.fromMap(Map<dynamic, dynamic> map) {
+    final project = map['project'];
+    final appliedActions = map['appliedActions'];
+    return WorkbenchProjectHotUpdateResult(
+      success: map['success'] == true,
+      projectId: (map['projectId'] ?? '').toString(),
+      prompt: (map['prompt'] ?? '').toString(),
+      appliedActionCount: appliedActions is List ? appliedActions.length : 0,
+      project: project is Map ? WorkbenchProject.fromMap(project) : null,
+      hotUpdateLogPath: (map['hotUpdateLogPath'] ?? '').toString(),
+    );
+  }
+}
+
 class WorkbenchTodoToolIds {
   const WorkbenchTodoToolIds._();
 

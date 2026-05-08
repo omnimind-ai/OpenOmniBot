@@ -4096,6 +4096,23 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
+    fun workbenchProjectHotUpdate(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                val projectId = call.argument<String>("projectId")?.trim().orEmpty()
+                val prompt = call.argument<String>("prompt")?.trim().orEmpty()
+                val caller = call.argument<String>("caller")?.trim().orEmpty().ifBlank { "ui" }
+                workbenchProjectStore.hotUpdateProject(projectId, prompt, caller)
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_HOT_UPDATE_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
     fun workbenchApiList(call: MethodCall, result: MethodChannel.Result) {
         workJob.launch {
             runCatching {

@@ -2866,6 +2866,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchStatusFinished => 'Archived';
 
   @override
+  String get workbenchAssistantName => 'Xiaowan';
+
+  @override
+  String get workbenchAssistantTooltip => 'Open Xiaowan';
+
+  @override
+  String get workbenchAssistantPromptHint => 'Describe the change to apply now';
+
+  @override
+  String get workbenchAssistantSend => 'Hot update current Project';
+
+  @override
+  String get workbenchAssistantApplied => 'Project hot updated';
+
+  @override
+  String get workbenchAssistantPromptRequired => 'Enter the change first';
+
+  @override
+  String get workbenchAssistantNoProject => 'Select a Project first';
+
+  @override
+  String get workbenchAssistantHotUpdateFailed => 'Project hot update failed';
+
+  @override
   String get workbenchProjectModeTitle => 'Workbench Mode';
 
   @override

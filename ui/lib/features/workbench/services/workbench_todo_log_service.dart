@@ -29,6 +29,16 @@ abstract class WorkbenchProjectBackend {
   Future<WorkbenchProjectExportResult> exportProject(String projectId);
 
   Future<WorkbenchProjectDeleteResult> deleteProject(String projectId);
+
+  /// Applies a Workbench control-plane hot update for an existing Project.
+  ///
+  /// `projectId` identifies the persisted Project package, and `prompt` is the
+  /// user request captured from the Xiaowan floating assistant. Implementations
+  /// must not register this control action as a Project business API.
+  Future<WorkbenchProjectHotUpdateResult> hotUpdateProject({
+    required String projectId,
+    required String prompt,
+  });
 }
 
 class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
@@ -127,6 +137,18 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
     );
     return WorkbenchProjectDeleteResult.fromMap(result ?? const {});
   }
+
+  @override
+  Future<WorkbenchProjectHotUpdateResult> hotUpdateProject({
+    required String projectId,
+    required String prompt,
+  }) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'workbenchProjectHotUpdate',
+      {'projectId': projectId, 'prompt': prompt, 'caller': 'ui'},
+    );
+    return WorkbenchProjectHotUpdateResult.fromMap(result ?? const {});
+  }
 }
 
 class WorkbenchTodoLogService extends ChangeNotifier {
@@ -215,6 +237,26 @@ class WorkbenchTodoLogService extends ChangeNotifier {
       return result;
     }
     _errorMessage = result.success ? null : result.errorMessage;
+    notifyListeners();
+    return result;
+  }
+
+  /// Sends the generated frontend assistant prompt to the native Workbench.
+  ///
+  /// The prompt updates the current Project through the control API and returns
+  /// a refreshed Project payload when native execution succeeds.
+  Future<WorkbenchProjectHotUpdateResult> applyHotUpdate(String prompt) async {
+    final result = await _backend.hotUpdateProject(
+      projectId: _project.projectId,
+      prompt: prompt,
+    );
+    if (result.project != null) {
+      _project = result.project!;
+    } else if (result.success) {
+      await refresh();
+      return result;
+    }
+    _errorMessage = null;
     notifyListeners();
     return result;
   }
@@ -409,6 +451,44 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     try {
       final result = await _backend.deleteProject(project.projectId);
       if (result.success) {
+        _projects = await _backend.listProjects();
+      }
+      return result;
+    } catch (error) {
+      _errorMessage = error.toString();
+      return null;
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Sends a Project-mode assistant prompt through the Workbench control API.
+  ///
+  /// `project` is the selected Project in the manager page, and `prompt` is the
+  /// requested live edit. The local project list is refreshed from the returned
+  /// Project payload or from native storage when needed.
+  Future<WorkbenchProjectHotUpdateResult?> applyHotUpdate(
+    WorkbenchProject project,
+    String prompt,
+  ) async {
+    _loading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final result = await _backend.hotUpdateProject(
+        projectId: project.projectId,
+        prompt: prompt,
+      );
+      if (result.project != null) {
+        _projects = _projects
+            .map(
+              (item) => item.projectId == result.project!.projectId
+                  ? result.project!
+                  : item,
+            )
+            .toList(growable: false);
+      } else if (result.success) {
         _projects = await _backend.listProjects();
       }
       return result;

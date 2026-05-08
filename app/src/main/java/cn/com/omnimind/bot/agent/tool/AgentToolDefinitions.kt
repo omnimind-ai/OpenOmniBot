@@ -1364,6 +1364,33 @@ object AgentToolDefinitions {
         }
     }
 
+    val workbenchProjectHotUpdateTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_hot_update")
+            put("displayName", "热更新 Workbench Project")
+            put("toolType", "workbench")
+            put("description", "根据用户在 Project 页面里和小万对话得到的 prompt，对已有 Workbench Project 做一次控制面热更新，并返回刷新后的 OOB 原生页面状态。它不会注册成 Project 业务 API，也不会出现在 workbench_api_list。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("projectId") {
+                        put("type", "string")
+                        put("description", "Project id。")
+                    }
+                    putJsonObject("prompt") {
+                        put("type", "string")
+                        put("description", "用户希望修改当前 Project 或生成前端的自然语言请求。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("projectId")
+                    add("prompt")
+                }
+            }
+        }
+    }
+
     val scheduleTaskCreateTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -1940,7 +1967,8 @@ object AgentToolDefinitions {
         workbenchApiCallTool,
         workbenchProjectExportTool,
         workbenchProjectOpenTool,
-        workbenchProjectDeleteTool
+        workbenchProjectDeleteTool,
+        workbenchProjectHotUpdateTool
     )
 
     private val scheduleToolDefinitions: List<JsonObject> = listOf(

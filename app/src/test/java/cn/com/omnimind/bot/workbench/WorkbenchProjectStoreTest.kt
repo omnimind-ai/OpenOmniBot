@@ -228,6 +228,43 @@ class WorkbenchProjectStoreTest {
         )
         assertFalse(apiIds.contains("workbench_project_create"))
         assertFalse(apiIds.contains("workbench_project_delete"))
+        assertFalse(apiIds.contains("workbench_project_hot_update"))
+    }
+
+    @Test
+    fun hotUpdateWritesAuditLogAndRefreshesProjectState() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        store.createProject(mapOf("projectId" to WORKBENCH_DEFAULT_PROJECT_ID))
+
+        val addUpdate = store.hotUpdateProject(
+            projectId = WORKBENCH_DEFAULT_PROJECT_ID,
+            prompt = "增加 todo：热更新后的任务",
+            caller = "ui"
+        )
+        val finishUpdate = store.hotUpdateProject(
+            projectId = WORKBENCH_DEFAULT_PROJECT_ID,
+            prompt = "归档一个 todo",
+            caller = "ai"
+        )
+
+        assertTrue(addUpdate["success"] == true)
+        assertTrue(finishUpdate["success"] == true)
+        val project = finishUpdate["project"] as Map<*, *>
+        val todos = project["todos"] as List<*>
+        val todo = todos.first() as Map<*, *>
+        assertEquals("热更新后的任务", todo["title"])
+        assertEquals("finished", todo["status"])
+        val hotUpdateLog =
+            root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/logs/hot_updates.jsonl")
+        val apiLog =
+            root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/logs/api_calls.jsonl")
+        assertEquals(2, hotUpdateLog.readLines().size)
+        assertTrue(hotUpdateLog.readText().contains("热更新后的任务"))
+        assertEquals(2, apiLog.readLines().size)
+        val apis = store.listApis(WORKBENCH_DEFAULT_PROJECT_ID)
+        assertEquals(1, apis.first { it["apiId"] == WORKBENCH_TODO_ADD_TOOL_ID }["executionCount"])
+        assertEquals(1, apis.first { it["apiId"] == WORKBENCH_TODO_FINISH_TOOL_ID }["executionCount"])
     }
 
     @Test
@@ -263,6 +300,11 @@ class WorkbenchProjectStoreTest {
             inputs = mapOf("title" to "Export me"),
             caller = "ai"
         )
+        store.hotUpdateProject(
+            projectId = WORKBENCH_DEFAULT_PROJECT_ID,
+            prompt = "增加 todo：Export hot update",
+            caller = "ui"
+        )
 
         val export = store.exportProject(WORKBENCH_DEFAULT_PROJECT_ID)
         val packageName = export["packageName"]!!.toString()
@@ -287,6 +329,7 @@ class WorkbenchProjectStoreTest {
             assertTrue(entries.contains("project/project.json"))
             assertTrue(entries.contains("project/data/todos.json"))
             assertTrue(entries.contains("project/logs/api_calls.jsonl"))
+            assertTrue(entries.contains("project/logs/hot_updates.jsonl"))
         }
     }
 }

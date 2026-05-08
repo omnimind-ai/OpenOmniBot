@@ -2737,6 +2737,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchStatusFinished => '已归档';
 
   @override
+  String get workbenchAssistantName => '小万';
+
+  @override
+  String get workbenchAssistantTooltip => '打开小万';
+
+  @override
+  String get workbenchAssistantPromptHint => '说出你想实时调整的地方';
+
+  @override
+  String get workbenchAssistantSend => '热更新当前 Project';
+
+  @override
+  String get workbenchAssistantApplied => 'Project 已热更新';
+
+  @override
+  String get workbenchAssistantPromptRequired => '请先输入要调整的内容';
+
+  @override
+  String get workbenchAssistantNoProject => '请先选择一个 Project';
+
+  @override
+  String get workbenchAssistantHotUpdateFailed => 'Project 热更新失败';
+
+  @override
   String get workbenchProjectModeTitle => '工作台模式';
 
   @override

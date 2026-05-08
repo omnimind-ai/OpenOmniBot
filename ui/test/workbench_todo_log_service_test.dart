@@ -71,6 +71,26 @@ void main() {
   );
 
   test(
+    'hot update applies through Workbench control API and refreshes project',
+    () async {
+      final service = _todoLogService();
+      await service.initialize();
+
+      final result = await service.applyHotUpdate('增加 todo：热更新后的任务');
+
+      expect(result.success, isTrue);
+      expect(result.appliedActionCount, 1);
+      expect(service.project.openTodos.first.title, '增加 todo：热更新后的任务');
+      expect(
+        service.project.tools
+            .firstWhere((tool) => tool.id == WorkbenchTodoToolIds.addTodo)
+            .executionCount,
+        1,
+      );
+    },
+  );
+
+  test(
     'todo.add rejects empty titles and unknown APIs fail explicitly',
     () async {
       final service = _todoLogService();
@@ -334,6 +354,65 @@ void main() {
       expect(deleted?.remainingProjectCount, 0);
     },
   );
+
+  test(
+    'native service hot updates project through MethodChannel control API',
+    () async {
+      const channel = MethodChannel('cn.com.omnimind.bot/AssistCoreEvent');
+      final calls = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call.method);
+            switch (call.method) {
+              case 'workbenchProjectGet':
+                return _projectPayload();
+              case 'workbenchApiList':
+                return _apiPayload();
+              case 'workbenchProjectHotUpdate':
+                return {
+                  'success': true,
+                  'projectId': workbenchTodoDefaultProjectId,
+                  'prompt': call.arguments['prompt'],
+                  'appliedActions': [
+                    {'apiId': WorkbenchTodoToolIds.addTodo, 'success': true},
+                  ],
+                  'hotUpdateLogPath':
+                      '/workspace/projects/$workbenchTodoDefaultProjectId/logs/hot_updates.jsonl',
+                  'project': _projectPayload(
+                    todos: [
+                      {
+                        'id': 'todo-hot-update',
+                        'title': 'Hot updated',
+                        'status': 'open',
+                        'createdAt': DateTime.now().toIso8601String(),
+                      },
+                    ],
+                  ),
+                };
+              default:
+                fail('Unexpected method ${call.method}');
+            }
+          });
+
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final service = WorkbenchTodoLogService.native();
+      await service.initialize();
+      final result = await service.applyHotUpdate('Hot updated');
+
+      expect(calls, [
+        'workbenchProjectGet',
+        'workbenchApiList',
+        'workbenchProjectHotUpdate',
+      ]);
+      expect(result.success, isTrue);
+      expect(result.hotUpdateLogPath, contains('hot_updates.jsonl'));
+      expect(service.project.openTodos.first.title, 'Hot updated');
+    },
+  );
 }
 
 WorkbenchTodoLogService _todoLogService() {
@@ -511,6 +590,26 @@ class _TestWorkbenchProjectBackend implements WorkbenchProjectBackend {
       projectPath: '/tmp/$deletedProjectId',
       spacePath: '/workspace/projects/$deletedProjectId',
       remainingProjectCount: 0,
+    );
+  }
+
+  @override
+  Future<WorkbenchProjectHotUpdateResult> hotUpdateProject({
+    required String projectId,
+    required String prompt,
+  }) async {
+    final addResult = await callApi(
+      projectId: projectId,
+      apiId: WorkbenchTodoToolIds.addTodo,
+      inputs: {'title': prompt},
+    );
+    return WorkbenchProjectHotUpdateResult(
+      success: addResult.success,
+      projectId: projectId,
+      prompt: prompt,
+      appliedActionCount: addResult.success ? 1 : 0,
+      project: _project,
+      hotUpdateLogPath: '/workspace/projects/$projectId/logs/hot_updates.jsonl',
     );
   }
 

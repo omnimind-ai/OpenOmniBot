@@ -535,6 +535,7 @@ class AgentToolRouter(
             "workbench_project_export" -> executeWorkbenchProjectExport(args, env.workspaceDescriptor)
             "workbench_project_open" -> executeWorkbenchProjectOpen(args, env.workspaceDescriptor)
             "workbench_project_delete" -> executeWorkbenchProjectDelete(args, env.workspaceDescriptor)
+            "workbench_project_hot_update" -> executeWorkbenchProjectHotUpdate(args, env.workspaceDescriptor)
             "schedule_task_create",
             "schedule_task_list",
             "schedule_task_update",
@@ -2001,6 +2002,33 @@ class AgentToolRouter(
             )
         } catch (e: Exception) {
             errorResult(toolName, e.message, "Workbench project delete failed")
+        }
+    }
+
+    private fun executeWorkbenchProjectHotUpdate(
+        args: JsonObject,
+        workspace: AgentWorkspaceDescriptor
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_hot_update"
+        return try {
+            val projectId = args["projectId"]?.jsonPrimitive?.content?.trim().orEmpty()
+            val prompt = args["prompt"]?.jsonPrimitive?.content?.trim().orEmpty()
+            val payload = workbenchProjectStore.hotUpdateProject(
+                projectId = projectId,
+                prompt = prompt,
+                caller = "ai"
+            )
+            val payloadJson = encodeLocalizedPayload(payload)
+            ToolExecutionResult.ContextResult(
+                toolName = toolName,
+                summaryText = "Workbench project hot updated",
+                previewJson = payloadJson,
+                rawResultJson = payloadJson,
+                success = payload["success"] == true,
+                workspaceId = workspace.id
+            )
+        } catch (e: Exception) {
+            errorResult(toolName, e.message, "Workbench project hot update failed")
         }
     }
 

@@ -5276,6 +5276,54 @@ abstract class AppLocalizations {
   /// **'已归档'**
   String get workbenchStatusFinished;
 
+  /// No description provided for @workbenchAssistantName.
+  ///
+  /// In zh, this message translates to:
+  /// **'小万'**
+  String get workbenchAssistantName;
+
+  /// No description provided for @workbenchAssistantTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开小万'**
+  String get workbenchAssistantTooltip;
+
+  /// No description provided for @workbenchAssistantPromptHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'说出你想实时调整的地方'**
+  String get workbenchAssistantPromptHint;
+
+  /// No description provided for @workbenchAssistantSend.
+  ///
+  /// In zh, this message translates to:
+  /// **'热更新当前 Project'**
+  String get workbenchAssistantSend;
+
+  /// No description provided for @workbenchAssistantApplied.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project 已热更新'**
+  String get workbenchAssistantApplied;
+
+  /// No description provided for @workbenchAssistantPromptRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先输入要调整的内容'**
+  String get workbenchAssistantPromptRequired;
+
+  /// No description provided for @workbenchAssistantNoProject.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先选择一个 Project'**
+  String get workbenchAssistantNoProject;
+
+  /// No description provided for @workbenchAssistantHotUpdateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project 热更新失败'**
+  String get workbenchAssistantHotUpdateFailed;
+
   /// No description provided for @workbenchProjectModeTitle.
   ///
   /// In zh, this message translates to:

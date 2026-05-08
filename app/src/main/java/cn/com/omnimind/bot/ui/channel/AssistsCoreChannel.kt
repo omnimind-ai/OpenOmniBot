@@ -328,6 +328,9 @@ class AssistsCoreChannel {
                 "workbenchProjectExport" -> {
                     assistsCoreManager!!.workbenchProjectExport(call, result)
                 }
+                "workbenchProjectHotUpdate" -> {
+                    assistsCoreManager!!.workbenchProjectHotUpdate(call, result)
+                }
                 "workbenchApiList" -> {
                     assistsCoreManager!!.workbenchApiList(call, result)
                 }

@@ -14,6 +14,7 @@ const val WORKBENCH_TODO_TEMPLATE_ID = "todo_log_demo"
 const val WORKBENCH_DEFAULT_PROJECT_ID = "oob-workbench-todo-log"
 const val WORKBENCH_TODO_ADD_TOOL_ID = "todo.add"
 const val WORKBENCH_TODO_FINISH_TOOL_ID = "todo.finish"
+const val WORKBENCH_HOT_UPDATE_CALLER = "xiaowan_hot_update"
 
 data class WorkbenchProjectRecord(
     val projectId: String,
@@ -271,6 +272,83 @@ class WorkbenchProjectStore(
     }
 
     /**
+     * Applies a prompt-driven hot update to a registered Workbench project.
+     *
+     * @param projectId Project whose native display should refresh after the update.
+     * @param prompt User request captured from the Xiaowan floating assistant; it is stored in
+     * `logs/hot_updates.jsonl` and interpreted by the current project template.
+     * @param caller Caller label such as `ui` or `ai`, persisted for audit and future replay.
+     * @return Hot-update result plus the refreshed project payload.
+     */
+    @Synchronized
+    fun hotUpdateProject(
+        projectId: String,
+        prompt: String,
+        caller: String
+    ): Map<String, Any?> {
+        val record = findProject(projectId)
+        val request = prompt.trim()
+        require(request.isNotEmpty()) { "Hot update prompt is required." }
+        require(record.templateId == WORKBENCH_TODO_TEMPLATE_ID) {
+            "Unsupported workbench hot update template: ${record.templateId}"
+        }
+        val appliedActions = mutableListOf<Map<String, Any?>>()
+        val lower = request.lowercase()
+        val wantsFinish =
+            listOf("归档", "完成", "finish", "archive", "done").any { lower.contains(it) }
+        val wantsAdd =
+            listOf("增加", "新增", "添加", "add", "create").any { lower.contains(it) }
+
+        if (wantsFinish) {
+            val openTodo = readTodos(record.projectId).firstOrNull { it.status != "finished" }
+            if (openTodo == null) {
+                appliedActions.add(
+                    linkedMapOf(
+                        "apiId" to WORKBENCH_TODO_FINISH_TOOL_ID,
+                        "success" to false,
+                        "errorCode" to "NO_OPEN_TODO"
+                    )
+                )
+            } else {
+                appliedActions.add(
+                    compactToolResult(
+                        callApi(
+                            projectId = record.projectId,
+                            apiId = WORKBENCH_TODO_FINISH_TOOL_ID,
+                            inputs = mapOf("todo_id" to openTodo.id),
+                            caller = WORKBENCH_HOT_UPDATE_CALLER
+                        )
+                    )
+                )
+            }
+        }
+
+        if (wantsAdd || !wantsFinish) {
+            appliedActions.add(
+                compactToolResult(
+                    callApi(
+                        projectId = record.projectId,
+                        apiId = WORKBENCH_TODO_ADD_TOOL_ID,
+                        inputs = mapOf("title" to hotUpdateTodoTitle(request)),
+                        caller = WORKBENCH_HOT_UPDATE_CALLER
+                    )
+                )
+            )
+        }
+
+        appendHotUpdate(record.projectId, request, caller, appliedActions)
+        writeProjectJson(record, projectApis(record.projectId), readTodos(record.projectId))
+        return linkedMapOf(
+            "success" to true,
+            "projectId" to record.projectId,
+            "prompt" to request,
+            "appliedActions" to appliedActions,
+            "hotUpdateLogPath" to "${record.spacePath}/logs/hot_updates.jsonl",
+            "project" to getProject(record.projectId)
+        )
+    }
+
+    /**
      * Resolves the native Flutter route for a project.
      *
      * @param projectId Project to open.
@@ -458,6 +536,7 @@ class WorkbenchProjectStore(
                 |## Data
                 |- `data/todos.json`: persistent todo state
                 |- `logs/api_calls.jsonl`: append-only AI/UI API call log
+                |- `logs/hot_updates.jsonl`: append-only Xiaowan hot update requests
                 |
                 """.trimMargin()
             )
@@ -513,7 +592,8 @@ class WorkbenchProjectStore(
                             "archiveTodo" to WORKBENCH_TODO_FINISH_TOOL_ID,
                             "frontend" to "frontend/page_spec.json",
                             "data" to "data/todos.json",
-                            "logs" to "logs/api_calls.jsonl"
+                            "logs" to "logs/api_calls.jsonl",
+                            "hotUpdates" to "logs/hot_updates.jsonl"
                         ),
                         "apis" to apis.map { api ->
                             linkedMapOf(
@@ -728,6 +808,64 @@ class WorkbenchProjectStore(
             "errorCode" to result["errorCode"]
         )
         file.appendText(logGson.toJson(row) + "\n")
+    }
+
+    /**
+     * Appends one Project-level hot update request to the audit log.
+     *
+     * @param projectId Project directory that owns the `logs/hot_updates.jsonl` file.
+     * @param prompt User prompt captured from the floating assistant.
+     * @param caller UI or AI caller label for future replay/debugging.
+     * @param appliedActions Compact API action summaries produced while applying the prompt.
+     */
+    private fun appendHotUpdate(
+        projectId: String,
+        prompt: String,
+        caller: String,
+        appliedActions: List<Map<String, Any?>>
+    ) {
+        val file = File(projectDir(projectId), "logs/hot_updates.jsonl")
+        file.parentFile?.mkdirs()
+        val row = linkedMapOf<String, Any?>(
+            "timestamp" to nowIso(),
+            "projectId" to projectId,
+            "caller" to caller.ifBlank { "unknown" },
+            "prompt" to prompt,
+            "appliedActions" to appliedActions
+        )
+        file.appendText(logGson.toJson(row) + "\n")
+    }
+
+    /**
+     * Reduces a full API call result to a log-safe action summary.
+     *
+     * @param result Payload returned by `callApi`; the full refreshed Project is intentionally
+     * omitted so `hot_updates.jsonl` stays small and append-only.
+     * @return API id, tool id, success flag, and optional error code.
+     */
+    private fun compactToolResult(result: Map<String, Any?>): Map<String, Any?> {
+        return linkedMapOf(
+            "apiId" to (result["apiId"] ?: result["toolId"]),
+            "toolId" to result["toolId"],
+            "success" to (result["success"] == true),
+            "errorCode" to result["errorCode"]
+        )
+    }
+
+    /**
+     * Converts a natural-language hot update prompt into the demo todo title.
+     *
+     * @param prompt Raw prompt from Xiaowan. If it contains a colon, the text after the first
+     * colon is treated as the concrete todo title; otherwise the full prompt is used.
+     * @return Bounded todo title suitable for persistence in `data/todos.json`.
+     */
+    private fun hotUpdateTodoTitle(prompt: String): String {
+        val candidate = when {
+            prompt.contains("：") -> prompt.substringAfter("：")
+            prompt.contains(":") -> prompt.substringAfter(":")
+            else -> prompt
+        }.trim().ifBlank { prompt }
+        return candidate.take(120)
     }
 
     private fun initialTodos(config: Map<String, Any?>): List<WorkbenchTodoRecord> {

@@ -50,6 +50,7 @@ workbench_project_get
 workbench_project_open
 workbench_project_export
 workbench_project_delete
+workbench_project_hot_update
 workbench_api_list
 workbench_api_call
 ```
@@ -73,6 +74,7 @@ Persist generated project assets under the shared workspace:
   backend/api_spec.json
   data/todos.json
   logs/api_calls.jsonl
+  logs/hot_updates.jsonl
 ```
 
 `registry.json` stores projects. `api_registry.json` stores business APIs only. `api_calls.jsonl` records both AI calls and UI clicks.
@@ -96,6 +98,7 @@ The project directory separates editable source specs from runtime state:
 8. Put file inspection and editing in Workspace instead of exposing long registry/data/log paths in the default Project UI.
 9. Keep Workbench mode separate from existing interaction pages. A small Project shortcut may appear in the chat/VLM input area, drawer, or Workspace header, but it should only open `/workbench/projects`; it must not become an MCP/toolbox list or expose Project control APIs as business APIs.
 10. Use `/workbench/projects` for the lightweight vibe editing/control surface and Project information, and `/workbench/todo_log?projectId=...` for the generated Todo frontend page.
+11. Project pages may expose a Xiaowan floating assistant. A submitted prompt must call `workbench_project_hot_update`, persist `logs/hot_updates.jsonl`, refresh the current native Flutter display, and keep Project business APIs in `workbench_api_list` unchanged.
 
 ## Backend Rules
 
@@ -166,7 +169,8 @@ Current demo limitation: `todo_log_demo` only includes `todo.add` and `todo.fini
 9. Open the project with `workbench_project_open`.
 10. Export a distributable project package with `workbench_project_export` when the user asks to register or share the project.
 11. Delete a project with `workbench_project_delete` only after explicit user confirmation.
-12. Add focused service/runtime tests before broad UI work.
+12. Hot update a project with `workbench_project_hot_update` after reading the current Project. Treat hot update as a Workbench control-plane action; it may internally call registered business APIs but must not appear in Project API Registry.
+13. Add focused service/runtime tests before broad UI work.
 
 ## Distribution Export
 
@@ -244,5 +248,7 @@ When a JDK is available, run the focused Android unit test:
 ```
 
 For live UI smoke, open `/workbench/projects` and verify the Project API panel shows `todo.add` / `todo.finish` execution counts. Then open `/workbench/todo_log?projectId=...` and verify it only shows the generated Todo frontend, not the Project control API panel or Workspace entry.
+
+For hot-update smoke, open either `/workbench/projects` or `/workbench/todo_log?projectId=...`, tap the Xiaowan floating button, submit a change prompt, and verify the page refreshes from persisted Project state while `workbench_api_list` still returns only `todo.add` / `todo.finish`.
 
 For distribution smoke, export the project from `/workbench/projects` or call `workbench_project_export`, then verify `/workspace/projects/exports/<project-id>-<timestamp>.zip` contains the manifest, registry records, `project/README.md`, `frontend/page_spec.json`, `backend/api_spec.json`, data, logs, and this skill.

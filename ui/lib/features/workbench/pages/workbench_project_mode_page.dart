@@ -274,6 +274,27 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
           primary: true,
           onBackPressed: _handleBackNavigation,
         ),
+        floatingActionButton: AnimatedBuilder(
+          animation: _service,
+          builder: (context, _) {
+            return FloatingActionButton.extended(
+              onPressed: () {
+                final project = _currentProject;
+                if (project == null) {
+                  showToast(
+                    context.l10n.workbenchAssistantNoProject,
+                    type: ToastType.error,
+                  );
+                  return;
+                }
+                _openAssistantSheet(project);
+              },
+              tooltip: context.l10n.workbenchAssistantTooltip,
+              icon: const Icon(Icons.auto_awesome_rounded),
+              label: Text(context.l10n.workbenchAssistantName),
+            );
+          },
+        ),
         body: SafeArea(
           child: AnimatedBuilder(
             animation: _service,
@@ -305,6 +326,159 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
         ),
       ),
     );
+  }
+
+  /// Opens the Xiaowan hot-update sheet for the selected Project.
+  ///
+  /// `project` is the currently selected Workbench Project. The submitted
+  /// prompt is handled by the Workbench control API, then the Project list is
+  /// refreshed from the returned persistent state.
+  Future<void> _openAssistantSheet(WorkbenchProject project) async {
+    final controller = TextEditingController();
+    var applying = false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final palette = sheetContext.omniPalette;
+            Future<void> submit() async {
+              final prompt = controller.text.trim();
+              if (prompt.isEmpty) {
+                showToast(
+                  sheetContext.l10n.workbenchAssistantPromptRequired,
+                  type: ToastType.error,
+                );
+                return;
+              }
+              setSheetState(() => applying = true);
+              try {
+                final result = await _service.applyHotUpdate(project, prompt);
+                if (!mounted) {
+                  return;
+                }
+                if (sheetContext.mounted) {
+                  Navigator.of(sheetContext).pop();
+                }
+                showToast(
+                  result?.success == true
+                      ? context.l10n.workbenchAssistantApplied
+                      : context.l10n.workbenchAssistantHotUpdateFailed,
+                  type: result?.success == true
+                      ? ToastType.success
+                      : ToastType.error,
+                );
+              } catch (_) {
+                if (!mounted) {
+                  return;
+                }
+                if (sheetContext.mounted) {
+                  setSheetState(() => applying = false);
+                }
+                showToast(
+                  context.l10n.workbenchAssistantHotUpdateFailed,
+                  type: ToastType.error,
+                );
+              }
+            }
+
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                  decoration: BoxDecoration(
+                    color: palette.surfacePrimary,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(16),
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.auto_awesome_rounded,
+                            color: palette.accentPrimary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              sheetContext.l10n.workbenchAssistantName,
+                              style: TextStyle(
+                                color: palette.textPrimary,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: MaterialLocalizations.of(
+                              sheetContext,
+                            ).closeButtonTooltip,
+                            onPressed: applying
+                                ? null
+                                : () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      _buildTinyCode(project.projectId),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: controller,
+                        autofocus: true,
+                        enabled: !applying,
+                        minLines: 3,
+                        maxLines: 5,
+                        textInputAction: TextInputAction.newline,
+                        decoration: InputDecoration(
+                          hintText:
+                              sheetContext.l10n.workbenchAssistantPromptHint,
+                          filled: true,
+                          fillColor: palette.surfaceSecondary,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.all(12),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: applying ? null : submit,
+                          icon: applying
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.bolt_rounded),
+                          label: Text(sheetContext.l10n.workbenchAssistantSend),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    controller.dispose();
   }
 
   WorkbenchProject? get _currentProject {
