@@ -35,6 +35,7 @@
                 android:id="@+id/ivResume"
                 android:layout_width="25dp"
                 android:layout_height="25dp"
+                android:contentDescription="@string/task_resume"
                 android:padding="3dp"
                 android:scaleType="centerCrop"
                 android:src="@mipmap/ic_vlm_task_resume_new" />
@@ -64,6 +65,7 @@
                 <ImageView
                     android:layout_width="6.2dp"
                     android:layout_height="10.3dp"
+                    android:importantForAccessibility="no"
                     android:scaleType="centerCrop"
                     android:src="@mipmap/ic_flash" />
                 <!-- 执行中状态文字  -->
@@ -93,6 +95,7 @@
                     android:layout_height="wrap_content"
                     android:layout_gravity="center_vertical"
                     android:background="@drawable/bg_gray_rounded_rect"
+                    android:contentDescription="@string/task_resume"
                     android:gravity="center_vertical"
                     android:paddingLeft="6dp"
                     android:paddingTop="3dp"
@@ -103,6 +106,7 @@
                     <ImageView
                         android:layout_width="16dp"
                         android:layout_height="16dp"
+                        android:importantForAccessibility="no"
                         android:scaleType="fitXY"
                         android:src="@mipmap/ic_vlm_task_resume_new" />
 
@@ -126,6 +130,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:background="@drawable/bg_gray_rounded_rect"
+                    android:contentDescription="@string/task_pause"
                     android:gravity="center_vertical"
                     android:paddingLeft="6dp"
                     android:paddingTop="3dp"
@@ -135,6 +140,7 @@
                     <ImageView
                         android:layout_width="16dp"
                         android:layout_height="16dp"
+                        android:importantForAccessibility="no"
                         android:scaleType="centerCrop"
                         android:src="@mipmap/ic_user_info" />
 
@@ -158,6 +164,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginLeft="8dp"
                     android:background="@drawable/bg_gray_rounded_rect"
+                    android:contentDescription="@string/task_stop"
                     android:gravity="center_vertical"
                     android:paddingLeft="6dp"
                     android:paddingTop="3dp"
@@ -167,6 +174,7 @@
                     <ImageView
                         android:layout_width="16dp"
                         android:layout_height="16dp"
+                        android:importantForAccessibility="no"
                         android:scaleType="fitXY"
                         android:src="@mipmap/ic_vlm_task_stop_new" />
 
@@ -188,4 +196,3 @@
 
 
 </RelativeLayout>
-

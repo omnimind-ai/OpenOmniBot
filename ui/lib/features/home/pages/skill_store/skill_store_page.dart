@@ -109,6 +109,13 @@ class _SkillStorePageState extends State<SkillStorePage> {
     });
   }
 
+  String _switchStateLabel(bool value) =>
+      value ? context.trLegacy('已开启') : context.trLegacy('已关闭');
+
+  String _localeText({required String zh, required String en}) {
+    return Localizations.localeOf(context).languageCode == 'en' ? en : zh;
+  }
+
   Future<void> _toggleSkill(AgentSkillItem item, bool enabled) async {
     _setBusy(item.id, true);
     try {
@@ -326,102 +333,111 @@ class _SkillStorePageState extends State<SkillStorePage> {
         ? context.l10n.skillNoDescription
         : item.description;
     final statusSummary = _buildStatusSummary(item);
+    final semanticParts = <String>[
+      item.name,
+      description,
+      if (statusSummary.isNotEmpty) statusSummary,
+    ];
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 14, 2, 14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildSkillTitle(item),
-                const SizedBox(height: 2),
-                Text(
-                  description,
-                  style: TextStyle(
-                    color: palette.textSecondary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w400,
-                    height: 1.55,
-                    fontFamily: 'PingFang SC',
-                  ),
-                ),
-                if (statusSummary.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+      child: Semantics(
+        container: true,
+        label: semanticParts.join('，'),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSkillTitle(item),
+                  const SizedBox(height: 2),
                   Text(
-                    statusSummary,
+                    description,
                     style: TextStyle(
+                      color: palette.textSecondary,
                       fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: item.installed && item.enabled
-                          ? palette.accentPrimary
-                          : palette.textTertiary,
-                      height: 1.45,
+                      fontWeight: FontWeight.w400,
+                      height: 1.55,
                       fontFamily: 'PingFang SC',
                     ),
                   ),
-                ],
-                if (!item.installed && item.isBuiltin) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    context.l10n.skillBuiltinRemovedDesc,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: palette.textTertiary,
-                      height: 1.5,
-                      fontFamily: 'PingFang SC',
+                  if (statusSummary.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      statusSummary,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: item.installed && item.enabled
+                            ? palette.accentPrimary
+                            : palette.textTertiary,
+                        height: 1.45,
+                        fontFamily: 'PingFang SC',
+                      ),
                     ),
-                  ),
-                ],
-                if (item.installed) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          item.shellSkillFilePath,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: palette.textTertiary,
-                            height: 1.45,
-                            fontFamily: 'PingFang SC',
+                  ],
+                  if (!item.installed && item.isBuiltin) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      context.l10n.skillBuiltinRemovedDesc,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: palette.textTertiary,
+                        height: 1.5,
+                        fontFamily: 'PingFang SC',
+                      ),
+                    ),
+                  ],
+                  if (item.installed) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.shellSkillFilePath,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: palette.textTertiary,
+                              height: 1.45,
+                              fontFamily: 'PingFang SC',
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      TextButton(
-                        onPressed: busy ? null : () => _deleteSkill(item),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.alertRed,
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(0, 28),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        const SizedBox(width: 12),
+                        TextButton(
+                          onPressed: busy ? null : () => _deleteSkill(item),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.alertRed,
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(0, 28),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            context.l10n.skillDelete,
+                            style: const TextStyle(fontSize: 12),
+                          ),
                         ),
-                        child: Text(
-                          context.l10n.skillDelete,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: _kSkillTileTrailingWidth,
-            height: _kSkillTileTrailingHeight,
-            child: Align(
-              alignment: Alignment.topRight,
-              child: _buildTrailingControl(item, busy: busy),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: _kSkillTileTrailingWidth,
+              height: _kSkillTileTrailingHeight,
+              child: Align(
+                alignment: Alignment.topRight,
+                child: _buildTrailingControl(item, busy: busy),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -485,48 +501,62 @@ class _SkillStorePageState extends State<SkillStorePage> {
   Widget _buildTrailingControl(AgentSkillItem item, {required bool busy}) {
     final palette = context.omniPalette;
     if (item.installed) {
-      return SizedBox(
-        width: _kSkillTileTrailingWidth,
-        height: _kSkillTileTrailingHeight,
-        child: Stack(
-          alignment: Alignment.centerRight,
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: busy ? null : () => _toggleSkill(item, !item.enabled),
-              child: AbsorbPointer(
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  opacity: busy ? 0.4 : 1,
-                  child: FlutterSwitch(
-                    width: 32,
-                    height: 18.67,
-                    toggleSize: 11.3,
-                    padding: 3,
-                    activeColor: palette.accentPrimary,
-                    inactiveColor: palette.borderStrong,
-                    borderRadius: 28.75,
-                    value: item.enabled,
-                    onToggle: (_) {},
+      return Semantics(
+        container: true,
+        button: true,
+        toggled: item.enabled,
+        enabled: !busy,
+        label: _localeText(
+          zh: '启用或停用技能 ${item.name}',
+          en: 'Enable or disable skill ${item.name}',
+        ),
+        value: busy ? context.trLegacy('加载中...') : _switchStateLabel(item.enabled),
+        onTap: busy ? null : () => _toggleSkill(item, !item.enabled),
+        child: ExcludeSemantics(
+          child: SizedBox(
+            width: _kSkillTileTrailingWidth,
+            height: _kSkillTileTrailingHeight,
+            child: Stack(
+              alignment: Alignment.centerRight,
+              children: [
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: busy ? null : () => _toggleSkill(item, !item.enabled),
+                  child: AbsorbPointer(
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      opacity: busy ? 0.4 : 1,
+                      child: FlutterSwitch(
+                        width: 32,
+                        height: 18.67,
+                        toggleSize: 11.3,
+                        padding: 3,
+                        activeColor: palette.accentPrimary,
+                        inactiveColor: palette.borderStrong,
+                        borderRadius: 28.75,
+                        value: item.enabled,
+                        onToggle: (_) {},
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-            IgnorePointer(
-              ignoring: !busy,
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 160),
-                curve: Curves.easeOutCubic,
-                opacity: busy ? 1 : 0,
-                child: const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2.1),
+                IgnorePointer(
+                  ignoring: !busy,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 160),
+                    curve: Curves.easeOutCubic,
+                    opacity: busy ? 1 : 0,
+                    child: const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2.1),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       );
     }

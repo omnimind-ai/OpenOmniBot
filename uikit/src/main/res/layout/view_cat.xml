@@ -12,6 +12,7 @@
             android:id="@+id/ivCat"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:contentDescription="@string/accessibility_floating_assistant"
             android:scaleType="centerCrop"/>
 
     </FrameLayout>

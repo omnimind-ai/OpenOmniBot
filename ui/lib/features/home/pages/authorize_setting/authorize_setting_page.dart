@@ -92,6 +92,18 @@ class _AuthorizeSettingPageState extends State<AuthorizeSettingPage>
     return languageCode == 'en' ? en : zh;
   }
 
+  String _switchStateLabel(bool value) =>
+      value ? context.trLegacy('已开启') : context.trLegacy('已关闭');
+
+  String _settingSemanticLabel(_AuthorizeSettingItem item) {
+    final parts = <String>[item.title];
+    final subtitle = item.subtitle?.trim();
+    if (subtitle != null && subtitle.isNotEmpty) {
+      parts.add(subtitle);
+    }
+    return parts.join('，');
+  }
+
   List<_AuthorizeSettingSection> _buildSections() {
     return [
       _AuthorizeSettingSection(
@@ -106,6 +118,7 @@ class _AuthorizeSettingPageState extends State<AuthorizeSettingPage>
             title: context.l10n.authorizeReceiveNotifications,
             subtitle: context.l10n.authorizeNotificationsDesc,
             trailing: _buildSwitchTrailing(
+              semanticLabel: context.l10n.authorizeReceiveNotifications,
               value: notificationEnabled,
               onToggle: _toggleNotification,
             ),
@@ -421,59 +434,64 @@ class _AuthorizeSettingPageState extends State<AuthorizeSettingPage>
     final palette = context.omniPalette;
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: item.onTap,
-        borderRadius: BorderRadius.circular(14),
-        splashColor: palette.accentPrimary.withValues(alpha: 0.08),
-        highlightColor: Colors.transparent,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(4, 14, 2, isLast ? 14 : 13),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _buildLeadingIcon(item),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: _titleColor,
-                        height: 1.5,
-                        fontFamily: 'PingFang SC',
-                      ),
-                    ),
-                    if (item.subtitle != null) ...[
-                      const SizedBox(height: 2),
+      child: Semantics(
+        button: item.onTap != null,
+        enabled: item.onTap != null || item.trailing != null,
+        label: _settingSemanticLabel(item),
+        child: InkWell(
+          onTap: item.onTap,
+          borderRadius: BorderRadius.circular(14),
+          splashColor: palette.accentPrimary.withValues(alpha: 0.08),
+          highlightColor: Colors.transparent,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(4, 14, 2, isLast ? 14 : 13),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _buildLeadingIcon(item),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        item.subtitle!,
+                        item.title,
                         style: TextStyle(
-                          fontSize: 11,
-                          height: 1.55,
-                          color: _subtitleColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: _titleColor,
+                          height: 1.5,
                           fontFamily: 'PingFang SC',
                         ),
                       ),
+                      if (item.subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          item.subtitle!,
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1.55,
+                            color: _subtitleColor,
+                            fontFamily: 'PingFang SC',
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
-                ),
-              ),
-              if (item.trailing != null)
-                item.trailing!
-              else if (item.onTap != null)
-                Padding(
-                  padding: const EdgeInsets.only(left: 12),
-                  child: Icon(
-                    Icons.chevron_right_rounded,
-                    size: 18,
-                    color: _tertiaryTextColor,
                   ),
                 ),
-            ],
+                if (item.trailing != null)
+                  item.trailing!
+                else if (item.onTap != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 12),
+                    child: Icon(
+                      Icons.chevron_right_rounded,
+                      size: 18,
+                      color: _tertiaryTextColor,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -518,25 +536,37 @@ class _AuthorizeSettingPageState extends State<AuthorizeSettingPage>
   }
 
   Widget _buildSwitchTrailing({
+    required String semanticLabel,
     required bool value,
     required ValueChanged<bool> onToggle,
   }) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return Semantics(
+      container: true,
+      button: true,
+      toggled: value,
+      enabled: true,
+      label: semanticLabel,
+      value: _switchStateLabel(value),
       onTap: () => onToggle(!value),
-      child: Padding(
-        padding: const EdgeInsets.only(left: 12),
-        child: AbsorbPointer(
-          child: FlutterSwitch(
-            width: 32,
-            height: 18.67,
-            toggleSize: 11.3,
-            padding: 3,
-            activeColor: _accentColor,
-            inactiveColor: _switchInactiveColor,
-            borderRadius: 28.75,
-            value: value,
-            onToggle: onToggle,
+      child: ExcludeSemantics(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => onToggle(!value),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: AbsorbPointer(
+              child: FlutterSwitch(
+                width: 32,
+                height: 18.67,
+                toggleSize: 11.3,
+                padding: 3,
+                activeColor: _accentColor,
+                inactiveColor: _switchInactiveColor,
+                borderRadius: 28.75,
+                value: value,
+                onToggle: onToggle,
+              ),
+            ),
           ),
         ),
       ),

@@ -7,6 +7,14 @@
     <string name="task_doing">执行中</string>
     <string name="task_takeover">接管</string>
     <string name="task_continue">继续</string>
+    <string name="task_stop">结束任务</string>
+    <string name="task_pause">暂停并接管任务</string>
+    <string name="task_resume">继续任务</string>
+    <string name="accessibility_floating_assistant">小万悬浮助手</string>
+    <string name="accessibility_floating_assistant_dragging">正在拖动小万悬浮助手</string>
+    <string name="accessibility_floating_assistant_working">小万悬浮助手正在执行任务</string>
+    <string name="accessibility_open_home">打开主页</string>
+    <string name="accessibility_scheduled_stop">取消定时任务</string>
     <string name="user_action">用户操作中...</string>
     <string name="suggestion_loading">容我想想...</string>
 </resources>

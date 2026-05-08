@@ -34,6 +34,9 @@ class _AboutPageState extends State<AboutPage> {
   bool _isUpdatingBetaOptIn = false;
   bool _isUpdatingDownloadSource = false;
 
+  String _switchStateLabel(bool value) =>
+      value ? context.trLegacy('已开启') : context.trLegacy('已关闭');
+
   @override
   void initState() {
     super.initState();
@@ -606,17 +609,32 @@ class _AboutPageState extends State<AboutPage> {
             onTap: _isUpdatingBetaOptIn
                 ? null
                 : () => _handleToggleBetaOptIn(!_betaOptIn),
-            trailing: IgnorePointer(
-              child: FlutterSwitch(
-                width: 44.8,
-                height: 25.0,
-                toggleSize: 15.3,
-                padding: 4.8,
-                activeColor: context.omniPalette.accentPrimary,
-                inactiveColor: context.omniPalette.borderStrong,
-                value: _betaOptIn,
-                borderRadius: 28.75,
-                onToggle: (_) {},
+            trailing: Semantics(
+              container: true,
+              button: true,
+              toggled: _betaOptIn,
+              enabled: !_isUpdatingBetaOptIn,
+              label: context.l10n.aboutBetaProgramTitle,
+              value: _isUpdatingBetaOptIn
+                  ? context.trLegacy('加载中...')
+                  : _switchStateLabel(_betaOptIn),
+              onTap: _isUpdatingBetaOptIn
+                  ? null
+                  : () => _handleToggleBetaOptIn(!_betaOptIn),
+              child: ExcludeSemantics(
+                child: IgnorePointer(
+                  child: FlutterSwitch(
+                    width: 44.8,
+                    height: 25.0,
+                    toggleSize: 15.3,
+                    padding: 4.8,
+                    activeColor: context.omniPalette.accentPrimary,
+                    inactiveColor: context.omniPalette.borderStrong,
+                    value: _betaOptIn,
+                    borderRadius: 28.75,
+                    onToggle: (_) {},
+                  ),
+                ),
               ),
             ),
           ),

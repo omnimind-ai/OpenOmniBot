@@ -23,43 +23,48 @@ class SettingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasTap = onTap != null;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(0),
-      child: Container(
-        height: height ?? 48,
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                context.trLegacy(title),
-                style: TextStyle(
-                  fontSize: AppTextStyles.fontSizeMain,
-                  fontWeight: FontWeight.w300,
-                  letterSpacing: 0.44,
-                  color: AppColors.text90,
-                ),
-              ),
-            ),
-            if (trailing != null) trailing!,
-            if (showChevron)      //无尾部组件，有箭头
-              SizedBox(
-                width: 16,
-                height: 16,
-                child: SvgPicture.asset(
-                  'assets/my/chevron_right.svg',
-                  width: 16,
-                  height: 16,
-                  colorFilter: const ColorFilter.mode(
-                    AppColors.text90, // icon_nav_secondary
-                    BlendMode.srcIn,
+    return Semantics(
+      button: hasTap,
+      enabled: hasTap || trailing != null,
+      label: context.trLegacy(title),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(0),
+        child: Container(
+          height: height ?? 48,
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  context.trLegacy(title),
+                  style: TextStyle(
+                    fontSize: AppTextStyles.fontSizeMain,
+                    fontWeight: FontWeight.w300,
+                    letterSpacing: 0.44,
+                    color: AppColors.text90,
                   ),
                 ),
               ),
-            if (!hasTap && trailing == null) 
-              const SizedBox.shrink(),
-          ],
+              if (trailing != null) trailing!,
+              if (showChevron)      //无尾部组件，有箭头
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: SvgPicture.asset(
+                    'assets/my/chevron_right.svg',
+                    width: 16,
+                    height: 16,
+                    colorFilter: const ColorFilter.mode(
+                      AppColors.text90, // icon_nav_secondary
+                      BlendMode.srcIn,
+                    ),
+                  ),
+                ),
+              if (!hasTap && trailing == null)
+                const SizedBox.shrink(),
+            ],
+          ),
         ),
       ),
     );

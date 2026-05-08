@@ -119,6 +119,14 @@ class MyPageState extends State<MyPage> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _setVibrationEnabled(bool enabled) async {
+    await CacheUtil.cacheBool("app_vibrate", enabled);
+    if (!mounted) return;
+    setState(() {
+      vibrationEnabled = enabled;
+    });
+  }
+
   Future<void> _loadUserData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -249,28 +257,46 @@ class MyPageState extends State<MyPage> with WidgetsBindingObserver {
                             children: [
                               SettingTile(
                                 title: '震动反馈',
-                                trailing: FlutterSwitch(
-                                  width: 44.8,
-                                  height: 25.0,
-                                  toggleSize: 15.3,
-                                  padding: 4.8,
-                                  activeColor: AppColors.primaryBlue,
-                                  inactiveColor:
-                                      AppColors.fillStandardSecondary,
-                                  value: vibrationEnabled,
-                                  borderRadius: 28.75,
-                                  onToggle: (val) async {
-                                    await CacheUtil.cacheBool(
-                                      "app_vibrate",
-                                      val,
-                                    );
-                                    setState(() {
-                                      vibrationEnabled = val;
-                                    });
-                                  },
+                                trailing: Semantics(
+                                  container: true,
+                                  button: true,
+                                  toggled: vibrationEnabled,
+                                  label:
+                                      Localizations.localeOf(context).languageCode ==
+                                          'en'
+                                      ? 'Vibration feedback'
+                                      : '震动反馈',
+                                  value: vibrationEnabled
+                                      ? (Localizations.localeOf(context)
+                                                    .languageCode ==
+                                                'en'
+                                            ? 'On'
+                                            : '已开启')
+                                      : (Localizations.localeOf(context)
+                                                    .languageCode ==
+                                                'en'
+                                            ? 'Off'
+                                            : '已关闭'),
+                                  onTap: () =>
+                                      _setVibrationEnabled(!vibrationEnabled),
+                                  child: ExcludeSemantics(
+                                    child: FlutterSwitch(
+                                      width: 44.8,
+                                      height: 25.0,
+                                      toggleSize: 15.3,
+                                      padding: 4.8,
+                                      activeColor: AppColors.primaryBlue,
+                                      inactiveColor:
+                                          AppColors.fillStandardSecondary,
+                                      value: vibrationEnabled,
+                                      borderRadius: 28.75,
+                                      onToggle: _setVibrationEnabled,
+                                    ),
+                                  ),
                                 ),
                                 showChevron: false,
-                                onTap: () {},
+                                onTap: () =>
+                                    _setVibrationEnabled(!vibrationEnabled),
                               ),
                               SettingTile(
                                 title: 'MCP 工具',

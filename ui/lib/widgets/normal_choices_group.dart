@@ -59,47 +59,54 @@ class _NormalChoicesGroupState extends State<NormalChoicesGroup> {
         runSpacing: 8.0,
         children: widget.options.map((option) {
           final isSelected = _selectedOptions.contains(option);
-          return GestureDetector(
-            onTap: () => _toggleOption(option),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
-              decoration: BoxDecoration(
-                color: isSelected 
-                    ?  Colors.grey
-                    : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (option.icon != null) ...[
-                    Container(
-                      width: 20,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        color: option.iconBackgroundColor,
-                        borderRadius: BorderRadius.circular(4),
+          return Semantics(
+            button: true,
+            selected: isSelected,
+            label: option.label,
+            child: GestureDetector(
+              onTap: () => _toggleOption(option),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.grey
+                      : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (option.icon != null) ...[
+                      ExcludeSemantics(
+                        child: Container(
+                          width: 20,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: option.iconBackgroundColor,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Center(
+                            child: option.icon,
+                          ),
+                        ),
                       ),
-                      child: Center(
-                        child: option.icon,
+                      const SizedBox(width: 6),
+                    ],
+                    Text(
+                      option.label,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: isSelected
+                            ? Colors.white
+                            : Colors.black87,
                       ),
                     ),
-                    const SizedBox(width: 6),
                   ],
-                  Text(
-                    option.label,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: isSelected 
-                          ? Colors.white 
-                          : Colors.black87,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           );

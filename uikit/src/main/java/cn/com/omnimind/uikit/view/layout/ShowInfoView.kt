@@ -84,6 +84,30 @@ class ShowInfoView @JvmOverloads constructor(
         //收起后展示的继续按钮
         ivResume = findViewById(R.id.ivResume)
 //        ShapeBuilder.roundedRectangle("#F3F4F5".toColorInt(), 30.dpToPxF()).applyTo(ivResume!!)
+        llTakeOver?.apply {
+            isClickable = true
+            isFocusable = true
+            contentDescription = context.getString(R.string.task_pause)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        }
+        llResume?.apply {
+            isClickable = true
+            isFocusable = true
+            contentDescription = context.getString(R.string.task_resume)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        }
+        llStop?.apply {
+            isClickable = true
+            isFocusable = true
+            contentDescription = context.getString(R.string.task_stop)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        }
+        ivResume?.apply {
+            isClickable = true
+            isFocusable = true
+            contentDescription = context.getString(R.string.task_resume)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        }
         // 设置初始值
         gradientBorderContainer?.setBorderColorType(borderColorType)
         // 设置按钮点击监听
@@ -491,5 +515,4 @@ class ShowInfoView @JvmOverloads constructor(
         delayTask = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 }
-
 

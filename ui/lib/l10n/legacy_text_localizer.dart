@@ -183,6 +183,7 @@ class LegacyTextLocalizer {
     '已安装': 'Installed',
     '已禁用': 'Disabled',
     '启用中': 'Enabled',
+    '已关闭': 'Disabled',
     '内置': 'Built-in',
     '用户': 'User',
     '保存成功': 'Saved successfully',

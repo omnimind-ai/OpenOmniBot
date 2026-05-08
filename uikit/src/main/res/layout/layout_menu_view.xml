@@ -19,6 +19,7 @@
         android:layout_width="60dp"
         android:layout_height="60dp"
         android:background="@drawable/bg_white_circle"
+        android:contentDescription="@string/accessibility_open_home"
         app:layout_constraintCircle="@id/centerPoint"
         app:layout_constraintCircleAngle="180"
         app:layout_constraintCircleRadius="60dp"
@@ -41,6 +42,7 @@
         <ImageView
             android:layout_width="27dp"
             android:layout_height="27dp"
+            android:importantForAccessibility="no"
             android:src="@drawable/ic_menu_home"
             app:layout_constraintBottom_toTopOf="@id/tv_home"
             app:layout_constraintBottom_toBottomOf="parent"

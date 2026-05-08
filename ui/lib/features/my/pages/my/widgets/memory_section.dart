@@ -148,14 +148,21 @@ class _MemorySectionState extends State<MemorySection> {
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
     // bool isEmpty = widget.memorySummary == null;
-    return GestureDetector(
-      onTap: widget.onTap,
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          children: [
+    final label = Localizations.localeOf(context).languageCode == 'en'
+        ? 'Open memory trajectory'
+        : '打开记忆轨迹';
+    return Semantics(
+      button: widget.onTap != null,
+      enabled: widget.onTap != null,
+      label: label,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            children: [
             // 渐变背景层 - 作为空状态的背景
             // if (isEmpty)
             //   Positioned.fill(
@@ -295,7 +302,8 @@ class _MemorySectionState extends State<MemorySection> {
             //     child: _buildTitle(),
             //   )
             // ],
-          ],
+            ],
+          ),
         ),
       ),
     );

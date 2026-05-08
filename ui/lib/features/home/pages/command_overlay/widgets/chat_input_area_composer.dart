@@ -20,6 +20,10 @@ const List<Color> _kDarkComposerFlowGradientColors = <Color>[
 
 mixin _ChatInputAreaComposerMixin
     on _ChatInputAreaStateBase, _ChatInputAreaRecordingMixin {
+  String _localeText({required String zh, required String en}) {
+    return Localizations.localeOf(context).languageCode == 'en' ? en : zh;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -252,17 +256,39 @@ mixin _ChatInputAreaComposerMixin
             ),
             if (widget.onClearSelectedModelOverride != null) ...[
               const SizedBox(width: 4),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: widget.onClearSelectedModelOverride,
-                child: Container(
-                  width: 14,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: textColor.withValues(alpha: 0.16),
-                    shape: BoxShape.circle,
+              Semantics(
+                button: true,
+                label: _localeText(
+                  zh: '清除本轮模型选择 $modelId',
+                  en: 'Clear selected model $modelId',
+                ),
+                child: Tooltip(
+                  message: _localeText(
+                    zh: '清除模型选择',
+                    en: 'Clear model selection',
                   ),
-                  child: Icon(Icons.close_rounded, size: 10, color: textColor),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: widget.onClearSelectedModelOverride,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      child: Container(
+                        width: 14,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: textColor.withValues(alpha: 0.16),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 10,
+                          color: textColor,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -277,6 +303,7 @@ mixin _ChatInputAreaComposerMixin
       padding: EdgeInsets.zero,
       iconSize: 20,
       icon: _addSvg,
+      tooltip: _localeText(zh: '添加附件', en: 'Add attachment'),
       onPressed: () {
         if (widget.useAttachmentPickerForPlus &&
             widget.onPickAttachment != null) {
@@ -302,7 +329,7 @@ mixin _ChatInputAreaComposerMixin
       padding: EdgeInsets.zero,
       iconSize: iconSize,
       icon: _commandSvg,
-      tooltip: '命令',
+      tooltip: _localeText(zh: '命令', en: 'Commands'),
       onPressed: widget.onTriggerSlashCommand == null
           ? null
           : () {
@@ -328,6 +355,9 @@ mixin _ChatInputAreaComposerMixin
       child: IconButton(
         padding: EdgeInsets.zero,
         iconSize: 20,
+        tooltip: isProcessing
+            ? _localeText(zh: '停止生成', en: 'Stop response')
+            : _localeText(zh: '发送消息', en: 'Send message'),
         icon: AnimatedSwitcher(
           duration: _buttonAnimationDuration,
           switchInCurve: _buttonAnimationCurve,
@@ -845,6 +875,9 @@ mixin _ChatInputAreaComposerMixin
     return IconButton(
       padding: EdgeInsets.zero,
       iconSize: iconSize,
+      tooltip: recordingActive
+          ? _localeText(zh: '停止语音输入', en: 'Stop voice input')
+          : _localeText(zh: '开始语音输入', en: 'Start voice input'),
       icon: AnimatedContainer(
         duration: _buttonAnimationDuration,
         curve: _buttonAnimationCurve,
@@ -979,10 +1012,13 @@ mixin _ChatInputAreaComposerMixin
       child: SizedBox(
         width: 24,
         height: 24,
-        child: IconButton(
-          padding: EdgeInsets.zero,
-          iconSize: 20,
-          icon: AnimatedSwitcher(
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              iconSize: 20,
+              tooltip: isEnabled
+                  ? _localeText(zh: '关闭 OpenClaw', en: 'Turn off OpenClaw')
+                  : _localeText(zh: '开启 OpenClaw', en: 'Turn on OpenClaw'),
+              icon: AnimatedSwitcher(
             duration: _buttonAnimationDuration,
             transitionBuilder: (child, animation) {
               return FadeTransition(
@@ -1057,6 +1093,11 @@ mixin _ChatInputAreaComposerMixin
       child: IconButton(
         padding: EdgeInsets.zero,
         iconSize: 20,
+        tooltip: widget.isProcessing
+            ? _localeText(zh: '停止生成', en: 'Stop response')
+            : hasText
+            ? _localeText(zh: '发送消息', en: 'Send message')
+            : _localeText(zh: '添加附件', en: 'Add attachment'),
         icon: AnimatedSwitcher(
           duration: _buttonAnimationDuration,
           switchInCurve: _buttonAnimationCurve,

@@ -38,6 +38,10 @@ const double _kChatAppBarAccessoryGap = 12;
 const double _kChatAppBarIslandMaxWidth = 176;
 const double _kChatAppBarRightActionSlotWidth = 50;
 
+String _chatLocalized(BuildContext context, {required String zh, required String en}) {
+  return Localizations.localeOf(context).languageCode == 'en' ? en : zh;
+}
+
 enum ChatSurfaceMode { workspace, normal, openclaw }
 
 const List<ChatSurfaceMode> kVisibleChatSurfaceModes = <ChatSurfaceMode>[
@@ -209,19 +213,34 @@ class ChatAppBar extends StatelessWidget {
                       bottom: 0,
                       width: _kChatAppBarMenuButtonSize,
                       child: Center(
-                        child: GestureDetector(
-                          key: const ValueKey('chat-app-bar-menu-button'),
-                          onTap: onMenuTap,
-                          child: Container(
-                            color: Colors.transparent,
-                            padding: const EdgeInsets.all(15),
-                            child: SvgPicture.asset(
-                              'assets/home/drawer_icon.svg',
-                              width: 20,
-                              height: 20,
-                              colorFilter: ColorFilter.mode(
-                                iconTint,
-                                BlendMode.srcIn,
+                        child: Semantics(
+                          button: true,
+                          label: _chatLocalized(
+                            context,
+                            zh: '打开导航菜单',
+                            en: 'Open navigation menu',
+                          ),
+                          child: Tooltip(
+                            message: _chatLocalized(
+                              context,
+                              zh: '菜单',
+                              en: 'Menu',
+                            ),
+                            child: GestureDetector(
+                              key: const ValueKey('chat-app-bar-menu-button'),
+                              onTap: onMenuTap,
+                              child: Container(
+                                color: Colors.transparent,
+                                padding: const EdgeInsets.all(15),
+                                child: SvgPicture.asset(
+                                  'assets/home/drawer_icon.svg',
+                                  width: 20,
+                                  height: 20,
+                                  colorFilter: ColorFilter.mode(
+                                    iconTint,
+                                    BlendMode.srcIn,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -278,21 +297,31 @@ class ChatAppBar extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (showAppUpdateIndicator)
-                          GestureDetector(
-                            key: const ValueKey('chat-app-update-button'),
-                            onTap: onAppUpdateTap,
-                            child: Tooltip(
-                              message: appUpdateTooltip ?? '发现新版本',
-                              child: Container(
-                                color: Colors.transparent,
-                                padding: const EdgeInsets.all(15),
-                                child: SvgPicture.asset(
-                                  _kChatAppBarUpdateSparklesAsset,
-                                  width: 18,
-                                  height: 18,
-                                  colorFilter: const ColorFilter.mode(
-                                    updateTint,
-                                    BlendMode.srcIn,
+                          Semantics(
+                            button: true,
+                            enabled: onAppUpdateTap != null,
+                            label: appUpdateTooltip ??
+                                _chatLocalized(
+                                  context,
+                                  zh: '发现新版本',
+                                  en: 'New version available',
+                                ),
+                            child: GestureDetector(
+                              key: const ValueKey('chat-app-update-button'),
+                              onTap: onAppUpdateTap,
+                              child: Tooltip(
+                                message: appUpdateTooltip ?? '发现新版本',
+                                child: Container(
+                                  color: Colors.transparent,
+                                  padding: const EdgeInsets.all(15),
+                                  child: SvgPicture.asset(
+                                    _kChatAppBarUpdateSparklesAsset,
+                                    width: 18,
+                                    height: 18,
+                                    colorFilter: const ColorFilter.mode(
+                                      updateTint,
+                                      BlendMode.srcIn,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -363,29 +392,41 @@ class _ChatAppBarCompanionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = isEnabled ? selectedColor : iconTint;
-    return GestureDetector(
-      key: const ValueKey('chat-app-companion-button'),
-      onTap: isLoading ? null : onTap,
-      behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: _kChatAppBarAccessoryButtonSize,
-        height: _kChatAppBarAccessoryButtonSize,
-        child: Center(
-          child: isLoading
-              ? SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(color),
-                  ),
-                )
-              : SvgPicture.asset(
-                  'assets/home/avatar.svg',
-                  width: 20,
-                  height: 20,
-                  colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-                ),
+    final label = isEnabled
+        ? _chatLocalized(context, zh: '关闭陪伴模式', en: 'Turn off companion mode')
+        : _chatLocalized(context, zh: '开启陪伴模式', en: 'Turn on companion mode');
+    return Semantics(
+      button: true,
+      toggled: isEnabled,
+      enabled: !isLoading,
+      label: label,
+      child: Tooltip(
+        message: label,
+        child: GestureDetector(
+          key: const ValueKey('chat-app-companion-button'),
+          onTap: isLoading ? null : onTap,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            width: _kChatAppBarAccessoryButtonSize,
+            height: _kChatAppBarAccessoryButtonSize,
+            child: Center(
+              child: isLoading
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(color),
+                      ),
+                    )
+                  : SvgPicture.asset(
+                      'assets/home/avatar.svg',
+                      width: 20,
+                      height: 20,
+                      colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+                    ),
+            ),
+          ),
         ),
       ),
     );
@@ -403,21 +444,26 @@ class _ChatAppBarWorkspaceButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: LegacyTextLocalizer.isEnglish ? 'Show workspace' : '显示工作区',
-      child: GestureDetector(
-        key: const ValueKey('chat-app-bar-workspace-pane-button'),
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          width: _kChatAppBarAccessoryButtonSize,
-          height: _kChatAppBarAccessoryButtonSize,
-          child: Center(
-            child: SvgPicture.asset(
-              _kChatAppBarWorkspaceIconAsset,
-              width: 20,
-              height: 20,
-              colorFilter: ColorFilter.mode(iconTint, BlendMode.srcIn),
+    final label = _chatLocalized(context, zh: '显示工作区', en: 'Show workspace');
+    return Semantics(
+      button: true,
+      label: label,
+      child: Tooltip(
+        message: label,
+        child: GestureDetector(
+          key: const ValueKey('chat-app-bar-workspace-pane-button'),
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            width: _kChatAppBarAccessoryButtonSize,
+            height: _kChatAppBarAccessoryButtonSize,
+            child: Center(
+              child: SvgPicture.asset(
+                _kChatAppBarWorkspaceIconAsset,
+                width: 20,
+                height: 20,
+                colorFilter: ColorFilter.mode(iconTint, BlendMode.srcIn),
+              ),
             ),
           ),
         ),
@@ -625,20 +671,25 @@ class _ChatAppBarModeShortcutButtonState
         ? selectedColor
         : widget.iconTint;
     final isEnglish = Localizations.localeOf(context).languageCode == 'en';
-    return Tooltip(
-      message: _isOpen
-          ? (isEnglish ? 'Close mode menu' : '收起模式菜单')
-          : (isEnglish ? 'Switch chat mode' : '切换聊天模式'),
-      child: GestureDetector(
-        onTap: _openMenu,
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          width: _kChatAppBarAccessoryButtonSize,
-          height: _kChatAppBarAccessoryButtonSize,
-          child: Center(
-            child: _isOpen
-                ? _buildOpenIcon(effectiveIconColor)
-                : _buildClosedIcon(effectiveIconColor),
+    final label = _isOpen
+        ? (isEnglish ? 'Close mode menu' : '收起模式菜单')
+        : (isEnglish ? 'Switch chat mode' : '切换聊天模式');
+    return Semantics(
+      button: true,
+      label: label,
+      child: Tooltip(
+        message: label,
+        child: GestureDetector(
+          onTap: _openMenu,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            width: _kChatAppBarAccessoryButtonSize,
+            height: _kChatAppBarAccessoryButtonSize,
+            child: Center(
+              child: _isOpen
+                  ? _buildOpenIcon(effectiveIconColor)
+                  : _buildClosedIcon(effectiveIconColor),
+            ),
           ),
         ),
       ),
@@ -880,13 +931,25 @@ class _ChatModeModelSwitcherState extends State<_ChatModeModelSwitcher> {
         if (widget.onModelTap == null) {
           return Center(child: text);
         }
-        return InkWell(
-          onTap: () {
-            widget.onInteracted?.call();
-            widget.onModelTap?.call(anchorContext);
-          },
-          borderRadius: BorderRadius.circular(999),
-          child: Center(child: text),
+        final label = _chatLocalized(
+          context,
+          zh: '切换模型，当前模型 $_modelLabel',
+          en: 'Switch model, current model $_modelLabel',
+        );
+        return Semantics(
+          button: true,
+          label: label,
+          child: Tooltip(
+            message: label,
+            child: InkWell(
+              onTap: () {
+                widget.onInteracted?.call();
+                widget.onModelTap?.call(anchorContext);
+              },
+              borderRadius: BorderRadius.circular(999),
+              child: Center(child: text),
+            ),
+          ),
         );
       },
     );
@@ -1121,33 +1184,38 @@ class _ChatToolSlider extends StatelessWidget {
         : visualProfile.secondaryTextColor;
     return Builder(
       builder: (anchorContext) {
-        return Tooltip(
-          message: LegacyTextLocalizer.isEnglish
-              ? 'Manage terminal environment variables'
-              : '管理终端环境变量',
-          child: InkWell(
-            key: const ValueKey('chat-island-terminal-env-button'),
-            onTap: () {
-              onInteracted?.call();
-              onTerminalEnvironmentTap(anchorContext);
-            },
-            borderRadius: BorderRadius.circular(999),
-            child: SizedBox.expand(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                margin: const EdgeInsets.symmetric(horizontal: 1),
-                decoration: BoxDecoration(
-                  color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                alignment: Alignment.center,
-                child: ColorFiltered(
-                  colorFilter: ColorFilter.mode(inactiveColor, BlendMode.srcIn),
-                  child: SvgPicture.asset(
-                    environmentIconAsset,
-                    width: 15,
-                    height: 15,
+        final label = LegacyTextLocalizer.isEnglish
+            ? 'Manage terminal environment variables'
+            : '管理终端环境变量';
+        return Semantics(
+          button: true,
+          label: label,
+          child: Tooltip(
+            message: label,
+            child: InkWell(
+              key: const ValueKey('chat-island-terminal-env-button'),
+              onTap: () {
+                onInteracted?.call();
+                onTerminalEnvironmentTap(anchorContext);
+              },
+              borderRadius: BorderRadius.circular(999),
+              child: SizedBox.expand(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  margin: const EdgeInsets.symmetric(horizontal: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  alignment: Alignment.center,
+                  child: ColorFiltered(
+                    colorFilter: ColorFilter.mode(inactiveColor, BlendMode.srcIn),
+                    child: SvgPicture.asset(
+                      environmentIconAsset,
+                      width: 15,
+                      height: 15,
+                    ),
                   ),
                 ),
               ),
@@ -1175,25 +1243,31 @@ class _ChatToolSlider extends StatelessWidget {
         : isSelected
         ? Theme.of(context).colorScheme.onPrimary
         : inactiveColor;
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        key: key,
-        onTap: isEnabled
-            ? () {
-                onInteracted?.call();
-                onTap();
-              }
-            : null,
-        borderRadius: BorderRadius.circular(999),
-        child: Center(
-          child: AnimatedScale(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            scale: isSelected ? 1 : 0.95,
-            child: ColorFiltered(
-              colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-              child: child,
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      enabled: isEnabled,
+      label: tooltip,
+      child: Tooltip(
+        message: tooltip,
+        child: InkWell(
+          key: key,
+          onTap: isEnabled
+              ? () {
+                  onInteracted?.call();
+                  onTap();
+                }
+              : null,
+          borderRadius: BorderRadius.circular(999),
+          child: Center(
+            child: AnimatedScale(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              scale: isSelected ? 1 : 0.95,
+              child: ColorFiltered(
+                colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+                child: child,
+              ),
             ),
           ),
         ),
@@ -1258,83 +1332,98 @@ class _ChatModeSliderState extends State<ChatModeSlider> {
     final alignment = _activeVisibleModeIndex == 0
         ? Alignment.centerLeft
         : Alignment.centerRight;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onHorizontalDragUpdate: (details) {
-        _dragDelta += details.delta.dx;
+    final activeLabel = widget.activeMode == ChatSurfaceMode.normal
+        ? _chatLocalized(context, zh: '聊天', en: 'Chat')
+        : _chatLocalized(context, zh: '工作区', en: 'Workspace');
+    return Semantics(
+      button: true,
+      label: _chatLocalized(context, zh: '切换聊天页面区域', en: 'Switch chat area'),
+      value: activeLabel,
+      onTap: () {
         widget.onInteracted?.call();
+        final targetMode = widget.activeMode == ChatSurfaceMode.normal
+            ? ChatSurfaceMode.workspace
+            : ChatSurfaceMode.normal;
+        widget.onChanged(targetMode);
       },
-      onHorizontalDragEnd: (details) {
-        widget.onInteracted?.call();
-        _handleDragEnd(velocity: details.primaryVelocity ?? 0);
-      },
-      onTapUp: (details) {
-        widget.onInteracted?.call();
-        final box = context.findRenderObject() as RenderBox?;
-        if (box == null || !box.hasSize) return;
-        final local = box.globalToLocal(details.globalPosition);
-        final segmentWidth = box.size.width / kVisibleChatSurfaceModes.length;
-        final targetIndex = (local.dx / segmentWidth).floor().clamp(
-          0,
-          kVisibleChatSurfaceModes.length - 1,
-        );
-        widget.onChanged(kVisibleChatSurfaceModes[targetIndex]);
-      },
-      child: Container(
-        height: 32,
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Stack(
-          children: [
-            AnimatedAlign(
-              duration: const Duration(milliseconds: 280),
-              curve: Curves.easeOutCubic,
-              alignment: alignment,
-              child: FractionallySizedBox(
-                widthFactor: 1 / kVisibleChatSurfaceModes.length,
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 1),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: activeGradient,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: (details) {
+          _dragDelta += details.delta.dx;
+          widget.onInteracted?.call();
+        },
+        onHorizontalDragEnd: (details) {
+          widget.onInteracted?.call();
+          _handleDragEnd(velocity: details.primaryVelocity ?? 0);
+        },
+        onTapUp: (details) {
+          widget.onInteracted?.call();
+          final box = context.findRenderObject() as RenderBox?;
+          if (box == null || !box.hasSize) return;
+          final local = box.globalToLocal(details.globalPosition);
+          final segmentWidth = box.size.width / kVisibleChatSurfaceModes.length;
+          final targetIndex = (local.dx / segmentWidth).floor().clamp(
+            0,
+            kVisibleChatSurfaceModes.length - 1,
+          );
+          widget.onChanged(kVisibleChatSurfaceModes[targetIndex]);
+        },
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Stack(
+            children: [
+              AnimatedAlign(
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeOutCubic,
+                alignment: alignment,
+                child: FractionallySizedBox(
+                  widthFactor: 1 / kVisibleChatSurfaceModes.length,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 1),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: activeGradient,
+                      ),
+                      borderRadius: BorderRadius.circular(999),
                     ),
-                    borderRadius: BorderRadius.circular(999),
                   ),
                 ),
               ),
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildModeIcon(
-                    isSelected: widget.activeMode == ChatSurfaceMode.normal,
-                    child: SvgPicture.asset(
-                      widget.primaryIconAsset,
-                      key: const ValueKey('chat-mode-slider-primary-icon'),
-                      width: 16,
-                      height: 16,
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildModeIcon(
+                      isSelected: widget.activeMode == ChatSurfaceMode.normal,
+                      child: SvgPicture.asset(
+                        widget.primaryIconAsset,
+                        key: const ValueKey('chat-mode-slider-primary-icon'),
+                        width: 16,
+                        height: 16,
+                      ),
                     ),
                   ),
-                ),
-                Expanded(
-                  child: _buildModeIcon(
-                    isSelected: widget.activeMode == ChatSurfaceMode.workspace,
-                    child: SvgPicture.asset(
-                      _workspaceIconAsset,
-                      key: const ValueKey('chat-mode-slider-workspace-icon'),
-                      width: 16,
-                      height: 16,
+                  Expanded(
+                    child: _buildModeIcon(
+                      isSelected: widget.activeMode == ChatSurfaceMode.workspace,
+                      child: SvgPicture.asset(
+                        _workspaceIconAsset,
+                        key: const ValueKey('chat-mode-slider-workspace-icon'),
+                        width: 16,
+                        height: 16,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

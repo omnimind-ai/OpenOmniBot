@@ -98,6 +98,13 @@ class _CompanionSettingPageState extends State<CompanionSettingPage> {
     }
   }
 
+  String _localeText({required String zh, required String en}) {
+    return Localizations.localeOf(context).languageCode == 'en' ? en : zh;
+  }
+
+  String _switchStateLabel(bool value) =>
+      value ? context.trLegacy('已开启') : context.trLegacy('已关闭');
+
   void _onToggleAuthorization(int index, bool isAuthorized) async {
     try {
       setState(() {
@@ -199,97 +206,123 @@ class _CompanionSettingPageState extends State<CompanionSettingPage> {
   }
 
   Widget _buildListItem(AppInfo appInfo, int index) {
+    final appLabel = appInfo.appName.isNotEmpty
+        ? appInfo.appName
+        : appInfo.packageName;
     return Padding(
       padding: EdgeInsets.only(
         top: index == 0 ? 2 : 8,
         bottom: index == _appInfos.length - 1 ? 2 : 8,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          if (appInfo.appIcon != null) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: Image(
-                image: appInfo.appIcon!,
-                width: 16,
-                height: 16,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
+      child: Semantics(
+        container: true,
+        label: _localeText(
+          zh: '$appLabel 陪伴权限',
+          en: '$appLabel companion permission',
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            if (appInfo.appIcon != null) ...[
+              ExcludeSemantics(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: Image(
+                    image: appInfo.appIcon!,
                     width: 16,
                     height: 16,
-                    decoration: BoxDecoration(
-                      color: context.isDarkTheme
-                          ? context.omniPalette.surfaceSecondary
-                          : Colors.grey[300],
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                    child: Icon(
-                      Icons.apps,
-                      size: 14,
-                      color: context.isDarkTheme
-                          ? context.omniPalette.textSecondary
-                          : Colors.grey[600],
-                    ),
-                  );
-                },
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: context.isDarkTheme
+                              ? context.omniPalette.surfaceSecondary
+                              : Colors.grey[300],
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Icon(
+                          Icons.apps,
+                          size: 14,
+                          color: context.isDarkTheme
+                              ? context.omniPalette.textSecondary
+                              : Colors.grey[600],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ] else ...[
+              ExcludeSemantics(
+                child: Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: context.isDarkTheme
+                        ? context.omniPalette.surfaceSecondary
+                        : Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                  child: Icon(
+                    Icons.apps,
+                    size: 14,
+                    color: context.isDarkTheme
+                        ? context.omniPalette.textSecondary
+                        : Colors.grey[600],
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                appLabel,
+                style: TextStyle(
+                  color: context.isDarkTheme
+                      ? context.omniPalette.textPrimary
+                      : AppColors.text,
+                  fontSize: 14,
+                  fontFamily: 'PingFang SC',
+                  fontWeight: FontWeight.w500,
+                  height: 1.57,
+                ),
               ),
             ),
-          ] else ...[
-            Container(
-              width: 16,
-              height: 16,
-              decoration: BoxDecoration(
-                color: context.isDarkTheme
-                    ? context.omniPalette.surfaceSecondary
-                    : Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
+            Semantics(
+              container: true,
+              button: true,
+              toggled: appInfo.isAuthorized,
+              label: _localeText(
+                zh: '允许 $appLabel 使用陪伴模式',
+                en: 'Allow $appLabel in companion mode',
               ),
-              child: Icon(
-                Icons.apps,
-                size: 14,
-                color: context.isDarkTheme
-                    ? context.omniPalette.textSecondary
-                    : Colors.grey[600],
+              value: _switchStateLabel(appInfo.isAuthorized),
+              onTap: () =>
+                  _onToggleAuthorization(index, !appInfo.isAuthorized),
+              child: ExcludeSemantics(
+                child: FlutterSwitch(
+                  width: 32,
+                  height: 18.4,
+                  toggleSize: 11.3,
+                  padding: 3,
+                  activeColor: context.isDarkTheme
+                      ? context.omniPalette.accentPrimary
+                      : const Color(0xFF202F51),
+                  inactiveColor: context.isDarkTheme
+                      ? context.omniPalette.surfaceElevated
+                      : AppColors.fillStandardSecondary,
+                  borderRadius: 28.75,
+                  value: appInfo.isAuthorized,
+                  onToggle: (val) {
+                    _onToggleAuthorization(index, val);
+                  },
+                ),
               ),
             ),
           ],
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              appInfo.appName.isNotEmpty
-                  ? appInfo.appName
-                  : appInfo.packageName,
-              style: TextStyle(
-                color: context.isDarkTheme
-                    ? context.omniPalette.textPrimary
-                    : AppColors.text,
-                fontSize: 14,
-                fontFamily: 'PingFang SC',
-                fontWeight: FontWeight.w500,
-                height: 1.57,
-              ),
-            ),
-          ),
-          FlutterSwitch(
-            width: 32,
-            height: 18.4,
-            toggleSize: 11.3,
-            padding: 3,
-            activeColor: context.isDarkTheme
-                ? context.omniPalette.accentPrimary
-                : const Color(0xFF202F51),
-            inactiveColor: context.isDarkTheme
-                ? context.omniPalette.surfaceElevated
-                : AppColors.fillStandardSecondary,
-            borderRadius: 28.75,
-            value: appInfo.isAuthorized,
-            onToggle: (val) {
-              _onToggleAuthorization(index, val);
-            },
-          ),
-        ],
+        ),
       ),
     );
   }

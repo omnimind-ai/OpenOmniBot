@@ -96,16 +96,27 @@ class _NormalOptionsCardState extends State<NormalOptionsCard> {
                       ),
                     ),
                     if (widget.multiSelect)
-                      GestureDetector(
-                        onTap: _toggleAll,
-                        child: Text(
-                          _allSelected
-                              ? (LegacyTextLocalizer.isEnglish ? 'Deselect all' : '取消全选')
-                              : (LegacyTextLocalizer.isEnglish ? 'Select all' : '全选'),
-                          style: TextStyle(
-                            color: Theme.of(context).primaryColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                      Semantics(
+                        button: true,
+                        checked: _allSelected,
+                        label: _allSelected
+                            ? (LegacyTextLocalizer.isEnglish
+                                  ? 'Deselect all options'
+                                  : '取消全选选项')
+                            : (LegacyTextLocalizer.isEnglish
+                                  ? 'Select all options'
+                                  : '全选选项'),
+                        child: GestureDetector(
+                          onTap: _toggleAll,
+                          child: Text(
+                            _allSelected
+                                ? (LegacyTextLocalizer.isEnglish ? 'Deselect all' : '取消全选')
+                                : (LegacyTextLocalizer.isEnglish ? 'Select all' : '全选'),
+                            style: TextStyle(
+                              color: Theme.of(context).primaryColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                       ),
@@ -130,42 +141,57 @@ class _NormalOptionsCardState extends State<NormalOptionsCard> {
                   final item = widget.options[index];
                   final isSelected = _selectedItems.contains(item);
                   
-                  return ListTile(
-                    onTap: () => _toggleItem(item),
-                    minTileHeight: 40,
-                    minLeadingWidth: 10,
-                    leading: item.icon != null 
-                        ? Container(
-                            width: 18,
-                            height: 18,
-                            decoration: BoxDecoration(
-                              color: Colors.lightBlueAccent,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Center(child: item.icon),
-                          )
-                        : null,
-                    title: Text(
-                      item.title,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    trailing: Container(
-                      width: 18,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: isSelected ? null : Border.all(color: Colors.grey.shade400, width: 1.5),
-                      ),
-                      child: isSelected 
-                          ? const Icon(
-                              Icons.check_circle,
-                              size: 18,
-                              color: Colors.black87,
+                  return Semantics(
+                    button: true,
+                    checked: isSelected,
+                    label: item.title,
+                    child: ListTile(
+                      onTap: () => _toggleItem(item),
+                      selected: isSelected,
+                      minTileHeight: 40,
+                      minLeadingWidth: 10,
+                      leading: item.icon != null
+                          ? ExcludeSemantics(
+                              child: Container(
+                                width: 18,
+                                height: 18,
+                                decoration: BoxDecoration(
+                                  color: Colors.lightBlueAccent,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Center(child: item.icon),
+                              ),
                             )
                           : null,
+                      title: Text(
+                        item.title,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      trailing: ExcludeSemantics(
+                        child: Container(
+                          width: 18,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: isSelected
+                                ? null
+                                : Border.all(
+                                    color: Colors.grey.shade400,
+                                    width: 1.5,
+                                  ),
+                          ),
+                          child: isSelected
+                              ? const Icon(
+                                  Icons.check_circle,
+                                  size: 18,
+                                  color: Colors.black87,
+                                )
+                              : null,
+                        ),
+                      ),
                     ),
                   );
                 },

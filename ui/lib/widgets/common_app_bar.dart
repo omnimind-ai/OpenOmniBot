@@ -91,18 +91,27 @@ class CommonAppBar extends StatelessWidget implements PreferredSizeWidget {
         leading ??
         (showLeading
             ? Center(
-                child: GestureDetector(
-                  onTap: onBackPressed ?? () => GoRouterManager.pop(),
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: SvgPicture.asset(
-                      'assets/common/chevron_left.svg',
-                      width: 24,
-                      height: 24,
-                      colorFilter: ColorFilter.mode(
-                        resolvedBackIconColor,
-                        BlendMode.srcIn,
+                child: Semantics(
+                  button: true,
+                  label: context.trLegacy('返回'),
+                  child: Tooltip(
+                    message: context.trLegacy('返回'),
+                    child: GestureDetector(
+                      onTap: onBackPressed ?? () => GoRouterManager.pop(),
+                      child: SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: Center(
+                          child: SvgPicture.asset(
+                            'assets/common/chevron_left.svg',
+                            width: 24,
+                            height: 24,
+                            colorFilter: ColorFilter.mode(
+                              resolvedBackIconColor,
+                              BlendMode.srcIn,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),

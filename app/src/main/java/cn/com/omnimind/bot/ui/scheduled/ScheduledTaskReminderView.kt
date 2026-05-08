@@ -38,6 +38,8 @@ class ScheduledTaskReminderView @JvmOverloads constructor(
             background = roundedRectDrawable(color = 0xFFFFFFFF.toInt(), radiusDp = 16)
             elevation = 6.dpToPx().toFloat()
             setPadding(12.dpToPx(), 12.dpToPx(), 12.dpToPx(), 12.dpToPx())
+            isFocusable = true
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
         }
 
         val contentRow = LinearLayout(context).apply {
@@ -104,6 +106,9 @@ class ScheduledTaskReminderView @JvmOverloads constructor(
 
         val cancelButton = TextView(context).apply {
             text = t("取消", "Cancel")
+            contentDescription = t("取消定时任务", "Cancel scheduled task")
+            isClickable = true
+            isFocusable = true
             textSize = 12f
             setTextColor(0xFF6B6B6B.toInt())
             setPadding(12.dpToPx(), 6.dpToPx(), 12.dpToPx(), 6.dpToPx())
@@ -116,6 +121,9 @@ class ScheduledTaskReminderView @JvmOverloads constructor(
 
         val executeNowButton = TextView(context).apply {
             text = t("立即执行", "Run Now")
+            contentDescription = t("立即执行定时任务", "Run scheduled task now")
+            isClickable = true
+            isFocusable = true
             textSize = 12f
             setTextColor(0xFFFFFFFF.toInt())
             setPadding(12.dpToPx(), 6.dpToPx(), 12.dpToPx(), 6.dpToPx())
@@ -170,6 +178,10 @@ class ScheduledTaskReminderView @JvmOverloads constructor(
         visibility = View.VISIBLE
         alpha = 0f
         updateCountdownDisplay(countdownSeconds)
+        contentDescription = t(
+            "定时任务 $taskName 即将执行，剩余 $countdownSeconds 秒",
+            "Scheduled task $taskName starts in $countdownSeconds seconds",
+        )
 
         animate()
             .alpha(1f)
@@ -225,6 +237,10 @@ class ScheduledTaskReminderView @JvmOverloads constructor(
 
     private fun updateCountdownDisplay(seconds: Int) {
         countdownText.text = seconds.toString()
+        countdownText.contentDescription = t(
+            "剩余 $seconds 秒",
+            "$seconds seconds remaining",
+        )
     }
 
     private fun roundedRectDrawable(color: Int, radiusDp: Int): GradientDrawable {

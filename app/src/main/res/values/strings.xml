@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">小万</string>
     <string name="omni_app_name">小万</string>
+    <string name="accessibility_loading">正在初始化</string>
 </resources>

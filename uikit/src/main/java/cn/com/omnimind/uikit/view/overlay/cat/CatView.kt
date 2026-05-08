@@ -5,6 +5,7 @@ import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.util.AttributeSet
+import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import cn.com.omnimind.baselib.util.OmniLog
@@ -53,6 +54,11 @@ class CatView @JvmOverloads constructor(
         flAnimation = findViewById(R.id.flAnimation)
         ivCat = findViewById(R.id.ivCat)
         flAnimation.layoutParams = LayoutParams(CatView.width.dpToPx(), CatView.height.dpToPx())
+        isClickable = true
+        isFocusable = true
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        ivCat.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        updateAccessibilityLabel()
     }
 
     fun setOnStateChangeListener(listener: OnStateChangeListener) {
@@ -89,6 +95,19 @@ class CatView @JvmOverloads constructor(
             }
         }
         onStateChangeListener.onStateChange(currentState)
+        updateAccessibilityLabel()
+    }
+
+    private fun updateAccessibilityLabel() {
+        contentDescription = when (currentState) {
+            DraggableViewState.DRAGGING ->
+                context.getString(R.string.accessibility_floating_assistant_dragging)
+            DraggableViewState.DOING_TASK,
+            DraggableViewState.PAUSE_TASK,
+            DraggableViewState.SHOW_CHAT ->
+                context.getString(R.string.accessibility_floating_assistant_working)
+            else -> context.getString(R.string.accessibility_floating_assistant)
+        }
     }
 
     fun showCollapsed() {

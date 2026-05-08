@@ -75,6 +75,11 @@ class ScheduledTipView @JvmOverloads constructor(
         // 初始化视图组件
         titleTextView = findViewById(R.id.titleTextView)
         stopButton = findViewById(R.id.stopButton)
+        isFocusable = true
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        stopButton.isClickable = true
+        stopButton.isFocusable = true
+        stopButton.contentDescription = context.getString(R.string.accessibility_scheduled_stop)
 
         // 设置基础样式
         elevation = 4.dpToPxF()
@@ -161,6 +166,7 @@ class ScheduledTipView @JvmOverloads constructor(
     fun setMessage(closeTimer: Long, doTaskTimer: Long) {
         // 恢复执行中状态
         titleTextView.text = "${doTaskTimer}${R.string.scheduled_tip.getResString()}"
+        contentDescription = titleTextView.text
         if (animator?.isRunning != true) {
             startAnimation()
         }
@@ -176,6 +182,7 @@ class ScheduledTipView @JvmOverloads constructor(
                 val seconds = millisUntilFinished / 1000
                 titleTextView.text =
                     "${seconds+1}${R.string.scheduled_tip.getResString()}"
+                contentDescription = titleTextView.text
 
             }
 

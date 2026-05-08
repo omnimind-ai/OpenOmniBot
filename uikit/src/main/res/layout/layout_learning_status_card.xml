@@ -31,6 +31,7 @@
             android:layout_width="28dp"
             android:layout_height="28dp"
             android:layout_gravity="center_vertical|end"
+            android:contentDescription="@string/accessibility_scheduled_stop"
             android:padding="3dp"
             android:src="@mipmap/ic_stop_task" />
 

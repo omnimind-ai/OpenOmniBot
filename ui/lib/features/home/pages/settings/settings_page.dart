@@ -233,6 +233,18 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  String _switchStateLabel(bool value) =>
+      value ? context.trLegacy('已开启') : context.trLegacy('已关闭');
+
+  String _settingSemanticLabel(_SettingItem item) {
+    final parts = <String>[context.trLegacy(item.title)];
+    final subtitle = item.subtitle?.trim();
+    if (subtitle != null && subtitle.isNotEmpty) {
+      parts.add(context.trLegacy(subtitle));
+    }
+    return parts.join('，');
+  }
+
   void _showMcpInfo() {
     final info = _mcpInfo;
     if (info == null || info.endpoint.isEmpty) return;
@@ -404,6 +416,7 @@ class _SettingsPageState extends State<SettingsPage> {
             title: context.l10n.settingsLocalServiceTitle,
             subtitle: context.l10n.settingsLocalServiceSubtitle,
             trailing: _buildSwitchTrailing(
+              semanticLabel: context.l10n.settingsLocalServiceTitle,
               value: _mcpEnabled,
               enabled: _mcpLoaded && !_mcpBusy,
               loading: !_mcpLoaded,
@@ -429,6 +442,7 @@ class _SettingsPageState extends State<SettingsPage> {
             title: context.l10n.settingsHideRecentsTitle,
             subtitle: context.l10n.settingsHideRecentsSubtitle,
             trailing: _buildSwitchTrailing(
+              semanticLabel: context.l10n.settingsHideRecentsTitle,
               value: hideFromRecentsEnabled,
               onToggle: _onHideFromRecentsChanged,
             ),
@@ -460,6 +474,7 @@ class _SettingsPageState extends State<SettingsPage> {
             title: context.l10n.settingsVibrationTitle,
             subtitle: context.l10n.settingsVibrationSubtitle,
             trailing: _buildSwitchTrailing(
+              semanticLabel: context.l10n.settingsVibrationTitle,
               value: vibrationEnabled,
               onToggle: (val) async {
                 await CacheUtil.cacheBool('app_vibrate', val);
@@ -475,6 +490,7 @@ class _SettingsPageState extends State<SettingsPage> {
             title: context.l10n.settingsAutoBackTitle,
             subtitle: context.l10n.settingsAutoBackSubtitle,
             trailing: _buildSwitchTrailing(
+              semanticLabel: context.l10n.settingsAutoBackTitle,
               value: _autoBackToChatAfterTaskEnabled,
               onToggle: _onAutoBackToChatAfterTaskChanged,
             ),
@@ -591,60 +607,65 @@ class _SettingsPageState extends State<SettingsPage> {
     final palette = context.omniPalette;
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: item.onTap,
-        borderRadius: BorderRadius.circular(14),
-        splashColor: palette.accentPrimary.withValues(alpha: 0.08),
-        highlightColor: Colors.transparent,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(4, 14, 2, isLast ? 14 : 13),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _buildLeadingIcon(item),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      context.trLegacy(item.title),
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: palette.textPrimary,
-                        height: 1.5,
-                        fontFamily: 'PingFang SC',
-                      ),
-                    ),
-                    if (item.subtitle != null) ...[
-                      const SizedBox(height: 2),
+      child: Semantics(
+        button: item.onTap != null,
+        enabled: item.onTap != null || item.trailing != null,
+        label: _settingSemanticLabel(item),
+        child: InkWell(
+          onTap: item.onTap,
+          borderRadius: BorderRadius.circular(14),
+          splashColor: palette.accentPrimary.withValues(alpha: 0.08),
+          highlightColor: Colors.transparent,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(4, 14, 2, isLast ? 14 : 13),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _buildLeadingIcon(item),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        context.trLegacy(item.subtitle!),
+                        context.trLegacy(item.title),
                         style: TextStyle(
-                          color: palette.textSecondary,
-                          fontSize: 11,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: palette.textPrimary,
+                          height: 1.5,
                           fontFamily: 'PingFang SC',
-                          fontWeight: FontWeight.w400,
-                          height: 1.55,
                         ),
                       ),
+                      if (item.subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          context.trLegacy(item.subtitle!),
+                          style: TextStyle(
+                            color: palette.textSecondary,
+                            fontSize: 11,
+                            fontFamily: 'PingFang SC',
+                            fontWeight: FontWeight.w400,
+                            height: 1.55,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
-                ),
-              ),
-              if (item.trailing != null)
-                item.trailing!
-              else if (item.onTap != null)
-                Padding(
-                  padding: const EdgeInsets.only(left: 12),
-                  child: Icon(
-                    Icons.chevron_right_rounded,
-                    size: 18,
-                    color: palette.textTertiary,
                   ),
                 ),
-            ],
+                if (item.trailing != null)
+                  item.trailing!
+                else if (item.onTap != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 12),
+                    child: Icon(
+                      Icons.chevron_right_rounded,
+                      size: 18,
+                      color: palette.textTertiary,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -671,42 +692,54 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildSwitchTrailing({
+    required String semanticLabel,
     required bool value,
     required ValueChanged<bool> onToggle,
     bool enabled = true,
     bool loading = false,
   }) {
     final palette = context.omniPalette;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return Semantics(
+      container: true,
+      button: true,
+      toggled: value,
+      enabled: enabled && !loading,
+      label: semanticLabel,
+      value: loading ? context.trLegacy('加载中...') : _switchStateLabel(value),
       onTap: enabled && !loading ? () => onToggle(!value) : null,
-      child: Padding(
-        padding: const EdgeInsets.only(left: 12),
-        child: loading
-            ? Container(
-                width: 32,
-                height: 18.67,
-                decoration: BoxDecoration(
-                  color: palette.borderStrong,
-                  borderRadius: BorderRadius.circular(28.75),
-                ),
-              )
-            : AbsorbPointer(
-                child: Opacity(
-                  opacity: enabled ? 1 : 0.5,
-                  child: FlutterSwitch(
+      child: ExcludeSemantics(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled && !loading ? () => onToggle(!value) : null,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: loading
+                ? Container(
                     width: 32,
                     height: 18.67,
-                    toggleSize: 11.3,
-                    padding: 3,
-                    activeColor: palette.accentPrimary,
-                    inactiveColor: palette.borderStrong,
-                    borderRadius: 28.75,
-                    value: value,
-                    onToggle: onToggle,
+                    decoration: BoxDecoration(
+                      color: palette.borderStrong,
+                      borderRadius: BorderRadius.circular(28.75),
+                    ),
+                  )
+                : AbsorbPointer(
+                    child: Opacity(
+                      opacity: enabled ? 1 : 0.5,
+                      child: FlutterSwitch(
+                        width: 32,
+                        height: 18.67,
+                        toggleSize: 11.3,
+                        padding: 3,
+                        activeColor: palette.accentPrimary,
+                        inactiveColor: palette.borderStrong,
+                        borderRadius: 28.75,
+                        value: value,
+                        onToggle: onToggle,
+                      ),
+                    ),
                   ),
-                ),
-              ),
+          ),
+        ),
       ),
     );
   }

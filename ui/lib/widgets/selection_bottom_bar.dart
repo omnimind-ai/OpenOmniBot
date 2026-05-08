@@ -23,39 +23,47 @@ import 'package:ui/theme/app_colors.dart';
     }
   // 选择模式下的底部删除按钮栏
   Widget _buildSelectionBottomBar() {
-    return GestureDetector(
-      onTap: onDeletePressed,
-      child: Container(
-        height: 56,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: Color(0xFFFFFFFF),
-          border: Border(
-            top: BorderSide(color: Colors.black.withOpacity(0.1), width: 0.5),
+    final label = LegacyTextLocalizer.isEnglish ? 'Delete selected items' : '删除已选择项';
+    return Semantics(
+      button: true,
+      enabled: onDeletePressed != null,
+      label: label,
+      child: GestureDetector(
+        onTap: onDeletePressed,
+        child: Container(
+          height: 56,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Color(0xFFFFFFFF),
+            border: Border(
+              top: BorderSide(color: Colors.black.withOpacity(0.1), width: 0.5),
+            ),
           ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SvgPicture.asset(
-              'assets/memory/memory_delete.svg',
-              width: 20,
-              height: 20,
-              colorFilter: ColorFilter.mode(
-                AppColors.alertRed,
-                BlendMode.srcIn,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ExcludeSemantics(
+                child: SvgPicture.asset(
+                  'assets/memory/memory_delete.svg',
+                  width: 20,
+                  height: 20,
+                  colorFilter: ColorFilter.mode(
+                    AppColors.alertRed,
+                    BlendMode.srcIn,
+                  ),
+                ),
               ),
-            ),
-            Text(
-              LegacyTextLocalizer.isEnglish ? 'Delete' : '删除',
-              style: TextStyle(
-                color: AppColors.alertRed,
-                fontSize: 12,
-                fontWeight: FontWeight.w400,
-                height: 1.5,
+              Text(
+                LegacyTextLocalizer.isEnglish ? 'Delete' : '删除',
+                style: TextStyle(
+                  color: AppColors.alertRed,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  height: 1.5,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

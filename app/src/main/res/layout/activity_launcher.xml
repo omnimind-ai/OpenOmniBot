@@ -13,6 +13,7 @@
         android:layout_width="120dp"
         android:layout_height="120dp"
         android:layout_marginBottom="40dp"
+        android:contentDescription="@string/app_name"
         android:src="@drawable/splash_logo"
         android:scaleType="centerInside" />
 
@@ -34,6 +35,7 @@
         android:layout_width="32dp"
         android:layout_height="32dp"
         android:layout_marginBottom="16dp"
+        android:contentDescription="@string/accessibility_loading"
         android:indeterminateTint="#F5F7FA" />
 
     <!-- 加载文字 -->
