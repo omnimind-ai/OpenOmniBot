@@ -183,6 +183,7 @@ class AgentConversationHistoryRepository(
         val preservedSummary = existingConversation?.contextSummary
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
+            ?.let(AgentConversationHistorySupport::normalizeContextSummary)
         val cutoffEntryId = existingConversation?.contextSummaryCutoffEntryDbId?.let { cutoffDbId ->
             existingEntries.firstOrNull { it.id == cutoffDbId }?.entryId
         }
@@ -346,7 +347,7 @@ class AgentConversationHistoryRepository(
         val conversation = DatabaseHelper.getConversationById(conversationId) ?: return@withContext
         DatabaseHelper.updateConversation(
             conversation.copy(
-                contextSummary = summary.trim(),
+                contextSummary = AgentConversationHistorySupport.normalizeContextSummary(summary),
                 contextSummaryCutoffEntryDbId = cutoffEntryDbId,
                 contextSummaryUpdatedAt = updatedAt,
                 updatedAt = maxOf(conversation.updatedAt, updatedAt)

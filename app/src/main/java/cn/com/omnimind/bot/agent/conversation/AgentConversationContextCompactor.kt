@@ -278,7 +278,9 @@ Do NOT translate or alter code snippets, file paths, identifiers, or error messa
             existingSummary = existingSummary,
             messagesToCompact = messagesToCompact
         )
-        val summary = requestCompactedSummary(requestMessages)
+        val summary = AgentConversationHistorySupport.normalizeContextSummary(
+            requestCompactedSummary(requestMessages)
+        )
         if (summary.isBlank()) {
             return CompactionOutcome(
                 compacted = false,

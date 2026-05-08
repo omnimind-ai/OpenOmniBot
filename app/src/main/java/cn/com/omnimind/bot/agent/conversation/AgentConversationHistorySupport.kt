@@ -50,10 +50,13 @@ internal object AgentConversationHistorySupport {
     private const val MAX_DISPLAY_LIST_ITEMS = 8
     internal const val MAX_STORAGE_ENTRY_PAYLOAD_CHARS = 32 * 1024
     internal const val MAX_STORAGE_SUMMARY_CHARS = 2 * 1024
+    internal const val MAX_CONTEXT_SUMMARY_CHARS = 32 * 1024
     private const val MAX_STORAGE_TOOL_JSON_CHARS = 4 * 1024
     private const val MAX_STORAGE_TOOL_TERMINAL_CHARS = 8 * 1024
     private const val MAX_STORAGE_MESSAGE_TEXT_CHARS = 24 * 1024
     private const val DISPLAY_TRUNCATION_NOTICE = "[Earlier content omitted]\n"
+    private const val CONTEXT_SUMMARY_TRUNCATION_NOTICE =
+        "\n\n[Context summary truncated to avoid Android CursorWindow row limits]\n\n"
     private const val LEGACY_CONTEXT_SUMMARY_SYSTEM_PREFIX = """
 以下是同一会话较早历史的压缩总结。它替代了压缩点之前的原始消息，请在后续对话中将其视为既有上下文。
 如果总结与压缩点之后的新消息冲突，应以后续原始消息为准。
@@ -267,7 +270,7 @@ internal object AgentConversationHistorySupport {
     }
 
     fun buildContextSummaryUserMessage(summary: String): ChatCompletionMessage {
-        val normalizedSummary = AgentTextSanitizer.sanitizeUtf16(summary).trim()
+        val normalizedSummary = normalizeContextSummary(summary)
         val content = if (normalizedSummary.isEmpty()) {
             CONTEXT_SUMMARY_USER_PREFIX
         } else {
@@ -281,6 +284,25 @@ internal object AgentConversationHistorySupport {
 
     fun buildContextSummarySystemMessage(summary: String): ChatCompletionMessage {
         return buildContextSummaryUserMessage(summary)
+    }
+
+    fun normalizeContextSummary(summary: String): String {
+        val normalized = AgentTextSanitizer.sanitizeUtf16(summary).trim()
+        if (normalized.length <= MAX_CONTEXT_SUMMARY_CHARS) {
+            return normalized
+        }
+
+        val remainingChars = (MAX_CONTEXT_SUMMARY_CHARS - CONTEXT_SUMMARY_TRUNCATION_NOTICE.length)
+            .coerceAtLeast(0)
+        if (remainingChars <= 0) {
+            return normalized.take(MAX_CONTEXT_SUMMARY_CHARS)
+        }
+
+        val headChars = (remainingChars / 3).coerceAtLeast(1)
+        val tailChars = remainingChars - headChars
+        return normalized.take(headChars).trimEnd() +
+            CONTEXT_SUMMARY_TRUNCATION_NOTICE +
+            normalized.takeLast(tailChars).trimStart()
     }
 
     fun extractContextSummaryText(message: ChatCompletionMessage): String? {

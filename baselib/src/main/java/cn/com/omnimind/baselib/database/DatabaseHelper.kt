@@ -11,6 +11,8 @@ import org.json.JSONObject
 object DatabaseHelper {
     // 保留既有 OSS 数据库文件名，避免用户升级后丢失本地数据。
     private const val LOCAL_DATABASE_NAME = AppDatabase.DATABASE_NAME + "oss"
+    private const val CONTEXT_SUMMARY_TRUNCATION_NOTICE =
+        "\n\n[Context summary truncated to avoid Android CursorWindow row limits]\n\n"
     private var database: AppDatabase? = null
 
     // Migration from version 1 to 2 - adding cache_suggestion table
@@ -742,11 +744,15 @@ object DatabaseHelper {
 
     // Conversation相关方法
     suspend fun insertConversation(conversation: Conversation): Long {
-        return getDatabase().conversationDao().insert(conversation)
+        return getDatabase().conversationDao().insert(
+            normalizeConversationForStorage(conversation)
+        )
     }
 
     suspend fun updateConversation(conversation: Conversation) {
-        getDatabase().conversationDao().update(conversation)
+        getDatabase().conversationDao().update(
+            normalizeConversationForStorage(conversation)
+        )
     }
 
     suspend fun deleteConversation(conversation: Conversation) {
@@ -967,6 +973,45 @@ object DatabaseHelper {
 
     suspend fun deleteCodexThreadBindingByConversationId(conversationId: Long): Int {
         return getDatabase().codexThreadBindingDao().deleteByConversationId(conversationId)
+    }
+
+    private fun normalizeConversationForStorage(conversation: Conversation): Conversation {
+        return conversation.copy(
+            title = trimText(conversation.title, ConversationDao.MAX_TITLE_CHARS),
+            summary = trimNullableText(conversation.summary, ConversationDao.MAX_SUMMARY_CHARS),
+            contextSummary = trimContextSummary(conversation.contextSummary),
+            lastMessage = trimNullableText(
+                conversation.lastMessage,
+                ConversationDao.MAX_LAST_MESSAGE_CHARS
+            )
+        )
+    }
+
+    private fun trimNullableText(value: String?, maxChars: Int): String? {
+        return value?.let { trimText(it, maxChars) }
+    }
+
+    private fun trimText(value: String, maxChars: Int): String {
+        if (value.length <= maxChars) return value
+        return value.take(maxChars)
+    }
+
+    private fun trimContextSummary(value: String?): String? {
+        val normalized = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val maxChars = ConversationDao.MAX_CONTEXT_SUMMARY_CHARS
+        if (normalized.length <= maxChars) return normalized
+
+        val remainingChars = (maxChars - CONTEXT_SUMMARY_TRUNCATION_NOTICE.length)
+            .coerceAtLeast(0)
+        if (remainingChars <= 0) {
+            return normalized.take(maxChars)
+        }
+
+        val headChars = (remainingChars / 3).coerceAtLeast(1)
+        val tailChars = remainingChars - headChars
+        return normalized.take(headChars).trimEnd() +
+            CONTEXT_SUMMARY_TRUNCATION_NOTICE +
+            normalized.takeLast(tailChars).trimStart()
     }
 
     /**

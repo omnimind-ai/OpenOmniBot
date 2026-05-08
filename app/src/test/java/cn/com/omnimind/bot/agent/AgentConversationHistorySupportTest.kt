@@ -481,6 +481,24 @@ class AgentConversationHistorySupportTest {
     }
 
     @Test
+    fun `normalizeContextSummary caps oversized summaries while preserving recent tail`() {
+        val longSummary = buildString {
+            append("goal-start\n")
+            append("older-details ".repeat(4000))
+            append("\ncurrent-state-tail")
+        }
+
+        val normalized = AgentConversationHistorySupport.normalizeContextSummary(longSummary)
+
+        assertTrue(
+            normalized.length <= AgentConversationHistorySupport.MAX_CONTEXT_SUMMARY_CHARS
+        )
+        assertTrue(normalized.startsWith("goal-start"))
+        assertTrue(normalized.contains("CursorWindow"))
+        assertTrue(normalized.endsWith("current-state-tail"))
+    }
+
+    @Test
     fun `buildPromptSeedFromEntries keeps all entries after cutoff without takeLast truncation`() {
         val entries = (1L..25L).map { index ->
             buildUserEntry(
