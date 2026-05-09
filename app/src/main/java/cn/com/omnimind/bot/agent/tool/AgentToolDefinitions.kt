@@ -273,8 +273,8 @@ object AgentToolDefinitions {
             "Stop an existing terminal session and clean up the corresponding tmux session. Call this after the stateful terminal task is complete.",
         "结束后等待工具结果，再回复用户。" to
             "Wait for the tool result after stopping the session before replying to the user.",
-        "控制一个最多 3 个标签页的离屏浏览器。不要用它打开 App deep link、omnibot:// 非 browser 资源或应用内路由。浏览器只支持访问 http(s) 页面，以及 omnibot://browser/... 资源文件。使用 navigate 打开页面，screenshot 查看当前视口截图（传 read_image=true 可让模型直接看到截图内容），click/type/hover 与元素交互，get_text/get_readable 抽取内容，scroll 导航长页面，scroll_and_collect 在一次调用中滚动并收集无限列表内容，find_elements 发现可交互元素，get_page_info 获取页面元信息，get_backbone 获取 DOM 骨架，execute_js 执行脚本，fetch 复用当前页面 session 下载资源并返回 omnibot://browser/... 产物，new_tab/close_tab/list_tabs 管理标签页，go_back/go_forward 浏览器前进后退，press_key 模拟键盘按键，wait_for_selector 等待元素出现，get_cookies 返回 cookie 摘要与可复用的 offload env 脚本路径，set_user_agent 切换 desktop_safari 或 mobile_safari。tool_title 必须是 5-10 个字的简洁摘要，并使用与用户相同的语言。" to
-            "Control an off-screen browser with up to 3 tabs. Do not use it for app deep links, non-browser `omnibot://` resources, or in-app routes. The browser supports http(s) pages and `omnibot://browser/...` resources. Use navigate to open pages, screenshot to capture the current viewport (set read_image=true if the model should inspect the screenshot directly), click/type/hover for interaction, get_text/get_readable for extraction, scroll for long-page navigation, scroll_and_collect to collect infinite-list content in one call, find_elements to discover interactable elements, get_page_info for metadata, get_backbone for a DOM skeleton, execute_js for scripting, fetch to download resources with the current page session and return `omnibot://browser/...` artifacts, new_tab/close_tab/list_tabs for tab management, go_back/go_forward for navigation history, press_key to simulate keys, wait_for_selector to wait for elements, get_cookies for cookie summaries plus a reusable offload env script path, and set_user_agent to switch between desktop_safari and mobile_safari. `tool_title` must be a concise 5-10 word summary in the same language as the user.",
+        "控制一个最多 3 个标签页的离屏浏览器。不要用它打开 App deep link、omnibot:// 非 browser 资源或应用内路由。浏览器只支持访问 http(s) 页面，以及 omnibot://browser/... 资源文件。使用 navigate 打开页面，screenshot 查看当前视口截图（传 read_image=true 可让模型直接看到截图内容），click/type/hover 与元素交互，get_text/get_readable 抽取内容，scroll 导航长页面，scroll_and_collect 在一次调用中滚动并收集无限列表内容，find_elements 发现可交互元素，get_page_info 获取页面元信息，get_backbone 获取 DOM 骨架，execute_js 执行脚本，fetch 复用当前页面 session 下载资源并返回 omnibot://browser/... 产物，new_tab/close_tab/list_tabs 管理标签页，go_back/go_forward 浏览器前进后退，press_key 模拟键盘按键，wait_for_selector 等待元素出现，get_cookies 返回 cookie 摘要与可复用的 offload env 脚本路径，set_user_agent 兼容 desktop_safari/mobile_safari 入参但实际切换 Android Chrome 风格桌面/移动 UA。结果可能包含 riskChallengeDetected、riskChallengeKind、recommendedNextAction、throttleDelayMs；若 riskChallengeDetected=true，应停止自动交互/刷新并请用户手动接管。tool_title 必须是 5-10 个字的简洁摘要，并使用与用户相同的语言。" to
+            "Control an off-screen browser with up to 3 tabs. Do not use it for app deep links, non-browser `omnibot://` resources, or in-app routes. The browser supports http(s) pages and `omnibot://browser/...` resources. Use navigate to open pages, screenshot to capture the current viewport (set read_image=true if the model should inspect the screenshot directly), click/type/hover for interaction, get_text/get_readable for extraction, scroll for long-page navigation, scroll_and_collect to collect infinite-list content in one call, find_elements to discover interactable elements, get_page_info for metadata, get_backbone for a DOM skeleton, execute_js for scripting, fetch to download resources with the current page session and return `omnibot://browser/...` artifacts, new_tab/close_tab/list_tabs for tab management, go_back/go_forward for navigation history, press_key to simulate keys, wait_for_selector to wait for elements, get_cookies for cookie summaries plus a reusable offload env script path, and set_user_agent to accept desktop_safari/mobile_safari for compatibility while actually switching Android Chrome-style desktop/mobile UAs. Results may include riskChallengeDetected, riskChallengeKind, recommendedNextAction, and throttleDelayMs; when riskChallengeDetected=true, stop automated interaction/reload attempts and ask the user to take over manually. `tool_title` must be a concise 5-10 word summary in the same language as the user.",
         "本次工具调用要做什么的简洁摘要，5-10 个字，展示给用户。" to
             "A concise summary of what this tool call is doing. Keep it to about 5-10 words and show it to the user.",
         "浏览器动作。" to "Browser action.",
@@ -299,8 +299,8 @@ object AgentToolDefinitions {
             "Number of scrolls for scroll_and_collect. Default 10, maximum 20.",
         "get_backbone 的最大深度，默认 5。" to
             "Maximum depth for get_backbone. Default 5.",
-        "要切换到的 user agent profile。" to
-            "User agent profile to switch to.",
+        "要切换到的 UA profile；枚举名保持兼容，实际使用 Android Chrome 风格桌面/移动 UA。" to
+            "UA profile to switch to. Enum names remain compatible; the actual user agents are Android Chrome-style desktop/mobile UAs.",
         "get_cookies 的 cookie 名过滤关键词。可传空格分隔字符串，兼容数组字符串输入。fuzzy=true 时要求所有关键词都包含在 cookie 名中；fuzzy=false 时要求精确命中任一 cookie 名。" to
             "Keyword filter for cookie names in get_cookies. Accepts a space-separated string and also tolerates array-like string input. When fuzzy=true, every keyword must appear in the cookie name; when fuzzy=false, an exact match of any cookie name is required.",
         "get_cookies 的关键词匹配模式，默认 true。" to
@@ -1038,7 +1038,7 @@ object AgentToolDefinitions {
             put("toolType", "browser")
             put(
                 "description",
-                "控制一个最多 3 个标签页的离屏浏览器。不要用它打开 App deep link、omnibot:// 非 browser 资源或应用内路由。浏览器只支持访问 http(s) 页面，以及 omnibot://browser/... 资源文件。使用 navigate 打开页面，screenshot 查看当前视口截图（传 read_image=true 可让模型直接看到截图内容），click/type/hover 与元素交互，get_text/get_readable 抽取内容，scroll 导航长页面，scroll_and_collect 在一次调用中滚动并收集无限列表内容，find_elements 发现可交互元素，get_page_info 获取页面元信息，get_backbone 获取 DOM 骨架，execute_js 执行脚本，fetch 复用当前页面 session 下载资源并返回 omnibot://browser/... 产物，new_tab/close_tab/list_tabs 管理标签页，go_back/go_forward 浏览器前进后退，press_key 模拟键盘按键，wait_for_selector 等待元素出现，get_cookies 返回 cookie 摘要与可复用的 offload env 脚本路径，set_user_agent 切换 desktop_safari 或 mobile_safari。tool_title 必须是 5-10 个字的简洁摘要，并使用与用户相同的语言。"
+                "控制一个最多 3 个标签页的离屏浏览器。不要用它打开 App deep link、omnibot:// 非 browser 资源或应用内路由。浏览器只支持访问 http(s) 页面，以及 omnibot://browser/... 资源文件。使用 navigate 打开页面，screenshot 查看当前视口截图（传 read_image=true 可让模型直接看到截图内容），click/type/hover 与元素交互，get_text/get_readable 抽取内容，scroll 导航长页面，scroll_and_collect 在一次调用中滚动并收集无限列表内容，find_elements 发现可交互元素，get_page_info 获取页面元信息，get_backbone 获取 DOM 骨架，execute_js 执行脚本，fetch 复用当前页面 session 下载资源并返回 omnibot://browser/... 产物，new_tab/close_tab/list_tabs 管理标签页，go_back/go_forward 浏览器前进后退，press_key 模拟键盘按键，wait_for_selector 等待元素出现，get_cookies 返回 cookie 摘要与可复用的 offload env 脚本路径，set_user_agent 兼容 desktop_safari/mobile_safari 入参但实际切换 Android Chrome 风格桌面/移动 UA。结果可能包含 riskChallengeDetected、riskChallengeKind、recommendedNextAction、throttleDelayMs；若 riskChallengeDetected=true，应停止自动交互/刷新并请用户手动接管。tool_title 必须是 5-10 个字的简洁摘要，并使用与用户相同的语言。"
             )
             putJsonObject("parameters") {
                 put("type", "object")
@@ -1130,7 +1130,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("user_agent") {
                         put("type", "string")
-                        put("description", "要切换到的 user agent profile。")
+                        put("description", "要切换到的 UA profile；枚举名保持兼容，实际使用 Android Chrome 风格桌面/移动 UA。")
                         putJsonArray("enum") {
                             add("desktop_safari")
                             add("mobile_safari")

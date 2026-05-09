@@ -1457,31 +1457,37 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           imageFilter: _isSelectionMode
               ? ImageFilter.blur(sigmaX: 10, sigmaY: 10)
               : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              _buildMemorySuggestion(),
-              const SizedBox(height: 12),
-              _buildMemoryTabSwitcher(),
-              const SizedBox(height: 12),
-            ],
+          child: Container(
+            width: double.infinity,
+            color: context.omniPalette.pageBackground,
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+                _buildMemorySuggestion(),
+                const SizedBox(height: 12),
+                _buildMemoryTabSwitcher(),
+                const SizedBox(height: 12),
+              ],
+            ),
           ),
         ),
         Expanded(
-          child: PageView(
-            controller: _memoryPageController,
-            physics: _isSelectionMode
-                ? const NeverScrollableScrollPhysics()
-                : const BouncingScrollPhysics(),
-            onPageChanged: (index) {
-              _safeSetState(() {
-                _currentMemoryTab = index;
-              });
-            },
-            children: [
-              _buildLocalMemoryPage(filteredCards, hasLocalMemories),
-              _buildCloudMemoryPage(hasMem0Section),
-            ],
+          child: ClipRect(
+            child: PageView(
+              controller: _memoryPageController,
+              physics: _isSelectionMode
+                  ? const NeverScrollableScrollPhysics()
+                  : const BouncingScrollPhysics(),
+              onPageChanged: (index) {
+                _safeSetState(() {
+                  _currentMemoryTab = index;
+                });
+              },
+              children: [
+                _buildLocalMemoryPage(filteredCards, hasLocalMemories),
+                _buildCloudMemoryPage(hasMem0Section),
+              ],
+            ),
           ),
         ),
       ],

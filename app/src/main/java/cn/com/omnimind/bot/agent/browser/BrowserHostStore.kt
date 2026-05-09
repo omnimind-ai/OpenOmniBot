@@ -346,7 +346,7 @@ class BrowserHostStore(
         writeList(KEY_HISTORY, updated)
     }
 
-    fun getDesktopModeEnabled(defaultValue: Boolean = true): Boolean {
+    fun getDesktopModeEnabled(defaultValue: Boolean = false): Boolean {
         return keyValueStore.getBoolean(scopedKey(KEY_DESKTOP_MODE), defaultValue)
     }
 

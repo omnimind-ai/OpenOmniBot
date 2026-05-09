@@ -26,6 +26,9 @@ void main() {
               title: '示例页面',
               isBookmarked: true,
               canGoBack: true,
+              riskChallengeDetected: true,
+              recommendedNextAction:
+                  'ask_user_to_complete_verification_manually',
               tabs: <AgentBrowserTab>[
                 AgentBrowserTab(
                   tabId: 2,
@@ -73,12 +76,13 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    expect(find.text('https://example.com'), findsOneWidget);
+    expect(find.text('example.com'), findsOneWidget);
+    expect(find.text('检测到验证码或风控验证，已暂停自动操作，请手动处理后继续'), findsOneWidget);
     expect(find.text('是否打开外部链接？'), findsOneWidget);
     expect(find.text('页面请求权限'), findsOneWidget);
     expect(find.text('页面输入'), findsOneWidget);
     expect(find.text('当前平台暂不支持浏览器工具视图'), findsOneWidget);
     expect(find.byIcon(Icons.star_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.arrow_back_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsOneWidget);
   });
 }

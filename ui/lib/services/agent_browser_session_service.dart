@@ -116,6 +116,15 @@ class AgentBrowserSessionService {
     return _invokeSnapshot('clearHistory');
   }
 
+  static Future<ChatBrowserSessionSnapshot?> clearCurrentSiteSession({
+    int? tabId,
+  }) {
+    return _invokeSnapshot(
+      'clearCurrentSiteSession',
+      <String, dynamic>{if (tabId != null) 'tabId': tabId},
+    );
+  }
+
   static Future<ChatBrowserSessionSnapshot?> pauseDownload(String taskId) {
     return _invokeSnapshot('pauseDownload', <String, dynamic>{'taskId': taskId});
   }

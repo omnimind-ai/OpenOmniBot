@@ -340,6 +340,9 @@ class AgentBrowserTab {
     this.isActive = false,
     this.isLoading = false,
     this.hasSslError = false,
+    this.riskChallengeDetected = false,
+    this.riskChallengeKind,
+    this.recommendedNextAction,
   });
 
   final int tabId;
@@ -349,6 +352,9 @@ class AgentBrowserTab {
   final bool isActive;
   final bool isLoading;
   final bool hasSslError;
+  final bool riskChallengeDetected;
+  final String? riskChallengeKind;
+  final String? recommendedNextAction;
 
   factory AgentBrowserTab.fromMap(Map<dynamic, dynamic> raw) {
     return AgentBrowserTab(
@@ -359,6 +365,9 @@ class AgentBrowserTab {
       isActive: _browserBool(raw['isActive']),
       isLoading: _browserBool(raw['isLoading']),
       hasSslError: _browserBool(raw['hasSslError']),
+      riskChallengeDetected: _browserBool(raw['riskChallengeDetected']),
+      riskChallengeKind: raw['riskChallengeKind']?.toString(),
+      recommendedNextAction: raw['recommendedNextAction']?.toString(),
     );
   }
 
@@ -370,6 +379,9 @@ class AgentBrowserTab {
     'isActive': isActive,
     'isLoading': isLoading,
     'hasSslError': hasSslError,
+    'riskChallengeDetected': riskChallengeDetected,
+    'riskChallengeKind': riskChallengeKind,
+    'recommendedNextAction': recommendedNextAction,
   };
 }
 
@@ -823,7 +835,11 @@ class ChatBrowserSessionSnapshot {
     this.canGoForward = false,
     this.isLoading = false,
     this.hasSslError = false,
-    this.isDesktopMode = true,
+    this.isDesktopMode = false,
+    this.riskChallengeDetected = false,
+    this.riskChallengeKind,
+    this.recommendedNextAction,
+    this.throttleDelayMs,
     this.activeDownloadCount = 0,
     this.tabs = const <AgentBrowserTab>[],
     this.bookmarks = const <AgentBrowserHistoryEntry>[],
@@ -849,6 +865,10 @@ class ChatBrowserSessionSnapshot {
   final bool isLoading;
   final bool hasSslError;
   final bool isDesktopMode;
+  final bool riskChallengeDetected;
+  final String? riskChallengeKind;
+  final String? recommendedNextAction;
+  final int? throttleDelayMs;
   final int activeDownloadCount;
   final List<AgentBrowserTab> tabs;
   final List<AgentBrowserHistoryEntry> bookmarks;
@@ -882,6 +902,10 @@ class ChatBrowserSessionSnapshot {
     bool? isLoading,
     bool? hasSslError,
     bool? isDesktopMode,
+    bool? riskChallengeDetected,
+    String? riskChallengeKind,
+    String? recommendedNextAction,
+    int? throttleDelayMs,
     int? activeDownloadCount,
     List<AgentBrowserTab>? tabs,
     List<AgentBrowserHistoryEntry>? bookmarks,
@@ -907,6 +931,12 @@ class ChatBrowserSessionSnapshot {
       isLoading: isLoading ?? this.isLoading,
       hasSslError: hasSslError ?? this.hasSslError,
       isDesktopMode: isDesktopMode ?? this.isDesktopMode,
+      riskChallengeDetected:
+          riskChallengeDetected ?? this.riskChallengeDetected,
+      riskChallengeKind: riskChallengeKind ?? this.riskChallengeKind,
+      recommendedNextAction:
+          recommendedNextAction ?? this.recommendedNextAction,
+      throttleDelayMs: throttleDelayMs ?? this.throttleDelayMs,
       activeDownloadCount: activeDownloadCount ?? this.activeDownloadCount,
       tabs: tabs ?? this.tabs,
       bookmarks: bookmarks ?? this.bookmarks,
@@ -935,6 +965,10 @@ class ChatBrowserSessionSnapshot {
       'isLoading': isLoading,
       'hasSslError': hasSslError,
       'isDesktopMode': isDesktopMode,
+      'riskChallengeDetected': riskChallengeDetected,
+      'riskChallengeKind': riskChallengeKind,
+      'recommendedNextAction': recommendedNextAction,
+      'throttleDelayMs': throttleDelayMs,
       'activeDownloadCount': activeDownloadCount,
       'tabs': tabs.map((item) => item.toMap()).toList(),
       'bookmarks': bookmarks.map((item) => item.toMap()).toList(),
@@ -963,7 +997,11 @@ class ChatBrowserSessionSnapshot {
       canGoForward: _browserBool(normalized['canGoForward']),
       isLoading: _browserBool(normalized['isLoading']),
       hasSslError: _browserBool(normalized['hasSslError']),
-      isDesktopMode: _browserBool(normalized['isDesktopMode'], fallback: true),
+      isDesktopMode: _browserBool(normalized['isDesktopMode']),
+      riskChallengeDetected: _browserBool(normalized['riskChallengeDetected']),
+      riskChallengeKind: normalized['riskChallengeKind']?.toString(),
+      recommendedNextAction: normalized['recommendedNextAction']?.toString(),
+      throttleDelayMs: _browserInt(normalized['throttleDelayMs']),
       activeDownloadCount: _browserInt(normalized['activeDownloadCount']) ?? 0,
       tabs: _browserMapList(normalized['tabs'])
           .map(AgentBrowserTab.fromMap)
@@ -1020,6 +1058,10 @@ class ChatBrowserSessionSnapshot {
       currentUrl: currentUrl,
       title: title,
       userAgentProfile: payload['userAgentProfile']?.toString(),
+      riskChallengeDetected: _browserBool(payload['riskChallengeDetected']),
+      riskChallengeKind: payload['riskChallengeKind']?.toString(),
+      recommendedNextAction: payload['recommendedNextAction']?.toString(),
+      throttleDelayMs: _browserInt(payload['throttleDelayMs']),
     );
   }
 
