@@ -877,49 +877,31 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                   '/data/user/0/cn.com.omnimind.bot/workspace/.omnibot',
             );
         final backgroundActive = AppBackgroundService.current.isActive;
-        return Column(
-          children: [
-            OmnibotWorkspaceModeToggle(
-              projectModeEnabled: _workspaceProjectModeEnabled,
-              translucentSurfaces: backgroundActive,
-              onChanged: (enabled) {
-                setState(() {
-                  _workspaceProjectModeEnabled = enabled;
-                  if (enabled) {
-                    _workspaceBrowserCanGoUp = false;
-                  }
-                });
-              },
-            ),
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeOutCubic,
-                child: _workspaceProjectModeEnabled
-                    ? OmnibotWorkspaceProjectFrontends(
-                        key: const ValueKey('chat-workspace-project-mode'),
-                        translucentSurfaces: backgroundActive,
-                      )
-                    : OmnibotWorkspaceBrowser(
-                        key: const ValueKey('chat-workspace-work-mode'),
-                        workspacePath: paths.rootPath,
-                        workspaceShellPath: paths.shellRootPath,
-                        translucentSurfaces: backgroundActive,
-                        showBreadcrumbHeader: true,
-                        showHeaderTitle: false,
-                        onCanGoUpChanged: (canGoUp) {
-                          if (_workspaceBrowserCanGoUp == canGoUp || !mounted) {
-                            return;
-                          }
-                          setState(() {
-                            _workspaceBrowserCanGoUp = canGoUp;
-                          });
-                        },
-                      ),
-              ),
-            ),
-          ],
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeOutCubic,
+          child: _workspaceProjectModeEnabled
+              ? OmnibotWorkspaceProjectFrontends(
+                  key: const ValueKey('chat-workspace-project-mode'),
+                  translucentSurfaces: backgroundActive,
+                )
+              : OmnibotWorkspaceBrowser(
+                  key: _workspaceBrowserKey,
+                  workspacePath: paths.rootPath,
+                  workspaceShellPath: paths.shellRootPath,
+                  translucentSurfaces: backgroundActive,
+                  showBreadcrumbHeader: true,
+                  showHeaderTitle: false,
+                  onCanGoUpChanged: (canGoUp) {
+                    if (_workspaceBrowserCanGoUp == canGoUp || !mounted) {
+                      return;
+                    }
+                    setState(() {
+                      _workspaceBrowserCanGoUp = canGoUp;
+                    });
+                  },
+                ),
         );
       },
     );
@@ -1058,7 +1040,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               ? 'New version ${_appUpdateStatus!.latestVersionLabel} available'
               : '发现新版本 ${_appUpdateStatus!.latestVersionLabel}');
     final appBarMode = showSurfaceSwitcher
-        ? _activeSurfaceMode
+        ? (_activeSurfaceMode == ChatSurfaceMode.project
+              ? ChatSurfaceMode.workspace
+              : _activeSurfaceMode)
         : ChatSurfaceMode.normal;
     final activeAppBarModelId = appBarMode == ChatSurfaceMode.normal
         ? switch (_activeMode) {
@@ -1157,6 +1141,18 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               isPureChatToggleLocked: _isPureChatToggleLocked,
               showWorkspacePaneButton: showWorkspacePaneButton,
               onWorkspacePaneTap: onWorkspacePaneTap,
+              showProjectSurfaceButton: showSurfaceSwitcher,
+              isProjectSurfaceSelected:
+                  _activeSurfaceMode == ChatSurfaceMode.workspace &&
+                  _workspaceProjectModeEnabled,
+              onProjectSurfaceTap: () {
+                final targetMode =
+                    _activeSurfaceMode == ChatSurfaceMode.workspace &&
+                        _workspaceProjectModeEnabled
+                    ? ChatSurfaceMode.workspace
+                    : ChatSurfaceMode.project;
+                unawaited(_switchChatMode(targetMode, syncPage: true));
+              },
             ),
             Expanded(child: conversationBody),
           ],
@@ -1350,52 +1346,24 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               internalRootPath:
                   '/data/user/0/cn.com.omnimind.bot/workspace/.omnibot',
             );
-        return Column(
-          children: [
-            OmnibotWorkspaceModeToggle(
-              projectModeEnabled: _workspaceProjectModeEnabled,
-              translucentSurfaces: backgroundActive,
-              onChanged: (enabled) {
-                setState(() {
-                  _workspaceProjectModeEnabled = enabled;
-                  if (enabled) {
-                    _workspaceBrowserCanGoUp = false;
-                  }
-                });
-              },
-            ),
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeOutCubic,
-                child: _workspaceProjectModeEnabled
-                    ? OmnibotWorkspaceProjectFrontends(
-                        key: const ValueKey('hd-workspace-project-mode'),
-                        translucentSurfaces: backgroundActive,
-                      )
-                    : OmnibotWorkspaceBrowser(
-                        key: _hdPadWorkspaceBrowserKey,
-                        workspacePath: paths.rootPath,
-                        workspaceShellPath: paths.shellRootPath,
-                        enableSystemBackHandler: false,
-                        translucentSurfaces: backgroundActive,
-                        showBreadcrumbHeader: true,
-                        showHeaderTitle: false,
-                        enableInlineDirectoryExpansion: false,
-                        inlineFilePreview: true,
-                        onCanGoUpChanged: (canGoUp) {
-                          if (_workspaceBrowserCanGoUp == canGoUp || !mounted) {
-                            return;
-                          }
-                          setState(() {
-                            _workspaceBrowserCanGoUp = canGoUp;
-                          });
-                        },
-                      ),
-              ),
-            ),
-          ],
+        return OmnibotWorkspaceBrowser(
+          key: _hdPadWorkspaceBrowserKey,
+          workspacePath: paths.rootPath,
+          workspaceShellPath: paths.shellRootPath,
+          enableSystemBackHandler: false,
+          translucentSurfaces: backgroundActive,
+          showBreadcrumbHeader: true,
+          showHeaderTitle: false,
+          enableInlineDirectoryExpansion: false,
+          inlineFilePreview: true,
+          onCanGoUpChanged: (canGoUp) {
+            if (_workspaceBrowserCanGoUp == canGoUp || !mounted) {
+              return;
+            }
+            setState(() {
+              _workspaceBrowserCanGoUp = canGoUp;
+            });
+          },
         );
       },
     );
@@ -1693,7 +1661,10 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                   _hdPadWorkspaceBrowserKey.currentState?.openParentDirectory();
                   return;
                 }
-                if (_isWorkspaceSurface && _workspaceBrowserCanGoUp) {
+                if (_activeSurfaceMode == ChatSurfaceMode.workspace &&
+                    !_workspaceProjectModeEnabled &&
+                    _workspaceBrowserCanGoUp) {
+                  _workspaceBrowserKey.currentState?.openParentDirectory();
                   return;
                 }
                 unawaited(saveConversationWithSummary());

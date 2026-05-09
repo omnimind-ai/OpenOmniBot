@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -26,6 +27,15 @@ const String _kChatAppBarModeMenuOpenIconAsset =
 const String _kChatAppBarPureChatIconAsset = 'assets/home/chat/pure_chat.svg';
 const String _kChatAppBarWorkspaceIconAsset =
     'assets/home/workspace_folder_icon.svg';
+const String _kChatAppBarWorkbenchIconSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+    'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round">'
+    '<rect width="7" height="9" x="3" y="3" rx="1"/>'
+    '<rect width="7" height="5" x="14" y="3" rx="1"/>'
+    '<rect width="7" height="9" x="14" y="12" rx="1"/>'
+    '<rect width="7" height="5" x="3" y="16" rx="1"/>'
+    '</svg>';
 
 const List<Color> _kDarkChatAccentGradient = <Color>[
   Color(0xFFAA9774),
@@ -38,7 +48,7 @@ const double _kChatAppBarAccessoryGap = 12;
 const double _kChatAppBarIslandMaxWidth = 176;
 const double _kChatAppBarRightActionSlotWidth = 50;
 
-enum ChatSurfaceMode { workspace, normal, openclaw }
+enum ChatSurfaceMode { workspace, project, normal, openclaw }
 
 const List<ChatSurfaceMode> kVisibleChatSurfaceModes = <ChatSurfaceMode>[
   ChatSurfaceMode.normal,
@@ -84,6 +94,9 @@ class ChatAppBar extends StatelessWidget {
   final bool isPureChatToggleLocked;
   final bool showWorkspacePaneButton;
   final VoidCallback? onWorkspacePaneTap;
+  final bool showProjectSurfaceButton;
+  final bool isProjectSurfaceSelected;
+  final VoidCallback? onProjectSurfaceTap;
 
   const ChatAppBar({
     super.key,
@@ -124,6 +137,9 @@ class ChatAppBar extends StatelessWidget {
     this.isPureChatToggleLocked = true,
     this.showWorkspacePaneButton = false,
     this.onWorkspacePaneTap,
+    this.showProjectSurfaceButton = false,
+    this.isProjectSurfaceSelected = false,
+    this.onProjectSurfaceTap,
   });
 
   @override
@@ -142,6 +158,8 @@ class ChatAppBar extends StatelessWidget {
     const updateTint = Color(0xFFD4A017);
     final showWorkspaceButton =
         showWorkspacePaneButton && onWorkspacePaneTap != null;
+    final showProjectButton =
+        showProjectSurfaceButton && onProjectSurfaceTap != null;
     final appBarBackgroundColor = showSurfaceSwitcher
         ? palette.pageBackground
         : palette.surfacePrimary;
@@ -161,6 +179,7 @@ class ChatAppBar extends StatelessWidget {
                   _kChatAppBarAccessoryGap * 2;
               final rightActionCount =
                   (showAppUpdateIndicator ? 1 : 0) +
+                  (showProjectButton ? 1 : 0) +
                   (showWorkspaceButton ? 1 : 0) +
                   (showPureChatToggle ? 1 : 0);
               final rightReservedSpace =
@@ -309,6 +328,21 @@ class ChatAppBar extends StatelessWidget {
                               ),
                             ),
                           ),
+                        if (showProjectButton)
+                          SizedBox(
+                            width: _kChatAppBarRightActionSlotWidth,
+                            height: _kChatAppBarRightActionSlotWidth,
+                            child: Center(
+                              child: _ChatAppBarProjectSurfaceButton(
+                                iconTint: iconTint,
+                                selectedColor: context.isDarkTheme
+                                    ? palette.accentPrimary
+                                    : const Color(0xFF1930D9),
+                                isSelected: isProjectSurfaceSelected,
+                                onTap: onProjectSurfaceTap!,
+                              ),
+                            ),
+                          ),
                         if (showPureChatToggle)
                           SizedBox(
                             width: _kChatAppBarRightActionSlotWidth,
@@ -418,6 +452,46 @@ class _ChatAppBarWorkspaceButton extends StatelessWidget {
               width: 20,
               height: 20,
               colorFilter: ColorFilter.mode(iconTint, BlendMode.srcIn),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatAppBarProjectSurfaceButton extends StatelessWidget {
+  const _ChatAppBarProjectSurfaceButton({
+    required this.iconTint,
+    required this.selectedColor,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final Color iconTint;
+  final Color selectedColor;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isSelected ? selectedColor : iconTint;
+    return Tooltip(
+      message: context.l10n.workbenchWorkspaceProjectMode,
+      child: GestureDetector(
+        key: const ValueKey('chat-app-bar-project-surface-button'),
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: _kChatAppBarAccessoryButtonSize,
+          height: _kChatAppBarAccessoryButtonSize,
+          child: Center(
+            child: SvgPicture.string(
+              _kChatAppBarWorkbenchIconSvg,
+              key: const ValueKey('chat-app-bar-project-surface-icon'),
+              width: 21,
+              height: 21,
+              colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
             ),
           ),
         ),
@@ -742,7 +816,10 @@ class _ChatModeModelSwitcherState extends State<_ChatModeModelSwitcher> {
   double _horizontalDragDelta = 0;
 
   int get _activeVisibleModeIndex {
-    final index = kVisibleChatSurfaceModes.indexOf(widget.activeMode);
+    final effectiveMode = widget.activeMode == ChatSurfaceMode.project
+        ? ChatSurfaceMode.workspace
+        : widget.activeMode;
+    final index = kVisibleChatSurfaceModes.indexOf(effectiveMode);
     if (index >= 0) {
       return index;
     }
@@ -1255,9 +1332,12 @@ class _ChatModeSliderState extends State<ChatModeSlider> {
     final activeGradient = context.isDarkTheme
         ? _kDarkChatAccentGradient
         : const <Color>[Color(0xFF2DA5F0), Color(0xFF1930D9)];
-    final alignment = _activeVisibleModeIndex == 0
-        ? Alignment.centerLeft
-        : Alignment.centerRight;
+    final activeX = kVisibleChatSurfaceModes.length <= 1
+        ? 0.0
+        : -1.0 +
+              (2.0 * _activeVisibleModeIndex) /
+                  (kVisibleChatSurfaceModes.length - 1);
+    final alignment = Alignment(activeX, 0);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onHorizontalDragUpdate: (details) {

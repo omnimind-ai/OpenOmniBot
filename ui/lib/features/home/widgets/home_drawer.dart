@@ -15,7 +15,6 @@ import 'package:ui/models/conversation_thread_target.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/conversation_history_service.dart';
 import 'package:ui/services/conversation_service.dart';
-import 'package:ui/services/omnibot_resource_service.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/cache_util.dart';
@@ -403,17 +402,16 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     GoRouterManager.push(route);
   }
 
-  Future<void> _openWorkspaceProjectMode() async {
+  void _openProjectSurface() {
     _maybeCloseDrawer();
-    final paths = await OmnibotResourceService.ensureWorkspacePathsLoaded();
-    if (!mounted) return;
+    final target = ConversationThreadTarget.newConversation(
+      mode: widget.newConversationMode,
+      requestKey: DateTime.now().microsecondsSinceEpoch.toString(),
+    );
     GoRouterManager.push(
-      '/home/omnibot_workspace',
-      extra: {
-        'workspacePath': paths.rootPath,
-        'workspaceShellPath': paths.shellRootPath,
-        'startInProjectMode': true,
-      },
+      '/home/chat',
+      extra: target,
+      queryParams: {..._threadTargetQueryParams(target), 'surface': 'project'},
     );
   }
 
@@ -1333,7 +1331,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       _DrawerShortcutAction(
         label: context.l10n.workbenchWorkspaceProjectMode,
         svgString: _kDrawerWorkbenchIconSvg,
-        onTap: () => unawaited(_openWorkspaceProjectMode()),
+        onTap: _openProjectSurface,
       ),
       _DrawerShortcutAction(
         label: context.l10n.trajectoryTitle,

@@ -118,7 +118,7 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
             _buildHeader(project),
             if (widget._debugMode) ...[
               const SizedBox(height: 12),
-              _buildDebugBanner(),
+              _buildDebugBanner(project),
             ],
             const SizedBox(height: 12),
             _buildTodoCard(project),
@@ -149,8 +149,9 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
     );
   }
 
-  Widget _buildDebugBanner() {
+  Widget _buildDebugBanner(WorkbenchProject project) {
     final palette = context.omniPalette;
+    final display = _selectedDisplay(project);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -178,14 +179,65 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
           const SizedBox(height: 10),
           _buildDebugLine(
             Icons.auto_awesome_rounded,
-            context.l10n.workbenchDebugHotUpdateHomeInput,
+            context.l10n.workbenchDebugFloatingXiaowan,
           ),
           const SizedBox(height: 6),
           _buildDebugLine(
             Icons.visibility_outlined,
-            '${context.l10n.workbenchDebugVlmTest} · ${context.l10n.workbenchDebugComingSoon}',
+            context.l10n.workbenchDebugVlmInput,
           ),
+          const SizedBox(height: 10),
+          _buildDebugContextGrid(project, display),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDebugContextGrid(
+    WorkbenchProject project,
+    WorkbenchDisplaySpec display,
+  ) {
+    final route = display.route.trim().isEmpty ? project.route : display.route;
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        _buildDebugContextChip(
+          context.l10n.workbenchDebugContextProject(project.projectId),
+        ),
+        _buildDebugContextChip(
+          context.l10n.workbenchDebugContextDisplay(display.id),
+        ),
+        _buildDebugContextChip(context.l10n.workbenchDebugContextRoute(route)),
+        _buildDebugContextChip(
+          context.l10n.workbenchTodoCount(
+            project.openTodos.length,
+            project.finishedTodos.length,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDebugContextChip(String label) {
+    final palette = context.omniPalette;
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 260),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: palette.surfaceSecondary,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: palette.textSecondary,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

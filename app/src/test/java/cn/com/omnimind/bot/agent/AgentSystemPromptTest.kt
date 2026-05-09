@@ -107,4 +107,35 @@ class AgentSystemPromptTest {
         assertTrue(prompt.contains("oob-workbench-todo-log"))
         assertTrue(prompt.contains("todo.add"))
     }
+
+    @Test
+    fun buildIncludesWorkbenchHomeInputRoutingRules() {
+        val prompt = AgentSystemPrompt.build(
+            workspace = AgentWorkspaceDescriptor(
+                id = "conversation-1",
+                rootPath = "/workspace",
+                androidRootPath = "/data/user/0/cn.com.omnimind.bot/workspace",
+                uriRoot = "omnibot://workspace",
+                currentCwd = "/workspace/demo",
+                androidCurrentCwd = "/data/user/0/cn.com.omnimind.bot/workspace/demo",
+                shellRootPath = "/workspace",
+                retentionPolicy = "shared_root"
+            ),
+            installedSkills = emptyList(),
+            skillsRootShellPath = "/workspace/.omnibot/skills",
+            skillsRootAndroidPath = "/data/user/0/cn.com.omnimind.bot/workspace/.omnibot/skills",
+            resolvedSkills = emptyList(),
+            memoryContext = null,
+            activeWorkbenchProjectContext = null,
+            locale = PromptLocale.ZH_CN
+        )
+
+        assertTrue(prompt.contains("Home 大输入框是 Project 创建"))
+        assertTrue(prompt.contains("workbench_project_create"))
+        assertTrue(prompt.contains("workbench_project_delete"))
+        assertTrue(prompt.contains("workbench_api_list"))
+        assertTrue(prompt.contains("workbench_api_call"))
+        assertTrue(prompt.contains("frontendContext"))
+        assertTrue(prompt.contains("drawingPaths"))
+    }
 }

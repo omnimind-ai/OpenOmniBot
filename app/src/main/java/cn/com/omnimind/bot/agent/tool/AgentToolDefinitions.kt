@@ -1641,7 +1641,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_hot_update")
             put("displayName", "热更新 Workbench Project")
             put("toolType", "workbench")
-            put("description", "根据用户在 Project 页面里和小万对话得到的 prompt，对已有 Workbench Project 做一次控制面热更新，并返回刷新后的 OOB 原生页面状态。它不会注册成 Project 业务 API，也不会出现在 workbench_api_list。")
+            put("description", "根据用户在 Project 页面里和小万悬浮窗、画图标注或 VLM 输入得到的 prompt，对已有 Workbench Project 做一次控制面热更新，并返回刷新后的 OOB 原生页面状态。调用时尽量附带当前 Flutter Display 的 frontendContext，例如 route、displayId、可见状态、用户选择的控件、选区、drawingPaths 或截图摘要。它不会注册成 Project 业务 API，也不会出现在 workbench_api_list。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1652,6 +1652,11 @@ object AgentToolDefinitions {
                     putJsonObject("prompt") {
                         put("type", "string")
                         put("description", "用户希望修改当前 Project 或生成前端的自然语言请求。")
+                    }
+                    putJsonObject("frontendContext") {
+                        put("type", "object")
+                        put("description", "可选。当前生成前端页面上下文，由小万悬浮窗、画图标注或 VLM 输入附带，例如 projectId、displayId、route、visibleState、selectedElement、selectedRegion、drawingPaths、screenshotSummary。")
+                        put("additionalProperties", true)
                     }
                 }
                 putJsonArray("required") {

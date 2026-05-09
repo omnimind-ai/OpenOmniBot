@@ -420,13 +420,16 @@ class WorkbenchProjectStore(
      * @param prompt User request captured from the Xiaowan floating assistant; it is stored in
      * `logs/hot_updates.jsonl` and interpreted by the current project template.
      * @param caller Caller label such as `ui` or `ai`, persisted for audit and future replay.
+     * @param frontendContext Optional current Flutter Display context attached by Xiaowan or VLM
+     * input, such as route, display id, visible state, selected element, or screenshot summary.
      * @return Hot-update result plus the refreshed project payload.
      */
     @Synchronized
     fun hotUpdateProject(
         projectId: String,
         prompt: String,
-        caller: String
+        caller: String,
+        frontendContext: Map<String, Any?> = emptyMap()
     ): Map<String, Any?> {
         val record = findProject(projectId)
         val request = prompt.trim()
@@ -478,12 +481,13 @@ class WorkbenchProjectStore(
             )
         }
 
-        appendHotUpdate(record.projectId, request, caller, appliedActions)
+        appendHotUpdate(record.projectId, request, caller, appliedActions, frontendContext)
         writeProjectJson(record, projectApis(record.projectId), readTodos(record.projectId))
         return linkedMapOf(
             "success" to true,
             "projectId" to record.projectId,
             "prompt" to request,
+            "frontendContext" to frontendContext,
             "appliedActions" to appliedActions,
             "hotUpdateLogPath" to "${record.spacePath}/logs/hot_updates.jsonl",
             "project" to getProject(record.projectId)
@@ -1106,12 +1110,14 @@ class WorkbenchProjectStore(
      * @param prompt User prompt captured from the floating assistant.
      * @param caller UI or AI caller label for future replay/debugging.
      * @param appliedActions Compact API action summaries produced while applying the prompt.
+     * @param frontendContext Current Flutter Display context captured by Xiaowan or VLM input.
      */
     private fun appendHotUpdate(
         projectId: String,
         prompt: String,
         caller: String,
-        appliedActions: List<Map<String, Any?>>
+        appliedActions: List<Map<String, Any?>>,
+        frontendContext: Map<String, Any?>
     ) {
         val file = File(projectDir(projectId), "logs/hot_updates.jsonl")
         file.parentFile?.mkdirs()
@@ -1120,6 +1126,7 @@ class WorkbenchProjectStore(
             "projectId" to projectId,
             "caller" to caller.ifBlank { "unknown" },
             "prompt" to prompt,
+            "frontendContext" to frontendContext,
             "appliedActions" to appliedActions
         )
         file.appendText(logGson.toJson(row) + "\n")

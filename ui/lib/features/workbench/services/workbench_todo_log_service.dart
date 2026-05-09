@@ -44,6 +44,7 @@ abstract class WorkbenchProjectBackend {
   Future<WorkbenchProjectHotUpdateResult> hotUpdateProject({
     required String projectId,
     required String prompt,
+    Map<String, Object?>? frontendContext,
   });
 
   /// Imports an APK file or Android project directory into a Workbench Project.
@@ -189,11 +190,16 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
   Future<WorkbenchProjectHotUpdateResult> hotUpdateProject({
     required String projectId,
     required String prompt,
+    Map<String, Object?>? frontendContext,
   }) async {
-    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'workbenchProjectHotUpdate',
-      {'projectId': projectId, 'prompt': prompt, 'caller': 'ui'},
-    );
+    final result = await _channel
+        .invokeMethod<Map<dynamic, dynamic>>('workbenchProjectHotUpdate', {
+          'projectId': projectId,
+          'prompt': prompt,
+          'caller': 'ui',
+          if (frontendContext != null && frontendContext.isNotEmpty)
+            'frontendContext': frontendContext,
+        });
     return WorkbenchProjectHotUpdateResult.fromMap(result ?? const {});
   }
 
@@ -312,10 +318,14 @@ class WorkbenchTodoLogService extends ChangeNotifier {
   ///
   /// The prompt updates the current Project through the control API and returns
   /// a refreshed Project payload when native execution succeeds.
-  Future<WorkbenchProjectHotUpdateResult> applyHotUpdate(String prompt) async {
+  Future<WorkbenchProjectHotUpdateResult> applyHotUpdate(
+    String prompt, {
+    Map<String, Object?>? frontendContext,
+  }) async {
     final result = await _backend.hotUpdateProject(
       projectId: _project.projectId,
       prompt: prompt,
+      frontendContext: frontendContext,
     );
     if (result.project != null) {
       _project = result.project!;
@@ -589,8 +599,9 @@ class WorkbenchProjectModeService extends ChangeNotifier {
   /// Project payload or from native storage when needed.
   Future<WorkbenchProjectHotUpdateResult?> applyHotUpdate(
     WorkbenchProject project,
-    String prompt,
-  ) async {
+    String prompt, {
+    Map<String, Object?>? frontendContext,
+  }) async {
     _loading = true;
     _errorMessage = null;
     notifyListeners();
@@ -598,6 +609,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       final result = await _backend.hotUpdateProject(
         projectId: project.projectId,
         prompt: prompt,
+        frontendContext: frontendContext,
       );
       if (result.project != null) {
         _projects = _projects

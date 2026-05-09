@@ -5240,6 +5240,12 @@ abstract class AppLocalizations {
   /// **'打开 Workbench'**
   String get workbenchWorkspaceOpenWorkbench;
 
+  /// No description provided for @workbenchWorkspaceOpenProjectConsole.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开 Project 控制台'**
+  String get workbenchWorkspaceOpenProjectConsole;
+
   /// No description provided for @workbenchWorkspaceWorkMode.
   ///
   /// In zh, this message translates to:
@@ -6103,6 +6109,36 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'回到首页大输入框描述修改，Agent 会带着当前 Project toolbox 执行热更新'**
   String get workbenchDebugHotUpdateHomeInput;
+
+  /// No description provided for @workbenchDebugFloatingXiaowan.
+  ///
+  /// In zh, this message translates to:
+  /// **'悬浮小万可以带上当前前端上下文，选择页面信息后调用 workbench_project_hot_update 迭代这个 Project。'**
+  String get workbenchDebugFloatingXiaowan;
+
+  /// No description provided for @workbenchDebugVlmInput.
+  ///
+  /// In zh, this message translates to:
+  /// **'VLM 输入也可以附带当前 Display、可见状态、选中控件或截图摘要，作为 frontendContext 交给 Project Skill。'**
+  String get workbenchDebugVlmInput;
+
+  /// No description provided for @workbenchDebugContextProject.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project {projectId}'**
+  String workbenchDebugContextProject(String projectId);
+
+  /// No description provided for @workbenchDebugContextDisplay.
+  ///
+  /// In zh, this message translates to:
+  /// **'Display {displayId}'**
+  String workbenchDebugContextDisplay(String displayId);
+
+  /// No description provided for @workbenchDebugContextRoute.
+  ///
+  /// In zh, this message translates to:
+  /// **'Route {route}'**
+  String workbenchDebugContextRoute(String route);
 
   /// No description provided for @workbenchDebugVlmTest.
   ///

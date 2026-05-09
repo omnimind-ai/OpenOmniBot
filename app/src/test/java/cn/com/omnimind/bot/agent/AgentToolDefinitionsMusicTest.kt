@@ -55,6 +55,29 @@ class AgentToolDefinitionsMusicTest {
     }
 
     @Test
+    fun `workbench hot update accepts drawing frontend context`() {
+        val hotUpdateTool = AgentToolDefinitions.staticTools()
+            .first { definition ->
+                ((definition["function"] as? JsonObject)
+                    ?.get("name")
+                    ?.jsonPrimitive
+                    ?.contentOrNull) == "workbench_project_hot_update"
+            }
+        val function = hotUpdateTool["function"] as JsonObject
+        val parameters = function["parameters"] as JsonObject
+        val properties = parameters["properties"] as JsonObject
+        val frontendContext = properties["frontendContext"] as JsonObject
+
+        assertTrue(properties.containsKey("frontendContext"))
+        assertTrue(
+            frontendContext["description"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.contains("drawingPaths") == true
+        )
+    }
+
+    @Test
     fun `english browser tool metadata is localized`() {
         val browserTool = AgentToolDefinitions.staticTools(PromptLocale.EN_US)
             .first { ((it["function"] as JsonObject)["name"]?.jsonPrimitive?.contentOrNull) == "browser_use" }

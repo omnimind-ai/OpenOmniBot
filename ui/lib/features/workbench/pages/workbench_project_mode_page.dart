@@ -40,6 +40,36 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     _selectAvailableProject(preferredProjectId: selectProjectId);
   }
 
+  Future<void> _createTodoDemoProject() async {
+    final project = await _service.createTodoLogProjectFromPrompt(
+      context.l10n.workbenchProjectDefaultPrompt,
+      name: context.l10n.workbenchGeneratedTodoProjectName,
+      initialTodos: [
+        context.l10n.workbenchPromptSeedAddTodo,
+        context.l10n.workbenchPromptSeedArchiveTodo,
+      ],
+    );
+    if (!mounted) return;
+    if (project == null) {
+      showToast(
+        context.l10n.workbenchProjectModeLoadFailed,
+        type: ToastType.error,
+      );
+      return;
+    }
+    setState(() => _selectedProjectId = project.projectId);
+    final activated = await _service.activateProject(project);
+    if (!mounted) return;
+    showToast(
+      activated == null
+          ? context.l10n.workbenchProjectGenerated
+          : context.l10n.workbenchProjectActivated(
+              _projectDisplayName(activated),
+            ),
+      type: ToastType.success,
+    );
+  }
+
   void _selectAvailableProject({String? preferredProjectId}) {
     final projects = _service.projects;
     if (projects.isEmpty) {
@@ -288,6 +318,13 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
           title: context.l10n.workbenchProjectModeTitle,
           primary: true,
           onBackPressed: _handleBackNavigation,
+          actions: [
+            IconButton(
+              tooltip: context.l10n.workbenchProjectModeCreateButton,
+              onPressed: _service.loading ? null : _createTodoDemoProject,
+              icon: const Icon(Icons.add_rounded),
+            ),
+          ],
         ),
         body: SafeArea(
           child: AnimatedBuilder(
@@ -372,6 +409,11 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
             tooltip: context.l10n.workbenchProjectHelpTooltip,
             onPressed: _showHelpDialog,
             icon: const Icon(Icons.info_outline_rounded),
+          ),
+          IconButton.filledTonal(
+            tooltip: context.l10n.workbenchProjectModeCreateButton,
+            onPressed: _service.loading ? null : _createTodoDemoProject,
+            icon: const Icon(Icons.add_rounded),
           ),
         ],
       ),
@@ -823,10 +865,21 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
 
   Widget _buildEmptyProjectPanel() {
     return _buildSurface(
-      child: _buildInlineStatus(
-        icon: Icons.info_outline_rounded,
-        label: context.l10n.workbenchProjectModeEmpty,
-        color: context.omniPalette.textSecondary,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildInlineStatus(
+            icon: Icons.info_outline_rounded,
+            label: context.l10n.workbenchProjectModeEmpty,
+            color: context.omniPalette.textSecondary,
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _service.loading ? null : _createTodoDemoProject,
+            icon: const Icon(Icons.add_rounded),
+            label: Text(context.l10n.workbenchProjectModeCreateButton),
+          ),
+        ],
       ),
     );
   }

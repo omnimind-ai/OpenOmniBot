@@ -439,10 +439,15 @@ void main() {
               case 'workbenchApiList':
                 return _apiPayload();
               case 'workbenchProjectHotUpdate':
+                final args = call.arguments as Map<dynamic, dynamic>;
+                expect(args['frontendContext'], {
+                  'displayId': 'todo-log-display',
+                  'route': '/workbench/todo_log',
+                });
                 return {
                   'success': true,
                   'projectId': workbenchTodoDefaultProjectId,
-                  'prompt': call.arguments['prompt'],
+                  'prompt': args['prompt'],
                   'appliedActions': [
                     {'apiId': WorkbenchTodoToolIds.addTodo, 'success': true},
                   ],
@@ -471,7 +476,13 @@ void main() {
 
       final service = WorkbenchTodoLogService.native();
       await service.initialize();
-      final result = await service.applyHotUpdate('Hot updated');
+      final result = await service.applyHotUpdate(
+        'Hot updated',
+        frontendContext: const {
+          'displayId': 'todo-log-display',
+          'route': '/workbench/todo_log',
+        },
+      );
 
       expect(calls, [
         'workbenchProjectGet',
@@ -766,6 +777,7 @@ class _TestWorkbenchProjectBackend implements WorkbenchProjectBackend {
   Future<WorkbenchProjectHotUpdateResult> hotUpdateProject({
     required String projectId,
     required String prompt,
+    Map<String, Object?>? frontendContext,
   }) async {
     final addResult = await callApi(
       projectId: projectId,

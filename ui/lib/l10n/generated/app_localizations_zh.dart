@@ -2750,6 +2750,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchWorkspaceOpenWorkbench => '打开 Workbench';
 
   @override
+  String get workbenchWorkspaceOpenProjectConsole => '打开 Project 控制台';
+
+  @override
   String get workbenchWorkspaceWorkMode => 'Work';
 
   @override
@@ -3213,6 +3216,29 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get workbenchDebugHotUpdateHomeInput =>
       '回到首页大输入框描述修改，Agent 会带着当前 Project toolbox 执行热更新';
+
+  @override
+  String get workbenchDebugFloatingXiaowan =>
+      '悬浮小万可以带上当前前端上下文，选择页面信息后调用 workbench_project_hot_update 迭代这个 Project。';
+
+  @override
+  String get workbenchDebugVlmInput =>
+      'VLM 输入也可以附带当前 Display、可见状态、选中控件或截图摘要，作为 frontendContext 交给 Project Skill。';
+
+  @override
+  String workbenchDebugContextProject(String projectId) {
+    return 'Project $projectId';
+  }
+
+  @override
+  String workbenchDebugContextDisplay(String displayId) {
+    return 'Display $displayId';
+  }
+
+  @override
+  String workbenchDebugContextRoute(String route) {
+    return 'Route $route';
+  }
 
   @override
   String get workbenchDebugVlmTest => '根据 VLM 模拟人类操作测试';

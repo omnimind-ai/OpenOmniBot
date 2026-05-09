@@ -95,6 +95,30 @@ The project directory separates editable source specs from runtime state:
 - `data/` and `logs/` are runtime state shared by AI and UI.
 - `android/` stores APK files or Android project source snapshots imported through the Workbench control plane. This is how OOB can "eat" an existing Android app/project into a vibe Project without turning the import itself into a business API.
 
+## Home Input Operations
+
+Project operations are driven by Agent understanding from the Home composer. Do not add a second input box, a local command parser, or a Workspace file-controller command path.
+
+Supported Home prompts include:
+
+```text
+create project: 做一个 todolist，可以增加todo，归档todo
+delete project oob-workbench-todo-log
+open project oob-workbench-todo-log
+export project oob-workbench-todo-log
+给当前 todo project 增加一条 todo：验证输入框直接调用 Project API
+把当前 Todo 前端的归档按钮改得更明显
+```
+
+Routing rules:
+
+1. Creation goes through `workbench_project_create`; never hand-write `registry.json` or `api_registry.json`.
+2. Listing, reading, opening, exporting, and deleting go through `workbench_project_list/get/open/export/delete`.
+3. `delete project <explicit projectId>` may call `workbench_project_delete` directly. If the user only says `delete project`, call `workbench_project_list` first; with multiple Projects ask the user to specify, and with only one active/available Project ask for confirmation before deleting.
+4. Business operations go through `workbench_api_list(projectId)` followed by `workbench_api_call(projectId, apiId, inputs)`. Do not edit `data/*.json` by hand.
+5. Frontend/backend edits prefer the active Project from the injected prompt context. If the user names a `projectId`, use that explicit Project.
+6. Hot updates from Home input, floating Xiaowan, drawing annotations, or VLM screen input go through `workbench_project_hot_update`.
+
 ## Display Rules
 
 1. Build OOB-native Flutter UI first.
@@ -105,10 +129,11 @@ The project directory separates editable source specs from runtime state:
 6. Prefer compact panels, list tiles, forms, segmented controls, and tool status rows that match existing OOB screens.
 7. Only use WebView or HTML when the user explicitly asks for web export or when the content is already web-native.
 8. Put file inspection and editing in Workspace instead of exposing long registry/data/log paths in the default Project UI.
-9. Keep Workbench mode separate from existing interaction pages. Home chat input must not show a Project popup button or active Project chip. Users enter Project mode from the Workspace/file surface by switching the small Work / Project toggle. The drawer shortcut may open Workspace directly with Project mode enabled.
-10. Treat Workspace Project mode as the primary frontend viewport. It should use a small Project marker and compact switch/open controls, then directly host the active Project's current Flutter Display like a browser child window. Do not show a large "Workspace / Project" identity block or a list of all Project internals in this primary surface. Keep `/workbench/projects` as a secondary control surface for deeper container management, not as the default user-facing frontend.
-11. Keep the Workspace Project guide as a compact info popup, not a full tutorial page. It should explain what a Project binds, how Flutter Displays call Project APIs, where data/logs persist, and how to extend backend tools through Workbench registration.
-12. v1 hot update prompts are handled from the Home chat input with Project context supplied by the Workbench skill and selected Project state. Generated frontend debug banners may point users back to Home; do not add a second Xiaowan input inside the Workspace Project launcher, Workbench manager, or generated frontend. A hot update still calls `workbench_project_hot_update`, persists `logs/hot_updates.jsonl`, refreshes the current Project payload, and keeps Project business APIs in `workbench_api_list` unchanged.
+9. Keep Workbench mode separate from existing interaction pages. Home chat input must not show a Project popup button or active Project chip. The top island keeps the two-way Chat / Workspace slider; Project is a separate top Workbench button using the Workbench tool mark, and toggles the Workspace container between file browsing and the active Project frontend. The top island should stay on the surface switcher by default instead of auto-collapsing into the model name; model/tools are temporary vertical-swipe layers. The drawer shortcut should return to Home and open the Project surface directly.
+10. Treat the Home top Workbench button as the primary frontend entry. It should show the active Project's current Flutter Display inside the Workspace container like a browser child window, with only compact switch/info/open/refresh controls above it. Do not put a Work/Project chip inside Workspace content, do not add Project as a third horizontal page in the slider, do not show a large "Workspace / Project" identity block, and do not list all Project internals in this primary surface. Keep `/workbench/projects` as a secondary control surface for deeper container management, not as the default user-facing frontend.
+11. Keep the Project Display guide as a compact info popup, not a full tutorial page. It should explain what a Project binds, how Flutter Displays call Project APIs, where data/logs persist, and how to extend backend tools through Workbench registration.
+12. Debug is not a Workbench-wide mode. It belongs to the currently displayed Flutter Display: floating Xiaowan, drawing annotations, and VLM input may attach the current frontend context, then call `workbench_project_hot_update`. Do not add a second chat box inside the Workspace Project launcher, Workbench manager, or generated frontend. A hot update still persists `logs/hot_updates.jsonl`, refreshes the current Project payload, and keeps Project business APIs in `workbench_api_list` unchanged.
+13. Drawing on top of a generated frontend should be treated as context capture for iteration. The overlay may produce vector strokes and selected regions, but those values must travel in `frontendContext` rather than becoming Project business APIs.
 
 ## Backend Rules
 
@@ -131,11 +156,12 @@ When a user opens Project generation mode and says something like “I want a si
 3. Backend APIs: map user verbs to Project APIs. “Add todo” maps to `todo.add`; “archive todo” maps to `todo.finish` in the current template because the persistent state uses `status=finished` for archived items.
 4. Data flow: specify that both AI and UI write through `workbench_api_call` and persist to `data/todos.json`, while every call appends to `logs/api_calls.jsonl`.
 5. Frontend binding: bind the add input/button to `todo.add`, and each open todo archive action to `todo.finish`.
-6. Frontend viewport: expose the generated Display from Workspace Project mode so the user can right-swipe/open Workspace, toggle Project mode, and immediately see the active Project's current frontend in an embedded child window. Use a small menu for switching Projects/Displays and keep delete/export/deep API stats in the secondary `/workbench/projects` manager; do not mix those controls into the generated frontend. The Workspace info popup should teach this boundary without adding a second creation flow.
+6. Frontend viewport: expose the generated Display from the Home top Workbench button so the user can tap the Workbench mark beside the Chat / Workspace slider and immediately see the active Project's current frontend in an embedded child window. Use a small menu for switching Projects/Displays and keep delete/export/deep API stats in the secondary `/workbench/projects` manager; do not mix those controls into the generated frontend. The Project info popup should teach this boundary without adding a second creation flow.
 7. Existing projects: call `workbench_project_list` to inspect registered projects and `workbench_project_get` before opening or mutating a specific project.
-8. Execution: call `workbench_project_create`, then call `workbench_api_call` for demo or requested initial state, and finally call `workbench_project_open`. Do not fake API execution by writing data files directly.
+8. Debug context: when the user asks to change the current frontend through floating Xiaowan, drawing overlay, or a VLM prompt, attach a `frontendContext` object to `workbench_project_hot_update`. Include `projectId`, `displayId`, `route`, visible state, selected element/control if any, `selectedRegion`, `drawingPaths`, and screenshot or VLM summary when available.
+9. Execution: call `workbench_project_create`, then call `workbench_api_call` for demo or requested initial state, and finally call `workbench_project_open`. Do not fake API execution by writing data files directly.
 
-The recommended user flow is: use the Home chat input for the requirement prompt, open Workspace when the user wants to inspect outputs, switch the small Work / Project toggle, and view the active Project Display directly in the Project child window. This skill still decomposes the prompt, creates the Project through `workbench_project_create`, initializes demo state through `workbench_api_call` when needed, and can open the generated frontend with `workbench_project_open`. If a generated prompt project already exists, choose a new stable suffix such as `oob-workbench-todolist-2` instead of overwriting the existing Project. Selecting a Project through the secondary `/workbench/projects` manager activates it as the current Agent toolbox for future Home-input messages; it does not create a new conversation by itself.
+The recommended user flow is: use the Home chat input for the requirement prompt, tap the top Workbench mark to view the active Project Display directly in the Project child window, and tap the same button again to return that container to Workspace file browsing. This skill still decomposes the prompt, creates the Project through `workbench_project_create`, initializes demo state through `workbench_api_call` when needed, and can open the generated frontend with `workbench_project_open`. If a generated prompt project already exists, choose a new stable suffix such as `oob-workbench-todolist-2` instead of overwriting the existing Project. Selecting a Project through the secondary `/workbench/projects` manager activates it as the current Agent toolbox for future Home-input messages; it does not create a new conversation by itself.
 
 The decomposition should be visible in the Project files (`README.md`, `frontend/page_spec.json`, `backend/api_spec.json`) and should stay compatible with future templates that add more APIs.
 
@@ -179,7 +205,7 @@ Current demo limitation: `todo_log_demo` only includes `todo.add` and `todo.fini
 9. Open the project with `workbench_project_open`.
 10. Export a distributable project package with `workbench_project_export` when the user asks to register or share the project.
 11. Delete a project with `workbench_project_delete` only after explicit user confirmation.
-12. Hot update a project with `workbench_project_hot_update` after reading the current Project. Treat hot update as a Workbench control-plane action; it may internally call registered business APIs but must not appear in Project API Registry.
+12. Hot update a project with `workbench_project_hot_update` after reading the current Project. Pass `frontendContext` when the prompt comes from a generated frontend, floating Xiaowan, or VLM input. Treat hot update as a Workbench control-plane action; it may internally call registered business APIs but must not appear in Project API Registry.
 13. Import an Android APK or Android project source with `workbench_project_ingest_android(projectId, sourcePath, sourceKind?)` only after the Project exists. This writes `android/manifest.json`, copies the asset under `android/apps/<asset-id>/`, and appends `logs/android_ingest.jsonl`; it does not install the APK into Android OS and does not appear in `workbench_api_list`.
 14. Add focused service/runtime tests before broad UI work.
 
@@ -222,7 +248,7 @@ Project APIs:
   - todo.add
   - todo.finish
 Display:
-  - Workspace Project mode child window hosting the active Todo Display
+  - Home top Workbench button toggling the Workspace container into the active Todo Display
   - Secondary Project control page at /workbench/projects for Project switcher, Project information, and Project APIs from Project API Registry with execution counts
   - Workspace Work mode for editing project files
   - Generated Todo frontend page at /workbench/todo_log?projectId=...
@@ -259,9 +285,9 @@ When a JDK is available, run the focused Android unit test:
 ./gradlew :app:testDevelopDebugUnitTest --tests '*Workbench*'
 ```
 
-For live UI smoke, open Workspace, switch the small Work / Project toggle to Project, and verify the active Todo Display is hosted inline as a child window with only a small Project marker/menu/open action above it. Home input should not show a Project popup button or active Project chip. If you open the secondary `/workbench/projects` manager, verify the Project API area shows read-only `todo.add` / `todo.finish` execution counts. The generated Todo frontend must only show the Todo business UI, not the Project control API panel or Workspace entry.
+For live UI smoke, open Home and verify the top island only has the Chat / Workspace two-way slider. Tap Workspace and verify it stays a file browser, then tap the separate top Workbench mark and verify the active Todo Display is hosted inline as a child window with only switch/info/open/refresh actions above it. Tap the Workbench mark again and verify it returns to file browsing. Home input should not show a Project popup button or active Project chip. If you open the secondary `/workbench/projects` manager, verify the Project API area shows read-only `todo.add` / `todo.finish` execution counts. The generated Todo frontend must only show the Todo business UI, not the Project control API panel or Workspace entry.
 
-For hot-update smoke, activate a Project, return to Home, submit the edit prompt through the main chat input, and verify the agent uses `workbench_project_hot_update` or the relevant Project APIs. The generated frontend debug banner should direct hot updates back to Home, and `workbench_api_list` must still return only `todo.add` / `todo.finish`.
+For hot-update smoke, activate a Project, open its Display, then submit an edit through Home input, floating Xiaowan, or VLM input with `frontendContext` that names the current `projectId`, `displayId`, route, visible state, and selected control/screenshot summary. Verify the agent uses `workbench_project_hot_update` or the relevant Project APIs. The generated frontend debug banner should expose the context boundary, and `workbench_api_list` must still return only `todo.add` / `todo.finish`.
 
 For distribution smoke, export the project from `/workbench/projects` or call `workbench_project_export`, then verify `/workspace/projects/exports/<project-id>-<timestamp>.zip` contains the manifest, registry records, `project/README.md`, `frontend/page_spec.json`, `backend/api_spec.json`, data, logs, and this skill.
 

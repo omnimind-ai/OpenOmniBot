@@ -89,8 +89,9 @@ enum _SlashCommandPanelRoute { root, effort, codexModel }
 
 class ChatPage extends StatefulWidget {
   final ConversationThreadTarget? threadTarget;
+  final String? initialSurfaceMode;
 
-  const ChatPage({super.key, this.threadTarget});
+  const ChatPage({super.key, this.threadTarget, this.initialSurfaceMode});
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -182,7 +183,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   };
   final Map<ChatPageMode, ChatIslandDisplayLayer>
   _chatIslandDisplayLayerByMode = {
-    ChatPageMode.normal: ChatIslandDisplayLayer.model,
+    ChatPageMode.normal: ChatIslandDisplayLayer.mode,
     ChatPageMode.openclaw: ChatIslandDisplayLayer.mode,
     ChatPageMode.codex: ChatIslandDisplayLayer.mode,
   };
@@ -352,9 +353,12 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   static const Duration _normalSurfaceModelRevealDelay = Duration(
     milliseconds: 1700,
   );
+  final GlobalKey<OmnibotWorkspaceBrowserState> _workspaceBrowserKey =
+      GlobalKey<OmnibotWorkspaceBrowserState>();
   bool _workspaceBrowserCanGoUp = false;
   bool _workspaceProjectModeEnabled = false;
   Future<OmnibotWorkspacePaths>? _workspacePathsLoadFuture;
+  bool _hasAppliedInitialSurfaceMode = false;
   bool _hasInitializedHalfScreen = false;
   bool _isCompanionModeEnabled = false;
   bool _isCompanionToggleLoading = false;
@@ -475,11 +479,12 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       _runtimeForMode(mode)?.chatIslandDisplayLayer ??
       (_chatIslandDisplayLayerByMode[mode] ??
           (mode == ChatPageMode.normal
-              ? ChatIslandDisplayLayer.model
+              ? ChatIslandDisplayLayer.mode
               : ChatIslandDisplayLayer.mode));
   bool get _isOpenClawSurface => _activeSurfaceMode == ChatSurfaceMode.openclaw;
   bool get _isWorkspaceSurface =>
-      _activeSurfaceMode == ChatSurfaceMode.workspace;
+      _activeSurfaceMode == ChatSurfaceMode.workspace ||
+      _activeSurfaceMode == ChatSurfaceMode.project;
 
   String _runtimeChromeSignature(ChatConversationRuntimeState? runtime) {
     if (runtime == null) {
@@ -881,13 +886,9 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   }
 
   bool _canAutoRevealNormalSurfaceModel() {
-    final modelId = _activeNormalChatModelId?.trim() ?? '';
-    return _activeSurfaceMode == ChatSurfaceMode.normal &&
-        !_isSurfacePageScrolling &&
-        !_normalSurfaceModelRevealInterrupted &&
-        modelId.isNotEmpty &&
-        _chatIslandDisplayLayerForMode(ChatPageMode.normal) ==
-            ChatIslandDisplayLayer.mode;
+    // The Home top island is now the global Chat / Workspace / Project entry.
+    // Keep that switcher visible until the user explicitly swipes to model/tools.
+    return false;
   }
 
   void _scheduleNormalSurfaceModelReveal() {
@@ -1571,9 +1572,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     _currentConversationByMode[mode] = null;
     _isInputAreaVisibleByMode[mode] = true;
     _isExecutingTaskByMode[mode] = false;
-    _chatIslandDisplayLayerByMode[mode] = mode == ChatPageMode.normal
-        ? ChatIslandDisplayLayer.model
-        : ChatIslandDisplayLayer.mode;
+    _chatIslandDisplayLayerByMode[mode] = ChatIslandDisplayLayer.mode;
     _lastAgentToolTypeByMode[mode] = null;
     _runtimeChromeSignatureByMode[mode] = '';
     _runtimeMessageMutationRevisionByMode[mode] = 0;

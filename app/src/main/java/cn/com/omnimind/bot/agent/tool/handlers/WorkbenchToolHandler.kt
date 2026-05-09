@@ -290,10 +290,14 @@ class WorkbenchToolHandler(
             helper.reportToolProgress(callback, toolName, "Hot updating Workbench project")
             val projectId = args["projectId"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
             val prompt = args["prompt"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            val frontendContext = (args["frontendContext"] as? JsonObject)
+                ?.let(helper::jsonObjectToMap)
+                ?: emptyMap()
             val payload = workbenchProjectStore.hotUpdateProject(
                 projectId = projectId,
                 prompt = prompt,
-                caller = "ai"
+                caller = "ai",
+                frontendContext = frontendContext
             )
             contextResult(
                 toolName = toolName,

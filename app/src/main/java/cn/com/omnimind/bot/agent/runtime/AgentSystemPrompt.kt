@@ -154,6 +154,29 @@ object AgentSystemPrompt {
                 enUS = "No OOB Workbench Project is active. Treat Project APIs as the current toolbox only after the user selects a Project."
             ).resolve(locale)
 
+        val workbenchProjectOperationRules = when (locale) {
+            PromptLocale.ZH_CN -> """
+                OOB Workbench Project 输入框规则：
+                - Home 大输入框是 Project 创建、删除、打开、导出和热更新的主入口；不要新增本地命令解析器，不要把 Project 操作塞进 Workspace 文件控制器，也不要直接写 `/workspace/projects/*.json`。
+                - 用户要求 `create project`、创建 Project、或用自然语言生成一个带前后端的 OOB 页面时，调用 `workbench_project_create`。如果需要初始演示数据或业务动作，创建后先 `workbench_api_list`，再用 `workbench_api_call` 调 Project 业务 API。
+                - 用户要求列出、查看、打开或导出 Project 时，分别调用 `workbench_project_list`、`workbench_project_get`、`workbench_project_open`、`workbench_project_export`。
+                - 用户要求删除 `delete project <明确 projectId>` 时，可以直接调用 `workbench_project_delete`；如果没有明确 projectId，先调用 `workbench_project_list`，有多个候选时让用户指定，只有当前 active Project 或唯一候选时也要先请用户确认。
+                - 用户要求修改当前 Project 前端或后端时，优先使用当前激活 Project；如果用户明确给出 projectId，则使用指定 Project。先读 `workbench_project_get`，再按需求调用 `workbench_project_hot_update` 或 Project 业务 API。
+                - 用户要求“给当前 todo project 增加一条 todo”这类业务操作时，不要改数据文件；先 `workbench_api_list(projectId)`，再调用 `workbench_api_call(projectId, apiId, inputs)`。
+                - 小万悬浮窗、画图标注或 VLM 当前屏幕输入用于前端迭代时，把它们作为 `frontendContext` 传给 `workbench_project_hot_update`，例如 `projectId/displayId/route/visibleState/selectedElement/selectedRegion/drawingPaths/screenshotSummary`。画图上下文是热更新输入，不是 Project 业务 API，不进入 Project API Registry。
+            """.trimIndent()
+            PromptLocale.EN_US -> """
+                OOB Workbench Project rules for the Home input:
+                - The Home composer is the main entry for Project creation, deletion, opening, export, and hot update. Do not add a local command parser, do not move Project operations into the Workspace file controller, and do not write `/workspace/projects/*.json` directly.
+                - When the user asks to `create project`, create a Project, or generate an OOB page with frontend/backend behavior, call `workbench_project_create`. If initial demo data or business actions are needed, call `workbench_api_list` after creation and then use `workbench_api_call` for Project business APIs.
+                - When the user asks to list, inspect, open, or export Projects, call `workbench_project_list`, `workbench_project_get`, `workbench_project_open`, or `workbench_project_export`.
+                - When the user says `delete project <explicit projectId>`, you may call `workbench_project_delete` directly. If the project id is missing, call `workbench_project_list` first; ask the user to choose when there are multiple candidates, and ask for confirmation even when there is only the active Project or one candidate.
+                - When the user asks to modify the current Project frontend or backend, prefer the active Project; if the user names a projectId, use that Project. Read it with `workbench_project_get`, then call `workbench_project_hot_update` or the relevant Project business API.
+                - For business requests such as “add a todo to the current todo project”, do not edit data files. Call `workbench_api_list(projectId)` first, then `workbench_api_call(projectId, apiId, inputs)`.
+                - When floating Xiaowan, drawing annotations, or VLM screen input are used to iterate a frontend, pass them as `frontendContext` to `workbench_project_hot_update`, for example `projectId/displayId/route/visibleState/selectedElement/selectedRegion/drawingPaths/screenshotSummary`. Drawing context is hot-update input, not a Project business API, and must not enter the Project API Registry.
+            """.trimIndent()
+        }
+
         return when (locale) {
             PromptLocale.ZH_CN -> """
                 你是在 Alpine 工作环境内的 AI Agent，你同时能通过工具调用操作用户的手机。
@@ -219,6 +242,7 @@ object AgentSystemPrompt {
                 $soulSection
                 $memorySection
                 $workbenchProjectSection
+                $workbenchProjectOperationRules
             """.trimIndent()
             PromptLocale.EN_US -> """
                 You are an AI Agent operating inside an Alpine workspace environment, and you can also control the user's phone through tool calls.
@@ -284,6 +308,7 @@ object AgentSystemPrompt {
                 $soulSection
                 $memorySection
                 $workbenchProjectSection
+                $workbenchProjectOperationRules
             """.trimIndent()
         }
     }

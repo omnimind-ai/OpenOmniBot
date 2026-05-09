@@ -1058,6 +1058,7 @@
   "workbenchTitle": "Workbench",
   "workbenchWorkspaceTitle": "Workspace",
   "workbenchWorkspaceOpenWorkbench": "Open Workbench",
+  "workbenchWorkspaceOpenProjectConsole": "Open Project console",
   "workbenchWorkspaceWorkMode": "Work",
   "workbenchWorkspaceProjectMode": "Project",
   "workbenchWorkspaceProjectFrontendsTitle": "Project window",
@@ -1240,6 +1241,32 @@
   "workbenchDebugToolsTitle": "Debug tools",
   "workbenchDebugHotUpdate": "Use floating Xiaowan to hot-update this Project",
   "workbenchDebugHotUpdateHomeInput": "Return to the Home input and describe the edit; the Agent will use the active Project toolbox for the hot update",
+  "workbenchDebugFloatingXiaowan": "Floating Xiaowan can attach the current frontend context, select page information, and call workbench_project_hot_update to iterate this Project.",
+  "workbenchDebugVlmInput": "VLM input can also attach the current Display, visible state, selected control, or screenshot summary as frontendContext for the Project Skill.",
+  "workbenchDebugContextProject": "Project {projectId}",
+  "@workbenchDebugContextProject": {
+    "placeholders": {
+      "projectId": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchDebugContextDisplay": "Display {displayId}",
+  "@workbenchDebugContextDisplay": {
+    "placeholders": {
+      "displayId": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchDebugContextRoute": "Route {route}",
+  "@workbenchDebugContextRoute": {
+    "placeholders": {
+      "route": {
+        "type": "String"
+      }
+    }
+  },
   "workbenchDebugVlmTest": "Run a VLM human-operation simulation",
   "workbenchDebugComingSoon": "Pending",
   "workbenchExportProjectPackage": "Export package",

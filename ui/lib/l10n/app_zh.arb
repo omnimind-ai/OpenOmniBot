@@ -1058,6 +1058,7 @@
   "workbenchTitle": "工作台",
   "workbenchWorkspaceTitle": "Workspace",
   "workbenchWorkspaceOpenWorkbench": "打开 Workbench",
+  "workbenchWorkspaceOpenProjectConsole": "打开 Project 控制台",
   "workbenchWorkspaceWorkMode": "Work",
   "workbenchWorkspaceProjectMode": "Project",
   "workbenchWorkspaceProjectFrontendsTitle": "Project 窗口",
@@ -1240,6 +1241,32 @@
   "workbenchDebugToolsTitle": "调试工具",
   "workbenchDebugHotUpdate": "悬浮小万实时修改当前 Project",
   "workbenchDebugHotUpdateHomeInput": "回到首页大输入框描述修改，Agent 会带着当前 Project toolbox 执行热更新",
+  "workbenchDebugFloatingXiaowan": "悬浮小万可以带上当前前端上下文，选择页面信息后调用 workbench_project_hot_update 迭代这个 Project。",
+  "workbenchDebugVlmInput": "VLM 输入也可以附带当前 Display、可见状态、选中控件或截图摘要，作为 frontendContext 交给 Project Skill。",
+  "workbenchDebugContextProject": "Project {projectId}",
+  "@workbenchDebugContextProject": {
+    "placeholders": {
+      "projectId": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchDebugContextDisplay": "Display {displayId}",
+  "@workbenchDebugContextDisplay": {
+    "placeholders": {
+      "displayId": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchDebugContextRoute": "Route {route}",
+  "@workbenchDebugContextRoute": {
+    "placeholders": {
+      "route": {
+        "type": "String"
+      }
+    }
+  },
   "workbenchDebugVlmTest": "根据 VLM 模拟人类操作测试",
   "workbenchDebugComingSoon": "待接入",
   "workbenchExportProjectPackage": "导出分发包",

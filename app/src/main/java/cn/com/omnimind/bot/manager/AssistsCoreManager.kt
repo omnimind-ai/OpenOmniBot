@@ -3715,7 +3715,14 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 val projectId = call.argument<String>("projectId")?.trim().orEmpty()
                 val prompt = call.argument<String>("prompt")?.trim().orEmpty()
                 val caller = call.argument<String>("caller")?.trim().orEmpty().ifBlank { "ui" }
-                workbenchProjectStore.hotUpdateProject(projectId, prompt, caller)
+                val frontendContext =
+                    call.argument<Map<String, Any?>>("frontendContext") ?: emptyMap()
+                workbenchProjectStore.hotUpdateProject(
+                    projectId = projectId,
+                    prompt = prompt,
+                    caller = caller,
+                    frontendContext = frontendContext
+                )
             }.onSuccess { payload ->
                 withContext(Dispatchers.Main) { result.success(payload) }
             }.onFailure { error ->

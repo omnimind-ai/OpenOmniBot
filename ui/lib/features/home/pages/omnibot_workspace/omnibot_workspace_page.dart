@@ -58,26 +58,19 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
     }
   }
 
-  void _setProjectModeEnabled(bool enabled) {
-    setState(() {
-      _mode = enabled
-          ? _OmnibotWorkspaceMode.project
-          : _OmnibotWorkspaceMode.work;
-      if (enabled) {
-        _browserCanGoUp = false;
-      }
-    });
-  }
-
   void _showWorkbenchGuide(bool backgroundActive) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return _WorkbenchGuideSheet(translucent: backgroundActive);
+        return OmnibotWorkbenchGuideSheet(translucent: backgroundActive);
       },
     );
+  }
+
+  void _openWorkbenchConsole() {
+    GoRouterManager.push('/workbench/projects');
   }
 
   @override
@@ -109,7 +102,19 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
                   child: Column(
                     children: [
                       CommonAppBar(
-                        title: context.l10n.workbenchWorkspaceTitle,
+                        titleWidget: Text(
+                          _mode == _OmnibotWorkspaceMode.project
+                              ? context.l10n.workbenchWorkspaceProjectMode
+                              : context.l10n.workbenchWorkspaceTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            color: palette.textPrimary,
+                            fontFamily: 'SF Pro',
+                          ),
+                        ),
                         primary: false,
                         backgroundColor: backgroundSurfaceColor(
                           translucent: backgroundActive,
@@ -118,6 +123,16 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
                         ),
                         onBackPressed: _handleBackPressed,
                         actions: [
+                          IconButton(
+                            tooltip: context
+                                .l10n
+                                .workbenchWorkspaceOpenProjectConsole,
+                            onPressed: _openWorkbenchConsole,
+                            icon: Icon(
+                              Icons.tune_rounded,
+                              color: palette.textSecondary,
+                            ),
+                          ),
                           IconButton(
                             tooltip:
                                 context.l10n.workbenchWorkspaceGuideTooltip,
@@ -129,12 +144,6 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
                             ),
                           ),
                         ],
-                      ),
-                      OmnibotWorkspaceModeToggle(
-                        projectModeEnabled:
-                            _mode == _OmnibotWorkspaceMode.project,
-                        translucentSurfaces: backgroundActive,
-                        onChanged: _setProjectModeEnabled,
                       ),
                       Expanded(
                         child: AnimatedSwitcher(
@@ -178,8 +187,8 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
   }
 }
 
-class _WorkbenchGuideSheet extends StatelessWidget {
-  const _WorkbenchGuideSheet({required this.translucent});
+class OmnibotWorkbenchGuideSheet extends StatelessWidget {
+  const OmnibotWorkbenchGuideSheet({super.key, required this.translucent});
 
   final bool translucent;
 
@@ -486,47 +495,66 @@ class _WorkbenchGuideSection extends StatelessWidget {
   }
 }
 
-class OmnibotWorkspaceModeToggle extends StatelessWidget {
-  const OmnibotWorkspaceModeToggle({
+class OmnibotWorkspaceModeHeader extends StatelessWidget {
+  const OmnibotWorkspaceModeHeader({
     super.key,
     required this.projectModeEnabled,
+    required this.translucent,
     required this.onChanged,
-    this.translucentSurfaces = false,
+    this.onOpenWorkbenchConsole,
+    this.onShowGuide,
   });
 
   final bool projectModeEnabled;
+  final bool translucent;
   final ValueChanged<bool> onChanged;
-  final bool translucentSurfaces;
+  final VoidCallback? onOpenWorkbenchConsole;
+  final VoidCallback? onShowGuide;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
     final background = backgroundSurfaceColor(
-      translucent: translucentSurfaces,
+      translucent: translucent,
       baseColor: palette.surfacePrimary,
-      opacity: 0.68,
+      opacity: 0.74,
     );
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-      color: background,
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: background,
+        border: Border(bottom: BorderSide(color: palette.borderSubtle)),
+      ),
       child: Row(
         children: [
-          Expanded(
-            child: _OmnibotWorkspaceModeButton(
-              selected: !projectModeEnabled,
-              label: context.l10n.workbenchWorkspaceWorkMode,
-              icon: Icons.folder_open_rounded,
-              onTap: () => onChanged(false),
+          Text(
+            context.l10n.workbenchWorkspaceTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: palette.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
             ),
           ),
           const SizedBox(width: 8),
-          Expanded(
-            child: _OmnibotWorkspaceModeButton(
-              selected: projectModeEnabled,
-              label: context.l10n.workbenchWorkspaceProjectMode,
-              icon: Icons.phone_android_rounded,
-              onTap: () => onChanged(true),
+          OmnibotWorkspaceModeButton(
+            projectModeEnabled: projectModeEnabled,
+            onTap: () => onChanged(!projectModeEnabled),
+          ),
+          const Spacer(),
+          IconButton(
+            tooltip: context.l10n.workbenchWorkspaceOpenProjectConsole,
+            onPressed: onOpenWorkbenchConsole,
+            icon: Icon(Icons.tune_rounded, color: palette.textSecondary),
+          ),
+          IconButton(
+            tooltip: context.l10n.workbenchWorkspaceGuideTooltip,
+            onPressed: onShowGuide,
+            icon: Icon(
+              Icons.info_outline_rounded,
+              color: palette.textSecondary,
             ),
           ),
         ],
@@ -535,51 +563,50 @@ class OmnibotWorkspaceModeToggle extends StatelessWidget {
   }
 }
 
-class _OmnibotWorkspaceModeButton extends StatelessWidget {
-  const _OmnibotWorkspaceModeButton({
-    required this.selected,
-    required this.label,
-    required this.icon,
+class OmnibotWorkspaceModeButton extends StatelessWidget {
+  const OmnibotWorkspaceModeButton({
+    super.key,
+    required this.projectModeEnabled,
     required this.onTap,
   });
 
-  final bool selected;
-  final String label;
-  final IconData icon;
+  final bool projectModeEnabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
-    final background = selected
-        ? palette.accentPrimary
-        : palette.surfaceSecondary;
-    final foreground = selected
-        ? Theme.of(context).colorScheme.onPrimary
-        : palette.textSecondary;
+    final label = projectModeEnabled
+        ? context.l10n.workbenchWorkspaceProjectMode
+        : context.l10n.workbenchWorkspaceWorkMode;
+    final icon = projectModeEnabled
+        ? Icons.phone_android_rounded
+        : Icons.folder_open_rounded;
     return Material(
-      color: background,
-      borderRadius: BorderRadius.circular(8),
+      color: palette.accentPrimary.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(999),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: selected ? null : onTap,
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
         child: Container(
-          height: 40,
+          height: 28,
+          constraints: const BoxConstraints(minWidth: 76),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           alignment: Alignment.center,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 18, color: foreground),
-              const SizedBox(width: 7),
+              Icon(icon, size: 14, color: palette.accentPrimary),
+              const SizedBox(width: 5),
               Flexible(
                 child: Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: foreground,
-                    fontSize: 13,
+                    color: palette.accentPrimary,
+                    fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -657,6 +684,19 @@ class _OmnibotWorkspaceProjectFrontendsState
     }
   }
 
+  void _showWorkbenchGuide() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return OmnibotWorkbenchGuideSheet(
+          translucent: widget.translucentSurfaces,
+        );
+      },
+    );
+  }
+
   String _displayRoute(WorkbenchProject project, WorkbenchDisplaySpec display) {
     final rawRoute = display.route.trim().isEmpty
         ? project.route.trim()
@@ -718,6 +758,7 @@ class _OmnibotWorkspaceProjectFrontendsState
           onOpenDisplay: project == null || display == null
               ? null
               : () => _openDisplayRoute(project, display),
+          onShowGuide: _showWorkbenchGuide,
           onProjectSelected: (selectedProject) =>
               unawaited(_activateProject(selectedProject)),
         ),
@@ -774,6 +815,7 @@ class _WorkspaceProjectMiniBar extends StatelessWidget {
     required this.translucent,
     required this.onRefresh,
     required this.onOpenDisplay,
+    required this.onShowGuide,
     required this.onProjectSelected,
   });
 
@@ -784,6 +826,7 @@ class _WorkspaceProjectMiniBar extends StatelessWidget {
   final bool translucent;
   final Future<void> Function() onRefresh;
   final VoidCallback? onOpenDisplay;
+  final VoidCallback onShowGuide;
   final ValueChanged<WorkbenchProject> onProjectSelected;
 
   @override
@@ -810,27 +853,6 @@ class _WorkspaceProjectMiniBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Tooltip(
-            message: context.l10n.workbenchWorkspaceProjectFrontendsTitle,
-            child: Container(
-              width: 28,
-              height: 28,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: palette.accentPrimary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: palette.accentPrimary.withValues(alpha: 0.24),
-                ),
-              ),
-              child: Icon(
-                Icons.phone_android_rounded,
-                size: 16,
-                color: palette.accentPrimary,
-              ),
-            ),
-          ),
-          const SizedBox(width: 9),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -910,6 +932,14 @@ class _WorkspaceProjectMiniBar extends StatelessWidget {
                   })
                   .toList(growable: false);
             },
+          ),
+          IconButton(
+            tooltip: context.l10n.workbenchWorkspaceGuideTooltip,
+            onPressed: onShowGuide,
+            icon: Icon(
+              Icons.info_outline_rounded,
+              color: palette.textSecondary,
+            ),
           ),
           IconButton(
             tooltip: context.l10n.workbenchOpenDisplay,

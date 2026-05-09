@@ -296,7 +296,11 @@ class WorkbenchProjectStoreTest {
         val addUpdate = store.hotUpdateProject(
             projectId = WORKBENCH_DEFAULT_PROJECT_ID,
             prompt = "增加 todo：热更新后的任务",
-            caller = "ui"
+            caller = "ui",
+            frontendContext = mapOf(
+                "displayId" to "todo-log-display",
+                "route" to "/workbench/todo_log"
+            )
         )
         val finishUpdate = store.hotUpdateProject(
             projectId = WORKBENCH_DEFAULT_PROJECT_ID,
@@ -317,6 +321,7 @@ class WorkbenchProjectStoreTest {
             root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/logs/api_calls.jsonl")
         assertEquals(2, hotUpdateLog.readLines().size)
         assertTrue(hotUpdateLog.readText().contains("热更新后的任务"))
+        assertTrue(hotUpdateLog.readText().contains("todo-log-display"))
         assertEquals(2, apiLog.readLines().size)
         val apis = store.listApis(WORKBENCH_DEFAULT_PROJECT_ID)
         assertEquals(1, apis.first { it["apiId"] == WORKBENCH_TODO_ADD_TOOL_ID }["executionCount"])

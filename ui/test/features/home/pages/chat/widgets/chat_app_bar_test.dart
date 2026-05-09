@@ -38,7 +38,7 @@ class _ChatAppBarHarness extends StatefulWidget {
 }
 
 class _ChatAppBarHarnessState extends State<_ChatAppBarHarness> {
-  ChatIslandDisplayLayer _displayLayer = ChatIslandDisplayLayer.model;
+  ChatIslandDisplayLayer _displayLayer = ChatIslandDisplayLayer.mode;
   ChatSurfaceMode _activeMode = ChatSurfaceMode.normal;
   int _browserTapCount = 0;
   int _envTapCount = 0;
@@ -185,10 +185,10 @@ class _SurfaceTransitionHarnessState extends State<_SurfaceTransitionHarness> {
   static const Duration _revealDelay = Duration(milliseconds: 1700);
 
   late final PageController _pageController = PageController(
-    initialPage: _pageIndexForSurface(ChatSurfaceMode.openclaw),
+    initialPage: _pageIndexForSurface(ChatSurfaceMode.workspace),
   );
-  ChatSurfaceMode _activeMode = ChatSurfaceMode.openclaw;
-  ChatIslandDisplayLayer _normalDisplayLayer = ChatIslandDisplayLayer.model;
+  ChatSurfaceMode _activeMode = ChatSurfaceMode.workspace;
+  ChatIslandDisplayLayer _normalDisplayLayer = ChatIslandDisplayLayer.mode;
   Timer? _revealTimer;
   bool _revealInterrupted = false;
   bool _isSurfacePageScrolling = false;
@@ -199,12 +199,12 @@ class _SurfaceTransitionHarnessState extends State<_SurfaceTransitionHarness> {
   int _pageIndexForSurface(ChatSurfaceMode mode) => switch (mode) {
     ChatSurfaceMode.normal => 0,
     ChatSurfaceMode.workspace => 1,
-    ChatSurfaceMode.openclaw => 2,
+    ChatSurfaceMode.project => 1,
+    ChatSurfaceMode.openclaw => 0,
   };
 
   ChatSurfaceMode _surfaceForPageIndex(int pageIndex) => switch (pageIndex) {
     1 => ChatSurfaceMode.workspace,
-    2 => ChatSurfaceMode.openclaw,
     _ => ChatSurfaceMode.normal,
   };
 
@@ -223,10 +223,7 @@ class _SurfaceTransitionHarnessState extends State<_SurfaceTransitionHarness> {
   }
 
   bool _canRevealModel() {
-    return _activeMode == ChatSurfaceMode.normal &&
-        !_isSurfacePageScrolling &&
-        !_revealInterrupted &&
-        _normalDisplayLayer == ChatIslandDisplayLayer.mode;
+    return false;
   }
 
   void _scheduleReveal() {
@@ -491,7 +488,6 @@ class _SurfaceTransitionHarnessState extends State<_SurfaceTransitionHarness> {
                       children: const [
                         ColoredBox(color: Colors.white),
                         ColoredBox(color: Colors.white),
-                        ColoredBox(color: Colors.white),
                       ],
                     ),
                   ),
@@ -638,7 +634,7 @@ Future<void> _tapModeSegment(WidgetTester tester, int index) async {
   final slider = find.byType(ChatModeSlider);
   final box = tester.renderObject<RenderBox>(slider);
   final topLeft = box.localToGlobal(Offset.zero);
-  final segmentWidth = box.size.width / 2;
+  final segmentWidth = box.size.width / kVisibleChatSurfaceModes.length;
   final tapOffset =
       topLeft + Offset(segmentWidth * (index + 0.5), box.size.height / 2);
   await tester.tapAt(tapOffset);
@@ -655,13 +651,13 @@ void _setTestViewport(WidgetTester tester, Size size) {
 }
 
 void main() {
-  testWidgets('keeps model layer visible by default in normal chat', (
+  testWidgets('keeps surface switcher visible by default in normal chat', (
     tester,
   ) async {
     await tester.pumpWidget(const _ChatAppBarHarness());
 
-    expect(find.text('layer:model'), findsOneWidget);
-    expect(find.text('gpt-5.4'), findsOneWidget);
+    expect(find.text('layer:mode'), findsOneWidget);
+    expect(find.byType(ChatModeSlider), findsOneWidget);
   });
 
   testWidgets('swaps companion shortcut left and mode menu right', (
@@ -770,6 +766,51 @@ void main() {
     expect(workspaceRect.right, lessThanOrEqualTo(modeMenuRect.left));
 
     await tester.tap(workspaceButton);
+    expect(tapCount, 1);
+  });
+
+  testWidgets('shows project surface button with workbench icon', (
+    tester,
+  ) async {
+    var tapCount = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DefaultAssetBundle(
+          bundle: _SvgTestAssetBundle(),
+          child: Scaffold(
+            body: ChatAppBar(
+              onMenuTap: () {},
+              onCompanionTap: () {},
+              activeMode: ChatSurfaceMode.normal,
+              onModeChanged: (_) {},
+              activeModelId: 'gpt-5.4',
+              displayLayer: ChatIslandDisplayLayer.mode,
+              onDisplayLayerChanged: (_) {},
+              onTerminalEnvironmentTap: (_) {},
+              onTerminalTap: () {},
+              onBrowserTap: () {},
+              showProjectSurfaceButton: true,
+              onProjectSurfaceTap: () {
+                tapCount += 1;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final projectButton = find.byKey(
+      const ValueKey('chat-app-bar-project-surface-button'),
+    );
+
+    expect(projectButton, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('chat-app-bar-project-surface-icon')),
+      findsOneWidget,
+    );
+
+    await tester.tap(projectButton);
+    await tester.pump();
     expect(tapCount, 1);
   });
 
@@ -1098,7 +1139,7 @@ void main() {
   ) async {
     await tester.pumpWidget(const _ChatAppBarHarness());
 
-    await tester.drag(find.text('gpt-5.4'), const Offset(0, -42));
+    await tester.drag(find.byType(ChatModeSlider), const Offset(0, -42));
     await tester.pumpAndSettle();
 
     expect(find.text('layer:model'), findsOneWidget);
@@ -1225,45 +1266,16 @@ void main() {
     expect(rootSurface.color, appBarContext.omniPalette.surfacePrimary);
   });
 
-  testWidgets(
-    'reveals model only after normal surface settles and stays idle',
-    (tester) async {
-      await tester.pumpWidget(const _SurfaceTransitionHarness());
-
-      expect(find.text('active:openclaw'), findsOneWidget);
-
-      await _tapModeSegment(tester, 0);
-      await _pumpSurfaceSwitch(tester);
-
-      expect(find.text('active:normal'), findsOneWidget);
-      expect(find.text('layer:mode'), findsOneWidget);
-
-      await tester.pump(const Duration(milliseconds: 1699));
-      expect(find.text('layer:mode'), findsOneWidget);
-
-      await tester.pump(const Duration(milliseconds: 1));
-      expect(find.text('layer:model'), findsOneWidget);
-    },
-  );
-
-  testWidgets('resets reveal delay after repeated surface switches', (
+  testWidgets('keeps normal surface switcher visible after settling idle', (
     tester,
   ) async {
     await tester.pumpWidget(const _SurfaceTransitionHarness());
 
-    await tester.tap(find.byKey(const ValueKey('request-normal')));
-    await tester.pump();
-    expect(find.text('active:normal'), findsOneWidget);
-    expect(find.text('layer:mode'), findsOneWidget);
+    expect(find.text('active:workspace'), findsOneWidget);
 
-    await tester.pump(const Duration(milliseconds: 1000));
+    await _tapModeSegment(tester, 0);
+    await _pumpSurfaceSwitch(tester);
 
-    await tester.tap(find.byKey(const ValueKey('request-openclaw')));
-    await tester.pump();
-    expect(find.text('active:openclaw'), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('request-normal')));
-    await tester.pump();
     expect(find.text('active:normal'), findsOneWidget);
     expect(find.text('layer:mode'), findsOneWidget);
 
@@ -1271,10 +1283,39 @@ void main() {
     expect(find.text('layer:mode'), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 1));
-    expect(find.text('layer:model'), findsOneWidget);
+    expect(find.text('layer:mode'), findsOneWidget);
   });
 
-  testWidgets('interrupts delayed reveal when page scroll happens in time', (
+  testWidgets(
+    'keeps surface switcher visible after repeated surface switches',
+    (tester) async {
+      await tester.pumpWidget(const _SurfaceTransitionHarness());
+
+      await tester.tap(find.byKey(const ValueKey('request-normal')));
+      await tester.pump();
+      expect(find.text('active:normal'), findsOneWidget);
+      expect(find.text('layer:mode'), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 1000));
+
+      await tester.tap(find.byKey(const ValueKey('request-openclaw')));
+      await tester.pump();
+      expect(find.text('active:openclaw'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('request-normal')));
+      await tester.pump();
+      expect(find.text('active:normal'), findsOneWidget);
+      expect(find.text('layer:mode'), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 1699));
+      expect(find.text('layer:mode'), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(find.text('layer:mode'), findsOneWidget);
+    },
+  );
+
+  testWidgets('keeps surface switcher visible when page scroll happens', (
     tester,
   ) async {
     await tester.pumpWidget(const _SurfaceTransitionHarness());
@@ -1309,6 +1350,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 140));
 
     expect(find.text('active:openclaw'), findsOneWidget);
-    expect(find.text('layer:model'), findsOneWidget);
+    expect(find.text('layer:mode'), findsOneWidget);
   });
 }

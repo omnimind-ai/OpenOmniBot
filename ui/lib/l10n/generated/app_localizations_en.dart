@@ -2882,6 +2882,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchWorkspaceOpenWorkbench => 'Open Workbench';
 
   @override
+  String get workbenchWorkspaceOpenProjectConsole => 'Open Project console';
+
+  @override
   String get workbenchWorkspaceWorkMode => 'Work';
 
   @override
@@ -3361,6 +3364,29 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get workbenchDebugHotUpdateHomeInput =>
       'Return to the Home input and describe the edit; the Agent will use the active Project toolbox for the hot update';
+
+  @override
+  String get workbenchDebugFloatingXiaowan =>
+      'Floating Xiaowan can attach the current frontend context, select page information, and call workbench_project_hot_update to iterate this Project.';
+
+  @override
+  String get workbenchDebugVlmInput =>
+      'VLM input can also attach the current Display, visible state, selected control, or screenshot summary as frontendContext for the Project Skill.';
+
+  @override
+  String workbenchDebugContextProject(String projectId) {
+    return 'Project $projectId';
+  }
+
+  @override
+  String workbenchDebugContextDisplay(String displayId) {
+    return 'Display $displayId';
+  }
+
+  @override
+  String workbenchDebugContextRoute(String route) {
+    return 'Route $route';
+  }
 
   @override
   String get workbenchDebugVlmTest => 'Run a VLM human-operation simulation';
