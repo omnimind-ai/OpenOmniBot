@@ -1155,6 +1155,68 @@
   "workbenchTodoAdded": "Todo added",
   "workbenchTodoFinishedToast": "Todo archived",
   "workbenchTodoInputRequired": "Enter a todo first",
+  "workbenchSchemaDefaultEntity": "Item",
+  "workbenchSchemaCreateTitle": "Create {entity}",
+  "@workbenchSchemaCreateTitle": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchSchemaInputHint": "Enter {entity} name",
+  "@workbenchSchemaInputHint": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchSchemaItemsTitle": "{entity} list",
+  "@workbenchSchemaItemsTitle": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchSchemaEmpty": "No {entity} yet",
+  "@workbenchSchemaEmpty": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchSchemaActive": "Active",
+  "workbenchSchemaArchived": "Archived",
+  "workbenchSchemaArchiveAction": "Archive",
+  "workbenchSchemaMissingCreateApi": "This Project has no create API",
+  "workbenchSchemaMissingArchiveApi": "This Project has no archive API",
+  "workbenchSchemaInputRequired": "Enter {entity} first",
+  "@workbenchSchemaInputRequired": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchSchemaItemCreated": "{entity} created",
+  "@workbenchSchemaItemCreated": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchSchemaItemArchived": "{entity} archived",
+  "@workbenchSchemaItemArchived": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
   "workbenchNoOpenTodo": "No open todo to finish",
   "workbenchLoadFailed": "Load failed",
   "workbenchUnknownTool": "Workbench tool failed",
@@ -1202,8 +1264,9 @@
   "workbenchProjectCurrentTitle": "Project use surface",
   "workbenchProjectCurrentSubtitle": "Default opens return to Home; debug opens return to the Workbench. Hot updates run from the Home input with the active Project.",
   "workbenchProjectModeCreateTitle": "Vibe project entry",
-  "workbenchProjectModeSubtitle": "Select a Project as the Agent workspace, open its Flutter displays, inspect API execution counts, and manage Workspace, export, and delete.",
-  "workbenchProjectModeCreateButton": "Create Todo demo",
+  "workbenchProjectModeSubtitle": "Select a Project as the Agent workspace, open its Flutter displays, inspect API execution counts, and manage Workspace, export, and delete. Creation and editing return to the Home input so the Agent can run the Workbench tools.",
+  "workbenchProjectModeCreateButton": "Create from Home",
+  "workbenchProjectCreateFromHome": "Return to the Home input and say create project or describe the page you want.",
   "workbenchProjectModeProjectsTitle": "Current Project APIs",
   "workbenchProjectApiForProject": "{projectName} APIs",
   "@workbenchProjectApiForProject": {
@@ -1271,6 +1334,27 @@
   },
   "workbenchDebugVlmTest": "Run a VLM human-operation simulation",
   "workbenchDebugComingSoon": "Pending",
+  "workbenchAnnotationTitle": "Annotation canvas",
+  "workbenchAnnotationDrawMode": "Draw",
+  "workbenchAnnotationBrowseMode": "Browse page",
+  "workbenchAnnotationUndo": "Undo",
+  "workbenchAnnotationClear": "Clear",
+  "workbenchAnnotationApply": "Apply annotation",
+  "workbenchAnnotationApplying": "Applying",
+  "workbenchAnnotationPromptHint": "Add edit notes, for example: turn this into the primary button",
+  "workbenchAnnotationNoStrokes": "Draw the area to edit first",
+  "workbenchAnnotationNoShape": "No marks",
+  "workbenchAnnotationShapeCount": "{count} shapes detected",
+  "@workbenchAnnotationShapeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchAnnotationDefaultPrompt": "Adjust the current Project frontend according to the canvas annotation.",
+  "workbenchAnnotationHotUpdateSuccess": "Applied the annotation to the Project",
+  "workbenchAnnotationHotUpdateFailed": "Annotation hot update failed",
   "workbenchExportProjectPackage": "Export package",
   "workbenchProjectExportFailed": "Project export failed",
   "workbenchProjectExported": "Exported {packageName}",
@@ -1344,6 +1428,17 @@
         "type": "int"
       },
       "finishedCount": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchSchemaItemCount": "{activeCount} active / {archivedCount} archived",
+  "@workbenchSchemaItemCount": {
+    "placeholders": {
+      "activeCount": {
+        "type": "int"
+      },
+      "archivedCount": {
         "type": "int"
       }
     }

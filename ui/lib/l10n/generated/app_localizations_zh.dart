@@ -3010,6 +3010,59 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchTodoInputRequired => '请先输入 todo';
 
   @override
+  String get workbenchSchemaDefaultEntity => '条目';
+
+  @override
+  String workbenchSchemaCreateTitle(String entity) {
+    return '新增 $entity';
+  }
+
+  @override
+  String workbenchSchemaInputHint(String entity) {
+    return '输入 $entity 名称';
+  }
+
+  @override
+  String workbenchSchemaItemsTitle(String entity) {
+    return '$entity 列表';
+  }
+
+  @override
+  String workbenchSchemaEmpty(String entity) {
+    return '暂无 $entity';
+  }
+
+  @override
+  String get workbenchSchemaActive => '进行中';
+
+  @override
+  String get workbenchSchemaArchived => '已归档';
+
+  @override
+  String get workbenchSchemaArchiveAction => '归档';
+
+  @override
+  String get workbenchSchemaMissingCreateApi => '这个 Project 没有可用的新增 API';
+
+  @override
+  String get workbenchSchemaMissingArchiveApi => '这个 Project 没有可用的归档 API';
+
+  @override
+  String workbenchSchemaInputRequired(String entity) {
+    return '请先输入 $entity';
+  }
+
+  @override
+  String workbenchSchemaItemCreated(String entity) {
+    return '$entity 已新增';
+  }
+
+  @override
+  String workbenchSchemaItemArchived(String entity) {
+    return '$entity 已归档';
+  }
+
+  @override
   String get workbenchNoOpenTodo => '没有可完成的 todo';
 
   @override
@@ -3136,10 +3189,14 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get workbenchProjectModeSubtitle =>
-      '选择一个 Project 作为 Agent 当前工作环境；打开它的 Flutter 前端、查看 API 执行次数，并管理 Workspace、导出和删除。';
+      '选择一个 Project 作为 Agent 当前工作环境；打开它的 Flutter 前端、查看 API 执行次数，并管理 Workspace、导出和删除。创建和编辑都回到首页输入框由 Agent 执行。';
 
   @override
-  String get workbenchProjectModeCreateButton => '创建 Todo demo';
+  String get workbenchProjectModeCreateButton => '去首页创建';
+
+  @override
+  String get workbenchProjectCreateFromHome =>
+      '回到首页输入框，直接说 create project 或描述你想做的页面。';
 
   @override
   String get workbenchProjectModeProjectsTitle => '当前 Project API';
@@ -3342,6 +3399,11 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String workbenchTodoCount(int openCount, int finishedCount) {
     return '$openCount 条待完成 / $finishedCount 条已完成';
+  }
+
+  @override
+  String workbenchSchemaItemCount(int activeCount, int archivedCount) {
+    return '$activeCount 条进行中 / $archivedCount 条归档';
   }
 
   @override

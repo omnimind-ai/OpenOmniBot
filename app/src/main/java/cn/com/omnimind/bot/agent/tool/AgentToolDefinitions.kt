@@ -1449,7 +1449,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_create")
             put("displayName", "创建 Workbench Project")
             put("toolType", "workbench")
-            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是控制面能力，不会出现在 Project 自己的业务 API 列表里。v1 支持 templateId=todo_log_demo；不要直接写 registry 文件，也不要生成 HTML/WebView。")
+            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是控制面能力，不会出现在 Project 自己的业务 API 列表里。支持 todo_log_demo 和通用 schema_app；不要直接写 registry 文件，也不要生成 HTML/WebView。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1459,7 +1459,11 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("templateId") {
                         put("type", "string")
-                        put("description", "Project 模板 id。v1 只支持 todo_log_demo。")
+                        put("description", "Project 模板 id。todo_log_demo 用于旧 Todo demo；schema_app 用于通用 prompt 生成的 OOB 原生 Project。")
+                        putJsonArray("enum") {
+                            add("todo_log_demo")
+                            add("schema_app")
+                        }
                     }
                     putJsonObject("name") {
                         put("type", "string")
@@ -1472,6 +1476,22 @@ object AgentToolDefinitions {
                     putJsonObject("initialTodos") {
                         put("type", "array")
                         put("description", "可选初始 todo 标题数组，仅 todo_log_demo 使用。")
+                    }
+                    putJsonObject("entityName") {
+                        put("type", "string")
+                        put("description", "schema_app 使用。Project 管理的业务实体名，例如 Note、Expense、Habit。")
+                    }
+                    putJsonObject("description") {
+                        put("type", "string")
+                        put("description", "schema_app 使用。生成前端的简短说明。")
+                    }
+                    putJsonObject("initialItems") {
+                        put("type", "array")
+                        put("description", "schema_app 使用。可选初始条目数组，可传字符串或对象。")
+                    }
+                    putJsonObject("apis") {
+                        put("type", "array")
+                        put("description", "schema_app 可选业务 API 规格。每项可包含 apiId、toolId、displayName、description、inputSchema、outputSchema、executorKind。若不传，OOB 会按 entityName 生成 <entity>.create 与 <entity>.archive。")
                     }
                 }
                 putJsonArray("required") {
@@ -1609,6 +1629,56 @@ object AgentToolDefinitions {
                 putJsonArray("required") {
                     add("projectId")
                 }
+            }
+        }
+    }
+
+    val workbenchProjectActivateTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_activate")
+            put("displayName", "激活 Workbench Project")
+            put("toolType", "workbench")
+            put("description", "把某个 Workbench Project 设为当前 Agent 工作环境。激活后，该 Project 的 Displays、Workspace path、skill id 和业务 API manifest 会注入后续 Agent prompt。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("projectId") {
+                        put("type", "string")
+                        put("description", "Project id。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("projectId")
+                }
+            }
+        }
+    }
+
+    val workbenchProjectActiveGetTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_active_get")
+            put("displayName", "读取当前 Workbench Project")
+            put("toolType", "workbench")
+            put("description", "读取当前已激活的 Workbench Project 及其 toolbox manifest。用于用户说当前 Project、这个页面、继续编辑时确认上下文。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {}
+            }
+        }
+    }
+
+    val workbenchProjectDeactivateTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_deactivate")
+            put("displayName", "取消激活 Workbench Project")
+            put("toolType", "workbench")
+            put("description", "清空当前 Agent 的 active Project 工作环境，但不删除 Project 本身。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {}
             }
         }
     }
@@ -2294,6 +2364,9 @@ object AgentToolDefinitions {
         workbenchApiCallTool,
         workbenchProjectExportTool,
         workbenchProjectOpenTool,
+        workbenchProjectActivateTool,
+        workbenchProjectActiveGetTool,
+        workbenchProjectDeactivateTool,
         workbenchProjectDeleteTool,
         workbenchProjectHotUpdateTool,
         workbenchProjectIngestAndroidTool

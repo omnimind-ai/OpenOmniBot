@@ -210,6 +210,41 @@ void main() {
   );
 
   test(
+    'native schema display does not create todo fallback when project is missing',
+    () async {
+      const channel = MethodChannel('cn.com.omnimind.bot/AssistCoreEvent');
+      final calls = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call.method);
+            switch (call.method) {
+              case 'workbenchProjectGet':
+                throw PlatformException(
+                  code: 'WORKBENCH_PROJECT_GET_ERROR',
+                  message: 'Workbench project not found: customer-tracker',
+                );
+              default:
+                fail('Unexpected method ${call.method}');
+            }
+          });
+
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final service = WorkbenchTodoLogService.native(
+        projectId: 'customer-tracker',
+        autoCreateTodoIfMissing: false,
+      );
+      await service.initialize();
+
+      expect(calls, ['workbenchProjectGet']);
+      expect(service.errorMessage, contains('customer-tracker'));
+    },
+  );
+
+  test(
     'project mode lists projects and creates isolated project ids',
     () async {
       final service = _projectModeService();
@@ -288,6 +323,79 @@ void main() {
     );
 
     expect(second?.projectId, 'oob-workbench-todolist-2');
+  });
+
+  test(
+    'project mode can create a generic schema project from prompt',
+    () async {
+      final service = _projectModeService();
+
+      final created = await service.createSchemaProjectFromPrompt(
+        '创建一个客户跟进系统，可以新增客户并归档客户',
+        projectId: 'customer-tracker',
+        name: 'Customer Tracker',
+        entityName: 'Customer',
+        description: 'Track customer follow-up records.',
+        initialItems: const ['Alice'],
+      );
+
+      expect(created?.projectId, 'customer-tracker');
+      expect(created?.templateId, 'schema_app');
+      expect(
+        created?.route,
+        '/workbench/schema_app?projectId=customer-tracker',
+      );
+      expect(created?.schema['entityName'], 'Customer');
+      expect(created?.items.single.title, 'Alice');
+      expect(
+        created?.tools.map((tool) => tool.id),
+        containsAll(['customer.create', 'customer.archive']),
+      );
+      expect(
+        created?.tools.map((tool) => tool.id),
+        isNot(contains(WorkbenchTodoToolIds.addTodo)),
+      );
+    },
+  );
+
+  test('native create forwards generic schema project config', () async {
+    const channel = MethodChannel('cn.com.omnimind.bot/AssistCoreEvent');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          switch (call.method) {
+            case 'workbenchProjectCreate':
+              final args = call.arguments as Map<dynamic, dynamic>;
+              expect(args['templateId'], 'schema_app');
+              expect(args['entityName'], 'Habit');
+              expect(args['description'], 'Track daily routines.');
+              expect(args['initialItems'], ['Drink water']);
+              return _schemaProjectPayload();
+            default:
+              fail('Unexpected method ${call.method}');
+          }
+        });
+
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final backend = NativeWorkbenchProjectBackend();
+    final project = await backend.createProject(
+      projectId: 'habit-tracker',
+      templateId: 'schema_app',
+      name: 'Habit Tracker',
+      prompt: 'Create a habit tracker',
+      entityName: 'Habit',
+      description: 'Track daily routines.',
+      initialItems: const ['Drink water'],
+    );
+
+    expect(calls.single.method, 'workbenchProjectCreate');
+    expect(project.projectId, 'habit-tracker');
+    expect(project.schema['entityName'], 'Habit');
   });
 
   test(
@@ -607,8 +715,73 @@ class _TestWorkbenchProjectBackend implements WorkbenchProjectBackend {
     String? name,
     String? prompt,
     List<String>? initialTodos,
+    String? entityName,
+    String? description,
+    List<Object?>? initialItems,
+    List<Map<String, Object?>>? apis,
   }) async {
     _hasProject = true;
+    if (templateId == 'schema_app') {
+      final entity = entityName?.trim().isNotEmpty == true
+          ? entityName!.trim()
+          : 'Item';
+      final namespace = entity.toLowerCase();
+      final items = (initialItems ?? const [])
+          .map(
+            (item) => WorkbenchSchemaItem(
+              id: '$namespace-${_todoSequence++}',
+              title: item is Map
+                  ? (item['title'] ?? item['name'] ?? entity).toString()
+                  : item.toString(),
+              status: 'active',
+              fields: item is Map ? Map<String, Object?>.from(item) : const {},
+              createdAt: DateTime.now(),
+            ),
+          )
+          .toList(growable: false);
+      _project = WorkbenchProject(
+        projectId: projectId,
+        name: name?.trim().isNotEmpty == true ? name!.trim() : entity,
+        templateId: templateId,
+        route: '/workbench/schema_app?projectId=$projectId',
+        spacePath: '/workspace/projects/$projectId',
+        pageIds: const ['schema-main-page'],
+        displays: [
+          WorkbenchDisplaySpec(
+            id: 'schema-main-display',
+            title: name?.trim().isNotEmpty == true ? name!.trim() : entity,
+            shortName: entity.toUpperCase(),
+            route: '/workbench/schema_app?projectId=$projectId',
+            description: description ?? '',
+            kind: 'oob_schema_collection',
+            isDefault: true,
+          ),
+        ],
+        tools: [
+          WorkbenchToolSpec(
+            id: '$namespace.create',
+            kind: 'native_schema_collection',
+            inputKeys: const ['title'],
+            outputKeys: const ['item'],
+          ),
+          WorkbenchToolSpec(
+            id: '$namespace.archive',
+            kind: 'native_schema_collection',
+            inputKeys: const ['item_id'],
+            outputKeys: const ['item'],
+          ),
+        ],
+        flows: const [],
+        androidAssets: const [],
+        todos: const [],
+        items: items,
+        schema: {
+          'entityName': entity,
+          if (description != null) 'description': description,
+        },
+      );
+      return _project;
+    }
     final todos = initialTodos == null || initialTodos.isEmpty
         ? _project.todos
         : initialTodos
@@ -908,4 +1081,52 @@ List<Map<String, Object?>> _apiPayload() {
       'outputKeys': ['todo'],
     },
   ];
+}
+
+Map<String, Object?> _schemaProjectPayload() {
+  return {
+    'projectId': 'habit-tracker',
+    'name': 'Habit Tracker',
+    'templateId': 'schema_app',
+    'route': '/workbench/schema_app?projectId=habit-tracker',
+    'spacePath': '/workspace/projects/habit-tracker',
+    'pageIds': ['schema-main-page'],
+    'schema': {'entityName': 'Habit', 'description': 'Track daily routines.'},
+    'displays': [
+      {
+        'id': 'schema-main-display',
+        'title': 'Habit Tracker',
+        'shortName': 'HABIT',
+        'route': '/workbench/schema_app?projectId=habit-tracker',
+        'kind': 'oob_schema_collection',
+        'isDefault': true,
+      },
+    ],
+    'tools': [
+      {
+        'apiId': 'habit.create',
+        'toolId': 'habit.create',
+        'kind': 'native_schema_collection',
+        'inputKeys': ['title'],
+        'outputKeys': ['item'],
+      },
+      {
+        'apiId': 'habit.archive',
+        'toolId': 'habit.archive',
+        'kind': 'native_schema_collection',
+        'inputKeys': ['item_id'],
+        'outputKeys': ['item'],
+      },
+    ],
+    'flows': [],
+    'items': [
+      {
+        'id': 'habit-1',
+        'title': 'Drink water',
+        'status': 'active',
+        'fields': {},
+        'createdAt': DateTime.now().toIso8601String(),
+      },
+    ],
+  };
 }

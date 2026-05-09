@@ -13,12 +13,14 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 const val WORKBENCH_TODO_TEMPLATE_ID = "todo_log_demo"
+const val WORKBENCH_SCHEMA_TEMPLATE_ID = "schema_app"
 const val WORKBENCH_DEFAULT_PROJECT_ID = "oob-workbench-todo-log"
 const val WORKBENCH_TODO_ADD_TOOL_ID = "todo.add"
 const val WORKBENCH_TODO_FINISH_TOOL_ID = "todo.finish"
 const val WORKBENCH_HOT_UPDATE_CALLER = "xiaowan_hot_update"
 const val WORKBENCH_ANDROID_APK_KIND = "apk"
 const val WORKBENCH_ANDROID_PROJECT_KIND = "android_project"
+const val WORKBENCH_SCHEMA_EXECUTOR_KIND = "native_schema_collection"
 
 data class WorkbenchProjectRecord(
     val projectId: String,
@@ -84,6 +86,24 @@ data class WorkbenchTodoRecord(
     )
 }
 
+data class WorkbenchSchemaItemRecord(
+    val id: String,
+    val title: String,
+    val status: String,
+    val fields: Map<String, Any?> = emptyMap(),
+    val createdAt: String,
+    val archivedAt: String? = null
+) {
+    fun toPayload(): Map<String, Any?> = linkedMapOf(
+        "id" to id,
+        "title" to title,
+        "status" to status,
+        "fields" to fields,
+        "createdAt" to createdAt,
+        "archivedAt" to archivedAt
+    )
+}
+
 data class WorkbenchAndroidAsset(
     val assetId: String,
     val projectId: String,
@@ -138,6 +158,8 @@ class WorkbenchProjectStore(
         object : TypeToken<List<WorkbenchProjectRecord>>() {}.type
     private val apiRecordListType = object : TypeToken<List<WorkbenchApiRecord>>() {}.type
     private val todoRecordListType = object : TypeToken<List<WorkbenchTodoRecord>>() {}.type
+    private val schemaItemRecordListType =
+        object : TypeToken<List<WorkbenchSchemaItemRecord>>() {}.type
     private val androidAssetListType =
         object : TypeToken<List<WorkbenchAndroidAsset>>() {}.type
     private val mapType = object : TypeToken<Map<String, Any?>>() {}.type
@@ -156,7 +178,9 @@ class WorkbenchProjectStore(
     /**
      * Creates a Workbench project from a template config, or returns an existing project unchanged.
      *
-     * @param config Project creation config from AI tools or Flutter. v1 supports `templateId=todo_log_demo`.
+     * @param config Project creation config from AI tools or Flutter. `todo_log_demo` keeps the
+     * original demo path, while `schema_app` creates a generic OOB-native Project from API and
+     * Display specs.
      * @return Full project payload including registered business APIs and persisted state.
      */
     @Synchronized
@@ -164,28 +188,28 @@ class WorkbenchProjectStore(
         val templateId = config["templateId"]?.toString()?.trim()
             ?.takeIf { it.isNotEmpty() }
             ?: WORKBENCH_TODO_TEMPLATE_ID
-        require(templateId == WORKBENCH_TODO_TEMPLATE_ID) {
+        require(templateId == WORKBENCH_TODO_TEMPLATE_ID || templateId == WORKBENCH_SCHEMA_TEMPLATE_ID) {
             "Unsupported workbench template: $templateId"
         }
         val projectId = sanitizeProjectId(
             config["projectId"]?.toString()?.trim()
                 ?.takeIf { it.isNotEmpty() }
-                ?: WORKBENCH_DEFAULT_PROJECT_ID
+                ?: defaultProjectId(templateId, config)
         )
         val name = config["name"]?.toString()?.trim()
             ?.takeIf { it.isNotEmpty() }
             ?: config["displayName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-            ?: "Todo Log Workbench"
+            ?: defaultProjectName(templateId, config)
         val sourcePrompt = config["prompt"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
         val now = nowIso()
         val existing = readProjectRegistry().firstOrNull { it.projectId == projectId }
-        val apis = todoTemplateApis(projectId)
+        val apis = templateApis(projectId, templateId, config)
         val record = existing
             ?: WorkbenchProjectRecord(
                 projectId = projectId,
                 name = name,
                 templateId = templateId,
-                route = "/workbench/todo_log?projectId=$projectId",
+                route = routeForTemplate(projectId, templateId),
                 spacePath = "${AgentWorkspaceManager.SHELL_ROOT_PATH}/projects/$projectId",
                 apiIds = apis.map { it.apiId },
                 createdAt = now,
@@ -208,13 +232,15 @@ class WorkbenchProjectStore(
         val projectDir = projectDir(projectId)
         File(projectDir, "data").mkdirs()
         File(projectDir, "logs").mkdirs()
-        val todoFile = todosFile(projectId)
-        if (!todoFile.exists()) {
+        if (record.templateId == WORKBENCH_TODO_TEMPLATE_ID && !todosFile(projectId).exists()) {
             writeTodos(projectId, initialTodos(config))
         }
+        if (record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID && !schemaItemsFile(projectId).exists()) {
+            writeSchemaItems(projectId, initialSchemaItems(config))
+        }
         val creationPrompt = if (existing == null) sourcePrompt else null
-        ensureProjectSourceFiles(record, apis, creationPrompt)
-        writeProjectJson(record, apis, readTodos(projectId), creationPrompt)
+        ensureProjectSourceFiles(record, apis, creationPrompt, config)
+        writeProjectJson(record, apis, creationPrompt)
         return projectPayload(record)
     }
 
@@ -406,10 +432,14 @@ class WorkbenchProjectStore(
         val result = when (api.toolId) {
             WORKBENCH_TODO_ADD_TOOL_ID -> addTodo(projectId, inputs)
             WORKBENCH_TODO_FINISH_TOOL_ID -> finishTodo(projectId, inputs)
-            else -> apiError(api, "UNKNOWN_API", "Unknown workbench API: ${api.toolId}")
+            else -> if (api.executorKind == WORKBENCH_SCHEMA_EXECUTOR_KIND) {
+                callSchemaCollectionApi(projectId, api, inputs)
+            } else {
+                apiError(api, "UNKNOWN_API", "Unknown workbench API: ${api.toolId}")
+            }
         }
         appendApiCall(projectId, api, inputs, caller, result)
-        writeProjectJson(findProject(projectId), projectApis(projectId), readTodos(projectId))
+        writeProjectJson(findProject(projectId), projectApis(projectId))
         return result + ("project" to getProject(projectId))
     }
 
@@ -434,7 +464,10 @@ class WorkbenchProjectStore(
         val record = findProject(projectId)
         val request = prompt.trim()
         require(request.isNotEmpty()) { "Hot update prompt is required." }
-        require(record.templateId == WORKBENCH_TODO_TEMPLATE_ID) {
+        require(
+            record.templateId == WORKBENCH_TODO_TEMPLATE_ID ||
+                record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID
+        ) {
             "Unsupported workbench hot update template: ${record.templateId}"
         }
         val appliedActions = mutableListOf<Map<String, Any?>>()
@@ -444,7 +477,9 @@ class WorkbenchProjectStore(
         val wantsAdd =
             listOf("增加", "新增", "添加", "add", "create").any { lower.contains(it) }
 
-        if (wantsFinish) {
+        if (record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID) {
+            applySchemaHotUpdate(record, request, wantsAdd, wantsFinish, appliedActions)
+        } else if (wantsFinish) {
             val openTodo = readTodos(record.projectId).firstOrNull { it.status != "finished" }
             if (openTodo == null) {
                 appliedActions.add(
@@ -468,7 +503,7 @@ class WorkbenchProjectStore(
             }
         }
 
-        if (wantsAdd || !wantsFinish) {
+        if (record.templateId == WORKBENCH_TODO_TEMPLATE_ID && (wantsAdd || !wantsFinish)) {
             appliedActions.add(
                 compactToolResult(
                     callApi(
@@ -482,7 +517,7 @@ class WorkbenchProjectStore(
         }
 
         appendHotUpdate(record.projectId, request, caller, appliedActions, frontendContext)
-        writeProjectJson(record, projectApis(record.projectId), readTodos(record.projectId))
+        writeProjectJson(record, projectApis(record.projectId))
         return linkedMapOf(
             "success" to true,
             "projectId" to record.projectId,
@@ -555,7 +590,7 @@ class WorkbenchProjectStore(
         val updatedAssets = readAndroidAssets(record.projectId) + asset
         writeAndroidAssets(record.projectId, updatedAssets)
         appendAndroidIngest(record.projectId, asset, caller, includedFiles)
-        writeProjectJson(record, projectApis(record.projectId), readTodos(record.projectId))
+        writeProjectJson(record, projectApis(record.projectId))
         return linkedMapOf(
             "success" to true,
             "projectId" to record.projectId,
@@ -661,22 +696,26 @@ class WorkbenchProjectStore(
         val apis = projectApis(record.projectId)
         ensureProjectSourceFiles(record, apis)
         val todos = readTodos(record.projectId)
+        val schemaItems = readSchemaItems(record.projectId)
         val counts = apiExecutionCounts(record.projectId)
         val androidAssets = readAndroidAssets(record.projectId)
+        val displays = workbenchDisplays(record)
         return linkedMapOf(
             "projectId" to record.projectId,
             "name" to record.name,
             "templateId" to record.templateId,
             "route" to record.route,
             "spacePath" to record.spacePath,
-            "pageIds" to listOf("todo-log-page"),
-            "displays" to workbenchDisplays(record),
+            "pageIds" to displays.mapNotNull { it["pageId"]?.toString() ?: it["id"]?.toString() },
+            "displays" to displays,
+            "schema" to workbenchPageSpec(record),
             "apiIds" to record.apiIds,
             "tools" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "androidAssets" to androidAssets.map { it.toPayload() },
             "flows" to emptyList<Map<String, Any?>>(),
             "todos" to todos.map { it.toPayload() },
+            "items" to schemaItems.map { it.toPayload() },
             "createdAt" to record.createdAt,
             "updatedAt" to record.updatedAt
         )
@@ -702,13 +741,15 @@ class WorkbenchProjectStore(
     private fun writeProjectJson(
         record: WorkbenchProjectRecord,
         apis: List<WorkbenchApiRecord>,
-        todos: List<WorkbenchTodoRecord>,
         sourcePrompt: String? = null
     ) {
         val counts = apiExecutionCounts(record.projectId)
         val androidAssets = readAndroidAssets(record.projectId)
+        val todos = readTodos(record.projectId)
+        val schemaItems = readSchemaItems(record.projectId)
         val prompt = sourcePrompt?.trim()?.takeIf { it.isNotEmpty() }
             ?: readProjectSourcePrompt(record.projectId)
+        val displays = workbenchDisplays(record)
         val payload = linkedMapOf<String, Any?>(
             "project" to record.toPayload(),
             "generation" to linkedMapOf(
@@ -722,11 +763,13 @@ class WorkbenchProjectStore(
                 )
             ),
             "page" to linkedMapOf(
-                "pageId" to "todo-log-page",
-                "renderer" to "oob_native_schema",
+                "pageId" to ((displays.firstOrNull()?.get("pageId") ?: displays.firstOrNull()?.get("id"))
+                    ?: "workbench-page"),
+                "renderer" to (workbenchPageSpec(record)["renderer"] ?: "oob_native_schema"),
                 "route" to record.route
             ),
-            "displays" to workbenchDisplays(record),
+            "displays" to displays,
+            "schema" to workbenchPageSpec(record),
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "android" to linkedMapOf(
                 "manifest" to "android/manifest.json",
@@ -736,6 +779,9 @@ class WorkbenchProjectStore(
                 "todoCount" to todos.size,
                 "openTodoCount" to todos.count { it.status != "finished" },
                 "finishedTodoCount" to todos.count { it.status == "finished" },
+                "itemCount" to schemaItems.size,
+                "activeItemCount" to schemaItems.count { it.status != "archived" },
+                "archivedItemCount" to schemaItems.count { it.status == "archived" },
                 "androidAssetCount" to androidAssets.size
             )
         )
@@ -745,15 +791,73 @@ class WorkbenchProjectStore(
     }
 
     /**
+     * Reads the editable frontend schema for one Project.
+     *
+     * @param record Project whose `frontend/page_spec.json` may define the current Display.
+     * @return Parsed schema map, or an empty map when the Project predates schema files.
+     */
+    private fun workbenchPageSpec(record: WorkbenchProjectRecord): Map<String, Any?> {
+        val file = File(projectDir(record.projectId), "frontend/page_spec.json")
+        if (!file.exists()) return emptyMap()
+        return runCatching {
+            gson.fromJson<Map<String, Any?>>(file.readText(), mapType) ?: emptyMap()
+        }.getOrElse { emptyMap() }
+    }
+
+    /**
      * Builds the native display registry exposed by one Workbench Project.
      *
      * @param record Project registry record that owns the display route and stable project id.
      * @return Display payloads shown by Flutter as Project-scoped frontends, not business APIs.
      */
     private fun workbenchDisplays(record: WorkbenchProjectRecord): List<Map<String, Any?>> {
+        val spec = workbenchPageSpec(record)
+        val explicitDisplays = spec["displays"]
+        if (explicitDisplays is List<*>) {
+            val displays = explicitDisplays.mapNotNull { item ->
+                @Suppress("UNCHECKED_CAST")
+                (item as? Map<String, Any?>)?.takeIf { display ->
+                    display["route"]?.toString()?.trim()?.isNotEmpty() == true
+                }
+            }
+            if (displays.isNotEmpty()) {
+                return displays
+            }
+        }
+        if (spec.isNotEmpty() && spec["route"]?.toString()?.trim()?.isNotEmpty() == true) {
+            return listOf(
+                linkedMapOf(
+                    "id" to (spec["displayId"] ?: spec["pageId"] ?: "schema-main-display"),
+                    "pageId" to (spec["pageId"] ?: "schema-main-page"),
+                    "title" to (spec["title"] ?: record.name),
+                    "shortName" to (spec["shortName"] ?: "APP"),
+                    "route" to spec["route"],
+                    "kind" to "oob_flutter",
+                    "renderer" to (spec["renderer"] ?: "oob_schema_collection"),
+                    "isDefault" to true,
+                    "description" to (spec["description"] ?: spec["subtitle"] ?: "")
+                )
+            )
+        }
+        if (record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID) {
+            return listOf(
+                linkedMapOf(
+                    "id" to "schema-main-display",
+                    "pageId" to "schema-main-page",
+                    "title" to record.name,
+                    "shortName" to "APP",
+                    "route" to record.route,
+                    "kind" to "oob_flutter",
+                    "renderer" to "oob_schema_collection",
+                    "isDefault" to true,
+                    "description" to "Schema display bound to this Project API registry."
+                )
+            )
+        }
         return listOf(
             linkedMapOf(
                 "id" to "todo-log-display",
+                "pageId" to "todo-log-page",
                 "title" to "Todo 日志",
                 "shortName" to "TODO",
                 "route" to record.route,
@@ -774,12 +878,18 @@ class WorkbenchProjectStore(
     private fun ensureProjectSourceFiles(
         record: WorkbenchProjectRecord,
         apis: List<WorkbenchApiRecord>,
-        sourcePrompt: String? = null
+        sourcePrompt: String? = null,
+        config: Map<String, Any?> = emptyMap()
     ) {
         val projectDir = projectDir(record.projectId)
         projectDir.mkdirs()
         val readme = File(projectDir, "README.md")
         if (!readme.exists()) {
+            val dataFiles = if (record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID) {
+                "- `data/items.json`: persistent schema item state"
+            } else {
+                "- `data/todos.json`: persistent todo state"
+            }
             readme.writeText(
                 """
                 |# ${record.name}
@@ -794,17 +904,16 @@ class WorkbenchProjectStore(
                 |- Workspace path: `${record.spacePath}`
                 |
                 |## Frontend
-                |The frontend is rendered by OOB's native Flutter Display. This demo stores the
-                |editable page contract in `frontend/page_spec.json`; the current template host code
-                |lives in OOB and binds controls to Project APIs through `workbenchApiCall`.
+                |The frontend is rendered by OOB's native Flutter Display. The editable page
+                |contract lives in `frontend/page_spec.json`; OOB binds visible controls to
+                |Project APIs through `workbenchApiCall`.
                 |
                 |## Backend
-                |Business APIs are declared in `backend/api_spec.json`. The current demo executor is
-                |the native Workbench runtime; future projects may replace `executorKind` with a
-                |workspace script or provider executor without changing the frontend call path.
+                |Business APIs are declared in `backend/api_spec.json`. API execution stays behind
+                |the Workbench runtime boundary, so AI calls and UI clicks share one backend path.
                 |
                 |## Data
-                |- `data/todos.json`: persistent todo state
+                |$dataFiles
                 |- `logs/api_calls.jsonl`: append-only AI/UI API call log
                 |- `logs/hot_updates.jsonl`: append-only Xiaowan hot update requests
                 |- `android/manifest.json`: imported Android APK/project assets
@@ -820,40 +929,7 @@ class WorkbenchProjectStore(
         backendDir.mkdirs()
         val pageSpec = File(frontendDir, "page_spec.json")
         if (!pageSpec.exists()) {
-            pageSpec.writeText(
-                gson.toJson(
-                    linkedMapOf<String, Any?>(
-                        "pageId" to "todo-log-page",
-                        "displayId" to "todo-log-display",
-                        "title" to "Todo 日志",
-                        "shortName" to "TODO",
-                        "renderer" to "oob_native_flutter_display",
-                        "route" to record.route,
-                        "sourcePrompt" to sourcePrompt,
-                        "decomposition" to listOf(
-                            "Prompt requirement -> Project registry",
-                            "Frontend display -> OOB native Flutter route",
-                            "Controls -> Project API calls",
-                            "State -> project data and logs"
-                        ),
-                        "state" to linkedMapOf(
-                            "todos" to "data/todos.json"
-                        ),
-                        "bindings" to listOf(
-                            linkedMapOf(
-                                "controlId" to "add-todo-button",
-                                "apiId" to WORKBENCH_TODO_ADD_TOOL_ID,
-                                "inputs" to linkedMapOf("title" to "page.todo_input")
-                            ),
-                            linkedMapOf(
-                                "controlId" to "finish-todo-button",
-                                "apiId" to WORKBENCH_TODO_FINISH_TOOL_ID,
-                                "inputs" to linkedMapOf("todo_id" to "todo.id")
-                            )
-                        )
-                    )
-                )
-            )
+            pageSpec.writeText(gson.toJson(defaultPageSpec(record, apis, sourcePrompt, config)))
         }
         val apiSpec = File(backendDir, "api_spec.json")
         if (!apiSpec.exists()) {
@@ -862,14 +938,8 @@ class WorkbenchProjectStore(
                     linkedMapOf<String, Any?>(
                         "executorBoundary" to "oob_native_workbench",
                         "sourcePrompt" to sourcePrompt,
-                        "promptDecomposition" to linkedMapOf(
-                            "addTodo" to WORKBENCH_TODO_ADD_TOOL_ID,
-                            "archiveTodo" to WORKBENCH_TODO_FINISH_TOOL_ID,
-                            "frontend" to "frontend/page_spec.json",
-                            "data" to "data/todos.json",
-                            "logs" to "logs/api_calls.jsonl",
-                            "hotUpdates" to "logs/hot_updates.jsonl"
-                        ),
+                        "templateId" to record.templateId,
+                        "promptDecomposition" to promptDecomposition(record, apis),
                         "apis" to apis.map { api ->
                             linkedMapOf(
                                 "apiId" to api.apiId,
@@ -878,7 +948,7 @@ class WorkbenchProjectStore(
                                 "inputSchema" to api.inputSchema,
                                 "outputSchema" to api.outputSchema,
                                 "executorKind" to api.executorKind,
-                                "persistence" to listOf("data/todos.json", "logs/api_calls.jsonl"),
+                                "persistence" to persistenceFiles(record),
                                 "frontendBinding" to "frontend/page_spec.json",
                                 "aiUsage" to "Call through workbench_api_call with this projectId."
                             )
@@ -905,6 +975,146 @@ class WorkbenchProjectStore(
                 """.trimMargin()
             )
         }
+    }
+
+    /**
+     * Builds the editable frontend contract for a new Project.
+     *
+     * @param record Project registry record used for route and identity.
+     * @param apis Business APIs that the generated Display can bind to.
+     * @param sourcePrompt User's original prompt, persisted for later hot-update context.
+     * @param config Optional creation config containing entity/display hints for generic Projects.
+     * @return Page spec written to `frontend/page_spec.json`.
+     */
+    private fun defaultPageSpec(
+        record: WorkbenchProjectRecord,
+        apis: List<WorkbenchApiRecord>,
+        sourcePrompt: String?,
+        config: Map<String, Any?>
+    ): Map<String, Any?> {
+        if (record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID) {
+            val entityName = schemaEntityName(config, record.name, sourcePrompt)
+            val title = config["title"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                ?: config["displayName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                ?: record.name
+            val description = config["description"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "Prompt-generated OOB native schema display."
+            return linkedMapOf(
+                "pageId" to "schema-main-page",
+                "displayId" to "schema-main-display",
+                "title" to title,
+                "shortName" to schemaShortName(entityName),
+                "description" to description,
+                "renderer" to "oob_schema_collection",
+                "route" to record.route,
+                "templateId" to record.templateId,
+                "sourcePrompt" to sourcePrompt,
+                "entityName" to entityName,
+                "primaryField" to "title",
+                "decomposition" to listOf(
+                    "Prompt requirement -> Project registry",
+                    "Frontend display -> OOB schema Flutter renderer",
+                    "Controls -> Project API calls",
+                    "State -> project data/items.json and logs"
+                ),
+                "state" to linkedMapOf("items" to "data/items.json"),
+                "fields" to listOf(
+                    linkedMapOf(
+                        "id" to "title",
+                        "label" to entityName,
+                        "type" to "string",
+                        "required" to true
+                    )
+                ),
+                "actions" to apis.map { api ->
+                    linkedMapOf(
+                        "apiId" to api.apiId,
+                        "kind" to schemaApiAction(api),
+                        "label" to api.displayName,
+                        "inputs" to if (schemaApiAction(api) == "archive") {
+                            linkedMapOf("item_id" to "item.id")
+                        } else {
+                            linkedMapOf("title" to "page.input.title")
+                        }
+                    )
+                }
+            )
+        }
+        return linkedMapOf(
+            "pageId" to "todo-log-page",
+            "displayId" to "todo-log-display",
+            "title" to "Todo 日志",
+            "shortName" to "TODO",
+            "renderer" to "oob_native_flutter_display",
+            "route" to record.route,
+            "templateId" to record.templateId,
+            "sourcePrompt" to sourcePrompt,
+            "decomposition" to listOf(
+                "Prompt requirement -> Project registry",
+                "Frontend display -> OOB native Flutter route",
+                "Controls -> Project API calls",
+                "State -> project data and logs"
+            ),
+            "state" to linkedMapOf("todos" to "data/todos.json"),
+            "bindings" to listOf(
+                linkedMapOf(
+                    "controlId" to "add-todo-button",
+                    "apiId" to WORKBENCH_TODO_ADD_TOOL_ID,
+                    "inputs" to linkedMapOf("title" to "page.todo_input")
+                ),
+                linkedMapOf(
+                    "controlId" to "finish-todo-button",
+                    "apiId" to WORKBENCH_TODO_FINISH_TOOL_ID,
+                    "inputs" to linkedMapOf("todo_id" to "todo.id")
+                )
+            )
+        )
+    }
+
+    /**
+     * Explains the prompt-to-runtime split in `backend/api_spec.json`.
+     *
+     * @param record Project whose template determines the state file.
+     * @param apis Registered business APIs for this Project.
+     * @return Stable metadata map for handoff, export, and future agents.
+     */
+    private fun promptDecomposition(
+        record: WorkbenchProjectRecord,
+        apis: List<WorkbenchApiRecord>
+    ): Map<String, Any?> {
+        return if (record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID) {
+            linkedMapOf(
+                "frontend" to "frontend/page_spec.json",
+                "data" to "data/items.json",
+                "logs" to "logs/api_calls.jsonl",
+                "hotUpdates" to "logs/hot_updates.jsonl",
+                "businessApis" to apis.map { it.apiId }
+            )
+        } else {
+            linkedMapOf(
+                "addTodo" to WORKBENCH_TODO_ADD_TOOL_ID,
+                "archiveTodo" to WORKBENCH_TODO_FINISH_TOOL_ID,
+                "frontend" to "frontend/page_spec.json",
+                "data" to "data/todos.json",
+                "logs" to "logs/api_calls.jsonl",
+                "hotUpdates" to "logs/hot_updates.jsonl"
+            )
+        }
+    }
+
+    /**
+     * Lists Project files that a business API is expected to read or write.
+     *
+     * @param record Project whose template owns the state file.
+     * @return Relative persistence paths stored in API specs.
+     */
+    private fun persistenceFiles(record: WorkbenchProjectRecord): List<String> {
+        val dataFile = if (record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID) {
+            "data/items.json"
+        } else {
+            "data/todos.json"
+        }
+        return listOf(dataFile, "logs/api_calls.jsonl")
     }
 
     /**
@@ -1195,6 +1405,62 @@ class WorkbenchProjectStore(
         return candidate.take(120)
     }
 
+    /**
+     * Applies a natural-language hot update to a generic schema Project.
+     *
+     * @param record Project whose API registry owns schema create/archive APIs.
+     * @param request Raw user hot-update request.
+     * @param wantsAdd Whether the prompt appears to request a new item.
+     * @param wantsArchive Whether the prompt appears to request archiving an item.
+     * @param appliedActions Mutable action list written into `hot_updates.jsonl`.
+     */
+    private fun applySchemaHotUpdate(
+        record: WorkbenchProjectRecord,
+        request: String,
+        wantsAdd: Boolean,
+        wantsArchive: Boolean,
+        appliedActions: MutableList<Map<String, Any?>>
+    ) {
+        val apis = projectApis(record.projectId)
+        val createApi = apis.firstOrNull { schemaApiAction(it) == "create" }
+        val archiveApi = apis.firstOrNull { schemaApiAction(it) == "archive" }
+        if (wantsArchive && archiveApi != null) {
+            val activeItem = readSchemaItems(record.projectId).firstOrNull { it.status != "archived" }
+            if (activeItem == null) {
+                appliedActions.add(
+                    linkedMapOf(
+                        "apiId" to archiveApi.apiId,
+                        "success" to false,
+                        "errorCode" to "NO_ACTIVE_ITEM"
+                    )
+                )
+            } else {
+                appliedActions.add(
+                    compactToolResult(
+                        callApi(
+                            projectId = record.projectId,
+                            apiId = archiveApi.apiId,
+                            inputs = mapOf("item_id" to activeItem.id),
+                            caller = WORKBENCH_HOT_UPDATE_CALLER
+                        )
+                    )
+                )
+            }
+        }
+        if ((wantsAdd || !wantsArchive) && createApi != null) {
+            appliedActions.add(
+                compactToolResult(
+                    callApi(
+                        projectId = record.projectId,
+                        apiId = createApi.apiId,
+                        inputs = mapOf("title" to hotUpdateTodoTitle(request)),
+                        caller = WORKBENCH_HOT_UPDATE_CALLER
+                    )
+                )
+            )
+        }
+    }
+
     private fun initialTodos(config: Map<String, Any?>): List<WorkbenchTodoRecord> {
         val raw = config["initialTodos"]
         val titles = when (raw) {
@@ -1214,6 +1480,63 @@ class WorkbenchProjectStore(
                 status = "open",
                 createdAt = now
             )
+        }
+    }
+
+    /**
+     * Parses initial generic items from Project creation config.
+     *
+     * @param config Project creation config; accepts `initialItems` as strings or maps.
+     * @return Initial item records for `data/items.json`.
+     */
+    private fun initialSchemaItems(config: Map<String, Any?>): List<WorkbenchSchemaItemRecord> {
+        val raw = config["initialItems"] ?: config["items"]
+        val entries = when (raw) {
+            is Iterable<*> -> raw.mapNotNull { item ->
+                when (item) {
+                    is Map<*, *> -> {
+                        val title = item["title"]?.toString()?.trim()
+                            ?: item["name"]?.toString()?.trim()
+                        val fields = item.entries.associate { entry ->
+                            entry.key.toString() to entry.value
+                        }.filterKeys { it != "id" && it != "title" && it != "name" && it != "status" }
+                        title?.takeIf { it.isNotEmpty() }?.let { it to fields }
+                    }
+                    else -> item?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                        ?.let { it to emptyMap<String, Any?>() }
+                }
+            }
+            else -> emptyList()
+        }
+        val now = nowIso()
+        return entries.mapIndexed { index, (title, fields) ->
+            WorkbenchSchemaItemRecord(
+                id = "item-initial-${index + 1}",
+                title = title,
+                status = "active",
+                fields = fields,
+                createdAt = now
+            )
+        }
+    }
+
+    /**
+     * Builds Project APIs for the requested template.
+     *
+     * @param projectId Project namespace for API registry records.
+     * @param templateId Template id selected by `workbench_project_create`.
+     * @param config Creation config that may include explicit schema APIs.
+     * @return Business API records only; Workbench control APIs are excluded.
+     */
+    private fun templateApis(
+        projectId: String,
+        templateId: String,
+        config: Map<String, Any?>
+    ): List<WorkbenchApiRecord> {
+        return if (templateId == WORKBENCH_SCHEMA_TEMPLATE_ID) {
+            schemaTemplateApis(projectId, config)
+        } else {
+            todoTemplateApis(projectId)
         }
     }
 
@@ -1240,6 +1563,185 @@ class WorkbenchProjectStore(
                 executorKind = "native_template"
             )
         )
+    }
+
+    /**
+     * Builds generic schema Project APIs from explicit config or a prompt-derived entity namespace.
+     *
+     * @param projectId Project namespace for API registry records.
+     * @param config Creation config. `apis` may provide apiId/displayName/schema/executorKind.
+     * @return API records handled by the native schema collection executor.
+     */
+    private fun schemaTemplateApis(
+        projectId: String,
+        config: Map<String, Any?>
+    ): List<WorkbenchApiRecord> {
+        val explicit = explicitApiRecords(projectId, config)
+        if (explicit.isNotEmpty()) return explicit
+        val namespace = schemaApiNamespace(config)
+        return listOf(
+            WorkbenchApiRecord(
+                apiId = "$namespace.create",
+                projectId = projectId,
+                toolId = "$namespace.create",
+                displayName = "Create ${schemaEntityName(config, namespace, null)}",
+                description = "Create an item in this schema Project state.",
+                inputSchema = linkedMapOf("title" to "string"),
+                outputSchema = linkedMapOf("item" to "object"),
+                executorKind = WORKBENCH_SCHEMA_EXECUTOR_KIND
+            ),
+            WorkbenchApiRecord(
+                apiId = "$namespace.archive",
+                projectId = projectId,
+                toolId = "$namespace.archive",
+                displayName = "Archive ${schemaEntityName(config, namespace, null)}",
+                description = "Archive an active item in this schema Project state.",
+                inputSchema = linkedMapOf("item_id" to "string"),
+                outputSchema = linkedMapOf("item" to "object"),
+                executorKind = WORKBENCH_SCHEMA_EXECUTOR_KIND
+            )
+        )
+    }
+
+    /**
+     * Converts explicit `apis` config into Workbench API registry records.
+     *
+     * @param projectId Project namespace for each record.
+     * @param config Creation config supplied by Agent or Flutter.
+     * @return Valid API records with nonblank ids.
+     */
+    private fun explicitApiRecords(
+        projectId: String,
+        config: Map<String, Any?>
+    ): List<WorkbenchApiRecord> {
+        val raw = config["apis"] ?: config["apiSpecs"] ?: return emptyList()
+        if (raw !is Iterable<*>) return emptyList()
+        return raw.mapNotNull { item ->
+            @Suppress("UNCHECKED_CAST")
+            val map = item as? Map<String, Any?> ?: return@mapNotNull null
+            val apiId = map["apiId"]?.toString()?.trim()
+                ?: map["toolId"]?.toString()?.trim()
+                ?: return@mapNotNull null
+            if (apiId.isEmpty()) return@mapNotNull null
+            WorkbenchApiRecord(
+                apiId = apiId,
+                projectId = projectId,
+                toolId = map["toolId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: apiId,
+                displayName = map["displayName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: apiId,
+                description = map["description"]?.toString()?.trim().orEmpty(),
+                inputSchema = asStringKeyMap(map["inputSchema"]),
+                outputSchema = asStringKeyMap(map["outputSchema"]),
+                executorKind = map["executorKind"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: WORKBENCH_SCHEMA_EXECUTOR_KIND
+            )
+        }
+    }
+
+    /**
+     * Normalizes a dynamic map into a JSON-safe string-key map.
+     *
+     * @param value Potential map from MethodChannel or tool arguments.
+     * @return Map with string keys, or an empty map when the input is absent.
+     */
+    private fun asStringKeyMap(value: Any?): Map<String, Any?> {
+        val raw = value as? Map<*, *> ?: return emptyMap()
+        return raw.entries.associate { entry -> entry.key.toString() to entry.value }
+    }
+
+    /**
+     * Executes generic schema collection create/archive APIs.
+     *
+     * @param projectId Project whose `data/items.json` should be updated.
+     * @param api API registry record. The action is inferred from its id.
+     * @param inputs Tool inputs from AI or UI.
+     * @return Tool-style success/error payload.
+     */
+    private fun callSchemaCollectionApi(
+        projectId: String,
+        api: WorkbenchApiRecord,
+        inputs: Map<String, Any?>
+    ): Map<String, Any?> {
+        return when (schemaApiAction(api)) {
+            "create" -> createSchemaItem(projectId, api, inputs)
+            "archive" -> archiveSchemaItem(projectId, api, inputs)
+            else -> apiError(api, "UNKNOWN_SCHEMA_ACTION", "Unknown schema API: ${api.apiId}")
+        }
+    }
+
+    private fun createSchemaItem(
+        projectId: String,
+        api: WorkbenchApiRecord,
+        inputs: Map<String, Any?>
+    ): Map<String, Any?> {
+        val title = schemaItemTitle(inputs)
+        if (title.isEmpty()) {
+            return apiError(api, "EMPTY_ITEM_TITLE", "Item title is required.")
+        }
+        val items = readSchemaItems(projectId).toMutableList()
+        val fields = inputs.filterKeys { key ->
+            key !in setOf("id", "item_id", "itemId", "title", "name", "label", "status")
+        }
+        val item = WorkbenchSchemaItemRecord(
+            id = "item-${System.currentTimeMillis()}-${items.size + 1}",
+            title = title,
+            status = "active",
+            fields = fields,
+            createdAt = nowIso()
+        )
+        items.add(0, item)
+        writeSchemaItems(projectId, items)
+        return apiSuccess(api, mapOf("item" to item.toPayload()))
+    }
+
+    private fun archiveSchemaItem(
+        projectId: String,
+        api: WorkbenchApiRecord,
+        inputs: Map<String, Any?>
+    ): Map<String, Any?> {
+        val itemId = inputs["item_id"]?.toString()?.trim()
+            ?: inputs["itemId"]?.toString()?.trim()
+            ?: inputs["id"]?.toString()?.trim()
+            ?: ""
+        if (itemId.isEmpty()) {
+            return apiError(api, "MISSING_ITEM_ID", "item_id is required.")
+        }
+        val items = readSchemaItems(projectId)
+        val index = items.indexOfFirst { it.id == itemId }
+        if (index < 0) {
+            return apiError(api, "ITEM_NOT_FOUND", "Item not found: $itemId")
+        }
+        val current = items[index]
+        val archived = if (current.status == "archived") {
+            current
+        } else {
+            current.copy(status = "archived", archivedAt = nowIso())
+        }
+        val updated = items.toMutableList()
+        updated[index] = archived
+        writeSchemaItems(projectId, updated)
+        return apiSuccess(api, mapOf("item" to archived.toPayload()))
+    }
+
+    private fun schemaItemTitle(inputs: Map<String, Any?>): String {
+        val direct = inputs["title"]?.toString()?.trim()
+            ?: inputs["name"]?.toString()?.trim()
+            ?: inputs["label"]?.toString()?.trim()
+        if (!direct.isNullOrEmpty()) return direct.take(160)
+        return inputs.values.firstOrNull { value ->
+            value?.toString()?.trim()?.isNotEmpty() == true
+        }?.toString()?.trim()?.take(160).orEmpty()
+    }
+
+    private fun schemaApiAction(api: WorkbenchApiRecord): String {
+        val id = "${api.apiId}.${api.toolId}".lowercase()
+        return when {
+            listOf(".archive", ".finish", ".complete", ".done").any { id.contains(it) } ->
+                "archive"
+            listOf(".create", ".add", ".new").any { id.contains(it) } ->
+                "create"
+            else -> "custom"
+        }
     }
 
     private fun projectApis(projectId: String): List<WorkbenchApiRecord> {
@@ -1328,6 +1830,35 @@ class WorkbenchProjectStore(
         val file = todosFile(projectId)
         file.parentFile?.mkdirs()
         file.writeText(gson.toJson(todos))
+    }
+
+    /**
+     * Reads generic schema items for a Project.
+     *
+     * @param projectId Project whose `data/items.json` should be parsed.
+     * @return Persisted item records, or an empty list for non-schema Projects.
+     */
+    private fun readSchemaItems(projectId: String): List<WorkbenchSchemaItemRecord> {
+        val file = schemaItemsFile(projectId)
+        if (!file.exists()) return emptyList()
+        return runCatching {
+            gson.fromJson<List<WorkbenchSchemaItemRecord>>(
+                file.readText(),
+                schemaItemRecordListType
+            ) ?: emptyList()
+        }.getOrElse { emptyList() }
+    }
+
+    /**
+     * Writes generic schema item state for a Project.
+     *
+     * @param projectId Project whose state file should be replaced.
+     * @param items Full desired item state.
+     */
+    private fun writeSchemaItems(projectId: String, items: List<WorkbenchSchemaItemRecord>) {
+        val file = schemaItemsFile(projectId)
+        file.parentFile?.mkdirs()
+        file.writeText(gson.toJson(items))
     }
 
     /**
@@ -1538,8 +2069,84 @@ class WorkbenchProjectStore(
         return "${AgentWorkspaceManager.SHELL_ROOT_PATH}/projects/$projectId/$relative"
     }
 
+    private fun defaultProjectId(templateId: String, config: Map<String, Any?>): String {
+        if (templateId != WORKBENCH_SCHEMA_TEMPLATE_ID) return WORKBENCH_DEFAULT_PROJECT_ID
+        return "oob-workbench-${schemaApiNamespace(config)}"
+    }
+
+    private fun defaultProjectName(templateId: String, config: Map<String, Any?>): String {
+        if (templateId != WORKBENCH_SCHEMA_TEMPLATE_ID) return "Todo Log Workbench"
+        return "${schemaEntityName(config, "Project", null)} Workbench"
+    }
+
+    private fun routeForTemplate(projectId: String, templateId: String): String {
+        return if (templateId == WORKBENCH_SCHEMA_TEMPLATE_ID) {
+            "/workbench/schema_app?projectId=$projectId"
+        } else {
+            "/workbench/todo_log?projectId=$projectId"
+        }
+    }
+
+    /**
+     * Resolves a human-facing entity name for generic schema Projects.
+     *
+     * @param config Project creation config supplied by UI or Agent.
+     * @param fallback Value used when no explicit entity can be found.
+     * @param prompt Optional natural language prompt used for simple domain inference.
+     * @return Display entity label stored in frontend/backend specs.
+     */
+    private fun schemaEntityName(
+        config: Map<String, Any?>,
+        fallback: String,
+        prompt: String?
+    ): String {
+        val explicit = config["entityName"]?.toString()?.trim()
+            ?: config["entity"]?.toString()?.trim()
+            ?: config["itemName"]?.toString()?.trim()
+        if (!explicit.isNullOrEmpty()) return explicit.take(40)
+        val hint = "${prompt.orEmpty()} ${config["prompt"]?.toString().orEmpty()} ${config["name"]?.toString().orEmpty()}"
+        return when {
+            hint.contains("笔记", ignoreCase = true) || hint.contains("note", ignoreCase = true) ->
+                "Note"
+            hint.contains("开销", ignoreCase = true) || hint.contains("expense", ignoreCase = true) ->
+                "Expense"
+            hint.contains("习惯", ignoreCase = true) || hint.contains("habit", ignoreCase = true) ->
+                "Habit"
+            hint.contains("客户", ignoreCase = true) || hint.contains("customer", ignoreCase = true) ->
+                "Customer"
+            else -> fallback.ifBlank { "Item" }.take(40)
+        }
+    }
+
+    private fun schemaApiNamespace(config: Map<String, Any?>): String {
+        val raw = config["apiNamespace"]?.toString()?.trim()
+            ?: config["entityName"]?.toString()?.trim()
+            ?: config["entity"]?.toString()?.trim()
+            ?: config["name"]?.toString()?.trim()
+            ?: "item"
+        return sanitizeApiSegment(raw)
+    }
+
+    private fun schemaShortName(entityName: String): String {
+        val ascii = sanitizeApiSegment(entityName).uppercase().take(5)
+        return ascii.ifBlank { "APP" }
+    }
+
+    private fun sanitizeApiSegment(value: String): String {
+        return value.trim()
+            .lowercase()
+            .replace(Regex("[^a-z0-9]+"), "-")
+            .trim('-')
+            .ifBlank { "item" }
+            .take(48)
+    }
+
     private fun todosFile(projectId: String): File {
         return File(projectDir(projectId), "data/todos.json")
+    }
+
+    private fun schemaItemsFile(projectId: String): File {
+        return File(projectDir(projectId), "data/items.json")
     }
 
     private fun androidManifestFile(projectId: String): File {

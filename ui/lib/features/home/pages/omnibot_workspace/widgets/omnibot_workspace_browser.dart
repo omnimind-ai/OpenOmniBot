@@ -49,6 +49,8 @@ class OmnibotWorkspaceBrowser extends StatefulWidget {
   final bool showHeaderTitle;
   final bool enableInlineDirectoryExpansion;
   final bool inlineFilePreview;
+  final String? initialDirectoryPath;
+  final ValueChanged<String>? onCurrentDirectoryChanged;
 
   const OmnibotWorkspaceBrowser({
     super.key,
@@ -61,6 +63,8 @@ class OmnibotWorkspaceBrowser extends StatefulWidget {
     this.showHeaderTitle = true,
     this.enableInlineDirectoryExpansion = true,
     this.inlineFilePreview = false,
+    this.initialDirectoryPath,
+    this.onCurrentDirectoryChanged,
   });
 
   @override
@@ -144,9 +148,26 @@ class OmnibotWorkspaceBrowserState extends State<OmnibotWorkspaceBrowser> {
   void initState() {
     super.initState();
     _rootDirectory = Directory(widget.workspacePath);
-    _directory = _rootDirectory;
+    _directory = _resolveInitialDirectory();
     _notifyCanGoUpChanged();
     _refresh();
+  }
+
+  Directory _resolveInitialDirectory() {
+    final initialPath = widget.initialDirectoryPath?.trim();
+    if (initialPath == null || initialPath.isEmpty) {
+      return _rootDirectory;
+    }
+    final normalized = _normalizePath(initialPath);
+    if (!_isInsideWorkspace(normalized)) {
+      return _rootDirectory;
+    }
+    final directory = Directory(normalized);
+    return directory.existsSync() ? directory : _rootDirectory;
+  }
+
+  void _notifyCurrentDirectoryChanged() {
+    widget.onCurrentDirectoryChanged?.call(_normalizePath(_directory.path));
   }
 
   void _notifyCanGoUpChanged() {
@@ -245,6 +266,7 @@ class OmnibotWorkspaceBrowserState extends State<OmnibotWorkspaceBrowser> {
       _selectedFileMetadata = null;
       _isBulkSelectionMode = false;
     });
+    _notifyCurrentDirectoryChanged();
     _notifyCanGoUpChanged();
     _refresh();
   }
@@ -314,6 +336,7 @@ class OmnibotWorkspaceBrowserState extends State<OmnibotWorkspaceBrowser> {
       _selectedFileMetadata = null;
       _isBulkSelectionMode = false;
     });
+    _notifyCurrentDirectoryChanged();
     _notifyCanGoUpChanged();
     _refresh();
   }

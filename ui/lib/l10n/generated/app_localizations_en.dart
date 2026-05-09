@@ -3152,6 +3152,61 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchTodoInputRequired => 'Enter a todo first';
 
   @override
+  String get workbenchSchemaDefaultEntity => 'Item';
+
+  @override
+  String workbenchSchemaCreateTitle(String entity) {
+    return 'Create $entity';
+  }
+
+  @override
+  String workbenchSchemaInputHint(String entity) {
+    return 'Enter $entity name';
+  }
+
+  @override
+  String workbenchSchemaItemsTitle(String entity) {
+    return '$entity list';
+  }
+
+  @override
+  String workbenchSchemaEmpty(String entity) {
+    return 'No $entity yet';
+  }
+
+  @override
+  String get workbenchSchemaActive => 'Active';
+
+  @override
+  String get workbenchSchemaArchived => 'Archived';
+
+  @override
+  String get workbenchSchemaArchiveAction => 'Archive';
+
+  @override
+  String get workbenchSchemaMissingCreateApi =>
+      'This Project has no create API';
+
+  @override
+  String get workbenchSchemaMissingArchiveApi =>
+      'This Project has no archive API';
+
+  @override
+  String workbenchSchemaInputRequired(String entity) {
+    return 'Enter $entity first';
+  }
+
+  @override
+  String workbenchSchemaItemCreated(String entity) {
+    return '$entity created';
+  }
+
+  @override
+  String workbenchSchemaItemArchived(String entity) {
+    return '$entity archived';
+  }
+
+  @override
   String get workbenchNoOpenTodo => 'No open todo to finish';
 
   @override
@@ -3282,10 +3337,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchProjectModeSubtitle =>
-      'Select a Project as the Agent workspace, open its Flutter displays, inspect API execution counts, and manage Workspace, export, and delete.';
+      'Select a Project as the Agent workspace, open its Flutter displays, inspect API execution counts, and manage Workspace, export, and delete. Creation and editing return to the Home input so the Agent can run the Workbench tools.';
 
   @override
-  String get workbenchProjectModeCreateButton => 'Create Todo demo';
+  String get workbenchProjectModeCreateButton => 'Create from Home';
+
+  @override
+  String get workbenchProjectCreateFromHome =>
+      'Return to the Home input and say create project or describe the page you want.';
 
   @override
   String get workbenchProjectModeProjectsTitle => 'Current Project APIs';
@@ -3494,6 +3553,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String workbenchTodoCount(int openCount, int finishedCount) {
     return '$openCount open / $finishedCount finished';
+  }
+
+  @override
+  String workbenchSchemaItemCount(int activeCount, int archivedCount) {
+    return '$activeCount active / $archivedCount archived';
   }
 
   @override

@@ -1155,6 +1155,68 @@
   "workbenchTodoAdded": "Todo 已添加",
   "workbenchTodoFinishedToast": "Todo 已归档",
   "workbenchTodoInputRequired": "请先输入 todo",
+  "workbenchSchemaDefaultEntity": "条目",
+  "workbenchSchemaCreateTitle": "新增 {entity}",
+  "@workbenchSchemaCreateTitle": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchSchemaInputHint": "输入 {entity} 名称",
+  "@workbenchSchemaInputHint": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchSchemaItemsTitle": "{entity} 列表",
+  "@workbenchSchemaItemsTitle": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchSchemaEmpty": "暂无 {entity}",
+  "@workbenchSchemaEmpty": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchSchemaActive": "进行中",
+  "workbenchSchemaArchived": "已归档",
+  "workbenchSchemaArchiveAction": "归档",
+  "workbenchSchemaMissingCreateApi": "这个 Project 没有可用的新增 API",
+  "workbenchSchemaMissingArchiveApi": "这个 Project 没有可用的归档 API",
+  "workbenchSchemaInputRequired": "请先输入 {entity}",
+  "@workbenchSchemaInputRequired": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchSchemaItemCreated": "{entity} 已新增",
+  "@workbenchSchemaItemCreated": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchSchemaItemArchived": "{entity} 已归档",
+  "@workbenchSchemaItemArchived": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
   "workbenchNoOpenTodo": "没有可完成的 todo",
   "workbenchLoadFailed": "加载失败",
   "workbenchUnknownTool": "Workbench 工具执行失败",
@@ -1202,8 +1264,9 @@
   "workbenchProjectCurrentTitle": "Project 使用台",
   "workbenchProjectCurrentSubtitle": "默认打开前端会回到首页；调试打开会回到工作台。热更新通过首页大输入框和当前激活 Project 完成。",
   "workbenchProjectModeCreateTitle": "Vibe Project 入口",
-  "workbenchProjectModeSubtitle": "选择一个 Project 作为 Agent 当前工作环境；打开它的 Flutter 前端、查看 API 执行次数，并管理 Workspace、导出和删除。",
-  "workbenchProjectModeCreateButton": "创建 Todo demo",
+  "workbenchProjectModeSubtitle": "选择一个 Project 作为 Agent 当前工作环境；打开它的 Flutter 前端、查看 API 执行次数，并管理 Workspace、导出和删除。创建和编辑都回到首页输入框由 Agent 执行。",
+  "workbenchProjectModeCreateButton": "去首页创建",
+  "workbenchProjectCreateFromHome": "回到首页输入框，直接说 create project 或描述你想做的页面。",
   "workbenchProjectModeProjectsTitle": "当前 Project API",
   "workbenchProjectApiForProject": "{projectName} 的 API",
   "@workbenchProjectApiForProject": {
@@ -1271,6 +1334,27 @@
   },
   "workbenchDebugVlmTest": "根据 VLM 模拟人类操作测试",
   "workbenchDebugComingSoon": "待接入",
+  "workbenchAnnotationTitle": "标注画布",
+  "workbenchAnnotationDrawMode": "画笔",
+  "workbenchAnnotationBrowseMode": "浏览页面",
+  "workbenchAnnotationUndo": "撤销",
+  "workbenchAnnotationClear": "清空",
+  "workbenchAnnotationApply": "应用标注",
+  "workbenchAnnotationApplying": "应用中",
+  "workbenchAnnotationPromptHint": "补充修改说明，例如：把这里改成主按钮",
+  "workbenchAnnotationNoStrokes": "先在页面上画出要修改的区域",
+  "workbenchAnnotationNoShape": "未标注",
+  "workbenchAnnotationShapeCount": "已识别 {count} 个形状",
+  "@workbenchAnnotationShapeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchAnnotationDefaultPrompt": "根据画布标注调整当前 Project 前端。",
+  "workbenchAnnotationHotUpdateSuccess": "已把标注应用到 Project",
+  "workbenchAnnotationHotUpdateFailed": "标注热更新失败",
   "workbenchExportProjectPackage": "导出分发包",
   "workbenchProjectExportFailed": "Project 导出失败",
   "workbenchProjectExported": "已导出 {packageName}",
@@ -1344,6 +1428,17 @@
         "type": "int"
       },
       "finishedCount": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchSchemaItemCount": "{activeCount} 条进行中 / {archivedCount} 条归档",
+  "@workbenchSchemaItemCount": {
+    "placeholders": {
+      "activeCount": {
+        "type": "int"
+      },
+      "archivedCount": {
         "type": "int"
       }
     }

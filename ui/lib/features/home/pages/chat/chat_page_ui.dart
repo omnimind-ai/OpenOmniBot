@@ -890,6 +890,10 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                   key: _workspaceBrowserKey,
                   workspacePath: paths.rootPath,
                   workspaceShellPath: paths.shellRootPath,
+                  initialDirectoryPath: _cachedWorkspaceDirectory(
+                    paths.rootPath,
+                  ),
+                  onCurrentDirectoryChanged: _persistWorkspaceDirectory,
                   translucentSurfaces: backgroundActive,
                   showBreadcrumbHeader: true,
                   showHeaderTitle: false,
@@ -1146,12 +1150,21 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                   _activeSurfaceMode == ChatSurfaceMode.workspace &&
                   _workspaceProjectModeEnabled,
               onProjectSurfaceTap: () {
-                final targetMode =
+                final projectSurfaceSelected =
                     _activeSurfaceMode == ChatSurfaceMode.workspace &&
-                        _workspaceProjectModeEnabled
-                    ? ChatSurfaceMode.workspace
-                    : ChatSurfaceMode.project;
-                unawaited(_switchChatMode(targetMode, syncPage: true));
+                    _workspaceProjectModeEnabled;
+                if (projectSurfaceSelected) {
+                  _persistWorkspaceProjectModeEnabled(false);
+                }
+                unawaited(
+                  _switchChatMode(
+                    projectSurfaceSelected
+                        ? ChatSurfaceMode.workspace
+                        : ChatSurfaceMode.project,
+                    syncPage: true,
+                    preferCachedWorkspaceMode: !projectSurfaceSelected,
+                  ),
+                );
               },
             ),
             Expanded(child: conversationBody),
@@ -1350,6 +1363,8 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
           key: _hdPadWorkspaceBrowserKey,
           workspacePath: paths.rootPath,
           workspaceShellPath: paths.shellRootPath,
+          initialDirectoryPath: _cachedWorkspaceDirectory(paths.rootPath),
+          onCurrentDirectoryChanged: _persistWorkspaceDirectory,
           enableSystemBackHandler: false,
           translucentSurfaces: backgroundActive,
           showBreadcrumbHeader: true,

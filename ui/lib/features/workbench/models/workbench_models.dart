@@ -74,6 +74,42 @@ class WorkbenchTodoItem {
   }
 }
 
+class WorkbenchSchemaItem {
+  const WorkbenchSchemaItem({
+    required this.id,
+    required this.title,
+    required this.status,
+    required this.createdAt,
+    this.fields = const {},
+    this.archivedAt,
+  });
+
+  final String id;
+  final String title;
+  final String status;
+  final Map<String, Object?> fields;
+  final DateTime createdAt;
+  final DateTime? archivedAt;
+
+  bool get isArchived => status == 'archived';
+
+  factory WorkbenchSchemaItem.fromMap(Map<dynamic, dynamic> map) {
+    final fields = map['fields'];
+    return WorkbenchSchemaItem(
+      id: (map['id'] ?? '').toString(),
+      title: (map['title'] ?? map['name'] ?? '').toString(),
+      status: (map['status'] ?? 'active').toString(),
+      fields: fields is Map ? Map<String, Object?>.from(fields) : const {},
+      createdAt:
+          DateTime.tryParse((map['createdAt'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      archivedAt: map['archivedAt'] == null
+          ? null
+          : DateTime.tryParse(map['archivedAt'].toString()),
+    );
+  }
+}
+
 class WorkbenchToolSpec {
   const WorkbenchToolSpec({
     required this.id,
@@ -297,6 +333,8 @@ class WorkbenchProject {
     required this.flows,
     required this.androidAssets,
     required this.todos,
+    required this.items,
+    this.schema = const {},
   });
 
   final String projectId;
@@ -310,12 +348,20 @@ class WorkbenchProject {
   final List<WorkbenchFlowSpec> flows;
   final List<WorkbenchAndroidAsset> androidAssets;
   final List<WorkbenchTodoItem> todos;
+  final List<WorkbenchSchemaItem> items;
+  final Map<String, Object?> schema;
 
   List<WorkbenchTodoItem> get openTodos =>
       todos.where((todo) => !todo.isFinished).toList(growable: false);
 
   List<WorkbenchTodoItem> get finishedTodos =>
       todos.where((todo) => todo.isFinished).toList(growable: false);
+
+  List<WorkbenchSchemaItem> get activeItems =>
+      items.where((item) => !item.isArchived).toList(growable: false);
+
+  List<WorkbenchSchemaItem> get archivedItems =>
+      items.where((item) => item.isArchived).toList(growable: false);
 
   WorkbenchDisplaySpec get primaryDisplay {
     for (final display in displays) {
@@ -338,6 +384,8 @@ class WorkbenchProject {
     final flows = map['flows'];
     final androidAssets = map['androidAssets'];
     final todos = map['todos'];
+    final items = map['items'];
+    final schema = map['schema'];
     final parsedDisplays = displays is List
         ? displays
               .whereType<Map<dynamic, dynamic>>()
@@ -381,6 +429,13 @@ class WorkbenchProject {
                 .map(WorkbenchTodoItem.fromMap)
                 .toList(growable: false)
           : const [],
+      items: items is List
+          ? items
+                .whereType<Map<dynamic, dynamic>>()
+                .map(WorkbenchSchemaItem.fromMap)
+                .toList(growable: false)
+          : const [],
+      schema: schema is Map ? Map<String, Object?>.from(schema) : const {},
     );
   }
 
@@ -396,6 +451,8 @@ class WorkbenchProject {
     List<WorkbenchFlowSpec>? flows,
     List<WorkbenchAndroidAsset>? androidAssets,
     List<WorkbenchTodoItem>? todos,
+    List<WorkbenchSchemaItem>? items,
+    Map<String, Object?>? schema,
   }) {
     return WorkbenchProject(
       projectId: projectId ?? this.projectId,
@@ -409,6 +466,8 @@ class WorkbenchProject {
       flows: flows ?? this.flows,
       androidAssets: androidAssets ?? this.androidAssets,
       todos: todos ?? this.todos,
+      items: items ?? this.items,
+      schema: schema ?? this.schema,
     );
   }
 }
@@ -630,6 +689,7 @@ class WorkbenchTodoProjectFactory {
       ],
       androidAssets: const [],
       todos: const [],
+      items: const [],
     );
   }
 }

@@ -5720,6 +5720,84 @@ abstract class AppLocalizations {
   /// **'请先输入 todo'**
   String get workbenchTodoInputRequired;
 
+  /// No description provided for @workbenchSchemaDefaultEntity.
+  ///
+  /// In zh, this message translates to:
+  /// **'条目'**
+  String get workbenchSchemaDefaultEntity;
+
+  /// No description provided for @workbenchSchemaCreateTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'新增 {entity}'**
+  String workbenchSchemaCreateTitle(String entity);
+
+  /// No description provided for @workbenchSchemaInputHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入 {entity} 名称'**
+  String workbenchSchemaInputHint(String entity);
+
+  /// No description provided for @workbenchSchemaItemsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'{entity} 列表'**
+  String workbenchSchemaItemsTitle(String entity);
+
+  /// No description provided for @workbenchSchemaEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无 {entity}'**
+  String workbenchSchemaEmpty(String entity);
+
+  /// No description provided for @workbenchSchemaActive.
+  ///
+  /// In zh, this message translates to:
+  /// **'进行中'**
+  String get workbenchSchemaActive;
+
+  /// No description provided for @workbenchSchemaArchived.
+  ///
+  /// In zh, this message translates to:
+  /// **'已归档'**
+  String get workbenchSchemaArchived;
+
+  /// No description provided for @workbenchSchemaArchiveAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'归档'**
+  String get workbenchSchemaArchiveAction;
+
+  /// No description provided for @workbenchSchemaMissingCreateApi.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个 Project 没有可用的新增 API'**
+  String get workbenchSchemaMissingCreateApi;
+
+  /// No description provided for @workbenchSchemaMissingArchiveApi.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个 Project 没有可用的归档 API'**
+  String get workbenchSchemaMissingArchiveApi;
+
+  /// No description provided for @workbenchSchemaInputRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先输入 {entity}'**
+  String workbenchSchemaInputRequired(String entity);
+
+  /// No description provided for @workbenchSchemaItemCreated.
+  ///
+  /// In zh, this message translates to:
+  /// **'{entity} 已新增'**
+  String workbenchSchemaItemCreated(String entity);
+
+  /// No description provided for @workbenchSchemaItemArchived.
+  ///
+  /// In zh, this message translates to:
+  /// **'{entity} 已归档'**
+  String workbenchSchemaItemArchived(String entity);
+
   /// No description provided for @workbenchNoOpenTodo.
   ///
   /// In zh, this message translates to:
@@ -5963,14 +6041,20 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectModeSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'选择一个 Project 作为 Agent 当前工作环境；打开它的 Flutter 前端、查看 API 执行次数，并管理 Workspace、导出和删除。'**
+  /// **'选择一个 Project 作为 Agent 当前工作环境；打开它的 Flutter 前端、查看 API 执行次数，并管理 Workspace、导出和删除。创建和编辑都回到首页输入框由 Agent 执行。'**
   String get workbenchProjectModeSubtitle;
 
   /// No description provided for @workbenchProjectModeCreateButton.
   ///
   /// In zh, this message translates to:
-  /// **'创建 Todo demo'**
+  /// **'去首页创建'**
   String get workbenchProjectModeCreateButton;
+
+  /// No description provided for @workbenchProjectCreateFromHome.
+  ///
+  /// In zh, this message translates to:
+  /// **'回到首页输入框，直接说 create project 或描述你想做的页面。'**
+  String get workbenchProjectCreateFromHome;
 
   /// No description provided for @workbenchProjectModeProjectsTitle.
   ///
@@ -6313,6 +6397,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'{openCount} 条待完成 / {finishedCount} 条已完成'**
   String workbenchTodoCount(int openCount, int finishedCount);
+
+  /// No description provided for @workbenchSchemaItemCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{activeCount} 条进行中 / {archivedCount} 条归档'**
+  String workbenchSchemaItemCount(int activeCount, int archivedCount);
 
   /// No description provided for @workbenchApiCount.
   ///

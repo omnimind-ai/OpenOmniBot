@@ -12,6 +12,10 @@ abstract class WorkbenchProjectBackend {
     String? name,
     String? prompt,
     List<String>? initialTodos,
+    String? entityName,
+    String? description,
+    List<Object?>? initialItems,
+    List<Map<String, Object?>>? apis,
   });
 
   Future<WorkbenchProject> getProject(String projectId);
@@ -75,6 +79,10 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
     String? name,
     String? prompt,
     List<String>? initialTodos,
+    String? entityName,
+    String? description,
+    List<Object?>? initialItems,
+    List<Map<String, Object?>>? apis,
   }) async {
     final result = await _channel
         .invokeMethod<Map<dynamic, dynamic>>('workbenchProjectCreate', {
@@ -84,6 +92,13 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
           if (prompt != null && prompt.trim().isNotEmpty) 'prompt': prompt,
           if (initialTodos != null && initialTodos.isNotEmpty)
             'initialTodos': initialTodos,
+          if (entityName != null && entityName.trim().isNotEmpty)
+            'entityName': entityName,
+          if (description != null && description.trim().isNotEmpty)
+            'description': description,
+          if (initialItems != null && initialItems.isNotEmpty)
+            'initialItems': initialItems,
+          if (apis != null && apis.isNotEmpty) 'apis': apis,
         });
     return WorkbenchProject.fromMap(result ?? const {});
   }
@@ -229,19 +244,26 @@ class WorkbenchTodoLogService extends ChangeNotifier {
     required WorkbenchProjectBackend backend,
     String projectId = workbenchTodoDefaultProjectId,
     WorkbenchProject? initialProject,
+    bool autoCreateTodoIfMissing = true,
   }) : _backend = backend,
        _projectId = projectId,
-       _project = initialProject ?? WorkbenchTodoProjectFactory.create();
+       _project = initialProject ?? WorkbenchTodoProjectFactory.create(),
+       _autoCreateTodoIfMissing = autoCreateTodoIfMissing;
 
-  factory WorkbenchTodoLogService.native({String? projectId}) {
+  factory WorkbenchTodoLogService.native({
+    String? projectId,
+    bool autoCreateTodoIfMissing = true,
+  }) {
     return WorkbenchTodoLogService(
       backend: NativeWorkbenchProjectBackend(),
       projectId: projectId ?? workbenchTodoDefaultProjectId,
+      autoCreateTodoIfMissing: autoCreateTodoIfMissing,
     );
   }
 
   final WorkbenchProjectBackend _backend;
   final String _projectId;
+  final bool _autoCreateTodoIfMissing;
   WorkbenchProject _project;
   bool _loading = false;
   String? _errorMessage;
@@ -272,6 +294,9 @@ class WorkbenchTodoLogService extends ChangeNotifier {
     } on PlatformException catch (error) {
       final message = error.message ?? '';
       if (!message.contains('not found')) {
+        rethrow;
+      }
+      if (!_autoCreateTodoIfMissing) {
         rethrow;
       }
     }
@@ -505,6 +530,54 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       }
       _projects = await _backend.listProjects();
       return latestProject;
+    } catch (error) {
+      _errorMessage = error.toString();
+      return null;
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Creates a generic schema Project through the Workbench control API.
+  ///
+  /// `prompt` is the user's original requirement for future iteration,
+  /// `entityName` names the business object the generated frontend manages,
+  /// and `initialItems` seeds persisted Project state without writing files
+  /// directly from Flutter.
+  Future<WorkbenchProject?> createSchemaProjectFromPrompt(
+    String prompt, {
+    required String projectId,
+    required String name,
+    required String entityName,
+    String? description,
+    List<Object?> initialItems = const [],
+    List<Map<String, Object?>> apis = const [],
+  }) async {
+    final normalizedPrompt = prompt.trim();
+    final normalizedProjectId = projectId.trim();
+    final normalizedEntityName = entityName.trim();
+    if (normalizedPrompt.isEmpty ||
+        normalizedProjectId.isEmpty ||
+        normalizedEntityName.isEmpty) {
+      return null;
+    }
+    _loading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final project = await _backend.createProject(
+        projectId: normalizedProjectId,
+        templateId: 'schema_app',
+        name: name,
+        prompt: normalizedPrompt,
+        entityName: normalizedEntityName,
+        description: description,
+        initialItems: initialItems,
+        apis: apis,
+      );
+      _projects = await _backend.listProjects();
+      return project;
     } catch (error) {
       _errorMessage = error.toString();
       return null;

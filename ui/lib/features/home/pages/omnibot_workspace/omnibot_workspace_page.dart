@@ -1,19 +1,26 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/omnibot_workspace/widgets/omnibot_workspace_browser.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
+import 'package:ui/features/workbench/pages/workbench_schema_project_page.dart';
 import 'package:ui/features/workbench/pages/workbench_todo_log_page.dart';
 import 'package:ui/features/workbench/services/workbench_todo_log_service.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/app_background_service.dart';
+import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/app_background_widgets.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 
 enum _OmnibotWorkspaceMode { work, project }
+
+const String _workspaceCachedModeKey = 'omnibot_workspace_cached_mode_v1';
+const String _workspaceCachedDirectoryKey =
+    'omnibot_workspace_cached_directory_v1';
 
 class OmnibotWorkspacePage extends StatefulWidget {
   final String workspacePath;
@@ -44,7 +51,49 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
     super.initState();
     _mode = widget.startInProjectMode
         ? _OmnibotWorkspaceMode.project
+        : _cachedWorkspaceMode();
+    _persistWorkspaceMode(_mode);
+  }
+
+  _OmnibotWorkspaceMode _cachedWorkspaceMode() {
+    final cached = StorageService.getString(_workspaceCachedModeKey);
+    return cached == _OmnibotWorkspaceMode.project.name
+        ? _OmnibotWorkspaceMode.project
         : _OmnibotWorkspaceMode.work;
+  }
+
+  void _persistWorkspaceMode(_OmnibotWorkspaceMode mode) {
+    unawaited(StorageService.setString(_workspaceCachedModeKey, mode.name));
+  }
+
+  String? _cachedWorkspaceDirectory(String rootPath) {
+    final cached = StorageService.getString(
+      _workspaceCachedDirectoryKey,
+    )?.trim();
+    if (cached == null || cached.isEmpty) return null;
+    final normalizedRoot = _normalizeWorkspacePath(rootPath);
+    final normalizedCached = _normalizeWorkspacePath(cached);
+    final insideRoot =
+        normalizedCached == normalizedRoot ||
+        normalizedCached.startsWith('$normalizedRoot/');
+    if (!insideRoot) return null;
+    return Directory(normalizedCached).existsSync() ? normalizedCached : null;
+  }
+
+  void _persistWorkspaceDirectory(String path) {
+    final normalized = _normalizeWorkspacePath(path);
+    if (normalized.isEmpty) return;
+    unawaited(
+      StorageService.setString(_workspaceCachedDirectoryKey, normalized),
+    );
+  }
+
+  String _normalizeWorkspacePath(String path) {
+    final trimmed = path.trim();
+    if (trimmed.length > 1 && trimmed.endsWith('/')) {
+      return trimmed.substring(0, trimmed.length - 1);
+    }
+    return trimmed;
   }
 
   void _handleBackPressed() {
@@ -159,6 +208,12 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
                                   key: _browserKey,
                                   workspacePath: widget.workspacePath,
                                   workspaceShellPath: widget.workspaceShellPath,
+                                  initialDirectoryPath:
+                                      _cachedWorkspaceDirectory(
+                                        widget.workspacePath,
+                                      ),
+                                  onCurrentDirectoryChanged:
+                                      _persistWorkspaceDirectory,
                                   enableSystemBackHandler: false,
                                   translucentSurfaces: backgroundActive,
                                   showBreadcrumbHeader: true,
@@ -977,6 +1032,16 @@ class _WorkspaceProjectDisplayHost extends StatelessWidget {
         route.startsWith('/workbench/todo_log');
     if (hostsTodoLog) {
       return WorkbenchTodoLogPage(
+        projectId: project.projectId,
+        displayId: display.id,
+        embedded: true,
+      );
+    }
+    final hostsSchemaDisplay =
+        project.templateId == 'schema_app' ||
+        route.startsWith('/workbench/schema_app');
+    if (hostsSchemaDisplay) {
+      return WorkbenchSchemaProjectPage(
         projectId: project.projectId,
         displayId: display.id,
         embedded: true,

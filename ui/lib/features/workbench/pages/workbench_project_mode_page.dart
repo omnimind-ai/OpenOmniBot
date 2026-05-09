@@ -40,34 +40,9 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     _selectAvailableProject(preferredProjectId: selectProjectId);
   }
 
-  Future<void> _createTodoDemoProject() async {
-    final project = await _service.createTodoLogProjectFromPrompt(
-      context.l10n.workbenchProjectDefaultPrompt,
-      name: context.l10n.workbenchGeneratedTodoProjectName,
-      initialTodos: [
-        context.l10n.workbenchPromptSeedAddTodo,
-        context.l10n.workbenchPromptSeedArchiveTodo,
-      ],
-    );
-    if (!mounted) return;
-    if (project == null) {
-      showToast(
-        context.l10n.workbenchProjectModeLoadFailed,
-        type: ToastType.error,
-      );
-      return;
-    }
-    setState(() => _selectedProjectId = project.projectId);
-    final activated = await _service.activateProject(project);
-    if (!mounted) return;
-    showToast(
-      activated == null
-          ? context.l10n.workbenchProjectGenerated
-          : context.l10n.workbenchProjectActivated(
-              _projectDisplayName(activated),
-            ),
-      type: ToastType.success,
-    );
+  void _returnHomeForProjectPrompt() {
+    showToast(context.l10n.workbenchProjectCreateFromHome);
+    context.go(GoRouterManager.homeRoute);
   }
 
   void _selectAvailableProject({String? preferredProjectId}) {
@@ -321,8 +296,8 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
           actions: [
             IconButton(
               tooltip: context.l10n.workbenchProjectModeCreateButton,
-              onPressed: _service.loading ? null : _createTodoDemoProject,
-              icon: const Icon(Icons.add_rounded),
+              onPressed: _returnHomeForProjectPrompt,
+              icon: const Icon(Icons.chat_bubble_outline_rounded),
             ),
           ],
         ),
@@ -412,8 +387,8 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
           ),
           IconButton.filledTonal(
             tooltip: context.l10n.workbenchProjectModeCreateButton,
-            onPressed: _service.loading ? null : _createTodoDemoProject,
-            icon: const Icon(Icons.add_rounded),
+            onPressed: _returnHomeForProjectPrompt,
+            icon: const Icon(Icons.chat_bubble_outline_rounded),
           ),
         ],
       ),
@@ -502,6 +477,13 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                   project.finishedTodos.length,
                 ),
               ),
+              if (project.templateId == 'schema_app')
+                _buildCountBadge(
+                  context.l10n.workbenchSchemaItemCount(
+                    project.activeItems.length,
+                    project.archivedItems.length,
+                  ),
+                ),
               _buildCountBadge(
                 context.l10n.workbenchAndroidAssetCount(
                   project.androidAssets.length,
@@ -875,8 +857,8 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
-            onPressed: _service.loading ? null : _createTodoDemoProject,
-            icon: const Icon(Icons.add_rounded),
+            onPressed: _returnHomeForProjectPrompt,
+            icon: const Icon(Icons.chat_bubble_outline_rounded),
             label: Text(context.l10n.workbenchProjectModeCreateButton),
           ),
         ],
@@ -1039,9 +1021,19 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   }
 
   IconData _toolIcon(String toolId) {
-    return toolId == WorkbenchTodoToolIds.addTodo
-        ? Icons.add_task_rounded
-        : Icons.task_alt_rounded;
+    final id = toolId.toLowerCase();
+    if (id == WorkbenchTodoToolIds.addTodo ||
+        id.endsWith('.create') ||
+        id.endsWith('.add')) {
+      return Icons.add_box_outlined;
+    }
+    if (id == WorkbenchTodoToolIds.finishTodo ||
+        id.endsWith('.archive') ||
+        id.endsWith('.finish') ||
+        id.endsWith('.complete')) {
+      return Icons.archive_outlined;
+    }
+    return Icons.api_rounded;
   }
 
   String _toolTitle(WorkbenchToolSpec tool) {

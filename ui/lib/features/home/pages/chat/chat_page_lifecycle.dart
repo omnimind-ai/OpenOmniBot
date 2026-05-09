@@ -94,7 +94,13 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       _hasAppliedInitialSurfaceMode = false;
       final initialSurfaceMode = _requestedInitialSurfaceMode;
       if (initialSurfaceMode != null) {
-        unawaited(_switchChatMode(initialSurfaceMode));
+        unawaited(
+          _switchChatMode(
+            initialSurfaceMode,
+            preferCachedWorkspaceMode:
+                initialSurfaceMode != ChatSurfaceMode.project,
+          ),
+        );
       }
     }
     if (_threadTargetChanged(oldWidget.threadTarget, widget.threadTarget)) {
@@ -243,6 +249,10 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
         ? ChatSurfaceMode.workspace
         : initialSurfaceMode ??
               _surfaceForConversationMode(effectiveTarget.mode);
+    final requestedWorkspaceProjectMode =
+        initialSurfaceMode == ChatSurfaceMode.project ||
+        (targetSurfaceMode == ChatSurfaceMode.workspace &&
+            _cachedWorkspaceProjectModeEnabled());
     final workspacePathsFuture =
         targetSurfaceMode == ChatSurfaceMode.workspace ||
             targetSurfaceMode == ChatSurfaceMode.project
@@ -262,8 +272,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       _activeSurfaceMode = targetSurfaceMode;
       _workspacePathsLoadFuture = workspacePathsFuture;
       _hasAppliedInitialSurfaceMode = true;
-      _workspaceProjectModeEnabled =
-          initialSurfaceMode == ChatSurfaceMode.project;
+      _workspaceProjectModeEnabled = requestedWorkspaceProjectMode;
       if (_workspaceProjectModeEnabled) {
         _workspaceBrowserCanGoUp = false;
       }
@@ -754,8 +763,13 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   Future<void> _switchChatMode(
     ChatSurfaceMode targetMode, {
     bool syncPage = true,
+    bool preferCachedWorkspaceMode = true,
   }) async {
-    final requestedProjectMode = targetMode == ChatSurfaceMode.project;
+    final requestedProjectMode =
+        targetMode == ChatSurfaceMode.project ||
+        (targetMode == ChatSurfaceMode.workspace &&
+            preferCachedWorkspaceMode &&
+            _cachedWorkspaceProjectModeEnabled());
     final resolvedTargetMode = targetMode == ChatSurfaceMode.openclaw
         ? ChatSurfaceMode.normal
         : requestedProjectMode
@@ -781,6 +795,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
             _workspaceBrowserCanGoUp = false;
           }
         });
+        _persistWorkspaceProjectModeEnabled(requestedProjectMode);
       }
       if (syncPage) _jumpToCurrentModePage();
       if (resolvedTargetMode == ChatSurfaceMode.normal &&
@@ -815,6 +830,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
         );
         _isBrowserOverlayVisible = false;
       });
+      _persistWorkspaceProjectModeEnabled(requestedProjectMode);
       _hideSlashCommandPanel();
       if (syncPage) _jumpToCurrentModePage();
       return;

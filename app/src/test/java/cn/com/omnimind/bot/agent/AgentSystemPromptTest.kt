@@ -132,6 +132,8 @@ class AgentSystemPromptTest {
 
         assertTrue(prompt.contains("Home 大输入框是 Project 创建"))
         assertTrue(prompt.contains("workbench_project_create"))
+        assertTrue(prompt.contains("workbench_project_activate"))
+        assertTrue(prompt.contains("workbench_project_active_get"))
         assertTrue(prompt.contains("workbench_project_delete"))
         assertTrue(prompt.contains("workbench_api_list"))
         assertTrue(prompt.contains("workbench_api_call"))

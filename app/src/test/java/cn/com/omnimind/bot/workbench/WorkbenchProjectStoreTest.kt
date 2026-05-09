@@ -157,6 +157,157 @@ class WorkbenchProjectStoreTest {
     }
 
     @Test
+    fun createSchemaProjectWritesGenericDisplayApiAndStateSpecs() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        val project = store.createProject(
+            mapOf(
+                "templateId" to WORKBENCH_SCHEMA_TEMPLATE_ID,
+                "projectId" to "customer-tracker",
+                "name" to "Customer Tracker",
+                "entityName" to "Customer",
+                "description" to "Track customer follow-up records.",
+                "initialItems" to listOf("Alice")
+            )
+        )
+
+        assertEquals("customer-tracker", project["projectId"])
+        assertEquals(WORKBENCH_SCHEMA_TEMPLATE_ID, project["templateId"])
+        assertEquals("/workbench/schema_app?projectId=customer-tracker", project["route"])
+        assertEquals(listOf("customer.create", "customer.archive"), project["apiIds"])
+        assertEquals(
+            listOf("customer.archive", "customer.create"),
+            store.listApis("customer-tracker").map { it["apiId"].toString() }.sorted()
+        )
+        val displays = project["displays"] as List<*>
+        val display = displays.first() as Map<*, *>
+        assertEquals("oob_schema_collection", display["renderer"])
+        val items = project["items"] as List<*>
+        assertEquals(1, items.size)
+        assertTrue(root.resolve("projects/customer-tracker/data/items.json").exists())
+        assertTrue(
+            root.resolve("projects/customer-tracker/frontend/page_spec.json")
+                .readText()
+                .contains("oob_schema_collection")
+        )
+        assertTrue(
+            root.resolve("projects/customer-tracker/backend/api_spec.json")
+                .readText()
+                .contains("customer.archive")
+        )
+    }
+
+    @Test
+    fun schemaApiCallCreatesAndArchivesItems() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        store.createProject(
+            mapOf(
+                "templateId" to WORKBENCH_SCHEMA_TEMPLATE_ID,
+                "projectId" to "notes",
+                "entityName" to "Note"
+            )
+        )
+
+        val createResult = store.callApi(
+            projectId = "notes",
+            apiId = "note.create",
+            inputs = mapOf("title" to "Capture a reusable project idea", "priority" to "high"),
+            caller = "ai"
+        )
+        assertTrue(createResult["success"] == true)
+        val item = ((createResult["outputs"] as Map<*, *>)["item"] as Map<*, *>)
+
+        val archiveResult = store.callApi(
+            projectId = "notes",
+            apiId = "note.archive",
+            inputs = mapOf("item_id" to item["id"]),
+            caller = "ui"
+        )
+        assertTrue(archiveResult["success"] == true)
+
+        val project = store.getProject("notes")
+        val items = project["items"] as List<*>
+        val archived = items.first() as Map<*, *>
+        assertEquals("archived", archived["status"])
+        val apis = store.listApis("notes")
+        assertEquals(1, apis.first { it["apiId"] == "note.create" }["executionCount"])
+        assertEquals(1, apis.first { it["apiId"] == "note.archive" }["executionCount"])
+    }
+
+    @Test
+    fun promptGeneratedSchemaProjectRunsE2eThroughOobWorkbench() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        val projectId = "oob-workbench-customer-tracker"
+
+        val created = store.createProject(
+            mapOf(
+                "templateId" to WORKBENCH_SCHEMA_TEMPLATE_ID,
+                "projectId" to projectId,
+                "name" to "客户跟进工作台",
+                "entityName" to "Customer",
+                "description" to "记录客户跟进、下一步动作和归档状态",
+                "prompt" to "我想创建一个客户跟进系统，可以新增客户并归档客户"
+            )
+        )
+        val activated = store.activateProject(projectId)
+        val apis = store.listApis(projectId)
+        val first = store.callApi(
+            projectId = projectId,
+            apiId = "customer.create",
+            inputs = mapOf("title" to "张三：下周二回访", "source" to "ai"),
+            caller = "ai"
+        )
+        val firstItem = (first["outputs"] as Map<*, *>)["item"] as Map<*, *>
+        store.callApi(
+            projectId = projectId,
+            apiId = "customer.create",
+            inputs = mapOf("title" to "李四：发送报价单", "source" to "ui"),
+            caller = "ui"
+        )
+        val archived = store.callApi(
+            projectId = projectId,
+            apiId = "customer.archive",
+            inputs = mapOf("item_id" to firstItem["id"]),
+            caller = "ai"
+        )
+        val openedRoute = store.routeForProject(projectId)
+        val exported = store.exportProject(projectId)
+        val zipFile = root.resolve("projects/exports/${exported["packageName"]}")
+
+        assertEquals(projectId, created["projectId"])
+        assertEquals(WORKBENCH_SCHEMA_TEMPLATE_ID, created["templateId"])
+        assertEquals("/workbench/schema_app?projectId=$projectId", openedRoute)
+        assertTrue(activated["success"] == true)
+        assertEquals(projectId, ((activated["project"] as Map<*, *>)["projectId"]))
+        assertEquals(listOf("customer.archive", "customer.create"), apis.map { it["apiId"].toString() }.sorted())
+        assertTrue(archived["success"] == true)
+        val project = store.getProject(projectId)
+        val items = project["items"] as List<*>
+        assertEquals(2, items.size)
+        assertEquals(1, items.count { (it as Map<*, *>)["status"] == "archived" })
+        assertTrue(store.activeProjectPromptContext().orEmpty().contains("customer.create"))
+        assertEquals(3, root.resolve("projects/$projectId/logs/api_calls.jsonl").readLines().size)
+        assertTrue(root.resolve("projects/registry.json").readText().contains(projectId))
+        assertTrue(root.resolve("projects/api_registry.json").readText().contains("customer.archive"))
+        assertTrue(root.resolve("projects/$projectId/frontend/page_spec.json").readText().contains("oob_schema_collection"))
+        assertTrue(root.resolve("projects/$projectId/backend/api_spec.json").readText().contains("customer.create"))
+        ZipFile(zipFile).use { zip ->
+            val entries = zip.entries().asSequence().map { it.name }.toSet()
+            assertTrue(entries.contains("manifest.json"))
+            assertTrue(entries.contains("project/frontend/page_spec.json"))
+            assertTrue(entries.contains("project/backend/api_spec.json"))
+            assertTrue(entries.contains("project/data/items.json"))
+            assertTrue(entries.contains("project/logs/api_calls.jsonl"))
+            val manifest = zip.getInputStream(zip.getEntry("manifest.json"))
+                .bufferedReader()
+                .use { it.readText() }
+            assertTrue(manifest.contains("skills/oob-native-workbench/SKILL.md"))
+        }
+    }
+
+    @Test
     fun apiCallAddsAndFinishesTodos() {
         val root = Files.createTempDirectory("workbench-store-test").toFile()
         val store = WorkbenchProjectStore(root)

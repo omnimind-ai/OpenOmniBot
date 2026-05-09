@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
 import 'package:ui/features/workbench/services/workbench_todo_log_service.dart';
+import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
@@ -88,6 +89,47 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
     showToast(context.l10n.workbenchTodoFinishedToast, type: ToastType.success);
   }
 
+  Future<bool> _applyAnnotationUpdate(
+    WorkbenchProject project,
+    WorkbenchAnnotationPayload payload,
+    String prompt,
+  ) async {
+    final display = _selectedDisplay(project);
+    final route = _routeForDisplay(project, display);
+    final frontendContext = payload.toFrontendContext(
+      projectId: project.projectId,
+      displayId: display.id,
+      route: route,
+      visibleState: {
+        'templateId': project.templateId,
+        'displayTitle': display.label,
+        'openTodoCount': project.openTodos.length,
+        'finishedTodoCount': project.finishedTodos.length,
+        'todoTitles': project.todos
+            .take(8)
+            .map((todo) => todo.title)
+            .toList(growable: false),
+      },
+    );
+    final result = await _service.applyHotUpdate(
+      prompt,
+      frontendContext: frontendContext,
+    );
+    if (!mounted) return false;
+    if (!result.success) {
+      showToast(
+        context.l10n.workbenchAnnotationHotUpdateFailed,
+        type: ToastType.error,
+      );
+      return false;
+    }
+    showToast(
+      context.l10n.workbenchAnnotationHotUpdateSuccess,
+      type: ToastType.success,
+    );
+    return true;
+  }
+
   void _handleBackNavigation() {
     final returnTo = widget._returnTo?.trim();
     if (returnTo != null && returnTo.isNotEmpty) {
@@ -108,7 +150,7 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
       animation: _service,
       builder: (context, _) {
         final project = _service.project;
-        return ListView(
+        final content = ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
             if (_service.loading) ...[
@@ -123,6 +165,14 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
             const SizedBox(height: 12),
             _buildTodoCard(project),
           ],
+        );
+        if (!widget._debugMode) {
+          return content;
+        }
+        return WorkbenchAnnotationOverlay(
+          onSubmit: (payload, prompt) =>
+              _applyAnnotationUpdate(project, payload, prompt),
+          child: content,
         );
       },
     );
@@ -197,7 +247,7 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
     WorkbenchProject project,
     WorkbenchDisplaySpec display,
   ) {
-    final route = display.route.trim().isEmpty ? project.route : display.route;
+    final route = _routeForDisplay(project, display);
     return Wrap(
       spacing: 6,
       runSpacing: 6,
@@ -545,5 +595,12 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
   String _displayTitle(WorkbenchProject project) {
     final label = _selectedDisplay(project).label.trim();
     return label.isEmpty ? context.l10n.workbenchTodoLog : label;
+  }
+
+  String _routeForDisplay(
+    WorkbenchProject project,
+    WorkbenchDisplaySpec display,
+  ) {
+    return display.route.trim().isEmpty ? project.route : display.route;
   }
 }

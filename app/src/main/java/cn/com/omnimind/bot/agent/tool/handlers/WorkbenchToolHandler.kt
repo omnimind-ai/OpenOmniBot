@@ -29,6 +29,9 @@ class WorkbenchToolHandler(
         "workbench_api_call",
         "workbench_project_export",
         "workbench_project_open",
+        "workbench_project_activate",
+        "workbench_project_active_get",
+        "workbench_project_deactivate",
         "workbench_project_delete",
         "workbench_project_hot_update",
         "workbench_project_ingest_android"
@@ -52,6 +55,9 @@ class WorkbenchToolHandler(
             "workbench_api_call" -> executeWorkbenchApiCall(args, env, callback)
             "workbench_project_export" -> executeWorkbenchProjectExport(args, env, callback)
             "workbench_project_open" -> executeWorkbenchProjectOpen(args, env, callback)
+            "workbench_project_activate" -> executeWorkbenchProjectActivate(args, env, callback)
+            "workbench_project_active_get" -> executeWorkbenchProjectActiveGet(env, callback)
+            "workbench_project_deactivate" -> executeWorkbenchProjectDeactivate(env, callback)
             "workbench_project_delete" -> executeWorkbenchProjectDelete(args, env, callback)
             "workbench_project_hot_update" -> executeWorkbenchProjectHotUpdate(args, env, callback)
             "workbench_project_ingest_android" -> executeWorkbenchProjectIngestAndroid(args, env, callback)
@@ -277,6 +283,74 @@ class WorkbenchToolHandler(
             throw e
         } catch (e: Exception) {
             helper.errorResult(toolName, e.message, "Workbench project delete failed")
+        }
+    }
+
+    private suspend fun executeWorkbenchProjectActivate(
+        args: JsonObject,
+        env: AgentExecutionEnvironment,
+        callback: AgentCallback
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_activate"
+        return try {
+            helper.reportToolProgress(callback, toolName, "Activating Workbench project")
+            val projectId = args["projectId"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            val payload = workbenchProjectStore.activateProject(projectId)
+            contextResult(
+                toolName = toolName,
+                summaryText = "Workbench project activated",
+                payload = payload,
+                success = payload["success"] == true,
+                env = env
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            helper.errorResult(toolName, e.message, "Workbench project activate failed")
+        }
+    }
+
+    private suspend fun executeWorkbenchProjectActiveGet(
+        env: AgentExecutionEnvironment,
+        callback: AgentCallback
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_active_get"
+        return try {
+            helper.reportToolProgress(callback, toolName, "Loading active Workbench project")
+            val payload = workbenchProjectStore.getActiveProject()
+            contextResult(
+                toolName = toolName,
+                summaryText = "Active Workbench project loaded",
+                payload = payload,
+                success = payload["success"] == true,
+                env = env
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            helper.errorResult(toolName, e.message, "Workbench active project get failed")
+        }
+    }
+
+    private suspend fun executeWorkbenchProjectDeactivate(
+        env: AgentExecutionEnvironment,
+        callback: AgentCallback
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_deactivate"
+        return try {
+            helper.reportToolProgress(callback, toolName, "Deactivating Workbench project")
+            val payload = workbenchProjectStore.deactivateProject()
+            contextResult(
+                toolName = toolName,
+                summaryText = "Workbench project deactivated",
+                payload = payload,
+                success = payload["success"] == true,
+                env = env
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            helper.errorResult(toolName, e.message, "Workbench project deactivate failed")
         }
     }
 

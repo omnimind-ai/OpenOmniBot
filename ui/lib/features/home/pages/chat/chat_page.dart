@@ -350,6 +350,10 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       'chat_hd_pad_left_pane_width';
   static const String _hdPadRightPaneWidthStorageKey =
       'chat_hd_pad_right_pane_width';
+  static const String _workspaceCachedModeKey =
+      'omnibot_workspace_cached_mode_v1';
+  static const String _workspaceCachedDirectoryKey =
+      'omnibot_workspace_cached_directory_v1';
   static const Duration _normalSurfaceModelRevealDelay = Duration(
     milliseconds: 1700,
   );
@@ -445,6 +449,49 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       mode == ConversationMode.openclaw
       ? ChatSurfaceMode.openclaw
       : ChatSurfaceMode.normal;
+  bool _cachedWorkspaceProjectModeEnabled() {
+    return StorageService.getString(_workspaceCachedModeKey) == 'project';
+  }
+
+  void _persistWorkspaceProjectModeEnabled(bool enabled) {
+    unawaited(
+      StorageService.setString(
+        _workspaceCachedModeKey,
+        enabled ? 'project' : 'work',
+      ),
+    );
+  }
+
+  String? _cachedWorkspaceDirectory(String rootPath) {
+    final cached = StorageService.getString(
+      _workspaceCachedDirectoryKey,
+    )?.trim();
+    if (cached == null || cached.isEmpty) return null;
+    final normalizedRoot = _normalizeWorkspacePath(rootPath);
+    final normalizedCached = _normalizeWorkspacePath(cached);
+    final insideRoot =
+        normalizedCached == normalizedRoot ||
+        normalizedCached.startsWith('$normalizedRoot/');
+    if (!insideRoot) return null;
+    return Directory(normalizedCached).existsSync() ? normalizedCached : null;
+  }
+
+  void _persistWorkspaceDirectory(String path) {
+    final normalized = _normalizeWorkspacePath(path);
+    if (normalized.isEmpty) return;
+    unawaited(
+      StorageService.setString(_workspaceCachedDirectoryKey, normalized),
+    );
+  }
+
+  String _normalizeWorkspacePath(String path) {
+    final trimmed = path.trim();
+    if (trimmed.length > 1 && trimmed.endsWith('/')) {
+      return trimmed.substring(0, trimmed.length - 1);
+    }
+    return trimmed;
+  }
+
   String _modeKey(ChatPageMode mode) => switch (mode) {
     ChatPageMode.normal => kChatRuntimeModeNormal,
     ChatPageMode.openclaw => kChatRuntimeModeOpenClaw,
@@ -1763,6 +1810,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   Future<void> _switchChatMode(
     ChatSurfaceMode targetMode, {
     bool syncPage = true,
+    bool preferCachedWorkspaceMode = true,
   });
 
   void _handleModePageChanged(int pageIndex);
