@@ -240,6 +240,10 @@
 -keep class com.google.ai.edge.litertlm.Conversation$JniMessageCallbackImpl { *; }
 -keep class com.google.ai.edge.litertlm.Session$JniInferenceCallbackImpl { *; }
 
+# LiteRT-LM constructs BenchmarkInfo from native code when benchmark metrics are enabled.
+# Keep the class and constructor so native Conversation.getBenchmarkInfo() can resolve them.
+-keep class com.google.ai.edge.litertlm.BenchmarkInfo { *; }
+
 # ==================== Detection 模块数据模型 ====================
 # 这些类涉及 Gson JSON 反序列化，字段名不能被混淆
 
