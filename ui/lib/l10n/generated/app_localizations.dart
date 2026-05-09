@@ -5276,6 +5276,138 @@ abstract class AppLocalizations {
   /// **'打开 Project 前端失败'**
   String get workbenchWorkspaceProjectOpenFailed;
 
+  /// No description provided for @workbenchWorkspaceGuideTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看 Project 工作台说明'**
+  String get workbenchWorkspaceGuideTooltip;
+
+  /// No description provided for @workbenchWorkspaceGuideClose.
+  ///
+  /// In zh, this message translates to:
+  /// **'关闭说明'**
+  String get workbenchWorkspaceGuideClose;
+
+  /// No description provided for @workbenchWorkspaceGuideTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project 工作台怎么工作'**
+  String get workbenchWorkspaceGuideTitle;
+
+  /// No description provided for @workbenchWorkspaceGuideIntro.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project 模式不是新的聊天页，而是 OOB 里用来承载 vibe project 的原生工作台。它把生成前端、后端 API、Workspace 文件、Skill 和持久化数据连成一个可继续编辑的单位。'**
+  String get workbenchWorkspaceGuideIntro;
+
+  /// No description provided for @workbenchWorkspaceGuideFlowTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'交互链路'**
+  String get workbenchWorkspaceGuideFlowTitle;
+
+  /// No description provided for @workbenchWorkspaceGuideFlowPrompt.
+  ///
+  /// In zh, this message translates to:
+  /// **'Prompt + Skill 拆解需求'**
+  String get workbenchWorkspaceGuideFlowPrompt;
+
+  /// No description provided for @workbenchWorkspaceGuideFlowProject.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project registry 记录容器'**
+  String get workbenchWorkspaceGuideFlowProject;
+
+  /// No description provided for @workbenchWorkspaceGuideFlowApi.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project API Registry 注册业务后端'**
+  String get workbenchWorkspaceGuideFlowApi;
+
+  /// No description provided for @workbenchWorkspaceGuideFlowDisplay.
+  ///
+  /// In zh, this message translates to:
+  /// **'Flutter Display 展示业务前端'**
+  String get workbenchWorkspaceGuideFlowDisplay;
+
+  /// No description provided for @workbenchWorkspaceGuideFlowPersist.
+  ///
+  /// In zh, this message translates to:
+  /// **'data/ + logs/ 持久化 AI 与 UI 调用'**
+  String get workbenchWorkspaceGuideFlowPersist;
+
+  /// No description provided for @workbenchWorkspaceGuideProjectTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project 绑定什么'**
+  String get workbenchWorkspaceGuideProjectTitle;
+
+  /// No description provided for @workbenchWorkspaceGuideProjectBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'一个 Project 会绑定目标、Skill、Workspace 文件、Display 列表、业务 API、数据和日志。它不是 MCP 工具列表，也不是随手生成的 HTML。'**
+  String get workbenchWorkspaceGuideProjectBody;
+
+  /// No description provided for @workbenchWorkspaceGuideFrontendTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'前端怎么显示'**
+  String get workbenchWorkspaceGuideFrontendTitle;
+
+  /// No description provided for @workbenchWorkspaceGuideFrontendBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'生成前端是 OOB 原生 Flutter Display。Workspace 切到 Project 后看到的是每个 Project 的具体前端入口，点击后进入业务页面；一个 Project 可以有多个 Display。'**
+  String get workbenchWorkspaceGuideFrontendBody;
+
+  /// No description provided for @workbenchWorkspaceGuideBackendTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'后端怎么被调用'**
+  String get workbenchWorkspaceGuideBackendTitle;
+
+  /// No description provided for @workbenchWorkspaceGuideBackendBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'后端能力注册在 Project API Registry 里，例如 todo.add、todo.finish。AI 层和前端按钮都调用同一条 workbenchApiCall(projectId, apiId, inputs)，Project 创建、导出、删除等控制接口不会混进业务 API。'**
+  String get workbenchWorkspaceGuideBackendBody;
+
+  /// No description provided for @workbenchWorkspaceGuideDataTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'数据怎么流'**
+  String get workbenchWorkspaceGuideDataTitle;
+
+  /// No description provided for @workbenchWorkspaceGuideDataBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'调用会经过 Flutter -> MethodChannel -> OOB native executor，然后写入 Project 的 data/ 和 logs/。前端刷新、AI 调用统计和重启后的状态都来自这份持久化数据。'**
+  String get workbenchWorkspaceGuideDataBody;
+
+  /// No description provided for @workbenchWorkspaceGuideVibeTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'怎么继续改'**
+  String get workbenchWorkspaceGuideVibeTitle;
+
+  /// No description provided for @workbenchWorkspaceGuideVibeBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'要继续 vibe coding，回到 Home 大输入框说需求。Workbench Skill 会判断是创建新 Project、扩充后端 API、调整 Display，还是对当前 Project 做 hot update。'**
+  String get workbenchWorkspaceGuideVibeBody;
+
+  /// No description provided for @workbenchWorkspaceGuideExtendTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'扩充后端工具'**
+  String get workbenchWorkspaceGuideExtendTitle;
+
+  /// No description provided for @workbenchWorkspaceGuideExtendBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'新增能力时先定义 apiId、输入输出 schema、executorKind、持久化文件和前端触发位置，再通过 Workbench 接口注册 Project API；不要手写 registry 文件。'**
+  String get workbenchWorkspaceGuideExtendBody;
+
   /// No description provided for @workbenchWorkspaceProjectApiStats.
   ///
   /// In zh, this message translates to:

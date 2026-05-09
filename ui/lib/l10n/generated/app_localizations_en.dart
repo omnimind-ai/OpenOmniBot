@@ -2903,6 +2903,85 @@ class AppLocalizationsEn extends AppLocalizations {
       'Failed to open Project frontend';
 
   @override
+  String get workbenchWorkspaceGuideTooltip => 'View Project Workbench guide';
+
+  @override
+  String get workbenchWorkspaceGuideClose => 'Close guide';
+
+  @override
+  String get workbenchWorkspaceGuideTitle => 'How Project Workbench works';
+
+  @override
+  String get workbenchWorkspaceGuideIntro =>
+      'Project mode is not another chat page. It is the native OOB workbench for vibe projects, linking generated frontends, backend APIs, Workspace files, skills, and persistent data into one editable unit.';
+
+  @override
+  String get workbenchWorkspaceGuideFlowTitle => 'Interaction flow';
+
+  @override
+  String get workbenchWorkspaceGuideFlowPrompt =>
+      'Prompt + Skill split the requirement';
+
+  @override
+  String get workbenchWorkspaceGuideFlowProject =>
+      'Project registry records the container';
+
+  @override
+  String get workbenchWorkspaceGuideFlowApi =>
+      'Project API Registry registers business backend APIs';
+
+  @override
+  String get workbenchWorkspaceGuideFlowDisplay =>
+      'Flutter Display renders the business frontend';
+
+  @override
+  String get workbenchWorkspaceGuideFlowPersist =>
+      'data/ + logs/ persist AI and UI calls';
+
+  @override
+  String get workbenchWorkspaceGuideProjectTitle => 'What a Project binds';
+
+  @override
+  String get workbenchWorkspaceGuideProjectBody =>
+      'A Project binds the goal, skill, Workspace files, Display list, business APIs, data, and logs. It is not an MCP tool list and it is not a loose generated HTML page.';
+
+  @override
+  String get workbenchWorkspaceGuideFrontendTitle =>
+      'How the frontend is shown';
+
+  @override
+  String get workbenchWorkspaceGuideFrontendBody =>
+      'The generated frontend is an OOB-native Flutter Display. After Workspace switches to Project mode, each Project shows its concrete frontend entries; tapping one opens the business page. One Project can own multiple Displays.';
+
+  @override
+  String get workbenchWorkspaceGuideBackendTitle => 'How the backend is called';
+
+  @override
+  String get workbenchWorkspaceGuideBackendBody =>
+      'Backend capabilities are registered in the Project API Registry, such as todo.add and todo.finish. The AI layer and frontend buttons call the same workbenchApiCall(projectId, apiId, inputs) path. Project create, export, and delete remain control APIs and do not mix into business APIs.';
+
+  @override
+  String get workbenchWorkspaceGuideDataTitle => 'How data flows';
+
+  @override
+  String get workbenchWorkspaceGuideDataBody =>
+      'A call goes through Flutter -> MethodChannel -> OOB native executor, then writes to the Project data/ and logs/. Frontend refreshes, AI execution stats, and state after restart all come from this persisted data.';
+
+  @override
+  String get workbenchWorkspaceGuideVibeTitle => 'How to keep editing';
+
+  @override
+  String get workbenchWorkspaceGuideVibeBody =>
+      'To continue vibe coding, go back to the main Home input and describe the change. The Workbench Skill decides whether to create a new Project, extend backend APIs, adjust Displays, or hot update the current Project.';
+
+  @override
+  String get workbenchWorkspaceGuideExtendTitle => 'Extending backend tools';
+
+  @override
+  String get workbenchWorkspaceGuideExtendBody =>
+      'When adding a capability, define apiId, input/output schemas, executorKind, persistence files, and the frontend trigger first. Then register the Project API through Workbench interfaces; do not hand-edit registry files.';
+
+  @override
   String workbenchWorkspaceProjectApiStats(int apiCount, int executionCount) {
     return '$apiCount APIs · $executionCount executions';
   }

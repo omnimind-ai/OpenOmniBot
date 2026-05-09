@@ -2770,6 +2770,80 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchWorkspaceProjectOpenFailed => '打开 Project 前端失败';
 
   @override
+  String get workbenchWorkspaceGuideTooltip => '查看 Project 工作台说明';
+
+  @override
+  String get workbenchWorkspaceGuideClose => '关闭说明';
+
+  @override
+  String get workbenchWorkspaceGuideTitle => 'Project 工作台怎么工作';
+
+  @override
+  String get workbenchWorkspaceGuideIntro =>
+      'Project 模式不是新的聊天页，而是 OOB 里用来承载 vibe project 的原生工作台。它把生成前端、后端 API、Workspace 文件、Skill 和持久化数据连成一个可继续编辑的单位。';
+
+  @override
+  String get workbenchWorkspaceGuideFlowTitle => '交互链路';
+
+  @override
+  String get workbenchWorkspaceGuideFlowPrompt => 'Prompt + Skill 拆解需求';
+
+  @override
+  String get workbenchWorkspaceGuideFlowProject => 'Project registry 记录容器';
+
+  @override
+  String get workbenchWorkspaceGuideFlowApi => 'Project API Registry 注册业务后端';
+
+  @override
+  String get workbenchWorkspaceGuideFlowDisplay => 'Flutter Display 展示业务前端';
+
+  @override
+  String get workbenchWorkspaceGuideFlowPersist =>
+      'data/ + logs/ 持久化 AI 与 UI 调用';
+
+  @override
+  String get workbenchWorkspaceGuideProjectTitle => 'Project 绑定什么';
+
+  @override
+  String get workbenchWorkspaceGuideProjectBody =>
+      '一个 Project 会绑定目标、Skill、Workspace 文件、Display 列表、业务 API、数据和日志。它不是 MCP 工具列表，也不是随手生成的 HTML。';
+
+  @override
+  String get workbenchWorkspaceGuideFrontendTitle => '前端怎么显示';
+
+  @override
+  String get workbenchWorkspaceGuideFrontendBody =>
+      '生成前端是 OOB 原生 Flutter Display。Workspace 切到 Project 后看到的是每个 Project 的具体前端入口，点击后进入业务页面；一个 Project 可以有多个 Display。';
+
+  @override
+  String get workbenchWorkspaceGuideBackendTitle => '后端怎么被调用';
+
+  @override
+  String get workbenchWorkspaceGuideBackendBody =>
+      '后端能力注册在 Project API Registry 里，例如 todo.add、todo.finish。AI 层和前端按钮都调用同一条 workbenchApiCall(projectId, apiId, inputs)，Project 创建、导出、删除等控制接口不会混进业务 API。';
+
+  @override
+  String get workbenchWorkspaceGuideDataTitle => '数据怎么流';
+
+  @override
+  String get workbenchWorkspaceGuideDataBody =>
+      '调用会经过 Flutter -> MethodChannel -> OOB native executor，然后写入 Project 的 data/ 和 logs/。前端刷新、AI 调用统计和重启后的状态都来自这份持久化数据。';
+
+  @override
+  String get workbenchWorkspaceGuideVibeTitle => '怎么继续改';
+
+  @override
+  String get workbenchWorkspaceGuideVibeBody =>
+      '要继续 vibe coding，回到 Home 大输入框说需求。Workbench Skill 会判断是创建新 Project、扩充后端 API、调整 Display，还是对当前 Project 做 hot update。';
+
+  @override
+  String get workbenchWorkspaceGuideExtendTitle => '扩充后端工具';
+
+  @override
+  String get workbenchWorkspaceGuideExtendBody =>
+      '新增能力时先定义 apiId、输入输出 schema、executorKind、持久化文件和前端触发位置，再通过 Workbench 接口注册 Project API；不要手写 registry 文件。';
+
+  @override
   String workbenchWorkspaceProjectApiStats(int apiCount, int executionCount) {
     return '$apiCount 个 API · 已执行 $executionCount 次';
   }

@@ -68,6 +68,17 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
     });
   }
 
+  void _showWorkbenchGuide(bool backgroundActive) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return _WorkbenchGuideSheet(translucent: backgroundActive);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<AppBackgroundConfig>(
@@ -105,6 +116,18 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
                           opacity: 0.68,
                         ),
                         onBackPressed: _handleBackPressed,
+                        actions: [
+                          IconButton(
+                            tooltip:
+                                context.l10n.workbenchWorkspaceGuideTooltip,
+                            onPressed: () =>
+                                _showWorkbenchGuide(backgroundActive),
+                            icon: Icon(
+                              Icons.info_outline_rounded,
+                              color: palette.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
                       OmnibotWorkspaceModeToggle(
                         projectModeEnabled:
@@ -150,6 +173,314 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
           ),
         );
       },
+    );
+  }
+}
+
+class _WorkbenchGuideSheet extends StatelessWidget {
+  const _WorkbenchGuideSheet({required this.translucent});
+
+  final bool translucent;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final maxHeight = MediaQuery.of(context).size.height * 0.84;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: Container(
+              decoration: BoxDecoration(
+                color: backgroundSurfaceColor(
+                  translucent: translucent,
+                  baseColor: palette.surfacePrimary,
+                  opacity: 0.96,
+                ),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(12),
+                ),
+                border: Border.all(color: palette.borderSubtle),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: palette.borderStrong,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 10, 8),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.dashboard_customize_outlined,
+                          color: palette.accentPrimary,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            context.l10n.workbenchWorkspaceGuideTitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: palette.textPrimary,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: context.l10n.workbenchWorkspaceGuideClose,
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: Icon(
+                            Icons.close_rounded,
+                            color: palette.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            context.l10n.workbenchWorkspaceGuideIntro,
+                            style: TextStyle(
+                              color: palette.textSecondary,
+                              fontSize: 13,
+                              height: 1.35,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          _WorkbenchGuideFlow(translucent: translucent),
+                          const SizedBox(height: 10),
+                          _WorkbenchGuideSection(
+                            icon: Icons.widgets_outlined,
+                            title: context
+                                .l10n
+                                .workbenchWorkspaceGuideProjectTitle,
+                            body:
+                                context.l10n.workbenchWorkspaceGuideProjectBody,
+                            translucent: translucent,
+                          ),
+                          _WorkbenchGuideSection(
+                            icon: Icons.phone_android_rounded,
+                            title: context
+                                .l10n
+                                .workbenchWorkspaceGuideFrontendTitle,
+                            body: context
+                                .l10n
+                                .workbenchWorkspaceGuideFrontendBody,
+                            translucent: translucent,
+                          ),
+                          _WorkbenchGuideSection(
+                            icon: Icons.api_rounded,
+                            title: context
+                                .l10n
+                                .workbenchWorkspaceGuideBackendTitle,
+                            body:
+                                context.l10n.workbenchWorkspaceGuideBackendBody,
+                            translucent: translucent,
+                          ),
+                          _WorkbenchGuideSection(
+                            icon: Icons.storage_rounded,
+                            title:
+                                context.l10n.workbenchWorkspaceGuideDataTitle,
+                            body: context.l10n.workbenchWorkspaceGuideDataBody,
+                            translucent: translucent,
+                          ),
+                          _WorkbenchGuideSection(
+                            icon: Icons.auto_fix_high_rounded,
+                            title:
+                                context.l10n.workbenchWorkspaceGuideVibeTitle,
+                            body: context.l10n.workbenchWorkspaceGuideVibeBody,
+                            translucent: translucent,
+                          ),
+                          _WorkbenchGuideSection(
+                            icon: Icons.extension_rounded,
+                            title:
+                                context.l10n.workbenchWorkspaceGuideExtendTitle,
+                            body:
+                                context.l10n.workbenchWorkspaceGuideExtendBody,
+                            translucent: translucent,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkbenchGuideFlow extends StatelessWidget {
+  const _WorkbenchGuideFlow({required this.translucent});
+
+  final bool translucent;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final steps = [
+      context.l10n.workbenchWorkspaceGuideFlowPrompt,
+      context.l10n.workbenchWorkspaceGuideFlowProject,
+      context.l10n.workbenchWorkspaceGuideFlowApi,
+      context.l10n.workbenchWorkspaceGuideFlowDisplay,
+      context.l10n.workbenchWorkspaceGuideFlowPersist,
+    ];
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: backgroundSurfaceColor(
+          translucent: translucent,
+          baseColor: palette.surfaceSecondary,
+          opacity: 0.72,
+        ),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            context.l10n.workbenchWorkspaceGuideFlowTitle,
+            style: TextStyle(
+              color: palette.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (var index = 0; index < steps.length; index++)
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: index == steps.length - 1 ? 0 : 8,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 24,
+                    height: 24,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: palette.accentPrimary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: palette.accentPrimary.withValues(alpha: 0.28),
+                      ),
+                    ),
+                    child: Text(
+                      '${index + 1}',
+                      style: TextStyle(
+                        color: palette.accentPrimary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      steps[index],
+                      style: TextStyle(
+                        color: palette.textSecondary,
+                        fontSize: 13,
+                        height: 1.3,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkbenchGuideSection extends StatelessWidget {
+  const _WorkbenchGuideSection({
+    required this.icon,
+    required this.title,
+    required this.body,
+    required this.translucent,
+  });
+
+  final IconData icon;
+  final String title;
+  final String body;
+  final bool translucent;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: backgroundSurfaceColor(
+          translucent: translucent,
+          baseColor: palette.surfaceSecondary,
+          opacity: 0.66,
+        ),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: palette.accentPrimary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  body,
+                  style: TextStyle(
+                    color: palette.textSecondary,
+                    fontSize: 13,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
