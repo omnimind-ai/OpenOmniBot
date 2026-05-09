@@ -14,8 +14,11 @@ This note tracks the native Workbench boundary used by OOB Project editing.
   `workbench_project_activate`, `workbench_project_active_get`, and
   `workbench_project_deactivate`.
 - Project business APIs remain in the Project API Registry and are called through `workbench_api_call`.
+- Project creation/import progress remains a Workbench control API: `workbench_project_progress_get`.
+- OSS/GitHub source ingest remains a Workbench control API: `workbench_project_ingest_oss`. URL-only ingest records `requiresFetch=true`; local downloaded source paths are copied and analyzed.
 - Generated frontend contracts live in `frontend/page_spec.json`.
 - Backend API contracts live in `backend/api_spec.json`.
+- Source ingest contracts live in `source/manifest.json`.
 - UI clicks and AI calls share the same native executor path and append to `logs/api_calls.jsonl`.
 
 ## Display Boundary
@@ -35,3 +38,13 @@ The normal prompt-generated path is `schema_app`: Home input -> Agent calls
 seeds state through `workbench_api_call` -> OOB opens
 `/workbench/schema_app?projectId=<id>`. The generated frontend and the Agent use
 the same Project APIs, data files, and `logs/api_calls.jsonl`.
+
+## Backend Runtime Boundary
+
+OOB Workbench is now the runtime container for backend assets as well as UI:
+
+- Project creation writes `logs/project_progress.jsonl` and exposes the latest row as `lastProgress` in the Project payload.
+- `backend/api_spec.json` records executor metadata, control API names, persistence paths, and source refs so a Project API can later move from native-backed execution to Bridge/Alpine without changing `workbench_api_call`.
+- `workbench_project_ingest_oss` imports local source snapshots under `source/repos/<source-id>/`, skips dependency/build directories, detects package files such as `package.json`, `pyproject.toml`, `pubspec.yaml`, and Gradle files, and stores entrypoint hints in `source/manifest.json`.
+- GitHub URL-only ingest is deliberately metadata-only. It is not a network fetch; after terminal/tool fetch downloads the repo, call the same API with `sourcePath`.
+- Workbench control APIs still do not appear in `workbench_api_list`; only Project business APIs are exposed to the generated frontend.

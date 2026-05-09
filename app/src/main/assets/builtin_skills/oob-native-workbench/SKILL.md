@@ -59,6 +59,8 @@ workbench_project_export
 workbench_project_delete
 workbench_project_hot_update
 workbench_project_ingest_android
+workbench_project_ingest_oss
+workbench_project_progress_get
 workbench_api_list
 workbench_api_call
 ```
@@ -68,6 +70,15 @@ Project APIs are the business actions owned by the created project. Todo is only
 ```text
 todo.add
 todo.finish
+```
+
+The v1 quick-capture demo is available only when the user explicitly asks to create a Project for 随手记 / Inbox / quick capture:
+
+```text
+capture.ingest
+capture.archive
+capture.promote_to_todo
+capture.summarize
 ```
 
 For normal prompt-generated vibe projects, prefer `templateId=schema_app`. A schema Project stores a generated Flutter display contract plus business APIs such as:
@@ -96,10 +107,16 @@ Persist generated project assets under the shared workspace:
   data/todos.json
   data/items.json
   logs/api_calls.jsonl
+  logs/link_fetch.jsonl
+  logs/script_runs.jsonl
   logs/hot_updates.jsonl
   android/manifest.json
   android/apps/<asset-id>/
   logs/android_ingest.jsonl
+  source/manifest.json
+  source/repos/<source-id>/
+  logs/oss_ingest.jsonl
+  logs/project_progress.jsonl
 ```
 
 `registry.json` stores projects. `api_registry.json` stores business APIs only. `api_calls.jsonl` records both AI calls and UI clicks.
@@ -108,9 +125,11 @@ The project directory separates editable source specs from runtime state:
 
 - `README.md` explains what the project is, how it is displayed, and where its APIs/data live.
 - `frontend/page_spec.json` is the generated frontend contract. It describes the OOB Flutter Display route, renderer, visible controls, state bindings, and which Project API each control calls. It is not standalone HTML.
-- `backend/api_spec.json` is the backend contract. It declares business API ids, schemas, executor kind, persistence files, frontend binding, and AI usage. Todo uses the native todo executor; schema projects use the generic native collection executor; future projects can replace `executorKind` with a workspace script or provider executor while keeping the same `workbench_api_call` path.
+- `backend/api_spec.json` is the backend contract. It declares business API ids, schemas, executor kind, runtime metadata, source refs, persistence files, frontend binding, and AI usage. Todo uses the native todo executor; schema projects use the generic native collection executor; `workspace_python_script` is the stable script boundary for Project APIs that will later run through Bridge/Alpine while keeping the same `workbench_api_call` path.
 - `data/` and `logs/` are runtime state shared by AI and UI.
 - `android/` stores APK files or Android project source snapshots imported through the Workbench control plane. This is how OOB can "eat" an existing Android app/project into a vibe Project without turning the import itself into a business API.
+- `source/` stores OSS/GitHub source snapshots imported through the Workbench control plane. URL-only imports are marked `requiresFetch=true` until terminal/tool fetch places a local repo path for analysis.
+- `logs/project_progress.jsonl` is the Project runtime progress stream. Creation, Android ingest, OSS ingest, and future executor preparation append structured progress rows; query it with `workbench_project_progress_get`.
 
 ## Home Input Operations
 
@@ -119,11 +138,13 @@ Project operations are driven by Agent understanding from the Home composer. Do 
 Supported Home prompts include:
 
 ```text
+帮我创建一个随手记的 project，要求可以收文本、链接、摘要和归档
 create project: 做一个客户跟进系统，可以新增客户，归档客户
 create project: 做一个 todolist，可以增加todo，归档todo
 delete project oob-workbench-todo-log
 open project oob-workbench-todo-log
 export project oob-workbench-todo-log
+记一下：明天问张三报价
 给当前 todo project 增加一条 todo：验证输入框直接调用 Project API
 把当前 Todo 前端的归档按钮改得更明显
 ```
@@ -131,11 +152,12 @@ export project oob-workbench-todo-log
 Routing rules:
 
 1. Creation goes through `workbench_project_create`; never hand-write `registry.json` or `api_registry.json`.
-2. Listing, reading, opening, exporting, and deleting go through `workbench_project_list/get/open/export/delete`.
-3. `delete project <explicit projectId>` may call `workbench_project_delete` directly. If the user only says `delete project`, call `workbench_project_list` first; with multiple Projects ask the user to specify, and with only one active/available Project ask for confirmation before deleting.
-4. Business operations go through `workbench_api_list(projectId)` followed by `workbench_api_call(projectId, apiId, inputs)`. Do not edit `data/*.json` by hand.
-5. Frontend/backend edits prefer the active Project from the injected prompt context. If the user names a `projectId`, use that explicit Project.
-6. Hot updates from Home input, floating Xiaowan, drawing annotations, or VLM screen input go through `workbench_project_hot_update`.
+2. Project creation is a deliberate action. Only call `workbench_project_create` when the user explicitly says to create/new/build a Project or workbench. A plain capture command such as `记一下：...`, `总结这个链接`, or `归档这条` must never create a Project by itself.
+3. Listing, reading, opening, exporting, and deleting go through `workbench_project_list/get/open/export/delete`.
+4. `delete project <explicit projectId>` may call `workbench_project_delete` directly. If the user only says `delete project`, call `workbench_project_list` first; with multiple Projects ask the user to specify, and with only one active/available Project ask for confirmation before deleting.
+5. Business operations go through `workbench_project_active_get` when context is unclear, then `workbench_api_list(projectId)` followed by `workbench_api_call(projectId, apiId, inputs)`. Do not edit `data/*.json` by hand. If there is no active Project, ask the user to explicitly create or select one first.
+6. Frontend/backend edits prefer the active Project from the injected prompt context. If the user names a `projectId`, use that explicit Project.
+7. Hot updates from Home input, floating Xiaowan, drawing annotations, or VLM screen input go through `workbench_project_hot_update`.
 
 ## Display Rules
 
@@ -209,7 +231,9 @@ Required workflow:
 6. Keep AI calls and UI clicks on the same API path and the same persistent data files.
 7. Add a focused mock or native test that calls the API and verifies persisted state and `api_calls.jsonl`.
 
-Current v1 boundary: `todo_log_demo` remains a demo. `schema_app` supports generic create/archive collection projects through `native_schema_collection`. If the requested backend tool is outside those actions, explicitly state the new API contract first, pass it as a Project API spec, and extend the native Workbench runtime or approved executor boundary before using it in the generated frontend.
+Current v1 boundary: `todo_log_demo` remains a regression demo. `schema_app` supports generic create/archive collection projects through `native_schema_collection`. `quick_capture_inbox` is the first daily-use validation template and registers `capture.ingest`, `capture.archive`, `capture.promote_to_todo`, and `capture.summarize` with `executorKind=workspace_python_script`.
+
+For this pass, `workspace_python_script` is a stable Project API contract with a native-backed executor so the v1 path is reliable. OOB also writes editable SDK/script artifacts under `backend/oob_sdk/` and `backend/scripts/` so a later BridgeServer, DSL compiler, or real Python sandbox executor can replace the native implementation without changing `workbench_api_call`, Display bindings, data paths, or API ids. If the requested backend tool is outside the current template actions, explicitly state the new API contract first, pass it as a Project API spec, and extend the native Workbench runtime or an approved executor boundary before using it in the generated frontend.
 
 ## Minimal Project Workflow
 
@@ -227,7 +251,25 @@ Current v1 boundary: `todo_log_demo` remains a demo. `schema_app` supports gener
 12. Delete a project with `workbench_project_delete` only after explicit user confirmation.
 13. Hot update a project with `workbench_project_hot_update` after reading the current Project. Pass `frontendContext` when the prompt comes from a generated frontend, floating Xiaowan, or VLM input. Treat hot update as a Workbench control-plane action; it may internally call registered business APIs but must not appear in Project API Registry.
 14. Import an Android APK or Android project source with `workbench_project_ingest_android(projectId, sourcePath, sourceKind?)` only after the Project exists. This writes `android/manifest.json`, copies the asset under `android/apps/<asset-id>/`, and appends `logs/android_ingest.jsonl`; it does not install the APK into Android OS and does not appear in `workbench_api_list`.
-15. Add focused service/runtime tests before broad UI work.
+15. Import a GitHub/OSS repo with `workbench_project_ingest_oss(projectId, sourceUrl?, sourcePath?, sourceKind?, ref?)` only after the Project exists. If only `sourceUrl` is available, OOB records `requiresFetch=true` metadata and does not claim the repo is downloaded. After terminal/tool fetch, call the same API with `sourcePath` to copy the snapshot under `source/repos/<source-id>/`, detect package files/entrypoints, and append `logs/oss_ingest.jsonl`. This is a Workbench control API, not a Project business API.
+16. Query Project creation/import progress with `workbench_project_progress_get(projectId?, limit?)` instead of parsing logs manually.
+17. Add focused service/runtime tests before broad UI work.
+
+## Toolvox / VLM Validation Boundary
+
+The local MCP surface exposes `vlm_task`, `task_status`, `task_reply`, `task_wait_unlock`, and `file_transfer`. Workbench control APIs are internal Agent tools; they are not directly exposed as MCP tools and must not be added to Project API Registry.
+
+For toolvox-style validation, `vlm_task` should drive OOB Home or the approved in-app runner. The in-app Agent then calls:
+
+```text
+workbench_project_create
+workbench_project_activate
+workbench_api_list
+workbench_api_call
+workbench_project_progress_get
+```
+
+Only call a Project creation run successful after `workspace/projects/<project-id>/project.json` and `logs/project_progress.jsonl` exist on the target device. If the device has no model provider configured, record the run as blocked instead of hand-writing files.
 
 ## Distribution Export
 
@@ -277,6 +319,39 @@ State:
   - logs/api_calls.jsonl
 ```
 
+## Quick Capture E2E Example
+
+Only use this template when the user explicitly asks to create a quick-capture / 随手记 / Inbox Project. A plain business command like `记一下：明天问张三报价` must use the active Project's API and must not create a Project by itself.
+
+```text
+Project: oob-workbench-quick-capture
+Template: quick_capture_inbox
+Project APIs:
+  - capture.ingest
+  - capture.archive
+  - capture.promote_to_todo
+  - capture.summarize
+Display:
+  - Home top Workbench button toggling the Workspace container into `随手记 Inbox · NOTE`
+  - Generated quick-capture frontend page at /workbench/quick_capture?projectId=...
+State:
+  - data/items.json
+  - logs/api_calls.jsonl
+  - logs/link_fetch.jsonl
+  - logs/script_runs.jsonl
+Workspace artifacts:
+  - backend/api_spec.json
+  - backend/oob_sdk/
+  - backend/scripts/capture_*.py
+```
+
+Recommended prompt:
+
+```text
+帮我创建一个随手记的 project，要求可以收文本、链接、摘要和归档。
+创建后激活它；如果需要初始化内容，请先 workbench_api_list，再用 capture.ingest 写入示例，最后打开随手记 Inbox 前端。
+```
+
 ## Legacy Demo Template
 
 `todo_log_demo` is only a legacy test/demo template. It can stay available for regression tests, but normal prompt-generated projects should use `schema_app` and keep the same split: OOB control API creates the project, and the project registers its own business APIs.
@@ -324,7 +399,12 @@ flutter test test/workbench_todo_log_service_test.dart
 When a JDK is available, run the focused Android unit test:
 
 ```bash
-./gradlew :app:testDevelopDebugUnitTest --tests '*Workbench*'
+env JAVA_HOME=/Applications/Android\ Studio.app/Contents/jbr/Contents/Home \
+  ANDROID_HOME=/Users/wuzewen/Library/Android/sdk \
+  ./gradlew :app:testDevelopStandardDebugUnitTest \
+  --tests '*Workbench*' \
+  --tests '*AgentToolDefinitions*' \
+  -Ptarget=lib/main_standard.dart
 ```
 
 For live UI smoke, open Home and verify the top island only has the Chat / Workspace two-way slider. Tap Workspace and verify it restores the last cached Workspace container and directory. Tap the separate top Workbench mark and verify the active schema Display is hosted inline as a child window with exactly four toolbar actions: Project manager, info, fullscreen display, and refresh. Tap the Workbench mark again and verify it returns to file browsing, then reopen Workspace and verify that cached file browser state is preserved. Home input should not show a Project popup button or active Project chip. If you open the `/workbench/projects` manager from the first toolbar action, verify it opens the current Project and shows switching, Displays, read-only `<entity>.create` / `<entity>.archive` execution counts, Workspace, export, and delete. The generated frontend must only show the business UI, not the Project control API panel or Workspace entry.

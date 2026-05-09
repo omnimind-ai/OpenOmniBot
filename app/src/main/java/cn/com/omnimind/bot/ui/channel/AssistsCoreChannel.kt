@@ -312,6 +312,12 @@ class AssistsCoreChannel {
                 "workbenchProjectIngestAndroid" -> {
                     assistsCoreManager!!.workbenchProjectIngestAndroid(call, result)
                 }
+                "workbenchProjectIngestOss" -> {
+                    assistsCoreManager!!.workbenchProjectIngestOss(call, result)
+                }
+                "workbenchProjectProgressGet" -> {
+                    assistsCoreManager!!.workbenchProjectProgressGet(call, result)
+                }
                 "workbenchApiList" -> {
                     assistsCoreManager!!.workbenchApiList(call, result)
                 }

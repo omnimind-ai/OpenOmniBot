@@ -3758,6 +3758,51 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
+    fun workbenchProjectIngestOss(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                val projectId = call.argument<String>("projectId")?.trim().orEmpty()
+                val sourceUrl = call.argument<String>("sourceUrl")?.trim()
+                val sourcePath = call.argument<String>("sourcePath")?.trim()
+                val sourceKind = call.argument<String>("sourceKind")?.trim()
+                val ref = call.argument<String>("ref")?.trim()
+                val displayName = call.argument<String>("displayName")?.trim()
+                val caller = call.argument<String>("caller")?.trim().orEmpty().ifBlank { "ui" }
+                workbenchProjectStore.ingestOssSource(
+                    projectId = projectId,
+                    sourceUrl = sourceUrl,
+                    sourcePath = sourcePath,
+                    sourceKind = sourceKind,
+                    ref = ref,
+                    displayName = displayName,
+                    caller = caller
+                )
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_INGEST_OSS_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
+    fun workbenchProjectProgressGet(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                val projectId = call.argument<String>("projectId")?.trim()
+                val limit = call.argument<Int>("limit") ?: 50
+                workbenchProjectStore.getProjectProgress(projectId, limit)
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_PROGRESS_GET_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
     fun workbenchApiList(call: MethodCall, result: MethodChannel.Result) {
         workJob.launch {
             runCatching {

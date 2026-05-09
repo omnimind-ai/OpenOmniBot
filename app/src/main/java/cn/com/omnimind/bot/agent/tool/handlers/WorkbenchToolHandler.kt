@@ -34,7 +34,9 @@ class WorkbenchToolHandler(
         "workbench_project_deactivate",
         "workbench_project_delete",
         "workbench_project_hot_update",
-        "workbench_project_ingest_android"
+        "workbench_project_ingest_android",
+        "workbench_project_ingest_oss",
+        "workbench_project_progress_get"
     )
 
     private val workbenchProjectStore = WorkbenchProjectStore(helper.context)
@@ -61,6 +63,8 @@ class WorkbenchToolHandler(
             "workbench_project_delete" -> executeWorkbenchProjectDelete(args, env, callback)
             "workbench_project_hot_update" -> executeWorkbenchProjectHotUpdate(args, env, callback)
             "workbench_project_ingest_android" -> executeWorkbenchProjectIngestAndroid(args, env, callback)
+            "workbench_project_ingest_oss" -> executeWorkbenchProjectIngestOss(args, env, callback)
+            "workbench_project_progress_get" -> executeWorkbenchProjectProgressGet(args, env, callback)
             else -> ToolExecutionResult.Error(toolCall.function.name, "Unknown workbench tool")
         }
     }
@@ -417,6 +421,72 @@ class WorkbenchToolHandler(
             throw e
         } catch (e: Exception) {
             helper.errorResult(toolName, e.message, "Workbench Android import failed")
+        }
+    }
+
+    private suspend fun executeWorkbenchProjectIngestOss(
+        args: JsonObject,
+        env: AgentExecutionEnvironment,
+        callback: AgentCallback
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_ingest_oss"
+        return try {
+            helper.reportToolProgress(callback, toolName, "Importing OSS source into Workbench project")
+            val projectId = args["projectId"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            val sourceUrl = args["sourceUrl"]?.jsonPrimitive?.contentOrNull?.trim()
+            val sourcePath = args["sourcePath"]?.jsonPrimitive?.contentOrNull?.trim()
+            val sourceKind = args["sourceKind"]?.jsonPrimitive?.contentOrNull?.trim()
+            val ref = args["ref"]?.jsonPrimitive?.contentOrNull?.trim()
+            val displayName = args["displayName"]?.jsonPrimitive?.contentOrNull?.trim()
+            val payload = workbenchProjectStore.ingestOssSource(
+                projectId = projectId,
+                sourceUrl = sourceUrl,
+                sourcePath = sourcePath,
+                sourceKind = sourceKind,
+                ref = ref,
+                displayName = displayName,
+                caller = "ai"
+            )
+            contextResult(
+                toolName = toolName,
+                summaryText = if ((payload["source"] as? Map<*, *>)?.get("requiresFetch") == true) {
+                    "OSS source registered and waiting for fetch"
+                } else {
+                    "OSS source imported into Workbench project"
+                },
+                payload = payload,
+                success = payload["success"] == true,
+                env = env
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            helper.errorResult(toolName, e.message, "Workbench OSS import failed")
+        }
+    }
+
+    private suspend fun executeWorkbenchProjectProgressGet(
+        args: JsonObject,
+        env: AgentExecutionEnvironment,
+        callback: AgentCallback
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_progress_get"
+        return try {
+            helper.reportToolProgress(callback, toolName, "Loading Workbench project progress")
+            val projectId = args["projectId"]?.jsonPrimitive?.contentOrNull?.trim()
+            val limit = args["limit"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 50
+            val payload = workbenchProjectStore.getProjectProgress(projectId, limit)
+            contextResult(
+                toolName = toolName,
+                summaryText = "Workbench project progress loaded",
+                payload = payload,
+                success = payload["success"] == true,
+                env = env
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            helper.errorResult(toolName, e.message, "Workbench project progress get failed")
         }
     }
 

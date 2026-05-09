@@ -1449,7 +1449,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_create")
             put("displayName", "创建 Workbench Project")
             put("toolType", "workbench")
-            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是控制面能力，不会出现在 Project 自己的业务 API 列表里。支持 todo_log_demo 和通用 schema_app；不要直接写 registry 文件，也不要生成 HTML/WebView。")
+            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是审慎控制面能力，只有用户明确要求创建/新建 Project 时才调用，不会出现在 Project 自己的业务 API 列表里。支持 todo_log_demo、schema_app 和 quick_capture_inbox；不要直接写 registry 文件，也不要生成 HTML/WebView。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1459,10 +1459,11 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("templateId") {
                         put("type", "string")
-                        put("description", "Project 模板 id。todo_log_demo 用于旧 Todo demo；schema_app 用于通用 prompt 生成的 OOB 原生 Project。")
+                        put("description", "Project 模板 id。todo_log_demo 用于旧 Todo demo；schema_app 用于通用 prompt 生成的 OOB 原生 Project；quick_capture_inbox 用于用户明确要求创建随手记/Inbox Project 时。")
                         putJsonArray("enum") {
                             add("todo_log_demo")
                             add("schema_app")
+                            add("quick_capture_inbox")
                         }
                     }
                     putJsonObject("name") {
@@ -1491,7 +1492,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("apis") {
                         put("type", "array")
-                        put("description", "schema_app 可选业务 API 规格。每项可包含 apiId、toolId、displayName、description、inputSchema、outputSchema、executorKind。若不传，OOB 会按 entityName 生成 <entity>.create 与 <entity>.archive。")
+                        put("description", "schema_app 可选业务 API 规格。每项可包含 apiId、toolId、displayName、description、inputSchema、outputSchema、executorKind。若不传，OOB 会按 entityName 生成 <entity>.create 与 <entity>.archive。quick_capture_inbox 会注册 capture.ingest/archive/promote_to_todo/summarize。")
                     }
                 }
                 putJsonArray("required") {
@@ -1573,11 +1574,11 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("apiId") {
                         put("type", "string")
-                        put("description", "业务 API id，例如 todo.add 或 todo.finish。")
+                        put("description", "业务 API id，例如 todo.add、todo.finish、capture.ingest 或 capture.archive。")
                     }
                     putJsonObject("inputs") {
                         put("type", "object")
-                        put("description", "API 输入对象。例如 todo.add 需要 {title}，todo.finish 需要 {todo_id}。")
+                        put("description", "API 输入对象。例如 todo.add 需要 {title}，todo.finish 需要 {todo_id}，capture.ingest 可传 {text,url,sourceApp,shareText,screenshotPath}，capture.archive 需要 {item_id}。")
                     }
                 }
                 putJsonArray("required") {
@@ -1711,7 +1712,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_hot_update")
             put("displayName", "热更新 Workbench Project")
             put("toolType", "workbench")
-            put("description", "根据用户在 Project 页面里和小万悬浮窗、画图标注或 VLM 输入得到的 prompt，对已有 Workbench Project 做一次控制面热更新，并返回刷新后的 OOB 原生页面状态。调用时尽量附带当前 Flutter Display 的 frontendContext，例如 route、displayId、可见状态、用户选择的控件、选区、drawingPaths 或截图摘要。它不会注册成 Project 业务 API，也不会出现在 workbench_api_list。")
+            put("description", "根据用户在 Project 页面里和小万悬浮窗、画图标注或 VLM 输入得到的 prompt，对已有 Workbench Project 做一次控制面热更新，并返回刷新后的 OOB 原生页面状态。调用时尽量附带当前 Flutter Display 的 frontendContext，例如 route、displayId、可见状态、用户选择的控件、选区、drawingPaths、annotationMeta 或截图摘要。形状和 UI 语义由 VLM 结合截图分析，不由前端预识别。它不会注册成 Project 业务 API，也不会出现在 workbench_api_list。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1725,7 +1726,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("frontendContext") {
                         put("type", "object")
-                        put("description", "可选。当前生成前端页面上下文，由小万悬浮窗、画图标注或 VLM 输入附带，例如 projectId、displayId、route、visibleState、selectedElement、selectedRegion、drawingPaths、screenshotSummary。")
+                        put("description", "可选。当前生成前端页面上下文，由小万悬浮窗、画图标注或 VLM 输入附带，例如 projectId、displayId、route、visibleState、selectedElement、selectedRegion、drawingPaths、annotationMeta、screenshotSummary。")
                         put("additionalProperties", true)
                     }
                 }
@@ -1771,6 +1772,76 @@ object AgentToolDefinitions {
                 putJsonArray("required") {
                     add("projectId")
                     add("sourcePath")
+                }
+            }
+        }
+    }
+
+    val workbenchProjectIngestOssTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_ingest_oss")
+            put("displayName", "导入 OSS/GitHub 源码")
+            put("toolType", "workbench")
+            put("description", "把一个 GitHub/OSS 项目或已下载的本地源码目录导入到已存在的 Workbench Project。它是 OOB Workbench 控制面能力，会写入 Project 的 source/manifest.json、logs/oss_ingest.jsonl 和 logs/project_progress.jsonl，不会注册成 Project 业务 API，也不会出现在 workbench_api_list。URL-only 导入只登记 fetch-required 元数据；真正拉取源码应通过批准的 terminal/tool 路径完成后再用 sourcePath 导入。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("projectId") {
+                        put("type", "string")
+                        put("description", "要接收 OSS/GitHub 源码的 Workbench Project id。")
+                    }
+                    putJsonObject("sourceUrl") {
+                        put("type", "string")
+                        put("description", "可选。GitHub 或 git 仓库 URL。只传 URL 时会登记为 requiresFetch=true，不直接联网拉取。")
+                    }
+                    putJsonObject("sourcePath") {
+                        put("type", "string")
+                        put("description", "可选。设备上已存在的源码目录或文件路径。可传 Android 绝对路径，也可传 /workspace/... shell 路径。")
+                    }
+                    putJsonObject("sourceKind") {
+                        put("type", "string")
+                        put("description", "可选。oss_repo 表示通用 OSS 仓库，github_repo 表示 GitHub 仓库，local_source 表示已下载本地源码；不传时根据 URL/path 自动推断。")
+                        putJsonArray("enum") {
+                            add("oss_repo")
+                            add("github_repo")
+                            add("local_source")
+                        }
+                    }
+                    putJsonObject("ref") {
+                        put("type", "string")
+                        put("description", "可选。分支、tag 或 commit，用于后续 fetch/replay。")
+                    }
+                    putJsonObject("displayName") {
+                        put("type", "string")
+                        put("description", "可选。导入后在 Project 运行时 manifest 中显示的源码名称。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("projectId")
+                }
+            }
+        }
+    }
+
+    val workbenchProjectProgressGetTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_progress_get")
+            put("displayName", "读取 Project 创建进度")
+            put("toolType", "workbench")
+            put("description", "读取 Workbench Project 创建、源码导入、热更新等控制面进度。它是 OOB 运行时状态查询能力，不属于 Project API Registry。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("projectId") {
+                        put("type", "string")
+                        put("description", "可选 Project id。为空时返回所有 Project 的最新进度摘要。")
+                    }
+                    putJsonObject("limit") {
+                        put("type", "integer")
+                        put("description", "可选。返回最近多少条事件，默认 50，最大按运行时限制裁剪。")
+                    }
                 }
             }
         }
@@ -2369,7 +2440,9 @@ object AgentToolDefinitions {
         workbenchProjectDeactivateTool,
         workbenchProjectDeleteTool,
         workbenchProjectHotUpdateTool,
-        workbenchProjectIngestAndroidTool
+        workbenchProjectIngestAndroidTool,
+        workbenchProjectIngestOssTool,
+        workbenchProjectProgressGetTool
     )
 
     private val scheduleToolDefinitions: List<JsonObject> = listOf(

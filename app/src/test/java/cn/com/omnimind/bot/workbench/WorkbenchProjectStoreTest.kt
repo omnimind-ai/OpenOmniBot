@@ -40,6 +40,8 @@ class WorkbenchProjectStoreTest {
         assertTrue(root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/README.md").exists())
         assertTrue(root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/frontend/page_spec.json").exists())
         assertTrue(root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/backend/api_spec.json").exists())
+        assertTrue(root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/logs/project_progress.jsonl").exists())
+        assertTrue(project["lastProgress"].toString().contains("project_create_completed"))
     }
 
     @Test
@@ -236,6 +238,105 @@ class WorkbenchProjectStoreTest {
     }
 
     @Test
+    fun quickCaptureProjectRunsWorkspacePythonScriptApis() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        val project = store.createProject(
+            mapOf(
+                "templateId" to WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID,
+                "projectId" to WORKBENCH_QUICK_CAPTURE_PROJECT_ID,
+                "name" to "随手记 Inbox",
+                "prompt" to "帮我创建一个随手记的 Project，可以收文本、链接、摘要和归档"
+            )
+        )
+
+        val ingestTodo = store.callApi(
+            projectId = WORKBENCH_QUICK_CAPTURE_PROJECT_ID,
+            apiId = WORKBENCH_CAPTURE_INGEST_TOOL_ID,
+            inputs = mapOf("text" to "记一下：明天问张三报价"),
+            caller = "ai"
+        )
+        val ingestLink = store.callApi(
+            projectId = WORKBENCH_QUICK_CAPTURE_PROJECT_ID,
+            apiId = WORKBENCH_CAPTURE_INGEST_TOOL_ID,
+            inputs = mapOf(
+                "text" to "https://xhslink.com/demo 装修案例",
+                "url" to "https://xhslink.com/demo",
+                "sourceApp" to "小红书"
+            ),
+            caller = "ui"
+        )
+        val linkItem = (ingestLink["outputs"] as Map<*, *>)["item"] as Map<*, *>
+        val promoted = store.callApi(
+            projectId = WORKBENCH_QUICK_CAPTURE_PROJECT_ID,
+            apiId = WORKBENCH_CAPTURE_PROMOTE_TOOL_ID,
+            inputs = mapOf("item_id" to linkItem["id"], "todo_title" to "整理装修案例"),
+            caller = "ai"
+        )
+        val archived = store.callApi(
+            projectId = WORKBENCH_QUICK_CAPTURE_PROJECT_ID,
+            apiId = WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID,
+            inputs = mapOf("item_id" to linkItem["id"]),
+            caller = "ui"
+        )
+
+        assertEquals(WORKBENCH_QUICK_CAPTURE_PROJECT_ID, project["projectId"])
+        assertEquals(WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID, project["templateId"])
+        assertEquals(
+            "/workbench/quick_capture?projectId=$WORKBENCH_QUICK_CAPTURE_PROJECT_ID",
+            project["route"]
+        )
+        assertEquals(
+            listOf(
+                WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID,
+                WORKBENCH_CAPTURE_INGEST_TOOL_ID,
+                WORKBENCH_CAPTURE_PROMOTE_TOOL_ID,
+                WORKBENCH_CAPTURE_SUMMARIZE_TOOL_ID
+            ),
+            store.listApis(WORKBENCH_QUICK_CAPTURE_PROJECT_ID).map { it["apiId"].toString() }.sorted()
+        )
+        assertTrue(ingestTodo["success"] == true)
+        assertTrue(ingestLink["success"] == true)
+        assertTrue(promoted["success"] == true)
+        assertTrue(archived["success"] == true)
+        val refreshed = store.getProject(WORKBENCH_QUICK_CAPTURE_PROJECT_ID)
+        val captureItems = refreshed["captureItems"] as List<*>
+        assertEquals(2, captureItems.size)
+        assertEquals(1, captureItems.count { (it as Map<*, *>)["status"] == "archived" })
+        assertTrue(
+            root.resolve("projects/$WORKBENCH_QUICK_CAPTURE_PROJECT_ID/data/items.json")
+                .readText()
+                .contains("整理装修案例")
+        )
+        assertTrue(
+            root.resolve("projects/$WORKBENCH_QUICK_CAPTURE_PROJECT_ID/logs/link_fetch.jsonl")
+                .readText()
+                .contains("xiaohongshu")
+        )
+        assertEquals(
+            4,
+            root.resolve("projects/$WORKBENCH_QUICK_CAPTURE_PROJECT_ID/logs/script_runs.jsonl")
+                .readLines()
+                .size
+        )
+        assertTrue(
+            root.resolve("projects/$WORKBENCH_QUICK_CAPTURE_PROJECT_ID/backend/scripts/capture_ingest.py")
+                .exists()
+        )
+        assertTrue(
+            root.resolve("projects/$WORKBENCH_QUICK_CAPTURE_PROJECT_ID/backend/oob_sdk.py")
+                .exists()
+        )
+        assertTrue(
+            root.resolve("projects/$WORKBENCH_QUICK_CAPTURE_PROJECT_ID/backend/oob_sdk/runner.py")
+                .exists()
+        )
+        val apis = store.listApis(WORKBENCH_QUICK_CAPTURE_PROJECT_ID)
+        assertEquals(2, apis.first { it["apiId"] == WORKBENCH_CAPTURE_INGEST_TOOL_ID }["executionCount"])
+        assertEquals(1, apis.first { it["apiId"] == WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID }["executionCount"])
+    }
+
+    @Test
     fun promptGeneratedSchemaProjectRunsE2eThroughOobWorkbench() {
         val root = Files.createTempDirectory("workbench-store-test").toFile()
         val store = WorkbenchProjectStore(root)
@@ -381,6 +482,8 @@ class WorkbenchProjectStoreTest {
         assertFalse(apiIds.contains("workbench_project_delete"))
         assertFalse(apiIds.contains("workbench_project_hot_update"))
         assertFalse(apiIds.contains("workbench_project_ingest_android"))
+        assertFalse(apiIds.contains("workbench_project_ingest_oss"))
+        assertFalse(apiIds.contains("workbench_project_progress_get"))
     }
 
     @Test
@@ -436,6 +539,77 @@ class WorkbenchProjectStoreTest {
         assertEquals(1, androidAssets.size)
         val apiIds = store.listApis(WORKBENCH_DEFAULT_PROJECT_ID).map { it["apiId"] }
         assertFalse(apiIds.contains("workbench_project_ingest_android"))
+    }
+
+    @Test
+    fun ingestOssSourceCopiesLocalRepoAnalyzesProgressAndKeepsApiRegistryClean() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        store.createProject(mapOf("projectId" to WORKBENCH_DEFAULT_PROJECT_ID))
+        val repo = root.resolve("demo-repo")
+        repo.mkdirs()
+        repo.resolve("package.json").writeText(
+            """
+            {"scripts":{"dev":"vite --host 0.0.0.0","test":"vitest"},"dependencies":{"react":"latest","vite":"latest"}}
+            """.trimIndent()
+        )
+        repo.resolve("src/main.tsx").apply {
+            parentFile?.mkdirs()
+            writeText("export const app = true")
+        }
+        repo.resolve("node_modules/ignored.js").apply {
+            parentFile?.mkdirs()
+            writeText("ignored")
+        }
+
+        val result = store.ingestOssSource(
+            projectId = WORKBENCH_DEFAULT_PROJECT_ID,
+            sourcePath = repo.absolutePath,
+            sourceUrl = "https://github.com/example/demo-repo",
+            caller = "ai"
+        )
+
+        assertTrue(result["success"] == true)
+        val source = result["source"] as Map<*, *>
+        assertEquals(false, source["requiresFetch"])
+        assertTrue((source["detectedStack"] as List<*>).contains("react"))
+        assertTrue((source["entrypoints"] as List<*>).toString().contains("npm run dev"))
+        assertTrue(root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/source/manifest.json").exists())
+        assertTrue(root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/logs/oss_ingest.jsonl").exists())
+        assertTrue(root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/project.json").readText().contains("sourceAssetCount"))
+        val copiedRoot = root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/source/repos")
+        assertTrue(copiedRoot.walkTopDown().any { it.name == "package.json" })
+        assertFalse(copiedRoot.walkTopDown().any { it.name == "ignored.js" })
+        val progress = store.getProjectProgress(WORKBENCH_DEFAULT_PROJECT_ID)
+        assertTrue(progress["count"].toString().toDouble() >= 1.0)
+        assertTrue(progress["events"].toString().contains("oss_ingest_completed"))
+        val apiIds = store.listApis(WORKBENCH_DEFAULT_PROJECT_ID).map { it["apiId"] }
+        assertFalse(apiIds.contains("workbench_project_ingest_oss"))
+        assertFalse(apiIds.contains("workbench_project_progress_get"))
+    }
+
+    @Test
+    fun ingestOssUrlOnlyRegistersFetchRequiredMetadata() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        store.createProject(mapOf("projectId" to WORKBENCH_DEFAULT_PROJECT_ID))
+
+        val result = store.ingestOssSource(
+            projectId = WORKBENCH_DEFAULT_PROJECT_ID,
+            sourceUrl = "https://github.com/example/not-downloaded",
+            ref = "main",
+            caller = "ai"
+        )
+
+        assertTrue(result["success"] == true)
+        val source = result["source"] as Map<*, *>
+        assertEquals(true, source["requiresFetch"])
+        assertEquals(WORKBENCH_OSS_GITHUB_KIND, source["sourceKind"])
+        assertEquals("main", source["ref"])
+        assertTrue(source["fetchHint"].toString().contains("sourcePath"))
+        val progress = store.getProjectProgress(WORKBENCH_DEFAULT_PROJECT_ID, limit = 20)
+        assertTrue(progress["events"].toString().contains("oss_fetch_required"))
+        assertTrue(progress["events"].toString().contains("waiting"))
     }
 
     @Test

@@ -39,6 +39,8 @@ class AgentToolDefinitionsMusicTest {
         assertTrue(toolNames.contains("workbench_project_activate"))
         assertTrue(toolNames.contains("workbench_project_active_get"))
         assertTrue(toolNames.contains("workbench_project_deactivate"))
+        assertTrue(toolNames.contains("workbench_project_ingest_oss"))
+        assertTrue(toolNames.contains("workbench_project_progress_get"))
     }
 
     @Test
