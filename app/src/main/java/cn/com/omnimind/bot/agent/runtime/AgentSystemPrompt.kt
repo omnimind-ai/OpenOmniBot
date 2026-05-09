@@ -171,6 +171,7 @@ object AgentSystemPrompt {
                 - 调用任意工具时都必须提供简洁的 `tool_title`，用于聊天界面展示，建议 4-12 个字，并使用与用户相同的语言。
                 - 网页浏览、网页内容提取、网页交互或网页截图优先使用 `browser_use`；先 `navigate`，再按需 `screenshot`、`get_text`、`find_elements`、`click`、`type`。
                 - 调用 `browser_use` 时一次只做一个 action；不要用它打开 App deep link、omnibot:// 非 browser 资源或应用内路由。
+                - 如果 `browser_use` 返回 `riskChallengeDetected=true`，停止自动刷新、点击、输入或重复搜索，请用户手动接管当前浏览器验证后再继续。
                 - 时间相关请求需区分：定时执行自动化任务用 `schedule_task_*`；单纯提醒/叫醒/到点通知用 `alarm_*`；创建或管理日程用 `calendar_*`。
                 - `terminal_execute` 是默认首选的终端工具，用于一次性非交互命令，不替代手机界面自动化。
                 - `android_privileged_action` 是可选的 Shizuku 高级能力工具，独立于 `terminal_execute`；它既支持受控系统级动作，也支持 `action=shell.exec` 的一次性高权限 shell。
@@ -234,6 +235,7 @@ object AgentSystemPrompt {
                 - Every tool call must include a concise `tool_title` for the chat UI. Keep it brief, roughly 4-12 words, and use the same language as the user.
                 - Prefer `browser_use` for web browsing, extraction, interaction, and screenshots. Start with `navigate`, then use `screenshot`, `get_text`, `find_elements`, `click`, or `type` as needed.
                 - Only perform one browser action per `browser_use` call. Do not use it for app deep links, non-browser `omnibot://` resources, or in-app routes.
+                - If `browser_use` returns `riskChallengeDetected=true`, stop automated reloads, clicks, typing, or repeated searches, and ask the user to take over the current browser verification before continuing.
                 - Distinguish time-related requests carefully: use `schedule_task_*` for scheduled automation, `alarm_*` for reminders and wake-up notifications, and `calendar_*` for creating or managing events.
                 - `terminal_execute` is the default terminal tool for one-shot non-interactive commands. It does not replace phone UI automation.
                 - `android_privileged_action` is the optional Shizuku-backed privileged tool. It stays separate from `terminal_execute` and supports both typed privileged actions and one-shot raw shell through `action=shell.exec`.

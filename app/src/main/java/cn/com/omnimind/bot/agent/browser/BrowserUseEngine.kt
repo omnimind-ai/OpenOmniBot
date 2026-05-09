@@ -30,6 +30,7 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.URLUtil
@@ -73,6 +74,7 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.random.Random
 
 private const val DEFAULT_BROWSER_SCROLL_AMOUNT = 500
 private const val DEFAULT_BROWSER_SCROLL_COUNT = 10
@@ -89,6 +91,8 @@ private const val READ_IMAGE_JPEG_QUALITY = 75
 private const val READ_IMAGE_MAX_WIDTH = 1280
 private const val LARGE_TEXT_THRESHOLD = 12_000
 private const val FIND_ELEMENTS_LIMIT = 60
+private const val TYPE_INPUT_CHUNK_SIZE = 3
+private const val TYPE_INPUT_CHUNK_DELAY_MS = 35L
 
 enum class BrowserUserAgentProfile(
     val wireName: String,
@@ -96,11 +100,11 @@ enum class BrowserUserAgentProfile(
 ) {
     DESKTOP_SAFARI(
         wireName = "desktop_safari",
-        userAgentString = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+        userAgentString = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
     ),
     MOBILE_SAFARI(
         wireName = "mobile_safari",
-        userAgentString = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+        userAgentString = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36"
     );
 
     companion object {
@@ -109,7 +113,7 @@ enum class BrowserUserAgentProfile(
             return entries.firstOrNull { it.wireName == normalized }
         }
 
-        fun defaultProfile(): BrowserUserAgentProfile = DESKTOP_SAFARI
+        fun defaultProfile(): BrowserUserAgentProfile = MOBILE_SAFARI
     }
 }
 
@@ -326,7 +330,9 @@ class BrowserUseEngine(
     private data class LoadSnapshot(
         val url: String?,
         val title: String?,
-        val errorMessage: String? = null
+        val errorMessage: String? = null,
+        val reusedExistingPage: Boolean = false,
+        val throttleDelayMs: Long = 0L
     )
 
     private data class BrowserTab(
@@ -342,6 +348,10 @@ class BrowserUseEngine(
         var helpersInjected: Boolean = false,
         var downloadHelperInjected: Boolean = false,
         var hasSslError: Boolean = false,
+        var lastHttpStatusCode: Int? = null,
+        var riskChallengeDetected: Boolean = false,
+        var riskChallengeKind: String? = null,
+        var recommendedNextAction: String? = null,
         var pendingFileChooserCallback: ValueCallback<Array<Uri>>? = null,
         val pageMenuCommands: LinkedHashMap<String, BrowserUserscriptMenuCommand> = linkedMapOf()
     )
@@ -390,7 +400,11 @@ class BrowserUseEngine(
                 "canGoForward" to false,
                 "isLoading" to false,
                 "hasSslError" to false,
-                "isDesktopMode" to true,
+                "isDesktopMode" to false,
+                "riskChallengeDetected" to false,
+                "riskChallengeKind" to null,
+                "recommendedNextAction" to null,
+                "throttleDelayMs" to null,
                 "tabs" to emptyList<Map<String, Any?>>(),
                 "bookmarks" to emptyList<Map<String, Any?>>(),
                 "history" to emptyList<Map<String, Any?>>(),
@@ -548,11 +562,12 @@ class BrowserUseEngine(
     private var currentWorkspace: AgentWorkspaceDescriptor = workspace
     private val hostStore = BrowserHostStore.create(workspace.id)
     private var defaultUserAgentProfile =
-        if (hostStore.getDesktopModeEnabled(defaultValue = true)) {
+        if (hostStore.getDesktopModeEnabled(defaultValue = false)) {
             BrowserUserAgentProfile.DESKTOP_SAFARI
         } else {
             BrowserUserAgentProfile.MOBILE_SAFARI
         }
+    private val hostActionTimestampsMs = linkedMapOf<String, Long>()
     private val downloadManager = BrowserDownloadManager(
         context = appContext,
         workspaceId = workspace.id,
@@ -633,6 +648,10 @@ class BrowserUseEngine(
             "clearHistory" -> {
                 hostStore.clearHistory()
                 publishSnapshotUpdate()
+                liveSessionSnapshot()
+            }
+            "clearCurrentSiteSession" -> {
+                clearCurrentSiteSession(arguments["tabId"].asInt())
                 liveSessionSnapshot()
             }
             "installUserscriptFromUrl" -> {
@@ -801,6 +820,10 @@ class BrowserUseEngine(
             "isLoading" to tab.isLoading,
             "hasSslError" to tab.hasSslError,
             "isDesktopMode" to (tab.userAgentProfile == BrowserUserAgentProfile.DESKTOP_SAFARI),
+            "riskChallengeDetected" to tab.riskChallengeDetected,
+            "riskChallengeKind" to tab.riskChallengeKind,
+            "recommendedNextAction" to tab.recommendedNextAction,
+            "throttleDelayMs" to null,
             "tabs" to tabs.values.map { item ->
                 linkedMapOf(
                     "tabId" to item.tabId,
@@ -809,7 +832,10 @@ class BrowserUseEngine(
                     "userAgentProfile" to item.userAgentProfile.wireName,
                     "isActive" to (item.tabId == activeTabId),
                     "isLoading" to item.isLoading,
-                    "hasSslError" to item.hasSslError
+                    "hasSslError" to item.hasSslError,
+                    "riskChallengeDetected" to item.riskChallengeDetected,
+                    "riskChallengeKind" to item.riskChallengeKind,
+                    "recommendedNextAction" to item.recommendedNextAction
                 )
             },
             "bookmarks" to hostStore.listBookmarks().map { item ->
@@ -1082,7 +1108,7 @@ class BrowserUseEngine(
             tab.webView.settings.userAgentString = defaultUserAgentProfile.userAgentString
         }
         if (!tab.currentUrl.isNullOrBlank() && tab.currentUrl != "about:blank") {
-            navigateTab(tab, tab.currentUrl)
+            navigateTab(tab, tab.currentUrl, allowReuse = false)
         }
         publishSnapshotUpdate()
     }
@@ -1090,6 +1116,42 @@ class BrowserUseEngine(
     private fun hostToggleBookmark() {
         val tab = activeTabId?.let { tabs[it] } ?: tabs.values.lastOrNull() ?: return
         hostStore.toggleBookmark(tab.currentUrl, tab.title)
+        publishSnapshotUpdate()
+    }
+
+    private suspend fun clearCurrentSiteSession(tabId: Int?) {
+        val tab = tabId?.let { requireExistingTab(it) } ?: requirePageTab(
+            BrowserUseRequest(toolTitle = "clear site", action = BrowserUseAction.GET_PAGE_INFO)
+        )
+        val currentUrl = tab.currentUrl?.takeIf {
+            it.startsWith("http://") || it.startsWith("https://")
+        } ?: return
+        val cookieNames = collectCookiesForUrl(currentUrl).keys
+        withContext(Dispatchers.Main.immediate) {
+            val cookieManager = CookieManager.getInstance()
+            buildCookieLookupUrls(currentUrl).forEach { cookieUrl ->
+                cookieNames.forEach { name ->
+                    cookieManager.setCookie(
+                        cookieUrl,
+                        "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/"
+                    )
+                }
+            }
+            cookieManager.flush()
+        }
+        runCatching {
+            evaluateJavascriptRaw(
+                tab,
+                """
+                    (function() {
+                        try { window.localStorage && window.localStorage.clear(); } catch (_) {}
+                        try { window.sessionStorage && window.sessionStorage.clear(); } catch (_) {}
+                        return 'cleared';
+                    })();
+                """.trimIndent()
+            )
+        }
+        clearRiskChallengeState(tab)
         publishSnapshotUpdate()
     }
 
@@ -1214,17 +1276,24 @@ class BrowserUseEngine(
 
     private suspend fun executeNewTab(request: BrowserUseRequest): BrowserUseOutcome {
         val tab = createTab()
+        var snapshot: LoadSnapshot? = null
         if (!request.url.isNullOrBlank()) {
-            navigateTab(tab, request.url)
+            snapshot = navigateTab(tab, request.url)
         }
         return simpleOutcome(
             request,
-            mapOf(
-                "tabId" to tab.tabId,
-                "currentUrl" to tab.currentUrl,
-                "pageTitle" to tab.title,
-                "tabs" to listTabsPayload()["tabs"],
-                "activeTabId" to activeTabId
+            buildCommonPayload(
+                tab = tab,
+                action = request.action,
+                extra = mapOf(
+                    "tabId" to tab.tabId,
+                    "currentUrl" to tab.currentUrl,
+                    "pageTitle" to tab.title,
+                    "tabs" to listTabsPayload()["tabs"],
+                    "activeTabId" to activeTabId,
+                    "navigationReused" to (snapshot?.reusedExistingPage ?: false)
+                ),
+                throttleDelayMs = snapshot?.throttleDelayMs
             )
         )
     }
@@ -1264,8 +1333,10 @@ class BrowserUseEngine(
                 extra = mapOf(
                     "finalUrl" to snapshot.url,
                     "pageTitle" to snapshot.title,
+                    "navigationReused" to snapshot.reusedExistingPage,
                     "pageInfo" to pageInfoMap(tab)
-                )
+                ),
+                throttleDelayMs = snapshot.throttleDelayMs
             )
         )
     }
@@ -1324,10 +1395,13 @@ class BrowserUseEngine(
 
     private suspend fun executeClick(request: BrowserUseRequest): BrowserUseOutcome {
         val tab = requirePageTab(request)
+        riskBlockedOutcomeIfNeeded(request, tab)?.let { return it }
+        val throttleDelayMs = applyHostThrottle(BrowserUseAction.CLICK, tab.currentUrl)
         val value = evaluateValue(
             tab,
             buildTargetedScript(
                 request = request,
+                requireVisibleTarget = true,
                 command = """
                     target.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: centerX, clientY: centerY }));
                     target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: centerX, clientY: centerY }));
@@ -1344,17 +1418,20 @@ class BrowserUseEngine(
             buildCommonPayload(
                 tab = tab,
                 action = request.action,
-                extra = mapOf("matchedElement" to jsonElementToAny(value))
+                extra = mapOf("matchedElement" to jsonElementToAny(value)),
+                throttleDelayMs = throttleDelayMs
             )
         )
     }
 
     private suspend fun executeHover(request: BrowserUseRequest): BrowserUseOutcome {
         val tab = requirePageTab(request)
+        riskBlockedOutcomeIfNeeded(request, tab)?.let { return it }
         val value = evaluateValue(
             tab,
             buildTargetedScript(
                 request = request,
+                requireVisibleTarget = true,
                 command = """
                     target.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: centerX, clientY: centerY }));
                     target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: centerX, clientY: centerY }));
@@ -1375,38 +1452,32 @@ class BrowserUseEngine(
 
     private suspend fun executeType(request: BrowserUseRequest): BrowserUseOutcome {
         val tab = requirePageTab(request)
-        val textLiteral = JSONObject.quote(request.text)
-        val value = evaluateValue(
-            tab,
-            buildTargetedScript(
-                request = request,
-                command = """
-                    target.focus();
-                    if (target.isContentEditable) {
-                        target.textContent = $textLiteral;
-                    } else if ('value' in target) {
-                        var nativeSetter = Object.getOwnPropertyDescriptor(
-                            window.HTMLInputElement.prototype, 'value'
-                        );
-                        if (!nativeSetter || !nativeSetter.set) {
-                            nativeSetter = Object.getOwnPropertyDescriptor(
-                                window.HTMLTextAreaElement.prototype, 'value'
-                            );
-                        }
-                        if (nativeSetter && nativeSetter.set) {
-                            nativeSetter.set.call(target, $textLiteral);
-                        } else {
-                            target.value = $textLiteral;
-                        }
-                    } else {
-                        throw new Error('Target element is not editable');
-                    }
-                    target.dispatchEvent(new Event('input', { bubbles: true }));
-                    target.dispatchEvent(new Event('change', { bubbles: true }));
-                    return describeElement(target);
-                """.trimIndent()
+        riskBlockedOutcomeIfNeeded(request, tab)?.let { return it }
+        val throttleDelayMs = applyHostThrottle(BrowserUseAction.TYPE, tab.currentUrl)
+        val textToType = request.text.orEmpty()
+        val chunks = if (textToType.isEmpty()) {
+            listOf("")
+        } else {
+            textToType.chunked(TYPE_INPUT_CHUNK_SIZE)
+        }
+        var value: JsonElement = JsonNull
+        chunks.forEachIndexed { index, chunk ->
+            value = evaluateValue(
+                tab,
+                buildTargetedScript(
+                    request = request,
+                    requireVisibleTarget = true,
+                    command = buildTypingChunkCommand(
+                        chunk = chunk,
+                        reset = index == 0,
+                        finalChunk = index == chunks.lastIndex
+                    )
+                )
             )
-        )
+            if (index != chunks.lastIndex) {
+                delay(TYPE_INPUT_CHUNK_DELAY_MS)
+            }
+        }
         return simpleOutcome(
             request,
             buildCommonPayload(
@@ -1414,8 +1485,10 @@ class BrowserUseEngine(
                 action = request.action,
                 extra = mapOf(
                     "typedTextLength" to request.text?.length,
+                    "typedChunkCount" to chunks.size,
                     "matchedElement" to jsonElementToAny(value)
-                )
+                ),
+                throttleDelayMs = throttleDelayMs
             )
         )
     }
@@ -1475,6 +1548,7 @@ class BrowserUseEngine(
 
     private suspend fun executeScroll(request: BrowserUseRequest): BrowserUseOutcome {
         val tab = requirePageTab(request)
+        riskBlockedOutcomeIfNeeded(request, tab)?.let { return it }
         val direction = request.direction?.takeIf { it == "up" || it == "down" } ?: "down"
         val selectorLiteral = request.selector?.let { JSONObject.quote(it) } ?: "null"
         val value = evaluateValue(
@@ -1510,6 +1584,8 @@ class BrowserUseEngine(
 
     private suspend fun executeScrollAndCollect(request: BrowserUseRequest): BrowserUseOutcome {
         val tab = requirePageTab(request)
+        riskBlockedOutcomeIfNeeded(request, tab)?.let { return it }
+        val throttleDelayMs = applyHostThrottle(BrowserUseAction.SCROLL_AND_COLLECT, tab.currentUrl)
         val seen = linkedSetOf<String>()
         var selectorUsed: String? = request.itemSelector
         repeat(request.scrollCount) { index ->
@@ -1549,7 +1625,8 @@ class BrowserUseEngine(
             request = request,
             tab = tab,
             selectorUsed = selectorUsed,
-            items = seen.toList()
+            items = seen.toList(),
+            throttleDelayMs = throttleDelayMs
         )
     }
 
@@ -1582,6 +1659,7 @@ class BrowserUseEngine(
 
     private suspend fun executeGetPageInfo(request: BrowserUseRequest): BrowserUseOutcome {
         val tab = requirePageTab(request)
+        inspectPageRiskChallenge(tab)
         return simpleOutcome(
             request,
             buildCommonPayload(
@@ -1627,6 +1705,7 @@ class BrowserUseEngine(
 
     private suspend fun executeCustomScript(request: BrowserUseRequest): BrowserUseOutcome {
         val tab = requirePageTab(request)
+        riskBlockedOutcomeIfNeeded(request, tab)?.let { return it }
         val value = evaluateValue(tab, request.script)
         return buildStructuredOutcome(
             request = request,
@@ -1640,25 +1719,28 @@ class BrowserUseEngine(
     private suspend fun executeSetUserAgent(request: BrowserUseRequest): BrowserUseOutcome {
         val tab = request.tabId?.let { requireExistingTab(it) } ?: tabs[activeTabId]
             ?: createTab()
+        var snapshot: LoadSnapshot? = null
         withContext(Dispatchers.Main.immediate) {
             tab.userAgentProfile = request.userAgent ?: BrowserUserAgentProfile.defaultProfile()
             tab.webView.settings.userAgentString = tab.userAgentProfile.userAgentString
         }
         if (!tab.currentUrl.isNullOrBlank() && tab.currentUrl != "about:blank") {
-            navigateTab(tab, tab.currentUrl)
+            snapshot = navigateTab(tab, tab.currentUrl, allowReuse = false)
         }
         return simpleOutcome(
             request,
             buildCommonPayload(
                 tab = tab,
                 action = request.action,
-                extra = mapOf("userAgentProfile" to tab.userAgentProfile.wireName)
+                extra = mapOf("userAgentProfile" to tab.userAgentProfile.wireName),
+                throttleDelayMs = snapshot?.throttleDelayMs
             )
         )
     }
 
     private suspend fun executeFetch(request: BrowserUseRequest): BrowserUseOutcome {
         val tab = requirePageTab(request)
+        riskBlockedOutcomeIfNeeded(request, tab)?.let { return it }
         val targetUrl = request.url?.trim().orEmpty()
         require(targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) {
             "fetch 仅支持 http(s) 资源"
@@ -1682,6 +1764,29 @@ class BrowserUseEngine(
             val message = withContext(Dispatchers.IO) {
                 runCatching { connection.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull()
             }.orEmpty().take(400)
+            val challenge = BrowserRiskControl.detectChallenge(
+                statusCode = responseCode,
+                bodyText = message,
+                currentUrl = targetUrl
+            )
+            if (challenge != null) {
+                connection.disconnect()
+                if (applyRiskChallengeState(tab, challenge)) {
+                    publishSnapshotUpdate()
+                }
+                return BrowserUseOutcome(
+                    summaryText = request.toolTitle,
+                    payload = buildCommonPayload(
+                        tab = tab,
+                        action = request.action,
+                        extra = mapOf(
+                            "statusCode" to responseCode,
+                            "responseSnippet" to message,
+                            "blockedByRiskChallenge" to true
+                        )
+                    )
+                )
+            }
             connection.disconnect()
             throw IllegalStateException("fetch 失败：HTTP $responseCode ${message.ifBlank { "" }}".trim())
         }
@@ -1829,6 +1934,8 @@ class BrowserUseEngine(
 
     private suspend fun executePressKey(request: BrowserUseRequest): BrowserUseOutcome {
         val tab = requirePageTab(request)
+        riskBlockedOutcomeIfNeeded(request, tab)?.let { return it }
+        val throttleDelayMs = applyHostThrottle(BrowserUseAction.PRESS_KEY, tab.currentUrl)
         val keyLiteral = JSONObject.quote(request.key)
         evaluateValue(
             tab,
@@ -1852,7 +1959,8 @@ class BrowserUseEngine(
             buildCommonPayload(
                 tab = tab,
                 action = request.action,
-                extra = mapOf("key" to request.key)
+                extra = mapOf("key" to request.key),
+                throttleDelayMs = throttleDelayMs
             )
         )
     }
@@ -1966,7 +2074,8 @@ class BrowserUseEngine(
         request: BrowserUseRequest,
         tab: BrowserTab,
         selectorUsed: String?,
-        items: List<String>
+        items: List<String>,
+        throttleDelayMs: Long? = null
     ): BrowserUseOutcome {
         val extra = linkedMapOf<String, Any?>(
             "selectorUsed" to selectorUsed,
@@ -1992,7 +2101,8 @@ class BrowserUseEngine(
             payload = buildCommonPayload(
                 tab = tab,
                 action = request.action,
-                extra = extra
+                extra = extra,
+                throttleDelayMs = throttleDelayMs
             ),
             artifacts = artifacts
         )
@@ -2043,7 +2153,8 @@ class BrowserUseEngine(
     private fun buildCommonPayload(
         tab: BrowserTab,
         action: BrowserUseAction,
-        extra: Map<String, Any?> = emptyMap()
+        extra: Map<String, Any?> = emptyMap(),
+        throttleDelayMs: Long? = null
     ): Map<String, Any?> {
         return linkedMapOf<String, Any?>(
             "workspaceId" to workspaceId,
@@ -2052,7 +2163,11 @@ class BrowserUseEngine(
             "currentUrl" to tab.currentUrl,
             "pageTitle" to tab.title,
             "userAgentProfile" to tab.userAgentProfile.wireName,
-            "activeTabId" to activeTabId
+            "activeTabId" to activeTabId,
+            "riskChallengeDetected" to tab.riskChallengeDetected,
+            "riskChallengeKind" to tab.riskChallengeKind,
+            "recommendedNextAction" to tab.recommendedNextAction,
+            "throttleDelayMs" to throttleDelayMs
         ).apply {
             putAll(extra)
         }
@@ -2067,7 +2182,10 @@ class BrowserUseEngine(
                     "url" to tab.currentUrl,
                     "title" to tab.title,
                     "userAgentProfile" to tab.userAgentProfile.wireName,
-                    "isActive" to (tab.tabId == activeTabId)
+                    "isActive" to (tab.tabId == activeTabId),
+                    "riskChallengeDetected" to tab.riskChallengeDetected,
+                    "riskChallengeKind" to tab.riskChallengeKind,
+                    "recommendedNextAction" to tab.recommendedNextAction
                 )
             }
         )
@@ -2158,17 +2276,158 @@ class BrowserUseEngine(
         return tab
     }
 
+    private fun normalizedHttpNavigationUrl(rawUrl: String?): String? {
+        return BrowserUrlNormalizer.normalizeHttpUrl(rawUrl)
+    }
+
+    private fun shouldReuseCurrentNavigation(
+        tab: BrowserTab,
+        resolvedUrl: String
+    ): Boolean {
+        if (tab.isLoading) return false
+        val current = normalizedHttpNavigationUrl(tab.currentUrl) ?: return false
+        val target = normalizedHttpNavigationUrl(resolvedUrl) ?: return false
+        return current == target
+    }
+
+    private suspend fun applyHostThrottle(
+        action: BrowserUseAction,
+        rawUrl: String?
+    ): Long {
+        if (!BrowserRiskControl.shouldThrottle(action)) return 0L
+        val host = BrowserRiskControl.normalizedHost(rawUrl) ?: return 0L
+        val baseDelayMs = BrowserRiskControl.baseThrottleDelayMs(action, rawUrl)
+        if (baseDelayMs <= 0L) return 0L
+        val now = System.currentTimeMillis()
+        val elapsed = hostActionTimestampsMs[host]?.let { now - it }
+        val delayMs = BrowserRiskControl.computeThrottleDelayMs(
+            baseDelayMs = baseDelayMs,
+            elapsedSinceLastActionMs = elapsed,
+            jitterMs = Random.nextLong(35L, 115L)
+        )
+        if (delayMs > 0L) {
+            delay(delayMs)
+        }
+        hostActionTimestampsMs[host] = System.currentTimeMillis()
+        return delayMs
+    }
+
+    private fun applyRiskChallengeState(
+        tab: BrowserTab,
+        challenge: BrowserRiskChallenge?
+    ): Boolean {
+        val detected = challenge != null
+        val changed = tab.riskChallengeDetected != detected ||
+            tab.riskChallengeKind != challenge?.kind ||
+            tab.recommendedNextAction != challenge?.recommendedNextAction
+        tab.riskChallengeDetected = detected
+        tab.riskChallengeKind = challenge?.kind
+        tab.recommendedNextAction = challenge?.recommendedNextAction
+        return changed
+    }
+
+    private fun clearRiskChallengeState(tab: BrowserTab) {
+        tab.lastHttpStatusCode = null
+        applyRiskChallengeState(tab, null)
+    }
+
+    private suspend fun inspectPageRiskChallenge(tab: BrowserTab): BrowserRiskChallenge? {
+        val currentUrl = tab.currentUrl.orEmpty()
+        val pageChallenge = if (currentUrl.startsWith("http://") || currentUrl.startsWith("https://")) {
+            runCatching {
+                val value = evaluateValue(
+                    tab,
+                    """
+                        const pageText = [
+                            document.title || '',
+                            document.body ? (document.body.innerText || document.body.textContent || '') : '',
+                            document.documentElement ? (document.documentElement.innerText || '') : ''
+                        ].join(' ').replace(/\s+/g, ' ').trim().slice(0, 8000);
+                        return {
+                            url: String(location.href || ''),
+                            title: String(document.title || ''),
+                            text: pageText
+                        };
+                    """.trimIndent()
+                ).jsonObject
+                BrowserRiskControl.detectChallenge(
+                    title = value["title"]?.jsonPrimitive?.contentOrNull ?: tab.title,
+                    bodyText = value["text"]?.jsonPrimitive?.contentOrNull,
+                    currentUrl = value["url"]?.jsonPrimitive?.contentOrNull ?: tab.currentUrl
+                )
+            }.getOrNull()
+        } else {
+            null
+        }
+        val statusChallenge = BrowserRiskControl.detectChallenge(
+            statusCode = tab.lastHttpStatusCode,
+            title = tab.title,
+            currentUrl = tab.currentUrl
+        )
+        val challenge = pageChallenge ?: statusChallenge
+        if (applyRiskChallengeState(tab, challenge)) {
+            publishSnapshotUpdate()
+        }
+        return challenge
+    }
+
+    private fun shouldBlockForRiskChallenge(action: BrowserUseAction): Boolean {
+        return when (action) {
+            BrowserUseAction.CLICK,
+            BrowserUseAction.TYPE,
+            BrowserUseAction.SCROLL,
+            BrowserUseAction.SCROLL_AND_COLLECT,
+            BrowserUseAction.EXECUTE_JS,
+            BrowserUseAction.FETCH,
+            BrowserUseAction.HOVER,
+            BrowserUseAction.PRESS_KEY -> true
+            else -> false
+        }
+    }
+
+    private fun riskBlockedOutcomeIfNeeded(
+        request: BrowserUseRequest,
+        tab: BrowserTab
+    ): BrowserUseOutcome? {
+        if (!tab.riskChallengeDetected || !shouldBlockForRiskChallenge(request.action)) {
+            return null
+        }
+        return BrowserUseOutcome(
+            summaryText = request.toolTitle,
+            payload = buildCommonPayload(
+                tab = tab,
+                action = request.action,
+                extra = mapOf(
+                    "blockedByRiskChallenge" to true,
+                    "blockedAction" to request.action.wireName
+                )
+            )
+        )
+    }
+
     private suspend fun navigateTab(
         tab: BrowserTab,
-        rawUrl: String?
+        rawUrl: String?,
+        allowReuse: Boolean = true
     ): LoadSnapshot {
         val resolvedUrl = resolveNavigateUrl(rawUrl)
         activeTabId = tab.tabId
+        if (allowReuse && shouldReuseCurrentNavigation(tab, resolvedUrl)) {
+            inspectPageRiskChallenge(tab)
+            return LoadSnapshot(
+                url = tab.currentUrl,
+                title = tab.title,
+                errorMessage = tab.lastError,
+                reusedExistingPage = true
+            )
+        }
+        val throttleDelayMs = applyHostThrottle(BrowserUseAction.NAVIGATE, resolvedUrl)
         val waiter = CompletableDeferred<LoadSnapshot>()
         tab.loadWaiter = waiter
         tab.lastError = null
         withContext(Dispatchers.Main.immediate) {
-            layoutWebView(tab.webView)
+            val (vpWidth, vpHeight) = viewportDimensionsForProfile(tab.userAgentProfile)
+            layoutWebView(tab.webView, vpWidth, vpHeight)
             tab.webView.loadUrl(resolvedUrl)
         }
         val snapshot = try {
@@ -2178,16 +2437,38 @@ class BrowserUseEngine(
                 tab.webView.stopLoading()
                 tab.isLoading = false
             }
-            LoadSnapshot(
-                url = resolvedUrl,
-                title = tab.title,
-                errorMessage = "页面加载超时（${NAVIGATION_TIMEOUT_MS / 1000}秒），请检查网络连接或稍后重试"
-            )
+            val challenge = if (tab.riskChallengeDetected) {
+                BrowserRiskChallenge(
+                    kind = tab.riskChallengeKind ?: "risk_challenge",
+                    recommendedNextAction = tab.recommendedNextAction
+                        ?: "ask_user_to_complete_verification_manually"
+                )
+            } else {
+                inspectPageRiskChallenge(tab)
+            }
+            if (challenge != null) {
+                LoadSnapshot(
+                    url = tab.currentUrl ?: resolvedUrl,
+                    title = tab.title,
+                    errorMessage = null,
+                    throttleDelayMs = throttleDelayMs
+                )
+            } else {
+                LoadSnapshot(
+                    url = resolvedUrl,
+                    title = tab.title,
+                    errorMessage = "页面加载超时（${NAVIGATION_TIMEOUT_MS / 1000}秒），请检查网络连接或稍后重试",
+                    throttleDelayMs = throttleDelayMs
+                )
+            }
+        }
+        if (snapshot.errorMessage.isNullOrBlank()) {
+            inspectPageRiskChallenge(tab)
         }
         if (!snapshot.errorMessage.isNullOrBlank()) {
             throw IllegalStateException(snapshot.errorMessage)
         }
-        return snapshot
+        return snapshot.copy(throttleDelayMs = snapshot.throttleDelayMs.coerceAtLeast(throttleDelayMs))
     }
 
     private suspend fun waitForPostActionSettle(tab: BrowserTab) {
@@ -2241,6 +2522,9 @@ class BrowserUseEngine(
         payload["canGoBack"] = withContext(Dispatchers.Main.immediate) { tab.webView.canGoBack() }
         payload["canGoForward"] = withContext(Dispatchers.Main.immediate) { tab.webView.canGoForward() }
         payload["userAgentProfile"] = tab.userAgentProfile.wireName
+        payload["riskChallengeDetected"] = tab.riskChallengeDetected
+        payload["riskChallengeKind"] = tab.riskChallengeKind
+        payload["recommendedNextAction"] = tab.recommendedNextAction
         return payload
     }
 
@@ -2249,7 +2533,8 @@ class BrowserUseEngine(
         script: String
     ): String {
         return withContext(Dispatchers.Main.immediate) {
-            layoutWebView(tab.webView)
+            val (vpWidth, vpHeight) = viewportDimensionsForProfile(tab.userAgentProfile)
+            layoutWebView(tab.webView, vpWidth, vpHeight)
             suspendCancellableCoroutine { continuation ->
                 val callback = ValueCallback<String> { value ->
                     if (continuation.isActive) {
@@ -2474,13 +2759,108 @@ class BrowserUseEngine(
             }
     }
 
+    private fun buildTypingChunkCommand(
+        chunk: String,
+        reset: Boolean,
+        finalChunk: Boolean
+    ): String {
+        val chunkLiteral = JSONObject.quote(chunk)
+        val resetLiteral = if (reset) "true" else "false"
+        val finalLiteral = if (finalChunk) "true" else "false"
+        return """
+            target.focus();
+            const chunk = $chunkLiteral;
+            const shouldReset = $resetLiteral;
+            const finalChunk = $finalLiteral;
+            function setNativeValue(node, value) {
+                var descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+                if (!descriptor || !descriptor.set) {
+                    descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
+                }
+                if (descriptor && descriptor.set) {
+                    descriptor.set.call(node, value);
+                } else {
+                    node.value = value;
+                }
+            }
+            function dispatchInput(kind, data) {
+                try {
+                    target.dispatchEvent(new InputEvent(kind, {
+                        bubbles: true,
+                        cancelable: true,
+                        inputType: data ? 'insertText' : 'deleteContentBackward',
+                        data: data || null
+                    }));
+                } catch (_) {
+                    target.dispatchEvent(new Event(kind, { bubbles: true, cancelable: true }));
+                }
+            }
+            function dispatchKeys(data) {
+                Array.from(String(data || '')).forEach(function(ch) {
+                    const opts = { key: ch, bubbles: true, cancelable: true };
+                    target.dispatchEvent(new KeyboardEvent('keydown', opts));
+                    target.dispatchEvent(new KeyboardEvent('keypress', opts));
+                    target.dispatchEvent(new KeyboardEvent('keyup', opts));
+                });
+            }
+            if (target.isContentEditable) {
+                if (shouldReset) {
+                    target.textContent = '';
+                    dispatchInput('input', '');
+                }
+                dispatchKeys(chunk);
+                if (document.execCommand) {
+                    document.execCommand('insertText', false, chunk);
+                } else {
+                    target.textContent = String(target.textContent || '') + chunk;
+                }
+                dispatchInput('input', chunk);
+            } else if ('value' in target) {
+                if (shouldReset) {
+                    setNativeValue(target, '');
+                    if (target.setSelectionRange) {
+                        target.setSelectionRange(0, 0);
+                    }
+                    dispatchInput('input', '');
+                }
+                dispatchKeys(chunk);
+                const current = String(target.value || '');
+                const start = typeof target.selectionStart === 'number' ? target.selectionStart : current.length;
+                const end = typeof target.selectionEnd === 'number' ? target.selectionEnd : start;
+                const nextValue = current.slice(0, start) + chunk + current.slice(end);
+                setNativeValue(target, nextValue);
+                const caret = start + chunk.length;
+                if (target.setSelectionRange) {
+                    target.setSelectionRange(caret, caret);
+                }
+                dispatchInput('input', chunk);
+            } else {
+                throw new Error('Target element is not editable');
+            }
+            if (finalChunk) {
+                target.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            return describeElement(target);
+        """.trimIndent()
+    }
+
     private fun buildTargetedScript(
         request: BrowserUseRequest,
-        command: String
+        command: String,
+        requireVisibleTarget: Boolean = false
     ): String {
         val selectorLiteral = request.selector?.let { JSONObject.quote(it) } ?: "null"
         val xLiteral = request.coordinateX?.toString() ?: "null"
         val yLiteral = request.coordinateY?.toString() ?: "null"
+        val visibleCheck = if (requireVisibleTarget) {
+            """
+            if (!isVisible(target)) {
+                throw new Error('Target element is not visible');
+            }
+            """.trimIndent()
+        } else {
+            ""
+        }
         return """
             const selector = $selectorLiteral;
             const coordinateX = $xLiteral;
@@ -2489,6 +2869,7 @@ class BrowserUseEngine(
             if (!target) {
                 throw new Error('Target element not found');
             }
+            $visibleCheck
             const rect = target.getBoundingClientRect();
             const centerX = Math.round(rect.left + rect.width / 2);
             const centerY = Math.round(rect.top + rect.height / 2);
@@ -3009,6 +3390,7 @@ class BrowserUseEngine(
             tab.helpersInjected = false
             tab.downloadHelperInjected = false
             tab.hasSslError = false
+            clearRiskChallengeState(tab)
             tab.pageMenuCommands.clear()
             if (tab.loadWaiter?.isActive != true) {
                 tab.loadWaiter = CompletableDeferred()
@@ -3023,8 +3405,11 @@ class BrowserUseEngine(
             val waiter = tab.loadWaiter
             mainScope.launch {
                 delay(LOAD_SETTLE_DELAY_MS)
-                runCatching { injectDownloadHelperIfNeeded(tab) }
-                runCatching { injectUserscriptsIfNeeded(tab) }
+                val challenge = runCatching { inspectPageRiskChallenge(tab) }.getOrNull()
+                if (challenge == null) {
+                    runCatching { injectDownloadHelperIfNeeded(tab) }
+                    runCatching { injectUserscriptsIfNeeded(tab) }
+                }
                 hostStore.recordVisit(tab.currentUrl, tab.title, isReload = false)
                 hostStore.updateTitle(tab.currentUrl, tab.title)
                 publishSnapshotUpdate()
@@ -3057,6 +3442,25 @@ class BrowserUseEngine(
                 )
             )
             publishSnapshotUpdate()
+        }
+
+        override fun onReceivedHttpError(
+            view: WebView?,
+            request: WebResourceRequest?,
+            errorResponse: WebResourceResponse?
+        ) {
+            if (request?.isForMainFrame == false) return
+            val statusCode = errorResponse?.statusCode ?: return
+            tab.lastHttpStatusCode = statusCode
+            BrowserRiskControl.detectChallenge(
+                statusCode = statusCode,
+                title = tab.title,
+                currentUrl = request?.url?.toString() ?: tab.currentUrl
+            )?.let { challenge ->
+                if (applyRiskChallengeState(tab, challenge)) {
+                    publishSnapshotUpdate()
+                }
+            }
         }
 
         override fun onReceivedSslError(

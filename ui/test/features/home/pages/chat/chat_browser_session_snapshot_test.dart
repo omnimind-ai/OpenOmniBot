@@ -16,6 +16,10 @@ void main() {
       'isLoading': true,
       'hasSslError': false,
       'isDesktopMode': true,
+      'riskChallengeDetected': true,
+      'riskChallengeKind': 'search_engine_challenge',
+      'recommendedNextAction': 'ask_user_to_complete_verification_manually',
+      'throttleDelayMs': 1500,
       'activeDownloadCount': 1,
       'tabs': <Map<String, dynamic>>[
         <String, dynamic>{
@@ -24,6 +28,8 @@ void main() {
           'title': 'Example',
           'isActive': true,
           'isLoading': true,
+          'riskChallengeDetected': true,
+          'riskChallengeKind': 'search_engine_challenge',
         },
       ],
       'bookmarks': <Map<String, dynamic>>[
@@ -79,7 +85,11 @@ void main() {
 
     expect(snapshot.available, isTrue);
     expect(snapshot.isBookmarked, isTrue);
+    expect(snapshot.riskChallengeDetected, isTrue);
+    expect(snapshot.riskChallengeKind, 'search_engine_challenge');
+    expect(snapshot.throttleDelayMs, 1500);
     expect(snapshot.tabs.single.tabId, 3);
+    expect(snapshot.tabs.single.riskChallengeDetected, isTrue);
     expect(snapshot.bookmarks.single.url, 'https://example.com');
     expect(snapshot.downloads.single.fileName, 'demo.pdf');
     expect(snapshot.downloadSummary.overallProgress, 0.5);

@@ -129,6 +129,13 @@ class _ChatBrowserOverlayState extends State<ChatBrowserOverlay> {
                     color: const Color(0xFFB42318),
                     background: const Color(0xFFFFF1F3),
                   ),
+                if (snapshot.riskChallengeDetected)
+                  _buildBanner(
+                    icon: Icons.front_hand_rounded,
+                    message: _riskChallengeMessage(snapshot),
+                    color: const Color(0xFF92400E),
+                    background: const Color(0xFFFFF7ED),
+                  ),
                 if (snapshot.externalOpenPrompt != null)
                   _buildExternalPrompt(snapshot.externalOpenPrompt!),
                 if (snapshot.permissionPrompt != null)
@@ -445,6 +452,26 @@ class _ChatBrowserOverlayState extends State<ChatBrowserOverlay> {
         ],
       ),
     );
+  }
+
+  String _riskChallengeMessage(ChatBrowserSessionSnapshot snapshot) {
+    switch (snapshot.recommendedNextAction) {
+      case 'wait_before_retrying_and_reduce_request_rate':
+        return _text(
+          '页面触发频率限制，已暂停自动操作，请稍后再继续',
+          'Rate limit detected. Automation is paused; wait before continuing.',
+        );
+      case 'stop_automatic_retry_and_use_manual_access':
+        return _text(
+          '页面拒绝自动访问，已暂停操作，请手动处理后继续',
+          'Access was denied. Automation is paused; continue manually.',
+        );
+      default:
+        return _text(
+          '检测到验证码或风控验证，已暂停自动操作，请手动处理后继续',
+          'Verification challenge detected. Automation is paused; complete it manually to continue.',
+        );
+    }
   }
 
   Widget _buildExternalPrompt(BrowserExternalOpenPrompt prompt) {
