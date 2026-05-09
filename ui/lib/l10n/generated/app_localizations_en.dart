@@ -3047,6 +3047,32 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get workbenchAndroidAssetsTitle => 'Android assets';
+
+  @override
+  String get workbenchAndroidSourceHint =>
+      'Enter an APK or Android project path, for example /workspace/apps/demo.apk';
+
+  @override
+  String get workbenchAndroidIngestButton => 'Import into current Project';
+
+  @override
+  String get workbenchAndroidSourceRequired =>
+      'Enter an Android app or project path';
+
+  @override
+  String get workbenchAndroidIngestFailed => 'Android asset import failed';
+
+  @override
+  String workbenchAndroidIngested(String name) {
+    return 'Imported $name';
+  }
+
+  @override
+  String get workbenchAndroidAssetsEmpty =>
+      'No imported Android apps or projects yet';
+
+  @override
   String workbenchTodoCount(int openCount, int finishedCount) {
     return '$openCount open / $finishedCount finished';
   }

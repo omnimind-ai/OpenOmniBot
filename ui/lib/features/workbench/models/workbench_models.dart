@@ -166,6 +166,62 @@ class WorkbenchFlowSpec {
   }
 }
 
+class WorkbenchAndroidAsset {
+  const WorkbenchAndroidAsset({
+    required this.assetId,
+    required this.sourceKind,
+    required this.displayName,
+    required this.originalPath,
+    required this.projectPath,
+    required this.shellPath,
+    required this.entryPath,
+    required this.importedAt,
+    this.packageName,
+    this.versionName,
+    this.versionCode,
+    this.sizeBytes = 0,
+    this.fileCount = 0,
+  });
+
+  final String assetId;
+  final String sourceKind;
+  final String displayName;
+  final String originalPath;
+  final String projectPath;
+  final String shellPath;
+  final String entryPath;
+  final String? packageName;
+  final String? versionName;
+  final int? versionCode;
+  final int sizeBytes;
+  final int fileCount;
+  final DateTime importedAt;
+
+  bool get isApk => sourceKind == 'apk';
+
+  String get displayPath => entryPath.trim().isEmpty ? shellPath : entryPath;
+
+  factory WorkbenchAndroidAsset.fromMap(Map<dynamic, dynamic> map) {
+    return WorkbenchAndroidAsset(
+      assetId: (map['assetId'] ?? '').toString(),
+      sourceKind: (map['sourceKind'] ?? '').toString(),
+      displayName: (map['displayName'] ?? map['assetId'] ?? '').toString(),
+      originalPath: (map['originalPath'] ?? '').toString(),
+      projectPath: (map['projectPath'] ?? '').toString(),
+      shellPath: (map['shellPath'] ?? '').toString(),
+      entryPath: (map['entryPath'] ?? '').toString(),
+      packageName: map['packageName']?.toString(),
+      versionName: map['versionName']?.toString(),
+      versionCode: int.tryParse((map['versionCode'] ?? '').toString()),
+      sizeBytes: int.tryParse((map['sizeBytes'] ?? '0').toString()) ?? 0,
+      fileCount: int.tryParse((map['fileCount'] ?? '0').toString()) ?? 0,
+      importedAt:
+          DateTime.tryParse((map['importedAt'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+}
+
 class WorkbenchProject {
   const WorkbenchProject({
     required this.projectId,
@@ -176,6 +232,7 @@ class WorkbenchProject {
     required this.pageIds,
     required this.tools,
     required this.flows,
+    required this.androidAssets,
     required this.todos,
   });
 
@@ -187,6 +244,7 @@ class WorkbenchProject {
   final List<String> pageIds;
   final List<WorkbenchToolSpec> tools;
   final List<WorkbenchFlowSpec> flows;
+  final List<WorkbenchAndroidAsset> androidAssets;
   final List<WorkbenchTodoItem> todos;
 
   List<WorkbenchTodoItem> get openTodos =>
@@ -199,6 +257,7 @@ class WorkbenchProject {
     final pageIds = map['pageIds'];
     final tools = map['tools'] ?? map['apis'];
     final flows = map['flows'];
+    final androidAssets = map['androidAssets'];
     final todos = map['todos'];
     return WorkbenchProject(
       projectId: (map['projectId'] ?? '').toString(),
@@ -221,6 +280,12 @@ class WorkbenchProject {
                 .map(WorkbenchFlowSpec.fromMap)
                 .toList(growable: false)
           : const [],
+      androidAssets: androidAssets is List
+          ? androidAssets
+                .whereType<Map<dynamic, dynamic>>()
+                .map(WorkbenchAndroidAsset.fromMap)
+                .toList(growable: false)
+          : const [],
       todos: todos is List
           ? todos
                 .whereType<Map<dynamic, dynamic>>()
@@ -239,6 +304,7 @@ class WorkbenchProject {
     List<String>? pageIds,
     List<WorkbenchToolSpec>? tools,
     List<WorkbenchFlowSpec>? flows,
+    List<WorkbenchAndroidAsset>? androidAssets,
     List<WorkbenchTodoItem>? todos,
   }) {
     return WorkbenchProject(
@@ -250,6 +316,7 @@ class WorkbenchProject {
       pageIds: pageIds ?? this.pageIds,
       tools: tools ?? this.tools,
       flows: flows ?? this.flows,
+      androidAssets: androidAssets ?? this.androidAssets,
       todos: todos ?? this.todos,
     );
   }
@@ -379,6 +446,37 @@ class WorkbenchProjectHotUpdateResult {
   }
 }
 
+class WorkbenchAndroidIngestResult {
+  const WorkbenchAndroidIngestResult({
+    required this.success,
+    required this.projectId,
+    required this.asset,
+    this.project,
+    this.androidManifestPath = '',
+    this.androidIngestLogPath = '',
+  });
+
+  final bool success;
+  final String projectId;
+  final WorkbenchAndroidAsset? asset;
+  final WorkbenchProject? project;
+  final String androidManifestPath;
+  final String androidIngestLogPath;
+
+  factory WorkbenchAndroidIngestResult.fromMap(Map<dynamic, dynamic> map) {
+    final asset = map['asset'];
+    final project = map['project'];
+    return WorkbenchAndroidIngestResult(
+      success: map['success'] == true,
+      projectId: (map['projectId'] ?? '').toString(),
+      asset: asset is Map ? WorkbenchAndroidAsset.fromMap(asset) : null,
+      project: project is Map ? WorkbenchProject.fromMap(project) : null,
+      androidManifestPath: (map['androidManifestPath'] ?? '').toString(),
+      androidIngestLogPath: (map['androidIngestLogPath'] ?? '').toString(),
+    );
+  }
+}
+
 class WorkbenchTodoToolIds {
   const WorkbenchTodoToolIds._();
 
@@ -429,6 +527,7 @@ class WorkbenchTodoProjectFactory {
           outputBinding: {'todo': 'project.todos'},
         ),
       ],
+      androidAssets: const [],
       todos: const [],
     );
   }

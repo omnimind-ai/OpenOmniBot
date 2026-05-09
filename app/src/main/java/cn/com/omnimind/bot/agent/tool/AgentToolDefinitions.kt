@@ -1391,6 +1391,45 @@ object AgentToolDefinitions {
         }
     }
 
+    val workbenchProjectIngestAndroidTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_ingest_android")
+            put("displayName", "导入 Android 资产")
+            put("toolType", "workbench")
+            put("description", "把一个 Android APK 文件或 Android 项目目录导入到已存在的 Workbench Project。它是 OOB Workbench 控制面能力，会写入 Project 的 android/manifest.json 和 logs/android_ingest.jsonl，不会注册成 Project 业务 API，也不会出现在 workbench_api_list。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("projectId") {
+                        put("type", "string")
+                        put("description", "要接收 Android 资产的 Workbench Project id。")
+                    }
+                    putJsonObject("sourcePath") {
+                        put("type", "string")
+                        put("description", "设备上的 APK 文件或 Android 项目目录路径。可传 Android 绝对路径，也可传 /workspace/... shell 路径。")
+                    }
+                    putJsonObject("sourceKind") {
+                        put("type", "string")
+                        put("description", "可选。apk 表示 APK 文件，android_project 表示 Android 项目目录；不传时根据 sourcePath 自动推断。")
+                        putJsonArray("enum") {
+                            add("apk")
+                            add("android_project")
+                        }
+                    }
+                    putJsonObject("displayName") {
+                        put("type", "string")
+                        put("description", "可选。导入后在 Project 页面显示的资产名称。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("projectId")
+                    add("sourcePath")
+                }
+            }
+        }
+    }
+
     val scheduleTaskCreateTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -1968,7 +2007,8 @@ object AgentToolDefinitions {
         workbenchProjectExportTool,
         workbenchProjectOpenTool,
         workbenchProjectDeleteTool,
-        workbenchProjectHotUpdateTool
+        workbenchProjectHotUpdateTool,
+        workbenchProjectIngestAndroidTool
     )
 
     private val scheduleToolDefinitions: List<JsonObject> = listOf(

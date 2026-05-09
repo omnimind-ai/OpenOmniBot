@@ -5606,6 +5606,48 @@ abstract class AppLocalizations {
   /// **'导出位置：{path}'**
   String workbenchProjectExportPath(String path);
 
+  /// No description provided for @workbenchAndroidAssetsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'Android 资产'**
+  String get workbenchAndroidAssetsTitle;
+
+  /// No description provided for @workbenchAndroidSourceHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入 APK 或 Android 项目路径，例如 /workspace/apps/demo.apk'**
+  String get workbenchAndroidSourceHint;
+
+  /// No description provided for @workbenchAndroidIngestButton.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入到当前 Project'**
+  String get workbenchAndroidIngestButton;
+
+  /// No description provided for @workbenchAndroidSourceRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入 Android 应用或项目路径'**
+  String get workbenchAndroidSourceRequired;
+
+  /// No description provided for @workbenchAndroidIngestFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'Android 资产导入失败'**
+  String get workbenchAndroidIngestFailed;
+
+  /// No description provided for @workbenchAndroidIngested.
+  ///
+  /// In zh, this message translates to:
+  /// **'已导入 {name}'**
+  String workbenchAndroidIngested(String name);
+
+  /// No description provided for @workbenchAndroidAssetsEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无导入的 Android 应用或项目'**
+  String get workbenchAndroidAssetsEmpty;
+
   /// No description provided for @workbenchTodoCount.
   ///
   /// In zh, this message translates to:

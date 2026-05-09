@@ -39,6 +39,17 @@ abstract class WorkbenchProjectBackend {
     required String projectId,
     required String prompt,
   });
+
+  /// Imports an APK file or Android project directory into a Workbench Project.
+  ///
+  /// This is a Workbench control-plane operation. It stores the Android asset
+  /// under the Project workspace and must not register a Project business API.
+  Future<WorkbenchAndroidIngestResult> ingestAndroidAsset({
+    required String projectId,
+    required String sourcePath,
+    String? sourceKind,
+    String? displayName,
+  });
 }
 
 class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
@@ -148,6 +159,26 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
       {'projectId': projectId, 'prompt': prompt, 'caller': 'ui'},
     );
     return WorkbenchProjectHotUpdateResult.fromMap(result ?? const {});
+  }
+
+  @override
+  Future<WorkbenchAndroidIngestResult> ingestAndroidAsset({
+    required String projectId,
+    required String sourcePath,
+    String? sourceKind,
+    String? displayName,
+  }) async {
+    final result = await _channel
+        .invokeMethod<Map<dynamic, dynamic>>('workbenchProjectIngestAndroid', {
+          'projectId': projectId,
+          'sourcePath': sourcePath,
+          if (sourceKind != null && sourceKind.trim().isNotEmpty)
+            'sourceKind': sourceKind,
+          if (displayName != null && displayName.trim().isNotEmpty)
+            'displayName': displayName,
+          'caller': 'ui',
+        });
+    return WorkbenchAndroidIngestResult.fromMap(result ?? const {});
   }
 }
 
@@ -479,6 +510,51 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       final result = await _backend.hotUpdateProject(
         projectId: project.projectId,
         prompt: prompt,
+      );
+      if (result.project != null) {
+        _projects = _projects
+            .map(
+              (item) => item.projectId == result.project!.projectId
+                  ? result.project!
+                  : item,
+            )
+            .toList(growable: false);
+      } else if (result.success) {
+        _projects = await _backend.listProjects();
+      }
+      return result;
+    } catch (error) {
+      _errorMessage = error.toString();
+      return null;
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Imports an Android app/project into the selected Workbench Project.
+  ///
+  /// `sourcePath` can be an Android absolute path or `/workspace/...` shell
+  /// path. The Project list is refreshed from the native payload after import.
+  Future<WorkbenchAndroidIngestResult?> ingestAndroidAsset(
+    WorkbenchProject project,
+    String sourcePath, {
+    String? sourceKind,
+    String? displayName,
+  }) async {
+    final normalizedSourcePath = sourcePath.trim();
+    if (normalizedSourcePath.isEmpty) {
+      return null;
+    }
+    _loading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final result = await _backend.ingestAndroidAsset(
+        projectId: project.projectId,
+        sourcePath: normalizedSourcePath,
+        sourceKind: sourceKind,
+        displayName: displayName,
       );
       if (result.project != null) {
         _projects = _projects

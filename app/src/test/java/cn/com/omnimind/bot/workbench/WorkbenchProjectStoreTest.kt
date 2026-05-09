@@ -229,6 +229,36 @@ class WorkbenchProjectStoreTest {
         assertFalse(apiIds.contains("workbench_project_create"))
         assertFalse(apiIds.contains("workbench_project_delete"))
         assertFalse(apiIds.contains("workbench_project_hot_update"))
+        assertFalse(apiIds.contains("workbench_project_ingest_android"))
+    }
+
+    @Test
+    fun ingestAndroidAssetWritesManifestLogAndKeepsApiRegistryClean() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        store.createProject(mapOf("projectId" to WORKBENCH_DEFAULT_PROJECT_ID))
+        val sourceApk = root.resolve("source-demo.apk")
+        sourceApk.writeBytes(byteArrayOf(1, 2, 3, 4))
+
+        val result = store.ingestAndroidAsset(
+            projectId = WORKBENCH_DEFAULT_PROJECT_ID,
+            sourcePath = sourceApk.absolutePath,
+            caller = "ai"
+        )
+
+        assertTrue(result["success"] == true)
+        val asset = result["asset"] as Map<*, *>
+        assertEquals(WORKBENCH_ANDROID_APK_KIND, asset["sourceKind"])
+        assertEquals("source-demo.apk", asset["displayName"])
+        assertTrue(asset["entryPath"].toString().endsWith("/source.apk"))
+        assertTrue(root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/android/manifest.json").exists())
+        assertTrue(root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/logs/android_ingest.jsonl").exists())
+        assertTrue(root.resolve("projects/$WORKBENCH_DEFAULT_PROJECT_ID/project.json").readText().contains("androidAssetCount"))
+        val project = store.getProject(WORKBENCH_DEFAULT_PROJECT_ID)
+        val androidAssets = project["androidAssets"] as List<*>
+        assertEquals(1, androidAssets.size)
+        val apiIds = store.listApis(WORKBENCH_DEFAULT_PROJECT_ID).map { it["apiId"] }
+        assertFalse(apiIds.contains("workbench_project_ingest_android"))
     }
 
     @Test
@@ -305,6 +335,23 @@ class WorkbenchProjectStoreTest {
             prompt = "增加 todo：Export hot update",
             caller = "ui"
         )
+        val sourceProject = root.resolve("android-source")
+        sourceProject.mkdirs()
+        sourceProject.resolve("settings.gradle").writeText("pluginManagement {}")
+        sourceProject.resolve("app/src/main/AndroidManifest.xml").apply {
+            parentFile?.mkdirs()
+            writeText("<manifest />")
+        }
+        sourceProject.resolve("app/build/ignored.txt").apply {
+            parentFile?.mkdirs()
+            writeText("ignored")
+        }
+        store.ingestAndroidAsset(
+            projectId = WORKBENCH_DEFAULT_PROJECT_ID,
+            sourcePath = sourceProject.absolutePath,
+            sourceKind = WORKBENCH_ANDROID_PROJECT_KIND,
+            caller = "ui"
+        )
 
         val export = store.exportProject(WORKBENCH_DEFAULT_PROJECT_ID)
         val packageName = export["packageName"]!!.toString()
@@ -328,8 +375,13 @@ class WorkbenchProjectStoreTest {
             assertTrue(entries.contains("project/backend/api_spec.json"))
             assertTrue(entries.contains("project/project.json"))
             assertTrue(entries.contains("project/data/todos.json"))
+            assertTrue(entries.contains("project/android/manifest.json"))
+            assertTrue(entries.contains("project/android/README.md"))
             assertTrue(entries.contains("project/logs/api_calls.jsonl"))
             assertTrue(entries.contains("project/logs/hot_updates.jsonl"))
+            assertTrue(entries.contains("project/logs/android_ingest.jsonl"))
+            assertTrue(entries.any { it.endsWith("/source/settings.gradle") })
+            assertFalse(entries.any { it.endsWith("/source/app/build/ignored.txt") })
         }
     }
 }

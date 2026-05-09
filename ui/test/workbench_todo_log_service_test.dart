@@ -413,6 +413,81 @@ void main() {
       expect(service.project.openTodos.first.title, 'Hot updated');
     },
   );
+
+  test('project mode ingests Android asset through control API', () async {
+    final service = _projectModeService();
+    await service.refresh();
+
+    final result = await service.ingestAndroidAsset(
+      service.projects.single,
+      '/workspace/apps/demo.apk',
+    );
+
+    expect(result?.success, isTrue);
+    expect(result?.asset?.sourceKind, 'apk');
+    expect(result?.asset?.displayPath, contains('/workspace/projects/'));
+    expect(service.projects.single.androidAssets, hasLength(1));
+    expect(
+      service.projects.single.androidAssets.single.displayName,
+      'demo.apk',
+    );
+    expect(
+      service.projects.single.tools.map((tool) => tool.id),
+      isNot(contains('workbench_project_ingest_android')),
+    );
+  });
+
+  test(
+    'native service ingests Android asset through MethodChannel control API',
+    () async {
+      const channel = MethodChannel('cn.com.omnimind.bot/AssistCoreEvent');
+      final calls = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call.method);
+            switch (call.method) {
+              case 'workbenchProjectList':
+                return [_projectPayload()];
+              case 'workbenchProjectIngestAndroid':
+                expect(
+                  call.arguments['sourcePath'],
+                  '/workspace/apps/demo.apk',
+                );
+                return {
+                  'success': true,
+                  'projectId': workbenchTodoDefaultProjectId,
+                  'asset': _androidAssetPayload(),
+                  'androidManifestPath':
+                      '/workspace/projects/$workbenchTodoDefaultProjectId/android/manifest.json',
+                  'androidIngestLogPath':
+                      '/workspace/projects/$workbenchTodoDefaultProjectId/logs/android_ingest.jsonl',
+                  'project': _projectPayload(
+                    androidAssets: [_androidAssetPayload()],
+                  ),
+                };
+              default:
+                fail('Unexpected method ${call.method}');
+            }
+          });
+
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final service = WorkbenchProjectModeService.native();
+      await service.refresh();
+      final result = await service.ingestAndroidAsset(
+        service.projects.single,
+        '/workspace/apps/demo.apk',
+      );
+
+      expect(calls, ['workbenchProjectList', 'workbenchProjectIngestAndroid']);
+      expect(result?.success, isTrue);
+      expect(result?.androidManifestPath, contains('android/manifest.json'));
+      expect(service.projects.single.androidAssets.single.sourceKind, 'apk');
+    },
+  );
 }
 
 WorkbenchTodoLogService _todoLogService() {
@@ -613,6 +688,45 @@ class _TestWorkbenchProjectBackend implements WorkbenchProjectBackend {
     );
   }
 
+  @override
+  Future<WorkbenchAndroidIngestResult> ingestAndroidAsset({
+    required String projectId,
+    required String sourcePath,
+    String? sourceKind,
+    String? displayName,
+  }) async {
+    final asset = WorkbenchAndroidAsset(
+      assetId: 'demo-apk',
+      sourceKind: sourceKind?.trim().isNotEmpty == true
+          ? sourceKind!.trim()
+          : 'apk',
+      displayName: displayName?.trim().isNotEmpty == true
+          ? displayName!.trim()
+          : sourcePath.split('/').last,
+      originalPath: sourcePath,
+      projectPath: '/tmp/$projectId/android/apps/demo-apk',
+      shellPath: '/workspace/projects/$projectId/android/apps/demo-apk',
+      entryPath:
+          '/workspace/projects/$projectId/android/apps/demo-apk/source.apk',
+      importedAt: DateTime.now(),
+      sizeBytes: 12,
+      fileCount: 1,
+    );
+    _project = _project.copyWith(
+      androidAssets: [asset, ..._project.androidAssets],
+    );
+    return WorkbenchAndroidIngestResult(
+      success: true,
+      projectId: projectId,
+      asset: asset,
+      project: _project,
+      androidManifestPath:
+          '/workspace/projects/$projectId/android/manifest.json',
+      androidIngestLogPath:
+          '/workspace/projects/$projectId/logs/android_ingest.jsonl',
+    );
+  }
+
   List<WorkbenchToolSpec> _toolsWithExecutionCounts() {
     return _project.tools
         .map(
@@ -626,6 +740,7 @@ class _TestWorkbenchProjectBackend implements WorkbenchProjectBackend {
 
 Map<String, Object?> _projectPayload({
   List<Map<String, Object?>> todos = const [],
+  List<Map<String, Object?>> androidAssets = const [],
 }) {
   return {
     'projectId': workbenchTodoDefaultProjectId,
@@ -636,7 +751,27 @@ Map<String, Object?> _projectPayload({
     'pageIds': ['todo-log-page'],
     'tools': _apiPayload(),
     'flows': [],
+    'androidAssets': androidAssets,
     'todos': todos,
+  };
+}
+
+Map<String, Object?> _androidAssetPayload() {
+  return {
+    'assetId': 'demo-apk',
+    'projectId': workbenchTodoDefaultProjectId,
+    'sourceKind': 'apk',
+    'displayName': 'demo.apk',
+    'originalPath': '/workspace/apps/demo.apk',
+    'projectPath':
+        '/data/workspace/projects/$workbenchTodoDefaultProjectId/android/apps/demo-apk',
+    'shellPath':
+        '/workspace/projects/$workbenchTodoDefaultProjectId/android/apps/demo-apk',
+    'entryPath':
+        '/workspace/projects/$workbenchTodoDefaultProjectId/android/apps/demo-apk/source.apk',
+    'sizeBytes': 12,
+    'fileCount': 1,
+    'importedAt': DateTime.now().toIso8601String(),
   };
 }
 

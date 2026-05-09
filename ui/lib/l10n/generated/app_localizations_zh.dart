@@ -2914,6 +2914,30 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get workbenchAndroidAssetsTitle => 'Android 资产';
+
+  @override
+  String get workbenchAndroidSourceHint =>
+      '输入 APK 或 Android 项目路径，例如 /workspace/apps/demo.apk';
+
+  @override
+  String get workbenchAndroidIngestButton => '导入到当前 Project';
+
+  @override
+  String get workbenchAndroidSourceRequired => '请输入 Android 应用或项目路径';
+
+  @override
+  String get workbenchAndroidIngestFailed => 'Android 资产导入失败';
+
+  @override
+  String workbenchAndroidIngested(String name) {
+    return '已导入 $name';
+  }
+
+  @override
+  String get workbenchAndroidAssetsEmpty => '暂无导入的 Android 应用或项目';
+
+  @override
   String workbenchTodoCount(int openCount, int finishedCount) {
     return '$openCount 条待完成 / $finishedCount 条已完成';
   }

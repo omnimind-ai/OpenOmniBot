@@ -1066,6 +1066,20 @@
       }
     }
   },
+  "workbenchAndroidAssetsTitle": "Android 资产",
+  "workbenchAndroidSourceHint": "输入 APK 或 Android 项目路径，例如 /workspace/apps/demo.apk",
+  "workbenchAndroidIngestButton": "导入到当前 Project",
+  "workbenchAndroidSourceRequired": "请输入 Android 应用或项目路径",
+  "workbenchAndroidIngestFailed": "Android 资产导入失败",
+  "workbenchAndroidIngested": "已导入 {name}",
+  "@workbenchAndroidIngested": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchAndroidAssetsEmpty": "暂无导入的 Android 应用或项目",
   "workbenchTodoCount": "{openCount} 条待完成 / {finishedCount} 条已完成",
   "@workbenchTodoCount": {
     "placeholders": {

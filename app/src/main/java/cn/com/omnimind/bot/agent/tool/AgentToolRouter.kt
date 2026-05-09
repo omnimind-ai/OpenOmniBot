@@ -536,6 +536,7 @@ class AgentToolRouter(
             "workbench_project_open" -> executeWorkbenchProjectOpen(args, env.workspaceDescriptor)
             "workbench_project_delete" -> executeWorkbenchProjectDelete(args, env.workspaceDescriptor)
             "workbench_project_hot_update" -> executeWorkbenchProjectHotUpdate(args, env.workspaceDescriptor)
+            "workbench_project_ingest_android" -> executeWorkbenchProjectIngestAndroid(args, env.workspaceDescriptor)
             "schedule_task_create",
             "schedule_task_list",
             "schedule_task_update",
@@ -2029,6 +2030,37 @@ class AgentToolRouter(
             )
         } catch (e: Exception) {
             errorResult(toolName, e.message, "Workbench project hot update failed")
+        }
+    }
+
+    private fun executeWorkbenchProjectIngestAndroid(
+        args: JsonObject,
+        workspace: AgentWorkspaceDescriptor
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_ingest_android"
+        return try {
+            val projectId = args["projectId"]?.jsonPrimitive?.content?.trim().orEmpty()
+            val sourcePath = args["sourcePath"]?.jsonPrimitive?.content?.trim().orEmpty()
+            val sourceKind = args["sourceKind"]?.jsonPrimitive?.contentOrNull?.trim()
+            val displayName = args["displayName"]?.jsonPrimitive?.contentOrNull?.trim()
+            val payload = workbenchProjectStore.ingestAndroidAsset(
+                projectId = projectId,
+                sourcePath = sourcePath,
+                sourceKind = sourceKind,
+                displayName = displayName,
+                caller = "ai"
+            )
+            val payloadJson = encodeLocalizedPayload(payload)
+            ToolExecutionResult.ContextResult(
+                toolName = toolName,
+                summaryText = "Android asset imported into Workbench project",
+                previewJson = payloadJson,
+                rawResultJson = payloadJson,
+                success = payload["success"] == true,
+                workspaceId = workspace.id
+            )
+        } catch (e: Exception) {
+            errorResult(toolName, e.message, "Workbench Android import failed")
         }
     }
 

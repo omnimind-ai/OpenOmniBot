@@ -1,6 +1,8 @@
 package cn.com.omnimind.bot.workbench
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -15,6 +17,8 @@ const val WORKBENCH_DEFAULT_PROJECT_ID = "oob-workbench-todo-log"
 const val WORKBENCH_TODO_ADD_TOOL_ID = "todo.add"
 const val WORKBENCH_TODO_FINISH_TOOL_ID = "todo.finish"
 const val WORKBENCH_HOT_UPDATE_CALLER = "xiaowan_hot_update"
+const val WORKBENCH_ANDROID_APK_KIND = "apk"
+const val WORKBENCH_ANDROID_PROJECT_KIND = "android_project"
 
 data class WorkbenchProjectRecord(
     val projectId: String,
@@ -80,6 +84,40 @@ data class WorkbenchTodoRecord(
     )
 }
 
+data class WorkbenchAndroidAsset(
+    val assetId: String,
+    val projectId: String,
+    val sourceKind: String,
+    val displayName: String,
+    val originalPath: String,
+    val projectPath: String,
+    val shellPath: String,
+    val entryPath: String,
+    val packageName: String? = null,
+    val versionName: String? = null,
+    val versionCode: Long? = null,
+    val sizeBytes: Long = 0,
+    val fileCount: Int = 0,
+    val importedAt: String
+) {
+    fun toPayload(): Map<String, Any?> = linkedMapOf(
+        "assetId" to assetId,
+        "projectId" to projectId,
+        "sourceKind" to sourceKind,
+        "displayName" to displayName,
+        "originalPath" to originalPath,
+        "projectPath" to projectPath,
+        "shellPath" to shellPath,
+        "entryPath" to entryPath,
+        "packageName" to packageName,
+        "versionName" to versionName,
+        "versionCode" to versionCode,
+        "sizeBytes" to sizeBytes,
+        "fileCount" to fileCount,
+        "importedAt" to importedAt
+    )
+}
+
 /**
  * Stores OOB Workbench projects and their registered Project APIs under the shared workspace.
  *
@@ -100,6 +138,8 @@ class WorkbenchProjectStore(
         object : TypeToken<List<WorkbenchProjectRecord>>() {}.type
     private val apiRecordListType = object : TypeToken<List<WorkbenchApiRecord>>() {}.type
     private val todoRecordListType = object : TypeToken<List<WorkbenchTodoRecord>>() {}.type
+    private val androidAssetListType =
+        object : TypeToken<List<WorkbenchAndroidAsset>>() {}.type
     private val mapType = object : TypeToken<Map<String, Any?>>() {}.type
 
     private val projectsRoot: File
@@ -349,6 +389,80 @@ class WorkbenchProjectStore(
     }
 
     /**
+     * Imports an Android APK or Android project directory into a Workbench Project.
+     *
+     * @param projectId Project that will own the imported Android asset.
+     * @param sourcePath Android absolute path or `/workspace/...` shell path to an APK file or
+     * Android project directory that already exists on the device.
+     * @param sourceKind Optional explicit kind. Use `apk` for APK files or `android_project` for
+     * source directories; blank values are inferred from the source path.
+     * @param displayName Optional user-facing asset name stored in the project manifest.
+     * @param caller UI or AI caller label persisted in `logs/android_ingest.jsonl`.
+     * @return Import result, the asset manifest entry, and the refreshed Project payload.
+     */
+    @Synchronized
+    fun ingestAndroidAsset(
+        projectId: String,
+        sourcePath: String,
+        sourceKind: String? = null,
+        displayName: String? = null,
+        caller: String = "unknown"
+    ): Map<String, Any?> {
+        val record = findProject(projectId)
+        val source = resolveSourcePath(sourcePath)
+        require(source.exists()) { "Android source does not exist: $sourcePath" }
+        val kind = resolveAndroidSourceKind(source, sourceKind)
+        val now = nowIso()
+        val baseName = displayName?.trim()?.takeIf { it.isNotEmpty() }
+            ?: source.name.ifBlank { kind }
+        val assetId = uniqueAndroidAssetId(record.projectId, baseName, now)
+        val assetDir = File(projectDir(record.projectId), "android/apps/$assetId")
+        assetDir.mkdirs()
+        val includedFiles = mutableListOf<String>()
+        val entry = if (kind == WORKBENCH_ANDROID_APK_KIND) {
+            val target = File(assetDir, "source.apk")
+            source.copyTo(target, overwrite = true)
+            includedFiles.add("source.apk")
+            target
+        } else {
+            val target = File(assetDir, "source")
+            copyAndroidProjectTree(source, target, includedFiles)
+            target
+        }
+        val apkInfo = if (kind == WORKBENCH_ANDROID_APK_KIND) readApkInfo(entry) else emptyMap()
+        val asset = WorkbenchAndroidAsset(
+            assetId = assetId,
+            projectId = record.projectId,
+            sourceKind = kind,
+            displayName = baseName,
+            originalPath = source.absolutePath,
+            projectPath = assetDir.absolutePath,
+            shellPath = shellPathForProjectFile(record.projectId, assetDir),
+            entryPath = shellPathForProjectFile(record.projectId, entry),
+            packageName = apkInfo["packageName"] as? String,
+            versionName = apkInfo["versionName"] as? String,
+            versionCode = apkInfo["versionCode"] as? Long,
+            sizeBytes = fileSizeBytes(entry),
+            fileCount = if (entry.isDirectory) includedFiles.size else 1,
+            importedAt = now
+        )
+        val updatedAssets = readAndroidAssets(record.projectId) + asset
+        writeAndroidAssets(record.projectId, updatedAssets)
+        appendAndroidIngest(record.projectId, asset, caller, includedFiles)
+        writeProjectJson(record, projectApis(record.projectId), readTodos(record.projectId))
+        return linkedMapOf(
+            "success" to true,
+            "projectId" to record.projectId,
+            "asset" to asset.toPayload(),
+            "androidManifestPath" to
+                "${record.spacePath}/android/manifest.json",
+            "androidIngestLogPath" to
+                "${record.spacePath}/logs/android_ingest.jsonl",
+            "project" to getProject(record.projectId)
+        )
+    }
+
+    /**
      * Resolves the native Flutter route for a project.
      *
      * @param projectId Project to open.
@@ -376,6 +490,7 @@ class WorkbenchProjectStore(
         val packageFile = File(exportsRoot, packageName)
         val includedFiles = mutableListOf<String>()
         val counts = apiExecutionCounts(record.projectId)
+        val androidAssets = readAndroidAssets(record.projectId)
         val skillEntry = linkedMapOf<String, Any?>(
             "skillId" to "oob-native-workbench",
             "source" to "builtin_asset",
@@ -389,6 +504,7 @@ class WorkbenchProjectStore(
             "projectId" to record.projectId,
             "project" to record.toPayload(),
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
+            "androidAssets" to androidAssets.map { it.toPayload() },
             "skills" to listOf(skillEntry),
             "workspaceShellPath" to record.spacePath
         )
@@ -440,6 +556,7 @@ class WorkbenchProjectStore(
         ensureProjectSourceFiles(record, apis)
         val todos = readTodos(record.projectId)
         val counts = apiExecutionCounts(record.projectId)
+        val androidAssets = readAndroidAssets(record.projectId)
         return linkedMapOf(
             "projectId" to record.projectId,
             "name" to record.name,
@@ -450,6 +567,7 @@ class WorkbenchProjectStore(
             "apiIds" to record.apiIds,
             "tools" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
+            "androidAssets" to androidAssets.map { it.toPayload() },
             "flows" to emptyList<Map<String, Any?>>(),
             "todos" to todos.map { it.toPayload() },
             "createdAt" to record.createdAt,
@@ -464,6 +582,7 @@ class WorkbenchProjectStore(
         sourcePrompt: String? = null
     ) {
         val counts = apiExecutionCounts(record.projectId)
+        val androidAssets = readAndroidAssets(record.projectId)
         val prompt = sourcePrompt?.trim()?.takeIf { it.isNotEmpty() }
             ?: readProjectSourcePrompt(record.projectId)
         val payload = linkedMapOf<String, Any?>(
@@ -484,10 +603,15 @@ class WorkbenchProjectStore(
                 "route" to record.route
             ),
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
+            "android" to linkedMapOf(
+                "manifest" to "android/manifest.json",
+                "assets" to androidAssets.map { it.toPayload() }
+            ),
             "state" to linkedMapOf(
                 "todoCount" to todos.size,
                 "openTodoCount" to todos.count { it.status != "finished" },
-                "finishedTodoCount" to todos.count { it.status == "finished" }
+                "finishedTodoCount" to todos.count { it.status == "finished" },
+                "androidAssetCount" to androidAssets.size
             )
         )
         val file = File(projectDir(record.projectId), "project.json")
@@ -537,6 +661,8 @@ class WorkbenchProjectStore(
                 |- `data/todos.json`: persistent todo state
                 |- `logs/api_calls.jsonl`: append-only AI/UI API call log
                 |- `logs/hot_updates.jsonl`: append-only Xiaowan hot update requests
+                |- `android/manifest.json`: imported Android APK/project assets
+                |- `logs/android_ingest.jsonl`: append-only Android asset import log
                 |
                 """.trimMargin()
             )
@@ -610,6 +736,24 @@ class WorkbenchProjectStore(
                         }
                     )
                 )
+            )
+        }
+        val androidDir = File(projectDir, "android")
+        androidDir.mkdirs()
+        val androidReadme = File(androidDir, "README.md")
+        if (!androidReadme.exists()) {
+            androidReadme.writeText(
+                """
+                |# Android Assets
+                |
+                |This directory stores Android APKs and Android project source snapshots imported
+                |through the OOB Workbench control API.
+                |
+                |Use `workbench_project_ingest_android` or MethodChannel
+                |`workbenchProjectIngestAndroid`; do not register Android import as a Project
+                |business API and do not hand-edit `manifest.json`.
+                |
+                """.trimMargin()
             )
         }
     }
@@ -837,6 +981,37 @@ class WorkbenchProjectStore(
     }
 
     /**
+     * Appends an Android asset import event for audit and future replay.
+     *
+     * @param projectId Project directory that owns the log file.
+     * @param asset Manifest entry created by `ingestAndroidAsset`.
+     * @param caller UI or AI caller label.
+     * @param includedFiles Project-relative copied files for source-directory imports.
+     */
+    private fun appendAndroidIngest(
+        projectId: String,
+        asset: WorkbenchAndroidAsset,
+        caller: String,
+        includedFiles: List<String>
+    ) {
+        val file = File(projectDir(projectId), "logs/android_ingest.jsonl")
+        file.parentFile?.mkdirs()
+        val row = linkedMapOf<String, Any?>(
+            "timestamp" to nowIso(),
+            "projectId" to projectId,
+            "assetId" to asset.assetId,
+            "sourceKind" to asset.sourceKind,
+            "caller" to caller.ifBlank { "unknown" },
+            "originalPath" to asset.originalPath,
+            "entryPath" to asset.entryPath,
+            "packageName" to asset.packageName,
+            "fileCount" to asset.fileCount,
+            "includedFiles" to includedFiles.take(200)
+        )
+        file.appendText(logGson.toJson(row) + "\n")
+    }
+
+    /**
      * Reduces a full API call result to a log-safe action summary.
      *
      * @param result Payload returned by `callApi`; the full refreshed Project is intentionally
@@ -981,8 +1156,220 @@ class WorkbenchProjectStore(
         file.writeText(gson.toJson(todos))
     }
 
+    /**
+     * Reads imported Android assets for a project.
+     *
+     * @param projectId Project whose `android/manifest.json` should be parsed.
+     * @return Previously imported APK/project asset records, or an empty list when absent.
+     */
+    private fun readAndroidAssets(projectId: String): List<WorkbenchAndroidAsset> {
+        val file = androidManifestFile(projectId)
+        if (!file.exists()) return emptyList()
+        return runCatching {
+            gson.fromJson<List<WorkbenchAndroidAsset>>(
+                file.readText(),
+                androidAssetListType
+            ) ?: emptyList()
+        }.getOrElse { emptyList() }
+    }
+
+    /**
+     * Writes the Android asset manifest for a project.
+     *
+     * @param projectId Project whose Android manifest should be replaced.
+     * @param assets Full desired asset list; callers pass the existing list plus a new record.
+     */
+    private fun writeAndroidAssets(projectId: String, assets: List<WorkbenchAndroidAsset>) {
+        val file = androidManifestFile(projectId)
+        file.parentFile?.mkdirs()
+        file.writeText(gson.toJson(assets.sortedBy { it.importedAt }))
+    }
+
+    /**
+     * Resolves UI/AI source paths into an Android filesystem path.
+     *
+     * @param rawPath Either an Android absolute path or a `/workspace/...` path from the Alpine
+     * shell view of the same workspace.
+     * @return Canonical Android file object used for existence checks and copying.
+     */
+    private fun resolveSourcePath(rawPath: String): File {
+        val trimmed = rawPath.trim()
+        require(trimmed.isNotEmpty()) { "Android source path is required." }
+        val shellRoot = AgentWorkspaceManager.SHELL_ROOT_PATH
+        val file = if (trimmed == shellRoot || trimmed.startsWith("$shellRoot/")) {
+            val suffix = trimmed.removePrefix(shellRoot).trimStart('/')
+            File(workspaceRoot, suffix)
+        } else {
+            File(trimmed)
+        }
+        return file.canonicalFile
+    }
+
+    /**
+     * Determines whether an import source should be treated as an APK or Android source project.
+     *
+     * @param source Existing file or directory.
+     * @param explicitKind Optional user-provided kind from AI/UI.
+     * @return `apk` for APK files or `android_project` for directories.
+     */
+    private fun resolveAndroidSourceKind(source: File, explicitKind: String?): String {
+        val normalized = explicitKind?.trim()?.lowercase().orEmpty()
+        val inferred = when {
+            source.isDirectory -> WORKBENCH_ANDROID_PROJECT_KIND
+            source.name.lowercase().endsWith(".apk") -> WORKBENCH_ANDROID_APK_KIND
+            else -> ""
+        }
+        val kind = normalized.ifEmpty { inferred }
+        require(kind == WORKBENCH_ANDROID_APK_KIND || kind == WORKBENCH_ANDROID_PROJECT_KIND) {
+            "Unsupported Android source kind: ${explicitKind ?: source.name}"
+        }
+        require(kind != WORKBENCH_ANDROID_APK_KIND || source.isFile) {
+            "APK import requires a file source."
+        }
+        require(kind != WORKBENCH_ANDROID_PROJECT_KIND || source.isDirectory) {
+            "Android project import requires a directory source."
+        }
+        return kind
+    }
+
+    /**
+     * Copies an Android project source tree into the Project while skipping generated cache dirs.
+     *
+     * @param source Existing Android project directory.
+     * @param target Destination directory under the Workbench Project asset.
+     * @param includedFiles Mutable audit list that receives target-relative copied files.
+     */
+    private fun copyAndroidProjectTree(
+        source: File,
+        target: File,
+        includedFiles: MutableList<String>
+    ) {
+        if (target.exists()) {
+            target.deleteRecursively()
+        }
+        target.mkdirs()
+        val excludedDirNames = setOf(".git", ".gradle", ".idea", "build", "node_modules")
+        source.walkTopDown()
+            .onEnter { file ->
+                file == source || !excludedDirNames.contains(file.name)
+            }
+            .filter { it.isFile }
+            .forEach { file ->
+                val relative = source.toPath().relativize(file.toPath()).toString()
+                    .replace(File.separatorChar, '/')
+                if (relative.isBlank() || relative.contains("..")) return@forEach
+                val output = File(target, relative)
+                output.parentFile?.mkdirs()
+                file.copyTo(output, overwrite = true)
+                includedFiles.add(relative)
+            }
+    }
+
+    /**
+     * Reads basic APK package metadata when Android PackageManager is available.
+     *
+     * @param apkFile Copied APK file inside the Project asset directory.
+     * @return Package name and version metadata, or an empty map in unit tests/non-APK cases.
+     */
+    private fun readApkInfo(apkFile: File): Map<String, Any?> {
+        val context = appContext ?: return emptyMap()
+        val info = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageArchiveInfo(
+                    apkFile.absolutePath,
+                    PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+            }
+        }.getOrNull() ?: return emptyMap()
+        val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            info.versionCode.toLong()
+        }
+        return linkedMapOf(
+            "packageName" to info.packageName,
+            "versionName" to info.versionName,
+            "versionCode" to versionCode
+        )
+    }
+
+    /**
+     * Creates a unique, filesystem-safe Android asset id.
+     *
+     * @param projectId Project namespace used to avoid collisions with existing imports.
+     * @param baseName User display name or source file name.
+     * @param timestamp ISO timestamp used as a stable suffix for this import.
+     * @return Safe id such as `sample-apk-2026-05-09t...`.
+     */
+    private fun uniqueAndroidAssetId(
+        projectId: String,
+        baseName: String,
+        timestamp: String
+    ): String {
+        val base = sanitizeAssetId(baseName.substringBeforeLast('.'))
+        val suffix = timestamp.replace(Regex("[^A-Za-z0-9]+"), "-").trim('-').lowercase()
+        var candidate = "$base-$suffix".trim('-')
+        var index = 2
+        while (File(projectDir(projectId), "android/apps/$candidate").exists()) {
+            candidate = "$base-$suffix-$index"
+            index += 1
+        }
+        return candidate
+    }
+
+    /**
+     * Normalizes a user or file supplied name for Android asset directories.
+     *
+     * @param value Raw display name or source file name.
+     * @return Lowercase id fragment that cannot traverse directories.
+     */
+    private fun sanitizeAssetId(value: String): String {
+        return value.trim()
+            .lowercase()
+            .replace(Regex("[^a-z0-9._-]+"), "-")
+            .trim('-', '.', '_')
+            .ifBlank { "android-asset" }
+            .take(80)
+    }
+
+    /**
+     * Computes a recursive byte size for a copied asset.
+     *
+     * @param file APK file or copied Android project directory.
+     * @return Total bytes of regular files under the asset entry.
+     */
+    private fun fileSizeBytes(file: File): Long {
+        return if (file.isFile) {
+            file.length()
+        } else {
+            file.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        }
+    }
+
+    /**
+     * Converts a project-local Android file path into the `/workspace` shell view.
+     *
+     * @param projectId Project directory id.
+     * @param file Android filesystem file inside the Project directory.
+     * @return Shell path that AI terminal tools can reuse.
+     */
+    private fun shellPathForProjectFile(projectId: String, file: File): String {
+        val projectRoot = projectDir(projectId)
+        val relative = projectRoot.toPath().relativize(file.toPath()).toString()
+            .replace(File.separatorChar, '/')
+        return "${AgentWorkspaceManager.SHELL_ROOT_PATH}/projects/$projectId/$relative"
+    }
+
     private fun todosFile(projectId: String): File {
         return File(projectDir(projectId), "data/todos.json")
+    }
+
+    private fun androidManifestFile(projectId: String): File {
+        return File(projectDir(projectId), "android/manifest.json")
     }
 
     private fun projectDir(projectId: String): File {

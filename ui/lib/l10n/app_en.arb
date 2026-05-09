@@ -1066,6 +1066,20 @@
       }
     }
   },
+  "workbenchAndroidAssetsTitle": "Android assets",
+  "workbenchAndroidSourceHint": "Enter an APK or Android project path, for example /workspace/apps/demo.apk",
+  "workbenchAndroidIngestButton": "Import into current Project",
+  "workbenchAndroidSourceRequired": "Enter an Android app or project path",
+  "workbenchAndroidIngestFailed": "Android asset import failed",
+  "workbenchAndroidIngested": "Imported {name}",
+  "@workbenchAndroidIngested": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchAndroidAssetsEmpty": "No imported Android apps or projects yet",
   "workbenchTodoCount": "{openCount} open / {finishedCount} finished",
   "@workbenchTodoCount": {
     "placeholders": {

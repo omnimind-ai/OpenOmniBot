@@ -25,6 +25,8 @@ class WorkbenchProjectModePage extends StatefulWidget {
 class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   late final WorkbenchProjectModeService _service;
   final TextEditingController _promptController = TextEditingController();
+  final TextEditingController _androidSourceController =
+      TextEditingController();
   String? _selectedProjectId;
   WorkbenchProjectExportResult? _lastExportResult;
   bool _promptSeeded = false;
@@ -39,6 +41,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   @override
   void dispose() {
     _promptController.dispose();
+    _androidSourceController.dispose();
     super.dispose();
   }
 
@@ -199,6 +202,35 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     setState(() => _lastExportResult = result);
     showToast(
       context.l10n.workbenchProjectExported(result.packageName),
+      type: ToastType.success,
+    );
+  }
+
+  Future<void> _ingestAndroidAsset(WorkbenchProject project) async {
+    final sourcePath = _androidSourceController.text.trim();
+    if (sourcePath.isEmpty) {
+      showToast(
+        context.l10n.workbenchAndroidSourceRequired,
+        type: ToastType.error,
+      );
+      return;
+    }
+    final result = await _service.ingestAndroidAsset(project, sourcePath);
+    if (!mounted) {
+      return;
+    }
+    if (result == null || !result.success) {
+      showToast(
+        context.l10n.workbenchAndroidIngestFailed,
+        type: ToastType.error,
+      );
+      return;
+    }
+    _androidSourceController.clear();
+    showToast(
+      context.l10n.workbenchAndroidIngested(
+        result.asset?.displayName ?? project.projectId,
+      ),
       type: ToastType.success,
     );
   }
@@ -846,6 +878,8 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
           const SizedBox(height: 12),
           _buildProjectInfo(project),
           const SizedBox(height: 14),
+          _buildAndroidAssetPanel(project),
+          const SizedBox(height: 14),
           Divider(color: context.omniPalette.borderSubtle, height: 1),
           const SizedBox(height: 14),
           _buildSectionHeader(
@@ -917,6 +951,132 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
           value: context.l10n.workbenchProjectInfoRuntimeValue,
         ),
       ],
+    );
+  }
+
+  Widget _buildAndroidAssetPanel(WorkbenchProject project) {
+    final palette = context.omniPalette;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: palette.surfaceSecondary,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+            title: context.l10n.workbenchAndroidAssetsTitle,
+            icon: Icons.android_rounded,
+            trailing: _buildCountBadge(project.androidAssets.length.toString()),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _androidSourceController,
+            enabled: !_service.loading,
+            minLines: 1,
+            maxLines: 2,
+            decoration: InputDecoration(
+              hintText: context.l10n.workbenchAndroidSourceHint,
+              filled: true,
+              fillColor: palette.surfacePrimary,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _service.loading
+                  ? null
+                  : () => _ingestAndroidAsset(project),
+              icon: const Icon(Icons.file_upload_outlined),
+              label: Text(context.l10n.workbenchAndroidIngestButton),
+            ),
+          ),
+          if (project.androidAssets.isEmpty) ...[
+            const SizedBox(height: 10),
+            _buildInlineStatus(
+              icon: Icons.info_outline_rounded,
+              label: context.l10n.workbenchAndroidAssetsEmpty,
+              color: palette.textSecondary,
+            ),
+          ] else ...[
+            const SizedBox(height: 10),
+            Column(
+              children: project.androidAssets
+                  .map(
+                    (asset) => Padding(
+                      padding: EdgeInsets.only(
+                        bottom: asset == project.androidAssets.last ? 0 : 8,
+                      ),
+                      child: _buildAndroidAssetRow(asset),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAndroidAssetRow(WorkbenchAndroidAsset asset) {
+    final palette = context.omniPalette;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: palette.surfacePrimary,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            asset.isApk ? Icons.android_rounded : Icons.folder_copy_outlined,
+            color: palette.accentPrimary,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  asset.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _buildTinyCode(asset.sourceKind),
+                    if (asset.packageName?.trim().isNotEmpty == true)
+                      _buildTinyCode(asset.packageName!),
+                    _buildTinyCode(asset.displayPath),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

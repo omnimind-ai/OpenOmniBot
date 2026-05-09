@@ -331,6 +331,9 @@ class AssistsCoreChannel {
                 "workbenchProjectHotUpdate" -> {
                     assistsCoreManager!!.workbenchProjectHotUpdate(call, result)
                 }
+                "workbenchProjectIngestAndroid" -> {
+                    assistsCoreManager!!.workbenchProjectIngestAndroid(call, result)
+                }
                 "workbenchApiList" -> {
                     assistsCoreManager!!.workbenchApiList(call, result)
                 }

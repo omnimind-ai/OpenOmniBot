@@ -51,6 +51,7 @@ workbench_project_open
 workbench_project_export
 workbench_project_delete
 workbench_project_hot_update
+workbench_project_ingest_android
 workbench_api_list
 workbench_api_call
 ```
@@ -75,6 +76,9 @@ Persist generated project assets under the shared workspace:
   data/todos.json
   logs/api_calls.jsonl
   logs/hot_updates.jsonl
+  android/manifest.json
+  android/apps/<asset-id>/
+  logs/android_ingest.jsonl
 ```
 
 `registry.json` stores projects. `api_registry.json` stores business APIs only. `api_calls.jsonl` records both AI calls and UI clicks.
@@ -85,6 +89,7 @@ The project directory separates editable source specs from runtime state:
 - `frontend/page_spec.json` is the generated frontend contract. It describes the OOB Flutter Display route, visible controls, state bindings, and which Project API each control calls. It is not standalone HTML.
 - `backend/api_spec.json` is the backend contract. It declares business API ids, schemas, executor kind, persistence files, frontend binding, and AI usage. In the current demo the real executor is OOB native Kotlin; future projects can replace the executor kind with a workspace script or provider executor while keeping the same `workbench_api_call` path.
 - `data/` and `logs/` are runtime state shared by AI and UI.
+- `android/` stores APK files or Android project source snapshots imported through the Workbench control plane. This is how OOB can "eat" an existing Android app/project into a vibe Project without turning the import itself into a business API.
 
 ## Display Rules
 
@@ -170,7 +175,8 @@ Current demo limitation: `todo_log_demo` only includes `todo.add` and `todo.fini
 10. Export a distributable project package with `workbench_project_export` when the user asks to register or share the project.
 11. Delete a project with `workbench_project_delete` only after explicit user confirmation.
 12. Hot update a project with `workbench_project_hot_update` after reading the current Project. Treat hot update as a Workbench control-plane action; it may internally call registered business APIs but must not appear in Project API Registry.
-13. Add focused service/runtime tests before broad UI work.
+13. Import an Android APK or Android project source with `workbench_project_ingest_android(projectId, sourcePath, sourceKind?)` only after the Project exists. This writes `android/manifest.json`, copies the asset under `android/apps/<asset-id>/`, and appends `logs/android_ingest.jsonl`; it does not install the APK into Android OS and does not appear in `workbench_api_list`.
+14. Add focused service/runtime tests before broad UI work.
 
 ## Distribution Export
 
@@ -193,6 +199,7 @@ project/project.json
 project/frontend/page_spec.json
 project/backend/api_spec.json
 project/data/*
+project/android/*
 project/logs/*
 skills/oob-native-workbench/SKILL.md
 ```
@@ -252,3 +259,14 @@ For live UI smoke, open `/workbench/projects` and verify the Project API panel s
 For hot-update smoke, open either `/workbench/projects` or `/workbench/todo_log?projectId=...`, tap the Xiaowan floating button, submit a change prompt, and verify the page refreshes from persisted Project state while `workbench_api_list` still returns only `todo.add` / `todo.finish`.
 
 For distribution smoke, export the project from `/workbench/projects` or call `workbench_project_export`, then verify `/workspace/projects/exports/<project-id>-<timestamp>.zip` contains the manifest, registry records, `project/README.md`, `frontend/page_spec.json`, `backend/api_spec.json`, data, logs, and this skill.
+
+For Android ingest smoke, create/open a Project first, then call:
+
+```text
+workbench_project_ingest_android(
+  projectId=<project-id>,
+  sourcePath=/workspace/apps/demo.apk
+)
+```
+
+or pass an Android project directory with `sourceKind=android_project`. Verify the Project payload contains `androidAssets`, `android/manifest.json` exists, `logs/android_ingest.jsonl` has one row, and `workbench_api_list(projectId)` still returns only business APIs such as `todo.add` and `todo.finish`.

@@ -4113,6 +4113,31 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
+    fun workbenchProjectIngestAndroid(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                val projectId = call.argument<String>("projectId")?.trim().orEmpty()
+                val sourcePath = call.argument<String>("sourcePath")?.trim().orEmpty()
+                val sourceKind = call.argument<String>("sourceKind")?.trim()
+                val displayName = call.argument<String>("displayName")?.trim()
+                val caller = call.argument<String>("caller")?.trim().orEmpty().ifBlank { "ui" }
+                workbenchProjectStore.ingestAndroidAsset(
+                    projectId = projectId,
+                    sourcePath = sourcePath,
+                    sourceKind = sourceKind,
+                    displayName = displayName,
+                    caller = caller
+                )
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_INGEST_ANDROID_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
     fun workbenchApiList(call: MethodCall, result: MethodChannel.Result) {
         workJob.launch {
             runCatching {
