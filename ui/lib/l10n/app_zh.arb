@@ -139,6 +139,8 @@
   "chatHistoryArchiveFailed": "归档对话失败",
   "chatHistoryUnarchiveFailed": "移出归档失败",
   "chatHistoryArchiveHint": "左滑对话即可归档",
+  "conversationStatusRunning": "执行中",
+  "conversationStatusCompleted": "已完成",
   "homeDrawerArchive": "归档对话",
   "homeDrawerNewChat": "新对话",
   "webchatNoChats": "开始一个新的对话吧",

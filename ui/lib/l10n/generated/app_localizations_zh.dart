@@ -436,6 +436,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatHistoryArchiveHint => '左滑对话即可归档';
 
   @override
+  String get conversationStatusRunning => '执行中';
+
+  @override
+  String get conversationStatusCompleted => '已完成';
+
+  @override
   String get homeDrawerArchive => '归档对话';
 
   @override

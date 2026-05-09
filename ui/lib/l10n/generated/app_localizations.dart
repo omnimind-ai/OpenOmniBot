@@ -926,6 +926,18 @@ abstract class AppLocalizations {
   /// **'左滑对话即可归档'**
   String get chatHistoryArchiveHint;
 
+  /// No description provided for @conversationStatusRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行中'**
+  String get conversationStatusRunning;
+
+  /// No description provided for @conversationStatusCompleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已完成'**
+  String get conversationStatusCompleted;
+
   /// No description provided for @homeDrawerArchive.
   ///
   /// In zh, this message translates to:

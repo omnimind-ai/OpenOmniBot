@@ -193,4 +193,53 @@ void main() {
     expect(selectedTarget!.conversationId, 42);
     expect(selectedTarget!.mode, ConversationMode.openclaw);
   });
+
+  testWidgets('renders running and completed indicators in conversation list', (
+    tester,
+  ) async {
+    nativeConversations = <Map<String, Object?>>[
+      <String, Object?>{
+        'id': 51,
+        'title': '正在执行的会话',
+        'mode': ConversationMode.normal.storageValue,
+        'summary': null,
+        'status': 0,
+        'lastMessage': 'running',
+        'messageCount': 1,
+        'createdAt': 1,
+        'updatedAt': 3,
+      },
+      <String, Object?>{
+        'id': 52,
+        'title': '已完成的会话',
+        'mode': ConversationMode.normal.storageValue,
+        'summary': null,
+        'status': 1,
+        'lastMessage': 'done',
+        'messageCount': 1,
+        'createdAt': 1,
+        'updatedAt': 2,
+      },
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DefaultAssetBundle(
+          bundle: _SvgTestAssetBundle(),
+          child: const ProviderScope(
+            child: Scaffold(
+              body: SizedBox(width: 360, height: 720, child: HomeDrawer()),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('conversation-status-running')), findsOne);
+    expect(
+      find.byKey(const ValueKey('conversation-status-completed')),
+      findsOne,
+    );
+  });
 }

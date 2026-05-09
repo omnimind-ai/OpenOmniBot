@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/widgets/conversation_slidable.dart';
 import 'package:ui/features/home/widgets/conversation_mode_badge.dart';
+import 'package:ui/features/home/widgets/conversation_status_indicator.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/theme/app_colors.dart';
@@ -14,6 +15,7 @@ class ChatHistoryConversationItem extends StatelessWidget {
     required this.actions,
     required this.onDelete,
     this.isBusy = false,
+    this.isRunning,
     this.showLeadingIcon = true,
     this.compact = false,
   });
@@ -23,6 +25,7 @@ class ChatHistoryConversationItem extends StatelessWidget {
   final List<ConversationSlideAction> actions;
   final VoidCallback onDelete;
   final bool isBusy;
+  final bool? isRunning;
   final bool showLeadingIcon;
   final bool compact;
 
@@ -31,6 +34,7 @@ class ChatHistoryConversationItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
+    final effectiveIsRunning = isRunning ?? conversation.isActive;
     final borderRadius = BorderRadius.circular(compact ? 7 : 8);
     final contentPadding = EdgeInsets.symmetric(
       horizontal: compact ? 14 : 16,
@@ -133,18 +137,29 @@ class ChatHistoryConversationItem extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Expanded(
-                            child: Text(
-                              conversation.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: compact ? 15 : 16,
-                                fontWeight: FontWeight.w500,
-                                color: context.isDarkTheme
-                                    ? palette.textPrimary
-                                    : AppColors.text,
-                                height: compact ? 1.2 : 1.25,
-                              ),
+                            child: Row(
+                              children: [
+                                ConversationStatusIndicator(
+                                  isRunning: effectiveIsRunning,
+                                  compact: true,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    conversation.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: compact ? 15 : 16,
+                                      fontWeight: FontWeight.w500,
+                                      color: context.isDarkTheme
+                                          ? palette.textPrimary
+                                          : AppColors.text,
+                                      height: compact ? 1.2 : 1.25,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           SizedBox(width: compact ? 6 : 8),

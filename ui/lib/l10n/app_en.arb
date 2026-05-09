@@ -139,6 +139,8 @@
   "chatHistoryArchiveFailed": "Couldn't archive the conversation",
   "chatHistoryUnarchiveFailed": "Couldn't restore the conversation",
   "chatHistoryArchiveHint": "Swipe left on a conversation to archive it",
+  "conversationStatusRunning": "Running",
+  "conversationStatusCompleted": "Completed",
   "homeDrawerArchive": "Archive",
   "homeDrawerNewChat": "New conversation",
   "webchatNoChats": "Start a new conversation",

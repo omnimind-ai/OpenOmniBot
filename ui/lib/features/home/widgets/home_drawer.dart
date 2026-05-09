@@ -7,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:ui/core/router/go_router_manager.dart';
+import 'package:ui/features/home/pages/chat/services/chat_conversation_runtime_coordinator.dart';
 import 'package:ui/features/home/widgets/conversation_slidable.dart';
+import 'package:ui/features/home/widgets/conversation_status_indicator.dart';
 import 'package:ui/features/home/widgets/home_drawer_search_field.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/models/conversation_model.dart';
@@ -108,6 +110,8 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
 
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  final ChatConversationRuntimeCoordinator _runtimeCoordinator =
+      ChatConversationRuntimeCoordinator.instance;
   final Map<String, _ConversationSearchIndex> _conversationSearchCache =
       <String, _ConversationSearchIndex>{};
   final Map<String, bool> _expandedConversationSections = <String, bool>{};
@@ -258,6 +262,9 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
   @override
   void initState() {
     super.initState();
+    _runtimeCoordinator
+      ..ensureInitialized()
+      ..addListener(_handleConversationRuntimeChanged);
     _searchController.addListener(_handleSearchQueryChanged);
     _searchFocusNode.addListener(_handleSearchFocusChanged);
     _titleEditingFocusNode.addListener(_handleTitleEditingFocusChanged);
@@ -272,6 +279,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
   @override
   void dispose() {
     _searchDebounceTimer?.cancel();
+    _runtimeCoordinator.removeListener(_handleConversationRuntimeChanged);
     _conversationListChangedSubscription?.cancel();
     _searchController
       ..removeListener(_handleSearchQueryChanged)
@@ -288,6 +296,12 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
 
   void reloadConversations() {
     _loadConversations();
+  }
+
+  void _handleConversationRuntimeChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   bool get _isSearchActive => _searchQuery.isNotEmpty;
@@ -1677,6 +1691,14 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     return summary.isNotEmpty ? summary : context.trLegacy('未命名对话');
   }
 
+  bool _isConversationRunning(ConversationModel conversation) {
+    final runtime = _runtimeCoordinator.runtimeFor(
+      conversationId: conversation.id,
+      mode: conversation.mode.storageValue,
+    );
+    return runtime?.hasInFlightTask == true || conversation.isActive;
+  }
+
   Widget _buildSwipeConversationItem(
     _ConversationSearchResult result, {
     required bool showDivider,
@@ -1721,6 +1743,11 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
+                        ConversationStatusIndicator(
+                          isRunning: _isConversationRunning(conversation),
+                          compact: true,
+                        ),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: isEditing
                               ? TextField(

@@ -469,6 +469,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'Swipe left on a conversation to archive it';
 
   @override
+  String get conversationStatusRunning => 'Running';
+
+  @override
+  String get conversationStatusCompleted => 'Completed';
+
+  @override
   String get homeDrawerArchive => 'Archive';
 
   @override

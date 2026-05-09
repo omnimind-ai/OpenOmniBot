@@ -6,8 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:ui/core/router/go_router_manager.dart';
+import 'package:ui/features/home/pages/chat/services/chat_conversation_runtime_coordinator.dart';
 import 'package:ui/features/home/pages/chat_history/widgets/chat_history_conversation_item.dart';
 import 'package:ui/features/home/widgets/conversation_slidable.dart';
+import 'package:ui/features/home/widgets/conversation_status_indicator.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/models/conversation_thread_target.dart';
 import 'package:ui/services/assists_core_service.dart';
@@ -46,6 +48,8 @@ class _ChatHistoryPageState extends State<ChatHistoryPage> {
   );
 
   List<ConversationModel> _conversations = const [];
+  final ChatConversationRuntimeCoordinator _runtimeCoordinator =
+      ChatConversationRuntimeCoordinator.instance;
   final Set<String> _busyKeys = <String>{};
   final Map<String, bool> _expandedDateSections = <String, bool>{};
   bool _isLoading = true;
@@ -70,6 +74,9 @@ class _ChatHistoryPageState extends State<ChatHistoryPage> {
   @override
   void initState() {
     super.initState();
+    _runtimeCoordinator
+      ..ensureInitialized()
+      ..addListener(_handleConversationRuntimeChanged);
     _conversationListChangedSubscription = AssistsMessageService
         .conversationListChangedStream
         .listen((_) {
@@ -80,8 +87,23 @@ class _ChatHistoryPageState extends State<ChatHistoryPage> {
 
   @override
   void dispose() {
+    _runtimeCoordinator.removeListener(_handleConversationRuntimeChanged);
     _conversationListChangedSubscription?.cancel();
     super.dispose();
+  }
+
+  void _handleConversationRuntimeChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  bool _isConversationRunning(ConversationModel conversation) {
+    final runtime = _runtimeCoordinator.runtimeFor(
+      conversationId: conversation.id,
+      mode: conversation.mode.storageValue,
+    );
+    return runtime?.hasInFlightTask == true || conversation.isActive;
   }
 
   Future<void> _loadConversations() async {
@@ -360,6 +382,7 @@ class _ChatHistoryPageState extends State<ChatHistoryPage> {
           conversation: conversation,
           actions: _buildActions(conversation),
           isBusy: _busyKeys.contains(conversation.threadKey),
+          isRunning: _isConversationRunning(conversation),
           compact: widget.archivedOnly,
           showLeadingIcon: !widget.archivedOnly,
           onTap: () => _openConversation(conversation),
@@ -643,6 +666,11 @@ class _ChatHistoryPageState extends State<ChatHistoryPage> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
+                        ConversationStatusIndicator(
+                          isRunning: _isConversationRunning(conversation),
+                          compact: true,
+                        ),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             title,

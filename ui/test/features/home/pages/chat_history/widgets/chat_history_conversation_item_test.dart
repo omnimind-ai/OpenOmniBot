@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -71,7 +70,7 @@ void main() {
       ),
     );
 
-    await tester.drag(find.byType(Slidable), const Offset(-800, 0));
+    await tester.drag(find.byType(Slidable), const Offset(-260, 0));
     await tester.pumpAndSettle();
 
     expect(find.byType(CustomSlidableAction), findsOneWidget);
@@ -87,21 +86,34 @@ void main() {
   ) async {
     var deleteCount = 0;
     var archiveCount = 0;
+    var visible = true;
 
     await tester.pumpWidget(
       _buildTestApp(
-        child: ConversationSlidable(
-          itemKey: 'conversation-override',
-          groupTag: 'test-group',
-          actions: _deleteActions(() => deleteCount++),
-          onDismissed: () => deleteCount++,
-          onFullSwipe: () => archiveCount++,
-          child: const SizedBox(height: 64, child: Text('Conversation E')),
+        child: StatefulBuilder(
+          builder: (context, setState) {
+            if (!visible) {
+              return const SizedBox.shrink();
+            }
+            return ConversationSlidable(
+              itemKey: 'conversation-override',
+              groupTag: 'test-group',
+              actions: _deleteActions(() => deleteCount++),
+              onDismissed: () => deleteCount++,
+              onFullSwipe: () {
+                archiveCount++;
+                setState(() {
+                  visible = false;
+                });
+              },
+              child: const SizedBox(height: 64, child: Text('Conversation E')),
+            );
+          },
         ),
       ),
     );
 
-    await tester.drag(find.byType(Slidable), const Offset(-800, 0));
+    await tester.fling(find.byType(Slidable), const Offset(-800, 0), 1000);
     await tester.pumpAndSettle();
 
     expect(archiveCount, 1);
@@ -112,20 +124,33 @@ void main() {
     tester,
   ) async {
     var deleteCount = 0;
+    var visible = true;
 
     await tester.pumpWidget(
       _buildTestApp(
-        child: ConversationSlidable(
-          itemKey: 'conversation-default',
-          groupTag: 'test-group',
-          actions: _deleteActions(() => deleteCount++),
-          onDismissed: () => deleteCount++,
-          child: const SizedBox(height: 64, child: Text('Conversation F')),
+        child: StatefulBuilder(
+          builder: (context, setState) {
+            if (!visible) {
+              return const SizedBox.shrink();
+            }
+            return ConversationSlidable(
+              itemKey: 'conversation-default',
+              groupTag: 'test-group',
+              actions: _deleteActions(() => deleteCount++),
+              onDismissed: () {
+                deleteCount++;
+                setState(() {
+                  visible = false;
+                });
+              },
+              child: const SizedBox(height: 64, child: Text('Conversation F')),
+            );
+          },
         ),
       ),
     );
 
-    await tester.drag(find.byType(Slidable), const Offset(-800, 0));
+    await tester.fling(find.byType(Slidable), const Offset(-800, 0), 1000);
     await tester.pumpAndSettle();
 
     expect(deleteCount, 1);
@@ -148,6 +173,45 @@ void main() {
     );
 
     expect(find.text('OpenClaw'), findsOneWidget);
+  });
+
+  testWidgets('renders running and completed conversation indicators', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildTestApp(
+        child: Column(
+          children: [
+            ChatHistoryConversationItem(
+              conversation: _conversation(
+                id: 5,
+                title: 'Running conversation',
+                status: 0,
+              ),
+              actions: _deleteActions(() {}),
+              onTap: () {},
+              onDelete: () {},
+            ),
+            ChatHistoryConversationItem(
+              conversation: _conversation(
+                id: 6,
+                title: 'Completed conversation',
+                status: 1,
+              ),
+              actions: _deleteActions(() {}),
+              onTap: () {},
+              onDelete: () {},
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('conversation-status-running')), findsOne);
+    expect(
+      find.byKey(const ValueKey('conversation-status-completed')),
+      findsOne,
+    );
   });
 }
 
@@ -176,13 +240,14 @@ ConversationModel _conversation({
   required int id,
   required String title,
   ConversationMode mode = ConversationMode.normal,
+  int status = 0,
 }) {
   return ConversationModel(
     id: id,
     mode: mode,
     title: title,
     summary: 'Summary',
-    status: 0,
+    status: status,
     lastMessage: 'Last message',
     messageCount: 3,
     createdAt: DateTime(2026, 3, 20, 9).millisecondsSinceEpoch,
