@@ -16,17 +16,20 @@ class WorkbenchTodoLogPage extends StatefulWidget {
     String? displayId,
     String? returnTo,
     bool debugMode = false,
+    bool embedded = false,
   }) : _service = service,
        _projectId = projectId,
        _displayId = displayId,
        _returnTo = returnTo,
-       _debugMode = debugMode;
+       _debugMode = debugMode,
+       _embedded = embedded;
 
   final WorkbenchTodoLogService? _service;
   final String? _projectId;
   final String? _displayId;
   final String? _returnTo;
   final bool _debugMode;
+  final bool _embedded;
 
   @override
   State<WorkbenchTodoLogPage> createState() => _WorkbenchTodoLogPageState();
@@ -34,6 +37,7 @@ class WorkbenchTodoLogPage extends StatefulWidget {
 
 class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
   late final WorkbenchTodoLogService _service;
+  late final bool _ownsService = widget._service == null;
   final TextEditingController _todoController = TextEditingController();
 
   @override
@@ -48,6 +52,9 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
   @override
   void dispose() {
     _todoController.dispose();
+    if (_ownsService) {
+      _service.dispose();
+    }
     super.dispose();
   }
 
@@ -97,6 +104,31 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
+    final body = AnimatedBuilder(
+      animation: _service,
+      builder: (context, _) {
+        final project = _service.project;
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: [
+            if (_service.loading) ...[
+              const LinearProgressIndicator(minHeight: 2),
+              const SizedBox(height: 12),
+            ],
+            _buildHeader(project),
+            if (widget._debugMode) ...[
+              const SizedBox(height: 12),
+              _buildDebugBanner(),
+            ],
+            const SizedBox(height: 12),
+            _buildTodoCard(project),
+          ],
+        );
+      },
+    );
+    if (widget._embedded) {
+      return Material(color: palette.pageBackground, child: body);
+    }
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -112,30 +144,7 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
           primary: true,
           onBackPressed: _handleBackNavigation,
         ),
-        body: SafeArea(
-          child: AnimatedBuilder(
-            animation: _service,
-            builder: (context, _) {
-              final project = _service.project;
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                children: [
-                  if (_service.loading) ...[
-                    const LinearProgressIndicator(minHeight: 2),
-                    const SizedBox(height: 12),
-                  ],
-                  _buildHeader(project),
-                  if (widget._debugMode) ...[
-                    const SizedBox(height: 12),
-                    _buildDebugBanner(),
-                  ],
-                  const SizedBox(height: 12),
-                  _buildTodoCard(project),
-                ],
-              );
-            },
-          ),
-        ),
+        body: SafeArea(child: body),
       ),
     );
   }

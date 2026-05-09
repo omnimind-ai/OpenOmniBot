@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/omnibot_workspace/widgets/omnibot_workspace_browser.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
+import 'package:ui/features/workbench/pages/workbench_todo_log_page.dart';
 import 'package:ui/features/workbench/services/workbench_todo_log_service.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/app_background_service.dart';
@@ -616,7 +617,7 @@ class _OmnibotWorkspaceProjectFrontendsState
   void initState() {
     super.initState();
     _service.addListener(_handleServiceChanged);
-    unawaited(_service.refresh());
+    unawaited(_refreshAndEnsureActive());
   }
 
   @override
@@ -634,10 +635,17 @@ class _OmnibotWorkspaceProjectFrontendsState
     }
   }
 
-  Future<void> _openDisplay(
-    WorkbenchProject project,
-    WorkbenchDisplaySpec display,
-  ) async {
+  Future<void> _refreshAndEnsureActive() async {
+    await _service.refresh();
+    if (!mounted ||
+        _service.activeProject != null ||
+        _service.projects.isEmpty) {
+      return;
+    }
+    await _service.activateProject(_service.projects.first);
+  }
+
+  Future<void> _activateProject(WorkbenchProject project) async {
     final active = await _service.activateProject(project);
     if (!mounted) return;
     if (active == null) {
@@ -647,7 +655,6 @@ class _OmnibotWorkspaceProjectFrontendsState
       );
       return;
     }
-    GoRouterManager.push(_displayRoute(project, display));
   }
 
   String _displayRoute(WorkbenchProject project, WorkbenchDisplaySpec display) {
@@ -669,6 +676,25 @@ class _OmnibotWorkspaceProjectFrontendsState
         .toString();
   }
 
+  void _openDisplayRoute(
+    WorkbenchProject project,
+    WorkbenchDisplaySpec display,
+  ) {
+    GoRouterManager.push(_displayRoute(project, display));
+  }
+
+  WorkbenchProject? _currentProject(List<WorkbenchProject> projects) {
+    final activeProjectId = _service.activeProject?.projectId;
+    if (activeProjectId != null) {
+      for (final project in projects) {
+        if (project.projectId == activeProjectId) {
+          return project;
+        }
+      }
+    }
+    return projects.isEmpty ? null : projects.first;
+  }
+
   String _projectDisplayName(WorkbenchProject project) {
     final name = project.name.trim();
     return name.isEmpty ? project.projectId : name;
@@ -677,196 +703,223 @@ class _OmnibotWorkspaceProjectFrontendsState
   @override
   Widget build(BuildContext context) {
     final projects = _service.projects;
-    return RefreshIndicator(
-      onRefresh: _service.refresh,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        children: [
-          if (_service.loading) ...[
-            const LinearProgressIndicator(minHeight: 2),
-            const SizedBox(height: 12),
-          ],
-          _ProjectModeHeader(translucent: widget.translucentSurfaces),
-          const SizedBox(height: 12),
-          if (projects.isEmpty)
-            _WorkspaceProjectStatusCard(
-              icon: Icons.phone_android_outlined,
-              label: context.l10n.workbenchWorkspaceProjectFrontendsEmpty,
-              translucent: widget.translucentSurfaces,
-            )
-          else
-            ...projects.map(
-              (project) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _WorkspaceProjectCard(
-                  project: project,
-                  active:
-                      _service.activeProject?.projectId == project.projectId,
-                  projectName: _projectDisplayName(project),
-                  translucent: widget.translucentSurfaces,
-                  onOpenDisplay: (display) => _openDisplay(project, display),
+    final project = _currentProject(projects);
+    final display = project?.primaryDisplay;
+    return Column(
+      children: [
+        if (_service.loading) const LinearProgressIndicator(minHeight: 2),
+        _WorkspaceProjectMiniBar(
+          project: project,
+          display: display,
+          projects: projects,
+          projectName: project == null ? null : _projectDisplayName(project),
+          translucent: widget.translucentSurfaces,
+          onRefresh: _refreshAndEnsureActive,
+          onOpenDisplay: project == null || display == null
+              ? null
+              : () => _openDisplayRoute(project, display),
+          onProjectSelected: (selectedProject) =>
+              unawaited(_activateProject(selectedProject)),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(color: context.omniPalette.borderSubtle),
+                  borderRadius: BorderRadius.circular(8),
                 ),
+                child: project == null || display == null
+                    ? _WorkspaceProjectStatusCard(
+                        icon: Icons.phone_android_outlined,
+                        label: context
+                            .l10n
+                            .workbenchWorkspaceProjectFrontendsEmpty,
+                        translucent: widget.translucentSurfaces,
+                      )
+                    : _WorkspaceProjectDisplayHost(
+                        key: ValueKey(
+                          'workspace-project-host-${project.projectId}-${display.id}',
+                        ),
+                        project: project,
+                        display: display,
+                      ),
               ),
             ),
-          if (_service.errorMessage != null) ...[
-            const SizedBox(height: 2),
-            _WorkspaceProjectStatusCard(
+          ),
+        ),
+        if (_service.errorMessage != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: _WorkspaceProjectStatusCard(
               icon: Icons.error_outline_rounded,
               label: context.l10n.workbenchProjectModeLoadFailed,
               color: const Color(0xFFDC2626),
               translucent: widget.translucentSurfaces,
             ),
-          ],
-          SizedBox(height: MediaQuery.of(context).padding.bottom),
-        ],
-      ),
+          ),
+      ],
     );
   }
 }
 
-class _ProjectModeHeader extends StatelessWidget {
-  const _ProjectModeHeader({required this.translucent});
+class _WorkspaceProjectMiniBar extends StatelessWidget {
+  const _WorkspaceProjectMiniBar({
+    required this.project,
+    required this.display,
+    required this.projects,
+    required this.projectName,
+    required this.translucent,
+    required this.onRefresh,
+    required this.onOpenDisplay,
+    required this.onProjectSelected,
+  });
 
+  final WorkbenchProject? project;
+  final WorkbenchDisplaySpec? display;
+  final List<WorkbenchProject> projects;
+  final String? projectName;
   final bool translucent;
+  final Future<void> Function() onRefresh;
+  final VoidCallback? onOpenDisplay;
+  final ValueChanged<WorkbenchProject> onProjectSelected;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
+    final activeProject = project;
+    final activeDisplay = display;
+    final displayLabel = activeDisplay == null
+        ? context.l10n.workbenchWorkspaceProjectFrontendsTitle
+        : activeDisplay.label.trim().isEmpty
+        ? context.l10n.workbenchUnnamedDisplay
+        : activeDisplay.label;
+    final background = backgroundSurfaceColor(
+      translucent: translucent,
+      baseColor: palette.surfacePrimary,
+      opacity: 0.74,
+    );
     return Container(
-      padding: const EdgeInsets.all(14),
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: backgroundSurfaceColor(
-          translucent: translucent,
-          baseColor: palette.surfacePrimary,
-          opacity: 0.76,
-        ),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: palette.borderSubtle),
+        color: background,
+        border: Border(bottom: BorderSide(color: palette.borderSubtle)),
       ),
       child: Row(
         children: [
-          Icon(Icons.phone_android_rounded, color: palette.accentPrimary),
-          const SizedBox(width: 10),
+          Tooltip(
+            message: context.l10n.workbenchWorkspaceProjectFrontendsTitle,
+            child: Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: palette.accentPrimary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: palette.accentPrimary.withValues(alpha: 0.24),
+                ),
+              ),
+              child: Icon(
+                Icons.phone_android_rounded,
+                size: 16,
+                color: palette.accentPrimary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 9),
           Expanded(
             child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  context.l10n.workbenchWorkspaceProjectFrontendsTitle,
-                  style: TextStyle(
-                    color: palette.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  context.l10n.workbenchWorkspaceProjectFrontendsSubtitle,
-                  style: TextStyle(
-                    color: palette.textSecondary,
-                    fontSize: 12,
-                    height: 1.3,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WorkspaceProjectCard extends StatelessWidget {
-  const _WorkspaceProjectCard({
-    required this.project,
-    required this.active,
-    required this.projectName,
-    required this.translucent,
-    required this.onOpenDisplay,
-  });
-
-  final WorkbenchProject project;
-  final bool active;
-  final String projectName;
-  final bool translucent;
-  final ValueChanged<WorkbenchDisplaySpec> onOpenDisplay;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final displays = project.displays.isEmpty
-        ? [project.primaryDisplay]
-        : project.displays;
-    final executionCount = project.tools.fold<int>(
-      0,
-      (sum, tool) => sum + tool.executionCount,
-    );
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: backgroundSurfaceColor(
-          translucent: translucent,
-          baseColor: palette.surfacePrimary,
-          opacity: 0.76,
-        ),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: active ? palette.accentPrimary : palette.borderSubtle,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  projectName,
+                  displayLabel,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: palette.textPrimary,
-                    fontSize: 16,
+                    fontSize: 13,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-              ),
-              if (active)
-                _WorkspaceProjectBadge(
-                  label: context.l10n.workbenchActiveProject,
-                  color: palette.accentPrimary,
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            context.l10n.workbenchWorkspaceProjectApiStats(
-              project.tools.length,
-              executionCount,
-            ),
-            style: TextStyle(
-              color: palette.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Column(
-            children: displays
-                .map(
-                  (display) => Padding(
-                    padding: EdgeInsets.only(
-                      bottom: display == displays.last ? 0 : 8,
-                    ),
-                    child: _WorkspaceProjectDisplayRow(
-                      display: display,
-                      onTap: () => onOpenDisplay(display),
+                if (projectName != null)
+                  Text(
+                    projectName!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.textTertiary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                )
-                .toList(growable: false),
+              ],
+            ),
+          ),
+          PopupMenuButton<String>(
+            tooltip: context.l10n.workbenchProjectSwitcher,
+            enabled: projects.isNotEmpty,
+            icon: Icon(
+              Icons.unfold_more_rounded,
+              color: projects.isEmpty
+                  ? palette.textTertiary
+                  : palette.textSecondary,
+            ),
+            onSelected: (projectId) {
+              for (final item in projects) {
+                if (item.projectId == projectId) {
+                  onProjectSelected(item);
+                  return;
+                }
+              }
+            },
+            itemBuilder: (context) {
+              return projects
+                  .map((item) {
+                    final name = item.name.trim().isEmpty
+                        ? item.projectId
+                        : item.name.trim();
+                    return PopupMenuItem<String>(
+                      value: item.projectId,
+                      child: Row(
+                        children: [
+                          Icon(
+                            item.projectId == activeProject?.projectId
+                                ? Icons.check_rounded
+                                : Icons.widgets_outlined,
+                            size: 18,
+                            color: item.projectId == activeProject?.projectId
+                                ? palette.accentPrimary
+                                : palette.textTertiary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  })
+                  .toList(growable: false);
+            },
+          ),
+          IconButton(
+            tooltip: context.l10n.workbenchOpenDisplay,
+            onPressed: onOpenDisplay,
+            icon: Icon(Icons.open_in_new_rounded, color: palette.textSecondary),
+          ),
+          IconButton(
+            tooltip: context.l10n.omniflowRefresh,
+            onPressed: () => unawaited(onRefresh()),
+            icon: Icon(Icons.refresh_rounded, color: palette.textSecondary),
           ),
         ],
       ),
@@ -874,14 +927,39 @@ class _WorkspaceProjectCard extends StatelessWidget {
   }
 }
 
-class _WorkspaceProjectDisplayRow extends StatelessWidget {
-  const _WorkspaceProjectDisplayRow({
+class _WorkspaceProjectDisplayHost extends StatelessWidget {
+  const _WorkspaceProjectDisplayHost({
+    super.key,
+    required this.project,
     required this.display,
-    required this.onTap,
   });
 
+  final WorkbenchProject project;
   final WorkbenchDisplaySpec display;
-  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final route = display.route.trim().isEmpty
+        ? project.route.trim()
+        : display.route.trim();
+    final hostsTodoLog =
+        project.templateId == workbenchTodoTemplateId ||
+        route.startsWith('/workbench/todo_log');
+    if (hostsTodoLog) {
+      return WorkbenchTodoLogPage(
+        projectId: project.projectId,
+        displayId: display.id,
+        embedded: true,
+      );
+    }
+    return _WorkspaceProjectUnsupportedDisplay(display: display);
+  }
+}
+
+class _WorkspaceProjectUnsupportedDisplay extends StatelessWidget {
+  const _WorkspaceProjectUnsupportedDisplay({required this.display});
+
+  final WorkbenchDisplaySpec display;
 
   @override
   Widget build(BuildContext context) {
@@ -889,62 +967,35 @@ class _WorkspaceProjectDisplayRow extends StatelessWidget {
     final label = display.label.trim().isEmpty
         ? context.l10n.workbenchUnnamedDisplay
         : display.label;
-    return Material(
-      color: palette.surfaceSecondary,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 52),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              Icon(Icons.open_in_new_rounded, color: palette.accentPrimary),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.widgets_outlined, color: palette.textTertiary, size: 34),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: palette.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
               ),
-              const SizedBox(width: 8),
-              Icon(Icons.chevron_right_rounded, color: palette.textTertiary),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _WorkspaceProjectBadge extends StatelessWidget {
-  const _WorkspaceProjectBadge({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.26)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              context.l10n.workbenchWorkspaceProjectUnsupportedDisplay,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: palette.textSecondary,
+                fontSize: 12,
+                height: 1.3,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -2756,11 +2756,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchWorkspaceProjectMode => 'Project';
 
   @override
-  String get workbenchWorkspaceProjectFrontendsTitle => 'Project 前端';
+  String get workbenchWorkspaceProjectFrontendsTitle => 'Project 窗口';
 
   @override
   String get workbenchWorkspaceProjectFrontendsSubtitle =>
-      '开启 Project 模式后，这里只显示每个 Project 的 OOB 原生前端入口。';
+      '开启 Project 模式后，这里像子窗口一样直接承载当前激活 Project 的 OOB 原生前端。';
 
   @override
   String get workbenchWorkspaceProjectFrontendsEmpty =>
@@ -2768,6 +2768,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get workbenchWorkspaceProjectOpenFailed => '打开 Project 前端失败';
+
+  @override
+  String get workbenchWorkspaceProjectUnsupportedDisplay =>
+      '这个 Display 暂不支持内嵌窗口显示，请用右上角打开为完整页面。';
 
   @override
   String get workbenchWorkspaceGuideTooltip => '查看 Project 工作台说明';
@@ -2813,7 +2817,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get workbenchWorkspaceGuideFrontendBody =>
-      '生成前端是 OOB 原生 Flutter Display。Workspace 切到 Project 后看到的是每个 Project 的具体前端入口，点击后进入业务页面；一个 Project 可以有多个 Display。';
+      '生成前端是 OOB 原生 Flutter Display。Workspace 切到 Project 后，不再显示大型管理列表，而是像浏览器子窗口一样直接承载当前激活 Project 的首页；一个 Project 可以有多个 Display，可用小菜单切换。';
 
   @override
   String get workbenchWorkspaceGuideBackendTitle => '后端怎么被调用';

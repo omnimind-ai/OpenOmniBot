@@ -2888,11 +2888,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchWorkspaceProjectMode => 'Project';
 
   @override
-  String get workbenchWorkspaceProjectFrontendsTitle => 'Project frontends';
+  String get workbenchWorkspaceProjectFrontendsTitle => 'Project window';
 
   @override
   String get workbenchWorkspaceProjectFrontendsSubtitle =>
-      'After Project mode is enabled, this area only shows OOB-native frontend entries for each Project.';
+      'After Project mode is enabled, this area hosts the active Project\'s OOB-native frontend like an embedded child window.';
 
   @override
   String get workbenchWorkspaceProjectFrontendsEmpty =>
@@ -2901,6 +2901,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get workbenchWorkspaceProjectOpenFailed =>
       'Failed to open Project frontend';
+
+  @override
+  String get workbenchWorkspaceProjectUnsupportedDisplay =>
+      'This Display is not supported in the embedded Project window yet. Open it as a full page from the top-right action.';
 
   @override
   String get workbenchWorkspaceGuideTooltip => 'View Project Workbench guide';
@@ -2951,7 +2955,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchWorkspaceGuideFrontendBody =>
-      'The generated frontend is an OOB-native Flutter Display. After Workspace switches to Project mode, each Project shows its concrete frontend entries; tapping one opens the business page. One Project can own multiple Displays.';
+      'The generated frontend is an OOB-native Flutter Display. After Workspace switches to Project mode, it no longer shows a large manager list; it hosts the active Project home like an embedded browser window. One Project can own multiple Displays, selected from the small menu.';
 
   @override
   String get workbenchWorkspaceGuideBackendTitle => 'How the backend is called';
