@@ -933,7 +933,7 @@
   "workbenchWorkspaceOpenWorkbench": "Open Workbench",
   "workbenchSubtitle": "A native OOB project example that registers Project APIs, persists state, and renders inside the Workbench.",
   "workbenchVibeSubtitle": "Prompt-built native frontend, project APIs, and workspace files stay connected inside OOB.",
-  "workbenchGeneratedTodoSubtitle": "This is the generated Todo frontend. It is separate from the Project control surface and calls the registered APIs directly.",
+  "workbenchGeneratedTodoSubtitle": "Todo Log (TODO) is one business frontend in this Project. It is separate from the Project control surface and calls the registered APIs directly.",
   "workbenchMockProjectName": "Todo Log Mock",
   "workbenchTemplateProjectName": "Todo Log Workbench",
   "workbenchNativeUi": "OOB native UI",
@@ -998,14 +998,14 @@
   "workbenchAssistantPromptRequired": "Enter the change first",
   "workbenchAssistantNoProject": "Select a Project first",
   "workbenchAssistantHotUpdateFailed": "Project hot update failed",
-  "workbenchProjectModeTitle": "Workbench Mode",
+  "workbenchProjectModeTitle": "Project Workbench",
   "workbenchFlutterDisplay": "Flutter Display",
   "workbenchProjectSwitcher": "Switch Project",
-  "workbenchProjectGenerateTitle": "Project generation mode",
-  "workbenchProjectGenerateSubtitle": "Enter one requirement. OOB splits it into a Project, generated frontend, business APIs, and persistent data through the built-in skill, then creates it through the real Workbench backend.",
+  "workbenchProjectGenerateTitle": "Continue a Vibe Project from Home",
+  "workbenchProjectGenerateSubtitle": "This keeps the same input habit as Home: one requirement is split by the built-in OOB skill into a Project, multiple frontend Displays, business APIs, and persistent data.",
   "workbenchProjectPromptHint": "Describe the Project you want",
   "workbenchProjectDefaultPrompt": "I want to create a simple todolist management system that can add todos and archive todos",
-  "workbenchProjectGenerateButton": "Create and open frontend",
+  "workbenchProjectGenerateButton": "Create and enter use mode",
   "workbenchInputProjectTooltip": "Open Project Workbench",
   "workbenchGeneratedTodoProjectName": "Todo List Workbench",
   "workbenchPromptSeedAddTodo": "Verify adding a todo",
@@ -1015,12 +1015,33 @@
   "workbenchProjectPlanFrontend": "Generate an OOB-native Flutter frontend",
   "workbenchProjectPlanApi": "Register business APIs shared by AI and UI",
   "workbenchProjectPlanData": "Persist data and API call logs",
-  "workbenchProjectCurrentTitle": "Current Project",
-  "workbenchProjectCurrentSubtitle": "Manage the created Project here; its frontend, Workspace, export, and delete actions all use the same registered state.",
+  "workbenchUseMode": "Use mode",
+  "workbenchDebugMode": "Debug mode",
+  "workbenchDisplaysTitle": "Frontend Displays",
+  "workbenchDisplayCount": "{count} displays",
+  "@workbenchDisplayCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchUnnamedDisplay": "Unnamed display",
+  "workbenchOpenDisplay": "Open this frontend",
+  "workbenchProjectCurrentTitle": "Project use surface",
+  "workbenchProjectCurrentSubtitle": "By default this opens usable frontends and returns to Home. Debug info, assets, and APIs stay in Debug mode.",
   "workbenchProjectModeCreateTitle": "Vibe project entry",
   "workbenchProjectModeSubtitle": "Open Project info, generated frontend, Workspace, and distribution package here. Business APIs still run through the same backend.",
   "workbenchProjectModeCreateButton": "Create Todo demo",
-  "workbenchProjectModeProjectsTitle": "Project APIs",
+  "workbenchProjectModeProjectsTitle": "Current Project APIs",
+  "workbenchProjectApiForProject": "{projectName} APIs",
+  "@workbenchProjectApiForProject": {
+    "placeholders": {
+      "projectName": {
+        "type": "String"
+      }
+    }
+  },
   "workbenchProjectModeOpen": "Open project",
   "workbenchProjectModeEmpty": "No Workbench projects yet",
   "workbenchProjectModeLoadFailed": "Project mode failed to load",
@@ -1048,6 +1069,10 @@
   "workbenchProjectInfoSourceValue": "README.md / frontend/page_spec.json / backend/api_spec.json",
   "workbenchProjectInfoRuntimeTitle": "Runtime state",
   "workbenchProjectInfoRuntimeValue": "data/todos.json / logs/api_calls.jsonl",
+  "workbenchDebugToolsTitle": "Debug tools",
+  "workbenchDebugHotUpdate": "Use floating Xiaowan to hot-update this Project",
+  "workbenchDebugVlmTest": "Run a VLM human-operation simulation",
+  "workbenchDebugComingSoon": "Pending",
   "workbenchExportProjectPackage": "Export package",
   "workbenchProjectExportFailed": "Project export failed",
   "workbenchProjectExported": "Exported {packageName}",

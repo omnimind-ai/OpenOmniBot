@@ -2583,7 +2583,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get workbenchGeneratedTodoSubtitle =>
-      '这是生成出来的 Todo 前端。它和 Project 控制面分开，并直接调用已注册的业务 API。';
+      'Todo 日志 (TODO) 是这个 Project 的业务前端之一。它和 Project 控制面分开，并直接调用已注册的业务 API。';
 
   @override
   String get workbenchMockProjectName => 'Todo 日志 Mock';
@@ -2761,7 +2761,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchAssistantHotUpdateFailed => 'Project 热更新失败';
 
   @override
-  String get workbenchProjectModeTitle => '工作台模式';
+  String get workbenchProjectModeTitle => 'Project 工作台';
 
   @override
   String get workbenchFlutterDisplay => 'Flutter 显示器';
@@ -2770,11 +2770,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchProjectSwitcher => '切换 Project';
 
   @override
-  String get workbenchProjectGenerateTitle => 'Project 生成模式';
+  String get workbenchProjectGenerateTitle => '从首页继续 Vibe Project';
 
   @override
   String get workbenchProjectGenerateSubtitle =>
-      '输入一句需求，OOB 会按内置 skill 拆成 Project、生成前端、业务 API 和持久化数据，并通过真实 Workbench 后端创建。';
+      '这里复用首页输入习惯：一句需求会被 OOB 内置 skill 拆成 Project、多个前端 Display、业务 API 和持久化数据。';
 
   @override
   String get workbenchProjectPromptHint => '描述你想创建的 Project';
@@ -2784,7 +2784,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '我想创建一个简单的 todolist 管理系统，要求可以增加 todo，归档 todo';
 
   @override
-  String get workbenchProjectGenerateButton => '创建并打开前端';
+  String get workbenchProjectGenerateButton => '创建并进入使用模式';
 
   @override
   String get workbenchInputProjectTooltip => '打开 Project 工作台';
@@ -2814,11 +2814,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchProjectPlanData => '写入持久化数据和 API 日志';
 
   @override
-  String get workbenchProjectCurrentTitle => '当前 Project';
+  String get workbenchUseMode => '使用模式';
+
+  @override
+  String get workbenchDebugMode => 'Debug 模式';
+
+  @override
+  String get workbenchDisplaysTitle => '前端 Displays';
+
+  @override
+  String workbenchDisplayCount(int count) {
+    return '$count 个前端';
+  }
+
+  @override
+  String get workbenchUnnamedDisplay => '未命名前端';
+
+  @override
+  String get workbenchOpenDisplay => '打开这个前端';
+
+  @override
+  String get workbenchProjectCurrentTitle => 'Project 使用台';
 
   @override
   String get workbenchProjectCurrentSubtitle =>
-      '这里管理已创建 Project；业务前端、Workspace、导出和删除都从同一个注册状态进入。';
+      '默认只进入可用前端；返回时回到首页。Debug 信息、资产和 API 放在 Debug 模式里。';
 
   @override
   String get workbenchProjectModeCreateTitle => 'Vibe Project 入口';
@@ -2831,7 +2851,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchProjectModeCreateButton => '创建 Todo demo';
 
   @override
-  String get workbenchProjectModeProjectsTitle => 'Project API';
+  String get workbenchProjectModeProjectsTitle => '当前 Project API';
+
+  @override
+  String workbenchProjectApiForProject(String projectName) {
+    return '$projectName 的 API';
+  }
 
   @override
   String get workbenchProjectModeOpen => '打开 Project';
@@ -2896,6 +2921,18 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get workbenchProjectInfoRuntimeValue =>
       'data/todos.json / logs/api_calls.jsonl';
+
+  @override
+  String get workbenchDebugToolsTitle => '调试工具';
+
+  @override
+  String get workbenchDebugHotUpdate => '悬浮小万实时修改当前 Project';
+
+  @override
+  String get workbenchDebugVlmTest => '根据 VLM 模拟人类操作测试';
+
+  @override
+  String get workbenchDebugComingSoon => '待接入';
 
   @override
   String get workbenchExportProjectPackage => '导出分发包';

@@ -16,6 +16,8 @@ void main() {
       expect(project.projectId, 'oob-workbench-todo-log');
       expect(project.spacePath, '/workspace/projects/oob-workbench-todo-log');
       expect(project.pageIds, contains('todo-log-page'));
+      expect(project.primaryDisplay.title, 'Todo 日志');
+      expect(project.primaryDisplay.shortName, 'TODO');
       expect(
         project.tools.map((tool) => tool.id),
         containsAll([
@@ -749,6 +751,16 @@ Map<String, Object?> _projectPayload({
     'route': '/workbench/todo_log?projectId=$workbenchTodoDefaultProjectId',
     'spacePath': '/workspace/projects/$workbenchTodoDefaultProjectId',
     'pageIds': ['todo-log-page'],
+    'displays': [
+      {
+        'id': 'todo-log-display',
+        'title': 'Todo 日志',
+        'shortName': 'TODO',
+        'route': '/workbench/todo_log?projectId=$workbenchTodoDefaultProjectId',
+        'kind': 'oob_flutter',
+        'isDefault': true,
+      },
+    ],
     'tools': _apiPayload(),
     'flows': [],
     'androidAssets': androidAssets,

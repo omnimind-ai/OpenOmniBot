@@ -21,6 +21,8 @@ List<GoRoute> workbenchRoutes = [
       name: 'workbench/todo_log',
       child: WorkbenchTodoLogPage(
         projectId: state.uri.queryParameters['projectId'],
+        displayId: state.uri.queryParameters['displayId'],
+        returnTo: state.uri.queryParameters['returnTo'],
       ),
     ),
   ),

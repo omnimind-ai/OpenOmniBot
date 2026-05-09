@@ -4979,7 +4979,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchGeneratedTodoSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'这是生成出来的 Todo 前端。它和 Project 控制面分开，并直接调用已注册的业务 API。'**
+  /// **'Todo 日志 (TODO) 是这个 Project 的业务前端之一。它和 Project 控制面分开，并直接调用已注册的业务 API。'**
   String get workbenchGeneratedTodoSubtitle;
 
   /// No description provided for @workbenchMockProjectName.
@@ -5327,7 +5327,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectModeTitle.
   ///
   /// In zh, this message translates to:
-  /// **'工作台模式'**
+  /// **'Project 工作台'**
   String get workbenchProjectModeTitle;
 
   /// No description provided for @workbenchFlutterDisplay.
@@ -5345,13 +5345,13 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectGenerateTitle.
   ///
   /// In zh, this message translates to:
-  /// **'Project 生成模式'**
+  /// **'从首页继续 Vibe Project'**
   String get workbenchProjectGenerateTitle;
 
   /// No description provided for @workbenchProjectGenerateSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'输入一句需求，OOB 会按内置 skill 拆成 Project、生成前端、业务 API 和持久化数据，并通过真实 Workbench 后端创建。'**
+  /// **'这里复用首页输入习惯：一句需求会被 OOB 内置 skill 拆成 Project、多个前端 Display、业务 API 和持久化数据。'**
   String get workbenchProjectGenerateSubtitle;
 
   /// No description provided for @workbenchProjectPromptHint.
@@ -5369,7 +5369,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectGenerateButton.
   ///
   /// In zh, this message translates to:
-  /// **'创建并打开前端'**
+  /// **'创建并进入使用模式'**
   String get workbenchProjectGenerateButton;
 
   /// No description provided for @workbenchInputProjectTooltip.
@@ -5426,16 +5426,52 @@ abstract class AppLocalizations {
   /// **'写入持久化数据和 API 日志'**
   String get workbenchProjectPlanData;
 
+  /// No description provided for @workbenchUseMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用模式'**
+  String get workbenchUseMode;
+
+  /// No description provided for @workbenchDebugMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'Debug 模式'**
+  String get workbenchDebugMode;
+
+  /// No description provided for @workbenchDisplaysTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'前端 Displays'**
+  String get workbenchDisplaysTitle;
+
+  /// No description provided for @workbenchDisplayCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 个前端'**
+  String workbenchDisplayCount(int count);
+
+  /// No description provided for @workbenchUnnamedDisplay.
+  ///
+  /// In zh, this message translates to:
+  /// **'未命名前端'**
+  String get workbenchUnnamedDisplay;
+
+  /// No description provided for @workbenchOpenDisplay.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开这个前端'**
+  String get workbenchOpenDisplay;
+
   /// No description provided for @workbenchProjectCurrentTitle.
   ///
   /// In zh, this message translates to:
-  /// **'当前 Project'**
+  /// **'Project 使用台'**
   String get workbenchProjectCurrentTitle;
 
   /// No description provided for @workbenchProjectCurrentSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'这里管理已创建 Project；业务前端、Workspace、导出和删除都从同一个注册状态进入。'**
+  /// **'默认只进入可用前端；返回时回到首页。Debug 信息、资产和 API 放在 Debug 模式里。'**
   String get workbenchProjectCurrentSubtitle;
 
   /// No description provided for @workbenchProjectModeCreateTitle.
@@ -5459,8 +5495,14 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectModeProjectsTitle.
   ///
   /// In zh, this message translates to:
-  /// **'Project API'**
+  /// **'当前 Project API'**
   String get workbenchProjectModeProjectsTitle;
+
+  /// No description provided for @workbenchProjectApiForProject.
+  ///
+  /// In zh, this message translates to:
+  /// **'{projectName} 的 API'**
+  String workbenchProjectApiForProject(String projectName);
 
   /// No description provided for @workbenchProjectModeOpen.
   ///
@@ -5581,6 +5623,30 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'data/todos.json / logs/api_calls.jsonl'**
   String get workbenchProjectInfoRuntimeValue;
+
+  /// No description provided for @workbenchDebugToolsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'调试工具'**
+  String get workbenchDebugToolsTitle;
+
+  /// No description provided for @workbenchDebugHotUpdate.
+  ///
+  /// In zh, this message translates to:
+  /// **'悬浮小万实时修改当前 Project'**
+  String get workbenchDebugHotUpdate;
+
+  /// No description provided for @workbenchDebugVlmTest.
+  ///
+  /// In zh, this message translates to:
+  /// **'根据 VLM 模拟人类操作测试'**
+  String get workbenchDebugVlmTest;
+
+  /// No description provided for @workbenchDebugComingSoon.
+  ///
+  /// In zh, this message translates to:
+  /// **'待接入'**
+  String get workbenchDebugComingSoon;
 
   /// No description provided for @workbenchExportProjectPackage.
   ///

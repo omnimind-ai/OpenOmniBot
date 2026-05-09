@@ -564,6 +564,7 @@ class WorkbenchProjectStore(
             "route" to record.route,
             "spacePath" to record.spacePath,
             "pageIds" to listOf("todo-log-page"),
+            "displays" to workbenchDisplays(record),
             "apiIds" to record.apiIds,
             "tools" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
@@ -602,6 +603,7 @@ class WorkbenchProjectStore(
                 "renderer" to "oob_native_schema",
                 "route" to record.route
             ),
+            "displays" to workbenchDisplays(record),
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "android" to linkedMapOf(
                 "manifest" to "android/manifest.json",
@@ -617,6 +619,27 @@ class WorkbenchProjectStore(
         val file = File(projectDir(record.projectId), "project.json")
         file.parentFile?.mkdirs()
         file.writeText(gson.toJson(payload))
+    }
+
+    /**
+     * Builds the native display registry exposed by one Workbench Project.
+     *
+     * @param record Project registry record that owns the display route and stable project id.
+     * @return Display payloads shown by Flutter as Project-scoped frontends, not business APIs.
+     */
+    private fun workbenchDisplays(record: WorkbenchProjectRecord): List<Map<String, Any?>> {
+        return listOf(
+            linkedMapOf(
+                "id" to "todo-log-display",
+                "title" to "Todo 日志",
+                "shortName" to "TODO",
+                "route" to record.route,
+                "kind" to "oob_flutter",
+                "renderer" to "oob_native_schema",
+                "isDefault" to true,
+                "description" to "Todo display bound to this Project API registry."
+            )
+        )
     }
 
     /**
@@ -678,6 +701,9 @@ class WorkbenchProjectStore(
                 gson.toJson(
                     linkedMapOf<String, Any?>(
                         "pageId" to "todo-log-page",
+                        "displayId" to "todo-log-display",
+                        "title" to "Todo 日志",
+                        "shortName" to "TODO",
                         "renderer" to "oob_native_flutter_display",
                         "route" to record.route,
                         "sourcePrompt" to sourcePrompt,

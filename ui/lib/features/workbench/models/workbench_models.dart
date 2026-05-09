@@ -222,6 +222,68 @@ class WorkbenchAndroidAsset {
   }
 }
 
+class WorkbenchDisplaySpec {
+  const WorkbenchDisplaySpec({
+    required this.id,
+    required this.title,
+    required this.shortName,
+    required this.route,
+    this.description = '',
+    this.kind = 'oob_flutter',
+    this.isDefault = false,
+  });
+
+  final String id;
+  final String title;
+  final String shortName;
+  final String route;
+  final String description;
+  final String kind;
+  final bool isDefault;
+
+  String get label {
+    final cleanTitle = title.trim();
+    final cleanShortName = shortName.trim();
+    if (cleanTitle.isEmpty) {
+      return cleanShortName;
+    }
+    if (cleanShortName.isEmpty) {
+      return cleanTitle;
+    }
+    return '$cleanTitle · $cleanShortName';
+  }
+
+  factory WorkbenchDisplaySpec.fromMap(Map<dynamic, dynamic> map) {
+    return WorkbenchDisplaySpec(
+      id: (map['id'] ?? map['displayId'] ?? map['pageId'] ?? '').toString(),
+      title: (map['title'] ?? map['displayName'] ?? map['name'] ?? '')
+          .toString(),
+      shortName: (map['shortName'] ?? map['abbr'] ?? '').toString(),
+      route: (map['route'] ?? '').toString(),
+      description: (map['description'] ?? '').toString(),
+      kind: (map['kind'] ?? map['renderer'] ?? 'oob_flutter').toString(),
+      isDefault: map['isDefault'] == true,
+    );
+  }
+
+  static WorkbenchDisplaySpec todoLog({
+    required String projectId,
+    required String route,
+  }) {
+    final resolvedRoute = route.trim().isEmpty
+        ? '/workbench/todo_log?projectId=$projectId'
+        : route.trim();
+    return WorkbenchDisplaySpec(
+      id: 'todo-log-display',
+      title: 'Todo 日志',
+      shortName: 'TODO',
+      route: resolvedRoute,
+      description: 'Todo list display bound to the Project API registry.',
+      isDefault: true,
+    );
+  }
+}
+
 class WorkbenchProject {
   const WorkbenchProject({
     required this.projectId,
@@ -230,6 +292,7 @@ class WorkbenchProject {
     required this.route,
     required this.spacePath,
     required this.pageIds,
+    required this.displays,
     required this.tools,
     required this.flows,
     required this.androidAssets,
@@ -242,6 +305,7 @@ class WorkbenchProject {
   final String route;
   final String spacePath;
   final List<String> pageIds;
+  final List<WorkbenchDisplaySpec> displays;
   final List<WorkbenchToolSpec> tools;
   final List<WorkbenchFlowSpec> flows;
   final List<WorkbenchAndroidAsset> androidAssets;
@@ -253,21 +317,46 @@ class WorkbenchProject {
   List<WorkbenchTodoItem> get finishedTodos =>
       todos.where((todo) => todo.isFinished).toList(growable: false);
 
+  WorkbenchDisplaySpec get primaryDisplay {
+    for (final display in displays) {
+      if (display.isDefault) {
+        return display;
+      }
+    }
+    if (displays.isNotEmpty) {
+      return displays.first;
+    }
+    return WorkbenchDisplaySpec.todoLog(projectId: projectId, route: route);
+  }
+
   factory WorkbenchProject.fromMap(Map<dynamic, dynamic> map) {
+    final projectId = (map['projectId'] ?? '').toString();
+    final route = (map['route'] ?? '').toString();
     final pageIds = map['pageIds'];
+    final displays = map['displays'] ?? map['frontends'];
     final tools = map['tools'] ?? map['apis'];
     final flows = map['flows'];
     final androidAssets = map['androidAssets'];
     final todos = map['todos'];
+    final parsedDisplays = displays is List
+        ? displays
+              .whereType<Map<dynamic, dynamic>>()
+              .map(WorkbenchDisplaySpec.fromMap)
+              .where((display) => display.route.trim().isNotEmpty)
+              .toList(growable: false)
+        : const <WorkbenchDisplaySpec>[];
     return WorkbenchProject(
-      projectId: (map['projectId'] ?? '').toString(),
+      projectId: projectId,
       name: (map['name'] ?? map['displayName'] ?? '').toString(),
       templateId: (map['templateId'] ?? '').toString(),
-      route: (map['route'] ?? '').toString(),
+      route: route,
       spacePath: (map['spacePath'] ?? '').toString(),
       pageIds: pageIds is List
           ? pageIds.map((item) => item.toString()).toList(growable: false)
           : const [],
+      displays: parsedDisplays.isEmpty
+          ? [WorkbenchDisplaySpec.todoLog(projectId: projectId, route: route)]
+          : parsedDisplays,
       tools: tools is List
           ? tools
                 .whereType<Map<dynamic, dynamic>>()
@@ -302,6 +391,7 @@ class WorkbenchProject {
     String? route,
     String? spacePath,
     List<String>? pageIds,
+    List<WorkbenchDisplaySpec>? displays,
     List<WorkbenchToolSpec>? tools,
     List<WorkbenchFlowSpec>? flows,
     List<WorkbenchAndroidAsset>? androidAssets,
@@ -314,6 +404,7 @@ class WorkbenchProject {
       route: route ?? this.route,
       spacePath: spacePath ?? this.spacePath,
       pageIds: pageIds ?? this.pageIds,
+      displays: displays ?? this.displays,
       tools: tools ?? this.tools,
       flows: flows ?? this.flows,
       androidAssets: androidAssets ?? this.androidAssets,
@@ -495,6 +586,16 @@ class WorkbenchTodoProjectFactory {
       route: '/workbench/todo_log?projectId=oob-workbench-todo-log',
       spacePath: '/workspace/projects/oob-workbench-todo-log',
       pageIds: const ['todo-log-page'],
+      displays: const [
+        WorkbenchDisplaySpec(
+          id: 'todo-log-display',
+          title: 'Todo 日志',
+          shortName: 'TODO',
+          route: '/workbench/todo_log?projectId=oob-workbench-todo-log',
+          description: 'Todo list display bound to the Project API registry.',
+          isDefault: true,
+        ),
+      ],
       tools: const [
         WorkbenchToolSpec(
           id: WorkbenchTodoToolIds.addTodo,

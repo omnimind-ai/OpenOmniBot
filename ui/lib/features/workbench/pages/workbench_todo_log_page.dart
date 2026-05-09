@@ -13,11 +13,17 @@ class WorkbenchTodoLogPage extends StatefulWidget {
     super.key,
     WorkbenchTodoLogService? service,
     String? projectId,
+    String? displayId,
+    String? returnTo,
   }) : _service = service,
-       _projectId = projectId;
+       _projectId = projectId,
+       _displayId = displayId,
+       _returnTo = returnTo;
 
   final WorkbenchTodoLogService? _service;
   final String? _projectId;
+  final String? _displayId;
+  final String? _returnTo;
 
   @override
   State<WorkbenchTodoLogPage> createState() => _WorkbenchTodoLogPageState();
@@ -73,8 +79,9 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
   }
 
   void _handleBackNavigation() {
-    if (context.canPop()) {
-      context.pop();
+    final returnTo = widget._returnTo?.trim();
+    if (returnTo != null && returnTo.isNotEmpty) {
+      context.go(returnTo);
       return;
     }
     context.go(GoRouterManager.homeRoute);
@@ -94,7 +101,7 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
       child: Scaffold(
         backgroundColor: palette.pageBackground,
         appBar: CommonAppBar(
-          title: context.l10n.workbenchGeneratedFrontend,
+          title: _displayTitle(_service.project),
           primary: true,
           onBackPressed: _handleBackNavigation,
         ),
@@ -279,11 +286,14 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
 
   Widget _buildHeader(WorkbenchProject project) {
     final palette = context.omniPalette;
+    final display = _selectedDisplay(project);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          context.l10n.workbenchTodoLog,
+          display.title.trim().isEmpty
+              ? context.l10n.workbenchTodoLog
+              : display.title,
           style: TextStyle(
             color: palette.textPrimary,
             fontSize: 24,
@@ -539,5 +549,22 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
         fontWeight: FontWeight.w700,
       ),
     );
+  }
+
+  WorkbenchDisplaySpec _selectedDisplay(WorkbenchProject project) {
+    final displayId = widget._displayId?.trim();
+    if (displayId != null && displayId.isNotEmpty) {
+      for (final display in project.displays) {
+        if (display.id == displayId) {
+          return display;
+        }
+      }
+    }
+    return project.primaryDisplay;
+  }
+
+  String _displayTitle(WorkbenchProject project) {
+    final label = _selectedDisplay(project).label.trim();
+    return label.isEmpty ? context.l10n.workbenchTodoLog : label;
   }
 }

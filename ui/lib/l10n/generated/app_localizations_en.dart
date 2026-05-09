@@ -2708,7 +2708,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchGeneratedTodoSubtitle =>
-      'This is the generated Todo frontend. It is separate from the Project control surface and calls the registered APIs directly.';
+      'Todo Log (TODO) is one business frontend in this Project. It is separate from the Project control surface and calls the registered APIs directly.';
 
   @override
   String get workbenchMockProjectName => 'Todo Log Mock';
@@ -2890,7 +2890,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchAssistantHotUpdateFailed => 'Project hot update failed';
 
   @override
-  String get workbenchProjectModeTitle => 'Workbench Mode';
+  String get workbenchProjectModeTitle => 'Project Workbench';
 
   @override
   String get workbenchFlutterDisplay => 'Flutter Display';
@@ -2899,11 +2899,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchProjectSwitcher => 'Switch Project';
 
   @override
-  String get workbenchProjectGenerateTitle => 'Project generation mode';
+  String get workbenchProjectGenerateTitle =>
+      'Continue a Vibe Project from Home';
 
   @override
   String get workbenchProjectGenerateSubtitle =>
-      'Enter one requirement. OOB splits it into a Project, generated frontend, business APIs, and persistent data through the built-in skill, then creates it through the real Workbench backend.';
+      'This keeps the same input habit as Home: one requirement is split by the built-in OOB skill into a Project, multiple frontend Displays, business APIs, and persistent data.';
 
   @override
   String get workbenchProjectPromptHint => 'Describe the Project you want';
@@ -2913,7 +2914,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'I want to create a simple todolist management system that can add todos and archive todos';
 
   @override
-  String get workbenchProjectGenerateButton => 'Create and open frontend';
+  String get workbenchProjectGenerateButton => 'Create and enter use mode';
 
   @override
   String get workbenchInputProjectTooltip => 'Open Project Workbench';
@@ -2946,11 +2947,31 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchProjectPlanData => 'Persist data and API call logs';
 
   @override
-  String get workbenchProjectCurrentTitle => 'Current Project';
+  String get workbenchUseMode => 'Use mode';
+
+  @override
+  String get workbenchDebugMode => 'Debug mode';
+
+  @override
+  String get workbenchDisplaysTitle => 'Frontend Displays';
+
+  @override
+  String workbenchDisplayCount(int count) {
+    return '$count displays';
+  }
+
+  @override
+  String get workbenchUnnamedDisplay => 'Unnamed display';
+
+  @override
+  String get workbenchOpenDisplay => 'Open this frontend';
+
+  @override
+  String get workbenchProjectCurrentTitle => 'Project use surface';
 
   @override
   String get workbenchProjectCurrentSubtitle =>
-      'Manage the created Project here; its frontend, Workspace, export, and delete actions all use the same registered state.';
+      'By default this opens usable frontends and returns to Home. Debug info, assets, and APIs stay in Debug mode.';
 
   @override
   String get workbenchProjectModeCreateTitle => 'Vibe project entry';
@@ -2963,7 +2984,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchProjectModeCreateButton => 'Create Todo demo';
 
   @override
-  String get workbenchProjectModeProjectsTitle => 'Project APIs';
+  String get workbenchProjectModeProjectsTitle => 'Current Project APIs';
+
+  @override
+  String workbenchProjectApiForProject(String projectName) {
+    return '$projectName APIs';
+  }
 
   @override
   String get workbenchProjectModeOpen => 'Open project';
@@ -3029,6 +3055,19 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get workbenchProjectInfoRuntimeValue =>
       'data/todos.json / logs/api_calls.jsonl';
+
+  @override
+  String get workbenchDebugToolsTitle => 'Debug tools';
+
+  @override
+  String get workbenchDebugHotUpdate =>
+      'Use floating Xiaowan to hot-update this Project';
+
+  @override
+  String get workbenchDebugVlmTest => 'Run a VLM human-operation simulation';
+
+  @override
+  String get workbenchDebugComingSoon => 'Pending';
 
   @override
   String get workbenchExportProjectPackage => 'Export package';

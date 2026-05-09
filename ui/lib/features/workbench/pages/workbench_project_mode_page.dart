@@ -22,6 +22,8 @@ class WorkbenchProjectModePage extends StatefulWidget {
       _WorkbenchProjectModePageState();
 }
 
+enum _WorkbenchProjectViewMode { use, debug }
+
 class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   late final WorkbenchProjectModeService _service;
   final TextEditingController _promptController = TextEditingController();
@@ -30,6 +32,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   String? _selectedProjectId;
   WorkbenchProjectExportResult? _lastExportResult;
   bool _promptSeeded = false;
+  _WorkbenchProjectViewMode _viewMode = _WorkbenchProjectViewMode.use;
 
   @override
   void initState() {
@@ -124,14 +127,20 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     }
     setState(() => _selectedProjectId = project.projectId);
     showToast(context.l10n.workbenchProjectGenerated, type: ToastType.success);
-    _openProject(project);
+    _openDisplay(project, project.primaryDisplay);
   }
 
-  void _openProject(WorkbenchProject project) {
-    final route = project.route.trim().isEmpty
-        ? '/workbench/todo_log?projectId=${Uri.encodeQueryComponent(project.projectId)}'
-        : project.route.trim();
-    context.push(route);
+  void _openDisplay(
+    WorkbenchProject project,
+    WorkbenchDisplaySpec display, {
+    bool debugReturn = false,
+  }) {
+    final route = _displayRoute(project, display, debugReturn: debugReturn);
+    if (debugReturn) {
+      context.push(route);
+      return;
+    }
+    context.go(route);
   }
 
   Future<void> _runToolFromList(
@@ -281,10 +290,6 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   }
 
   void _handleBackNavigation() {
-    if (context.canPop()) {
-      context.pop();
-      return;
-    }
     context.go(GoRouterManager.homeRoute);
   }
 
@@ -341,7 +346,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                   ],
                   _buildGenerationPanel(),
                   const SizedBox(height: 12),
-                  _buildDisplayPanel(project),
+                  _buildModeSwitch(),
                   if (_service.projects.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     _buildProjectSwitcher(project),
@@ -349,8 +354,12 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                   const SizedBox(height: 12),
                   if (project == null)
                     _buildEmptyProjectPanel()
-                  else
-                    _buildApiPanel(project),
+                  else ...[
+                    if (_viewMode == _WorkbenchProjectViewMode.use)
+                      _buildUsePanel(project)
+                    else
+                      _buildDebugPanel(project),
+                  ],
                 ],
               );
             },
@@ -533,6 +542,11 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     return null;
   }
 
+  String _projectDisplayName(WorkbenchProject project) {
+    final name = project.name.trim();
+    return name.isEmpty ? project.projectId : name;
+  }
+
   Widget _buildGenerationPanel() {
     final palette = context.omniPalette;
     return _buildSurface(
@@ -541,7 +555,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
         children: [
           _buildSectionHeader(
             title: context.l10n.workbenchProjectGenerateTitle,
-            icon: Icons.auto_fix_high_rounded,
+            icon: Icons.chat_bubble_outline_rounded,
           ),
           const SizedBox(height: 10),
           Text(
@@ -582,6 +596,58 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
         ],
       ),
     );
+  }
+
+  Widget _buildModeSwitch() {
+    final palette = context.omniPalette;
+    return SegmentedButton<_WorkbenchProjectViewMode>(
+      segments: [
+        ButtonSegment(
+          value: _WorkbenchProjectViewMode.use,
+          icon: const Icon(Icons.play_circle_outline_rounded),
+          label: Text(context.l10n.workbenchUseMode),
+        ),
+        ButtonSegment(
+          value: _WorkbenchProjectViewMode.debug,
+          icon: const Icon(Icons.bug_report_outlined),
+          label: Text(context.l10n.workbenchDebugMode),
+        ),
+      ],
+      selected: {_viewMode},
+      showSelectedIcon: false,
+      style: SegmentedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        side: BorderSide(color: palette.borderSubtle),
+      ),
+      onSelectionChanged: (selection) {
+        setState(() => _viewMode = selection.first);
+      },
+    );
+  }
+
+  String _displayRoute(
+    WorkbenchProject project,
+    WorkbenchDisplaySpec display, {
+    required bool debugReturn,
+  }) {
+    final rawRoute = display.route.trim().isEmpty
+        ? project.route.trim()
+        : display.route.trim();
+    final resolvedRoute = rawRoute.isEmpty
+        ? '/workbench/todo_log?projectId=${Uri.encodeQueryComponent(project.projectId)}'
+        : rawRoute;
+    final uri = Uri.parse(resolvedRoute);
+    final params = <String, String>{
+      ...uri.queryParameters,
+      'projectId': project.projectId,
+      'displayId': display.id,
+    };
+    if (debugReturn) {
+      params['returnTo'] = '/workbench/projects';
+    } else {
+      params.remove('returnTo');
+    }
+    return uri.replace(queryParameters: params).toString();
   }
 
   Widget _buildGenerationBlueprint() {
@@ -673,7 +739,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     );
   }
 
-  Widget _buildDisplayPanel(WorkbenchProject? project) {
+  Widget _buildUsePanel(WorkbenchProject project) {
     final palette = context.omniPalette;
     return _buildSurface(
       child: Column(
@@ -701,9 +767,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      project == null
-                          ? context.l10n.workbenchFlutterDisplay
-                          : context.l10n.workbenchProjectCurrentTitle,
+                      context.l10n.workbenchProjectCurrentTitle,
                       style: TextStyle(
                         color: palette.textPrimary,
                         fontSize: 18,
@@ -712,9 +776,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                     ),
                     const SizedBox(height: 5),
                     Text(
-                      project == null
-                          ? context.l10n.workbenchProjectModeSubtitle
-                          : context.l10n.workbenchProjectCurrentSubtitle,
+                      context.l10n.workbenchProjectCurrentSubtitle,
                       style: TextStyle(
                         color: palette.textSecondary,
                         fontSize: 13,
@@ -726,66 +788,206 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
               ),
             ],
           ),
-          if (project != null) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _buildTinyCode(project.projectId),
-                _buildCountBadge(
-                  context.l10n.workbenchApiCount(project.tools.length),
-                ),
-                _buildCountBadge(
-                  context.l10n.workbenchTodoCount(
-                    project.openTodos.length,
-                    project.finishedTodos.length,
-                  ),
-                ),
-              ],
-            ),
-          ],
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              if (project != null)
-                FilledButton.icon(
-                  onPressed: () => _openProject(project),
-                  icon: const Icon(Icons.open_in_new_rounded),
-                  label: Text(context.l10n.workbenchOpenGeneratedFrontend),
+              _buildTinyCode(project.projectId),
+              _buildCountBadge(
+                context.l10n.workbenchDisplayCount(project.displays.length),
+              ),
+              _buildCountBadge(
+                context.l10n.workbenchApiCount(project.tools.length),
+              ),
+              _buildCountBadge(
+                context.l10n.workbenchTodoCount(
+                  project.openTodos.length,
+                  project.finishedTodos.length,
                 ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _buildDisplayList(project, debugReturn: false),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
               OutlinedButton.icon(
                 onPressed: _service.loading ? null : _createDefaultProject,
                 icon: const Icon(Icons.playlist_add_rounded),
                 label: Text(context.l10n.workbenchProjectModeCreateButton),
               ),
-              if (project != null)
-                OutlinedButton.icon(
-                  onPressed: () => _openWorkspace(project),
-                  icon: const Icon(Icons.folder_open_rounded),
-                  label: Text(context.l10n.workbenchOpenWorkspace),
-                ),
-              if (project != null)
-                OutlinedButton.icon(
-                  onPressed: _service.loading
-                      ? null
-                      : () => _exportProject(project),
-                  icon: const Icon(Icons.inventory_2_outlined),
-                  label: Text(context.l10n.workbenchExportProjectPackage),
-                ),
-              if (project != null)
-                TextButton.icon(
-                  onPressed: _service.loading
-                      ? null
-                      : () => _confirmDeleteProject(project),
-                  icon: const Icon(Icons.delete_outline_rounded),
-                  label: Text(context.l10n.workbenchDeleteProject),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFFDC2626),
+              OutlinedButton.icon(
+                onPressed: () => _openWorkspace(project),
+                icon: const Icon(Icons.folder_open_rounded),
+                label: Text(context.l10n.workbenchOpenWorkspace),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDisplayList(
+    WorkbenchProject project, {
+    required bool debugReturn,
+  }) {
+    final displays = project.displays.isEmpty
+        ? [project.primaryDisplay]
+        : project.displays;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(
+          title: context.l10n.workbenchDisplaysTitle,
+          icon: Icons.phone_android_rounded,
+          trailing: _buildCountBadge(
+            context.l10n.workbenchDisplayCount(displays.length),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Column(
+          children: displays
+              .map(
+                (display) => Padding(
+                  padding: EdgeInsets.only(
+                    bottom: display == displays.last ? 0 : 10,
+                  ),
+                  child: _buildDisplayRow(
+                    project,
+                    display,
+                    debugReturn: debugReturn,
                   ),
                 ),
+              )
+              .toList(growable: false),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDisplayRow(
+    WorkbenchProject project,
+    WorkbenchDisplaySpec display, {
+    required bool debugReturn,
+  }) {
+    final palette = context.omniPalette;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: palette.surfaceSecondary,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.phone_android_rounded, color: palette.accentPrimary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  display.label.trim().isEmpty
+                      ? context.l10n.workbenchUnnamedDisplay
+                      : display.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _buildTinyCode(display.id),
+                    _buildTinyCode(display.route),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filled(
+            tooltip: context.l10n.workbenchOpenDisplay,
+            onPressed: () =>
+                _openDisplay(project, display, debugReturn: debugReturn),
+            icon: const Icon(Icons.open_in_new_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDebugPanel(WorkbenchProject project) {
+    final palette = context.omniPalette;
+    return _buildSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+            title: context.l10n.workbenchDebugMode,
+            icon: Icons.bug_report_outlined,
+          ),
+          const SizedBox(height: 12),
+          _buildProjectIdentity(project),
+          const SizedBox(height: 12),
+          _buildDisplayList(project, debugReturn: true),
+          const SizedBox(height: 14),
+          _buildDebugToolPanel(project),
+          const SizedBox(height: 14),
+          _buildProjectInfo(project),
+          const SizedBox(height: 14),
+          _buildAndroidAssetPanel(project),
+          const SizedBox(height: 14),
+          Divider(color: context.omniPalette.borderSubtle, height: 1),
+          const SizedBox(height: 14),
+          _buildSectionHeader(
+            title: context.l10n.workbenchProjectApiForProject(
+              _projectDisplayName(project),
+            ),
+            icon: Icons.api_rounded,
+            trailing: _buildCountBadge(
+              context.l10n.workbenchApiCount(project.tools.length),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildApiList(project),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _openWorkspace(project),
+                icon: const Icon(Icons.folder_open_rounded),
+                label: Text(context.l10n.workbenchOpenWorkspace),
+              ),
+              OutlinedButton.icon(
+                onPressed: _service.loading
+                    ? null
+                    : () => _exportProject(project),
+                icon: const Icon(Icons.inventory_2_outlined),
+                label: Text(context.l10n.workbenchExportProjectPackage),
+              ),
+              TextButton.icon(
+                onPressed: _service.loading
+                    ? null
+                    : () => _confirmDeleteProject(project),
+                icon: const Icon(Icons.delete_outline_rounded),
+                label: Text(context.l10n.workbenchDeleteProject),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFFDC2626),
+                ),
+              ),
             ],
           ),
           if (_lastExportResult != null) ...[
@@ -806,6 +1008,59 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
               color: const Color(0xFFDC2626),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDebugToolPanel(WorkbenchProject project) {
+    final palette = context.omniPalette;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: palette.surfaceSecondary,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+            title: context.l10n.workbenchDebugToolsTitle,
+            icon: Icons.tune_rounded,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _buildInlineStatus(
+                  icon: Icons.auto_awesome_rounded,
+                  label: context.l10n.workbenchDebugHotUpdate,
+                  color: palette.textSecondary,
+                ),
+              ),
+              TextButton(
+                onPressed: () => _openAssistantSheet(project),
+                child: Text(context.l10n.workbenchAssistantName),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: _buildInlineStatus(
+                  icon: Icons.visibility_outlined,
+                  label: context.l10n.workbenchDebugVlmTest,
+                  color: palette.textSecondary,
+                ),
+              ),
+              OutlinedButton(
+                onPressed: null,
+                child: Text(context.l10n.workbenchDebugComingSoon),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -860,38 +1115,6 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
         icon: Icons.info_outline_rounded,
         label: context.l10n.workbenchProjectModeEmpty,
         color: context.omniPalette.textSecondary,
-      ),
-    );
-  }
-
-  Widget _buildApiPanel(WorkbenchProject project) {
-    return _buildSurface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionHeader(
-            title: context.l10n.workbenchProjectInfoTitle,
-            icon: Icons.info_outline_rounded,
-          ),
-          const SizedBox(height: 12),
-          _buildProjectIdentity(project),
-          const SizedBox(height: 12),
-          _buildProjectInfo(project),
-          const SizedBox(height: 14),
-          _buildAndroidAssetPanel(project),
-          const SizedBox(height: 14),
-          Divider(color: context.omniPalette.borderSubtle, height: 1),
-          const SizedBox(height: 14),
-          _buildSectionHeader(
-            title: context.l10n.workbenchProjectModeProjectsTitle,
-            icon: Icons.api_rounded,
-            trailing: _buildCountBadge(
-              context.l10n.workbenchApiCount(project.tools.length),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildApiList(project),
-        ],
       ),
     );
   }

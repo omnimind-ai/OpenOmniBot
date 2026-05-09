@@ -933,7 +933,7 @@
   "workbenchWorkspaceOpenWorkbench": "打开 Workbench",
   "workbenchSubtitle": "一个 OOB 原生 Project 示例，用来验证 Project API 注册、状态持久化和 Workbench 内显示。",
   "workbenchVibeSubtitle": "Prompt 生成的原生前端、Project API 和 Workspace 文件在 OOB 内保持关联。",
-  "workbenchGeneratedTodoSubtitle": "这是生成出来的 Todo 前端。它和 Project 控制面分开，并直接调用已注册的业务 API。",
+  "workbenchGeneratedTodoSubtitle": "Todo 日志 (TODO) 是这个 Project 的业务前端之一。它和 Project 控制面分开，并直接调用已注册的业务 API。",
   "workbenchMockProjectName": "Todo 日志 Mock",
   "workbenchTemplateProjectName": "Todo 日志 Workbench",
   "workbenchNativeUi": "OOB 原生显示",
@@ -998,14 +998,14 @@
   "workbenchAssistantPromptRequired": "请先输入要调整的内容",
   "workbenchAssistantNoProject": "请先选择一个 Project",
   "workbenchAssistantHotUpdateFailed": "Project 热更新失败",
-  "workbenchProjectModeTitle": "工作台模式",
+  "workbenchProjectModeTitle": "Project 工作台",
   "workbenchFlutterDisplay": "Flutter 显示器",
   "workbenchProjectSwitcher": "切换 Project",
-  "workbenchProjectGenerateTitle": "Project 生成模式",
-  "workbenchProjectGenerateSubtitle": "输入一句需求，OOB 会按内置 skill 拆成 Project、生成前端、业务 API 和持久化数据，并通过真实 Workbench 后端创建。",
+  "workbenchProjectGenerateTitle": "从首页继续 Vibe Project",
+  "workbenchProjectGenerateSubtitle": "这里复用首页输入习惯：一句需求会被 OOB 内置 skill 拆成 Project、多个前端 Display、业务 API 和持久化数据。",
   "workbenchProjectPromptHint": "描述你想创建的 Project",
   "workbenchProjectDefaultPrompt": "我想创建一个简单的 todolist 管理系统，要求可以增加 todo，归档 todo",
-  "workbenchProjectGenerateButton": "创建并打开前端",
+  "workbenchProjectGenerateButton": "创建并进入使用模式",
   "workbenchInputProjectTooltip": "打开 Project 工作台",
   "workbenchGeneratedTodoProjectName": "Todo List 工作台",
   "workbenchPromptSeedAddTodo": "验证可以增加 todo",
@@ -1015,12 +1015,33 @@
   "workbenchProjectPlanFrontend": "生成 OOB 原生 Flutter 前端",
   "workbenchProjectPlanApi": "注册 AI/UI 共用业务 API",
   "workbenchProjectPlanData": "写入持久化数据和 API 日志",
-  "workbenchProjectCurrentTitle": "当前 Project",
-  "workbenchProjectCurrentSubtitle": "这里管理已创建 Project；业务前端、Workspace、导出和删除都从同一个注册状态进入。",
+  "workbenchUseMode": "使用模式",
+  "workbenchDebugMode": "Debug 模式",
+  "workbenchDisplaysTitle": "前端 Displays",
+  "workbenchDisplayCount": "{count} 个前端",
+  "@workbenchDisplayCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchUnnamedDisplay": "未命名前端",
+  "workbenchOpenDisplay": "打开这个前端",
+  "workbenchProjectCurrentTitle": "Project 使用台",
+  "workbenchProjectCurrentSubtitle": "默认只进入可用前端；返回时回到首页。Debug 信息、资产和 API 放在 Debug 模式里。",
   "workbenchProjectModeCreateTitle": "Vibe Project 入口",
   "workbenchProjectModeSubtitle": "在这里打开 Project 信息、生成前端、Workspace 和分发包；业务 API 仍通过同一个后端执行。",
   "workbenchProjectModeCreateButton": "创建 Todo demo",
-  "workbenchProjectModeProjectsTitle": "Project API",
+  "workbenchProjectModeProjectsTitle": "当前 Project API",
+  "workbenchProjectApiForProject": "{projectName} 的 API",
+  "@workbenchProjectApiForProject": {
+    "placeholders": {
+      "projectName": {
+        "type": "String"
+      }
+    }
+  },
   "workbenchProjectModeOpen": "打开 Project",
   "workbenchProjectModeEmpty": "暂无 Workbench Project",
   "workbenchProjectModeLoadFailed": "Project 模式加载失败",
@@ -1048,6 +1069,10 @@
   "workbenchProjectInfoSourceValue": "README.md / frontend/page_spec.json / backend/api_spec.json",
   "workbenchProjectInfoRuntimeTitle": "运行态",
   "workbenchProjectInfoRuntimeValue": "data/todos.json / logs/api_calls.jsonl",
+  "workbenchDebugToolsTitle": "调试工具",
+  "workbenchDebugHotUpdate": "悬浮小万实时修改当前 Project",
+  "workbenchDebugVlmTest": "根据 VLM 模拟人类操作测试",
+  "workbenchDebugComingSoon": "待接入",
   "workbenchExportProjectPackage": "导出分发包",
   "workbenchProjectExportFailed": "Project 导出失败",
   "workbenchProjectExported": "已导出 {packageName}",
