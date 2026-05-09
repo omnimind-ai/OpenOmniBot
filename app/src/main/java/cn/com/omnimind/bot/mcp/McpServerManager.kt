@@ -479,7 +479,9 @@ private object TokenVault {
         cachedKey?.let { return it }
         val pm = context.packageManager
         val packageName = context.packageName
-        val flags = pm.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNATURES).signatures
+        val flags =
+            pm.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNATURES).signatures
+                ?: emptyArray()
         val digest = MessageDigest.getInstance("SHA-256")
         // 取所有签名做摘要，保证同一 APK 一致
         for (sig in flags) {
