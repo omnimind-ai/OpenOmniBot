@@ -21,14 +21,13 @@ import '../authorize/authorize_page_args.dart';
 import '../command_overlay/widgets/chat_input_area.dart';
 import '../command_overlay/services/tool_card_detail_gesture_gate.dart';
 import '../common/openclaw_connection_checker.dart';
+import '../omnibot_workspace/omnibot_workspace_page.dart';
 import '../omnibot_workspace/widgets/omnibot_workspace_browser.dart';
 import 'services/chat_conversation_lifecycle_guard.dart';
 import 'services/chat_conversation_runtime_coordinator.dart';
 import 'package:ui/constants/openclaw/openclaw_keys.dart';
 import 'package:ui/core/router/go_router_manager.dart';
-import 'package:ui/features/workbench/services/workbench_todo_log_service.dart';
 import 'package:ui/features/home/widgets/permission_bottom_sheet.dart';
-import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/app_state_service.dart';
 import 'package:ui/services/app_update_service.dart';
 import 'package:ui/services/app_background_service.dart';
@@ -138,8 +137,6 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   ConversationThreadTarget? _resolvedThreadTarget;
   SharedOpenDraftPayload? _stagedSharedOpenDraft;
   int? _stagedSharedOpenDraftExpiresAt;
-  late final WorkbenchActiveProjectService _workbenchActiveProjectService =
-      WorkbenchActiveProjectService.native();
   int _conversationTargetRequestId = 0;
 
   // OpenClaw 配置与开关
@@ -356,6 +353,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     milliseconds: 1700,
   );
   bool _workspaceBrowserCanGoUp = false;
+  bool _workspaceProjectModeEnabled = false;
   Future<OmnibotWorkspacePaths>? _workspacePathsLoadFuture;
   bool _hasInitializedHalfScreen = false;
   bool _isCompanionModeEnabled = false;

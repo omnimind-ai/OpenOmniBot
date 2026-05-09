@@ -1058,6 +1058,23 @@
   "workbenchTitle": "工作台",
   "workbenchWorkspaceTitle": "Workspace",
   "workbenchWorkspaceOpenWorkbench": "打开 Workbench",
+  "workbenchWorkspaceWorkMode": "Work",
+  "workbenchWorkspaceProjectMode": "Project",
+  "workbenchWorkspaceProjectFrontendsTitle": "Project 前端",
+  "workbenchWorkspaceProjectFrontendsSubtitle": "开启 Project 模式后，这里只显示每个 Project 的 OOB 原生前端入口。",
+  "workbenchWorkspaceProjectFrontendsEmpty": "暂无 Project 前端。回到对话里描述需求后，Agent 会通过 Workbench 创建可显示的 Project。",
+  "workbenchWorkspaceProjectOpenFailed": "打开 Project 前端失败",
+  "workbenchWorkspaceProjectApiStats": "{apiCount} 个 API · 已执行 {executionCount} 次",
+  "@workbenchWorkspaceProjectApiStats": {
+    "placeholders": {
+      "apiCount": {
+        "type": "int"
+      },
+      "executionCount": {
+        "type": "int"
+      }
+    }
+  },
   "workbenchSubtitle": "一个 OOB 原生 Project 示例，用来验证 Project API 注册、状态持久化和 Workbench 内显示。",
   "workbenchVibeSubtitle": "Prompt 生成的原生前端、Project API 和 Workspace 文件在 OOB 内保持关联。",
   "workbenchGeneratedTodoSubtitle": "Todo 日志 (TODO) 是这个 Project 的业务前端之一。它和 Project 控制面分开，并直接调用已注册的业务 API。",

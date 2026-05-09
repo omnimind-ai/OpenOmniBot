@@ -181,14 +181,6 @@ mixin _ChatInputAreaComposerMixin
             child: _buildSlashTriggerButton(iconSize: 20),
           ),
         ],
-        if (widget.onOpenWorkbenchProject != null) ...[
-          const SizedBox(width: 4),
-          SizedBox(
-            width: 28,
-            height: 28,
-            child: _buildWorkbenchProjectButton(),
-          ),
-        ],
         const Spacer(),
         if (contextUsageRatio != null) ...[
           _ContextUsageRingButton(
@@ -320,24 +312,6 @@ mixin _ChatInputAreaComposerMixin
               }
               widget.onTriggerSlashCommand?.call();
             },
-    );
-  }
-
-  Widget _buildWorkbenchProjectButton() {
-    return IconButton(
-      key: const ValueKey('chat-input-open-workbench-project-button'),
-      padding: EdgeInsets.zero,
-      iconSize: 20,
-      tooltip: context.l10n.workbenchInputProjectTooltip,
-      onPressed: () {
-        if (_isPopupVisible) {
-          setState(() => _isPopupVisible = false);
-          widget.onPopupVisibilityChanged?.call(false);
-        }
-        widget.focusNode.unfocus();
-        widget.onOpenWorkbenchProject?.call();
-      },
-      icon: const Icon(Icons.dashboard_customize_outlined),
     );
   }
 

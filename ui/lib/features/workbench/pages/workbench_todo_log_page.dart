@@ -87,6 +87,10 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
       context.go(returnTo);
       return;
     }
+    if (GoRouterManager.canPop()) {
+      GoRouterManager.pop();
+      return;
+    }
     context.go(GoRouterManager.homeRoute);
   }
 

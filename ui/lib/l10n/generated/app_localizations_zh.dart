@@ -2750,6 +2750,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchWorkspaceOpenWorkbench => '打开 Workbench';
 
   @override
+  String get workbenchWorkspaceWorkMode => 'Work';
+
+  @override
+  String get workbenchWorkspaceProjectMode => 'Project';
+
+  @override
+  String get workbenchWorkspaceProjectFrontendsTitle => 'Project 前端';
+
+  @override
+  String get workbenchWorkspaceProjectFrontendsSubtitle =>
+      '开启 Project 模式后，这里只显示每个 Project 的 OOB 原生前端入口。';
+
+  @override
+  String get workbenchWorkspaceProjectFrontendsEmpty =>
+      '暂无 Project 前端。回到对话里描述需求后，Agent 会通过 Workbench 创建可显示的 Project。';
+
+  @override
+  String get workbenchWorkspaceProjectOpenFailed => '打开 Project 前端失败';
+
+  @override
+  String workbenchWorkspaceProjectApiStats(int apiCount, int executionCount) {
+    return '$apiCount 个 API · 已执行 $executionCount 次';
+  }
+
+  @override
   String get workbenchSubtitle =>
       '一个 OOB 原生 Project 示例，用来验证 Project API 注册、状态持久化和 Workbench 内显示。';
 

@@ -876,18 +876,50 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               internalRootPath:
                   '/data/user/0/cn.com.omnimind.bot/workspace/.omnibot',
             );
-        return OmnibotWorkspaceBrowser(
-          workspacePath: paths.rootPath,
-          workspaceShellPath: paths.shellRootPath,
-          translucentSurfaces: AppBackgroundService.current.isActive,
-          showBreadcrumbHeader: true,
-          showHeaderTitle: false,
-          onCanGoUpChanged: (canGoUp) {
-            if (_workspaceBrowserCanGoUp == canGoUp || !mounted) return;
-            setState(() {
-              _workspaceBrowserCanGoUp = canGoUp;
-            });
-          },
+        final backgroundActive = AppBackgroundService.current.isActive;
+        return Column(
+          children: [
+            OmnibotWorkspaceModeToggle(
+              projectModeEnabled: _workspaceProjectModeEnabled,
+              translucentSurfaces: backgroundActive,
+              onChanged: (enabled) {
+                setState(() {
+                  _workspaceProjectModeEnabled = enabled;
+                  if (enabled) {
+                    _workspaceBrowserCanGoUp = false;
+                  }
+                });
+              },
+            ),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeOutCubic,
+                child: _workspaceProjectModeEnabled
+                    ? OmnibotWorkspaceProjectFrontends(
+                        key: const ValueKey('chat-workspace-project-mode'),
+                        translucentSurfaces: backgroundActive,
+                      )
+                    : OmnibotWorkspaceBrowser(
+                        key: const ValueKey('chat-workspace-work-mode'),
+                        workspacePath: paths.rootPath,
+                        workspaceShellPath: paths.shellRootPath,
+                        translucentSurfaces: backgroundActive,
+                        showBreadcrumbHeader: true,
+                        showHeaderTitle: false,
+                        onCanGoUpChanged: (canGoUp) {
+                          if (_workspaceBrowserCanGoUp == canGoUp || !mounted) {
+                            return;
+                          }
+                          setState(() {
+                            _workspaceBrowserCanGoUp = canGoUp;
+                          });
+                        },
+                      ),
+              ),
+            ),
+          ],
         );
       },
     );
@@ -1170,10 +1202,6 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                       useAttachmentPickerForPlus: true,
                       onPickAttachment: _pickAttachments,
                       onTriggerSlashCommand: _triggerSlashCommandPanel,
-                      onOpenWorkbenchProject: () {
-                        GoRouterManager.push('/workbench/projects');
-                      },
-                      topBanner: _buildActiveWorkbenchProjectBanner(),
                       attachments: _pendingAttachments,
                       onRemoveAttachment: _removePendingAttachment,
                       selectedModelOverrideId:
@@ -1302,59 +1330,6 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     );
   }
 
-  Widget? _buildActiveWorkbenchProjectBanner() {
-    final project = _workbenchActiveProjectService.activeProject;
-    if (project == null || _activeMode != ChatPageMode.normal) {
-      return null;
-    }
-    final palette = context.omniPalette;
-    final name = project.name.trim().isEmpty ? project.projectId : project.name;
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 360),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: palette.surfacePrimary,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: palette.borderSubtle),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.dashboard_customize_outlined,
-            size: 16,
-            color: palette.accentPrimary,
-          ),
-          const SizedBox(width: 7),
-          Flexible(
-            child: Text(
-              context.l10n.workbenchActiveProjectChip(name),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: palette.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              unawaited(_workbenchActiveProjectService.deactivate());
-            },
-            child: Icon(
-              Icons.close_rounded,
-              size: 16,
-              color: palette.textTertiary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildHdPadWorkspacePane({
     required bool backgroundActive,
     required AppBackgroundVisualProfile visualProfile,
@@ -1375,22 +1350,52 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               internalRootPath:
                   '/data/user/0/cn.com.omnimind.bot/workspace/.omnibot',
             );
-        return OmnibotWorkspaceBrowser(
-          key: _hdPadWorkspaceBrowserKey,
-          workspacePath: paths.rootPath,
-          workspaceShellPath: paths.shellRootPath,
-          enableSystemBackHandler: false,
-          translucentSurfaces: backgroundActive,
-          showBreadcrumbHeader: true,
-          showHeaderTitle: false,
-          enableInlineDirectoryExpansion: false,
-          inlineFilePreview: true,
-          onCanGoUpChanged: (canGoUp) {
-            if (_workspaceBrowserCanGoUp == canGoUp || !mounted) return;
-            setState(() {
-              _workspaceBrowserCanGoUp = canGoUp;
-            });
-          },
+        return Column(
+          children: [
+            OmnibotWorkspaceModeToggle(
+              projectModeEnabled: _workspaceProjectModeEnabled,
+              translucentSurfaces: backgroundActive,
+              onChanged: (enabled) {
+                setState(() {
+                  _workspaceProjectModeEnabled = enabled;
+                  if (enabled) {
+                    _workspaceBrowserCanGoUp = false;
+                  }
+                });
+              },
+            ),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeOutCubic,
+                child: _workspaceProjectModeEnabled
+                    ? OmnibotWorkspaceProjectFrontends(
+                        key: const ValueKey('hd-workspace-project-mode'),
+                        translucentSurfaces: backgroundActive,
+                      )
+                    : OmnibotWorkspaceBrowser(
+                        key: _hdPadWorkspaceBrowserKey,
+                        workspacePath: paths.rootPath,
+                        workspaceShellPath: paths.shellRootPath,
+                        enableSystemBackHandler: false,
+                        translucentSurfaces: backgroundActive,
+                        showBreadcrumbHeader: true,
+                        showHeaderTitle: false,
+                        enableInlineDirectoryExpansion: false,
+                        inlineFilePreview: true,
+                        onCanGoUpChanged: (canGoUp) {
+                          if (_workspaceBrowserCanGoUp == canGoUp || !mounted) {
+                            return;
+                          }
+                          setState(() {
+                            _workspaceBrowserCanGoUp = canGoUp;
+                          });
+                        },
+                      ),
+              ),
+            ),
+          ],
         );
       },
     );

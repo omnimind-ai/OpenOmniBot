@@ -2882,6 +2882,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchWorkspaceOpenWorkbench => 'Open Workbench';
 
   @override
+  String get workbenchWorkspaceWorkMode => 'Work';
+
+  @override
+  String get workbenchWorkspaceProjectMode => 'Project';
+
+  @override
+  String get workbenchWorkspaceProjectFrontendsTitle => 'Project frontends';
+
+  @override
+  String get workbenchWorkspaceProjectFrontendsSubtitle =>
+      'After Project mode is enabled, this area only shows OOB-native frontend entries for each Project.';
+
+  @override
+  String get workbenchWorkspaceProjectFrontendsEmpty =>
+      'No Project frontends yet. Describe the project in chat and the Agent can create a visible Workbench Project.';
+
+  @override
+  String get workbenchWorkspaceProjectOpenFailed =>
+      'Failed to open Project frontend';
+
+  @override
+  String workbenchWorkspaceProjectApiStats(int apiCount, int executionCount) {
+    return '$apiCount APIs · $executionCount executions';
+  }
+
+  @override
   String get workbenchSubtitle =>
       'A native OOB project example that registers Project APIs, persists state, and renders inside the Workbench.';
 

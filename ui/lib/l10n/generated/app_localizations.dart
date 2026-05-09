@@ -5240,6 +5240,48 @@ abstract class AppLocalizations {
   /// **'打开 Workbench'**
   String get workbenchWorkspaceOpenWorkbench;
 
+  /// No description provided for @workbenchWorkspaceWorkMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'Work'**
+  String get workbenchWorkspaceWorkMode;
+
+  /// No description provided for @workbenchWorkspaceProjectMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project'**
+  String get workbenchWorkspaceProjectMode;
+
+  /// No description provided for @workbenchWorkspaceProjectFrontendsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project 前端'**
+  String get workbenchWorkspaceProjectFrontendsTitle;
+
+  /// No description provided for @workbenchWorkspaceProjectFrontendsSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启 Project 模式后，这里只显示每个 Project 的 OOB 原生前端入口。'**
+  String get workbenchWorkspaceProjectFrontendsSubtitle;
+
+  /// No description provided for @workbenchWorkspaceProjectFrontendsEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无 Project 前端。回到对话里描述需求后，Agent 会通过 Workbench 创建可显示的 Project。'**
+  String get workbenchWorkspaceProjectFrontendsEmpty;
+
+  /// No description provided for @workbenchWorkspaceProjectOpenFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开 Project 前端失败'**
+  String get workbenchWorkspaceProjectOpenFailed;
+
+  /// No description provided for @workbenchWorkspaceProjectApiStats.
+  ///
+  /// In zh, this message translates to:
+  /// **'{apiCount} 个 API · 已执行 {executionCount} 次'**
+  String workbenchWorkspaceProjectApiStats(int apiCount, int executionCount);
+
   /// No description provided for @workbenchSubtitle.
   ///
   /// In zh, this message translates to:

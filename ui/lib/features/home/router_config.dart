@@ -191,6 +191,7 @@ List<GoRoute> homeRoutes = [
         workspacePath: (extra['workspacePath'] ?? '').toString(),
         workspaceId: extra['workspaceId']?.toString(),
         workspaceShellPath: extra['workspaceShellPath']?.toString(),
+        startInProjectMode: extra['startInProjectMode'] == true,
       );
     },
   ),

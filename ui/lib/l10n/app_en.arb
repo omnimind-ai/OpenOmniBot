@@ -1058,6 +1058,23 @@
   "workbenchTitle": "Workbench",
   "workbenchWorkspaceTitle": "Workspace",
   "workbenchWorkspaceOpenWorkbench": "Open Workbench",
+  "workbenchWorkspaceWorkMode": "Work",
+  "workbenchWorkspaceProjectMode": "Project",
+  "workbenchWorkspaceProjectFrontendsTitle": "Project frontends",
+  "workbenchWorkspaceProjectFrontendsSubtitle": "After Project mode is enabled, this area only shows OOB-native frontend entries for each Project.",
+  "workbenchWorkspaceProjectFrontendsEmpty": "No Project frontends yet. Describe the project in chat and the Agent can create a visible Workbench Project.",
+  "workbenchWorkspaceProjectOpenFailed": "Failed to open Project frontend",
+  "workbenchWorkspaceProjectApiStats": "{apiCount} APIs · {executionCount} executions",
+  "@workbenchWorkspaceProjectApiStats": {
+    "placeholders": {
+      "apiCount": {
+        "type": "int"
+      },
+      "executionCount": {
+        "type": "int"
+      }
+    }
+  },
   "workbenchSubtitle": "A native OOB project example that registers Project APIs, persists state, and renders inside the Workbench.",
   "workbenchVibeSubtitle": "Prompt-built native frontend, project APIs, and workspace files stay connected inside OOB.",
   "workbenchGeneratedTodoSubtitle": "Todo Log (TODO) is one business frontend in this Project. It is separate from the Project control surface and calls the registered APIs directly.",

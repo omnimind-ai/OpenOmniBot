@@ -2172,8 +2172,6 @@ class ChatInputWrapper extends StatelessWidget {
   final List<ChatInputAttachment> attachments;
   final ValueChanged<String>? onRemoveAttachment;
   final VoidCallback? onTriggerSlashCommand;
-  final VoidCallback? onOpenWorkbenchProject;
-  final Widget? topBanner;
   final String? selectedModelOverrideId;
   final VoidCallback? onClearSelectedModelOverride;
   final double? contextUsageRatio;
@@ -2202,8 +2200,6 @@ class ChatInputWrapper extends StatelessWidget {
     this.attachments = const [],
     this.onRemoveAttachment,
     this.onTriggerSlashCommand,
-    this.onOpenWorkbenchProject,
-    this.topBanner,
     this.selectedModelOverrideId,
     this.onClearSelectedModelOverride,
     this.contextUsageRatio,
@@ -2223,7 +2219,6 @@ class ChatInputWrapper extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (topBanner != null) ...[topBanner!, const SizedBox(height: 8)],
           ChatInputArea(
             key: inputAreaKey,
             controller: controller,
@@ -2242,7 +2237,6 @@ class ChatInputWrapper extends StatelessWidget {
             attachments: attachments,
             onRemoveAttachment: onRemoveAttachment,
             onTriggerSlashCommand: onTriggerSlashCommand,
-            onOpenWorkbenchProject: onOpenWorkbenchProject,
             selectedModelOverrideId: selectedModelOverrideId,
             onClearSelectedModelOverride: onClearSelectedModelOverride,
             contextUsageRatio: contextUsageRatio,

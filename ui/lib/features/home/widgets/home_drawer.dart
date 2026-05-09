@@ -15,6 +15,7 @@ import 'package:ui/models/conversation_thread_target.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/conversation_history_service.dart';
 import 'package:ui/services/conversation_service.dart';
+import 'package:ui/services/omnibot_resource_service.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/cache_util.dart';
@@ -400,6 +401,20 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
   void _navigateTo(String route) {
     _maybeCloseDrawer();
     GoRouterManager.push(route);
+  }
+
+  Future<void> _openWorkspaceProjectMode() async {
+    _maybeCloseDrawer();
+    final paths = await OmnibotResourceService.ensureWorkspacePathsLoaded();
+    if (!mounted) return;
+    GoRouterManager.push(
+      '/home/omnibot_workspace',
+      extra: {
+        'workspacePath': paths.rootPath,
+        'workspaceShellPath': paths.shellRootPath,
+        'startInProjectMode': true,
+      },
+    );
   }
 
   void _openNewConversation() {
@@ -1316,9 +1331,9 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
         onTap: () => _navigateTo('/home/skill_store'),
       ),
       _DrawerShortcutAction(
-        label: context.l10n.workbenchTitle,
+        label: context.l10n.workbenchWorkspaceProjectMode,
         svgString: _kDrawerWorkbenchIconSvg,
-        onTap: () => _navigateTo('/workbench/projects'),
+        onTap: () => unawaited(_openWorkspaceProjectMode()),
       ),
       _DrawerShortcutAction(
         label: context.l10n.trajectoryTitle,
