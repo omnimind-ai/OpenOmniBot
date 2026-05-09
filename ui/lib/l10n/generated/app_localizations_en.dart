@@ -3246,7 +3246,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchAssistantHotUpdateFailed => 'Project hot update failed';
 
   @override
-  String get workbenchProjectModeTitle => 'Project Workbench';
+  String get workbenchProjectModeTitle => 'Projects';
 
   @override
   String get workbenchFlutterDisplay => 'Flutter Display';
@@ -3337,7 +3337,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchProjectModeSubtitle =>
-      'Select a Project as the Agent workspace, open its Flutter displays, inspect API execution counts, and manage Workspace, export, and delete. Creation and editing return to the Home input so the Agent can run the Workbench tools.';
+      'This page only shows the Project list and the active Project. Open a Project to inspect displays, APIs, Workspace, export, and delete.';
+
+  @override
+  String get workbenchProjectActiveTitle => 'Active Project';
+
+  @override
+  String get workbenchProjectActiveEmpty => 'No active Project yet';
+
+  @override
+  String get workbenchProjectListTitle => 'Project list';
+
+  @override
+  String get workbenchProjectDetailTitle => 'Project detail';
 
   @override
   String get workbenchProjectModeCreateButton => 'Create from Home';

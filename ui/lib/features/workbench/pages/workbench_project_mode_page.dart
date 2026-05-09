@@ -28,6 +28,7 @@ class WorkbenchProjectModePage extends StatefulWidget {
 class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   late final WorkbenchProjectModeService _service;
   String? _selectedProjectId;
+  String? _detailProjectId;
   WorkbenchProjectExportResult? _lastExportResult;
 
   @override
@@ -50,6 +51,9 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     await _service.refresh();
     if (!mounted) return;
     _selectAvailableProject(preferredProjectId: selectProjectId);
+    if (_detailProjectId != null && _findProject(_detailProjectId!) == null) {
+      setState(() => _detailProjectId = null);
+    }
   }
 
   void _returnHomeForProjectPrompt() {
@@ -83,15 +87,9 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     }
   }
 
-  WorkbenchProject? get _currentProject {
-    if (_selectedProjectId != null) {
-      final selected = _findProject(_selectedProjectId!);
-      if (selected != null) return selected;
-    }
-    return _service.activeProject == null
-        ? (_service.projects.isEmpty ? null : _service.projects.first)
-        : _findProject(_service.activeProject!.projectId) ??
-              (_service.projects.isEmpty ? null : _service.projects.first);
+  WorkbenchProject? get _detailProject {
+    if (_detailProjectId == null) return null;
+    return _findProject(_detailProjectId!);
   }
 
   WorkbenchProject? _findProject(String projectId) {
@@ -239,61 +237,24 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
       _selectedProjectId = _service.projects.isEmpty
           ? null
           : _service.projects.first.projectId;
+      _detailProjectId = null;
       _lastExportResult = null;
     });
     showToast(context.l10n.workbenchProjectDeleted, type: ToastType.success);
   }
 
-  void _showHelpDialog() {
-    final palette = context.omniPalette;
-    showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(context.l10n.workbenchProjectHelpTitle),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildHelpRow(
-                Icons.chat_bubble_outline_rounded,
-                context.l10n.workbenchProjectHelpHomeInput,
-              ),
-              const SizedBox(height: 10),
-              _buildHelpRow(
-                Icons.check_circle_outline_rounded,
-                context.l10n.workbenchProjectHelpSelect,
-              ),
-              const SizedBox(height: 10),
-              _buildHelpRow(
-                Icons.phone_android_rounded,
-                context.l10n.workbenchProjectHelpDisplays,
-              ),
-              const SizedBox(height: 10),
-              _buildHelpRow(
-                Icons.api_rounded,
-                context.l10n.workbenchProjectHelpApis,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(MaterialLocalizations.of(context).okButtonLabel),
-            ),
-          ],
-          backgroundColor: palette.surfacePrimary,
-        );
-      },
-    );
-  }
-
   void _handleBackNavigation() {
+    if (_detailProjectId != null) {
+      setState(() => _detailProjectId = null);
+      return;
+    }
     context.go(GoRouterManager.homeRoute);
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
+    final detailProject = _detailProject;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -302,22 +263,25 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
       child: Scaffold(
         backgroundColor: palette.pageBackground,
         appBar: CommonAppBar(
-          title: context.l10n.workbenchProjectModeTitle,
+          title: detailProject == null
+              ? context.l10n.workbenchProjectModeTitle
+              : context.l10n.workbenchProjectDetailTitle,
           primary: true,
           onBackPressed: _handleBackNavigation,
           actions: [
-            IconButton(
-              tooltip: context.l10n.workbenchProjectModeCreateButton,
-              onPressed: _returnHomeForProjectPrompt,
-              icon: const Icon(Icons.chat_bubble_outline_rounded),
-            ),
+            if (detailProject == null)
+              IconButton(
+                tooltip: context.l10n.workbenchProjectModeCreateButton,
+                onPressed: _returnHomeForProjectPrompt,
+                icon: const Icon(Icons.chat_bubble_outline_rounded),
+              ),
           ],
         ),
         body: SafeArea(
           child: AnimatedBuilder(
             animation: _service,
             builder: (context, _) {
-              final project = _currentProject;
+              final detailProject = _detailProject;
               return RefreshIndicator(
                 onRefresh: () =>
                     _refreshProjects(selectProjectId: _selectedProjectId),
@@ -328,16 +292,23 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                       const LinearProgressIndicator(minHeight: 2),
                       const SizedBox(height: 12),
                     ],
-                    _buildIntroPanel(),
-                    if (_service.projects.isNotEmpty) ...[
+                    if (detailProject == null) ...[
+                      _buildActiveProjectSummary(),
                       const SizedBox(height: 12),
-                      _buildProjectSwitcher(project),
-                    ],
-                    const SizedBox(height: 12),
-                    if (project == null)
-                      _buildEmptyProjectPanel()
-                    else
-                      _buildProjectPanel(project),
+                      if (_service.projects.isEmpty)
+                        _buildEmptyProjectPanel()
+                      else
+                        _buildProjectList(),
+                      if (_service.errorMessage != null) ...[
+                        const SizedBox(height: 12),
+                        _buildInlineStatus(
+                          icon: Icons.error_outline_rounded,
+                          label: context.l10n.workbenchProjectModeLoadFailed,
+                          color: const Color(0xFFDC2626),
+                        ),
+                      ],
+                    ] else
+                      _buildProjectPanel(detailProject),
                   ],
                 ),
               );
@@ -348,106 +319,162 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     );
   }
 
-  Widget _buildIntroPanel() {
+  Widget _buildActiveProjectSummary() {
     final palette = context.omniPalette;
+    final activeProject = _service.activeProject == null
+        ? null
+        : _findProject(_service.activeProject!.projectId) ??
+              _service.activeProject;
     return _buildSurface(
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: palette.surfaceSecondary,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: palette.borderSubtle),
-            ),
-            child: Icon(
-              Icons.dashboard_customize_outlined,
-              color: palette.accentPrimary,
-            ),
+          _buildSectionHeader(
+            title: context.l10n.workbenchProjectActiveTitle,
+            icon: Icons.check_circle_outline_rounded,
+            trailing: activeProject == null
+                ? null
+                : _buildCountBadge(context.l10n.workbenchActiveProject),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 10),
+          if (activeProject == null)
+            _buildInlineStatus(
+              icon: Icons.info_outline_rounded,
+              label: context.l10n.workbenchProjectActiveEmpty,
+              color: palette.textSecondary,
+            )
+          else ...[
+            Text(
+              _projectDisplayName(activeProject),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: palette.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Text(
-                  context.l10n.workbenchProjectModeTitle,
-                  style: TextStyle(
-                    color: palette.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
+                _buildTinyCode(activeProject.projectId),
+                _buildCountBadge(
+                  context.l10n.workbenchDisplayCount(
+                    activeProject.displays.length,
                   ),
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  context.l10n.workbenchProjectModeSubtitle,
-                  style: TextStyle(
-                    color: palette.textSecondary,
-                    fontSize: 13,
-                    height: 1.35,
-                  ),
+                _buildCountBadge(
+                  context.l10n.workbenchApiCount(activeProject.tools.length),
                 ),
               ],
             ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProjectList() {
+    return _buildSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+            title: context.l10n.workbenchProjectListTitle,
+            icon: Icons.dashboard_customize_outlined,
+            trailing: _buildCountBadge(_service.projects.length.toString()),
           ),
-          IconButton(
-            tooltip: context.l10n.workbenchProjectHelpTooltip,
-            onPressed: _showHelpDialog,
-            icon: const Icon(Icons.info_outline_rounded),
-          ),
-          IconButton.filledTonal(
-            tooltip: context.l10n.workbenchProjectModeCreateButton,
-            onPressed: _returnHomeForProjectPrompt,
-            icon: const Icon(Icons.chat_bubble_outline_rounded),
+          const SizedBox(height: 12),
+          Column(
+            children: _service.projects
+                .map(
+                  (project) => Padding(
+                    padding: EdgeInsets.only(
+                      bottom: project == _service.projects.last ? 0 : 10,
+                    ),
+                    child: _buildProjectListRow(project),
+                  ),
+                )
+                .toList(growable: false),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildProjectSwitcher(WorkbenchProject? selectedProject) {
-    return _buildSurface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionHeader(
-            title: context.l10n.workbenchProjectSwitcher,
-            icon: Icons.view_week_rounded,
-            trailing: _buildCountBadge(_service.projects.length.toString()),
+  Widget _buildProjectListRow(WorkbenchProject project) {
+    final palette = context.omniPalette;
+    final active = _isActiveProject(project);
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () {
+        setState(() {
+          _selectedProjectId = project.projectId;
+          _detailProjectId = project.projectId;
+          _lastExportResult = null;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: active ? palette.surfaceSecondary : palette.surfacePrimary,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: active ? palette.accentPrimary : palette.borderSubtle,
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _service.projects
-                .map((project) {
-                  final selected =
-                      project.projectId == selectedProject?.projectId;
-                  final active = _isActiveProject(project);
-                  final label = active
-                      ? '${_projectDisplayName(project)} · ${context.l10n.workbenchActiveProject}'
-                      : _projectDisplayName(project);
-                  return ChoiceChip(
-                    selected: selected,
-                    label: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 230),
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              active
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.dashboard_customize_outlined,
+              color: active ? palette.accentPrimary : palette.textSecondary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _projectDisplayName(project),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
                     ),
-                    onSelected: (_) {
-                      setState(() => _selectedProjectId = project.projectId);
-                      _activateProject(project);
-                    },
-                  );
-                })
-                .toList(growable: false),
-          ),
-        ],
+                  ),
+                  const SizedBox(height: 7),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _buildTinyCode(project.projectId),
+                      if (project.templateId.trim().isNotEmpty)
+                        _buildCountBadge(project.templateId),
+                      _buildCountBadge(
+                        context.l10n.workbenchDisplayCount(
+                          project.displays.length,
+                        ),
+                      ),
+                      _buildCountBadge(
+                        context.l10n.workbenchApiCount(project.tools.length),
+                      ),
+                      if (active)
+                        _buildCountBadge(context.l10n.workbenchActiveProject),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right_rounded, color: palette.textTertiary),
+          ],
+        ),
       ),
     );
   }
@@ -902,27 +929,6 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
             color: palette.textSecondary,
             fontSize: 12,
             fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHelpRow(IconData icon, String label) {
-    final palette = context.omniPalette;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: palette.accentPrimary),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: palette.textSecondary,
-              fontSize: 13,
-              height: 1.35,
-            ),
           ),
         ),
       ],

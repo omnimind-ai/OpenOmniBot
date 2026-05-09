@@ -5879,7 +5879,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectModeTitle.
   ///
   /// In zh, this message translates to:
-  /// **'Project 工作台'**
+  /// **'Projects'**
   String get workbenchProjectModeTitle;
 
   /// No description provided for @workbenchFlutterDisplay.
@@ -6041,8 +6041,32 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectModeSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'选择一个 Project 作为 Agent 当前工作环境；打开它的 Flutter 前端、查看 API 执行次数，并管理 Workspace、导出和删除。创建和编辑都回到首页输入框由 Agent 执行。'**
+  /// **'这里只显示 Project 列表和当前激活项。点进 Project 后再看前端、API、Workspace、导出和删除。'**
   String get workbenchProjectModeSubtitle;
+
+  /// No description provided for @workbenchProjectActiveTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前激活'**
+  String get workbenchProjectActiveTitle;
+
+  /// No description provided for @workbenchProjectActiveEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'尚未激活 Project'**
+  String get workbenchProjectActiveEmpty;
+
+  /// No description provided for @workbenchProjectListTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project 列表'**
+  String get workbenchProjectListTitle;
+
+  /// No description provided for @workbenchProjectDetailTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project 详情'**
+  String get workbenchProjectDetailTitle;
 
   /// No description provided for @workbenchProjectModeCreateButton.
   ///

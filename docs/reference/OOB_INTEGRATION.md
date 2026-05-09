@@ -20,7 +20,7 @@ This note tracks the native Workbench boundary used by OOB Project editing.
 
 ## Display Boundary
 
-The Home Project surface embeds the active Project display as a child window. Schema Projects use the generic Flutter schema display; `todo_log_demo` remains a regression/demo template. The Project manager remains a secondary control surface for activation, opening displays, Workspace, export, delete, and API execution counts.
+The Home Project surface embeds the active Project display as a child window. Schema Projects use the generic Flutter schema display; `todo_log_demo` remains a regression/demo template. The Project manager remains a secondary control surface, but its landing page is only a compact Project list plus the current active Project. Tap a Project row to open details for activation, displays, Workspace, export, delete, and API execution counts.
 
 The embedded Project toolbar stays fixed to four actions: open the current Project management page, show Project info, open the current Display fullscreen, and refresh the Project payload. Project switching and deeper management stay in `/workbench/projects`.
 
