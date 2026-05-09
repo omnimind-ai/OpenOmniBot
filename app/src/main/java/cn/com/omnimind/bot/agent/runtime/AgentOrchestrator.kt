@@ -42,6 +42,7 @@ class AgentOrchestrator(
         prettyPrint = true
     }
     private val tag = "AgentOrchestrator"
+    private val maxLengthContinuationRounds = 3
 
     private fun t(zh: String, en: String): String {
         return if (AppLocaleManager.isEnglish()) en else zh
@@ -54,18 +55,21 @@ class AgentOrchestrator(
         var outputKind = AgentOutputKind.NONE
         var hasUserFacingOutput = false
         var lastAssistantContent = ""
+        var accumulatedAssistantContent = ""
         var lastFinishReason: String? = null
         var latestPromptTokens: Int? = null
         var latestPromptTokenThreshold: Int? = null
         var lastPrefillTokensPerSecond: Double? = null
         var lastDecodeTokensPerSecond: Double? = null
         var completedModelRounds = 0
+        var lengthContinuationRounds = 0
         var terminated = false
 
         try {
             roundLoop@ while (true) {
                 completedModelRounds += 1
                 val round = completedModelRounds
+                val assistantContentPrefix = accumulatedAssistantContent
                 callback.onThinkingStart()
                 val toolChoiceForRound = if (messages.lastOrNull()?.role == "tool") {
                     null
@@ -76,6 +80,7 @@ class AgentOrchestrator(
                     tag,
                     "round=$round request_tools=${toolRegistry.toolsForModel.size}"
                 )
+                val disableThinking = input.executionEnv.reasoningEffort == "no"
                 val turn = llmClient.streamTurn(
                     request = ChatCompletionRequest(
                         messages = messages.toList(),
@@ -83,7 +88,8 @@ class AgentOrchestrator(
                         maxCompletionTokens = 16384,
                         stream = true,
                         streamOptions = ChatCompletionStreamOptions(includeUsage = true),
-                        reasoningEffort = input.executionEnv.reasoningEffort,
+                        enableThinking = if (disableThinking) false else null,
+                        reasoningEffort = if (disableThinking) null else input.executionEnv.reasoningEffort,
                         tools = toolRegistry.toolsForModel,
                         toolChoice = toolChoiceForRound,
                         parallelToolCalls = false
@@ -95,7 +101,13 @@ class AgentOrchestrator(
                     },
                     onContentUpdate = { content ->
                         if (content.isNotBlank()) {
-                            callback.onChatMessage(content, false)
+                            callback.onChatMessage(
+                                combineContinuationContent(
+                                    prefix = assistantContentPrefix,
+                                    content = content
+                                ),
+                                false
+                            )
                         }
                     }
                 )
@@ -105,7 +117,11 @@ class AgentOrchestrator(
                     turn.usage?.prefillTokensPerSecond ?: lastPrefillTokensPerSecond
                 lastDecodeTokensPerSecond =
                     turn.usage?.decodeTokensPerSecond ?: lastDecodeTokensPerSecond
-                lastAssistantContent = turn.message.contentText().trim()
+                val rawAssistantContent = turn.message.contentText().trim()
+                lastAssistantContent = combineContinuationContent(
+                    prefix = accumulatedAssistantContent,
+                    content = rawAssistantContent
+                )
                 val toolCalls = turn.message.toolCalls.orEmpty()
                 logInfo(
                     tag,
@@ -119,7 +135,9 @@ class AgentOrchestrator(
                             content = turn.message.content,
                             toolCalls = toolCalls
                         ),
-                        toolCalls = toolCalls.ifEmpty { null }
+                        toolCalls = toolCalls.ifEmpty { null },
+                        reasoningContent = turn.message.reasoningContent
+                            ?.takeIf { it.isNotBlank() }
                     )
                 )
                 latestPromptTokens = turn.usage?.promptTokens
@@ -143,6 +161,20 @@ class AgentOrchestrator(
                 }
 
                 if (toolCalls.isEmpty()) {
+                    if (
+                        isLengthFinishReason(lastFinishReason) &&
+                        rawAssistantContent.isNotBlank() &&
+                        lengthContinuationRounds < maxLengthContinuationRounds
+                    ) {
+                        lengthContinuationRounds += 1
+                        accumulatedAssistantContent = lastAssistantContent
+                        messages.add(buildLengthContinuationMessage())
+                        logInfo(
+                            tag,
+                            "round=$round finish_reason=${lastFinishReason.orEmpty()} auto_continue=$lengthContinuationRounds/${maxLengthContinuationRounds} accumulated_content_len=${accumulatedAssistantContent.length}"
+                        )
+                        continue@roundLoop
+                    }
                     val fallbackMessage = lastAssistantContent.ifBlank {
                         "我已完成思考，但暂时无法生成回复，请重试。"
                     }
@@ -158,6 +190,8 @@ class AgentOrchestrator(
                     terminated = true
                     break
                 }
+                accumulatedAssistantContent = ""
+                lengthContinuationRounds = 0
 
                 var advanceToNextRound = false
                 for (toolCall in toolCalls) {
@@ -283,7 +317,14 @@ class AgentOrchestrator(
                         terminated = true
                         break@roundLoop
                     }
-                    if (toolCall.function.name == "terminal_execute") {
+                    if (
+                        toolCall.function.name == "terminal_execute" ||
+                        toolCall.function.name == "android_privileged_action" ||
+                        toolCall.function.name == "android_privileged_session_start" ||
+                        toolCall.function.name == "android_privileged_session_exec" ||
+                        toolCall.function.name == "android_privileged_session_read" ||
+                        toolCall.function.name == "android_privileged_session_stop"
+                    ) {
                         break
                     }
                 }
@@ -488,9 +529,59 @@ class AgentOrchestrator(
             ?: throw IllegalArgumentException("tool arguments must be a JSON object")
     }
 
-    private fun normalizeThinkingText(text: String, maxLen: Int = 3000): String {
-        val normalized = text.replace("\r\n", "\n").trim()
-        return if (normalized.length <= maxLen) normalized else normalized.take(maxLen) + "\n..."
+    private fun normalizeThinkingText(text: String): String {
+        val normalized = if ('\r' in text) {
+            text.replace("\r\n", "\n").replace('\r', '\n')
+        } else {
+            text
+        }
+        return normalized.trim()
+    }
+
+    private fun isLengthFinishReason(reason: String?): Boolean {
+        val normalized = reason?.trim()?.lowercase().orEmpty()
+        return normalized == "length" ||
+            normalized == "max_tokens" ||
+            normalized == "max_completion_tokens"
+    }
+
+    private fun buildLengthContinuationMessage(): ChatCompletionMessage {
+        return ChatCompletionMessage(
+            role = "user",
+            content = JsonPrimitive(
+                "上一条 assistant 回复因为达到输出长度上限被截断。请从中断处继续完成原任务，不要重复已经输出的内容，不要重新开头，不要解释本提示。"
+            )
+        )
+    }
+
+    private fun combineContinuationContent(prefix: String, content: String): String {
+        val normalizedPrefix = AgentTextSanitizer.sanitizeUtf16(prefix).trim()
+        val normalizedContent = AgentTextSanitizer.sanitizeUtf16(content).trim()
+        if (normalizedPrefix.isEmpty()) return normalizedContent
+        if (normalizedContent.isEmpty()) return normalizedPrefix
+        if (normalizedContent.startsWith(normalizedPrefix)) return normalizedContent
+        if (normalizedPrefix.startsWith(normalizedContent)) return normalizedPrefix
+
+        val maxOverlap = minOf(
+            normalizedPrefix.length,
+            normalizedContent.length,
+            2048
+        )
+        for (overlap in maxOverlap downTo 1) {
+            val prefixStart = normalizedPrefix.length - overlap
+            if (
+                normalizedPrefix.regionMatches(
+                    thisOffset = prefixStart,
+                    other = normalizedContent,
+                    otherOffset = 0,
+                    length = overlap,
+                    ignoreCase = false
+                )
+            ) {
+                return normalizedPrefix + normalizedContent.substring(overlap)
+            }
+        }
+        return normalizedPrefix + normalizedContent
     }
 
     private fun logInfo(tag: String, message: String) {

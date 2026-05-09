@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import cn.com.omnimind.baselib.permission.PermissionRequest
+import cn.com.omnimind.baselib.shizuku.ShizukuCapabilityManager
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.terminal.EmbeddedTerminalAutoStartManager
@@ -34,6 +35,7 @@ class SpecialPermissionManager(private val context: Context) {
     }
     private val embeddedTerminalSetupManager = EmbeddedTerminalSetupManager(context)
     private val embeddedTerminalAutoStartManager = EmbeddedTerminalAutoStartManager(context)
+    private val shizukuCapabilityManager = ShizukuCapabilityManager.get(context)
 
     fun isAccessibilityServiceEnabled(result: MethodChannel.Result) {
         try {
@@ -52,6 +54,16 @@ class SpecialPermissionManager(private val context: Context) {
         } catch (e: Exception) {
             OmniLog.e(TAG, "Error checking battery optimization", e)
             result.error("CHECK_FAILED", "Failed to check battery optimization.", e.message)
+        }
+    }
+
+    fun isBackgroundRunAllowed(result: MethodChannel.Result) {
+        try {
+            val value = AssistsUtil.Setting.isBackgroundRunAllowed(context)
+            result.success(value)
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "Error checking background run permission", e)
+            result.error("CHECK_FAILED", "Failed to check background run permission.", e.message)
         }
     }
 
@@ -159,6 +171,74 @@ class SpecialPermissionManager(private val context: Context) {
                 "无法打开应用启动管理设置页面，可能没有 Activity 能处理此 Intent。",
                 e.message
             )
+        }
+    }
+
+    fun isShizukuInstalled(result: MethodChannel.Result) {
+        try {
+            result.success(shizukuCapabilityManager.isShizukuInstalled())
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "Error checking Shizuku installation", e)
+            result.error("CHECK_FAILED", "Failed to check Shizuku installation.", e.message)
+        }
+    }
+
+    fun isShizukuRunning(result: MethodChannel.Result) {
+        try {
+            result.success(shizukuCapabilityManager.getStatus().running)
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "Error checking Shizuku running status", e)
+            result.error("CHECK_FAILED", "Failed to check Shizuku running status.", e.message)
+        }
+    }
+
+    fun openShizukuDownloadOrApp(result: MethodChannel.Result) {
+        try {
+            result.success(shizukuCapabilityManager.openShizukuDownloadOrApp())
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "Error opening Shizuku app or website", e)
+            result.error("INTENT_FAILED", "Failed to open Shizuku app or website.", e.message)
+        }
+    }
+
+    fun requestShizukuPermission(result: MethodChannel.Result) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val status = shizukuCapabilityManager.requestPermission()
+                withContext(Dispatchers.Main) {
+                    result.success(status.toMap())
+                }
+            } catch (e: Exception) {
+                OmniLog.e(TAG, "Error requesting Shizuku permission", e)
+                withContext(Dispatchers.Main) {
+                    result.error("REQUEST_FAILED", "Failed to request Shizuku permission.", e.message)
+                }
+            }
+        }
+    }
+
+    fun getShizukuStatus(result: MethodChannel.Result) {
+        try {
+            result.success(shizukuCapabilityManager.getStatus().toMap())
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "Error reading Shizuku status", e)
+            result.error("READ_FAILED", "Failed to read Shizuku status.", e.message)
+        }
+    }
+
+    fun runShizukuHealthCheck(result: MethodChannel.Result) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val payload = shizukuCapabilityManager.runHealthCheck()
+                withContext(Dispatchers.Main) {
+                    result.success(payload)
+                }
+            } catch (e: Exception) {
+                OmniLog.e(TAG, "Error running Shizuku health check", e)
+                withContext(Dispatchers.Main) {
+                    result.error("HEALTH_CHECK_FAILED", "Failed to run Shizuku health check.", e.message)
+                }
+            }
         }
     }
 

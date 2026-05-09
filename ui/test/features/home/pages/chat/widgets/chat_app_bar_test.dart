@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:ui/features/home/pages/chat/chat_page_models.dart';
 import 'package:ui/features/home/pages/chat/widgets/chat_widgets.dart';
+import 'package:ui/theme/theme_context.dart';
 
 class _SvgTestAssetBundle extends CachingAssetBundle {
   static final Uint8List _svgBytes = Uint8List.fromList(
@@ -93,10 +94,17 @@ class _ChatAppBarHarnessState extends State<_ChatAppBarHarness> {
 }
 
 class _PureChatToggleHarness extends StatefulWidget {
-  const _PureChatToggleHarness({this.selected = false, this.locked = false});
+  const _PureChatToggleHarness({
+    this.selected = false,
+    this.locked = false,
+    this.showAgentTapCount = false,
+    this.showCodexTapCount = false,
+  });
 
   final bool selected;
   final bool locked;
+  final bool showAgentTapCount;
+  final bool showCodexTapCount;
 
   @override
   State<_PureChatToggleHarness> createState() => _PureChatToggleHarnessState();
@@ -104,8 +112,10 @@ class _PureChatToggleHarness extends StatefulWidget {
 
 class _PureChatToggleHarnessState extends State<_PureChatToggleHarness> {
   late bool _selected = widget.selected;
-  late bool _locked = widget.locked;
+  late final bool _locked = widget.locked;
   int _toggleCount = 0;
+  int _agentTapCount = 0;
+  int _codexTapCount = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -117,10 +127,20 @@ class _PureChatToggleHarnessState extends State<_PureChatToggleHarness> {
             children: [
               ChatAppBar(
                 onMenuTap: () {},
+                onAgentTap: () {
+                  setState(() {
+                    _agentTapCount += 1;
+                  });
+                },
                 onPureChatToggleTap: () {
                   setState(() {
                     _selected = !_selected;
                     _toggleCount += 1;
+                  });
+                },
+                onCodexTap: () {
+                  setState(() {
+                    _codexTapCount += 1;
                   });
                 },
                 onCompanionTap: () {},
@@ -139,6 +159,8 @@ class _PureChatToggleHarnessState extends State<_PureChatToggleHarness> {
               Text('selected:$_selected'),
               Text('locked:$_locked'),
               Text('toggles:$_toggleCount'),
+              if (widget.showAgentTapCount) Text('agentTaps:$_agentTapCount'),
+              if (widget.showCodexTapCount) Text('codexTaps:$_codexTapCount'),
             ],
           ),
         ),
@@ -642,7 +664,7 @@ void main() {
     expect(find.text('gpt-5.4'), findsOneWidget);
   });
 
-  testWidgets('places pure chat toggle between menu button and island', (
+  testWidgets('swaps companion shortcut left and mode menu right', (
     tester,
   ) async {
     await tester.pumpWidget(const _PureChatToggleHarness());
@@ -650,21 +672,108 @@ void main() {
     final menuRect = tester.getRect(
       find.byKey(const ValueKey('chat-app-bar-menu-button')),
     );
-    final pureChatRect = tester.getRect(
+    final companionRect = tester.getRect(
+      find.byKey(const ValueKey('chat-app-companion-button')),
+    );
+    final modeMenuRect = tester.getRect(
       find.byKey(const ValueKey('chat-app-bar-pure-chat-button')),
     );
     final islandRect = tester.getRect(
       find.byKey(const ValueKey('chat-app-bar-island')),
     );
-    final pureChatCenter = pureChatRect.center;
+    final companionCenter = companionRect.center;
     final expectedGapMidpoint = (menuRect.right + islandRect.left) / 2;
 
-    expect(menuRect.right, lessThan(pureChatRect.left));
-    expect(pureChatRect.right, lessThan(islandRect.left));
-    expect(pureChatCenter.dx, closeTo(expectedGapMidpoint, 1));
+    expect(menuRect.right, lessThan(companionRect.left));
+    expect(companionRect.right, lessThan(islandRect.left));
+    expect(companionCenter.dx, closeTo(expectedGapMidpoint, 1));
+    expect(islandRect.right, lessThan(modeMenuRect.left));
   });
 
-  testWidgets('keeps pure chat toggle clear of island on narrow screens', (
+  testWidgets('uses page background when surface switcher is visible', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DefaultAssetBundle(
+          bundle: _SvgTestAssetBundle(),
+          child: Scaffold(
+            body: ChatAppBar(
+              onMenuTap: () {},
+              onCompanionTap: () {},
+              activeMode: ChatSurfaceMode.normal,
+              onModeChanged: (_) {},
+              activeModelId: 'gpt-5.4',
+              displayLayer: ChatIslandDisplayLayer.model,
+              onDisplayLayerChanged: (_) {},
+              onTerminalEnvironmentTap: (_) {},
+              onTerminalTap: () {},
+              onBrowserTap: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final appBarContext = tester.element(find.byType(ChatAppBar));
+    final rootSurface = tester.widget<ColoredBox>(
+      find.byKey(const ValueKey('chat-app-bar-background')),
+    );
+
+    expect(rootSurface.color, appBarContext.omniPalette.pageBackground);
+  });
+
+  testWidgets('shows workspace restore button before the right mode menu', (
+    tester,
+  ) async {
+    var tapCount = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DefaultAssetBundle(
+          bundle: _SvgTestAssetBundle(),
+          child: Scaffold(
+            body: ChatAppBar(
+              onMenuTap: () {},
+              onCompanionTap: () {},
+              activeMode: ChatSurfaceMode.normal,
+              onModeChanged: (_) {},
+              activeModelId: 'gpt-5.4',
+              displayLayer: ChatIslandDisplayLayer.model,
+              onDisplayLayerChanged: (_) {},
+              onTerminalEnvironmentTap: (_) {},
+              onTerminalTap: () {},
+              onBrowserTap: () {},
+              showPureChatToggle: true,
+              showWorkspacePaneButton: true,
+              onWorkspacePaneTap: () {
+                tapCount += 1;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final workspaceButton = find.byKey(
+      const ValueKey('chat-app-bar-workspace-pane-button'),
+    );
+    final island = find.byKey(const ValueKey('chat-app-bar-island'));
+    final modeMenu = find.byKey(
+      const ValueKey('chat-app-bar-pure-chat-button'),
+    );
+    final workspaceRect = tester.getRect(workspaceButton);
+    final islandRect = tester.getRect(island);
+    final modeMenuRect = tester.getRect(modeMenu);
+
+    expect(workspaceButton, findsOneWidget);
+    expect(islandRect.right, lessThan(workspaceRect.left));
+    expect(workspaceRect.right, lessThanOrEqualTo(modeMenuRect.left));
+
+    await tester.tap(workspaceButton);
+    expect(tapCount, 1);
+  });
+
+  testWidgets('keeps swapped shortcuts clear of island on narrow screens', (
     tester,
   ) async {
     _setTestViewport(tester, const Size(390, 844));
@@ -675,14 +784,18 @@ void main() {
 
     await tester.pumpWidget(const _PureChatToggleHarness());
 
-    final pureChatRect = tester.getRect(
+    final companionRect = tester.getRect(
+      find.byKey(const ValueKey('chat-app-companion-button')),
+    );
+    final modeMenuRect = tester.getRect(
       find.byKey(const ValueKey('chat-app-bar-pure-chat-button')),
     );
     final islandRect = tester.getRect(
       find.byKey(const ValueKey('chat-app-bar-island')),
     );
 
-    expect(pureChatRect.right, lessThanOrEqualTo(islandRect.left));
+    expect(companionRect.right, lessThanOrEqualTo(islandRect.left));
+    expect(islandRect.right, lessThanOrEqualTo(modeMenuRect.left));
   });
 
   testWidgets('highlights pure chat toggle when selected', (tester) async {
@@ -701,7 +814,7 @@ void main() {
     );
   });
 
-  testWidgets('locks pure chat toggle after thread starts', (tester) async {
+  testWidgets('respects pure chat toggle lock flag', (tester) async {
     await tester.pumpWidget(const _PureChatToggleHarness(locked: true));
 
     expect(find.text('selected:false'), findsOneWidget);
@@ -714,6 +827,76 @@ void main() {
 
     expect(find.text('selected:false'), findsOneWidget);
     expect(find.text('toggles:0'), findsOneWidget);
+  });
+
+  testWidgets('opens mode menu with agent codex and pure chat actions', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _PureChatToggleHarness(
+        showAgentTapCount: true,
+        showCodexTapCount: true,
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('chat-app-bar-pure-chat-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('chat-app-bar-mode-menu-agent')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('chat-app-bar-mode-menu-codex')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('chat-app-bar-mode-menu-pure-chat')),
+      findsOneWidget,
+    );
+    final pureChatMenuIcon = tester.widget<SvgPicture>(
+      find.descendant(
+        of: find.byKey(const ValueKey('chat-app-bar-mode-menu-pure-chat')),
+        matching: find.byType(SvgPicture),
+      ),
+    );
+    expect(pureChatMenuIcon.width, 18);
+    expect(pureChatMenuIcon.height, 18);
+    expect(find.text('Agent 模式'), findsNothing);
+    expect(find.text('Codex 模式'), findsNothing);
+    expect(find.text('纯聊天模式'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('chat-app-bar-mode-menu-agent')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('agentTaps:1'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('chat-app-bar-pure-chat-button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('chat-app-bar-mode-menu-codex')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('codexTaps:1'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('chat-app-bar-pure-chat-button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('chat-app-bar-mode-menu-pure-chat')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('selected:true'), findsOneWidget);
+    expect(find.text('toggles:1'), findsOneWidget);
   });
 
   testWidgets('uses chat-left workspace-right surface order', (tester) async {
@@ -746,10 +929,11 @@ void main() {
     expect(find.text('active:normal'), findsOneWidget);
   });
 
-  testWidgets('shows app update indicator next to companion button', (
+  testWidgets('shows update indicator next to mode menu without direct codex', (
     tester,
   ) async {
     var tapCount = 0;
+    var codexTapCount = 0;
     await tester.pumpWidget(
       MaterialApp(
         home: DefaultAssetBundle(
@@ -767,7 +951,11 @@ void main() {
               onTerminalTap: () {},
               onBrowserTap: () {},
               showAppUpdateIndicator: true,
+              showPureChatToggle: true,
               appUpdateTooltip: '发现新版本 v9.9.9',
+              onCodexTap: () {
+                codexTapCount += 1;
+              },
               onAppUpdateTap: () {
                 tapCount += 1;
               },
@@ -778,12 +966,131 @@ void main() {
     );
 
     final indicator = find.byKey(const ValueKey('chat-app-update-button'));
+    final codex = find.byKey(const ValueKey('chat-app-codex-button'));
+    final modeMenu = find.byKey(
+      const ValueKey('chat-app-bar-pure-chat-button'),
+    );
+    final companion = find.byKey(const ValueKey('chat-app-companion-button'));
+    final island = find.byKey(const ValueKey('chat-app-bar-island'));
     expect(indicator, findsOneWidget);
+    expect(codex, findsNothing);
+    expect(modeMenu, findsOneWidget);
+    expect(companion, findsOneWidget);
+
+    expect(
+      tester.getRect(companion).right,
+      lessThanOrEqualTo(tester.getRect(island).left),
+    );
+    expect(
+      tester.getRect(indicator).right,
+      lessThanOrEqualTo(tester.getRect(modeMenu).left),
+    );
 
     await tester.tap(indicator);
     await tester.pumpAndSettle();
 
     expect(tapCount, 1);
+
+    await tester.tap(modeMenu);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('chat-app-bar-mode-menu-codex')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(codexTapCount, 1);
+  });
+
+  testWidgets('tints and enlarges codex icon with theme color when selected', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DefaultAssetBundle(
+          bundle: _SvgTestAssetBundle(),
+          child: Scaffold(
+            body: ChatAppBar(
+              onMenuTap: () {},
+              onCompanionTap: () {},
+              activeMode: ChatSurfaceMode.normal,
+              onModeChanged: (_) {},
+              activeModelId: 'gpt-5.4',
+              displayLayer: ChatIslandDisplayLayer.model,
+              onDisplayLayerChanged: (_) {},
+              onTerminalEnvironmentTap: (_) {},
+              onTerminalTap: () {},
+              onBrowserTap: () {},
+              isCodexReady: true,
+              isCodexConnected: true,
+              isCodexSelected: true,
+              showPureChatToggle: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final codex = find.byKey(const ValueKey('chat-app-bar-pure-chat-button'));
+    final codexIcon = tester.widget<SvgPicture>(
+      find.descendant(of: codex, matching: find.byType(SvgPicture)),
+    );
+
+    expect(
+      codexIcon.colorFilter,
+      const ColorFilter.mode(Color(0xFF2C7FEB), BlendMode.srcIn),
+    );
+    expect(codexIcon.width, 22);
+    expect(codexIcon.height, 22);
+  });
+
+  testWidgets('uses current chat mode icon in surface slider', (tester) async {
+    Future<void> pumpAppBar({
+      bool isAgentSelected = false,
+      bool isCodexSelected = false,
+      bool isPureChatSelected = false,
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DefaultAssetBundle(
+            bundle: _SvgTestAssetBundle(),
+            child: Scaffold(
+              body: ChatAppBar(
+                onMenuTap: () {},
+                onCompanionTap: () {},
+                activeMode: ChatSurfaceMode.normal,
+                onModeChanged: (_) {},
+                activeModelId: 'gpt-5.4',
+                displayLayer: ChatIslandDisplayLayer.mode,
+                onDisplayLayerChanged: (_) {},
+                onTerminalEnvironmentTap: (_) {},
+                onTerminalTap: () {},
+                onBrowserTap: () {},
+                isAgentSelected: isAgentSelected,
+                isCodexSelected: isCodexSelected,
+                isPureChatSelected: isPureChatSelected,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    String primaryIconAsset() {
+      final icon = tester.widget<SvgPicture>(
+        find.byKey(const ValueKey('chat-mode-slider-primary-icon')),
+      );
+      return icon.bytesLoader.toString();
+    }
+
+    await pumpAppBar(isAgentSelected: true);
+    expect(primaryIconAsset(), contains('assets/home/chat/agent.svg'));
+
+    await pumpAppBar(isCodexSelected: true);
+    expect(primaryIconAsset(), contains('assets/home/chat/codex.svg'));
+
+    await pumpAppBar(isPureChatSelected: true);
+    expect(primaryIconAsset(), contains('assets/home/chat/pure_chat.svg'));
   });
 
   testWidgets('supports direct island swipe between model and tools layers', (
@@ -909,6 +1216,13 @@ void main() {
 
     expect(find.byType(ChatModeSlider), findsNothing);
     expect(find.text('gpt-5.4'), findsOneWidget);
+
+    final appBarContext = tester.element(find.byType(ChatAppBar));
+    final rootSurface = tester.widget<ColoredBox>(
+      find.byKey(const ValueKey('chat-app-bar-background')),
+    );
+
+    expect(rootSurface.color, appBarContext.omniPalette.surfacePrimary);
   });
 
   testWidgets(

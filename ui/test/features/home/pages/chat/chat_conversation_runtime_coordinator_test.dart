@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/chat/chat_page_models.dart';
 import 'package:ui/features/home/pages/chat/services/chat_conversation_runtime_coordinator.dart';
+import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/ai_chat_service.dart';
 import 'package:ui/services/voice_playback_coordinator.dart';
 
@@ -19,15 +20,294 @@ void main() {
   final recordedVoiceCalls = <MethodCall>[];
   late List<Map<String, dynamic>> sceneBindings;
   late Map<String, dynamic> sceneVoiceConfig;
+  var agentStreamSeq = 0;
+  final agentThinkingRounds = <String, int>{};
+  final agentTextRounds = <String, int>{};
+  final agentPendingNextTextRound = <String, bool>{};
+  final agentActiveThinkingEntryIds = <String, String>{};
+  final agentActiveTextEntryIds = <String, String>{};
+  final agentActiveToolEntryIds = <String, String>{};
+  final agentToolSequences = <String, int>{};
+  final agentEntryOrderSeqs = <String, int>{};
+  var agentEntrySeq = 0;
+
+  String agentThinkingEntryId(String taskId, int roundIndex) {
+    return roundIndex <= 1
+        ? '$taskId-thinking'
+        : '$taskId-thinking-$roundIndex';
+  }
+
+  String agentTextEntryId(String taskId, int roundIndex) {
+    return roundIndex <= 1 ? '$taskId-text' : '$taskId-text-$roundIndex';
+  }
+
+  int agentToolRoundIndex(String taskId) {
+    return <int>[
+      agentThinkingRounds[taskId] ?? 0,
+      agentTextRounds[taskId] ?? 0,
+      1,
+    ].reduce((left, right) => left > right ? left : right);
+  }
+
+  Map<String, dynamic> streamMetaForEntry(
+    String entryId,
+    int roundIndex,
+    String kind,
+    String taskId,
+  ) {
+    final stableSeq = agentEntryOrderSeqs.putIfAbsent(entryId, () {
+      agentEntrySeq += 1;
+      return agentEntrySeq;
+    });
+    return <String, dynamic>{
+      'seq': stableSeq,
+      'roundIndex': roundIndex,
+      'kind': kind,
+      'parentTaskId': taskId,
+    };
+  }
+
+  List<MethodCall> mapLegacyAgentEvent(String method, dynamic arguments) {
+    final raw = Map<String, dynamic>.from(
+      (arguments as Map?) ?? const <String, dynamic>{},
+    );
+    final taskId = (raw['taskId'] ?? '').toString();
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    MethodCall streamCall(Map<String, dynamic> payload) {
+      agentStreamSeq += 1;
+      return MethodCall('onAgentStreamEvent', <String, dynamic>{
+        'taskId': taskId,
+        'seq': agentStreamSeq,
+        'createdAt': now,
+        ...payload,
+      });
+    }
+
+    switch (method) {
+      case 'onAgentThinkingStart':
+        final roundIndex = (agentThinkingRounds[taskId] ?? 0) + 1;
+        agentThinkingRounds[taskId] = roundIndex;
+        final entryId = agentThinkingEntryId(taskId, roundIndex);
+        agentActiveThinkingEntryIds[taskId] = entryId;
+        if (agentActiveTextEntryIds.containsKey(taskId)) {
+          agentPendingNextTextRound[taskId] = true;
+        }
+        return <MethodCall>[
+          streamCall(<String, dynamic>{
+            'kind': 'thinking_started',
+            'entryId': entryId,
+            'roundIndex': roundIndex,
+            'thinking': '',
+            'stage': 1,
+            'streamMeta': streamMetaForEntry(
+              entryId,
+              roundIndex,
+              'thinking_started',
+              taskId,
+            ),
+          }),
+        ];
+      case 'onAgentThinkingUpdate':
+        final roundIndex = agentThinkingRounds[taskId] ?? 1;
+        final entryId =
+            agentActiveThinkingEntryIds[taskId] ??
+            agentThinkingEntryId(taskId, roundIndex);
+        agentActiveThinkingEntryIds[taskId] = entryId;
+        return <MethodCall>[
+          streamCall(<String, dynamic>{
+            'kind': 'thinking_snapshot',
+            'entryId': entryId,
+            'roundIndex': roundIndex,
+            'thinking': (raw['thinking'] ?? '').toString(),
+            'stage': 1,
+            'streamMeta': streamMetaForEntry(
+              entryId,
+              roundIndex,
+              'thinking_snapshot',
+              taskId,
+            ),
+          }),
+        ];
+      case 'onAgentChatMessage':
+        var roundIndex = agentTextRounds[taskId] ?? 0;
+        if (roundIndex == 0 || agentPendingNextTextRound[taskId] == true) {
+          roundIndex += 1;
+          agentTextRounds[taskId] = roundIndex;
+          agentPendingNextTextRound.remove(taskId);
+          agentActiveTextEntryIds[taskId] = agentTextEntryId(
+            taskId,
+            roundIndex,
+          );
+        }
+        final entryId =
+            agentActiveTextEntryIds[taskId] ??
+            agentTextEntryId(taskId, roundIndex == 0 ? 1 : roundIndex);
+        return <MethodCall>[
+          streamCall(<String, dynamic>{
+            'kind': 'text_snapshot',
+            'entryId': entryId,
+            'roundIndex': agentTextRounds[taskId] ?? 1,
+            'text': (raw['message'] ?? '').toString(),
+            'isFinal': raw['isFinal'] == true,
+            'streamMeta': streamMetaForEntry(
+              entryId,
+              agentTextRounds[taskId] ?? 1,
+              'text_snapshot',
+              taskId,
+            ),
+            if (raw['prefillTokensPerSecond'] != null)
+              'prefillTokensPerSecond': raw['prefillTokensPerSecond'],
+            if (raw['decodeTokensPerSecond'] != null)
+              'decodeTokensPerSecond': raw['decodeTokensPerSecond'],
+          }),
+        ];
+      case 'onAgentToolCallStart':
+        final nextSequence = (agentToolSequences[taskId] ?? 0) + 1;
+        agentToolSequences[taskId] = nextSequence;
+        final entryId = (raw['cardId'] ?? '').toString().trim().isNotEmpty
+            ? (raw['cardId'] ?? '').toString().trim()
+            : '$taskId-tool-$nextSequence';
+        agentActiveToolEntryIds[taskId] = entryId;
+        agentPendingNextTextRound[taskId] = true;
+        return <MethodCall>[
+          streamCall(<String, dynamic>{
+            'kind': 'tool_started',
+            'entryId': entryId,
+            'roundIndex': agentToolRoundIndex(taskId),
+            'streamMeta': streamMetaForEntry(
+              entryId,
+              agentToolRoundIndex(taskId),
+              'tool_started',
+              taskId,
+            ),
+            ...raw,
+            'cardId': entryId,
+          }),
+        ];
+      case 'onAgentToolCallProgress':
+        final entryId = (raw['cardId'] ?? '').toString().trim().isNotEmpty
+            ? (raw['cardId'] ?? '').toString().trim()
+            : agentActiveToolEntryIds[taskId];
+        return <MethodCall>[
+          streamCall(<String, dynamic>{
+            'kind': 'tool_progress',
+            'entryId': entryId,
+            'roundIndex': agentToolRoundIndex(taskId),
+            if (entryId != null)
+              'streamMeta': streamMetaForEntry(
+                entryId,
+                agentToolRoundIndex(taskId),
+                'tool_progress',
+                taskId,
+              ),
+            ...raw,
+            if (entryId != null) 'cardId': entryId,
+          }),
+        ];
+      case 'onAgentToolCallComplete':
+        final entryId = (raw['cardId'] ?? '').toString().trim().isNotEmpty
+            ? (raw['cardId'] ?? '').toString().trim()
+            : agentActiveToolEntryIds.remove(taskId);
+        agentPendingNextTextRound[taskId] = true;
+        return <MethodCall>[
+          streamCall(<String, dynamic>{
+            'kind': 'tool_completed',
+            'entryId': entryId,
+            'roundIndex': agentToolRoundIndex(taskId),
+            if (entryId != null)
+              'streamMeta': streamMetaForEntry(
+                entryId,
+                agentToolRoundIndex(taskId),
+                'tool_completed',
+                taskId,
+              ),
+            ...raw,
+            if (entryId != null) 'cardId': entryId,
+          }),
+        ];
+      case 'onAgentError':
+        final existingEntryId = agentActiveTextEntryIds[taskId];
+        final errorText = (raw['error'] ?? '').toString();
+        if (existingEntryId == null) {
+          final roundIndex = (agentTextRounds[taskId] ?? 0) + 1;
+          agentTextRounds[taskId] = roundIndex;
+          final entryId = agentTextEntryId(taskId, roundIndex);
+          agentActiveTextEntryIds[taskId] = entryId;
+          return <MethodCall>[
+            streamCall(<String, dynamic>{
+              'kind': 'text_snapshot',
+              'entryId': entryId,
+              'roundIndex': roundIndex,
+              'text': errorText,
+              'isFinal': true,
+              'streamMeta': streamMetaForEntry(
+                entryId,
+                roundIndex,
+                'text_snapshot',
+                taskId,
+              ),
+            }),
+            streamCall(<String, dynamic>{
+              'kind': 'error',
+              'entryId': entryId,
+              'roundIndex': roundIndex,
+              'error': errorText,
+              'persistAsError': true,
+              'streamMeta': streamMetaForEntry(
+                entryId,
+                roundIndex,
+                'error',
+                taskId,
+              ),
+            }),
+          ];
+        }
+        return <MethodCall>[
+          streamCall(<String, dynamic>{
+            'kind': 'error',
+            'entryId': existingEntryId,
+            'roundIndex': agentTextRounds[taskId] ?? 1,
+            'error': errorText,
+            'persistAsError': false,
+            'streamMeta': streamMetaForEntry(
+              existingEntryId,
+              agentTextRounds[taskId] ?? 1,
+              'error',
+              taskId,
+            ),
+          }),
+        ];
+      default:
+        return <MethodCall>[MethodCall(method, arguments)];
+    }
+  }
 
   Future<void> emitPlatformEvent(String method, [dynamic arguments]) async {
-    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .handlePlatformMessage(
-          channelName,
-          codec.encodeMethodCall(MethodCall(method, arguments)),
-          (ByteData? _) {},
-        );
-    await Future<void>.delayed(Duration.zero);
+    final calls =
+        method.startsWith('onAgent') &&
+            method != 'onAgentPromptTokenUsageChanged' &&
+            method != 'onAgentContextCompactionStateChanged' &&
+            method != 'onAgentStreamEvent'
+        ? mapLegacyAgentEvent(method, arguments)
+        : <MethodCall>[MethodCall(method, arguments)];
+    for (final call in calls) {
+      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(
+            channelName,
+            codec.encodeMethodCall(call),
+            (ByteData? _) {},
+          );
+      await Future<void>.delayed(Duration.zero);
+    }
+  }
+
+  List<String> visibleMessageIds(ChatConversationRuntimeState runtime) {
+    return runtime.messages
+        .map((message) => message.id)
+        .toList()
+        .reversed
+        .toList();
   }
 
   setUp(() async {
@@ -35,6 +315,16 @@ void main() {
     await VoicePlaybackCoordinator.instance.debugResetForTest();
     recordedMethodCalls.clear();
     recordedVoiceCalls.clear();
+    agentStreamSeq = 0;
+    agentThinkingRounds.clear();
+    agentTextRounds.clear();
+    agentPendingNextTextRound.clear();
+    agentActiveThinkingEntryIds.clear();
+    agentActiveTextEntryIds.clear();
+    agentActiveToolEntryIds.clear();
+    agentToolSequences.clear();
+    agentEntryOrderSeqs.clear();
+    agentEntrySeq = 0;
     sceneBindings = <Map<String, dynamic>>[];
     sceneVoiceConfig = <String, dynamic>{
       'autoPlay': false,
@@ -114,6 +404,61 @@ void main() {
     expect(runtimeA.messages.first.content?['prefillTokensPerSecond'], 123.4);
     expect(runtimeA.messages.first.content?['decodeTokensPerSecond'], 56.7);
     expect(runtimeB.messages, isEmpty);
+  });
+
+  test('persists codex runtime messages back to native history', () async {
+    const conversationId = 2001;
+    final runtime = coordinator.ensureRuntime(
+      conversationId: conversationId,
+      mode: kChatRuntimeModeCodex,
+    );
+    runtime.messages.insert(0, ChatMessageModel.userMessage('第一句标题应该保留'));
+
+    await coordinator.applyCodexEvent(
+      conversationId: conversationId,
+      event: {
+        'message': {
+          'method': 'item/agentMessage/delta',
+          'params': {'turnId': 'turn-1', 'delta': 'Codex reply'},
+        },
+      },
+    );
+    await coordinator.flushPendingPersistence(
+      conversationId: conversationId,
+      mode: kChatRuntimeModeCodex,
+    );
+
+    final replaceCalls = recordedMethodCalls
+        .where((call) => call.method == 'replaceConversationMessages')
+        .toList();
+    expect(replaceCalls, isNotEmpty);
+
+    final args = Map<String, dynamic>.from(
+      (replaceCalls.last.arguments as Map).cast<String, dynamic>(),
+    );
+    expect(args['conversationId'], conversationId);
+    expect(args['mode'], 'codex');
+
+    final messages = (args['messages'] as List)
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item.cast<String, dynamic>()))
+        .toList();
+    expect(
+      messages.any(
+        (message) =>
+            message['user'] == 1 &&
+            ((message['content'] as Map?)?['text'] == '第一句标题应该保留'),
+      ),
+      isTrue,
+    );
+    expect(
+      messages.any(
+        (message) =>
+            message['user'] == 2 &&
+            ((message['content'] as Map?)?['text'] == 'Codex reply'),
+      ),
+      isTrue,
+    );
   });
 
   test('replaces divergent agent snapshots instead of concatenating', () async {
@@ -839,6 +1184,7 @@ void main() {
     runtime.activeToolCardId = 'agent-task-tool-1';
     runtime.activeThinkingCardId = 'agent-task-thinking';
     runtime.pendingAgentTextTaskId = 'agent-task';
+    runtime.waitingThinkingBeforeAgentTextTaskId = 'agent-task';
     runtime.pendingThinkingRoundSplit = true;
     runtime.toolCardSequence = 3;
     runtime.thinkingRound = 2;
@@ -856,10 +1202,60 @@ void main() {
     expect(runtime.activeToolCardId, isNull);
     expect(runtime.activeThinkingCardId, isNull);
     expect(runtime.pendingAgentTextTaskId, isNull);
+    expect(runtime.waitingThinkingBeforeAgentTextTaskId, isNull);
     expect(runtime.pendingThinkingRoundSplit, isFalse);
     expect(runtime.toolCardSequence, 0);
     expect(runtime.thinkingRound, 0);
   });
+
+  test(
+    'shows thinking before assistant content when reasoning arrives later',
+    () async {
+      const conversationId = 4451;
+      const taskId = 'agent-thinking-before-content';
+
+      final runtime = coordinator.ensureRuntime(
+        conversationId: conversationId,
+        mode: kChatRuntimeModeNormal,
+      );
+      runtime.currentDispatchTaskId = taskId;
+      coordinator.registerTask(
+        taskId: taskId,
+        conversationId: conversationId,
+        mode: kChatRuntimeModeNormal,
+      );
+
+      await emitPlatformEvent('onAgentThinkingStart', <String, dynamic>{
+        'taskId': taskId,
+      });
+      await emitPlatformEvent('onAgentChatMessage', <String, dynamic>{
+        'taskId': taskId,
+        'message': '先给出结论。',
+        'isFinal': false,
+      });
+
+      expect(
+        visibleMessageIds(runtime),
+        equals(<String>['$taskId-thinking', '$taskId-text']),
+      );
+
+      await emitPlatformEvent('onAgentThinkingUpdate', <String, dynamic>{
+        'taskId': taskId,
+        'thinking': '我先检查一下上下文。',
+      });
+
+      expect(
+        visibleMessageIds(runtime),
+        equals(<String>['$taskId-thinking', '$taskId-text']),
+      );
+      expect(
+        runtime.messages
+            .firstWhere((message) => message.id == '$taskId-text')
+            .text,
+        '先给出结论。',
+      );
+    },
+  );
 
   test(
     'keeps assistant content visible when tool calls start afterwards',
@@ -905,6 +1301,51 @@ void main() {
     },
   );
 
+  test('keeps visible order as thinking then content then tool card', () async {
+    const conversationId = 4520;
+    const taskId = 'agent-thinking-content-tool';
+
+    final runtime = coordinator.ensureRuntime(
+      conversationId: conversationId,
+      mode: kChatRuntimeModeNormal,
+    );
+    runtime.currentDispatchTaskId = taskId;
+    coordinator.registerTask(
+      taskId: taskId,
+      conversationId: conversationId,
+      mode: kChatRuntimeModeNormal,
+    );
+
+    await emitPlatformEvent('onAgentThinkingStart', <String, dynamic>{
+      'taskId': taskId,
+    });
+    await emitPlatformEvent('onAgentChatMessage', <String, dynamic>{
+      'taskId': taskId,
+      'message': '让我先检查仓库状态。',
+      'isFinal': false,
+    });
+    await emitPlatformEvent('onAgentToolCallStart', <String, dynamic>{
+      'taskId': taskId,
+      'toolName': 'terminal_execute',
+      'displayName': 'terminal_execute',
+      'toolType': 'terminal',
+      'summary': '检查 git 状态',
+    });
+
+    final visibleIds = visibleMessageIds(runtime);
+    expect(visibleIds, hasLength(3));
+    expect(visibleIds[0], '$taskId-thinking');
+    expect(visibleIds[1], '$taskId-text');
+    expect(
+      runtime.messages
+          .firstWhere(
+            (message) => message.cardData?['type'] == 'agent_tool_summary',
+          )
+          .id,
+      visibleIds[2],
+    );
+  });
+
   test('stores toolTitle from agent tool events on tool cards', () async {
     const conversationId = 4555;
     const taskId = 'agent-task-title';
@@ -937,9 +1378,9 @@ void main() {
     expect(toolMessage.cardData?['toolTitle'], '查看配置');
   });
 
-  test('persists deep thinking cards for history restoration', () async {
-    const conversationId = 4666;
-    const taskId = 'agent-task-thinking-persist';
+  test('releases buffered final content after a short timeout', () async {
+    const conversationId = 4606;
+    const taskId = 'agent-timeout-release';
 
     final runtime = coordinator.ensureRuntime(
       conversationId: conversationId,
@@ -955,35 +1396,62 @@ void main() {
     await emitPlatformEvent('onAgentThinkingStart', <String, dynamic>{
       'taskId': taskId,
     });
-    await emitPlatformEvent('onAgentThinkingUpdate', <String, dynamic>{
+    await emitPlatformEvent('onAgentChatMessage', <String, dynamic>{
       'taskId': taskId,
-      'thinking': '恢复后也要能看到这段思考',
+      'message': '即使没等到思考文本，也要尽快显示正文。',
+      'isFinal': true,
+      'prefillTokensPerSecond': 12.3,
+      'decodeTokensPerSecond': 45.6,
     });
-    await Future<void>.delayed(Duration.zero);
 
-    final upsertCall = recordedMethodCalls.lastWhere(
-      (call) => call.method == 'upsertConversationUiCard',
-    );
-    final arguments = Map<String, dynamic>.from(
-      upsertCall.arguments as Map<dynamic, dynamic>,
-    );
-    final cardData = Map<String, dynamic>.from(
-      arguments['cardData'] as Map<dynamic, dynamic>,
-    );
-    final thinkingMessage = runtime.messages.firstWhere(
-      (message) => message.id == '$taskId-thinking',
-    );
-
-    expect(arguments['conversationId'], conversationId);
-    expect(arguments['mode'], 'normal');
-    expect(arguments['entryId'], '$taskId-thinking');
     expect(
-      arguments['createdAt'],
-      thinkingMessage.createAt.millisecondsSinceEpoch,
+      visibleMessageIds(runtime),
+      equals(<String>['$taskId-thinking', '$taskId-text']),
     );
-    expect(cardData['type'], 'deep_thinking');
-    expect(cardData['thinkingContent'], '恢复后也要能看到这段思考');
+    final textMessage = runtime.messages.firstWhere(
+      (message) => message.id == '$taskId-text',
+    );
+    expect(textMessage.text, '即使没等到思考文本，也要尽快显示正文。');
+    expect(textMessage.content?['prefillTokensPerSecond'], 12.3);
+    expect(textMessage.content?['decodeTokensPerSecond'], 45.6);
   });
+
+  test(
+    'stores stream meta on deep thinking cards for history restoration',
+    () async {
+      const conversationId = 4666;
+      const taskId = 'agent-task-thinking-persist';
+
+      final runtime = coordinator.ensureRuntime(
+        conversationId: conversationId,
+        mode: kChatRuntimeModeNormal,
+      );
+      runtime.currentDispatchTaskId = taskId;
+      coordinator.registerTask(
+        taskId: taskId,
+        conversationId: conversationId,
+        mode: kChatRuntimeModeNormal,
+      );
+
+      await emitPlatformEvent('onAgentThinkingStart', <String, dynamic>{
+        'taskId': taskId,
+      });
+      await emitPlatformEvent('onAgentThinkingUpdate', <String, dynamic>{
+        'taskId': taskId,
+        'thinking': '恢复后也要能看到这段思考',
+      });
+      await Future<void>.delayed(Duration.zero);
+      final thinkingMessage = runtime.messages.firstWhere(
+        (message) => message.id == '$taskId-thinking',
+      );
+      expect(thinkingMessage.cardData?['type'], 'deep_thinking');
+      expect(thinkingMessage.cardData?['thinkingContent'], '恢复后也要能看到这段思考');
+      expect(thinkingMessage.streamMeta?['seq'], 1);
+      expect(thinkingMessage.streamMeta?['roundIndex'], 1);
+      expect(thinkingMessage.streamMeta?['kind'], 'thinking_snapshot');
+      expect(thinkingMessage.streamMeta?['parentTaskId'], taskId);
+    },
+  );
 
   test(
     'renders later content plus tool-call rounds as new assistant messages instead of overwriting earlier ones',
@@ -1047,6 +1515,75 @@ void main() {
       expect(firstRoundMessage.text, '第一轮：先检查仓库状态。');
       expect(secondRoundMessage.text, '第二轮：继续等待克隆完成，然后再次检查。');
       expect(runtime.pendingAgentTextTaskId, taskId);
+    },
+  );
+
+  test(
+    'finalizes each agent thinking card when the stream moves on to tool or text output',
+    () async {
+      const conversationId = 4602;
+      const taskId = 'agent-task-thinking-collapse';
+
+      final runtime = coordinator.ensureRuntime(
+        conversationId: conversationId,
+        mode: kChatRuntimeModeNormal,
+      );
+      runtime.currentDispatchTaskId = taskId;
+      coordinator.registerTask(
+        taskId: taskId,
+        conversationId: conversationId,
+        mode: kChatRuntimeModeNormal,
+      );
+
+      await emitPlatformEvent('onAgentThinkingStart', <String, dynamic>{
+        'taskId': taskId,
+      });
+      await emitPlatformEvent('onAgentThinkingUpdate', <String, dynamic>{
+        'taskId': taskId,
+        'thinking': '第一轮先分析仓库状态。',
+      });
+      await emitPlatformEvent('onAgentToolCallStart', <String, dynamic>{
+        'taskId': taskId,
+        'toolName': 'terminal_execute',
+        'displayName': 'terminal_execute',
+        'toolType': 'terminal',
+        'summary': '检查 git 状态',
+      });
+
+      final firstThinkingCard = runtime.messages.firstWhere(
+        (message) => message.id == '$taskId-thinking',
+      );
+      expect(firstThinkingCard.cardData?['isLoading'], isFalse);
+      expect(firstThinkingCard.cardData?['stage'], 4);
+      expect(firstThinkingCard.cardData?['endTime'], isNotNull);
+
+      await emitPlatformEvent('onAgentThinkingStart', <String, dynamic>{
+        'taskId': taskId,
+      });
+      await emitPlatformEvent('onAgentThinkingUpdate', <String, dynamic>{
+        'taskId': taskId,
+        'thinking': '第二轮根据工具结果继续分析。',
+      });
+
+      final secondThinkingCard = runtime.messages.firstWhere(
+        (message) => message.id == '$taskId-thinking-2',
+      );
+      expect(secondThinkingCard.cardData?['isLoading'], isTrue);
+      expect(secondThinkingCard.cardData?['stage'], 1);
+
+      await emitPlatformEvent('onAgentChatMessage', <String, dynamic>{
+        'taskId': taskId,
+        'message': '第二轮给出最终结论。',
+        'isFinal': false,
+      });
+
+      final finalizedSecondThinkingCard = runtime.messages.firstWhere(
+        (message) => message.id == '$taskId-thinking-2',
+      );
+      expect(finalizedSecondThinkingCard.cardData?['isLoading'], isFalse);
+      expect(finalizedSecondThinkingCard.cardData?['stage'], 4);
+      expect(runtime.activeThinkingCardId, isNull);
+      expect(runtime.isDeepThinking, isFalse);
     },
   );
 

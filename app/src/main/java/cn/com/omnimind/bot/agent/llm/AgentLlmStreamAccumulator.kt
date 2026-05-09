@@ -19,7 +19,8 @@ import java.util.TreeMap
 
 class AgentLlmStreamAccumulator(
     private val json: Json,
-    private val preferInlineThinkTags: Boolean = false
+    private val preferInlineThinkTags: Boolean = false,
+    private val includeReasoningInAssistantMessage: Boolean = false
 ) {
     companion object {
         private const val TAG = "AgentLlmStreamAccumulator"
@@ -193,6 +194,8 @@ class AgentLlmStreamAccumulator(
 
     fun currentReasoning(): String = AgentTextSanitizer.sanitizeUtf16(reasoningBuffer.toString())
 
+    fun currentReasoningLength(): Int = reasoningBuffer.length
+
     fun currentContent(): String = AgentTextSanitizer.sanitizeUtf16(contentBuffer.toString())
 
     fun buildTurn(): ChatCompletionTurn {
@@ -232,7 +235,10 @@ class AgentLlmStreamAccumulator(
             message = ChatCompletionMessage(
                 role = "assistant",
                 content = content.ifBlank { null }?.let(::JsonPrimitive),
-                toolCalls = toolCalls.ifEmpty { null }
+                toolCalls = toolCalls.ifEmpty { null },
+                reasoningContent = reasoning.takeIf {
+                    includeReasoningInAssistantMessage && it.isNotBlank()
+                }
             ),
             reasoning = reasoning,
             finishReason = finishReason,

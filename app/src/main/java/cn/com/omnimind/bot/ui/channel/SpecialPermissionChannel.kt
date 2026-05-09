@@ -64,6 +64,10 @@ class SpecialPermissionChannel {
                         result
                     )
 
+                    "isBackgroundRunAllowed" -> specialPermissionManager!!.isBackgroundRunAllowed(
+                        result
+                    )
+
                     "openBatteryOptimizationSettings" -> specialPermissionManager!!.openBatteryOptimizationSettings(
                         result
                     )
@@ -83,6 +87,24 @@ class SpecialPermissionChannel {
                         result
                     )
                     "openAutoStartSettings" -> specialPermissionManager!!.openAutoStartSettings(
+                        result
+                    )
+                    "isShizukuInstalled" -> specialPermissionManager!!.isShizukuInstalled(
+                        result
+                    )
+                    "isShizukuRunning" -> specialPermissionManager!!.isShizukuRunning(
+                        result
+                    )
+                    "openShizukuDownloadOrApp" -> specialPermissionManager!!.openShizukuDownloadOrApp(
+                        result
+                    )
+                    "requestShizukuPermission" -> specialPermissionManager!!.requestShizukuPermission(
+                        result
+                    )
+                    "getShizukuStatus" -> specialPermissionManager!!.getShizukuStatus(
+                        result
+                    )
+                    "runShizukuHealthCheck" -> specialPermissionManager!!.runShizukuHealthCheck(
                         result
                     )
                     "isTermuxInstalled" -> specialPermissionManager!!.isTermuxInstalled(

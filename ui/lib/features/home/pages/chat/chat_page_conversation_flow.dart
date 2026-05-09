@@ -13,7 +13,9 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       ConversationHistoryService.upsertConversationUiCard(
         conversationId,
         entryId: message.id,
-        cardData: Map<String, dynamic>.from(cardData!),
+        cardData: buildPersistentDeepThinkingCardData(
+          Map<String, dynamic>.from(cardData!),
+        ),
         createdAtMillis: message.createAt.millisecondsSinceEpoch,
         mode: activeConversationModeValue,
       ),
@@ -92,6 +94,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
           runtime?.browserSessionSnapshot ??
           _browserSessionSnapshotByMode[mode],
     );
+    _rememberRuntimeUiSnapshot(mode);
   }
 
   @override
@@ -126,6 +129,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     String? thinkingContent,
     bool? isLoading,
     int? stage,
+    Map<String, dynamic>? streamMeta,
   }) {
     final loadingIndex = _messages.indexWhere((msg) => msg.id == taskID);
     if (loadingIndex != -1) {
@@ -155,10 +159,13 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
           user: 3,
           content: {'cardData': cardData, 'id': thinkingCardId},
           createAt: DateTime.fromMillisecondsSinceEpoch(startTime),
+          streamMeta: ensureAgentStreamMessageMeta(
+            streamMeta,
+            entryId: thinkingCardId,
+          ),
         ),
       );
     });
-    _persistDeepThinkingCardIfNeeded(_messages.first);
   }
 
   @override
@@ -168,6 +175,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     String? thinkingContent,
     bool? isLoading,
     int? stage,
+    Map<String, dynamic>? streamMeta,
     bool lockCompleted = true,
   }) {
     final thinkingCardId = cardId ?? '$taskID-thinking';
@@ -198,9 +206,14 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       cardData['endTime'] = endTime;
 
       content['cardData'] = cardData;
-      _messages[index] = existing.copyWith(content: content);
+      _messages[index] = existing.copyWith(
+        content: content,
+        streamMeta: ensureAgentStreamMessageMeta(
+          streamMeta ?? existing.streamMeta,
+          entryId: thinkingCardId,
+        ),
+      );
     });
-    _persistDeepThinkingCardIfNeeded(_messages[index]);
   }
 
   @override
@@ -370,6 +383,17 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       return;
     }
 
+    if (_isOmniInferLocalModelSelected &&
+        activeConversationModeValue != ConversationMode.chatOnly) {
+      showToast(
+        LegacyTextLocalizer.localize(
+          '本地模型仅支持纯聊天模式，请开启新的纯聊天对话后再使用本地模型',
+        ),
+        type: ToastType.warning,
+      );
+      return;
+    }
+
     if (runSlashCommand) {
       final handledSlash = await _tryHandleSlashCommand(messageText);
       if (handledSlash) return;
@@ -383,12 +407,18 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
 
     _inputFocusNode.unfocus();
     final messageIds = addUserMessage(messageText, attachments: attachments);
+    _syncUserMessageLinkPreviews(messageIds.userMessageId);
     if (restoreInputValue != null && mounted) {
       _messageController.value = restoreInputValue;
     }
 
     if (_isOpenClawSurface) {
       await _sendChatMessage(messageIds.aiMessageId);
+      return;
+    }
+
+    if (_activeConversationMode == ChatPageMode.codex) {
+      await _sendCodexMessage(messageIds.aiMessageId, messageText);
       return;
     }
 
@@ -415,6 +445,138 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
         _currentDispatchTaskId == messageIds.aiMessageId) {
       handleAgentError('统一 Agent 启动失败，请检查模型提供商与场景模型配置。');
     }
+  }
+
+  void _syncUserMessageLinkPreviews(String messageId) {
+    final index = _messages.indexWhere((msg) => msg.id == messageId);
+    if (index == -1) {
+      return;
+    }
+
+    final message = _messages[index];
+    if (message.type != 1 || message.user != 1) {
+      return;
+    }
+
+    final content = Map<String, dynamic>.from(message.content ?? const {});
+    final nextPreviews = LinkPreviewService.instance.reconcilePreviewMaps(
+      text: message.text ?? '',
+      existing: content['linkPreviews'],
+    );
+    if (_previewMapListsEqual(content['linkPreviews'], nextPreviews)) {
+      return;
+    }
+
+    setState(() {
+      if (nextPreviews.isEmpty) {
+        content.remove('linkPreviews');
+      } else {
+        content['linkPreviews'] = nextPreviews;
+      }
+      _messages[index] = message.copyWith(content: content);
+    });
+
+    // 用户消息也先展示 loading 卡片，抓取完成后再回填真实预览。
+    for (final previewMap in nextPreviews) {
+      final preview = ChatLinkPreview.fromJson(previewMap);
+      if (preview.status != ChatLinkPreview.statusLoading ||
+          preview.url.isEmpty) {
+        continue;
+      }
+      unawaited(_resolveUserMessageLinkPreview(messageId, preview.url));
+    }
+  }
+
+  Future<void> _resolveUserMessageLinkPreview(
+    String messageId,
+    String url,
+  ) async {
+    final resolved = await LinkPreviewService.instance.loadPreview(url);
+    if (!mounted) {
+      return;
+    }
+
+    var didUpdate = false;
+    setState(() {
+      final index = _messages.indexWhere((msg) => msg.id == messageId);
+      if (index == -1) {
+        return;
+      }
+
+      final message = _messages[index];
+      final content = Map<String, dynamic>.from(message.content ?? const {});
+      final rawPreviews = content['linkPreviews'];
+      if (rawPreviews is! List) {
+        return;
+      }
+
+      final updatedPreviews = rawPreviews
+          .whereType<Map>()
+          .map(
+            (item) => Map<String, dynamic>.from(item.cast<String, dynamic>()),
+          )
+          .map((previewMap) {
+            final preview = ChatLinkPreview.fromJson(previewMap);
+            if (preview.url != url ||
+                preview.status != ChatLinkPreview.statusLoading) {
+              return previewMap;
+            }
+            didUpdate = true;
+            return resolved.toJson();
+          })
+          .toList();
+      if (!didUpdate) {
+        return;
+      }
+
+      content['linkPreviews'] = updatedPreviews;
+      _messages[index] = message.copyWith(content: content);
+    });
+
+    if (!didUpdate) {
+      return;
+    }
+
+    final conversationId = _currentConversationId;
+    if (conversationId != null) {
+      await ConversationHistoryService.saveConversationMessages(
+        conversationId,
+        List<ChatMessageModel>.from(_messages),
+        mode: activeConversationModeValue,
+      );
+    }
+  }
+
+  bool _previewMapListsEqual(dynamic left, List<Map<String, dynamic>> right) {
+    if (left is! List) {
+      return right.isEmpty;
+    }
+    final normalizedLeft = left
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item.cast<String, dynamic>()))
+        .toList();
+    if (normalizedLeft.length != right.length) {
+      return false;
+    }
+    for (var index = 0; index < normalizedLeft.length; index += 1) {
+      if (!_previewMapEquals(normalizedLeft[index], right[index])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _previewMapEquals(
+    Map<String, dynamic> left,
+    Map<String, dynamic> right,
+  ) {
+    return left['url'] == right['url'] &&
+        left['domain'] == right['domain'] &&
+        left['siteName'] == right['siteName'] &&
+        left['title'] == right['title'] &&
+        left['description'] == right['description'] &&
+        left['imageUrl'] == right['imageUrl'] &&
+        left['status'] == right['status'];
   }
 
   @override
@@ -586,7 +748,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       _registerActiveTaskBinding(aiMessageId);
 
       final userMessage = latestUserUtterance();
-      final attachments = await _latestUserAttachments();
+      final attachments = _latestUserAgentAttachments();
 
       final success = await AssistsMessageService.createAgentTask(
         taskId: aiMessageId,
@@ -614,19 +776,6 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
   }
 
   @override
-  List<Map<String, dynamic>> _historyBeforeLatestUser(
-    List<Map<String, dynamic>> history,
-  ) {
-    if (history.isEmpty) return history;
-    final normalized = List<Map<String, dynamic>>.from(history);
-    final last = normalized.last;
-    if ((last['role'] as String?) == 'user') {
-      normalized.removeLast();
-    }
-    return normalized;
-  }
-
-  @override
   Future<List<Map<String, dynamic>>> _latestUserAttachments() async {
     for (final message in _messages) {
       if (message.user != 1) continue;
@@ -646,6 +795,14 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       return normalized;
     }
     return const [];
+  }
+
+  List<Map<String, dynamic>> _latestUserAgentAttachments() {
+    for (final message in _messages) {
+      if (message.user != 1) continue;
+      return buildAgentRuntimeAttachmentsFromMessageContent(message.content);
+    }
+    return const <Map<String, dynamic>>[];
   }
 
   @override
@@ -709,7 +866,26 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
   @override
   void _onCancelTask() {
     try {
+      if (_activeConversationMode == ChatPageMode.codex) {
+        unawaited(_interruptCodexTurn());
+        final taskId =
+            _currentDispatchTaskId ?? _activeRuntime?.lastAgentTaskId;
+        if (taskId != null) {
+          _runtimeCoordinator.unregisterTask(taskId);
+        }
+        setState(() {
+          _isAiResponding = false;
+          _isContextCompressing = false;
+          _isCheckingExecutableTask = false;
+          _isExecutingTask = false;
+          _isInputAreaVisible = true;
+          _currentDispatchTaskId = null;
+          _messages.removeWhere((msg) => msg.isLoading);
+        });
+        return;
+      }
       if (_currentDispatchTaskId != null ||
+          _activeRuntime?.lastAgentTaskId != null ||
           _isCheckingExecutableTask ||
           _isExecutingTask) {
         _cancelDispatchTask();
@@ -740,12 +916,12 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
 
   @override
   void _cancelDispatchTask() {
-    final taskId = _currentDispatchTaskId;
+    final taskId = _currentDispatchTaskId ?? _activeRuntime?.lastAgentTaskId;
     interruptActiveToolCard();
     AssistsMessageService.cancelRunningTask(taskId: taskId);
     if (taskId != null) {
+      _updateThinkingCardToCancelled(taskId);
       _runtimeCoordinator.unregisterTask(taskId);
-      removeThinkingCard(taskId);
     }
     clearAgentStreamSessionState();
     resetDispatchState();
@@ -755,9 +931,6 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
   void _onCancelTaskFromCard(String taskId) {
     try {
       interruptActiveToolCard();
-      if (_isDeepThinking) {
-        AssistsMessageService.cancelRunningTask(taskId: taskId);
-      }
       AssistsMessageService.cancelRunningTask(taskId: taskId);
       _runtimeCoordinator.unregisterTask(taskId);
       _updateThinkingCardToCancelled(taskId);
@@ -779,16 +952,12 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
 
   @override
   void _updateThinkingCardToCancelled(String taskId) {
-    final thinkingCards = _messages
-        .where(
-          (msg) =>
-              msg.id == '$taskId-thinking' ||
-              msg.id.startsWith('$taskId-thinking-'),
-        )
-        .toList();
-    if (thinkingCards.isEmpty) return;
-
-    final thinkingCard = thinkingCards.first;
+    final thinkingCard = resolveAgentThinkingCardForTask(
+      _messages,
+      taskId: taskId,
+      preferredCardId: _activeRuntime?.activeThinkingCardId,
+    );
+    if (thinkingCard == null) return;
     final thinkingCardId = thinkingCard.id;
     final index = _messages.indexWhere((msg) => msg.id == thinkingCardId);
     if (index == -1) return;

@@ -192,6 +192,21 @@ class ConversationDomainService(
         )
     }
 
+    suspend fun listConversationMessagesPaged(
+        conversationId: Long,
+        conversationMode: String,
+        limit: Int,
+        offset: Int
+    ): Map<String, Any?> {
+        val (messages, hasMore) = historyRepository.listConversationMessagesPaged(
+            conversationId = conversationId,
+            conversationMode = normalizeConversationMode(conversationMode),
+            limit = limit,
+            offset = offset
+        )
+        return mapOf("messages" to messages, "hasMore" to hasMore)
+    }
+
     suspend fun replaceConversationMessages(
         conversationId: Long,
         conversationMode: String,

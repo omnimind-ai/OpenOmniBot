@@ -201,6 +201,45 @@ object DatabaseHelper {
         }
     }
 
+    private val MIGRATION_11_12 = object : Migration(11, 12) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                "ALTER TABLE token_usage_records ADD COLUMN cachedTokens INTEGER NOT NULL DEFAULT 0"
+            )
+        }
+    }
+
+    private val MIGRATION_12_13 = object : Migration(12, 13) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `codex_thread_bindings` (
+                    `conversationId` INTEGER NOT NULL,
+                    `threadId` TEXT NOT NULL,
+                    `cwd` TEXT NOT NULL,
+                    `createdAt` INTEGER NOT NULL,
+                    `updatedAt` INTEGER NOT NULL,
+                    PRIMARY KEY(`conversationId`)
+                )
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                `index_codex_thread_bindings_threadId`
+                ON `codex_thread_bindings` (`threadId`)
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS
+                `index_codex_thread_bindings_updatedAt`
+                ON `codex_thread_bindings` (`updatedAt`)
+                """.trimIndent()
+            )
+        }
+    }
+
     internal val ALL_MIGRATIONS = arrayOf(
         MIGRATION_1_2,
         MIGRATION_2_3,
@@ -211,7 +250,9 @@ object DatabaseHelper {
         MIGRATION_7_8,
         MIGRATION_8_9,
         MIGRATION_9_10,
-        MIGRATION_10_11
+        MIGRATION_10_11,
+        MIGRATION_11_12,
+        MIGRATION_12_13
     )
 
     fun init(context: Context) {
@@ -746,6 +787,20 @@ object DatabaseHelper {
         )
     }
 
+    suspend fun getAgentConversationEntriesAscSafe(
+        conversationId: Long,
+        conversationMode: String,
+        payloadLimit: Int,
+        summaryLimit: Int
+    ): List<AgentConversationEntryRecord> {
+        return getDatabase().agentConversationEntryDao().getThreadEntriesAscSafe(
+            conversationId = conversationId,
+            conversationMode = conversationMode,
+            payloadLimit = payloadLimit,
+            summaryLimit = summaryLimit
+        )
+    }
+
     suspend fun getAgentConversationEntriesDesc(
         conversationId: Long,
         conversationMode: String
@@ -753,6 +808,20 @@ object DatabaseHelper {
         return getDatabase().agentConversationEntryDao().getThreadEntriesDesc(
             conversationId = conversationId,
             conversationMode = conversationMode
+        )
+    }
+
+    suspend fun getAgentConversationEntriesDescSafe(
+        conversationId: Long,
+        conversationMode: String,
+        payloadLimit: Int,
+        summaryLimit: Int
+    ): List<AgentConversationEntryRecord> {
+        return getDatabase().agentConversationEntryDao().getThreadEntriesDescSafe(
+            conversationId = conversationId,
+            conversationMode = conversationMode,
+            payloadLimit = payloadLimit,
+            summaryLimit = summaryLimit
         )
     }
 
@@ -765,6 +834,22 @@ object DatabaseHelper {
             conversationId = conversationId,
             conversationMode = conversationMode,
             entryId = entryId
+        )
+    }
+
+    suspend fun getAgentConversationEntryByThreadAndIdSafe(
+        conversationId: Long,
+        conversationMode: String,
+        entryId: String,
+        payloadLimit: Int,
+        summaryLimit: Int
+    ): AgentConversationEntryRecord? {
+        return getDatabase().agentConversationEntryDao().getByThreadAndEntryIdSafe(
+            conversationId = conversationId,
+            conversationMode = conversationMode,
+            entryId = entryId,
+            payloadLimit = payloadLimit,
+            summaryLimit = summaryLimit
         )
     }
 
@@ -786,20 +871,102 @@ object DatabaseHelper {
         return getDatabase().agentConversationEntryDao().getLatestConversationEntry(conversationId)
     }
 
+    suspend fun getLatestAgentConversationEntryHeader(
+        conversationId: Long
+    ): AgentConversationEntryHeader? {
+        return getDatabase().agentConversationEntryDao().getLatestConversationEntryHeader(
+            conversationId
+        )
+    }
+
     suspend fun getLatestAgentConversationUpdate(conversationId: Long): AgentConversationEntry? {
         return getDatabase().agentConversationEntryDao().getLatestConversationUpdate(conversationId)
+    }
+
+    suspend fun getLatestAgentConversationUpdateHeader(
+        conversationId: Long
+    ): AgentConversationEntryHeader? {
+        return getDatabase().agentConversationEntryDao().getLatestConversationUpdateHeader(
+            conversationId
+        )
     }
 
     suspend fun getEarliestAgentConversationEntry(conversationId: Long): AgentConversationEntry? {
         return getDatabase().agentConversationEntryDao().getEarliestConversationEntry(conversationId)
     }
 
+    suspend fun getEarliestAgentConversationEntryHeader(
+        conversationId: Long
+    ): AgentConversationEntryHeader? {
+        return getDatabase().agentConversationEntryDao().getEarliestConversationEntryHeader(
+            conversationId
+        )
+    }
+
     suspend fun countAgentConversationEntries(conversationId: Long): Int {
         return getDatabase().agentConversationEntryDao().countConversationEntries(conversationId)
     }
 
+    suspend fun getAgentConversationEntriesDescPaged(
+        conversationId: Long,
+        conversationMode: String,
+        limit: Int,
+        offset: Int
+    ): List<AgentConversationEntry> {
+        return getDatabase().agentConversationEntryDao().getThreadEntriesDescPaged(
+            conversationId = conversationId,
+            conversationMode = conversationMode,
+            limit = limit,
+            offset = offset
+        )
+    }
+
+    suspend fun getAgentConversationEntriesDescPagedSafe(
+        conversationId: Long,
+        conversationMode: String,
+        limit: Int,
+        offset: Int,
+        payloadLimit: Int,
+        summaryLimit: Int
+    ): List<AgentConversationEntryRecord> {
+        return getDatabase().agentConversationEntryDao().getThreadEntriesDescPagedSafe(
+            conversationId = conversationId,
+            conversationMode = conversationMode,
+            limit = limit,
+            offset = offset,
+            payloadLimit = payloadLimit,
+            summaryLimit = summaryLimit
+        )
+    }
+
+    suspend fun countAgentConversationThreadEntries(
+        conversationId: Long,
+        conversationMode: String
+    ): Int {
+        return getDatabase().agentConversationEntryDao().countThreadEntries(
+            conversationId = conversationId,
+            conversationMode = conversationMode
+        )
+    }
+
     suspend fun incrementConversationMessageCount(id: Long) {
         getDatabase().conversationDao().incrementMessageCount(id, System.currentTimeMillis())
+    }
+
+    suspend fun upsertCodexThreadBinding(binding: CodexThreadBinding) {
+        getDatabase().codexThreadBindingDao().upsert(binding)
+    }
+
+    suspend fun getCodexThreadBindingByConversationId(conversationId: Long): CodexThreadBinding? {
+        return getDatabase().codexThreadBindingDao().getByConversationId(conversationId)
+    }
+
+    suspend fun getCodexThreadBindingByThreadId(threadId: String): CodexThreadBinding? {
+        return getDatabase().codexThreadBindingDao().getByThreadId(threadId)
+    }
+
+    suspend fun deleteCodexThreadBindingByConversationId(conversationId: Long): Int {
+        return getDatabase().codexThreadBindingDao().deleteByConversationId(conversationId)
     }
 
     /**

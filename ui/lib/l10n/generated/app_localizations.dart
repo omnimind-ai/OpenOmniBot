@@ -896,6 +896,36 @@ abstract class AppLocalizations {
   /// **'暂无聊天记录'**
   String get chatHistoryEmpty;
 
+  /// No description provided for @chatHistoryArchivedToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'已归档'**
+  String get chatHistoryArchivedToast;
+
+  /// No description provided for @chatHistoryUnarchivedToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'已移出归档'**
+  String get chatHistoryUnarchivedToast;
+
+  /// No description provided for @chatHistoryArchiveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'归档对话失败'**
+  String get chatHistoryArchiveFailed;
+
+  /// No description provided for @chatHistoryUnarchiveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'移出归档失败'**
+  String get chatHistoryUnarchiveFailed;
+
+  /// No description provided for @chatHistoryArchiveHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'左滑对话即可归档'**
+  String get chatHistoryArchiveHint;
+
   /// No description provided for @homeDrawerArchive.
   ///
   /// In zh, this message translates to:
@@ -995,7 +1025,7 @@ abstract class AppLocalizations {
   /// No description provided for @memoryGreeting.
   ///
   /// In zh, this message translates to:
-  /// **'你好呀，\n小万会在这里收集你的记忆！'**
+  /// **'你好呀，\n欢迎回来，我们会在这里慢慢整理你的记忆。'**
   String get memoryGreeting;
 
   /// No description provided for @memorySelectedCount.
@@ -1448,6 +1478,42 @@ abstract class AppLocalizations {
   /// **'删除 Provider 失败：{error}'**
   String modelProviderDeleteFailed(Object error);
 
+  /// No description provided for @modelProviderLoadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载模型提供商配置失败'**
+  String get modelProviderLoadFailed;
+
+  /// No description provided for @modelProviderSwitchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换 Provider 失败：{error}'**
+  String modelProviderSwitchFailed(Object error);
+
+  /// No description provided for @modelProviderBaseUrlRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先填写 Base URL'**
+  String get modelProviderBaseUrlRequired;
+
+  /// No description provided for @modelProviderInvalidBaseUrl.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入有效的 http(s) Base URL'**
+  String get modelProviderInvalidBaseUrl;
+
+  /// No description provided for @modelProviderFetchedModels.
+  ///
+  /// In zh, this message translates to:
+  /// **'已获取 {count} 个模型'**
+  String modelProviderFetchedModels(Object count);
+
+  /// No description provided for @modelProviderFetchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'拉取模型列表失败：{error}'**
+  String modelProviderFetchFailed(Object error);
+
   /// No description provided for @sceneModelMapping.
   ///
   /// In zh, this message translates to:
@@ -1477,6 +1543,72 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'暂无可配置场景'**
   String get sceneModelNoScenes;
+
+  /// No description provided for @sceneModelLoadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载场景模型配置失败'**
+  String get sceneModelLoadFailed;
+
+  /// No description provided for @sceneModelPartialUpdateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'部分模型已更新，但这些 Provider 刷新失败：{profiles}'**
+  String sceneModelPartialUpdateFailed(Object profiles);
+
+  /// No description provided for @sceneModelUpdatedModels.
+  ///
+  /// In zh, this message translates to:
+  /// **'已更新 {count} 个模型'**
+  String sceneModelUpdatedModels(Object count);
+
+  /// No description provided for @sceneModelRefreshFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新模型列表失败：{error}'**
+  String sceneModelRefreshFailed(Object error);
+
+  /// No description provided for @sceneModelInvalidModelId.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型 ID 不能以 scene. 开头'**
+  String get sceneModelInvalidModelId;
+
+  /// No description provided for @sceneModelBoundToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'已将 {scene} 绑定到 {model}'**
+  String sceneModelBoundToast(Object scene, Object model);
+
+  /// No description provided for @sceneModelSaveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存 {scene} 配置失败：{error}'**
+  String sceneModelSaveFailed(Object scene, Object error);
+
+  /// No description provided for @sceneModelBindingCleared.
+  ///
+  /// In zh, this message translates to:
+  /// **'已清除 {scene} 的绑定'**
+  String sceneModelBindingCleared(Object scene);
+
+  /// No description provided for @sceneModelDefaultRestored.
+  ///
+  /// In zh, this message translates to:
+  /// **'{scene} 已恢复为默认模型'**
+  String sceneModelDefaultRestored(Object scene);
+
+  /// No description provided for @sceneModelClearFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除 {scene} 配置失败：{error}'**
+  String sceneModelClearFailed(Object scene, Object error);
+
+  /// No description provided for @sceneVoiceSaveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存语音配置失败：{error}'**
+  String sceneVoiceSaveFailed(Object error);
 
   /// No description provided for @localModelsTitle.
   ///
@@ -1736,6 +1868,42 @@ abstract class AppLocalizations {
   /// **'暂停下载失败'**
   String get localModelsDownloadPauseFailed;
 
+  /// No description provided for @localModelsDownloadStartedToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始下载：{modelName}'**
+  String localModelsDownloadStartedToast(String modelName);
+
+  /// No description provided for @localModelsDownloadPausedToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载已暂停：{modelName}'**
+  String localModelsDownloadPausedToast(String modelName);
+
+  /// No description provided for @localModelsDownloadCompletedToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载完成：{modelName}'**
+  String localModelsDownloadCompletedToast(String modelName);
+
+  /// No description provided for @localModelsDownloadFailedToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载失败：{modelName} — {reason}'**
+  String localModelsDownloadFailedToast(String modelName, String reason);
+
+  /// No description provided for @localModelsDownloadCancelledToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载已取消：{modelName} — {reason}'**
+  String localModelsDownloadCancelledToast(String modelName, String reason);
+
+  /// No description provided for @localModelsDownloadErrorUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'未知错误'**
+  String get localModelsDownloadErrorUnknown;
+
   /// No description provided for @localModelsFilterAndSource.
   ///
   /// In zh, this message translates to:
@@ -1945,6 +2113,30 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'未下载'**
   String get localModelsNotDownloaded;
+
+  /// No description provided for @localModelsImportFromDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'从设备导入'**
+  String get localModelsImportFromDevice;
+
+  /// No description provided for @localModelsImportSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型导入成功'**
+  String get localModelsImportSuccess;
+
+  /// No description provided for @localModelsImportFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入失败：{reason}'**
+  String localModelsImportFailed(String reason);
+
+  /// No description provided for @localModelsImporting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在导入 {modelId}...'**
+  String localModelsImporting(String modelId);
 
   /// No description provided for @alarmSaved.
   ///
@@ -2678,6 +2870,78 @@ abstract class AppLocalizations {
   /// **'小万，是一款以智能对话为核心的手机AI助\n手，通过语义理解与持续学习能力，协助用户\n完成信息处理、决策辅助和日常管理。'**
   String get aboutDescription;
 
+  /// No description provided for @aboutBetaProgramTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入 beta 测试'**
+  String get aboutBetaProgramTitle;
+
+  /// No description provided for @aboutBetaProgramDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'接收更快的四段版更新。'**
+  String get aboutBetaProgramDescription;
+
+  /// No description provided for @aboutBetaProgramToggleFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'beta 测试设置更新失败'**
+  String get aboutBetaProgramToggleFailed;
+
+  /// No description provided for @aboutPreferencesSectionTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新与测试'**
+  String get aboutPreferencesSectionTitle;
+
+  /// No description provided for @aboutApkSourceTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装包下载源'**
+  String get aboutApkSourceTitle;
+
+  /// No description provided for @aboutApkSourceDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择安装更新时使用的下载源。'**
+  String get aboutApkSourceDescription;
+
+  /// No description provided for @aboutApkSourceOptionCnb.
+  ///
+  /// In zh, this message translates to:
+  /// **'CNB'**
+  String get aboutApkSourceOptionCnb;
+
+  /// No description provided for @aboutApkSourceOptionCnbDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'国内网络优先'**
+  String get aboutApkSourceOptionCnbDescription;
+
+  /// No description provided for @aboutApkSourceOptionGithub.
+  ///
+  /// In zh, this message translates to:
+  /// **'GitHub'**
+  String get aboutApkSourceOptionGithub;
+
+  /// No description provided for @aboutApkSourceOptionGithubDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'官方 Release'**
+  String get aboutApkSourceOptionGithubDescription;
+
+  /// No description provided for @aboutApkSourceSwitchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装包下载源切换失败'**
+  String get aboutApkSourceSwitchFailed;
+
+  /// No description provided for @aboutUpdateHintDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查更新获取最新版本'**
+  String get aboutUpdateHintDefault;
+
   /// No description provided for @workspaceMemoryLoadFailed.
   ///
   /// In zh, this message translates to:
@@ -2863,6 +3127,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'Python 包安装器'**
   String get alpinePipInstall;
+
+  /// No description provided for @alpineCodex.
+  ///
+  /// In zh, this message translates to:
+  /// **'OpenAI Codex CLI 与 app-server 桥接'**
+  String get alpineCodex;
 
   /// No description provided for @alpineSshClient.
   ///
@@ -3139,6 +3409,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'开发环境'**
   String get alpineDevEnv;
+
+  /// No description provided for @alpineAiAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'AI Agent'**
+  String get alpineAiAgent;
 
   /// No description provided for @alpineEnvConfig.
   ///

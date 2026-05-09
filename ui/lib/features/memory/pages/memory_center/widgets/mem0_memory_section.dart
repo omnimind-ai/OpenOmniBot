@@ -93,21 +93,25 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
           else if (!widget.snapshot.configured)
             _buildPlaceholder(
               icon: Icons.cloud_off_outlined,
-              title: '长期记忆未就绪',
-              subtitle: '完成记忆初始化后，这里会展示跨会话沉淀的偏好与事实。',
+              title: LegacyTextLocalizer.localize('长期记忆未就绪'),
+              subtitle: LegacyTextLocalizer.localize(
+                '完成记忆初始化后，这里会展示跨会话沉淀的偏好与事实。',
+              ),
             )
           else if (widget.snapshot.errorMessage != null &&
               !widget.snapshot.hasData)
             _buildPlaceholder(
               icon: Icons.error_outline_rounded,
-              title: '长期记忆暂时不可用',
+              title: LegacyTextLocalizer.localize('长期记忆暂时不可用'),
               subtitle: widget.snapshot.errorMessage!,
             )
           else if (filteredItems.isEmpty)
             _buildPlaceholder(
               icon: Icons.auto_awesome_outlined,
-              title: '长期记忆还是空的',
-              subtitle: '当 Agent 主动写入长期偏好后，这里会逐渐丰富起来。',
+              title: LegacyTextLocalizer.localize('长期记忆还是空的'),
+              subtitle: LegacyTextLocalizer.localize(
+                '当 Agent 主动写入长期偏好后，这里会逐渐丰富起来。',
+              ),
             )
           else
             Column(
@@ -162,7 +166,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
             splashRadius: 18,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            tooltip: '新增长期记忆',
+            tooltip: LegacyTextLocalizer.localize('新增长期记忆'),
           ),
         if (widget.snapshot.configured || widget.snapshot.hasData)
           IconButton(
@@ -179,7 +183,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
             splashRadius: 18,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            tooltip: '刷新长期记忆',
+            tooltip: LegacyTextLocalizer.localize('刷新长期记忆'),
           ),
       ],
     );
@@ -341,7 +345,11 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
                       _buildMetaPill(_formatTime(item.displayTime)),
                       ...item.categories.take(2).map(_buildMetaPill),
                       if (item.score != null)
-                        _buildMetaPill('匹配 ${(item.score! * 100).round()}%'),
+                        _buildMetaPill(
+                          LegacyTextLocalizer.localize(
+                            '匹配 ${(item.score! * 100).round()}%',
+                          ),
+                        ),
                     ],
                   ),
                 ],
@@ -392,7 +400,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
       ..sort((a, b) => b.value.compareTo(a.value));
 
     return <(String, int, String)>[
-      (_allCategory, 0, '全部'),
+      (_allCategory, 0, LegacyTextLocalizer.localize('全部')),
       ...categories.take(6).map((entry) => (entry.key, entry.value, entry.key)),
     ];
   }
@@ -413,16 +421,16 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
     final now = DateTime.now();
     final diff = now.difference(dateTime);
     if (diff.inMinutes < 1) {
-      return '刚刚';
+      return LegacyTextLocalizer.localize('刚刚');
     }
     if (diff.inHours < 1) {
-      return '${diff.inMinutes} 分钟前';
+      return LegacyTextLocalizer.localize('${diff.inMinutes} 分钟前');
     }
     if (diff.inDays < 1) {
-      return '${diff.inHours} 小时前';
+      return LegacyTextLocalizer.localize('${diff.inHours} 小时前');
     }
     if (diff.inDays < 7) {
-      return '${diff.inDays} 天前';
+      return LegacyTextLocalizer.localize('${diff.inDays} 天前');
     }
     return DateFormat('MM/dd').format(dateTime);
   }

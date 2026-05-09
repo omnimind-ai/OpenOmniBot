@@ -77,6 +77,8 @@ class Loading {
 class AppToast {
   static OverlayEntry? _entry;
   static Timer? _timer;
+  static int _nextToken = 0;
+  static int? _activeToken;
 
   /// 展示一个 Toast。
   ///
@@ -84,22 +86,37 @@ class AppToast {
   /// [type] 样式类型（影响图标与主色）
   /// [duration] 展示时长
   /// [position] 位置（顶部/中部/底部）
-  static void show(
+  static AppToastHandle show(
     String message, {
     ToastType type = ToastType.info,
     Duration duration = const Duration(seconds: 2),
     ToastPosition position = ToastPosition.top,
+  }) => _show(
+    message,
+    type: type,
+    duration: duration,
+    position: position,
+  );
+
+  static AppToastHandle loading(
+    String message, {
+    ToastPosition position = ToastPosition.top,
+  }) => _show(message, type: ToastType.loading, position: position);
+
+  static AppToastHandle _show(
+    String message, {
+    required ToastType type,
+    Duration? duration,
+    required ToastPosition position,
   }) {
     // 若已有展示中的 toast，先移除
-    _timer?.cancel();
-    _timer = null;
-    _entry?.remove();
-    _entry = null;
+    _dismissActive();
+    final token = ++_nextToken;
 
     final nav = GoRouterManager.rootNavigatorKey.currentState;
     if (nav == null || nav.overlay == null) {
       debugPrint('AppToast: navigator is null, skip show');
-      return;
+      return AppToastHandle._(token);
     }
 
     final alignment = _alignmentFor(position);
@@ -107,6 +124,7 @@ class AppToast {
 
     final localizedMessage = LegacyTextLocalizer.localize(message);
 
+    _activeToken = token;
     _entry = OverlayEntry(
       builder: (context) => SafeArea(
         child: IgnorePointer(
@@ -122,15 +140,27 @@ class AppToast {
 
     nav.overlay!.insert(_entry!);
 
-    _timer = Timer(duration, () {
-      _entry?.remove();
-      _entry = null;
-      _timer = null;
-    });
+    if (duration != null) {
+      _timer = Timer(duration, () => _dismiss(token));
+    }
+    return AppToastHandle._(token);
+  }
+
+  static void _dismiss(int token) {
+    if (_activeToken != token) return;
+    _dismissActive();
+  }
+
+  static void _dismissActive() {
+    _timer?.cancel();
+    _timer = null;
+    _entry?.remove();
+    _entry = null;
+    _activeToken = null;
   }
 
   /// 便捷方法
-  static void success(
+  static AppToastHandle success(
     String message, {
     Duration duration = const Duration(seconds: 2),
     ToastPosition position = ToastPosition.top,
@@ -140,7 +170,7 @@ class AppToast {
     duration: duration,
     position: position,
   );
-  static void error(
+  static AppToastHandle error(
     String message, {
     Duration duration = const Duration(seconds: 2),
     ToastPosition position = ToastPosition.top,
@@ -150,7 +180,7 @@ class AppToast {
     duration: duration,
     position: position,
   );
-  static void warning(
+  static AppToastHandle warning(
     String message, {
     Duration duration = const Duration(seconds: 2),
     ToastPosition position = ToastPosition.top,
@@ -160,7 +190,7 @@ class AppToast {
     duration: duration,
     position: position,
   );
-  static void info(
+  static AppToastHandle info(
     String message, {
     Duration duration = const Duration(seconds: 2),
     ToastPosition position = ToastPosition.top,
@@ -194,7 +224,20 @@ class AppToast {
   }
 }
 
-enum ToastType { info, success, warning, error }
+class AppToastHandle {
+  AppToastHandle._(this._token);
+
+  final int _token;
+  bool _dismissed = false;
+
+  void dismiss() {
+    if (_dismissed) return;
+    _dismissed = true;
+    AppToast._dismiss(_token);
+  }
+}
+
+enum ToastType { info, success, warning, error, loading }
 
 enum ToastPosition { top, center, bottom }
 
@@ -313,11 +356,22 @@ class _ToastContainerState extends State<_ToastContainer>
                       children: [
                         Padding(
                           padding: EdgeInsets.only(top: isMultiLine ? 1 : 0),
-                          child: Icon(
-                            colors.icon,
-                            color: colors.color,
-                            size: 14,
-                          ),
+                          child: widget.type == ToastType.loading
+                              ? SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      colors.color,
+                                    ),
+                                  ),
+                                )
+                              : Icon(
+                                  colors.icon,
+                                  color: colors.color,
+                                  size: 14,
+                                ),
                         ),
                         const SizedBox(width: 10),
                         Flexible(
@@ -431,6 +485,11 @@ class _ToastColors {
       case ToastType.info:
         // 使用品牌主色
         return _ToastColors(const Color(0xFF00AEF7), Icons.info_rounded);
+      case ToastType.loading:
+        return _ToastColors(
+          const Color(0xFF00AEF7),
+          Icons.hourglass_top_rounded,
+        );
     }
   }
 }

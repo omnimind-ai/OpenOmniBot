@@ -31,7 +31,22 @@ data class ModelProviderProfile(
 data class ProviderModelOption(
     val id: String,
     val displayName: String = id,
-    val ownedBy: String? = null
+    val ownedBy: String? = null,
+    val contextLimit: Int? = null,
+    val inputLimit: Int? = null,
+    val outputLimit: Int? = null,
+    val inputModalities: List<String> = emptyList(),
+    val outputModalities: List<String> = emptyList(),
+    val modelsDevProviderId: String? = null,
+    val modelsDevProviderName: String? = null,
+    val providerLogoUrl: String? = null,
+    val family: String? = null,
+    val group: String? = null,
+    val attachment: Boolean? = null,
+    val reasoning: Boolean? = null,
+    val toolCall: Boolean? = null,
+    val structuredOutput: Boolean? = null,
+    val temperature: Boolean? = null
 )
 
 data class SceneCatalogItem(

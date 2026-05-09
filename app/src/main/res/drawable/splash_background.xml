@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 原生层启动窗口背景：纯色 + 居中图标 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@android:color/white" />
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#151617" />
+        </shape>
+    </item>
 
     <!-- 居中图标：200dp × 200dp，使用 center 避免裁剪 -->
     <item
@@ -13,4 +17,3 @@
             android:antialias="true" />
     </item>
 </layer-list>
-

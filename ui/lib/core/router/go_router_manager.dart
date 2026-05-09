@@ -8,6 +8,8 @@ import 'go_router_config.dart';
 import 'package:flutter/foundation.dart';
 import 'logging_observer.dart';
 import 'package:ui/services/method_channel_service.dart';
+import 'package:ui/constants/storage_keys.dart';
+import 'package:ui/services/storage_service.dart';
 
 class RouteOptions {
   final bool noAnim;
@@ -181,12 +183,44 @@ class GoRouterManager {
 
     print('initialLocation: $_initialRoute');
 
+    // Determine effective initial location with onboarding guard
+    final welcomeCompleted =
+        StorageService.getBool(StorageKeys.welcomeCompleted,
+            defaultValue: false) ??
+        false;
+    final requestedInitial = _initialRoute ?? homeRoute;
+    final effectiveInitial = (!welcomeCompleted &&
+            !requestedInitial.startsWith('/welcome') &&
+            !_isSubEngine)
+        ? '/welcome/choice'
+        : requestedInitial;
+
     return GoRouter(
       navigatorKey: _rootNavigatorKey,
-      initialLocation: _initialRoute ?? homeRoute,
+      initialLocation: effectiveInitial,
+      redirect: _isSubEngine
+          ? null
+          : (context, state) {
+              final completed = StorageService.getBool(
+                      StorageKeys.welcomeCompleted,
+                      defaultValue: false) ??
+                  false;
+              final location = state.matchedLocation;
+              final isWelcomeRoute = location.startsWith('/welcome');
+
+              // Not completed onboarding → redirect non-welcome routes
+              if (!completed && !isWelcomeRoute) {
+                return '/welcome/choice';
+              }
+              // Already completed → redirect welcome routes to home
+              if (completed && isWelcomeRoute) {
+                return homeRoute;
+              }
+              return null;
+            },
       observers: [
-        routeObserver, // 页面生命周期监听
-        if (kDebugMode) LoggingRouterObserver(), // Add logging observer
+        routeObserver,
+        if (kDebugMode) LoggingRouterObserver(),
       ],
       routes: [
         GoRoute(

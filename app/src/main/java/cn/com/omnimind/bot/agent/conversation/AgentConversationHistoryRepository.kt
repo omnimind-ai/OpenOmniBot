@@ -2,14 +2,14 @@ package cn.com.omnimind.bot.agent
 
 import android.content.Context
 import cn.com.omnimind.baselib.database.AgentConversationEntry
+import cn.com.omnimind.baselib.database.AgentConversationEntryHeader
+import cn.com.omnimind.baselib.database.AgentConversationEntryRecord
 import cn.com.omnimind.baselib.database.Conversation
 import cn.com.omnimind.baselib.database.DatabaseHelper
 import cn.com.omnimind.baselib.llm.ChatCompletionMessage
 import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.time.Instant
 
 class AgentConversationHistoryRepository(
     @Suppress("UNUSED_PARAMETER")
@@ -49,12 +49,13 @@ class AgentConversationHistoryRepository(
         attachments: List<Map<String, Any?>> = emptyList(),
         createdAt: Long = System.currentTimeMillis()
     ) {
-        val payload = buildTextMessagePayload(
+        val payload = AgentConversationHistorySupport.buildTextMessagePayload(
             messageId = entryId,
             user = 1,
             text = text,
             attachments = attachments,
             isError = false,
+            streamMeta = null,
             createdAt = createdAt
         )
         upsertMessageEntry(
@@ -76,14 +77,16 @@ class AgentConversationHistoryRepository(
         text: String,
         isError: Boolean = false,
         attachments: List<Map<String, Any?>> = emptyList(),
+        streamMeta: Map<String, Any?>? = null,
         createdAt: Long = System.currentTimeMillis()
     ) {
-        val payload = buildTextMessagePayload(
+        val payload = AgentConversationHistorySupport.buildTextMessagePayload(
             messageId = entryId,
             user = 2,
             text = text,
             attachments = attachments,
             isError = isError,
+            streamMeta = streamMeta,
             createdAt = createdAt
         )
         upsertMessageEntry(
@@ -103,12 +106,14 @@ class AgentConversationHistoryRepository(
         conversationMode: String,
         entryId: String,
         cardData: Map<String, Any?>,
+        streamMeta: Map<String, Any?>? = null,
         createdAt: Long = System.currentTimeMillis()
     ) {
-        val payload = buildCardMessagePayload(
+        val payload = AgentConversationHistorySupport.buildCardMessagePayload(
             messageId = entryId,
             cardData = cardData,
             isError = false,
+            streamMeta = streamMeta,
             createdAt = createdAt
         )
         upsertMessageEntry(
@@ -131,14 +136,14 @@ class AgentConversationHistoryRepository(
         fallbackStatus: String = STATUS_RUNNING,
         fallbackSummary: String = ""
     ) = withContext(Dispatchers.IO) {
-        val existing = DatabaseHelper.getAgentConversationEntryByThreadAndId(
+        val existing = loadThreadEntryByIdSafe(
             conversationId = conversationId,
             conversationMode = conversationMode,
             entryId = entryId
         )
         val mergedPayload = mergeToolPayload(
             existing = existing?.takeIf { it.entryType == ENTRY_TYPE_TOOL_EVENT }?.let {
-                readMap(it.payloadJson)
+                AgentConversationHistorySupport.readMap(it.payloadJson)
             }.orEmpty(),
             incoming = payload,
             fallbackStatus = fallbackStatus,
@@ -174,10 +179,7 @@ class AgentConversationHistoryRepository(
         messages: List<Map<String, Any?>>
     ) = withContext(Dispatchers.IO) {
         val existingConversation = DatabaseHelper.getConversationById(conversationId)
-        val existingEntries = DatabaseHelper.getAgentConversationEntriesAsc(
-            conversationId,
-            conversationMode
-        )
+        val existingEntries = loadThreadEntriesAscSafe(conversationId, conversationMode)
         val preservedSummary = existingConversation?.contextSummary
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
@@ -218,7 +220,7 @@ class AgentConversationHistoryRepository(
             } else {
                 gson.toJson(message)
             }
-            val insertedId = DatabaseHelper.upsertAgentConversationEntry(
+            val insertedId = upsertEntry(
                 AgentConversationEntry(
                     conversationId = conversationId,
                     conversationMode = conversationMode,
@@ -258,10 +260,31 @@ class AgentConversationHistoryRepository(
         conversationMode: String
     ): List<Map<String, Any?>> = withContext(Dispatchers.IO) {
         val normalized = normalizeEntriesForDisplay(
-            DatabaseHelper.getAgentConversationEntriesDesc(conversationId, conversationMode)
+            loadThreadEntriesDescSafe(conversationId, conversationMode)
         )
         val messagePayloads = normalized.mapNotNull { entry -> entryToMessagePayload(entry) }
         ConversationSnapshotOrdering.sortForDisplay(messagePayloads)
+    }
+
+    suspend fun listConversationMessagesPaged(
+        conversationId: Long,
+        conversationMode: String,
+        limit: Int,
+        offset: Int
+    ): Pair<List<Map<String, Any?>>, Boolean> = withContext(Dispatchers.IO) {
+        val totalCount = DatabaseHelper.countAgentConversationThreadEntries(
+            conversationId, conversationMode
+        )
+        val entries = loadThreadEntriesDescPagedSafe(conversationId, conversationMode, limit, offset)
+        val normalized = if (offset == 0) {
+            normalizeEntriesForDisplay(entries)
+        } else {
+            entries
+        }
+        val messagePayloads = normalized.mapNotNull { entry -> entryToMessagePayload(entry) }
+        val sorted = ConversationSnapshotOrdering.sortForDisplay(messagePayloads)
+        val hasMore = offset + entries.size < totalCount
+        Pair(sorted, hasMore)
     }
 
     suspend fun clearConversationMessages(
@@ -286,7 +309,7 @@ class AgentConversationHistoryRepository(
         }
         val conversation = DatabaseHelper.getConversationById(conversationId)
         val normalizedEntries = normalizeInterruptedToolEntries(
-            DatabaseHelper.getAgentConversationEntriesAsc(conversationId, conversationMode)
+            loadThreadEntriesAscSafe(conversationId, conversationMode)
         )
         AgentConversationHistorySupport.buildPromptSeedFromEntries(
             entries = normalizedEntries,
@@ -301,7 +324,7 @@ class AgentConversationHistoryRepository(
     ): ContextCompactionCandidate? = withContext(Dispatchers.IO) {
         val conversation = DatabaseHelper.getConversationById(conversationId) ?: return@withContext null
         val normalizedEntries = normalizeInterruptedToolEntries(
-            DatabaseHelper.getAgentConversationEntriesAsc(conversationId, conversationMode)
+            loadThreadEntriesAscSafe(conversationId, conversationMode)
         )
         val selection = AgentConversationHistorySupport.selectEntriesToCompact(
             entries = normalizedEntries,
@@ -362,7 +385,7 @@ class AgentConversationHistoryRepository(
         status: String,
         createdAt: Long
     ) = withContext(Dispatchers.IO) {
-        val existing = DatabaseHelper.getAgentConversationEntryByThreadAndId(
+        val existing = loadThreadEntryByIdSafe(
             conversationId = conversationId,
             conversationMode = conversationMode,
             entryId = entryId
@@ -384,18 +407,20 @@ class AgentConversationHistoryRepository(
         refreshConversationMetadata(conversationId)
     }
 
-    private suspend fun upsertEntry(entry: AgentConversationEntry) {
-        DatabaseHelper.upsertAgentConversationEntry(entry)
+    private suspend fun upsertEntry(entry: AgentConversationEntry): Long {
+        return DatabaseHelper.upsertAgentConversationEntry(
+            AgentConversationHistorySupport.prepareEntryForStorage(entry)
+        )
     }
 
     private suspend fun refreshConversationMetadata(conversationId: Long) {
         val conversation = DatabaseHelper.getConversationById(conversationId) ?: return
-        val lastEntry = DatabaseHelper.getLatestAgentConversationEntry(conversationId)
-        val firstEntry = DatabaseHelper.getEarliestAgentConversationEntry(conversationId)
-        val lastUpdate = DatabaseHelper.getLatestAgentConversationUpdate(conversationId)
+        val lastEntry = DatabaseHelper.getLatestAgentConversationEntryHeader(conversationId)
+        val firstEntry = DatabaseHelper.getEarliestAgentConversationEntryHeader(conversationId)
+        val lastUpdate = DatabaseHelper.getLatestAgentConversationUpdateHeader(conversationId)
         val messageCount = DatabaseHelper.countAgentConversationEntries(conversationId)
         val updatedConversation = conversation.copy(
-            lastMessage = lastEntry?.let(::conversationLastMessageFromEntry)?.takeIf { it.isNotBlank() },
+            lastMessage = lastEntry?.let(::conversationLastMessageFromHeader)?.takeIf { it.isNotBlank() },
             messageCount = messageCount,
             createdAt = firstEntry?.createdAt ?: conversation.createdAt,
             updatedAt = lastUpdate?.updatedAt ?: conversation.updatedAt
@@ -443,103 +468,33 @@ class AgentConversationHistoryRepository(
         return normalized
     }
 
-    private fun buildTextMessagePayload(
-        messageId: String,
-        user: Int,
-        text: String,
-        attachments: List<Map<String, Any?>>,
-        isError: Boolean,
-        createdAt: Long
-    ): Map<String, Any?> {
-        val safeText = AgentTextSanitizer.sanitizeUtf16(text)
-        val content = linkedMapOf<String, Any?>(
-            "text" to safeText,
-            "id" to messageId
-        )
-        if (attachments.isNotEmpty()) {
-            content["attachments"] = attachments
-        }
-        return linkedMapOf(
-            "id" to messageId,
-            "type" to 1,
-            "user" to user,
-            "content" to content,
-            "isLoading" to false,
-            "isFirst" to false,
-            "isError" to isError,
-            "isSummarizing" to false,
-            "createAt" to Instant.ofEpochMilli(createdAt).toString()
-        )
-    }
-
-    private fun buildCardMessagePayload(
-        messageId: String,
-        cardData: Map<String, Any?>,
-        isError: Boolean,
-        createdAt: Long
-    ): Map<String, Any?> {
-        return linkedMapOf(
-            "id" to messageId,
-            "type" to 2,
-            "user" to 3,
-            "content" to linkedMapOf(
-                "cardData" to cardData,
-                "id" to messageId
-            ),
-            "isLoading" to false,
-            "isFirst" to false,
-            "isError" to isError,
-            "isSummarizing" to false,
-            "createAt" to Instant.ofEpochMilli(createdAt).toString()
-        )
-    }
-
     private fun entryToMessagePayload(entry: AgentConversationEntry): Map<String, Any?>? {
         return when (entry.entryType) {
             ENTRY_TYPE_TOOL_EVENT -> buildToolCardMessage(entry)
             ENTRY_TYPE_USER_MESSAGE,
-            ENTRY_TYPE_ASSISTANT_MESSAGE,
-            ENTRY_TYPE_UI_CARD -> readMap(entry.payloadJson)
+            ENTRY_TYPE_ASSISTANT_MESSAGE -> AgentConversationHistorySupport.readMap(entry.payloadJson)
+            ENTRY_TYPE_UI_CARD -> AgentConversationHistorySupport.buildDisplaySafeUiCardMessage(
+                entry = entry,
+                payload = AgentConversationHistorySupport.readMap(entry.payloadJson)
+            )
             else -> null
         }
     }
 
     private fun buildToolCardMessage(entry: AgentConversationEntry): Map<String, Any?> {
-        val payload = readMap(entry.payloadJson)
+        val payload = AgentConversationHistorySupport.readMap(entry.payloadJson)
         val messageId = entry.entryId
-        val cardData = linkedMapOf<String, Any?>(
-            "type" to "agent_tool_summary",
-            "taskId" to payload["taskId"],
-            "cardId" to payload["cardId"]?.toString().orEmpty().ifEmpty { messageId },
-            "toolName" to payload["toolName"]?.toString().orEmpty(),
-            "displayName" to payload["displayName"]?.toString().orEmpty(),
-            "toolTitle" to payload["toolTitle"]?.toString().orEmpty(),
-            "toolType" to payload["toolType"]?.toString().orEmpty().ifEmpty { "builtin" },
-            "serverName" to payload["serverName"],
-            "status" to entry.status,
-            "summary" to payload["summary"]?.toString().orEmpty().ifEmpty { entry.summary },
-            "progress" to payload["progress"]?.toString().orEmpty(),
-            "argsJson" to payload["argsJson"]?.toString().orEmpty(),
-            "resultPreviewJson" to payload["resultPreviewJson"]?.toString().orEmpty(),
-            "rawResultJson" to payload["rawResultJson"]?.toString().orEmpty(),
-            "terminalOutput" to payload["terminalOutput"]?.toString().orEmpty(),
-            "terminalOutputDelta" to payload["terminalOutputDelta"]?.toString().orEmpty(),
-            "terminalSessionId" to payload["terminalSessionId"],
-            "terminalStreamState" to payload["terminalStreamState"]?.toString().orEmpty(),
-            "interruptedBy" to payload["interruptedBy"]?.toString(),
-            "interruptionReason" to payload["interruptionReason"]?.toString(),
-            "timedOut" to (payload["timedOut"] == true),
-            "workspaceId" to payload["workspaceId"],
-            "artifacts" to toListOfStringAnyMap(payload["artifacts"]),
-            "actions" to toListOfStringAnyMap(payload["actions"]),
-            "success" to (payload["success"] ?: (entry.status == STATUS_SUCCESS)),
-            "showScheduleAction" to (payload["toolType"]?.toString() == "schedule"),
-            "showAlarmAction" to (payload["toolType"]?.toString() == "alarm")
+        val cardData = AgentConversationHistorySupport.buildDisplaySafeToolCardData(
+            entry = entry,
+            payload = payload
         )
-        return buildCardMessagePayload(
+        return AgentConversationHistorySupport.buildCardMessagePayload(
             messageId = messageId,
             cardData = cardData,
             isError = entry.status == STATUS_ERROR,
+            streamMeta = AgentConversationHistorySupport.compactDisplayStreamMeta(
+                payload["streamMeta"]
+            ),
             createdAt = entry.createdAt
         )
     }
@@ -558,24 +513,11 @@ class AgentConversationHistoryRepository(
         )
     }
 
-    private fun conversationLastMessageFromEntry(entry: AgentConversationEntry): String {
+    private fun conversationLastMessageFromHeader(entry: AgentConversationEntryHeader): String {
         return when (entry.entryType) {
             ENTRY_TYPE_TOOL_EVENT -> entry.summary.ifBlank { "执行了工具调用" }
-            ENTRY_TYPE_UI_CARD -> {
-                val payload = readMap(entry.payloadJson)
-                val content = toStringAnyMap(payload["content"])
-                val cardData = toStringAnyMap(content["cardData"])
-                cardData["summary"]?.toString()?.trim().orEmpty().ifEmpty {
-                    cardData["type"]?.toString()?.trim().orEmpty().ifEmpty { "卡片消息" }
-                }
-            }
-            else -> {
-                val payload = readMap(entry.payloadJson)
-                val content = toStringAnyMap(payload["content"])
-                AgentTextSanitizer.sanitizeUtf16(
-                    content["text"]?.toString()?.trim().orEmpty().ifEmpty { entry.summary }
-                )
-            }
+            ENTRY_TYPE_UI_CARD -> entry.summary.ifBlank { "卡片消息" }
+            else -> AgentTextSanitizer.sanitizeUtf16(entry.summary.trim())
         }
     }
 
@@ -591,14 +533,83 @@ class AgentConversationHistoryRepository(
         )
     }
 
-    private fun readMap(json: String): Map<String, Any?> {
-        if (json.isBlank()) return emptyMap()
-        return runCatching {
-            gson.fromJson<Map<String, Any?>>(
-                json,
-                object : TypeToken<Map<String, Any?>>() {}.type
-            )
-        }.getOrElse { emptyMap() }
+    private suspend fun loadThreadEntryByIdSafe(
+        conversationId: Long,
+        conversationMode: String,
+        entryId: String
+    ): AgentConversationEntry? {
+        val record = DatabaseHelper.getAgentConversationEntryByThreadAndIdSafe(
+            conversationId = conversationId,
+            conversationMode = conversationMode,
+            entryId = entryId,
+            payloadLimit = AgentConversationHistorySupport.MAX_STORAGE_ENTRY_PAYLOAD_CHARS,
+            summaryLimit = AgentConversationHistorySupport.MAX_STORAGE_SUMMARY_CHARS
+        ) ?: return null
+        return materializeEntries(listOf(record)).singleOrNull()
+    }
+
+    private suspend fun loadThreadEntriesAscSafe(
+        conversationId: Long,
+        conversationMode: String
+    ): List<AgentConversationEntry> {
+        val records = DatabaseHelper.getAgentConversationEntriesAscSafe(
+            conversationId = conversationId,
+            conversationMode = conversationMode,
+            payloadLimit = AgentConversationHistorySupport.MAX_STORAGE_ENTRY_PAYLOAD_CHARS,
+            summaryLimit = AgentConversationHistorySupport.MAX_STORAGE_SUMMARY_CHARS
+        )
+        return materializeEntries(records)
+    }
+
+    private suspend fun loadThreadEntriesDescSafe(
+        conversationId: Long,
+        conversationMode: String
+    ): List<AgentConversationEntry> {
+        val records = DatabaseHelper.getAgentConversationEntriesDescSafe(
+            conversationId = conversationId,
+            conversationMode = conversationMode,
+            payloadLimit = AgentConversationHistorySupport.MAX_STORAGE_ENTRY_PAYLOAD_CHARS,
+            summaryLimit = AgentConversationHistorySupport.MAX_STORAGE_SUMMARY_CHARS
+        )
+        return materializeEntries(records)
+    }
+
+    private suspend fun loadThreadEntriesDescPagedSafe(
+        conversationId: Long,
+        conversationMode: String,
+        limit: Int,
+        offset: Int
+    ): List<AgentConversationEntry> {
+        val records = DatabaseHelper.getAgentConversationEntriesDescPagedSafe(
+            conversationId = conversationId,
+            conversationMode = conversationMode,
+            limit = limit,
+            offset = offset,
+            payloadLimit = AgentConversationHistorySupport.MAX_STORAGE_ENTRY_PAYLOAD_CHARS,
+            summaryLimit = AgentConversationHistorySupport.MAX_STORAGE_SUMMARY_CHARS
+        )
+        return materializeEntries(records)
+    }
+
+    private suspend fun materializeEntries(
+        records: List<AgentConversationEntryRecord>
+    ): List<AgentConversationEntry> {
+        if (records.isEmpty()) return emptyList()
+        val materialized = records.map(AgentConversationHistorySupport::materializeRecord)
+        repairRecoveredEntries(materialized)
+        return materialized.map { it.entry }
+    }
+
+    private suspend fun repairRecoveredEntries(
+        entries: List<AgentConversationHistorySupport.MaterializedEntry>
+    ) {
+        entries
+            .asSequence()
+            .filter { it.needsRepair }
+            .map { it.entry }
+            .forEach { repaired ->
+                upsertEntry(repaired)
+            }
     }
 
     private fun toStringAnyMap(value: Any?): Map<String, Any?> {

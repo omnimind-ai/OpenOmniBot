@@ -100,6 +100,7 @@ class HomeDrawer extends ConsumerStatefulWidget {
 class HomeDrawerState extends ConsumerState<HomeDrawer> {
   static const double _conversationActionIconSize = 18;
   static const Duration _searchDebounceDuration = Duration(milliseconds: 220);
+  static const Duration _sectionToggleDuration = Duration(milliseconds: 260);
   static const BorderRadius _drawerTrailingActionRadius = BorderRadius.only(
     topRight: Radius.circular(4),
     bottomRight: Radius.circular(4),
@@ -109,7 +110,10 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
   final FocusNode _searchFocusNode = FocusNode();
   final Map<String, _ConversationSearchIndex> _conversationSearchCache =
       <String, _ConversationSearchIndex>{};
+  final Map<String, bool> _expandedConversationSections = <String, bool>{};
   final Set<String> _busyConversationKeys = <String>{};
+  final TextEditingController _titleEditingController = TextEditingController();
+  final FocusNode _titleEditingFocusNode = FocusNode();
   List<ConversationModel> _allConversations = <ConversationModel>[];
   List<_ConversationSearchResult> _searchResults =
       <_ConversationSearchResult>[];
@@ -117,6 +121,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
   bool _isSearching = false;
   int _searchGeneration = 0;
   Timer? _searchDebounceTimer;
+  String? _editingThreadKey;
   StreamSubscription<Map<String, dynamic>>?
   _conversationListChangedSubscription;
 
@@ -255,6 +260,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     super.initState();
     _searchController.addListener(_handleSearchQueryChanged);
     _searchFocusNode.addListener(_handleSearchFocusChanged);
+    _titleEditingFocusNode.addListener(_handleTitleEditingFocusChanged);
     _conversationListChangedSubscription = AssistsMessageService
         .conversationListChangedStream
         .listen((_) {
@@ -273,6 +279,10 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     _searchFocusNode
       ..removeListener(_handleSearchFocusChanged)
       ..dispose();
+    _titleEditingFocusNode
+      ..removeListener(_handleTitleEditingFocusChanged)
+      ..dispose();
+    _titleEditingController.dispose();
     super.dispose();
   }
 
@@ -369,7 +379,22 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       return;
     }
     _maybeCloseDrawer();
-    GoRouterManager.pushReplacement('/home/chat', extra: target);
+    GoRouterManager.push(
+      '/home/chat',
+      extra: target,
+      queryParams: _threadTargetQueryParams(target),
+    );
+  }
+
+  Map<String, dynamic> _threadTargetQueryParams(
+    ConversationThreadTarget target,
+  ) {
+    return <String, dynamic>{
+      'conversationId': target.conversationId?.toString() ?? 'new',
+      'mode': target.mode.storageValue,
+      'requestKey':
+          target.requestKey ?? DateTime.now().microsecondsSinceEpoch.toString(),
+    };
   }
 
   void _navigateTo(String route) {
@@ -555,6 +580,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     final messages = await ConversationHistoryService.getConversationMessages(
       conversation.id,
       mode: conversation.mode,
+      expectedMessageCount: conversation.messageCount,
     );
 
     for (final message in messages) {
@@ -1074,16 +1100,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       if (sectionIndex > 0) {
         children.add(const SizedBox(height: 14));
       }
-      children.add(_buildConversationSectionHeader(section.label));
-      children.add(const SizedBox(height: 4));
-      for (int itemIndex = 0; itemIndex < section.results.length; itemIndex++) {
-        children.add(
-          _buildSwipeConversationItem(
-            section.results[itemIndex],
-            showDivider: itemIndex != section.results.length - 1,
-          ),
-        );
-      }
+      children.add(_buildConversationDateSection(section));
     }
     return children;
   }
@@ -1109,32 +1126,127 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     return sections;
   }
 
-  Widget _buildConversationSectionHeader(String label) {
+  bool _isConversationSectionExpanded(String label) =>
+      _expandedConversationSections[label] ?? true;
+
+  void _toggleConversationSection(String label) {
+    setState(() {
+      _expandedConversationSections[label] = !_isConversationSectionExpanded(
+        label,
+      );
+    });
+  }
+
+  Widget _buildConversationDateSection(_ConversationSection section) {
+    final expanded = _isConversationSectionExpanded(section.label);
+    final items = Column(
+      children: [
+        const SizedBox(height: 4),
+        for (int itemIndex = 0; itemIndex < section.results.length; itemIndex++)
+          _buildSwipeConversationItem(
+            section.results[itemIndex],
+            showDivider: itemIndex != section.results.length - 1,
+          ),
+      ],
+    );
+
+    return Column(
+      children: [
+        _buildConversationSectionHeader(
+          section.label,
+          expanded: expanded,
+          itemCount: section.results.length,
+          onTap: () => _toggleConversationSection(section.label),
+        ),
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: expanded ? 1 : 0, end: expanded ? 1 : 0),
+          duration: _sectionToggleDuration,
+          curve: Curves.easeInOutCubicEmphasized,
+          builder: (context, value, child) {
+            return ClipRect(
+              child: Align(
+                alignment: Alignment.topCenter,
+                heightFactor: value,
+                child: Opacity(
+                  opacity: value.clamp(0.0, 1.0).toDouble(),
+                  child: IgnorePointer(ignoring: value < 0.99, child: child),
+                ),
+              ),
+            );
+          },
+          child: items,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildConversationSectionHeader(
+    String label, {
+    required bool expanded,
+    required int itemCount,
+    required VoidCallback onTap,
+  }) {
     final palette = context.omniPalette;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
-      child: Row(
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.6,
-              color: palette.textTertiary,
-              fontFamily: 'PingFang SC',
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          splashColor: palette.accentPrimary.withValues(alpha: 0.06),
+          highlightColor: Colors.transparent,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 28),
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.fromLTRB(4, 5, 4, 5),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.6,
+                    color: palette.textTertiary,
+                    fontFamily: 'PingFang SC',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '$itemCount',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: palette.textTertiary.withValues(alpha: 0.82),
+                    fontFamily: 'PingFang SC',
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: palette.borderSubtle.withValues(
+                      alpha: context.isDarkTheme ? 0.56 : 0.8,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                AnimatedRotation(
+                  turns: expanded ? 0 : -0.25,
+                  duration: _sectionToggleDuration,
+                  curve: Curves.easeInOutCubicEmphasized,
+                  child: Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: palette.textTertiary,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Container(
-              height: 1,
-              color: palette.borderSubtle.withValues(
-                alpha: context.isDarkTheme ? 0.56 : 0.8,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1286,6 +1398,68 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
         ),
       ),
     );
+  }
+
+  void _startEditingTitle(ConversationModel conversation) {
+    if (_busyConversationKeys.contains(conversation.threadKey)) {
+      return;
+    }
+    final title = _resolveConversationTitle(conversation);
+    _titleEditingController.text = title;
+    _titleEditingController.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: title.length,
+    );
+    setState(() {
+      _editingThreadKey = conversation.threadKey;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _titleEditingFocusNode.requestFocus();
+    });
+  }
+
+  void _handleTitleEditingFocusChanged() {
+    if (!_titleEditingFocusNode.hasFocus && _editingThreadKey != null) {
+      _commitTitleEdit();
+    }
+  }
+
+  Future<void> _commitTitleEdit() async {
+    final threadKey = _editingThreadKey;
+    if (threadKey == null) return;
+
+    final newTitle = _titleEditingController.text.trim();
+    final conversation = _allConversations
+        .cast<ConversationModel?>()
+        .firstWhere((c) => c!.threadKey == threadKey, orElse: () => null);
+
+    setState(() {
+      _editingThreadKey = null;
+    });
+
+    if (conversation == null) return;
+
+    final oldTitle = _resolveConversationTitle(conversation);
+    if (newTitle.isEmpty || newTitle == oldTitle) return;
+
+    final updated = conversation.copyWith(title: newTitle);
+    setState(() {
+      _replaceConversationInState(updated);
+    });
+
+    final success = await ConversationService.updateConversationTitle(
+      conversationId: conversation.id,
+      newTitle: newTitle,
+      mode: conversation.mode,
+    );
+
+    if (!mounted) return;
+    if (!success) {
+      setState(() {
+        _replaceConversationInState(conversation);
+      });
+      showToast(context.trLegacy('重命名失败'), type: ToastType.error);
+    }
   }
 
   void _openConversationFromDrawer(ConversationModel conversation) {
@@ -1499,6 +1673,8 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     final title = _resolveConversationTitle(conversation);
     final showArchivedBadge = _isSearchActive && conversation.isArchived;
 
+    final isEditing = _editingThreadKey == conversation.threadKey;
+
     return ConversationSlidable(
       itemKey: conversation.threadKey,
       groupTag: 'home-drawer-conversations',
@@ -1513,7 +1689,12 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
           Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: () => _openConversationFromDrawer(conversation),
+              onTap: isEditing
+                  ? null
+                  : () => _openConversationFromDrawer(conversation),
+              onLongPress: isEditing
+                  ? null
+                  : () => _startEditingTitle(conversation),
               borderRadius: BorderRadius.circular(14),
               splashColor: context.omniPalette.accentPrimary.withValues(
                 alpha: 0.08,
@@ -1528,18 +1709,47 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: _drawerTextColor,
-                              height: 1.35,
-                              fontFamily: 'PingFang SC',
-                            ),
-                          ),
+                          child: isEditing
+                              ? TextField(
+                                  controller: _titleEditingController,
+                                  focusNode: _titleEditingFocusNode,
+                                  maxLines: 1,
+                                  cursorColor: _drawerTextColor.withValues(
+                                    alpha: 0.6,
+                                  ),
+                                  cursorWidth: 1.5,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: _drawerTextColor,
+                                    height: 1.35,
+                                    fontFamily: 'PingFang SC',
+                                  ),
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    border: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    disabledBorder: InputBorder.none,
+                                    errorBorder: InputBorder.none,
+                                    focusedErrorBorder: InputBorder.none,
+                                  ),
+                                  onTapOutside: (_) => _commitTitleEdit(),
+                                  onSubmitted: (_) => _commitTitleEdit(),
+                                )
+                              : Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: _drawerTextColor,
+                                    height: 1.35,
+                                    fontFamily: 'PingFang SC',
+                                  ),
+                                ),
                         ),
                         if (showArchivedBadge) ...[
                           const SizedBox(width: 10),

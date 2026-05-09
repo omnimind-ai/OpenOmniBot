@@ -15,9 +15,7 @@ void main() {
   }) async {
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: MessageBubble(message: message),
-        ),
+        home: Scaffold(body: MessageBubble(message: message)),
       ),
     );
     await tester.pump();
@@ -31,7 +29,9 @@ void main() {
     await VoicePlaybackCoordinator.instance.debugResetForTest();
   });
 
-  testWidgets('shows voice button only when voice scene is bound', (tester) async {
+  testWidgets('shows voice button only when voice scene is bound', (
+    tester,
+  ) async {
     final message = ChatMessageModel.assistantMessage('你好，世界', id: 'voice-msg');
 
     VoicePlaybackCoordinator.instance.debugSetAvailabilityForTest(
@@ -65,5 +65,94 @@ void main() {
 
     await pumpBubble(tester, message: message);
     expect(find.byTooltip('暂停语音'), findsOneWidget);
+  });
+
+  testWidgets('user bubble shows compact quote-style link preview', (
+    tester,
+  ) async {
+    final message = ChatMessageModel(
+      id: 'user-bubble',
+      type: 1,
+      user: 1,
+      content: {
+        'text': '帮我看一下这个链接',
+        'id': 'user-bubble',
+        'linkPreviews': [
+          {
+            'url': 'https://example.com/article',
+            'domain': 'example.com',
+            'siteName': 'Example',
+            'title': '链接预览标题',
+            'description': '链接预览描述',
+            'status': 'ready',
+          },
+        ],
+      },
+    );
+
+    await pumpBubble(tester, message: message);
+
+    final bubbleFinder = find.byKey(
+      const ValueKey('user-message-bubble-user-bubble'),
+    );
+    final bubble = tester.widget<Container>(bubbleFinder);
+    final decoration = bubble.decoration! as ShapeDecoration;
+    final shape = decoration.shape as RoundedRectangleBorder;
+
+    expect(
+      bubble.padding,
+      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    );
+    expect(shape.borderRadius, BorderRadius.circular(4));
+    final previewQuote = tester.widget<Container>(
+      find.byKey(const ValueKey('link-preview-quote-0')),
+    );
+    final previewDecoration = previewQuote.decoration! as BoxDecoration;
+    final previewTitle = tester.widget<Text>(find.text('链接预览标题'));
+
+    expect(previewDecoration.color, isNull);
+    expect(previewDecoration.border, isA<Border>());
+    expect((previewDecoration.border! as Border).left.width, 3);
+    expect(previewTitle.style?.fontSize, 12);
+    expect(find.text('链接预览标题'), findsOneWidget);
+    expect(find.byKey(const ValueKey('link-preview-card-0')), findsOneWidget);
+  });
+
+  testWidgets('assistant bubble also uses compact quote-style link preview', (
+    tester,
+  ) async {
+    final message = ChatMessageModel(
+      id: 'assistant-bubble',
+      type: 1,
+      user: 2,
+      content: {
+        'text': '你可以看这个链接',
+        'id': 'assistant-bubble',
+        'linkPreviews': [
+          {
+            'url': 'https://example.com/article',
+            'domain': 'example.com',
+            'siteName': 'Example',
+            'title': 'AI 链接预览标题',
+            'description': 'AI 链接预览描述',
+            'status': 'ready',
+          },
+        ],
+      },
+    );
+
+    await pumpBubble(tester, message: message);
+
+    final previewQuote = tester.widget<Container>(
+      find.byKey(const ValueKey('link-preview-quote-0')),
+    );
+    final previewDecoration = previewQuote.decoration! as BoxDecoration;
+    final previewTitle = tester.widget<Text>(find.text('AI 链接预览标题'));
+
+    expect(previewDecoration.color, isNull);
+    expect(previewDecoration.border, isA<Border>());
+    expect((previewDecoration.border! as Border).left.width, 3);
+    expect(previewTitle.style?.fontSize, 12);
+    expect(find.byKey(const ValueKey('link-preview-card-0')), findsOneWidget);
   });
 }

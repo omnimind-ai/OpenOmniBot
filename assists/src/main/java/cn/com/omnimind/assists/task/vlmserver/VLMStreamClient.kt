@@ -2,9 +2,12 @@ package cn.com.omnimind.assists.task.vlmserver
 
 import cn.com.omnimind.assists.controller.http.HttpController
 import cn.com.omnimind.baselib.llm.ChatCompletionRequest
+import cn.com.omnimind.baselib.llm.ReasoningStreamUpdatePolicy
 import cn.com.omnimind.baselib.util.OmniLog
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -36,6 +39,11 @@ class HttpVLMStreamClient(
     }
 ) : VLMStreamClient {
     private val tag = "HttpVLMStreamClient"
+
+    private companion object {
+        const val REASONING_UPDATE_INTERVAL_MS =
+            ReasoningStreamUpdatePolicy.DEFAULT_INTERVAL_MS
+    }
 
     private data class StreamRequestVariant(
         val name: String,
@@ -88,12 +96,14 @@ class HttpVLMStreamClient(
         val completed = AtomicBoolean(false)
         val accumulator = VLMStreamAccumulator(json)
         var lastReasoning = ""
+        var lastReasoningEmitLength = 0
+        var lastReasoningEmitAt = 0L
+        var reasoningEmitJob: Job? = null
+        val reasoningLock = Any()
         var eventSource: EventSource? = null
         var handle: SceneChatCompletionStreamHandle? = null
 
-        fun emitReasoning() {
-            val reasoning = accumulator.currentReasoning()
-            if (reasoning.isBlank() || reasoning == lastReasoning) return
+        fun dispatchReasoningSnapshot(reasoning: String) {
             lastReasoning = reasoning
             if (onReasoningUpdate != null) {
                 scope.launch {
@@ -103,12 +113,65 @@ class HttpVLMStreamClient(
             }
         }
 
+        fun collectReasoningSnapshotLocked(): String? {
+            val length = accumulator.currentReasoningLength()
+            if (length <= 0 || length == lastReasoningEmitLength) return null
+            val reasoning = accumulator.currentReasoning()
+            lastReasoningEmitLength = length
+            if (reasoning.isBlank() || reasoning == lastReasoning) return null
+            lastReasoning = reasoning
+            lastReasoningEmitAt = System.currentTimeMillis()
+            return reasoning
+        }
+
+        fun scheduleReasoningSnapshotLocked(delayMs: Long) {
+            reasoningEmitJob = scope.launch {
+                delay(delayMs)
+                val snapshot = synchronized(reasoningLock) {
+                    reasoningEmitJob = null
+                    collectReasoningSnapshotLocked()
+                }
+                if (snapshot != null) {
+                    dispatchReasoningSnapshot(snapshot)
+                }
+            }
+        }
+
+        fun emitReasoning(force: Boolean = false) {
+            var snapshot: String? = null
+            synchronized(reasoningLock) {
+                val length = accumulator.currentReasoningLength()
+                if (length <= 0 || length == lastReasoningEmitLength) return
+                if (force) {
+                    reasoningEmitJob?.cancel()
+                    reasoningEmitJob = null
+                    snapshot = collectReasoningSnapshotLocked()
+                    return@synchronized
+                }
+                if (reasoningEmitJob?.isActive == true) return
+                val delayMs = ReasoningStreamUpdatePolicy.nextDelayMs(
+                    hasEmittedBefore = lastReasoningEmitLength > 0,
+                    lastEmitAtMs = lastReasoningEmitAt,
+                    nowMs = System.currentTimeMillis(),
+                    intervalMs = REASONING_UPDATE_INTERVAL_MS
+                )
+                if (delayMs <= 0L) {
+                    snapshot = collectReasoningSnapshotLocked()
+                } else {
+                    scheduleReasoningSnapshotLocked(delayMs)
+                }
+            }
+            if (snapshot != null) {
+                dispatchReasoningSnapshot(snapshot!!)
+            }
+        }
+
         fun completeStream(eventSource: EventSource? = null) {
             if (!completed.compareAndSet(false, true)) return
             runCatching {
                 val resolvedHandle = handle
                     ?: throw IllegalStateException("scene stream handle not initialized")
-                emitReasoning()
+                emitReasoning(force = true)
                 SceneChatCompletionTurn(
                     parser = resolvedHandle.parser,
                     route = resolvedHandle.route,
@@ -171,6 +234,7 @@ class HttpVLMStreamClient(
             eventSource = handle?.eventSource
             return streamDone.await()
         } finally {
+            reasoningEmitJob?.cancel()
             eventSource?.cancel()
         }
     }

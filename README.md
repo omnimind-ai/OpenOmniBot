@@ -139,6 +139,7 @@ Scheduled tasks can execute work such as VLM tasks and subagent flows. Alarms ar
 git clone https://github.com/omnimind-ai/OpenOmniBot.git
 cd OpenOmniBot
 
+# Required only when building the full omniinfer edition.
 git submodule update --init third_party/omniinfer
 git -C third_party/omniinfer submodule update --init framework/mnn
 git -C third_party/omniinfer submodule update --init framework/llama.cpp
@@ -158,10 +159,19 @@ flutter pub get
 
 ```bash
 cd ..
-./gradlew :app:installDevelopDebug
+
+# Slim standard edition, without local inference
+./gradlew :app:installDevelopStandardDebug -Ptarget=lib/main_standard.dart
+
+# Full omniinfer edition, with local inference
+./gradlew :app:installDevelopOmniinferDebug -Ptarget=lib/main_omniinfer.dart
 ```
 
 <h2 id="architecture">Architecture Overview</h2>
+
+<p align="center">
+  <img src="docs/pic/architect.svg" alt="Architecture" width="100%" />
+</p>
 
 ```text
 OpenOmniBot/
@@ -189,7 +199,8 @@ Special thanks to these open-source projects:
   <tr>
     <td align="center">
       <img src="docs/pic/wechat.jpg" alt="WeChat Group" width="220"/><br/>
-      <b>WeChat Group</b>
+      <b>WeChat Group</b><br/>
+      <a href="https://discord.gg/WnBvBXgykD">Join our Discord community</a>
     </td>
   </tr>
 </table>

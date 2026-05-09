@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/authorize/widgets/permission_section.dart';
-import 'package:ui/services/special_permission.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/theme/theme_context.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 
 import '../../../../services/device_service.dart';
@@ -58,7 +59,10 @@ class _AuthorizePageState extends State<AuthorizePage>
       final brand = (deviceInfo?['brand'] as String?)?.toLowerCase() ?? 'other';
       if (!mounted) return;
 
-      final specs = PermissionService.loadSpecs(brand: brand);
+      final specs = PermissionService.loadSpecs(
+        brand: brand,
+        includeOptionalAdvanced: true,
+      );
       final loadedPermissions = PermissionService.specsToPermissionData(
         specs,
         context: context,
@@ -78,7 +82,10 @@ class _AuthorizePageState extends State<AuthorizePage>
       debugPrint('获取设备品牌失败: $e');
       if (!mounted) return;
 
-      final specs = PermissionService.loadSpecs(brand: 'other');
+      final specs = PermissionService.loadSpecs(
+        brand: 'other',
+        includeOptionalAdvanced: true,
+      );
       final fallbackPermissions = PermissionService.specsToPermissionData(
         specs,
         context: context,
@@ -113,9 +120,7 @@ class _AuthorizePageState extends State<AuthorizePage>
     );
   }
 
-  void _appendSpecialPermissionsIfNeeded(
-    List<PermissionData> permissions,
-  ) {
+  void _appendSpecialPermissionsIfNeeded(List<PermissionData> permissions) {
     for (final requiredId in _requiredPermissionIds) {
       final exists = permissions.any((item) => item.id == requiredId);
       if (exists) {
@@ -141,15 +146,19 @@ class _AuthorizePageState extends State<AuthorizePage>
         .toList(growable: false);
 
     if (labels.isEmpty) return null;
-    return '继续任务仅要求：${labels.join('、')}';
+    if (LegacyTextLocalizer.isEnglish) {
+      return 'Continue requires only: ${labels.join(', ')}';
+    }
+    return LegacyTextLocalizer.localize('继续任务仅要求：${labels.join('、')}');
   }
 
   @override
   Widget build(BuildContext context) {
     final requiredPermissionHint = _requiredPermissionHint();
+    final palette = context.omniPalette;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: palette.pageBackground,
       appBar: CommonAppBar(
         primary: true,
         onBackPressed: () => Navigator.of(context).pop(false),
@@ -167,19 +176,19 @@ class _AuthorizePageState extends State<AuthorizePage>
                     children: [
                       const SizedBox(height: 35),
                       Text(
-                        '设置权限',
+                        LegacyTextLocalizer.localize('设置权限'),
                         style: TextStyle(
-                          color: Colors.black.withValues(alpha: 0.80),
+                          color: palette.textPrimary,
                           fontSize: 35,
                           fontWeight: FontWeight.w500,
                           height: 0.86,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        '请放心，这些权限你随时可以收回',
+                      Text(
+                        LegacyTextLocalizer.localize('请放心，这些权限你随时可以收回'),
                         style: TextStyle(
-                          color: Color(0xFF666666),
+                          color: palette.textSecondary,
                           fontSize: 14,
                           fontWeight: FontWeight.w400,
                           height: 1.57,
@@ -189,8 +198,8 @@ class _AuthorizePageState extends State<AuthorizePage>
                       if (requiredPermissionHint != null)
                         Text(
                           requiredPermissionHint,
-                          style: const TextStyle(
-                            color: Color(0xFF1930D9),
+                          style: TextStyle(
+                            color: palette.accentPrimary,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                             height: 1.57,
@@ -212,7 +221,7 @@ class _AuthorizePageState extends State<AuthorizePage>
             ),
             Container(
               padding: const EdgeInsets.fromLTRB(62, 16, 62, 34),
-              decoration: const BoxDecoration(color: Colors.white),
+              decoration: BoxDecoration(color: palette.pageBackground),
               child: ValueListenableBuilder<bool>(
                 valueListenable: _canContinue,
                 builder: (context, authorized, child) {
@@ -252,8 +261,8 @@ class _AuthorizePageState extends State<AuthorizePage>
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                const Text(
-                                  '权限检查中...',
+                                Text(
+                                  LegacyTextLocalizer.localize('权限检查中...'),
                                   style: TextStyle(
                                     color: Colors.white,
                                     fontSize: 17,
@@ -262,8 +271,8 @@ class _AuthorizePageState extends State<AuthorizePage>
                                   ),
                                 ),
                               ] else
-                                const Text(
-                                  '继续任务',
+                                Text(
+                                  LegacyTextLocalizer.localize('继续任务'),
                                   style: TextStyle(
                                     color: Colors.white,
                                     fontSize: 17,

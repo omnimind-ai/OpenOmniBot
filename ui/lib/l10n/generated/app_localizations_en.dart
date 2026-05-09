@@ -453,6 +453,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatHistoryEmpty => 'No conversations yet';
 
   @override
+  String get chatHistoryArchivedToast => 'Archived';
+
+  @override
+  String get chatHistoryUnarchivedToast => 'Moved out of archive';
+
+  @override
+  String get chatHistoryArchiveFailed => 'Couldn\'t archive the conversation';
+
+  @override
+  String get chatHistoryUnarchiveFailed => 'Couldn\'t restore the conversation';
+
+  @override
+  String get chatHistoryArchiveHint =>
+      'Swipe left on a conversation to archive it';
+
+  @override
   String get homeDrawerArchive => 'Archive';
 
   @override
@@ -507,7 +523,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get memoryGreeting =>
-      'Hello!\nOmnibot will collect your memories here!';
+      'Hi there,\nWe\'ll keep your memories together here.';
 
   @override
   String memorySelectedCount(Object n) {
@@ -765,6 +781,31 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get modelProviderLoadFailed =>
+      'Failed to load model provider settings';
+
+  @override
+  String modelProviderSwitchFailed(Object error) {
+    return 'Failed to switch providers: $error';
+  }
+
+  @override
+  String get modelProviderBaseUrlRequired => 'Enter a Base URL first';
+
+  @override
+  String get modelProviderInvalidBaseUrl => 'Enter a valid http(s) Base URL';
+
+  @override
+  String modelProviderFetchedModels(Object count) {
+    return 'Fetched $count models';
+  }
+
+  @override
+  String modelProviderFetchFailed(Object error) {
+    return 'Failed to fetch the model list: $error';
+  }
+
+  @override
   String get sceneModelMapping => 'Scene Mapping';
 
   @override
@@ -780,6 +821,57 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sceneModelNoScenes => 'No configurable scenes';
+
+  @override
+  String get sceneModelLoadFailed => 'Failed to load scene model settings';
+
+  @override
+  String sceneModelPartialUpdateFailed(Object profiles) {
+    return 'Updated some models, but these providers failed: $profiles';
+  }
+
+  @override
+  String sceneModelUpdatedModels(Object count) {
+    return 'Updated $count models';
+  }
+
+  @override
+  String sceneModelRefreshFailed(Object error) {
+    return 'Failed to refresh the model list: $error';
+  }
+
+  @override
+  String get sceneModelInvalidModelId => 'Model ID can\'t start with scene.';
+
+  @override
+  String sceneModelBoundToast(Object scene, Object model) {
+    return '$scene is now using $model';
+  }
+
+  @override
+  String sceneModelSaveFailed(Object scene, Object error) {
+    return 'Failed to save $scene: $error';
+  }
+
+  @override
+  String sceneModelBindingCleared(Object scene) {
+    return 'Cleared the binding for $scene';
+  }
+
+  @override
+  String sceneModelDefaultRestored(Object scene) {
+    return '$scene is back to the default model';
+  }
+
+  @override
+  String sceneModelClearFailed(Object scene, Object error) {
+    return 'Failed to clear $scene: $error';
+  }
+
+  @override
+  String sceneVoiceSaveFailed(Object error) {
+    return 'Failed to save voice settings: $error';
+  }
 
   @override
   String get localModelsTitle => 'Local Models';
@@ -921,6 +1013,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get localModelsDownloadPauseFailed => 'Failed to pause download';
 
   @override
+  String localModelsDownloadStartedToast(String modelName) {
+    return 'Download started: $modelName';
+  }
+
+  @override
+  String localModelsDownloadPausedToast(String modelName) {
+    return 'Download paused: $modelName';
+  }
+
+  @override
+  String localModelsDownloadCompletedToast(String modelName) {
+    return 'Download completed: $modelName';
+  }
+
+  @override
+  String localModelsDownloadFailedToast(String modelName, String reason) {
+    return 'Download failed: $modelName — $reason';
+  }
+
+  @override
+  String localModelsDownloadCancelledToast(String modelName, String reason) {
+    return 'Download cancelled: $modelName — $reason';
+  }
+
+  @override
+  String get localModelsDownloadErrorUnknown => 'Unknown error';
+
+  @override
   String get localModelsFilterAndSource => 'Filter & Source';
 
   @override
@@ -1030,6 +1150,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get localModelsNotDownloaded => 'Not Downloaded';
+
+  @override
+  String get localModelsImportFromDevice => 'Import from Device';
+
+  @override
+  String get localModelsImportSuccess => 'Model imported successfully';
+
+  @override
+  String localModelsImportFailed(String reason) {
+    return 'Import failed: $reason';
+  }
+
+  @override
+  String localModelsImporting(String modelId) {
+    return 'Importing $modelId...';
+  }
 
   @override
   String get alarmSaved => 'Alarm settings saved';
@@ -1462,6 +1598,47 @@ class AppLocalizationsEn extends AppLocalizations {
       'Omnibot is an AI assistant app centered on\nintelligent conversation, using semantic understanding\nand continuous learning to help with information\nprocessing, decision support, and daily management.';
 
   @override
+  String get aboutBetaProgramTitle => 'Join beta testing';
+
+  @override
+  String get aboutBetaProgramDescription =>
+      'Get faster four-part beta updates.';
+
+  @override
+  String get aboutBetaProgramToggleFailed =>
+      'Failed to update beta testing preference';
+
+  @override
+  String get aboutPreferencesSectionTitle => 'Update & Testing';
+
+  @override
+  String get aboutApkSourceTitle => 'APK Download Source';
+
+  @override
+  String get aboutApkSourceDescription =>
+      'Choose the source used for update installs.';
+
+  @override
+  String get aboutApkSourceOptionCnb => 'CNB';
+
+  @override
+  String get aboutApkSourceOptionCnbDescription => 'Best for mainland China';
+
+  @override
+  String get aboutApkSourceOptionGithub => 'GitHub';
+
+  @override
+  String get aboutApkSourceOptionGithubDescription => 'Official release source';
+
+  @override
+  String get aboutApkSourceSwitchFailed =>
+      'Failed to switch APK download source';
+
+  @override
+  String get aboutUpdateHintDefault =>
+      'Check for updates to get the latest version';
+
+  @override
   String get workspaceMemoryLoadFailed =>
       'Failed to load workspace memory config';
 
@@ -1563,6 +1740,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get alpinePipInstall => 'Python Package Installer';
+
+  @override
+  String get alpineCodex => 'OpenAI Codex CLI and app-server bridge';
 
   @override
   String get alpineSshClient => 'SSH Client';
@@ -1713,6 +1893,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get alpineDevEnv => 'Dev Environment';
 
   @override
+  String get alpineAiAgent => 'AI Agent';
+
+  @override
   String get alpineEnvConfig => 'Environment Config';
 
   @override
@@ -1812,16 +1995,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeDrawerLunchSub3 => 'Let Omnibot recommend for you';
 
   @override
-  String get homeDrawerAfternoonGreeting => 'Tea break';
+  String get homeDrawerAfternoonGreeting => 'Time for a tea break';
 
   @override
-  String get homeDrawerAfternoonSub => 'You can finish the rest with ease';
+  String get homeDrawerAfternoonSub => 'You\'ve got this!';
 
   @override
-  String get homeDrawerAfternoonGreeting2 => 'Look outside for a minute';
+  String get homeDrawerAfternoonGreeting2 => 'Look away for a bit';
 
   @override
-  String get homeDrawerAfternoonSub2 => 'Give your eyes a rest';
+  String get homeDrawerAfternoonSub2 => 'Refresh your eyes for a moment';
 
   @override
   String get homeDrawerEveningGreeting => 'Take it easy on the way home';

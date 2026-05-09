@@ -3,7 +3,6 @@ package cn.com.omnimind.bot.mcp
 import android.content.Context
 import android.util.Base64
 import cn.com.omnimind.baselib.util.OmniLog
-import cn.com.omnimind.bot.utg.UtgBridge
 import cn.com.omnimind.bot.webchat.AgentRunService
 import cn.com.omnimind.bot.webchat.BrowserMirrorService
 import cn.com.omnimind.bot.webchat.ConversationDomainService
@@ -20,6 +19,10 @@ import io.ktor.http.Cookie
 import io.ktor.serialization.gson.gson
 import io.ktor.server.application.call
 import io.ktor.server.application.install
+import io.ktor.server.auth.Authentication
+import io.ktor.server.auth.UserIdPrincipal
+import io.ktor.server.auth.bearer
+import io.ktor.server.auth.authenticate
 import io.ktor.server.cio.CIO
 import io.ktor.server.cio.CIOApplicationEngine
 import io.ktor.server.engine.EmbeddedServer
@@ -27,7 +30,6 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.request.receive
-import io.ktor.server.request.receiveText
 import io.ktor.server.request.host
 import io.ktor.server.request.path
 import io.ktor.server.response.header
@@ -60,7 +62,6 @@ import java.util.UUID
  */
 object McpServerManager {
     private const val TAG = "[McpServerManager]"
-    private const val LOCALHOST_HOST = "127.0.0.1"
     private const val PREF_ENABLE = "mcp_server_enabled"
     private const val PREF_HOST = "mcp_server_host"
     private const val PREF_TOKEN = "mcp_server_token"
@@ -69,7 +70,6 @@ object McpServerManager {
     private const val WEBCHAT_SESSION_COOKIE = "omnibot_webchat_session"
     private const val WEBCHAT_ASSET_DIR = "flutter_web"
     private const val WEBCHAT_SESSION_TTL_MS = 7L * 24L * 60L * 60L * 1000L
-    private val BEARER_TOKEN_PATTERN = Regex("^[A-Za-z0-9\\-._~+/]+=*$")
 
     private val mmkv by lazy { MMKV.defaultMMKV() }
     private val gson by lazy { Gson() }
@@ -129,14 +129,6 @@ object McpServerManager {
         )
     }
 
-    fun ensureRunning(context: Context): McpServerState {
-        if (isRunning) {
-            return currentState()
-        }
-        val port = mmkv.decodeInt(PREF_PORT, DEFAULT_PORT).takeIf { it > 0 } ?: DEFAULT_PORT
-        return startServer(context, port)
-    }
-
     fun stopServer() {
         synchronized(serverLock) {
             stopServerLocked()
@@ -160,7 +152,8 @@ object McpServerManager {
     private fun startServer(context: Context, port: Int): McpServerState {
         synchronized(serverLock) {
             try {
-                val lanIp = resolveLanIp() ?: LOCALHOST_HOST
+                val lanIp = resolveLanIp()
+                    ?: throw IllegalStateException("未检测到可用的局域网 IPv4 地址，请确认设备已连接可访问局域网的网络")
                 if (isRunning) {
                     val currentPort = mmkv.decodeInt(PREF_PORT, DEFAULT_PORT).takeIf { it > 0 } ?: DEFAULT_PORT
                     if (currentPort == port) {
@@ -204,6 +197,13 @@ object McpServerManager {
         return embeddedServer(CIO, host = "0.0.0.0", port = port) {
             install(CallLogging)
             install(ContentNegotiation) { gson() }
+            install(Authentication) {
+                bearer("bearer-auth") {
+                    authenticate { credential ->
+                        if (credential.token == token) UserIdPrincipal("mcp-client") else null
+                    }
+                }
+            }
             routing {
                 get("/") {
                     call.respondRedirect("/webchat/")
@@ -509,90 +509,42 @@ object McpServerManager {
                     handleWebChatStatic(call, appContext)
                 }
                 
-                // 服务状态
-                get("/mcp/state") {
-                    if (!requireBearerAuth(call)) return@get
-                    call.respond(currentState().toMap())
-                }
-
-                post("/utg/observe") {
-                    if (!requireBearerAuth(call)) return@post
-                    val request = gson.fromJson(
-                        call.receiveText(),
-                        UtgBridge.ObservationRequest::class.java
-                    ) ?: UtgBridge.ObservationRequest()
-                    val result = UtgBridge.captureObservation(request)
-                    call.respond(result)
-                }
-
-                post("/utg/act") {
-                    if (!requireBearerAuth(call)) return@post
-                    val request = gson.fromJson(
-                        call.receiveText(),
-                        UtgBridge.ActRequest::class.java
-                    ) ?: UtgBridge.ActRequest(
-                        action = UtgBridge.ActionEnvelope(type = "", params = emptyMap())
-                    )
-                    val result = UtgBridge.executeAction(request)
-                    call.respond(result)
-                }
-
-                post("/utg/confirm") {
-                    if (!requireBearerAuth(call)) return@post
-                    val request = gson.fromJson(
-                        call.receiveText(),
-                        UtgBridge.ConfirmRequest::class.java
-                    ) ?: UtgBridge.ConfirmRequest(prompt = "")
-                    val result = UtgBridge.requestConfirmation(request.prompt)
-                    call.respond(result)
-                }
-
-                // MCP JSON-RPC 端点
-                post("/mcp") {
-                    if (!requireBearerAuth(call)) return@post
-                    handleJsonRpc(call, context)
-                }
-
-                // 工具发现
-                get("/mcp/list_tools") {
-                    if (!requireBearerAuth(call)) return@get
-                    call.respond(mapOf("tools" to McpToolDefinitions.allTools))
-                }
-                post("/mcp/list_tools") {
-                    if (!requireBearerAuth(call)) return@post
-                    call.respond(mapOf("tools" to McpToolDefinitions.allTools))
-                }
-
-                // REST 风格工具调用
-                post("/mcp/call_tool") {
-                    if (!requireBearerAuth(call)) return@post
-                    val params = call.receive<Map<String, Any?>>()
-                    val result = executeTool(context, params["name"] as? String, params["arguments"] as? Map<String, Any?>)
-                    call.respond(result)
-                }
-
-                // 传统 VLM 任务端点（保持兼容）
-                post("/mcp/v1/task/vlm") {
-                    if (!requireBearerAuth(call)) return@post
-                    handleLegacyVlmTask(call, context)
-                }
-
-                // 任务状态查询
-                get("/mcp/v1/task/{taskId}/status") {
-                    if (!requireBearerAuth(call)) return@get
-                    val taskId = call.parameters["taskId"]
-                    val state = taskId?.let { McpTaskManager.getTask(it) }
-                    if (state == null) {
-                        call.respond(HttpStatusCode.NotFound, mapOf("error" to "Task not found"))
-                    } else {
-                        call.respond(state.toResponseMap())
+                authenticate("bearer-auth") {
+                    // 服务状态
+                    get("/mcp/state") {
+                        call.respond(currentState().toMap())
                     }
-                }
-
-                // 任务回复
-                post("/mcp/v1/task/{taskId}/reply") {
-                    if (!requireBearerAuth(call)) return@post
-                    handleLegacyTaskReply(call)
+                    
+                    // MCP JSON-RPC 端点
+                    post("/mcp") { handleJsonRpc(call, context) }
+                    
+                    // 工具发现
+                    get("/mcp/list_tools") { call.respond(mapOf("tools" to McpToolDefinitions.allTools)) }
+                    post("/mcp/list_tools") { call.respond(mapOf("tools" to McpToolDefinitions.allTools)) }
+                    
+                    // REST 风格工具调用
+                    post("/mcp/call_tool") {
+                        val params = call.receive<Map<String, Any?>>()
+                        val result = executeTool(context, params["name"] as? String, params["arguments"] as? Map<String, Any?>)
+                        call.respond(result)
+                    }
+                    
+                    // 传统 VLM 任务端点（保持兼容）
+                    post("/mcp/v1/task/vlm") { handleLegacyVlmTask(call, context) }
+                    
+                    // 任务状态查询
+                    get("/mcp/v1/task/{taskId}/status") {
+                        val taskId = call.parameters["taskId"]
+                        val state = taskId?.let { McpTaskManager.getTask(it) }
+                        if (state == null) {
+                            call.respond(HttpStatusCode.NotFound, mapOf("error" to "Task not found"))
+                        } else {
+                            call.respond(state.toResponseMap())
+                        }
+                    }
+                    
+                    // 任务回复
+                    post("/mcp/v1/task/{taskId}/reply") { handleLegacyTaskReply(call) }
                 }
             }
         }
@@ -784,19 +736,6 @@ object McpServerManager {
             expiresAt != null && expiresAt > System.currentTimeMillis()
         }
         if (valid) {
-            return true
-        }
-        call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "UNAUTHORIZED"))
-        return false
-    }
-
-    private suspend fun requireBearerAuth(
-        call: io.ktor.server.application.ApplicationCall
-    ): Boolean {
-        val bearerToken = call.request.headers["Authorization"]
-            ?.removePrefix("Bearer ")
-            ?.trim()
-        if (!bearerToken.isNullOrBlank() && bearerToken == currentState().token) {
             return true
         }
         call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "UNAUTHORIZED"))
@@ -1004,13 +943,8 @@ object McpServerManager {
     // ==================== Token 管理 ====================
 
     private fun ensureToken(): String {
-        val saved = mmkv.decodeString(PREF_TOKEN)?.trim().orEmpty()
-        if (saved.isNotEmpty() && BEARER_TOKEN_PATTERN.matches(saved)) {
-            return saved
-        }
-        if (saved.isNotEmpty()) {
-            OmniLog.w(TAG, "refresh invalid MCP bearer token")
-        }
+        val saved = mmkv.decodeString(PREF_TOKEN)
+        if (!saved.isNullOrBlank()) return saved
         val token = generateToken()
         mmkv.encode(PREF_TOKEN, token)
         return token

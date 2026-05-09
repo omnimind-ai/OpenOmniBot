@@ -1,12 +1,11 @@
 import 'package:go_router/go_router.dart';
-import 'package:ui/features/welcome/pages/welcome_page/welcome_page.dart';
+import 'package:ui/features/welcome/pages/onboarding/onboarding_choice_page.dart';
 
-/// 欢迎页模块路由配置
+/// Onboarding module route configuration
 List<GoRoute> welcomeRoutes = [
-  // 欢迎页
   GoRoute(
-    path: '/welcome/welcome_page',
-    name: 'welcome/welcome_page',
-    builder: (context, state) => const WelcomePage(),
+    path: '/welcome/choice',
+    name: 'welcome/choice',
+    builder: (context, state) => const OnboardingChoicePage(),
   ),
 ];

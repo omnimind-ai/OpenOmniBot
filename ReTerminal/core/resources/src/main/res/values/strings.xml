@@ -66,4 +66,12 @@
     <string name="input_mode_type_null_desc">Semantically correct but may break some IMEs</string>
     <string name="input_mode_visible_password">Legacy Workaround</string>
     <string name="input_mode_visible_password_desc">Fixes Samsung keyboard echo; may break Gboard CJK input</string>
+    <string name="alpine_package_mirror">Alpine Package Mirror</string>
+    <string name="alpine_package_mirror_official">Official source</string>
+    <string name="alpine_package_mirror_official_desc">dl-cdn.alpinelinux.org</string>
+    <string name="alpine_package_mirror_tsinghua">Tsinghua mirror</string>
+    <string name="alpine_package_mirror_tsinghua_desc">mirrors.tuna.tsinghua.edu.cn/alpine (default)</string>
+    <string name="alpine_package_mirror_applied">Alpine package mirror updated.</string>
+    <string name="alpine_package_mirror_pending">Mirror saved. It will be applied after Alpine initializes.</string>
+    <string name="alpine_package_mirror_failed">Failed to update mirror: %1$s</string>
 </resources>

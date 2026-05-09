@@ -158,6 +158,8 @@ class VLMStreamAccumulator(
 
     fun currentReasoning(): String = reasoningBuffer.toString()
 
+    fun currentReasoningLength(): Int = reasoningBuffer.length
+
     fun buildTurn(): ChatCompletionTurn {
         if (!seenChunk) {
             throw IllegalStateException("chat completion stream ended without chunks")

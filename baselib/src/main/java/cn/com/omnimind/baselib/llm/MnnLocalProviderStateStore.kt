@@ -11,6 +11,15 @@ object MnnLocalProviderStateStore {
     private const val KEY_API_KEY = "mnn_local_provider_api_key"
     private const val KEY_READY = "mnn_local_provider_ready"
 
+    @Volatile
+    private var enabled: Boolean = false
+
+    fun setEnabled(value: Boolean) {
+        enabled = value
+    }
+
+    fun isEnabled(): Boolean = enabled
+
     fun isBuiltinProfileId(profileId: String?): Boolean {
         return when (profileId?.trim()) {
             BUILTIN_PROFILE_ID, LEGACY_BUILTIN_PROFILE_ID -> true

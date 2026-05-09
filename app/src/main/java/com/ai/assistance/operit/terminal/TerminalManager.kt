@@ -17,6 +17,7 @@ import com.rk.libcommons.localLibDir
 import com.rk.settings.Settings
 import com.rk.terminal.App
 import com.rk.terminal.runtime.EmbeddedRuntimeInstaller
+import com.rk.terminal.runtime.AlpineRepositoryManager
 import com.termux.terminal.TerminalEmulator
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
@@ -311,6 +312,23 @@ class TerminalManager private constructor(
         }
     }
 
+    suspend fun startLongLivedAlpineProcess(
+        command: String,
+        executorKey: String,
+        extraEnvironment: Map<String, String> = emptyMap(),
+        redirectErrorStream: Boolean = false
+    ): Process {
+        check(initializeEnvironment()) { "Alpine terminal environment is not ready." }
+        return withContext(Dispatchers.IO) {
+            buildAlpineProcess(
+                executorKey = executorKey,
+                command = command,
+                redirectErrorStream = redirectErrorStream,
+                extraEnvironment = extraEnvironment
+            ).start()
+        }
+    }
+
     fun saveScrollOffset(sessionId: String, scrollOffset: Float) {
         val handle = sessionsById[sessionId] ?: return
         handle.data = handle.data.copy(scrollOffsetY = scrollOffset)
@@ -326,6 +344,19 @@ class TerminalManager private constructor(
     }
 
     private fun buildHiddenExecProcess(executorKey: String, command: String): ProcessBuilder {
+        return buildAlpineProcess(
+            executorKey = executorKey,
+            command = command,
+            redirectErrorStream = true
+        )
+    }
+
+    private fun buildAlpineProcess(
+        executorKey: String,
+        command: String,
+        redirectErrorStream: Boolean,
+        extraEnvironment: Map<String, String> = emptyMap()
+    ): ProcessBuilder {
         val initHost = ensureShellScripts()
         val processBuilder = ProcessBuilder(
             "/system/bin/sh",
@@ -334,10 +365,15 @@ class TerminalManager private constructor(
             "-lc",
             command
         )
-        processBuilder.redirectErrorStream(true)
+        processBuilder.redirectErrorStream(redirectErrorStream)
         val env = processBuilder.environment()
         buildEnvironmentMap(sessionId = executorKey).forEach { (key, value) ->
             env[key] = value
+        }
+        extraEnvironment.forEach { (key, value) ->
+            if (key.isNotBlank()) {
+                env[key] = value
+            }
         }
         return processBuilder
     }
@@ -364,6 +400,7 @@ class TerminalManager private constructor(
             "PKG" to context.packageName,
             "PKG_PATH" to context.applicationInfo.sourceDir,
             "OMNIBOT_HOST_WORKSPACE" to hostWorkspaceDir.absolutePath,
+            "OMNIBOT_ALPINE_APK_REPOSITORY_BASE" to AlpineRepositoryManager.selectedBaseUrl(),
             "PROOT_TMP_DIR" to App.getTempDir().resolve(sessionId).apply { mkdirs() }.absolutePath,
             "TMPDIR" to App.getTempDir().absolutePath
         )

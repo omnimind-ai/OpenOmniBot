@@ -1,8 +1,8 @@
 package com.rk.terminal.ui.screens.settings
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -26,11 +26,16 @@ import com.rk.components.compose.preferences.base.PreferenceGroup
 import com.rk.components.compose.preferences.base.PreferenceLayout
 import com.rk.components.compose.preferences.base.PreferenceTemplate
 import com.rk.resources.strings
+import com.rk.settings.AlpinePackageMirror
 import com.rk.settings.Settings
 import com.rk.terminal.ui.activities.terminal.MainActivity
 import com.rk.terminal.ui.components.SettingsToggle
 import com.rk.terminal.ui.routes.MainActivityRoutes
 import androidx.core.net.toUri
+import com.rk.terminal.runtime.AlpineRepositoryManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -83,8 +88,33 @@ object InputMode {
 @Composable
 fun Settings(modifier: Modifier = Modifier,navController: NavController,mainActivity: MainActivity) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var selectedOption by remember { mutableIntStateOf(Settings.working_Mode) }
     var selectedInputMode by remember { mutableIntStateOf(Settings.input_mode) }
+    var selectedAlpineMirror by remember { mutableIntStateOf(Settings.alpine_package_mirror) }
+
+    fun selectAlpineMirror(source: Int) {
+        selectedAlpineMirror = source
+        Settings.alpine_package_mirror = source
+        scope.launch {
+            val toastMessage = withContext(Dispatchers.IO) {
+                runCatching {
+                    val result = AlpineRepositoryManager.applySelectedRepositoryToInstalledRootfs()
+                    if (result.applied) {
+                        context.getString(strings.alpine_package_mirror_applied)
+                    } else {
+                        context.getString(strings.alpine_package_mirror_pending)
+                    }
+                }.getOrElse { error ->
+                    context.getString(
+                        strings.alpine_package_mirror_failed,
+                        error.message ?: error.javaClass.simpleName
+                    )
+                }
+            }
+            Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     PreferenceLayout(label = stringResource(strings.settings)) {
         PreferenceGroup(heading = stringResource(strings.default_working_mode)) {
@@ -178,6 +208,40 @@ fun Settings(modifier: Modifier = Modifier,navController: NavController,mainActi
                 onClick = {
                     selectedInputMode = InputMode.VISIBLE_PASSWORD
                     Settings.input_mode = selectedInputMode
+                })
+        }
+
+        PreferenceGroup(heading = stringResource(strings.alpine_package_mirror)) {
+
+            SettingsCard(
+                title = { Text(stringResource(strings.alpine_package_mirror_official)) },
+                description = { Text(stringResource(strings.alpine_package_mirror_official_desc)) },
+                startWidget = {
+                    RadioButton(
+                        modifier = Modifier.padding(start = 8.dp),
+                        selected = selectedAlpineMirror == AlpinePackageMirror.OFFICIAL,
+                        onClick = {
+                            selectAlpineMirror(AlpinePackageMirror.OFFICIAL)
+                        })
+                },
+                onClick = {
+                    selectAlpineMirror(AlpinePackageMirror.OFFICIAL)
+                })
+
+
+            SettingsCard(
+                title = { Text(stringResource(strings.alpine_package_mirror_tsinghua)) },
+                description = { Text(stringResource(strings.alpine_package_mirror_tsinghua_desc)) },
+                startWidget = {
+                    RadioButton(
+                        modifier = Modifier.padding(start = 8.dp),
+                        selected = selectedAlpineMirror == AlpinePackageMirror.TSINGHUA,
+                        onClick = {
+                            selectAlpineMirror(AlpinePackageMirror.TSINGHUA)
+                        })
+                },
+                onClick = {
+                    selectAlpineMirror(AlpinePackageMirror.TSINGHUA)
                 })
         }
 

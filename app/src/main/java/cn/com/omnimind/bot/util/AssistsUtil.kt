@@ -1,35 +1,31 @@
 package cn.com.omnimind.bot.util
 
 import cn.com.omnimind.accessibility.action.ScreenCaptureManager
+import android.app.AppOpsManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Process
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import androidx.core.net.toUri
 import cn.com.omnimind.assists.AssistsCore
 import cn.com.omnimind.assists.api.bean.TaskParams
-import cn.com.omnimind.assists.api.bean.VLMTaskPreHookResult
-import cn.com.omnimind.assists.api.bean.VLMTaskRunLogPayload
-import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.assists.api.interfaces.OnMessagePushListener
-import cn.com.omnimind.assists.task.vlmserver.OperationResult
 import cn.com.omnimind.assists.task.scheduled.worker.ScheduledParams
 import cn.com.omnimind.assists.task.scheduled.worker.ScheduledStates
 import cn.com.omnimind.baselib.util.APPPackageUtil
+import cn.com.omnimind.baselib.util.MobileManufacturerUtil
 import cn.com.omnimind.baselib.util.exception.PermissionException
 import cn.com.omnimind.bot.App
 import cn.com.omnimind.bot.manager.OmniForegroundService
-import cn.com.omnimind.bot.mcp.McpServerManager
-import cn.com.omnimind.bot.utg.UtgBridge
 import cn.com.omnimind.bot.util.AssistsUtil.Core.createCompanionTask
 import cn.com.omnimind.uikit.UIKit
 import cn.com.omnimind.uikit.api.callback.HalfScreenApi
-import com.google.gson.Gson
 import java.util.concurrent.TimeUnit
 
 
@@ -203,11 +199,7 @@ class AssistsUtil {
             onMessagePushListener: OnMessagePushListener,
             needSummary: Boolean = false,
             skipGoHome: Boolean = false,  // 是否跳过回到主页，从当前页面开始执行
-            stepSkillGuidance: String = "",
-            onRunFunction: (suspend (String) -> OperationResult)? = null,
-            onPrepareExecution: (suspend () -> VLMTaskPreHookResult)? = null,
-            onCompileGateResolved: (suspend (VLMTaskPreHookResult) -> Unit)? = null,
-            onTaskRunLogReady: (suspend (VLMTaskRunLogPayload) -> Unit)? = null
+            stepSkillGuidance: String = ""
         ) {
 
             if (!AssistsCore.isAccessibilityServiceEnabled()) {
@@ -225,56 +217,6 @@ class AssistsUtil {
                     }
                 }
             }
-            val resolvedPrepareExecution = onPrepareExecution ?: {
-                UtgBridge.prepareVlmTaskExecution(
-                    context = context,
-                    goal = goal,
-                    currentPackageName = packageName?.takeIf { it.isNotBlank() }
-                        ?: AccessibilityController.getPackageName()
-                )
-            }
-            val resolvedRunFunction = onRunFunction ?: { functionId ->
-                val bridgeState = McpServerManager.ensureRunning(context)
-                val response = UtgBridge.runFunction(
-                    UtgBridge.RunFunctionRequest(
-                        goal = goal,
-                        functionId = functionId,
-                        arguments = emptyMap(),
-                        bridgeBaseUrl = UtgBridge.localBridgeBaseUrl(bridgeState),
-                        bridgeToken = bridgeState.token,
-                        context = mapOf("source" to "oob_vlm_task"),
-                        skipTerminalVerify = true,
-                    )
-                )
-                if (response == null) {
-                    OperationResult(false, "OmniFlow function request failed", null)
-                } else {
-                    OperationResult(
-                        success = response.success,
-                        message = response.summary?.takeIf { it.isNotBlank() }
-                            ?: response.errorMessage?.takeIf { it.isNotBlank() }
-                            ?: if (response.success) {
-                                "OmniFlow function succeeded without provider summary"
-                            } else {
-                                "OmniFlow function request failed"
-                            },
-                        data = null,
-                        providerRunLogJson = response.runLog?.let { Gson().toJson(it) },
-                        providerRunLogPath = response.providerRunLogPath,
-                        canonicalRunLogPath = response.canonicalRunLogPath,
-                    )
-                }
-            }
-            val resolvedTaskRunLogReady: suspend (VLMTaskRunLogPayload) -> Unit = { payload ->
-                if (onTaskRunLogReady != null) {
-                    onTaskRunLogReady.invoke(payload)
-                } else {
-                    val response = UtgBridge.ingestVlmTaskRunLog(payload)
-                    if (response == null) {
-                        Log.w(TAG, "ingestVlmTaskRunLog returned null")
-                    }
-                }
-            }
             AssistsCore.startTask(
                 TaskParams.VLMOperationTaskParams(
                     goal,
@@ -287,11 +229,7 @@ class AssistsUtil {
                     needSummary,
                     onMessagePushListener,
                     skipGoHome,
-                    stepSkillGuidance,
-                    resolvedRunFunction,
-                    resolvedPrepareExecution,
-                    onCompileGateResolved,
-                    resolvedTaskRunLogReady
+                    stepSkillGuidance
                 )
             )
         }
@@ -457,11 +395,76 @@ class AssistsUtil {
 
         }
 
+        fun isBackgroundRunAllowed(context: Context): Boolean {
+            if (isIgnoringBatteryOptimizations(context)) {
+                return true
+            }
+            if (!MobileManufacturerUtil.isXiaomiSeries()) {
+                return false
+            }
+            val compatibilityAllowed = isXiaomiBackgroundRunAllowed(context)
+            Log.d(TAG, "Xiaomi background run compatibility result=$compatibilityAllowed")
+            return compatibilityAllowed
+        }
+
+        private fun isXiaomiBackgroundRunAllowed(context: Context): Boolean {
+            val appOpsManager =
+                context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
+                    ?: return false
+            val uid = context.applicationInfo.uid.takeIf { it > 0 } ?: Process.myUid()
+            val packageName = context.packageName
+            val runAnyMode = readAppOpMode(
+                appOpsManager = appOpsManager,
+                operation = OPSTR_RUN_ANY_IN_BACKGROUND,
+                uid = uid,
+                packageName = packageName
+            )
+            val runMode = readAppOpMode(
+                appOpsManager = appOpsManager,
+                operation = OPSTR_RUN_IN_BACKGROUND,
+                uid = uid,
+                packageName = packageName
+            )
+            Log.d(TAG, "Xiaomi background run app ops: runAny=$runAnyMode, run=$runMode")
+            val knownModes = listOf(runAnyMode, runMode).filterNotNull()
+            if (knownModes.isEmpty()) {
+                return false
+            }
+            val explicitlyBlocked = knownModes.any { mode ->
+                mode == AppOpsManager.MODE_IGNORED ||
+                        mode == AppOpsManager.MODE_ERRORED ||
+                        mode == AppOpsManager.MODE_FOREGROUND
+            }
+            if (explicitlyBlocked) {
+                return false
+            }
+            return knownModes.all { mode ->
+                mode == AppOpsManager.MODE_ALLOWED || mode == AppOpsManager.MODE_DEFAULT
+            }
+        }
+
+        private fun readAppOpMode(
+            appOpsManager: AppOpsManager,
+            operation: String,
+            uid: Int,
+            packageName: String
+        ): Int? {
+            return runCatching {
+                appOpsManager.unsafeCheckOpNoThrow(operation, uid, packageName)
+            }.getOrElse { error ->
+                Log.d(TAG, "readAppOpMode failed for $operation: ${error.message}")
+                null
+            }
+        }
+
         /**
          * 打开电池优化设置页面
          * @param context 上下文
          * @param result 方法调用结果
          */
+        private const val OPSTR_RUN_ANY_IN_BACKGROUND = "android:run_any_in_background"
+        private const val OPSTR_RUN_IN_BACKGROUND = "android:run_in_background"
+
         fun openBatteryOptimizationSettings(context: Context) {
             val intent =
                 Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {

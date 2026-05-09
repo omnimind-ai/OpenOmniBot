@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.ui.channel
 
 import android.content.Context
+import cn.com.omnimind.bot.localmodel.LocalModelFeature
 import io.flutter.embedding.engine.FlutterEngine
 
 /**
@@ -20,7 +21,6 @@ class ChannelManager {
     private var pdfPreviewChannel: PdfPreviewChannel = PdfPreviewChannel()
     private var hideFromRecentsChannel: HideFromRecentsChannel = HideFromRecentsChannel()
     private var appUpdateChannel: AppUpdateChannel = AppUpdateChannel()
-    private var mnnLocalModelsChannel: MnnLocalModelsChannel = MnnLocalModelsChannel()
 
     private var uiRouterChannel: UIRouterChannel = UIRouterChannel()
 
@@ -29,6 +29,7 @@ class ChannelManager {
     private var overlayChannel: OverlayChannel = OverlayChannel()
     private var browserSessionChannel: BrowserSessionChannel = BrowserSessionChannel()
     private var storageUsageChannel: StorageUsageChannel = StorageUsageChannel()
+    private var codexAppServerChannel: CodexAppServerChannel = CodexAppServerChannel()
     fun getUIRouterChannel(): UIRouterChannel {
         return uiRouterChannel
     }
@@ -50,13 +51,14 @@ class ChannelManager {
         pdfPreviewChannel.setChannel(flutterEngine)
         hideFromRecentsChannel.setChannel(flutterEngine)
         appUpdateChannel.setChannel(flutterEngine)
-        mnnLocalModelsChannel.setChannel(flutterEngine)
+        LocalModelFeature.setChannel(flutterEngine)
         uiRouterChannel.setChannel(flutterEngine)
         mcpServerChannel.setChannel(flutterEngine)
         remoteMcpConfigChannel.setChannel(flutterEngine)
         overlayChannel.setChannel(flutterEngine)
         browserSessionChannel.setChannel(flutterEngine)
         storageUsageChannel.setChannel(flutterEngine)
+        codexAppServerChannel.setChannel(flutterEngine)
     }
 
     fun onCreate(context: Context) {
@@ -70,10 +72,11 @@ class ChannelManager {
         pdfPreviewChannel.onCreate(context)
         hideFromRecentsChannel.onCreate(context)
         appUpdateChannel.onCreate(context)
-        mnnLocalModelsChannel.onCreate(context)
+        LocalModelFeature.onChannelManagerCreate(context)
         mcpServerChannel.onCreate(context)
         remoteMcpConfigChannel.onCreate()
         storageUsageChannel.onCreate(context)
+        codexAppServerChannel.onCreate(context)
     }
 
     fun clearChannel() {
@@ -87,7 +90,7 @@ class ChannelManager {
         pdfPreviewChannel.clear()
         hideFromRecentsChannel.clear()
         appUpdateChannel.clear()
-        mnnLocalModelsChannel.clear()
+        LocalModelFeature.clearChannel()
         uiRouterChannel.clear()
         cacheChannel.clear()
         httpChannel.clear()
@@ -96,6 +99,7 @@ class ChannelManager {
         overlayChannel.clear()
         browserSessionChannel.clear()
         storageUsageChannel.clear()
+        codexAppServerChannel.clear()
     }
 
 

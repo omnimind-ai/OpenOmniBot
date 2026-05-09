@@ -22,5 +22,6 @@ data class TokenUsageRecord(
     val completionTokens: Int = 0,
     val reasoningTokens: Int = 0,
     val textTokens: Int = 0,
+    val cachedTokens: Int = 0,
     val createdAt: Long = Date().time
 )

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "summary",
+    "comment",
+    "pr_title",
+    "pr_body",
+    "verification",
+    "changed_files"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "comment_only",
+        "needs_info",
+        "code_change",
+        "no_op"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "comment": {
+      "type": "string",
+      "maxLength": 20000
+    },
+    "pr_title": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "pr_body": {
+      "type": "string",
+      "maxLength": 20000
+    },
+    "verification": {
+      "type": "string",
+      "maxLength": 10000
+    },
+    "changed_files": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "maxItems": 100
+    }
+  }
+}

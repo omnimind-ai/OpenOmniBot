@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    
+    <!-- 背景圆形 -->
+    <path
+        android:fillColor="#467b4a"
+        android:pathData="M60,60m-60,0a60,60 0,1 1,120 0a60,60 0,1 1,-120 0" />
+    
+    <!-- 聊天气泡图标 -->
+    <path
+        android:fillColor="#2D2D2D"
+        android:pathData="M30,40 Q30,30 40,30 L80,30 Q90,30 90,40 L90,65 Q90,75 80,75 L50,75 L35,85 L35,75 Q30,75 30,65 Z" />
+    
+    <!-- 聊天气泡内的点点 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M45,52m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
+    
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,52m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
+    
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M75,52m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
+        
+</vector>

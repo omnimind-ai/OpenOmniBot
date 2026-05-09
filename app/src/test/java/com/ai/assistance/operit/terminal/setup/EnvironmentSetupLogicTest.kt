@@ -43,6 +43,36 @@ class EnvironmentSetupLogicTest {
     }
 
     @Test
+    fun buildInstallCommands_codexInstallsOfficialCliAndRuntimeDependencies() {
+        val commands = EnvironmentSetupLogic.buildInstallCommands(
+            selectedPackageIds = listOf("codex"),
+            repositorySetupCommand = ""
+        )
+
+        val apkAdd = commands.first { it.startsWith("apk add ") }
+        assertTrue(apkAdd.contains("nodejs"))
+        assertTrue(apkAdd.contains("npm"))
+        assertTrue(apkAdd.contains("git"))
+        assertTrue(apkAdd.contains("bash"))
+        assertTrue(apkAdd.contains("curl"))
+        assertTrue(apkAdd.contains("ripgrep"))
+        assertTrue(commands.contains("mkdir -p /root/.npm-global/bin"))
+        assertTrue(commands.contains("npm config set prefix /root/.npm-global"))
+        assertTrue(commands.contains("export PATH=\"/root/.npm-global/bin:\$PATH\""))
+        assertTrue(commands.contains("npm install -g @openai/codex@latest"))
+        assertTrue(commands.contains("ln -sf /root/.npm-global/bin/codex /usr/local/bin/codex || true"))
+    }
+
+    @Test
+    fun buildInventoryProbeCommand_codexChecksVersionAndAppServer() {
+        val command = EnvironmentSetupLogic.buildInventoryProbeCommand(listOf("codex"))
+
+        assertTrue(command.contains("command -v codex"))
+        assertTrue(command.contains("codex app-server --help"))
+        assertTrue(command.contains("codex --version"))
+    }
+
+    @Test
     fun buildSetupScript_isShellSafeForEveryPackageCombination() {
         val packageIds = EnvironmentSetupLogic.packageDefinitions.map { it.id }
         val tempDir = Files.createTempDirectory("omni-setup-script-test").toFile()

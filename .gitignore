@@ -25,3 +25,5 @@ release.jks
 testbot/build
 
 log.txt
+
+output/

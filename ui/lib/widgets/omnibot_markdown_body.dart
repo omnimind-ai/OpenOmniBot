@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
 import 'package:ui/utils/ui.dart';
+import 'package:ui/widgets/chat_drawer_gesture_guard.dart';
 import 'package:ui/widgets/omnibot_resource_widgets.dart';
 
 class OmnibotMarkdownBody extends StatelessWidget {
@@ -18,6 +20,7 @@ class OmnibotMarkdownBody extends StatelessWidget {
   final bool selectable;
   final bool inlineResourcePlainStyle;
   final Widget? trailingInline;
+  final OmnibotResourceOpenCallback? onResourceOpen;
 
   const OmnibotMarkdownBody({
     super.key,
@@ -26,37 +29,37 @@ class OmnibotMarkdownBody extends StatelessWidget {
     this.selectable = false,
     this.inlineResourcePlainStyle = false,
     this.trailingInline,
+    this.onResourceOpen,
   });
 
   @override
   Widget build(BuildContext context) {
     final codeTapHandler = OmnibotCodeTapHandler();
+    final styleSheet = buildOmnibotMarkdownStyleSheet(context, baseStyle);
     return MarkdownBody(
       data: _linkifyBareOmnibotUris(_withTrailingInlineToken(data)),
       selectable: selectable,
       onTapLink: (text, href, title) {
         if (href == null) return;
-        OmnibotResourceService.handleLinkTap(href);
+        _handleMarkdownLinkTap(context, href, onResourceOpen);
       },
-      blockSyntaxes: <md.BlockSyntax>[OmnibotMathBlockSyntax()],
+      blockSyntaxes: const <md.BlockSyntax>[
+        OmnibotTableSyntax(),
+        OmnibotMathBlockSyntax(),
+      ],
       inlineSyntaxes: <md.InlineSyntax>[
         OmnibotInlineMathSyntax(),
         OmnibotInlineLinkSyntax(),
         if (trailingInline != null) OmnibotTrailingInlineSyntax(),
       ],
-      builders: <String, MarkdownElementBuilder>{
-        'code': OmnibotInlineCodeBuilder(onCopy: codeTapHandler.copy),
-        'pre': OmnibotCodeBlockBuilder(onCopy: codeTapHandler.copy),
-        'math-inline': OmnibotInlineMathBuilder(baseStyle: baseStyle),
-        'math-block': OmnibotBlockMathBuilder(baseStyle: baseStyle),
-        'omnibot-link': OmnibotInlineLinkBuilder(
-          inlineResourcePlainStyle: inlineResourcePlainStyle,
-        ),
-        if (trailingInline != null)
-          'omnibot-trailing-inline': OmnibotTrailingInlineBuilder(
-            child: trailingInline!,
-          ),
-      },
+      builders: buildOmnibotMarkdownBuilders(
+        baseStyle: baseStyle,
+        selectable: selectable,
+        inlineResourcePlainStyle: inlineResourcePlainStyle,
+        codeTapHandler: codeTapHandler,
+        trailingInline: trailingInline,
+        onResourceOpen: onResourceOpen,
+      ),
       sizedImageBuilder: (config) {
         final uri = config.uri;
         if (uri.scheme == 'omnibot') {
@@ -65,6 +68,7 @@ class OmnibotMarkdownBody extends StatelessWidget {
             return OmnibotInlineResourceEmbed(
               metadata: metadata,
               plainStyle: inlineResourcePlainStyle,
+              onOpen: onResourceOpen,
             );
           }
         }
@@ -73,7 +77,7 @@ class OmnibotMarkdownBody extends StatelessWidget {
         }
         return Image.network(uri.toString());
       },
-      styleSheet: buildOmnibotMarkdownStyleSheet(context, baseStyle),
+      styleSheet: styleSheet,
     );
   }
 
@@ -81,11 +85,13 @@ class OmnibotMarkdownBody extends StatelessWidget {
     if (trailingInline == null) {
       return source;
     }
-    final trimmed = source.trimRight();
+    // 只去除尾部换行（避免 token 被推入新段落），保留原始空格，
+    // 不人为添加额外空格，使 markdown 前缀与纯文本尾部无缝衔接。
+    final trimmed = source.replaceFirst(RegExp(r'[\r\n]+$'), '');
     if (trimmed.isEmpty) {
       return _trailingInlineToken;
     }
-    return '$trimmed $_trailingInlineToken';
+    return '$trimmed$_trailingInlineToken';
   }
 }
 
@@ -137,6 +143,212 @@ MarkdownStyleSheet buildOmnibotMarkdownStyleSheet(
   );
 }
 
+Map<String, MarkdownElementBuilder> buildOmnibotMarkdownBuilders({
+  required TextStyle baseStyle,
+  required bool selectable,
+  required bool inlineResourcePlainStyle,
+  required OmnibotCodeTapHandler codeTapHandler,
+  Widget? trailingInline,
+  OmnibotResourceOpenCallback? onResourceOpen,
+}) {
+  return <String, MarkdownElementBuilder>{
+    'code': OmnibotInlineCodeBuilder(onCopy: codeTapHandler.copy),
+    'pre': OmnibotCodeBlockBuilder(onCopy: codeTapHandler.copy),
+    'math-inline': OmnibotInlineMathBuilder(baseStyle: baseStyle),
+    'math-block': OmnibotBlockMathBuilder(baseStyle: baseStyle),
+    'omnibot-table': OmnibotTableBuilder(
+      baseStyle: baseStyle,
+      selectable: selectable,
+      inlineResourcePlainStyle: inlineResourcePlainStyle,
+      onResourceOpen: onResourceOpen,
+    ),
+    'omnibot-link': OmnibotInlineLinkBuilder(
+      inlineResourcePlainStyle: inlineResourcePlainStyle,
+      onResourceOpen: onResourceOpen,
+    ),
+    if (trailingInline != null)
+      'omnibot-trailing-inline': OmnibotTrailingInlineBuilder(
+        child: trailingInline,
+      ),
+  };
+}
+
+class OmnibotTableSyntax extends md.BlockSyntax {
+  static const String tag = 'omnibot-table';
+  static const String payloadAttribute = 'data-omnibot-table-payload';
+  static final RegExp _tableDividerPattern = RegExp(
+    r'^[ ]{0,3}\|?([ \t]*:?\-+:?[ \t]*\|[ \t]*)+([ \t]|[ \t]*:?\-+:?[ \t]*)?$',
+  );
+
+  const OmnibotTableSyntax();
+
+  @override
+  bool canEndBlock(md.BlockParser parser) => true;
+
+  @override
+  RegExp get pattern => RegExp('');
+
+  @override
+  bool canParse(md.BlockParser parser) {
+    return parser.matchesNext(_tableDividerPattern);
+  }
+
+  @override
+  md.Node? parse(md.BlockParser parser) {
+    final alignments = _parseAlignments(parser.next!.content);
+    final columnCount = alignments.length;
+    final headRow = _parseRowCells(parser, alignments);
+    if (headRow.length != columnCount) {
+      parser.retreat();
+      return null;
+    }
+
+    parser.advance();
+
+    final rows = <_OmnibotTableRowSpec>[
+      _OmnibotTableRowSpec(isHeader: true, cells: headRow),
+    ];
+    while (!parser.isDone && !md.BlockSyntax.isAtBlockEnd(parser)) {
+      final row = _parseRowCells(parser, alignments);
+      while (row.length < columnCount) {
+        row.add(const _OmnibotTableCellSpec(source: ''));
+      }
+      while (row.length > columnCount) {
+        row.removeLast();
+      }
+      rows.add(_OmnibotTableRowSpec(isHeader: false, cells: row));
+    }
+
+    return md.Element.empty(tag)
+      ..attributes[payloadAttribute] = jsonEncode(
+        rows.map((row) => row.toJson()).toList(growable: false),
+      );
+  }
+
+  List<String?> _parseAlignments(String line) {
+    final columns = <String?>[];
+    var started = false;
+    var hitDash = false;
+    String? alignment;
+
+    for (var index = 0; index < line.length; index++) {
+      final char = line.codeUnitAt(index);
+      if (char == 32 || char == 9 || (!started && char == 124)) {
+        continue;
+      }
+      started = true;
+
+      if (char == 58) {
+        if (hitDash) {
+          alignment = alignment == 'left' ? 'center' : 'right';
+        } else {
+          alignment = 'left';
+        }
+      }
+
+      if (char == 124) {
+        columns.add(alignment);
+        hitDash = false;
+        alignment = null;
+      } else {
+        hitDash = true;
+      }
+    }
+
+    if (hitDash) {
+      columns.add(alignment);
+    }
+
+    return columns;
+  }
+
+  List<_OmnibotTableCellSpec> _parseRowCells(
+    md.BlockParser parser,
+    List<String?> alignments,
+  ) {
+    final line = parser.current;
+    final cells = <String>[];
+    var index = _walkPastOpeningPipe(line.content);
+    final cellBuffer = StringBuffer();
+
+    while (true) {
+      if (index >= line.content.length) {
+        cells.add(cellBuffer.toString().trimRight());
+        cellBuffer.clear();
+        break;
+      }
+      final char = line.content.codeUnitAt(index);
+      if (char == 92) {
+        if (index == line.content.length - 1) {
+          cellBuffer.writeCharCode(char);
+          cells.add(cellBuffer.toString().trimRight());
+          cellBuffer.clear();
+          break;
+        }
+        final escaped = line.content.codeUnitAt(index + 1);
+        if (escaped == 124) {
+          cellBuffer.writeCharCode(escaped);
+        } else {
+          cellBuffer.writeCharCode(char);
+          cellBuffer.writeCharCode(escaped);
+        }
+        index += 2;
+      } else if (char == 124) {
+        cells.add(cellBuffer.toString().trimRight());
+        cellBuffer.clear();
+        index++;
+        index = _walkPastWhitespace(line.content, index);
+        if (index >= line.content.length) {
+          break;
+        }
+      } else {
+        cellBuffer.writeCharCode(char);
+        index++;
+      }
+    }
+    parser.advance();
+
+    final rowChildren = <_OmnibotTableCellSpec>[];
+    for (var index = 0; index < cells.length; index++) {
+      rowChildren.add(
+        _OmnibotTableCellSpec(
+          source: cells[index],
+          align: index < alignments.length ? alignments[index] : null,
+        ),
+      );
+    }
+
+    return rowChildren;
+  }
+
+  int _walkPastWhitespace(String line, int index) {
+    while (index < line.length) {
+      final char = line.codeUnitAt(index);
+      if (char != 32 && char != 9) {
+        break;
+      }
+      index++;
+    }
+    return index;
+  }
+
+  int _walkPastOpeningPipe(String line) {
+    var index = 0;
+    while (index < line.length) {
+      final char = line.codeUnitAt(index);
+      if (char == 124) {
+        index++;
+        index = _walkPastWhitespace(line, index);
+      }
+      if (char != 32 && char != 9) {
+        break;
+      }
+      index++;
+    }
+    return index;
+  }
+}
+
 class OmnibotInlineLinkSyntax extends md.InlineSyntax {
   OmnibotInlineLinkSyntax() : super(_pattern);
 
@@ -157,6 +369,8 @@ class OmnibotInlineLinkSyntax extends md.InlineSyntax {
 
 class OmnibotMathBlockSyntax extends md.BlockSyntax {
   static const String expressionAttribute = 'data-expression';
+
+  const OmnibotMathBlockSyntax();
 
   @override
   RegExp get pattern => RegExp(r'^\s*\$\$');
@@ -221,6 +435,260 @@ class OmnibotMathBlockSyntax extends md.BlockSyntax {
     final element = md.Element.empty('math-block');
     element.attributes[expressionAttribute] = expression;
     return element;
+  }
+}
+
+class OmnibotTableBuilder extends MarkdownElementBuilder {
+  OmnibotTableBuilder({
+    required this.baseStyle,
+    required this.selectable,
+    required this.inlineResourcePlainStyle,
+    this.onResourceOpen,
+  });
+
+  final TextStyle baseStyle;
+  final bool selectable;
+  final bool inlineResourcePlainStyle;
+  final OmnibotResourceOpenCallback? onResourceOpen;
+
+  @override
+  bool isBlockElement() => true;
+
+  @override
+  Widget visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    final styleSheet = buildOmnibotMarkdownStyleSheet(context, baseStyle);
+    final tableRows = _buildTableRows(styleSheet, element);
+    if (tableRows.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: styleSheet.tablePadding ?? EdgeInsets.zero,
+      child: _OmnibotTableScrollable(
+        thumbVisibility: styleSheet.tableScrollbarThumbVisibility ?? false,
+        child: Table(
+          border: styleSheet.tableBorder,
+          defaultColumnWidth:
+              styleSheet.tableColumnWidth ?? const IntrinsicColumnWidth(),
+          defaultVerticalAlignment: styleSheet.tableVerticalAlignment,
+          children: tableRows,
+        ),
+      ),
+    );
+  }
+
+  List<TableRow> _buildTableRows(
+    MarkdownStyleSheet styleSheet,
+    md.Element tableElement,
+  ) {
+    final payload =
+        tableElement.attributes[OmnibotTableSyntax.payloadAttribute];
+    if (payload == null || payload.isEmpty) {
+      return const <TableRow>[];
+    }
+    final decoded = jsonDecode(payload);
+    if (decoded is! List) {
+      return const <TableRow>[];
+    }
+    final rowSpecs = decoded
+        .whereType<Map<String, dynamic>>()
+        .map(_OmnibotTableRowSpec.fromJson)
+        .toList(growable: false);
+    final rows = <TableRow>[];
+    for (final rowSpec in rowSpecs) {
+      rows.add(TableRow(children: _buildRowCells(styleSheet, rowSpec)));
+    }
+    return rows;
+  }
+
+  List<Widget> _buildRowCells(
+    MarkdownStyleSheet styleSheet,
+    _OmnibotTableRowSpec rowSpec,
+  ) {
+    if (rowSpec.cells.isEmpty) {
+      return const <Widget>[SizedBox.shrink()];
+    }
+    return rowSpec.cells
+        .map((cell) {
+          final isHeader = rowSpec.isHeader;
+          final cellStyle =
+              (isHeader ? styleSheet.tableHead : styleSheet.tableBody) ??
+              baseStyle;
+          final textAlign = _resolveCellTextAlign(
+            cell.align,
+            fallback: isHeader
+                ? (styleSheet.tableHeadAlign ?? TextAlign.center)
+                : TextAlign.left,
+          );
+          final alignment = _alignmentForTextAlign(textAlign);
+          return DecoratedBox(
+            decoration:
+                styleSheet.tableCellsDecoration ?? const BoxDecoration(),
+            child: Padding(
+              padding: styleSheet.tableCellsPadding ?? EdgeInsets.zero,
+              child: Align(
+                alignment: alignment,
+                child: _OmnibotMarkdownTableCell(
+                  data: cell.source,
+                  baseStyle: cellStyle,
+                  selectable: selectable,
+                  inlineResourcePlainStyle: inlineResourcePlainStyle,
+                  onResourceOpen: onResourceOpen,
+                  textAlign: textAlign,
+                ),
+              ),
+            ),
+          );
+        })
+        .toList(growable: false);
+  }
+
+  TextAlign _resolveCellTextAlign(
+    String? align, {
+    required TextAlign fallback,
+  }) {
+    return switch (align) {
+      'left' => TextAlign.left,
+      'center' => TextAlign.center,
+      'right' => TextAlign.right,
+      _ => fallback,
+    };
+  }
+
+  Alignment _alignmentForTextAlign(TextAlign textAlign) {
+    return switch (textAlign) {
+      TextAlign.center => Alignment.center,
+      TextAlign.right || TextAlign.end => Alignment.centerRight,
+      _ => Alignment.centerLeft,
+    };
+  }
+}
+
+class _OmnibotTableRowSpec {
+  const _OmnibotTableRowSpec({required this.isHeader, required this.cells});
+
+  factory _OmnibotTableRowSpec.fromJson(Map<String, dynamic> json) {
+    final rawCells = json['cells'];
+    final cells = rawCells is List
+        ? rawCells
+              .whereType<Map<String, dynamic>>()
+              .map(_OmnibotTableCellSpec.fromJson)
+              .toList(growable: false)
+        : const <_OmnibotTableCellSpec>[];
+    return _OmnibotTableRowSpec(
+      isHeader: json['isHeader'] == true,
+      cells: cells,
+    );
+  }
+
+  final bool isHeader;
+  final List<_OmnibotTableCellSpec> cells;
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'isHeader': isHeader,
+      'cells': cells.map((cell) => cell.toJson()).toList(growable: false),
+    };
+  }
+}
+
+class _OmnibotTableCellSpec {
+  const _OmnibotTableCellSpec({required this.source, this.align});
+
+  factory _OmnibotTableCellSpec.fromJson(Map<String, dynamic> json) {
+    return _OmnibotTableCellSpec(
+      source: json['source'] as String? ?? '',
+      align: json['align'] as String?,
+    );
+  }
+
+  final String source;
+  final String? align;
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{'source': source, 'align': align};
+  }
+}
+
+class _OmnibotTableScrollable extends StatefulWidget {
+  const _OmnibotTableScrollable({
+    required this.thumbVisibility,
+    required this.child,
+  });
+
+  final bool thumbVisibility;
+  final Widget child;
+
+  @override
+  State<_OmnibotTableScrollable> createState() =>
+      _OmnibotTableScrollableState();
+}
+
+class _OmnibotTableScrollableState extends State<_OmnibotTableScrollable> {
+  late final ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ChatDrawerGestureGuard(
+      child: Scrollbar(
+        controller: _scrollController,
+        thumbVisibility: widget.thumbVisibility,
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          scrollDirection: Axis.horizontal,
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+class _OmnibotMarkdownTableCell extends StatelessWidget {
+  const _OmnibotMarkdownTableCell({
+    required this.data,
+    required this.baseStyle,
+    required this.selectable,
+    required this.inlineResourcePlainStyle,
+    required this.onResourceOpen,
+    required this.textAlign,
+  });
+
+  final String data;
+  final TextStyle baseStyle;
+  final bool selectable;
+  final bool inlineResourcePlainStyle;
+  final OmnibotResourceOpenCallback? onResourceOpen;
+  final TextAlign textAlign;
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTextStyle.merge(
+      style: baseStyle,
+      textAlign: textAlign,
+      child: OmnibotMarkdownBody(
+        data: data,
+        baseStyle: baseStyle,
+        selectable: selectable,
+        inlineResourcePlainStyle: inlineResourcePlainStyle,
+        onResourceOpen: onResourceOpen,
+      ),
+    );
   }
 }
 
@@ -353,9 +821,11 @@ class OmnibotCodeBlockBuilder extends MarkdownElementBuilder {
           onTap: canCopy ? () => onCopy(code) : null,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Text(code, style: codeStyle, softWrap: false),
+            child: ChatDrawerGestureGuard(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Text(code, style: codeStyle, softWrap: false),
+              ),
             ),
           ),
         ),
@@ -453,13 +923,16 @@ class OmnibotBlockMathBuilder extends MarkdownElementBuilder {
     );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Math.tex(
-          expression,
-          mathStyle: MathStyle.display,
-          textStyle: style,
-          onErrorFallback: (error) => Text('\$\$$expression\$\$', style: style),
+      child: ChatDrawerGestureGuard(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Math.tex(
+            expression,
+            mathStyle: MathStyle.display,
+            textStyle: style,
+            onErrorFallback: (error) =>
+                Text('\$\$$expression\$\$', style: style),
+          ),
         ),
       ),
     );
@@ -467,9 +940,13 @@ class OmnibotBlockMathBuilder extends MarkdownElementBuilder {
 }
 
 class OmnibotInlineLinkBuilder extends MarkdownElementBuilder {
-  OmnibotInlineLinkBuilder({this.inlineResourcePlainStyle = false});
+  OmnibotInlineLinkBuilder({
+    this.inlineResourcePlainStyle = false,
+    this.onResourceOpen,
+  });
 
   final bool inlineResourcePlainStyle;
+  final OmnibotResourceOpenCallback? onResourceOpen;
 
   @override
   Widget visitElementAfterWithContext(
@@ -489,7 +966,7 @@ class OmnibotInlineLinkBuilder extends MarkdownElementBuilder {
           child: InkWell(
             onTap: href == null
                 ? null
-                : () => OmnibotResourceService.handleLinkTap(href),
+                : () => _handleMarkdownLinkTap(context, href, onResourceOpen),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Text(
@@ -511,11 +988,29 @@ class OmnibotInlineLinkBuilder extends MarkdownElementBuilder {
           child: OmnibotInlineResourceEmbed(
             metadata: metadata,
             plainStyle: inlineResourcePlainStyle,
+            onOpen: onResourceOpen,
           ),
         ),
       ),
     );
   }
+}
+
+Future<void> _handleMarkdownLinkTap(
+  BuildContext context,
+  String href,
+  OmnibotResourceOpenCallback? onResourceOpen,
+) async {
+  if (href.startsWith('omnibot://') && onResourceOpen != null) {
+    await OmnibotResourceService.ensureWorkspacePathsLoaded();
+    if (!context.mounted) return;
+    final metadata = OmnibotResourceService.resolveUri(href);
+    if (metadata != null) {
+      await onResourceOpen(context, metadata);
+      return;
+    }
+  }
+  await OmnibotResourceService.handleLinkTap(href);
 }
 
 class OmnibotTrailingInlineSyntax extends md.InlineSyntax {
@@ -543,10 +1038,7 @@ class OmnibotTrailingInlineBuilder extends MarkdownElementBuilder {
     TextStyle? parentStyle,
   ) {
     return Text.rich(
-      WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Padding(padding: const EdgeInsets.only(left: 4), child: child),
-      ),
+      WidgetSpan(alignment: PlaceholderAlignment.middle, child: child),
     );
   }
 }

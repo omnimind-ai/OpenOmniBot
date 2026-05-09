@@ -37,13 +37,31 @@ class PermissionService {
             ? 'Allow agent to read/write files in public storage'
             : '允许 agent 读取和操作安卓公共存储中的文件与文件夹',
       ),
+      kShizukuPermissionId => _PermissionDisplaySpec(
+        id: kShizukuPermissionId,
+        iconPath: 'assets/welcome/permission_installed_apps.svg',
+        iconWidth: 32,
+        iconHeight: 32,
+        name: LegacyTextLocalizer.isEnglish
+            ? 'Shizuku Permission'
+            : 'Shizuku 权限',
+        description: LegacyTextLocalizer.isEnglish
+            ? 'Optional advanced system actions for the agent'
+            : '可选的高级系统能力，用于扩展 agent 的系统级操作边界',
+      ),
       _ => null,
     };
   }
 
   /// 根据品牌加载权限规格列表
-  static List<PermissionSpec> loadSpecs({required String brand}) {
-    return PermissionRegistry.getPermissions(brand: brand);
+  static List<PermissionSpec> loadSpecs({
+    required String brand,
+    bool includeOptionalAdvanced = false,
+  }) {
+    return PermissionRegistry.getPermissions(
+      brand: brand,
+      includeOptionalAdvanced: includeOptionalAdvanced,
+    );
   }
 
   /// 将权限规格转换为 PermissionData（供 UI 组件使用）
@@ -183,10 +201,12 @@ class PermissionService {
   static Future<List<PermissionSpec>> getMissingByLevel({
     required String brand,
     required PermissionLevel level,
+    bool includeOptionalAdvanced = false,
   }) async {
     final specs = PermissionRegistry.getPermissionsByLevel(
       brand: brand,
       level: level,
+      includeOptionalAdvanced: includeOptionalAdvanced,
     );
     return getMissing(specs);
   }
@@ -199,8 +219,13 @@ class PermissionService {
   static Future<bool> allGrantedByLevel({
     required String brand,
     required PermissionLevel level,
+    bool includeOptionalAdvanced = false,
   }) async {
-    final missing = await getMissingByLevel(brand: brand, level: level);
+    final missing = await getMissingByLevel(
+      brand: brand,
+      level: level,
+      includeOptionalAdvanced: includeOptionalAdvanced,
+    );
     return missing.isEmpty;
   }
 
@@ -224,6 +249,17 @@ class PermissionService {
           spec,
           onAuthorize: openPublicStorageSettings,
           checkAuthorization: isPublicStorageAccessGranted,
+        );
+      case kShizukuPermissionId:
+        return _buildDisplayPermissionData(
+          spec,
+          onAuthorize: () async {
+            await ensureShizukuPermission(context);
+          },
+          checkAuthorization: () async {
+            final status = await getShizukuStatus();
+            return status.isGranted;
+          },
         );
     }
     return null;
@@ -280,6 +316,20 @@ class PermissionService {
               description: LegacyTextLocalizer.isEnglish
                   ? 'Enable cross-app automation'
                   : '支持跨应用自动操作',
+              onAuthorize: () async {},
+              checkAuthorization: () async => false,
+            ),
+            kShizukuPermissionId => PermissionData(
+              id: kShizukuPermissionId,
+              iconPath: 'assets/welcome/permission_installed_apps.svg',
+              iconWidth: 32,
+              iconHeight: 32,
+              name: LegacyTextLocalizer.isEnglish
+                  ? 'Shizuku Permission'
+                  : 'Shizuku 权限',
+              description: LegacyTextLocalizer.isEnglish
+                  ? 'Optional advanced system actions for the agent'
+                  : '可选的高级系统能力，用于扩展 agent 的系统级操作边界',
               onAuthorize: () async {},
               checkAuthorization: () async => false,
             ),

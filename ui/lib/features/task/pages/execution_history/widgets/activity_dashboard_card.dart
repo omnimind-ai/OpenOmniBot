@@ -14,6 +14,7 @@ class _WeeklyTokenData {
   final DateTime weekStart;
   int localTokens = 0;
   int cloudTokens = 0;
+  int cachedTokens = 0;
   int get totalTokens => localTokens + cloudTokens;
   _WeeklyTokenData({required this.weekStart});
 }
@@ -59,6 +60,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
   bool _isTokenLoading = true;
   int _totalLocal = 0;
   int _totalCloud = 0;
+  int _totalCached = 0;
 
   // -- animation --
   late AnimationController _fadeController;
@@ -171,6 +173,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
 
       int totalLocal = 0;
       int totalCloud = 0;
+      int totalCached = 0;
 
       for (final record in records) {
         final daysSinceStart = DateTime.fromMillisecondsSinceEpoch(
@@ -180,6 +183,10 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
         final weekIndex = daysSinceStart ~/ 7;
         if (weekIndex >= totalWeeks) continue;
         final tokens = record.totalTokens;
+
+        weeklyData[weekIndex].cachedTokens += record.cachedTokens;
+        totalCached += record.cachedTokens;
+
         if (record.isLocal) {
           weeklyData[weekIndex].localTokens += tokens;
           totalLocal += tokens;
@@ -194,6 +201,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
           _weeklyData = weeklyData;
           _totalLocal = totalLocal;
           _totalCloud = totalCloud;
+          _totalCached = totalCached;
           _isTokenLoading = false;
         });
         _tryStartFade();
@@ -254,6 +262,9 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
   Color _localPillText(bool d) => d ? const Color(0xFF98D492) : const Color(0xFF3D7A35);
   Color _cloudPillBg(bool d) => d ? const Color(0xFF1A3A5C) : const Color(0xFFE8F2FC);
   Color _cloudPillText(bool d) => d ? const Color(0xFF3B9FE8) : const Color(0xFF2C7FEB);
+  Color _cachedColor(bool d) => d ? const Color(0xFFB8860B) : const Color(0xFFD4A017);
+  Color _cachedPillBg(bool d) => d ? const Color(0xFF3A3018) : const Color(0xFFFFF3DC);
+  Color _cachedPillText(bool d) => d ? const Color(0xFFE8C547) : const Color(0xFFB8860B);
 
   // -----------------------------------------------------------------------
   //  Build
@@ -344,13 +355,52 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
     return Row(
       children: [
         // 对话次数
-        _buildStatPill(Icons.chat_bubble_outline_rounded, '$_totalConversations', '次对话', accentBlue, palette),
+        _buildStatPill(
+          Icons.chat_bubble_outline_rounded,
+          '$_totalConversations',
+          LegacyTextLocalizer.localize('次对话'),
+          accentBlue,
+          palette,
+        ),
         const SizedBox(width: 8),
         // 连续天数
-        _buildStatPill(Icons.local_fire_department_rounded, '$_currentStreak', '天连续', streakColor, palette),
-        const Spacer(),
-        // Token 总量
-        _buildStatPill(Icons.bolt_rounded, _formatTokenCount(_totalTokens), 'tokens', accentBlue, palette),
+        _buildStatPill(
+          Icons.local_fire_department_rounded,
+          '$_currentStreak',
+          LegacyTextLocalizer.localize('天连续'),
+          streakColor,
+          palette,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                // Token 总量
+                _buildStatPill(
+                  Icons.bolt_rounded,
+                  _formatTokenCount(_totalTokens),
+                  'tokens',
+                  accentBlue,
+                  palette,
+                ),
+                if (_totalCached > 0)
+                  _buildStatPill(
+                    Icons.cached_rounded,
+                    _formatTokenCount(_totalCached),
+                    LegacyTextLocalizer.localize('缓存'),
+                    _cachedColor(isDark),
+                    palette,
+                  ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -619,7 +669,13 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
                       if (cellDate.isAfter(today)) return SizedBox(width: cellSize, height: cellSize);
                       final count = _activityMap[_dateKey(cellDate)] ?? 0;
                       return Tooltip(
-                        message: count > 0 ? '$count 次对话 · ${cellDate.month}/${cellDate.day}' : '无对话 · ${cellDate.month}/${cellDate.day}',
+                        message: count > 0
+                            ? LegacyTextLocalizer.localize(
+                                '$count 次对话 · ${cellDate.month}/${cellDate.day}',
+                              )
+                            : LegacyTextLocalizer.localize(
+                                '无对话 · ${cellDate.month}/${cellDate.day}',
+                              ),
                         preferBelow: false,
                         verticalOffset: 12,
                         decoration: BoxDecoration(color: isDark ? const Color(0xFF2D3032) : const Color(0xFF353E53), borderRadius: BorderRadius.circular(6)),
@@ -637,8 +693,51 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
     );
   }
 
-  String _monthName(int m) => const ['', '1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'][m];
-  String _dayLabel(int i) => const ['一', '', '三', '', '五', '', '日'][i];
+  String _monthName(int m) {
+    if (LegacyTextLocalizer.isEnglish) {
+      const names = [
+        '',
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
+      return names[m];
+    }
+    const names = [
+      '',
+      '1月',
+      '2月',
+      '3月',
+      '4月',
+      '5月',
+      '6月',
+      '7月',
+      '8月',
+      '9月',
+      '10月',
+      '11月',
+      '12月',
+    ];
+    return names[m];
+  }
+
+  String _dayLabel(int i) {
+    if (LegacyTextLocalizer.isEnglish) {
+      const labels = ['Mon', '', 'Wed', '', 'Fri', '', 'Sun'];
+      return labels[i];
+    }
+    const labels = ['一', '', '三', '', '五', '', '日'];
+    return labels[i];
+  }
 
   // -----------------------------------------------------------------------
   //  Token tab — stacked bars
@@ -649,7 +748,15 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
       return const SizedBox(height: 100, child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))));
     }
     if (_totalTokens == 0) {
-      return SizedBox(height: 70, child: Center(child: Text('暂无 Token 消耗数据', style: TextStyle(fontSize: 11, color: palette.textTertiary))));
+      return SizedBox(
+        height: 70,
+        child: Center(
+          child: Text(
+            LegacyTextLocalizer.localize('暂无 Token 消耗数据'),
+            style: TextStyle(fontSize: 11, color: palette.textTertiary),
+          ),
+        ),
+      );
     }
     return Column(
       children: [
@@ -658,10 +765,24 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             if (_totalLocal > 0)
-              _buildPropPill('本地 ${_percentOf(_totalLocal, _totalTokens)}%', _localPillBg(isDark), _localPillText(isDark), _localColor(isDark)),
+              _buildPropPill(
+                LegacyTextLocalizer.localize(
+                  '本地 ${_percentOf(_totalLocal, _totalTokens)}%',
+                ),
+                _localPillBg(isDark),
+                _localPillText(isDark),
+                _localColor(isDark),
+              ),
             if (_totalLocal > 0 && _totalCloud > 0) const SizedBox(width: 6),
             if (_totalCloud > 0)
-              _buildPropPill('云端 ${_percentOf(_totalCloud, _totalTokens)}%', _cloudPillBg(isDark), _cloudPillText(isDark), _cloudColor(isDark)),
+              _buildPropPill(
+                LegacyTextLocalizer.localize(
+                  '云端 ${_percentOf(_totalCloud, _totalTokens)}%',
+                ),
+                _cloudPillBg(isDark),
+                _cloudPillText(isDark),
+                _cloudColor(isDark),
+              ),
           ],
         ),
         const SizedBox(height: 10),
@@ -708,7 +829,11 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
             return Padding(
               padding: EdgeInsets.only(right: index < _weeklyData.length - 1 ? barGap : 0),
               child: Tooltip(
-                message: week.totalTokens > 0 ? '本地 ${_formatTokenCount(week.localTokens)} · 云端 ${_formatTokenCount(week.cloudTokens)}' : '无消耗',
+                message: week.totalTokens > 0
+                    ? LegacyTextLocalizer.localize(
+                        '本地 ${_formatTokenCount(week.localTokens)} · 云端 ${_formatTokenCount(week.cloudTokens)} · 缓存 ${_formatTokenCount(week.cachedTokens)}',
+                      )
+                    : LegacyTextLocalizer.localize('无消耗'),
                 preferBelow: false, verticalOffset: 12,
                 decoration: BoxDecoration(color: isDark ? const Color(0xFF2D3032) : const Color(0xFF353E53), borderRadius: BorderRadius.circular(6)),
                 textStyle: const TextStyle(fontSize: 11, color: Colors.white),
@@ -719,7 +844,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       if (cloudH > 0) Container(width: barWidth, height: cloudH.clamp(0, barAreaHeight), decoration: BoxDecoration(color: _cloudColor(isDark), borderRadius: BorderRadius.only(topLeft: const Radius.circular(2), topRight: const Radius.circular(2)))),
-                      if (localH > 0) Container(width: barWidth, height: localH.clamp(0, barAreaHeight), decoration: BoxDecoration(color: _localColor(isDark), borderRadius: localH > 0 && cloudH <= 0 ? const BorderRadius.only(topLeft: Radius.circular(2), topRight: Radius.circular(2)) : BorderRadius.zero)),
+                      if (localH > 0) Container(width: barWidth, height: localH.clamp(0, barAreaHeight), decoration: BoxDecoration(color: _localColor(isDark), borderRadius: cloudH > 0 ? BorderRadius.zero : const BorderRadius.only(topLeft: Radius.circular(2), topRight: Radius.circular(2)))),
                       if (week.totalTokens == 0) Container(width: barWidth, height: 2, decoration: BoxDecoration(color: palette.surfaceElevated, borderRadius: BorderRadius.circular(1))),
                     ],
                   ),

@@ -35,7 +35,13 @@ data class ChatCompletionRequest(
     val reasoningEffort: String? = null,
     @SerialName("enable_thinking")
     val enableThinking: Boolean? = null,
+    val thinking: ChatCompletionThinking? = null,
     val audio: ChatCompletionAudioRequest? = null
+)
+
+@Serializable
+data class ChatCompletionThinking(
+    val type: String
 )
 
 @Serializable
@@ -51,6 +57,8 @@ data class ChatCompletionMessage(
     val audio: ChatCompletionAudioResponse? = null,
     @SerialName("tool_calls")
     val toolCalls: List<AssistantToolCall>? = null,
+    @SerialName("reasoning_content")
+    val reasoningContent: String? = null,
     @SerialName("tool_call_id")
     val toolCallId: String? = null,
     val name: String? = null

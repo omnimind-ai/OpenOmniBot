@@ -4,7 +4,8 @@ enum ConversationMode {
   normal('normal'),
   chatOnly('chat_only'),
   openclaw('openclaw'),
-  subagent('subagent');
+  subagent('subagent'),
+  codex('codex');
 
   const ConversationMode(this.storageValue);
 
@@ -25,6 +26,7 @@ enum ConversationMode {
     ConversationMode.chatOnly => LegacyTextLocalizer.localize('纯聊天'),
     ConversationMode.openclaw => 'OpenClaw',
     ConversationMode.subagent => 'SubAgent',
+    ConversationMode.codex => 'Codex',
   };
 }
 

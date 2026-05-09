@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ui/features/home/pages/scene_model_setting/scene_model_setting_page.dart';
+import 'package:ui/l10n/generated/app_localizations.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/app_theme.dart';
@@ -33,23 +34,31 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const channel = MethodChannel('cn.com.omnimind.bot/AssistCoreEvent');
+  const codexChannel = MethodChannel('cn.com.omnimind.bot/CodexAppServer');
 
   Widget buildTestApp(Widget child) {
     return MaterialApp(
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      locale: const Locale('zh'),
       home: DefaultAssetBundle(bundle: _SvgTestAssetBundle(), child: child),
     );
   }
 
   late Map<String, dynamic> savedVoiceConfig;
+  late Map<String, dynamic>? savedCodexConfig;
   late int getSceneModelCatalogCount;
+  late int codexWriteCount;
 
   setUp(() async {
     AssistsMessageService.initialize();
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await StorageService.init();
     getSceneModelCatalogCount = 0;
+    codexWriteCount = 0;
+    savedCodexConfig = null;
     savedVoiceConfig = <String, dynamic>{
       'autoPlay': false,
       'voiceId': 'default_zh',
@@ -127,11 +136,36 @@ void main() {
               return null;
           }
         });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(codexChannel, (call) async {
+          switch (call.method) {
+            case 'config/local/read':
+              return <String, dynamic>{
+                'baseUrl': 'https://example.com/v1',
+                'model': 'gpt-5.5',
+                'apiKey': 'test-key',
+                'codexHome': '/root/.codex',
+              };
+            case 'config/local/write':
+              savedCodexConfig = Map<String, dynamic>.from(
+                (call.arguments as Map).cast<String, dynamic>(),
+              );
+              codexWriteCount += 1;
+              return <String, dynamic>{
+                ...savedCodexConfig!,
+                'codexHome': '/root/.codex',
+              };
+            default:
+              return null;
+          }
+        });
   });
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(codexChannel, null);
   });
 
   testWidgets('voice scene expands and saves voice settings', (tester) async {
@@ -189,5 +223,41 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(getSceneModelCatalogCount, catalogCallCountAfterSave);
+    expect(codexWriteCount, 0);
+  });
+
+  testWidgets('codex config autosaves after fields are complete', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 2200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(buildTestApp(const SceneModelSettingPage()));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.byKey(const Key('codex-config-save-button')), findsNothing);
+
+    final baseUrlField = find.byKey(const Key('codex-config-base-url-field'));
+    final modelField = find.byKey(const Key('codex-config-model-field'));
+    final apiKeyField = find.byKey(const Key('codex-config-api-key-field'));
+    await tester.ensureVisible(baseUrlField);
+    await tester.enterText(baseUrlField, 'https://new.example/v1');
+    await tester.enterText(modelField, 'gpt-5.6');
+    await tester.enterText(apiKeyField, 'new-key');
+
+    expect(codexWriteCount, 0);
+    await tester.pump(const Duration(milliseconds: 750));
+    await tester.pump();
+
+    expect(codexWriteCount, 1);
+    expect(savedCodexConfig, <String, dynamic>{
+      'baseUrl': 'https://new.example/v1',
+      'model': 'gpt-5.6',
+      'apiKey': 'new-key',
+    });
+    expect(find.text('已自动保存，请重启软件以应用 Codex 配置。'), findsOneWidget);
   });
 }

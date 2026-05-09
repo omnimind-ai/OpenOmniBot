@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 
 const String _llamaCppBackend = 'llama.cpp';
 const String _omniinferMnnBackend = 'omniinfer-mnn';
+const String _omniinferQnnBackend = 'executorch-qnn';
+const String _omniinferLiteRtBackend = 'litert';
 
 String _normalizeInferenceBackend(Object? raw) {
   final value = (raw ?? '').toString().trim();
@@ -13,6 +15,13 @@ String _normalizeInferenceBackend(Object? raw) {
     case 'mnn':
     case _omniinferMnnBackend:
       return _omniinferMnnBackend;
+    case 'qnn':
+    case _omniinferQnnBackend:
+      return _omniinferQnnBackend;
+    case 'litert':
+    case 'litert-lm':
+    case 'litertlm':
+      return _omniinferLiteRtBackend;
     default:
       return _llamaCppBackend;
   }
@@ -364,6 +373,19 @@ class MnnLocalModelsService {
     return MnnLocalConfig.fromMap(result);
   }
 
+  /// Eagerly preload a model (backend-agnostic).
+  /// Cancels any previous in-progress preload.
+  /// Returns a map with keys: success (bool), modelId (String),
+  /// cancelled (bool, optional), error (String, optional).
+  static Future<Map<dynamic, dynamic>?> preloadModel({
+    required String modelId,
+  }) {
+    return _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'preloadModel',
+      {'modelId': modelId},
+    );
+  }
+
   static Future<MnnLocalConfig> stopApiService() async {
     final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
       'stopApiService',
@@ -399,5 +421,12 @@ class MnnLocalModelsService {
       {'backend': backend},
     );
     return _normalizeInferenceBackend(result ?? backend);
+  }
+
+  static Future<Map<String, dynamic>> importModel() async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'importModel',
+    );
+    return (result ?? {}).cast<String, dynamic>();
   }
 }

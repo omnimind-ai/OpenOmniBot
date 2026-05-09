@@ -3,6 +3,7 @@ import 'package:ui/services/app_background_service.dart';
 import 'artifact_card.dart';
 import 'agent_tool_summary_card.dart';
 import 'context_compaction_marker_card.dart';
+import 'codex_request_card.dart';
 import 'deep_thinking_card.dart';
 import 'executable_task_card.dart';
 import 'permission_button_card.dart';
@@ -25,8 +26,11 @@ class CardWidgetFactory {
     OnRequestAuthorize? onRequestAuthorize,
     void Function(String taskId)? onCancelTask,
     bool enableThinkingCollapse = false,
+    bool thinkingAutoCollapseOnComplete = true,
+    bool? showThinkingAvatarOverride,
     ScrollController? parentScrollController,
     VoidCallback? onParentScrollHandoff,
+    VoidCallback? onStreamingTextLayoutChanged,
     AppBackgroundConfig appearanceConfig = AppBackgroundConfig.defaults,
     AppBackgroundVisualProfile visualProfile =
         AppBackgroundVisualProfile.defaultProfile,
@@ -71,14 +75,15 @@ class CardWidgetFactory {
           onCancelTask: onCancelTask,
           isExecutable: isExecutable,
           isCollapsible: isCollapsible,
+          autoCollapseOnComplete: thinkingAutoCollapseOnComplete,
           parentScrollController: parentScrollController,
           onParentScrollHandoff: onParentScrollHandoff,
+          onStreamingTextLayoutChanged: onStreamingTextLayoutChanged,
           textScale: resolvedChatTextScale(appearanceConfig),
           textColor: visualProfile.primaryTextColor,
-          showStatusAvatar: _shouldShowDeepThinkingAvatar(
-            taskID: taskID,
-            cardId: cardId,
-          ),
+          showStatusAvatar:
+              showThinkingAvatarOverride ??
+              _shouldShowDeepThinkingAvatar(taskID: taskID, cardId: cardId),
         );
       case 'stage_hint':
         final hint = cardData['hint'] as String? ?? '';
@@ -106,6 +111,10 @@ class CardWidgetFactory {
         );
       case 'context_compaction_marker':
         return ContextCompactionMarkerCard(cardData: cardData);
+      case 'codex_request':
+        return CodexRequestCard(cardData: cardData);
+      case 'history_omitted_card':
+        return _HistoryOmittedCard(cardData: cardData);
       case 'artifact_card':
         final artifact = cardData['artifact'] as Map<String, dynamic>? ?? {};
         return ArtifactCard(artifact: artifact);
@@ -157,6 +166,81 @@ class CardWidgetFactory {
       return true;
     }
     return cardId == '$taskID-thinking';
+  }
+}
+
+class _HistoryOmittedCard extends StatelessWidget {
+  const _HistoryOmittedCard({required this.cardData});
+
+  final Map<String, dynamic> cardData;
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = (cardData['summary'] ?? '').toString().trim();
+    final originalType = (cardData['originalType'] ?? '').toString().trim();
+    final title = summary.isEmpty ? '历史过程卡片已折叠' : summary;
+    final subtitle = originalType.isEmpty ? '历史过程' : originalType;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.78,
+        ),
+        child: Container(
+          margin: const EdgeInsets.only(top: 6, bottom: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.6),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.history_toggle_off_rounded,
+                size: 16,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colorScheme.onSurface,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        height: 1.2,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colorScheme.onSurfaceVariant,
+                        fontSize: 10,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

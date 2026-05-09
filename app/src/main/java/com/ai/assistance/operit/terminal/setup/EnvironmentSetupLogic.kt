@@ -16,6 +16,7 @@ object EnvironmentSetupLogic {
         PackageDefinition("python", "python3 --version", "dev"),
         PackageDefinition("uv", "uv --version", "dev"),
         PackageDefinition("pip", "pip3 --version", "dev"),
+        PackageDefinition("codex", "codex --version", "ai"),
         PackageDefinition("ssh_client", "ssh -V 2>&1", "ssh"),
         PackageDefinition("sshpass", "sshpass -V 2>&1", "ssh"),
         PackageDefinition("openssh_server", "sshd -V 2>&1", "ssh")
@@ -35,6 +36,7 @@ object EnvironmentSetupLogic {
         "nodejs" to listOf("nodejs", "npm"),
         "npm" to listOf("npm"),
         "git" to listOf("git"),
+        "codex" to listOf("nodejs", "npm", "git", "bash", "curl", "ripgrep"),
         "python" to listOf("python3"),
         "pip" to listOf("py3-pip"),
         "uv" to listOf("python3", "py3-pip"),
@@ -84,6 +86,13 @@ object EnvironmentSetupLogic {
         }
         if ("uv" in requested) {
             commands += "if ! apk add --no-cache uv; then python3 -m pip install --break-system-packages --upgrade uv; fi"
+        }
+        if ("codex" in requested) {
+            commands += "mkdir -p /root/.npm-global/bin"
+            commands += "npm config set prefix /root/.npm-global"
+            commands += "export PATH=\"/root/.npm-global/bin:${'$'}PATH\""
+            commands += "npm install -g @openai/codex@latest"
+            commands += "ln -sf /root/.npm-global/bin/codex /usr/local/bin/codex || true"
         }
         if ("openssh_server" in requested) {
             commands += "mkdir -p /var/run/sshd /etc/ssh"
@@ -156,6 +165,11 @@ object EnvironmentSetupLogic {
                     commandCheck = "command -v pip3 >/dev/null 2>&1",
                     versionCommand = "pip3 --version"
                 )
+                "codex" -> buildProbeSnippet(
+                    packageId = packageId,
+                    commandCheck = "PATH=\"/root/.npm-global/bin:${'$'}PATH\"; export PATH; command -v codex >/dev/null 2>&1 && codex app-server --help >/dev/null 2>&1",
+                    versionCommand = "codex --version"
+                )
                 "ssh_client" -> buildProbeSnippet(
                     packageId = packageId,
                     commandCheck = "command -v ssh >/dev/null 2>&1",
@@ -207,6 +221,7 @@ object EnvironmentSetupLogic {
             "python" -> "command -v python3"
             "pip" -> "command -v pip3"
             "uv" -> "command -v uv"
+            "codex" -> "PATH=\"/root/.npm-global/bin:${'$'}PATH\"; export PATH; command -v codex && codex app-server --help"
             "ripgrep" -> "command -v rg"
             "tmux" -> "command -v tmux"
             "xz" -> "command -v xz"

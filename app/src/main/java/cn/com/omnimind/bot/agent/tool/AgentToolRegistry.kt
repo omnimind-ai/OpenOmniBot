@@ -3,6 +3,9 @@ package cn.com.omnimind.bot.agent
 import android.content.Context
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.i18n.LocalizedText
+import cn.com.omnimind.baselib.shizuku.PrivilegedActionPolicy
+import cn.com.omnimind.baselib.shizuku.ShizukuBackend
+import cn.com.omnimind.baselib.shizuku.ShizukuCapabilityManager
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.mcp.RemoteMcpDiscoveredServer
 import cn.com.omnimind.bot.mcp.RemoteMcpToolDescriptor
@@ -20,7 +23,8 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class AgentToolRegistry(
     private val context: Context,
-    discoveredServers: List<RemoteMcpDiscoveredServer>
+    discoveredServers: List<RemoteMcpDiscoveredServer>,
+    conversationMode: String = AgentConversationModePolicy.NORMAL_MODE
 ) : AgentToolCatalog {
     data class RuntimeToolDescriptor(
         val name: String,
@@ -37,15 +41,61 @@ class AgentToolRegistry(
 
     init {
         val locale = AppLocaleManager.resolvePromptLocale(context)
+        val shizukuStatus = ShizukuCapabilityManager.get(context).getStatus()
         val runtimeDefinitions = mutableListOf<JsonObject>()
         runtimeDefinitions.addAll(AgentToolDefinitions.staticTools(locale))
+        if (shizukuStatus.isGranted()) {
+            val privilegedVisibleActions = shizukuStatus.availableActions.ifEmpty {
+                PrivilegedActionPolicy.visibleAgentActions(
+                    if (shizukuStatus.backend == ShizukuBackend.ROOT) {
+                        ShizukuBackend.ROOT
+                    } else {
+                        ShizukuBackend.ADB
+                    }
+                )
+            }
+            runtimeDefinitions.add(
+                AgentToolDefinitions.androidPrivilegedActionTool(
+                    visibleActions = privilegedVisibleActions,
+                    backend = shizukuStatus.backend,
+                    locale = locale
+                )
+            )
+            runtimeDefinitions.add(
+                AgentToolDefinitions.androidPrivilegedSessionStartTool(
+                    backend = shizukuStatus.backend,
+                    locale = locale
+                )
+            )
+            runtimeDefinitions.add(
+                AgentToolDefinitions.androidPrivilegedSessionExecTool(
+                    backend = shizukuStatus.backend,
+                    locale = locale
+                )
+            )
+            runtimeDefinitions.add(
+                AgentToolDefinitions.androidPrivilegedSessionReadTool(
+                    backend = shizukuStatus.backend,
+                    locale = locale
+                )
+            )
+            runtimeDefinitions.add(
+                AgentToolDefinitions.androidPrivilegedSessionStopTool(
+                    backend = shizukuStatus.backend,
+                    locale = locale
+                )
+            )
+        }
         runtimeDefinitions.addAll(AgentToolDefinitions.memoryTools(locale))
         runtimeDefinitions.addAll(AgentToolDefinitions.subagentTools(locale))
         discoveredServers.flatMap { it.tools }.forEach { tool ->
             runtimeDefinitions.add(toDynamicMcpToolDefinition(tool, locale))
         }
 
-        toolsForModel = runtimeDefinitions.mapNotNull { definition ->
+        val filteredDefinitions = AgentConversationModePolicy
+            .filterToolDefinitionsForConversationMode(runtimeDefinitions, conversationMode)
+
+        toolsForModel = filteredDefinitions.mapNotNull { definition ->
             val function = definition["function"] as? JsonObject ?: return@mapNotNull null
             val name = function["name"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
             if (name.isBlank()) return@mapNotNull null

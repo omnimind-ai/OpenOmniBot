@@ -2,6 +2,7 @@ package cn.com.omnimind.bot.agent
 
 import android.content.Context
 import android.os.FileObserver
+import cn.com.omnimind.baselib.llm.DeepSeekProvider
 import cn.com.omnimind.baselib.llm.ModelProviderConfigStore
 import cn.com.omnimind.baselib.llm.ModelProviderProfile
 import cn.com.omnimind.baselib.llm.SceneModelBindingEntry
@@ -313,7 +314,7 @@ class AgentAiCapabilityConfigSync private constructor(
                     name = provider.name.trim(),
                     baseUrl = provider.baseUrl.trim(),
                     apiKey = provider.apiKey.trim(),
-                    protocolType = provider.protocolType.trim().ifEmpty { "openai_compatible" }
+                    protocolType = normalizeProtocolType(provider.protocolType)
                 )
             },
             editingProfileId = snapshot.currentProviderId
@@ -385,7 +386,7 @@ class AgentAiCapabilityConfigSync private constructor(
                     name = provider.name?.trim().orEmpty(),
                     baseUrl = provider.baseUrl?.trim().orEmpty(),
                     apiKey = provider.apiKey?.trim().orEmpty(),
-                    protocolType = provider.protocolType?.trim()?.ifEmpty { "openai_compatible" } ?: "openai_compatible"
+                    protocolType = normalizeProtocolType(provider.protocolType)
                 )
             } ?: fallback.providers,
             sceneModels = sceneModels,
@@ -572,6 +573,10 @@ class AgentAiCapabilityConfigSync private constructor(
 
     private fun firstNonBlank(vararg values: String?): String {
         return values.firstOrNull { !it.isNullOrBlank() }?.trim().orEmpty()
+    }
+
+    private fun normalizeProtocolType(value: String?): String {
+        return DeepSeekProvider.normalizeProtocolType(value)
     }
 
     private fun JsonObject.readString(name: String): String {

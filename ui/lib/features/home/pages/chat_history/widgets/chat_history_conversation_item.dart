@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/widgets/conversation_slidable.dart';
 import 'package:ui/features/home/widgets/conversation_mode_badge.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -36,7 +37,9 @@ class ChatHistoryConversationItem extends StatelessWidget {
       vertical: compact ? 12 : 16,
     );
     final metaText = conversation.messageCount > 0
-        ? '${conversation.timeDisplay} · ${conversation.messageCount} 条消息'
+        ? LegacyTextLocalizer.localize(
+            '${conversation.timeDisplay} · ${conversation.messageCount} 条消息',
+          )
         : conversation.timeDisplay;
     return ConversationSlidable(
       itemKey: conversation.threadKey,
@@ -188,7 +191,9 @@ class ChatHistoryConversationItem extends StatelessWidget {
                     if (!compact && conversation.messageCount > 0) ...[
                       const SizedBox(height: 4),
                       Text(
-                        '${conversation.messageCount} 条消息',
+                        LegacyTextLocalizer.localize(
+                          '${conversation.messageCount} 条消息',
+                        ),
                         style: TextStyle(
                           fontSize: 12,
                           color: context.isDarkTheme

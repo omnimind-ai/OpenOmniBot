@@ -1,29 +1,8 @@
 package cn.com.omnimind.assists.api.bean
 
 import cn.com.omnimind.assists.api.interfaces.OnMessagePushListener
-import cn.com.omnimind.assists.task.vlmserver.OperationResult
-import cn.com.omnimind.assists.task.vlmserver.TaskExecutionReport
 import java.util.concurrent.TimeUnit
 
-data class VLMTaskPreHookResult(
-    val kind: String,
-    val summary: String = "",
-    val functionId: String? = null,
-    val plannerGuidance: String = "",
-    val executionRoute: String = ""
-)
-
-data class VLMTaskRunLogPayload(
-    val goal: String,
-    val compileGateResult: VLMTaskPreHookResult? = null,
-    val taskReport: TaskExecutionReport,
-    val startedAtMs: Long,
-    val finishedAtMs: Long,
-    val finalXml: String? = null,
-    val finalPackageName: String? = null,
-    val rawEvents: List<Map<String, Any?>> = emptyList(),
-    val traceSessionMeta: Map<String, Any?> = emptyMap(),
-)
 
 sealed class TaskParams {
     data class OpenClawConfig(
@@ -63,11 +42,7 @@ sealed class TaskParams {
         val needSummary: Boolean = false,
         val onMessagePushListener: OnMessagePushListener? = null,
         val skipGoHome: Boolean = false,  // 是否跳过回到主页，从当前页面开始执行
-        val stepSkillGuidance: String = "",
-        val onRunFunction: (suspend (String) -> OperationResult)? = null,
-        val onPrepareExecution: (suspend () -> VLMTaskPreHookResult)? = null,
-        val onCompileGateResolved: (suspend (VLMTaskPreHookResult) -> Unit)? = null,
-        val onTaskRunLogReady: (suspend (VLMTaskRunLogPayload) -> Unit)? = null
+        val stepSkillGuidance: String = ""
     ): TaskParams();
 
     data class ScheduledTaskParams(

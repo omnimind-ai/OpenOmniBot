@@ -202,6 +202,9 @@ mixin _ChatPageOpenClawMixin on _ChatPageStateBase {
   Future<bool> _tryHandleSlashCommand(String messageText) async {
     final trimmed = messageText.trim();
     if (!trimmed.startsWith('/')) return false;
+    if (_activeMode == ChatPageMode.codex) {
+      return _tryHandleCodexSlashCommand(trimmed);
+    }
 
     if (trimmed == '/compact' || trimmed.startsWith('/compact ')) {
       await _executeManualContextCompactionCommand();
@@ -223,7 +226,7 @@ mixin _ChatPageOpenClawMixin on _ChatPageStateBase {
         trimmed.substring('/effort'.length).trimLeft(),
       );
       if (effort == null) {
-        _showSnackBar('可用思考强度：low、high');
+        _showSnackBar('可用思考强度：no、low、high');
         return true;
       }
       await _applyConversationReasoningEffort(effort);

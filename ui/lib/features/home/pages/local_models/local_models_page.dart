@@ -17,11 +17,22 @@ enum _AccentTone { neutral, accent, success, info, warning, danger }
 
 const String _llamaCppBackend = 'llama.cpp';
 const String _omniinferMnnBackend = 'omniinfer-mnn';
+const String _omniinferQnnBackend = 'executorch-qnn';
+const String _omniinferLiteRtBackend = 'litert';
 
 class LocalModelsPage extends StatefulWidget {
-  const LocalModelsPage({super.key, this.initialTab = 'service'});
+  const LocalModelsPage({
+    super.key,
+    this.initialTab = 'service',
+    this.initialBackend,
+    this.pinnedModelId,
+  });
 
   final String initialTab;
+  final String? initialBackend;
+
+  /// When set, the market tab will pin this model to the top of the list.
+  final String? pinnedModelId;
 
   @override
   State<LocalModelsPage> createState() => _LocalModelsPageState();
@@ -59,7 +70,10 @@ class _LocalModelsPageState extends State<LocalModelsPage>
   bool _loadingInstalled = true;
   bool _loadingMarket = true;
   bool _loadingConfig = true;
-  bool _togglingApiService = false;
+
+  bool _importing = false;
+  double _importProgress = 0.0;
+  String _importModelId = '';
 
   @override
   void initState() {
@@ -71,7 +85,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     );
     _tabController.addListener(_handleTabChanged);
     _eventSubscription = MnnLocalModelsService.eventStream.listen(_handleEvent);
-    _bootstrap();
+    _bootstrap(preferredBackend: widget.initialBackend);
     _startPolling();
   }
 
@@ -129,7 +143,15 @@ class _LocalModelsPageState extends State<LocalModelsPage>
 
   List<MnnLocalModel> get _sortedMarketModels {
     final sorted = List<MnnLocalModel>.from(_marketModels);
+    final pinId = widget.pinnedModelId;
     sorted.sort((a, b) {
+      // Pin the recommended model to the top
+      if (pinId != null && pinId.isNotEmpty) {
+        final aPin = a.id.contains(pinId) || a.name.contains(pinId);
+        final bPin = b.id.contains(pinId) || b.name.contains(pinId);
+        if (aPin && !bPin) return -1;
+        if (!aPin && bPin) return 1;
+      }
       final sizeCompare = _modelSizeSortValue(
         a,
       ).compareTo(_modelSizeSortValue(b));
@@ -141,8 +163,14 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     return sorted;
   }
 
-  Future<void> _bootstrap() async {
+  Future<void> _bootstrap({String? preferredBackend}) async {
     try {
+      final normalizedPreferredBackend = _normalizeBackendName(
+        preferredBackend,
+      );
+      if (normalizedPreferredBackend != null) {
+        await MnnLocalModelsService.setBackend(normalizedPreferredBackend);
+      }
       final overview = await MnnLocalModelsService.getOverview(
         installedQuery: _installedSearchController.text.trim(),
         marketQuery: _marketSearchController.text.trim(),
@@ -164,6 +192,25 @@ class _LocalModelsPageState extends State<LocalModelsPage>
         _refreshInstalled(silent: true),
         _refreshMarket(silent: true),
       ]);
+    }
+  }
+
+  String? _normalizeBackendName(String? raw) {
+    switch (raw?.trim().toLowerCase()) {
+      case _llamaCppBackend:
+        return _llamaCppBackend;
+      case 'mnn':
+      case _omniinferMnnBackend:
+        return _omniinferMnnBackend;
+      case 'qnn':
+      case _omniinferQnnBackend:
+        return _omniinferQnnBackend;
+      case 'litert':
+      case 'litert-lm':
+      case 'litertlm':
+        return _omniinferLiteRtBackend;
+      default:
+        return null;
     }
   }
 
@@ -275,6 +322,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
 
   void _handleEvent(MnnLocalEvent event) {
     if (!mounted) return;
+    debugPrint('[LocalModels] event: ${event.type}, payload keys: ${event.payload.keys}');
     switch (event.type) {
       case 'download_update':
         final modelId = (event.payload['modelId'] ?? '').toString();
@@ -282,14 +330,56 @@ class _LocalModelsPageState extends State<LocalModelsPage>
         final download = rawDownload is Map
             ? MnnLocalDownloadInfo.fromMap(rawDownload)
             : null;
+        final prevState = _marketModels
+            .where((m) => m.id == modelId)
+            .firstOrNull
+            ?.download
+            ?.stateLabel ?? 'not_started';
+        debugPrint('[LocalModels] download_update: model=$modelId, '
+            'prevState=$prevState -> newState=${download?.stateLabel}, '
+            'progress=${download?.progress.toStringAsFixed(2)}, '
+            'error=${download?.errorMessage}');
+        _showDownloadStateToast(modelId, download);
         _updateMarketDownloadState(modelId, download);
         if (download?.isCompleted == true) {
           _refreshInstalled(silent: true);
         }
         break;
+      case 'download_error':
+        final errorModelId = (event.payload['modelId'] ?? '').toString();
+        final errorMsg = (event.payload['error'] ?? '').toString();
+        debugPrint('[LocalModels] download_error: model=$errorModelId, error=$errorMsg');
+        if (errorModelId.isNotEmpty) {
+          final name = _displayModelName(errorModelId);
+          final reason = errorMsg.trim().isNotEmpty
+              ? errorMsg.trim()
+              : context.l10n.localModelsDownloadErrorUnknown;
+          showToast(
+            context.l10n.localModelsDownloadFailedToast(name, reason),
+            type: ToastType.error,
+          );
+          _refreshMarket(silent: true);
+        }
+        break;
       case 'downloads_changed':
+        debugPrint('[LocalModels] downloads_changed: ${event.payload}');
         _refreshInstalled(silent: true);
         _refreshMarket(silent: true);
+        break;
+      case 'import_progress':
+        final importModelId = (event.payload['modelId'] ?? '').toString();
+        final importProgress =
+            (event.payload['progress'] as num?)?.toDouble() ?? 0.0;
+        if (mounted) {
+          setState(() {
+            _importProgress = importProgress;
+            _importModelId = importModelId;
+            if (importProgress >= 1.0) {
+              _importing = false;
+              _refreshInstalled(silent: true);
+            }
+          });
+        }
         break;
       case 'config_changed':
         final configPayload = event.payload['config'];
@@ -302,6 +392,43 @@ class _LocalModelsPageState extends State<LocalModelsPage>
         }
         break;
       default:
+        break;
+    }
+  }
+
+  void _showDownloadStateToast(String modelId, MnnLocalDownloadInfo? download) {
+    if (download == null || modelId.isEmpty) return;
+    final newState = download.stateLabel;
+    // Look up previous state from the current market model list.
+    final prevModel = _marketModels.where((m) => m.id == modelId).firstOrNull;
+    final prevState = prevModel?.download?.stateLabel ?? 'not_started';
+    if (newState == prevState) return;
+
+    final name = _displayModelName(modelId);
+    final l10n = context.l10n;
+    debugPrint('[LocalModels] state transition: model=$modelId ($name), '
+        '$prevState -> $newState');
+
+    // Toast for terminal/async state transitions only.
+    // User-initiated actions (start/pause) are toasted from button handlers.
+    switch (newState) {
+      case 'completed':
+        debugPrint('[LocalModels] toast: download completed -> $name');
+        showToast(l10n.localModelsDownloadCompletedToast(name), type: ToastType.success);
+        break;
+      case 'failed':
+        final reason = download.errorMessage.trim().isNotEmpty
+            ? download.errorMessage.trim()
+            : l10n.localModelsDownloadErrorUnknown;
+        debugPrint('[LocalModels] toast: download failed -> $name, reason=$reason');
+        showToast(l10n.localModelsDownloadFailedToast(name, reason), type: ToastType.error);
+        break;
+      case 'cancelled':
+        final reason = download.errorMessage.trim().isNotEmpty
+            ? download.errorMessage.trim()
+            : l10n.localModelsDownloadErrorUnknown;
+        debugPrint('[LocalModels] toast: download cancelled -> $name, reason=$reason');
+        showToast(l10n.localModelsDownloadCancelledToast(name, reason), type: ToastType.error);
         break;
     }
   }
@@ -394,42 +521,44 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     }
   }
 
-  Future<void> _toggleApiService(bool enable) async {
-    final config = _config;
-    if (config == null || _togglingApiService) {
-      return;
-    }
-    setState(() => _togglingApiService = true);
+  Future<void> _importModel() async {
+    setState(() {
+      _importing = true;
+      _importProgress = 0.0;
+      _importModelId = '';
+    });
+
     try {
-      final nextConfig = enable
-          ? await MnnLocalModelsService.startApiService(
-              modelId: config.activeModelId.isEmpty
-                  ? null
-                  : config.activeModelId,
-            )
-          : await MnnLocalModelsService.stopApiService();
+      final response = await MnnLocalModelsService.importModel();
       if (!mounted) return;
-      setState(() => _config = nextConfig);
-      _refreshInstalled(silent: true);
-      final apiRunning = nextConfig.apiRunning;
-      if (enable) {
+
+      final success = response['success'] == true;
+      final error = (response['error'] ?? '').toString();
+
+      if (error == 'cancelled') {
+        // User cancelled the file picker, do nothing
+      } else if (success) {
         showToast(
-          apiRunning ? context.l10n.localModelsServiceStarted : context.l10n.localModelsStartFailed,
-          type: apiRunning ? ToastType.success : ToastType.error,
+          context.l10n.localModelsImportSuccess,
+          type: ToastType.success,
         );
+        _refreshInstalled(silent: true);
       } else {
         showToast(
-          apiRunning ? context.l10n.localModelsStopFailed : context.l10n.localModelsServiceStopped,
-          type: apiRunning ? ToastType.error : ToastType.success,
+          context.l10n.localModelsImportFailed(error),
+          type: ToastType.error,
         );
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        showToast(enable ? context.l10n.localModelsStartFailed : context.l10n.localModelsStopFailed, type: ToastType.error);
+        showToast(
+          context.l10n.localModelsImportFailed(e.toString()),
+          type: ToastType.error,
+        );
       }
     } finally {
       if (mounted) {
-        setState(() => _togglingApiService = false);
+        setState(() => _importing = false);
       }
     }
   }
@@ -513,11 +642,6 @@ class _LocalModelsPageState extends State<LocalModelsPage>
       default:
         return l10n.localModelsNotDownloaded;
     }
-  }
-
-  bool _shouldEnableStart(MnnLocalConfig config) {
-    return !_togglingApiService &&
-        !(config.activeModelId.isEmpty && _serviceModels.isEmpty);
   }
 
   Color _blend(Color first, Color second, double t) {
@@ -1003,36 +1127,19 @@ class _LocalModelsPageState extends State<LocalModelsPage>
           value: _omniinferMnnBackend,
           child: Text('omniinfer-mnn'),
         ),
+        DropdownMenuItem(
+          value: _omniinferQnnBackend,
+          child: Text('omniinfer-npu'),
+        ),
+        DropdownMenuItem(
+          value: _omniinferLiteRtBackend,
+          child: Text('LiteRT-LM'),
+        ),
       ],
       onChanged: (value) async {
         if (value == null || value == backend) return;
         await _switchInferenceBackend(value);
       },
-    );
-  }
-
-  Widget _buildServiceActionButton(MnnLocalConfig config) {
-    final shouldStop = config.apiRunning;
-    final enabled = shouldStop
-        ? !_togglingApiService
-        : _shouldEnableStart(config);
-    final tone = shouldStop ? _AccentTone.danger : _AccentTone.accent;
-    final l10n = context.l10n;
-    final label = _togglingApiService
-        ? (shouldStop ? l10n.localModelsStopping : l10n.localModelsStarting)
-        : (shouldStop ? l10n.localModelsStopService : l10n.localModelsStartService);
-
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton.icon(
-        onPressed: enabled ? () => _toggleApiService(!shouldStop) : null,
-        style: _filledButtonStyle(tone: tone),
-        icon: Icon(
-          shouldStop ? Icons.stop_circle_outlined : Icons.play_arrow_rounded,
-          size: 18,
-        ),
-        label: Text(label),
-      ),
     );
   }
 
@@ -1113,8 +1220,6 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                   '${_backendLabel(config.loadedBackend)} / ${_displayModelName(config.loadedModelId)}',
             ),
           ],
-          const SizedBox(height: 12),
-          _buildServiceActionButton(config),
           const SizedBox(height: 24),
           SettingsSectionTitle(
             label: context.l10n.localModelsAutoPreheatSection,
@@ -1131,6 +1236,54 @@ class _LocalModelsPageState extends State<LocalModelsPage>
             label: context.l10n.localModelsInstalled,
             subtitle: context.l10n.localModelsInstalledDesc,
           ),
+          if (_importing)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    context.l10n.localModelsImporting(_importModelId),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: _secondaryTextColor,
+                      fontFamily: AppTextStyles.fontFamily,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: _importProgress,
+                      minHeight: 8,
+                      backgroundColor: _alpha(_secondaryTextColor, 0.14),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        _toneBaseColor(_AccentTone.info),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${(_importProgress * 100).toStringAsFixed(1)}%',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _secondaryTextColor,
+                      fontFamily: AppTextStyles.fontFamily,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: FilledButton.icon(
+                onPressed: _importModel,
+                style: _softButtonStyle(tone: _AccentTone.accent),
+                icon: const Icon(Icons.folder_open_rounded, size: 18),
+                label: Text(context.l10n.localModelsImportFromDevice),
+              ),
+            ),
           _buildSearchBar(
             controller: _installedSearchController,
             hintText: context.l10n.localModelsSearchHint,
@@ -1175,30 +1328,32 @@ class _LocalModelsPageState extends State<LocalModelsPage>
             subtitle: context.l10n.localModelsFilterAndSourceDesc,
           ),
           _buildBackendDropdown(backend: config?.backend ?? _llamaCppBackend),
-          const SizedBox(height: 12),
-          _buildDropdownField(
-            key: ValueKey(
-              'download-provider-${config?.downloadProvider ?? 'ModelScope'}',
+          if (config?.availableSources.isNotEmpty == true) ...[
+            const SizedBox(height: 12),
+            _buildDropdownField(
+              key: ValueKey(
+                'download-provider-${config?.downloadProvider ?? 'ModelScope'}',
+              ),
+              label: context.l10n.localModelsDownloadSource,
+              icon: Icons.public_rounded,
+              value: config?.downloadProvider.isNotEmpty == true
+                  ? config!.downloadProvider
+                  : null,
+              hintText: context.l10n.localModelsSelectDownloadSource,
+              items: config!.availableSources
+                  .map(
+                    (value) => DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                _changeDownloadProvider(value);
+              },
             ),
-            label: context.l10n.localModelsDownloadSource,
-            icon: Icons.public_rounded,
-            value: config?.downloadProvider.isNotEmpty == true
-                ? config!.downloadProvider
-                : null,
-            hintText: context.l10n.localModelsSelectDownloadSource,
-            items: (config?.availableSources ?? const <String>[])
-                .map(
-                  (value) => DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) {
-              if (value == null) return;
-              _changeDownloadProvider(value);
-            },
-          ),
+          ],
           const SizedBox(height: 24),
           SettingsSectionTitle(
             label: context.l10n.localModelsMarketModels,
@@ -1358,6 +1513,12 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     );
   }
 
+  bool _isPinnedModel(MnnLocalModel model) {
+    final pinId = widget.pinnedModelId;
+    if (pinId == null || pinId.isEmpty) return false;
+    return model.id.contains(pinId) || model.name.contains(pinId);
+  }
+
   Widget _buildMarketCard(MnnLocalModel model) {
     final download = model.download;
     final isCompleted = download?.isCompleted == true;
@@ -1437,6 +1598,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
             spacing: 8,
             runSpacing: 8,
             children: [
+              if (_isPinnedModel(model)) _buildAccentTag(context.trLegacy('推荐')),
               _buildTag(model.category.toUpperCase()),
               if (model.source.isNotEmpty) _buildTag(model.source),
               if (model.vendor.isNotEmpty) _buildTag(model.vendor),
@@ -1498,6 +1660,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
               if (!isCompleted && !isDownloading)
                 FilledButton.icon(
                   onPressed: () async {
+                    debugPrint('[LocalModels] button: startDownload model=${model.id} (${model.name}), isPaused=$isPaused, isFailed=$isFailed');
                     _updateMarketDownloadState(
                       model.id,
                       _downloadPlaceholder(
@@ -1508,8 +1671,16 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                     );
                     try {
                       await MnnLocalModelsService.startDownload(model.id);
+                      debugPrint('[LocalModels] button: startDownload success model=${model.id}');
+                      if (mounted) {
+                        showToast(
+                          context.l10n.localModelsDownloadStartedToast(model.name),
+                          type: ToastType.success,
+                        );
+                      }
                       _refreshMarket(silent: true);
-                    } catch (_) {
+                    } catch (e) {
+                      debugPrint('[LocalModels] button: startDownload error model=${model.id}, error=$e');
                       _refreshMarket(silent: true);
                       showToast(context.l10n.localModelsDownloadStartFailed, type: ToastType.error);
                     }
@@ -1532,6 +1703,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
               if (isDownloading)
                 OutlinedButton.icon(
                   onPressed: () async {
+                    debugPrint('[LocalModels] button: pauseDownload model=${model.id} (${model.name})');
                     _updateMarketDownloadState(
                       model.id,
                       _downloadPlaceholder(
@@ -1542,8 +1714,16 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                     );
                     try {
                       await MnnLocalModelsService.pauseDownload(model.id);
+                      debugPrint('[LocalModels] button: pauseDownload success model=${model.id}');
+                      if (mounted) {
+                        showToast(
+                          context.l10n.localModelsDownloadPausedToast(model.name),
+                          type: ToastType.warning,
+                        );
+                      }
                       _refreshMarket(silent: true);
-                    } catch (_) {
+                    } catch (e) {
+                      debugPrint('[LocalModels] button: pauseDownload error model=${model.id}, error=$e');
                       _refreshMarket(silent: true);
                       showToast(context.l10n.localModelsDownloadPauseFailed, type: ToastType.error);
                     }
@@ -1551,6 +1731,29 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                   style: _outlinedButtonStyle(tone: _AccentTone.warning),
                   icon: const Icon(Icons.pause_rounded, size: 18),
                   label: Text(context.l10n.localModelsPause),
+                ),
+              if (isPaused || isFailed)
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    debugPrint('[LocalModels] button: deletePartFiles model=${model.id} (${model.name})');
+                    try {
+                      await MnnLocalModelsService.deleteModel(model.id);
+                      if (mounted) {
+                        showToast(
+                          context.l10n.localModelsDelete,
+                          type: ToastType.success,
+                        );
+                      }
+                      _refreshMarket(silent: true);
+                      _refreshInstalled(silent: true);
+                    } catch (e) {
+                      debugPrint('[LocalModels] button: deletePartFiles error model=${model.id}, error=$e');
+                      _refreshMarket(silent: true);
+                    }
+                  },
+                  style: _outlinedButtonStyle(tone: _AccentTone.danger),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                  label: Text(context.l10n.localModelsDelete),
                 ),
               if (isCompleted)
                 FilledButton.icon(
@@ -1695,6 +1898,27 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     );
   }
 
+  Widget _buildAccentTag(String value) {
+    final accentColor = _palette.accentPrimary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: accentColor.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accentColor.withOpacity(0.3)),
+      ),
+      child: Text(
+        value,
+        style: TextStyle(
+          fontSize: 12,
+          color: accentColor,
+          fontWeight: FontWeight.w700,
+          fontFamily: AppTextStyles.fontFamily,
+        ),
+      ),
+    );
+  }
+
   Widget _buildTag(String value) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1767,6 +1991,10 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     switch (backend) {
       case _omniinferMnnBackend:
         return 'omniinfer-mnn';
+      case _omniinferQnnBackend:
+        return 'omniinfer-npu';
+      case _omniinferLiteRtBackend:
+        return 'LiteRT-LM';
       case _llamaCppBackend:
       default:
         return 'OmniInfer-llama';

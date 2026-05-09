@@ -2,20 +2,28 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/core/mixins/page_lifecycle_mixin.dart';
+import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/memory/pages/memory_center/widgets/tag_section.dart';
+import 'package:ui/features/task/pages/execution_history/task_execution_detail_page.dart';
 import 'package:ui/features/task/pages/scheduled_tasks/widgets/schedule_task_sheet.dart';
+import 'package:ui/models/task_execution_info.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/scheduled_task_scheduler_service.dart';
 import 'package:ui/services/scheduled_task_storage_service.dart';
+import 'package:ui/utils/cache_util.dart';
+import 'package:ui/utils/image_util.dart';
 import 'package:ui/features/task/pages/execution_history/widgets/execution_record_list_item.dart';
 import 'package:intl/intl.dart';
 
+import 'package:ui/models/execution_record.dart';
+import 'package:ui/widgets/context_menu.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:ui/features/memory/pages/memory_center/widgets/batch_delete_confirm_sheet.dart';
 import 'package:ui/theme/app_text_styles.dart';
 import 'package:ui/features/task/pages/execution_history/widgets/execution_record_list.dart';
 import 'package:ui/utils/ui.dart';
+import 'package:ui/widgets/image/cached_image.dart';
 import 'package:ui/widgets/selection_bottom_bar.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -36,6 +44,8 @@ class _TrajectoryPageState
         PageLifecycleMixin<TrajectoryPage> {
   List<AppTag> executionTags = [];
 
+  List<TaskExecutionInfo> taskExecutionInfos = [];
+
   List<ExecutionRecordListItemData> executionRecordViewModels = [];
 
   bool _isLoading = true;
@@ -44,12 +54,11 @@ class _TrajectoryPageState
 
   // 选择模式状态
   bool _isSelectionMode = false;
-  Set<String> _selectedRecordKeys = {}; // 使用 goal 作为唯一标识
+  Set<String> _selectedRecordKeys = {}; // 使用 title+packageName 作为唯一标识
 
+  // Suggestion 缓存，key 为 nodeId|suggestionId（用于执行任务）
+  Map<String, Map<String, dynamic>> _suggestionMap = {};
   Set<String> _scheduledTaskKeys = {};
-
-  // OmniFlow run logs 状态
-  UtgRunLogsSnapshot? _runLogsSnapshot;
 
   @override
   void initState() {
@@ -68,43 +77,6 @@ class _TrajectoryPageState
     }
   }
 
-  /// 加载 Provider run logs
-  Future<void> _loadProviderRunLogs({bool silent = false}) async {
-    try {
-      final config = await AssistsMessageService.getUtgBridgeConfig();
-      if (!mounted) return;
-      final snapshot = await AssistsMessageService.getUtgRunLogs(
-        baseUrl: config.resolvedOmniflowBaseUrl,
-      );
-      if (!mounted) return;
-      _runLogsSnapshot = snapshot;
-    } catch (e) {
-      if (!mounted) return;
-      print('Error loading provider run logs: $e');
-      _runLogsSnapshot = null;
-    }
-  }
-
-  /// 通过 OmniFlow 重放 run log
-  Future<void> _replayRunLog(UtgRunLogSummary run) async {
-    try {
-      final config = await AssistsMessageService.getUtgBridgeConfig();
-      final result = await AssistsMessageService.replayUtgRunLog(
-        runId: run.runId,
-        baseUrl: config.resolvedOmniflowBaseUrl,
-      );
-      if (!mounted) return;
-      if (result.success) {
-        showToast(context.trLegacy('开始重放'), type: ToastType.success);
-      } else {
-        showToast(result.errorMessage ?? context.trLegacy('重放失败'), type: ToastType.error);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      showToast('${context.trLegacy('重放失败')}：$e', type: ToastType.error);
-    }
-  }
-
   void _onTagSelectionChanged(Set<String> next, String triggerId) {
     setState(() {
       if (next.contains('all')) {
@@ -120,7 +92,7 @@ class _TrajectoryPageState
     });
   }
 
-  /// 加载数据（仅 OmniFlow run logs）
+  // 从数据库加载数据
   /// [silent] 是否静默刷新（不显示loading）
   Future<void> _loadData({bool silent = false}) async {
     if (!silent) {
@@ -130,10 +102,8 @@ class _TrajectoryPageState
     }
 
     try {
-      // 只加载 OmniFlow run logs
-      await _loadProviderRunLogs(silent: true);
-      // 构建显示数据
-      _buildExecutionRecords();
+      await Future.wait([_loadSuggestionMap(), _loadTaskExecutionInfos()]);
+      await _loadExecutionTags();
 
       setState(() {
         if (!silent) {
@@ -151,6 +121,12 @@ class _TrajectoryPageState
     }
   }
 
+  /// 加载 Suggestion 数据并缓存到 _suggestionMap
+  Future<void> _loadSuggestionMap() async {
+    // 开源版仅保留 VLM 回放能力。
+    _suggestionMap = {};
+  }
+
   Future<void> _loadScheduledTaskKeys() async {
     try {
       final tasks = await ScheduledTaskStorageService.loadScheduledTasks();
@@ -165,159 +141,293 @@ class _TrajectoryPageState
     }
   }
 
-  /// 构建执行记录列表（仅 OmniFlow run logs）
-  void _buildExecutionRecords() {
-    final records = _convertOmniflowRunLogs();
-
-    // 按时间排序（最新在前）
-    records.sort((a, b) {
-      final aTime = a.sortTimestamp ?? DateTime(1970);
-      final bTime = b.sortTimestamp ?? DateTime(1970);
-      return bTime.compareTo(aTime);
-    });
-
-    // 构建标签（按 packageName 聚合）
-    final tagList = <AppTag>[];
-    tagList.add(
-      AppTag(
-        id: 'all',
-        label: context.l10n.trajectoryAll,
-        count: records.length,
-        svgPath: 'assets/common/all_icon.svg',
-        iconBgColor: Colors.black,
-        iconColor: Colors.white,
-      ),
-    );
-
-    // 按 packageName 分组统计
-    final packageCounts = <String, int>{};
-    for (final record in records) {
-      if (record.packageName.isNotEmpty) {
-        packageCounts[record.packageName] =
-            (packageCounts[record.packageName] ?? 0) + 1;
-      }
-    }
-
-    for (final entry in packageCounts.entries) {
-      tagList.add(
-        AppTag(
-          id: entry.key,
-          label: entry.key.split('.').last, // 简化显示
-          count: entry.value,
-          icon: Icons.apps,
-          iconBgColor: const Color(0xFFE6F0FE),
-        ),
-      );
-    }
-
-    setState(() {
-      executionTags = tagList;
-      executionRecordViewModels = records;
-    });
+  /// 生成 Suggestion key（与执行记录匹配）
+  String _getSuggestionKey(String nodeId, String suggestionId) {
+    return '$nodeId|$suggestionId';
   }
 
-  /// 将 OmniFlow run logs 按 goal 聚合为列表项
-  List<ExecutionRecordListItemData> _convertOmniflowRunLogs() {
-    final runLogs = _runLogsSnapshot?.runs ?? const <UtgRunLogSummary>[];
-    if (runLogs.isEmpty) return [];
+  // 加载执行记录信息
+  Future<void> _loadTaskExecutionInfos() async {
+    try {
+      final records = await CacheUtil.getTaskExecutionInfos();
 
-    // 按 goal 聚合
-    final Map<String, List<UtgRunLogSummary>> groupedByGoal = {};
-    for (final run in runLogs) {
-      final key = run.goal.trim().isEmpty ? run.runId : run.goal.trim();
-      groupedByGoal.putIfAbsent(key, () => []).add(run);
-    }
-
-    return groupedByGoal.entries.map((entry) {
-      final goal = entry.key;
-      final runs = entry.value;
-      // 按时间排序，取最新的一条作为代表
-      runs.sort((a, b) {
-        final aTime = DateTime.tryParse(a.startedAt) ?? DateTime(1970);
-        final bTime = DateTime.tryParse(b.startedAt) ?? DateTime(1970);
-        return bTime.compareTo(aTime);
+      setState(() {
+        taskExecutionInfos = records;
       });
-      final latestRun = runs.first;
-      final executionCount = runs.length;
+    } catch (e) {
+      print('Error loading execution records: $e');
+    }
+  }
 
-      // 解析时间
-      DateTime? timestamp;
-      if (latestRun.startedAt.isNotEmpty) {
-        timestamp = DateTime.tryParse(latestRun.startedAt);
+  // 加载执行记录标签数据 TODO 优化抽取函数
+  Future<void> _loadExecutionTags() async {
+    try {
+      // 1) 先构建 tagList 数据源
+      final tagList = <AppTag>[];
+      final totalCount = taskExecutionInfos.length;
+      tagList.add(
+        AppTag(
+          id: 'all',
+          label: context.l10n.trajectoryAll,
+          count: totalCount,
+          svgPath: 'assets/common/all_icon.svg',
+          iconBgColor: Colors.black,
+          iconColor: Colors.white,
+        ),
+      );
+
+      // 收集需要获取图标的 packageName
+      final packageNames = <String>{};
+      //将taskexecutioninfos按packagename分组，统计数量，并加入到packagenames中
+      for (final info in taskExecutionInfos) {
+        final appName = info.appName;
+        final packageName = info.packageName;
+
+        if (packageName.isNotEmpty && !packageNames.contains(packageName)) {
+          packageNames.add(packageName);
+          tagList.add(
+            AppTag(
+              id: packageName,
+              label: appName,
+              count: taskExecutionInfos
+                  .where((e) => e.packageName == packageName)
+                  .length,
+              icon: Icons.apps,
+              iconBgColor: const Color(0xFFE6F0FE),
+              appIconProvider: null,
+            ),
+          );
+        }
       }
 
-      final timestampMs = timestamp?.millisecondsSinceEpoch;
-      final section = timestampMs != null ? _getSection(timestampMs) : null;
-      final timeLabel = timestampMs != null && section != null
-          ? _getTimeLabel(section, timestampMs)
-          : latestRun.startedAt;
+      // 2) 批量获取图标
+      Map<String, ImageProvider?> iconProv = {};
+      if (mounted) {
+        iconProv = await ImageUtil.batchLoadAppIcons(packageNames, context);
+      } else {
+        iconProv = {};
+      }
 
-      // OmniFlow 图标
-      final iconsList = <Widget>[
-        Builder(builder: (context) {
+      // 3) 将图标数据填回 tagList 的 appIconProvider（避免再次 setState）
+      final tagListWithIcons = tagList.map((t) {
+        if (t.appIconProvider == null && iconProv.containsKey(t.id)) {
+          return AppTag(
+            id: t.id,
+            label: t.label,
+            count: t.count,
+            icon: t.icon,
+            iconBgColor: t.iconBgColor,
+            iconColor: t.iconColor,
+            appIconProvider: iconProv[t.id],
+          );
+        }
+        return t;
+      }).toList();
+
+      // 4) 将图标数据填回 executionRecordViewModels 的 icons（避免再次 setState）
+      final defaultIcon = Builder(
+        builder: (context) {
+          final palette = context.omniPalette;
           return Container(
             width: 20,
             height: 20,
             decoration: BoxDecoration(
-              color: const Color(0xFF6366F1),
-              borderRadius: BorderRadius.circular(4),
+              color: context.isDarkTheme
+                  ? palette.surfaceElevated
+                  : Colors.grey[300],
+              borderRadius: BorderRadius.circular(2),
+              border: context.isDarkTheme
+                  ? Border.all(color: palette.borderSubtle)
+                  : null,
             ),
-            child: const Icon(
-              Icons.auto_awesome,
-              size: 14,
-              color: Colors.white,
+            child: Icon(
+              Icons.apps,
+              size: 16,
+              color: context.isDarkTheme
+                  ? palette.textSecondary
+                  : Colors.grey[600],
             ),
           );
-        }),
-      ];
-
-      // 用于定时任务的唯一标识
-      final nodeId = 'omniflow';
-      final suggestionId = 'goal:$goal';
-
-      return ExecutionRecordListItemData(
-        id: goal.hashCode,
-        title: goal,
-        packageName: latestRun.finalPackageName,
-        nodeId: nodeId,
-        suggestionId: suggestionId,
-        times: executionCount,
-        section: section,
-        lastExecutionTimeLabel: timeLabel,
-        icons: iconsList,
-        isExecutable: true,
-        isSchedulable: true,
-        isReplayable: latestRun.runId.isNotEmpty,
-        runId: latestRun.runId,
-        suggestionData: {
-          'goal': goal,
-          'runId': latestRun.runId,
-          'packageName': latestRun.finalPackageName,
         },
-        onExecute: () => _executeGoal(goal, latestRun.finalPackageName),
-        onReplay: latestRun.runId.isNotEmpty
-            ? () => _replayRunLog(latestRun)
-            : null,
-        sortTimestamp: timestamp,
       );
-    }).toList();
+
+      final modelsWithIcons = taskExecutionInfos.map((info) {
+        final section = _getSection(info.lastExecutionTime);
+        final iconsList = <Widget>[];
+
+        // 1. 添加 App 图标
+        if (iconProv.containsKey(info.packageName)) {
+          iconsList.add(
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: Image(
+                image: iconProv[info.packageName]!,
+                width: 20,
+                height: 20,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  final palette = context.omniPalette;
+                  return Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: context.isDarkTheme
+                          ? palette.surfaceElevated
+                          : Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                      border: context.isDarkTheme
+                          ? Border.all(color: palette.borderSubtle)
+                          : null,
+                    ),
+                    child: Icon(
+                      Icons.apps,
+                      size: 16,
+                      color: context.isDarkTheme
+                          ? palette.textSecondary
+                          : Colors.grey[600],
+                    ),
+                  );
+                },
+              ),
+            ),
+          );
+        } else {
+          iconsList.add(defaultIcon);
+        }
+
+        // 2. 添加技能类型图标（suggestion iconUrl 或默认类型图标）
+        print(
+          'Adding type icon for ${info.title} with iconUrl: ${info.iconUrl}',
+        );
+        print('ExecutionRecordType: ${info.type}');
+        iconsList.add(_buildTypeIcon(info.type, info.iconUrl));
+
+        // 3. 判断是否可执行（参照 SkillGridItem 的判断逻辑）
+        final suggestionKey = _getSuggestionKey(info.nodeId, info.suggestionId);
+        final suggestionData =
+            _suggestionMap[suggestionKey] ?? _buildVlmSuggestionData(info);
+        final isExecutable = suggestionData != null
+            ? _isExecutable(suggestionData, info.type)
+            : false;
+        final isSchedulable = suggestionData != null
+            ? _isSchedulable(suggestionData, info.type, isExecutable)
+            : false;
+
+        return ExecutionRecordListItemData(
+          id: info.id,
+          title: info.title,
+          packageName: info.packageName,
+          nodeId: info.nodeId,
+          suggestionId: info.suggestionId,
+          times: info.count,
+          section: section,
+          lastExecutionTimeLabel: _getTimeLabel(
+            section,
+            info.lastExecutionTime,
+          ),
+          icons: iconsList,
+          isExecutable: isExecutable,
+          isSchedulable: isSchedulable,
+          suggestionData: suggestionData,
+          onExecute: isExecutable
+              ? () => _executeTask(info, suggestionData)
+              : null,
+        );
+      }).toList();
+
+      setState(() {
+        executionTags = tagListWithIcons;
+        executionRecordViewModels = modelsWithIcons;
+      });
+    } catch (e) {
+      print('Error loading execution tags: $e');
+    }
   }
 
-  /// 执行 goal（通过 VLM 任务）
-  Future<void> _executeGoal(String goal, String packageName) async {
-    if (goal.trim().isEmpty) {
-      showToast(context.trLegacy('目标不能为空'), type: ToastType.error);
+  bool _isExecutable(
+    Map<String, dynamic> suggestionData,
+    ExecutionRecordType type,
+  ) {
+    final isAppInstalled = suggestionData['isInstalled'] as bool? ?? false;
+    final isHomeTask = suggestionData['isHomeTask'] as bool? ?? false;
+    final requireChatbotTrigger =
+        suggestionData['triggerType'] == 'require_chatbot_trigger';
+
+    // 检测 tasks 中的 slots 是否为空，判断是否需要额外信息
+    bool needsExtraInfo = false;
+    final tasks = suggestionData['tasks'];
+    if (tasks != null && tasks is List && tasks.isNotEmpty) {
+      for (final task in tasks) {
+        final slots = task['slots'];
+        if (slots != null && slots is List && slots.isNotEmpty) {
+          needsExtraInfo = true;
+          break;
+        }
+      }
+    }
+
+    // 任务可执行的条件（与 SkillGridItem 一致）：
+    // 1. 不是学习任务
+    // 2. 应用已安装
+    // 3. 是首页任务
+    // 4. 不需要 chatbot 触发
+    // 5. 不需要额外信息
+    return isAppInstalled &&
+        isHomeTask &&
+        !requireChatbotTrigger &&
+        !needsExtraInfo;
+  }
+
+  Map<String, dynamic>? _buildVlmSuggestionData(TaskExecutionInfo info) {
+    if (info.type != ExecutionRecordType.vlm) {
+      return null;
+    }
+    final goal = info.suggestionId.trim().isNotEmpty
+        ? info.suggestionId.trim()
+        : info.title.trim();
+    if (goal.isEmpty) {
+      return null;
+    }
+    return {
+      'goal': goal,
+      'packageName': info.packageName,
+      'nodeId': info.nodeId,
+      'suggestionId': info.suggestionId,
+    };
+  }
+
+  bool _isSchedulable(
+    Map<String, dynamic> suggestionData,
+    ExecutionRecordType type,
+    bool isExecutable,
+  ) {
+    if (type == ExecutionRecordType.vlm) {
+      final goal = (suggestionData['goal'] as String?)?.trim() ?? '';
+      return goal.isNotEmpty;
+    }
+    return isExecutable;
+  }
+
+  /// 执行任务
+  Future<void> _executeTask(
+    TaskExecutionInfo info,
+    Map<String, dynamic> suggestionData,
+  ) async {
+    final goal = (suggestionData['goal'] as String?)?.trim() ?? '';
+    if (goal.isEmpty) {
+      showToast('Current record does not support execution', type: ToastType.error);
       return;
     }
+
     final success = await AssistsMessageService.createVLMOperationTask(
       goal,
-      packageName: packageName.isNotEmpty ? packageName : null,
+      packageName: info.packageName,
     );
     if (!mounted) return;
     if (success) {
-      showToast(context.trLegacy('任务已启动'), type: ToastType.success);
+      showToast('Task started', type: ToastType.success);
     } else {
-      showToast(context.trLegacy('启动失败'), type: ToastType.error);
+      showToast('Task execution failed', type: ToastType.error);
     }
   }
 
@@ -358,249 +468,97 @@ class _TrajectoryPageState
     }
   }
 
-  /// 点击执行记录，展示详情
-  void _onRecordTap(ExecutionRecordListItemData vm) {
-    _showRunLogDetail(vm);
-  }
+  /// 构建类型图标（优先使用 icon URL，否则使用类型默认图标）
+  Widget _buildTypeIcon(ExecutionRecordType type, String? iconUrl) {
+    const double iconSize = 20.0;
 
-  /// 展示 run log 详情弹窗
-  void _showRunLogDetail(ExecutionRecordListItemData vm) {
-    final palette = context.omniPalette;
-    final isDark = context.isDarkTheme;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.7,
-          ),
-          decoration: BoxDecoration(
-            color: isDark ? palette.surfacePrimary : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 顶部拖动条
-              Center(
-                child: Container(
-                  margin: const EdgeInsets.only(top: 12),
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: isDark ? palette.borderSubtle : Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              // 标题
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        vm.title,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: palette.textPrimary,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        Icons.close,
-                        color: palette.textSecondary,
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-              Divider(
-                height: 1,
-                color: isDark ? palette.borderSubtle : Colors.grey[200],
-              ),
-              // 详情内容
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildDetailRow('执行次数', '${vm.times} 次'),
-                      _buildDetailRow('最近执行', vm.lastExecutionTimeLabel),
-                      if (vm.packageName.isNotEmpty)
-                        _buildDetailRow('应用包名', vm.packageName),
-                      if (vm.runId != null && vm.runId!.isNotEmpty)
-                        _buildDetailRow('Run ID', vm.runId!),
-                      const SizedBox(height: 24),
-                      // 操作按钮
-                      Row(
-                        children: [
-                          if (vm.isExecutable)
-                            Expanded(
-                              child: _buildActionButton(
-                                icon: Icons.play_arrow_rounded,
-                                label: '执行',
-                                onTap: () {
-                                  Navigator.pop(context);
-                                  vm.onExecute?.call();
-                                },
-                              ),
-                            ),
-                          if (vm.isExecutable && vm.isReplayable)
-                            const SizedBox(width: 12),
-                          if (vm.isReplayable)
-                            Expanded(
-                              child: _buildActionButton(
-                                icon: Icons.replay_rounded,
-                                label: '重放',
-                                onTap: () {
-                                  Navigator.pop(context);
-                                  vm.onReplay?.call();
-                                },
-                              ),
-                            ),
-                        ],
-                      ),
-                      if (vm.isSchedulable) ...[
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: _buildActionButton(
-                            icon: Icons.schedule_rounded,
-                            label: '设置定时任务',
-                            onTap: () {
-                              Navigator.pop(context);
-                              _onSchedulePressed(vm);
-                            },
-                          ),
-                        ),
-                      ],
-                      // 记忆按钮（保存为可复用技能）
-                      if (vm.runId != null && vm.runId!.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: _buildActionButton(
-                            icon: Icons.save_alt_rounded,
-                            label: '保存为技能',
-                            onTap: () {
-                              Navigator.pop(context);
-                              _saveAsSkill(vm);
-                            },
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    final palette = context.omniPalette;
-    final isDark = context.isDarkTheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                color: isDark ? palette.textSecondary : Colors.grey[600],
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 14,
-                color: palette.textPrimary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 保存为技能（调用 import_run_log API）
-  Future<void> _saveAsSkill(ExecutionRecordListItemData vm) async {
-    if (vm.runId == null || vm.runId!.isEmpty) {
-      showToast('缺少 Run ID，无法保存', type: ToastType.error);
-      return;
-    }
-
-    try {
-      final config = await AssistsMessageService.getUtgBridgeConfig();
-      final result = await AssistsMessageService.importRunLog(
-        runId: vm.runId!,
-        baseUrl: config.resolvedOmniflowBaseUrl,
+    // 如果有 icon URL，优先显示网络图标
+    if (iconUrl != null && iconUrl.isNotEmpty) {
+      return CachedImage(
+        imageUrl: iconUrl,
+        width: iconSize,
+        height: iconSize,
+        fit: BoxFit.cover,
+        errorWidget: _buildDefaultTypeIcon(type, iconSize),
       );
+    }
 
-      if (!mounted) return;
-      if (result.success) {
-        showToast('已保存为技能', type: ToastType.success);
-      } else {
-        showToast('保存失败: ${result.errorMessage ?? "未知错误"}',
-            type: ToastType.error);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      showToast('保存失败：$e', type: ToastType.error);
+    // 没有 icon URL 时使用默认类型图标
+    return _buildDefaultTypeIcon(type, iconSize);
+  }
+
+  /// 构建默认类型图标（SVG）
+  Widget _buildDefaultTypeIcon(ExecutionRecordType type, double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Color(type.defaultIconColor),
+        borderRadius: BorderRadius.circular(2),
+      ),
+      padding: const EdgeInsets.all(2),
+      child: type.defaultIconPath.isEmpty
+          ? SizedBox.shrink()
+          : SvgPicture.asset(
+              type.defaultIconPath,
+              width: size - 4,
+              height: size - 4,
+            ),
+    );
+  }
+
+  void _showContextMenu(
+    ExecutionRecordListItemData vm,
+    BuildContext context,
+    Offset position,
+  ) async {
+    final action = await showRecordContextMenu(
+      context: context,
+      position: position,
+    );
+    switch (action) {
+      // case RecordMenuAction.edit:
+      //   _editRecord(vm.title, vm.id);
+      //   break;
+      case RecordMenuAction.delete:
+        _deleteExecutionRecord(vm.id);
+        break;
+      default:
+        break;
     }
   }
 
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    final palette = context.omniPalette;
-    final isDark = context.isDarkTheme;
-    return Material(
-      color: isDark ? palette.surfaceSecondary : Colors.grey[100],
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 20, color: palette.accentPrimary),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: palette.accentPrimary,
-                ),
-              ),
-            ],
-          ),
-        ),
+  /// 点击执行记录，跳转到详情页
+  void _navigateToDetail(ExecutionRecordListItemData vm) {
+    // 查找对应的 TaskExecutionInfo
+    final info = taskExecutionInfos.firstWhere(
+      (e) => e.nodeId == vm.nodeId && e.suggestionId == vm.suggestionId,
+      orElse: () => TaskExecutionInfo(
+        id: vm.id,
+        appName: '',
+        packageName: vm.packageName,
+        title: vm.title,
+        nodeId: vm.nodeId,
+        suggestionId: vm.suggestionId,
+        count: vm.times,
+        lastExecutionTime: 0,
       ),
     );
+
+    final params = TaskExecutionDetailParams(
+      title: vm.title,
+      packageName: vm.packageName,
+      appName: info.appName,
+      nodeId: vm.nodeId,
+      suggestionId: vm.suggestionId,
+      totalCount: vm.times,
+      lastExecutionTime: info.lastExecutionTime,
+      type: info.type,
+      iconUrl: info.iconUrl,
+      content: info.content,
+    );
+
+    GoRouterManager.push('/task/execution_detail', extra: params.toMap());
   }
 
   /// 长按进入选择模式
@@ -650,7 +608,7 @@ class _TrajectoryPageState
     });
   }
 
-  /// 批量删除选中的记录（从视图中移除）
+  /// 批量删除选中的记录
   Future<void> _batchDeleteSelectedRecords() async {
     final count = _selectedRecordKeys.length;
     if (count == 0) return;
@@ -664,20 +622,101 @@ class _TrajectoryPageState
     );
 
     if (result == true) {
-      // 从视图中移除选中的记录
-      setState(() {
-        executionRecordViewModels.removeWhere(
-          (record) => _selectedRecordKeys.contains(_getRecordKey(record)),
-        );
-      });
+      // 执行批量删除
+      int successCount = 0;
+      for (final key in _selectedRecordKeys.toList()) {
+        final parts = key.split('|');
+        if (parts.length == 2) {
+          final nodeId = parts[0];
+          final suggestionId = parts[1];
+          final success = await _performBatchDeleteByNodeAndSuggestionId(
+            nodeId,
+            suggestionId,
+          );
+          if (success) {
+            successCount++;
+          }
+        }
+      }
 
       // 退出选择模式
       _exitSelectionMode();
 
-      // 重建标签
-      _buildExecutionRecords();
+      // 重新加载标签统计
+      await _loadExecutionTags();
+
+
+      // 显示删除结果
+      if (successCount > 0) {
+        showToast(context.l10n.skillDeleted, type: ToastType.success);
+      }
+    }
+  }
+
+  /// 执行单条批量删除（不显示弹窗，使用 nodeId+suggestionId）
+  Future<bool> _performBatchDeleteByNodeAndSuggestionId(
+    String nodeId,
+    String suggestionId,
+  ) async {
+    try {
+      bool success = await CacheUtil.deleteExecutionRecordByNodeAndSuggestionId(
+        nodeId,
+        suggestionId,
+      );
+      if (success) {
+        // 从本地列表中删除匹配的记录
+        setState(() {
+          taskExecutionInfos.removeWhere(
+            (record) =>
+                record.nodeId == nodeId && record.suggestionId == suggestionId,
+          );
+        });
+      }
+      return success;
+    } catch (e) {
+      print('Error deleting task records: $e');
+      return false;
+    }
+  }
+
+  // 删除执行记录（单条）
+  void _deleteExecutionRecord(int recordId) {
+    AppDialog.confirm(
+      context,
+      title: context.l10n.memoryDeleteConfirmTitle,
+      content: context.l10n.memoryDeleteWarning,
+      cancelText: context.trLegacy('取消'),
+      confirmText: context.l10n.skillDelete,
+      confirmButtonColor: AppColors.alertRed,
+    ).then((result) async {
+      if (result == true) {
+        await _performExecutionDelete(recordId);
+      }
+    });
+  }
+
+  // 执行删除操作（单条）
+  Future<void> _performExecutionDelete(int recordId) async {
+    try {
+      bool success = await CacheUtil.deleteExecutionRecordById(recordId);
+      if (!success) {
+        showToast(context.l10n.skillDeleteFailed, type: ToastType.error);
+        return;
+      }
+
+      // 从本地列表中删除
+      setState(() {
+        taskExecutionInfos.removeWhere((record) => record.id == recordId);
+      });
 
       showToast(context.l10n.skillDeleted, type: ToastType.success);
+
+      // 重新加载标签统计
+      await _loadExecutionTags();
+
+    } catch (e) {
+      print('Error deleting card: $e');
+      showToast(context.l10n.skillDeleteFailed, type: ToastType.error);
     }
   }
 
@@ -728,7 +767,7 @@ class _TrajectoryPageState
                             child: Align(
                               alignment: Alignment.centerLeft,
                               child: Text(
-                                '任务记录',
+                                context.l10n.trajectoryTaskRecords,
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w600,
@@ -751,15 +790,16 @@ class _TrajectoryPageState
                             SizedBox(height: 8),
                             ExecutionRecordList(
                               records: filterRecords,
+                              onDelete: _deleteExecutionRecord,
+                              onMore: _showContextMenu,
                               onLongPress: (vm) => _enterSelectionMode(vm),
-                              onTap: (vm) => _onRecordTap(vm),
+                              onTap: (vm) => _navigateToDetail(vm),
                               isSelectionMode: _isSelectionMode,
                               selectedKeys: _selectedRecordKeys,
                               onToggleSelection: _toggleRecordSelection,
                               getRecordKey: _getRecordKey,
                               onSchedulePressed: _onSchedulePressed,
                               scheduledTaskKeys: _scheduledTaskKeys,
-                              onReplayPressed: (vm) => vm.onReplay?.call(),
                             ),
                           ] else
                             _buildEmptyRecordsHint(),
@@ -914,5 +954,4 @@ class _TrajectoryPageState
       ),
     );
   }
-
 }

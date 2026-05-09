@@ -5,6 +5,9 @@ import 'package:ui/theme/theme_context.dart';
 
 class ExecutionRecordListItem extends StatelessWidget {
   final ExecutionRecordListItemData recordModel;
+  final void Function(BuildContext context, Offset position)? onMorePressed;
+  final void Function(int recordId, bool targetStatus)? onRecommendPressed;
+  final VoidCallback? onDelete;
   final VoidCallback? onLongPress;
   // 选择模式相关
   final bool isSelectionMode;
@@ -12,18 +15,18 @@ class ExecutionRecordListItem extends StatelessWidget {
   // 定时任务相关
   final VoidCallback? onSchedulePressed;
   final bool hasScheduledTask;
-  // 重放相关
-  final VoidCallback? onReplayPressed;
 
   const ExecutionRecordListItem({
     Key? key,
     required this.recordModel,
+    this.onMorePressed,
+    this.onRecommendPressed,
+    this.onDelete,
     this.onLongPress,
     this.isSelectionMode = false,
     this.isSelected = false,
     this.onSchedulePressed,
     this.hasScheduledTask = false,
-    this.onReplayPressed,
   }) : super(key: key);
 
   @override
@@ -109,7 +112,6 @@ class ExecutionRecordListItem extends StatelessWidget {
                             ),
                           ),
                         ),
-                        // 统一显示执行次数
                         Text(
                           '共执行 ${recordModel.times} 次',
                           style: TextStyle(
@@ -134,53 +136,14 @@ class ExecutionRecordListItem extends StatelessWidget {
             ],
           ),
         ),
-        // 右上角按钮组（选择模式下不显示）
-        if (!isSelectionMode) ...[
-          Positioned(
-            top: 6,
-            right: 4,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 重放按钮
-                if (recordModel.isReplayable) _buildReplayButton(),
-                // 执行按钮
-                if (recordModel.isExecutable) _buildExecuteButton(),
-              ],
-            ),
-          ),
+        // 可执行时显示执行按钮（选择模式下不显示）
+        if (recordModel.isExecutable && !isSelectionMode) ...[
+          Positioned(top: 6, right: 4, child: _buildExecuteButton()),
         ],
-        // 定时按钮
         if (recordModel.isSchedulable && !isSelectionMode) ...[
           Positioned(bottom: 6, right: 4, child: _buildScheduleButton()),
         ],
       ],
-    );
-  }
-
-  /// 构建重放按钮
-  Widget _buildReplayButton() {
-    return Builder(
-      builder: (context) {
-        final palette = context.omniPalette;
-        final isDark = context.isDarkTheme;
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {
-            onReplayPressed?.call();
-          },
-          child: Container(
-            width: 32,
-            height: 32,
-            alignment: Alignment.center,
-            child: Icon(
-              Icons.replay_rounded,
-              size: 18,
-              color: isDark ? palette.textSecondary : AppColors.text70,
-            ),
-          ),
-        );
-      },
     );
   }
 
@@ -254,34 +217,25 @@ class ExecutionRecordListItem extends StatelessWidget {
       ),
     );
   }
-
 }
 
-/// 执行记录数据模型（仅 OmniFlow run logs）
 class ExecutionRecordListItemData {
   final int id;
   final String title;
   final String packageName;
-  final String nodeId;
-  final String suggestionId;
+  final String nodeId; // 标识 suggestion
+  final String suggestionId; // 标识 suggestion
   final int times;
   final String lastExecutionTimeLabel;
   final List<Widget> icons;
+  final bool isRecommended;
   final String? section;
 
   // 可执行相关属性
-  final bool isExecutable;
-  final bool isSchedulable;
-  final bool isReplayable; // 是否可重放
-  final Map<String, dynamic>? suggestionData;
-  final VoidCallback? onExecute;
-  final VoidCallback? onReplay; // 重放回调
-
-  // OmniFlow run log 标识
-  final String? runId;
-
-  // 排序用时间戳
-  final DateTime? sortTimestamp;
+  final bool isExecutable; // 是否可执行
+  final bool isSchedulable; // 是否可设置定时
+  final Map<String, dynamic>? suggestionData; // Suggestion 完整数据
+  final VoidCallback? onExecute; // 执行回调
 
   ExecutionRecordListItemData({
     required this.id,
@@ -292,14 +246,46 @@ class ExecutionRecordListItemData {
     required this.times,
     required this.lastExecutionTimeLabel,
     required this.icons,
+    this.isRecommended = false,
     this.section,
     this.isExecutable = false,
     this.isSchedulable = false,
-    this.isReplayable = false,
     this.suggestionData,
     this.onExecute,
-    this.onReplay,
-    this.runId,
-    this.sortTimestamp,
   });
+
+  ExecutionRecordListItemData copyWith({
+    int? id,
+    String? title,
+    String? packageName,
+    String? nodeId,
+    String? suggestionId,
+    int? times,
+    String? lastExecutionTimeLabel,
+    List<Widget>? icons,
+    bool? isRecommended,
+    String? section,
+    bool? isExecutable,
+    bool? isSchedulable,
+    Map<String, dynamic>? suggestionData,
+    VoidCallback? onExecute,
+  }) {
+    return ExecutionRecordListItemData(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      packageName: packageName ?? this.packageName,
+      nodeId: nodeId ?? this.nodeId,
+      suggestionId: suggestionId ?? this.suggestionId,
+      times: times ?? this.times,
+      lastExecutionTimeLabel:
+          lastExecutionTimeLabel ?? this.lastExecutionTimeLabel,
+      icons: icons ?? this.icons,
+      isRecommended: isRecommended ?? this.isRecommended,
+      section: section ?? this.section,
+      isExecutable: isExecutable ?? this.isExecutable,
+      isSchedulable: isSchedulable ?? this.isSchedulable,
+      suggestionData: suggestionData ?? this.suggestionData,
+      onExecute: onExecute ?? this.onExecute,
+    );
+  }
 }

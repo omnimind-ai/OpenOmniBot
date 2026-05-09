@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/widgets/agent_avatar.dart';
 
@@ -23,13 +24,30 @@ class BotStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final normalizedCostTime = costTime == null
+        ? ''
+        : LegacyTextLocalizer.isEnglish
+        ? costTime!
+        : costTime!.replaceAll(' ', '');
+    if (status == BotStatusType.completed && LegacyTextLocalizer.isEnglish) {
+      final completedEnglishText = normalizedCostTime.isEmpty
+          ? 'Thought complete'
+          : 'Thought for $normalizedCostTime';
+      return _buildStatusRow(
+        context,
+        customIcon: showAvatar ? const AgentAvatarButton(size: 30) : null,
+        text: completedEnglishText,
+        shimmerText: false,
+      );
+    }
+
     switch (status) {
       case BotStatusType.completed:
         return _buildStatusRow(
           context,
           customIcon: showAvatar ? const AgentAvatarButton(size: 30) : null,
-          text: '思考完成',
-          timeDesc: '用时',
+          text: LegacyTextLocalizer.localize('思考完成'),
+          timeDesc: LegacyTextLocalizer.localize('用时'),
           costTime: costTime,
           shimmerText: false,
         );
@@ -37,8 +55,10 @@ class BotStatus extends StatelessWidget {
         return _buildStatusRow(
           context,
           customIcon: showAvatar ? const AgentAvatarButton(size: 30) : null,
-          text: hintText ?? '正在思考',
-          timeDesc: costTime != null ? '用时' : null,
+          text: LegacyTextLocalizer.localize(hintText ?? '正在思考'),
+          timeDesc: costTime != null
+              ? LegacyTextLocalizer.localize('用时')
+              : null,
           costTime: costTime,
           shimmerText: shimmerText,
         );
@@ -92,8 +112,19 @@ class BotStatus extends StatelessWidget {
       iconWidget = null;
     }
 
+    final normalizedCostTime = costTime == null
+        ? ''
+        : LegacyTextLocalizer.isEnglish
+        ? costTime!
+        : costTime!.replaceAll(' ', '');
+    final timeJoiner =
+        timeDesc != null &&
+            normalizedCostTime.isNotEmpty &&
+            LegacyTextLocalizer.isEnglish
+        ? ' '
+        : '';
     final timeText = timeDesc != null
-        ? '($timeDesc${costTime ?? ''})$timeDescSuffix'
+        ? '($timeDesc$timeJoiner$normalizedCostTime)$timeDescSuffix'
         : '';
     final textGroup = Row(
       mainAxisSize: MainAxisSize.min,

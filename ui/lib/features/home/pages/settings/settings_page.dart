@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:flutter_switch/flutter_switch.dart';
 import 'package:ui/core/router/go_router_manager.dart';
+import 'package:ui/features/local_model/local_model_feature.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/hide_from_recents_service.dart';
@@ -26,8 +27,6 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  static const String _omniFlowDebugUnlockedKey = 'omni_flow_debug_unlocked';
-
   bool vibrationEnabled = true;
   bool hideFromRecentsEnabled = false;
   bool _autoBackToChatAfterTaskEnabled = true;
@@ -35,9 +34,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _mcpLoaded = false;
   bool _mcpBusy = false;
   McpServerInfo? _mcpInfo;
-  bool _utgLoaded = false;
-  UtgBridgeConfig? _utgConfig;
-  bool _omniFlowDebugUnlocked = false;
   bool _workspaceMemoryLoaded = false;
   WorkspaceMemoryEmbeddingConfig? _embeddingConfig;
   StreamSubscription<AgentAiConfigChangedEvent>? _configChangedSubscription;
@@ -55,7 +51,6 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadHideFromRecentsState();
     _loadAutoBackToChatAfterTaskState();
     _loadMcpServerState();
-    _loadUtgBridgeConfig();
     _loadWorkspaceMemoryState();
     _configChangedSubscription = AssistsMessageService
         .agentAiConfigChangedStream
@@ -65,12 +60,6 @@ class _SettingsPageState extends State<SettingsPage> {
           }
           _loadWorkspaceMemoryState();
         });
-    _omniFlowDebugUnlocked =
-        StorageService.getBool(
-          _omniFlowDebugUnlockedKey,
-          defaultValue: false,
-        ) ??
-        false;
   }
 
   @override
@@ -118,10 +107,7 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() {
         hideFromRecentsEnabled = !value;
       });
-      showToast(
-        context.l10n.settingsHideRecentsFailed,
-        type: ToastType.error,
-      );
+      showToast(context.l10n.settingsHideRecentsFailed, type: ToastType.error);
     }
   }
 
@@ -157,10 +143,7 @@ class _SettingsPageState extends State<SettingsPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      showToast(
-        context.l10n.settingsSaveFailed,
-        type: ToastType.error,
-      );
+      showToast(context.l10n.settingsSaveFailed, type: ToastType.error);
     }
   }
 
@@ -202,23 +185,6 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<void> _loadUtgBridgeConfig() async {
-    try {
-      final config = await AssistsMessageService.getUtgBridgeConfig();
-      if (!mounted) return;
-      setState(() {
-        _utgConfig = config;
-        _utgLoaded = true;
-      });
-    } catch (e) {
-      debugPrint('Load OmniFlow bridge config failed: $e');
-      if (!mounted) return;
-      setState(() {
-        _utgLoaded = true;
-      });
-    }
-  }
-
   Future<void> _toggleMcpServer(bool enable) async {
     if (_mcpBusy) return;
     setState(() {
@@ -236,20 +202,17 @@ class _SettingsPageState extends State<SettingsPage> {
         final endpoint = info?.endpoint ?? '';
         if (endpoint.isNotEmpty) {
           showToast(
-          context.l10n.settingsMcpEnabledToast(endpoint),
-          type: ToastType.success,
-        );
+            context.l10n.settingsMcpEnabledToast(endpoint),
+            type: ToastType.success,
+          );
         }
       } else {
-        showToast(
-          context.l10n.settingsMcpDisabledToast,
-        );
+        showToast(context.l10n.settingsMcpDisabledToast);
       }
     } on PlatformException catch (e) {
       if (!mounted) return;
       showToast(
-        e.message ??
-            context.l10n.settingsMcpToggleFailed,
+        e.message ?? context.l10n.settingsMcpToggleFailed,
         type: ToastType.error,
       );
       setState(() {
@@ -257,10 +220,7 @@ class _SettingsPageState extends State<SettingsPage> {
       });
     } catch (e) {
       if (!mounted) return;
-      showToast(
-        context.l10n.settingsMcpToggleFailed,
-        type: ToastType.error,
-      );
+      showToast(context.l10n.settingsMcpToggleFailed, type: ToastType.error);
       setState(() {
         _mcpEnabled = !enable;
       });
@@ -296,7 +256,9 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(height: 8),
               Text(context.l10n.settingsMcpToken),
               SelectableText(
-                info.token.isEmpty ? context.l10n.settingsNotGenerated : info.token,
+                info.token.isEmpty
+                    ? context.l10n.settingsNotGenerated
+                    : info.token,
               ),
               const SizedBox(height: 12),
               Row(
@@ -305,9 +267,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: info.endpoint));
                       Navigator.of(context).pop();
-                      showToast(
-                        context.l10n.settingsCopiedAddress,
-                      );
+                      showToast(context.l10n.settingsCopiedAddress);
                     },
                     child: Text(context.l10n.settingsCopyAddress),
                   ),
@@ -315,9 +275,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: info.token));
                       Navigator.of(context).pop();
-                      showToast(
-                        context.l10n.settingsCopiedToken,
-                      );
+                      showToast(context.l10n.settingsCopiedToken);
                     },
                     child: Text(context.l10n.settingsCopyToken),
                   ),
@@ -330,9 +288,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         setState(() {
                           _mcpInfo = refreshed ?? _mcpInfo;
                         });
-                        showToast(
-                          context.l10n.settingsTokenRefreshed,
-                        );
+                        showToast(context.l10n.settingsTokenRefreshed);
                       } catch (_) {
                         showToast(
                           context.l10n.settingsTokenRefreshFailed,
@@ -357,18 +313,8 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  String _buildUtgSubtitle() {
-    return context.l10n.omniflowSettingsSubtitle;
-  }
-
   @override
   Widget build(BuildContext context) {
-    _omniFlowDebugUnlocked =
-        StorageService.getBool(
-          _omniFlowDebugUnlockedKey,
-          defaultValue: false,
-        ) ??
-        _omniFlowDebugUnlocked;
     final palette = context.omniPalette;
     final workspaceMemoryConfigured = _embeddingConfig?.configured == true;
     final workspaceMemorySubtitle = !_workspaceMemoryLoaded
@@ -395,63 +341,50 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   List<_SettingSection> _buildSections(String workspaceMemorySubtitle) {
-    final modelMemoryItems = <_SettingItem>[
-      _SettingItem(
-        icon: Icons.smart_toy_outlined,
-        iconSvg: 'assets/home/vlm_model_setting_icon.svg',
-        title: context.l10n.settingsModelProviderTitle,
-        subtitle: context.l10n.settingsModelProviderSubtitle,
-        onTap: () {
-          GoRouterManager.push('/home/vlm_model_setting');
-        },
-      ),
-      _SettingItem(
-        icon: Icons.tune_outlined,
-        iconSvg: 'assets/home/scene_model_setting_icon.svg',
-        title: context.l10n.settingsSceneModelTitle,
-        subtitle: context.l10n.settingsSceneModelSubtitle,
-        onTap: () {
-          GoRouterManager.push('/home/scene_model_setting');
-        },
-      ),
-      _SettingItem(
-        icon: Icons.memory_outlined,
-        iconSvg: 'assets/home/local_model_cpu_icon.svg',
-        title: context.l10n.settingsLocalModelsTitle,
-        subtitle: context.l10n.settingsLocalModelsSubtitle,
-        onTap: () {
-          GoRouterManager.push('/home/local_models?tab=service');
-        },
-      ),
-      _SettingItem(
-        icon: Icons.cloud_sync_outlined,
-        iconSvg: 'assets/home/mem0_cloud_setting_icon.svg',
-        title: context.l10n.settingsWorkspaceMemoryTitle,
-        subtitle: workspaceMemorySubtitle,
-        onTap: () async {
-          await GoRouterManager.pushForResult(
-            '/home/workspace_memory_setting',
-          );
-          _loadWorkspaceMemoryState();
-        },
-      ),
-    ];
-    // OmniFlow 技能栏 - 直接显示，不需要解锁
-    modelMemoryItems.add(
-      _SettingItem(
-        icon: Icons.auto_awesome_outlined,
-        title: context.l10n.omniflowPanelTitle,
-        subtitle: _buildUtgSubtitle(),
-        onTap: () async {
-          await GoRouterManager.pushForResult('/home/utg');
-          _loadUtgBridgeConfig();
-        },
-      ),
-    );
     return [
       _SettingSection(
         label: context.l10n.settingsSectionModelMemory,
-        items: modelMemoryItems,
+        items: [
+          _SettingItem(
+            icon: Icons.smart_toy_outlined,
+            iconSvg: 'assets/home/vlm_model_setting_icon.svg',
+            title: context.l10n.settingsModelProviderTitle,
+            subtitle: context.l10n.settingsModelProviderSubtitle,
+            onTap: () {
+              GoRouterManager.push('/home/vlm_model_setting');
+            },
+          ),
+          _SettingItem(
+            icon: Icons.tune_outlined,
+            iconSvg: 'assets/home/scene_model_setting_icon.svg',
+            title: context.l10n.settingsSceneModelTitle,
+            subtitle: context.l10n.settingsSceneModelSubtitle,
+            onTap: () {
+              GoRouterManager.push('/home/scene_model_setting');
+            },
+          ),
+          if (localModelFeature.enabled)
+            _SettingItem(
+              icon: Icons.memory_outlined,
+              title: context.l10n.settingsLocalModelsTitle,
+              subtitle: context.l10n.settingsLocalModelsSubtitle,
+              onTap: () {
+                GoRouterManager.push('/home/local_models?tab=service');
+              },
+            ),
+          _SettingItem(
+            icon: Icons.cloud_sync_outlined,
+            iconSvg: 'assets/home/mem0_cloud_setting_icon.svg',
+            title: context.l10n.settingsWorkspaceMemoryTitle,
+            subtitle: workspaceMemorySubtitle,
+            onTap: () async {
+              await GoRouterManager.pushForResult(
+                '/home/workspace_memory_setting',
+              );
+              _loadWorkspaceMemoryState();
+            },
+          ),
+        ],
       ),
       _SettingSection(
         label: context.l10n.settingsSectionServiceEnvironment,
@@ -552,6 +485,15 @@ class _SettingsPageState extends State<SettingsPage> {
         label: context.l10n.settingsSectionPermissionInfo,
         items: [
           _SettingItem(
+            icon: Icons.admin_panel_settings_outlined,
+            iconSvg: 'assets/home/app_permission_authorize_icon.svg',
+            title: context.l10n.authorizePageTitle,
+            subtitle: context.trLegacy('查看并配置无障碍、悬浮窗、Shizuku 等权限'),
+            onTap: () {
+              GoRouterManager.push('/home/authorize_setting');
+            },
+          ),
+          _SettingItem(
             icon: Icons.security,
             iconSvg: 'assets/home/companion_permission_setting_icon.svg',
             title: context.l10n.settingsCompanionPermissionTitle,
@@ -564,9 +506,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 }
               } catch (e) {
                 debugPrint('Failed to request installed apps permission: $e');
-                showToast(
-                  context.l10n.settingsInstalledAppsPermissionFailed,
-                );
+                showToast(context.l10n.settingsInstalledAppsPermissionFailed);
               }
             },
           ),

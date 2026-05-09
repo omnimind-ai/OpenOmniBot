@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -47,6 +49,9 @@ val buildFlutterWebBundle by tasks.registering(Exec::class) {
     inputs.dir(rootProject.file("ui/web"))
     inputs.file(rootProject.file("ui/pubspec.yaml"))
     outputs.dir(flutterWebBuildDir)
+    doFirst {
+        delete(flutterWebBuildDir)
+    }
 }
 
 val syncFlutterWebBundle by tasks.registering(Copy::class) {
@@ -55,6 +60,20 @@ val syncFlutterWebBundle by tasks.registering(Copy::class) {
     dependsOn(buildFlutterWebBundle)
     from(flutterWebBuildDir)
     into(flutterWebAssetsDir)
+    doFirst {
+        delete(flutterWebAssetsDir)
+    }
+}
+
+gradle.projectsEvaluated {
+    rootProject.findProject(":flutter")?.tasks
+        ?.matching { it.name.startsWith("compileFlutterBuild") }
+        ?.configureEach {
+            val flutterCompileTask = this
+            buildFlutterWebBundle.configure {
+                mustRunAfter(flutterCompileTask)
+            }
+        }
 }
 
 android {
@@ -66,7 +85,7 @@ android {
         minSdk = 29
         targetSdk = 34
         versionCode = 1
-        versionName = "0.3.4"
+        versionName = "0.4.0.3"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a"))
@@ -74,7 +93,7 @@ android {
 
     }
     // 添加 flavor 维度
-    flavorDimensions += "version"
+    flavorDimensions += listOf("version", "edition")
 
     productFlavors {
         create("develop") {
@@ -91,6 +110,18 @@ android {
             buildConfigField("String", "DEFAULT_MODEL_PROVIDER_BASE_URL", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_BASE_URL")}\"")
             buildConfigField("String", "DEFAULT_MODEL_PROVIDER_API_KEY", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_API_KEY")}\"")
             resValue("bool", "is_accessibility_tool", "true")
+        }
+
+        create("standard") {
+            dimension = "edition"
+            buildConfigField("boolean", "LOCAL_MODEL_FEATURE_ENABLED", "false")
+            buildConfigField("String", "APP_EDITION", "\"standard\"")
+        }
+
+        create("omniinfer") {
+            dimension = "edition"
+            buildConfigField("boolean", "LOCAL_MODEL_FEATURE_ENABLED", "true")
+            buildConfigField("String", "APP_EDITION", "\"omniinfer\"")
         }
     }
     signingConfigs {
@@ -129,11 +160,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
-    kotlinOptions {
-        jvmTarget = "11"
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
         compose = true
@@ -168,6 +196,9 @@ android {
         getByName("main") {
             assets.srcDirs("src/main/assets", "../skills", flutterWebAssetsRootDir)
         }
+        getByName("omniinfer") {
+            assets.srcDirs("src/omniinfer/assets")
+        }
     }
 
     lint {
@@ -178,6 +209,12 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
 tasks.named("preBuild").configure {
     dependsOn(syncFlutterWebBundle)
 }
@@ -185,7 +222,9 @@ dependencies {
     implementation(project(":flutter"))
     implementation(project(":uikit"))
     implementation(project(":baselib"))
-    implementation(project(":omniinfer-server"))
+    findProject(":omniinfer-server")?.let {
+        add("omniinferImplementation", it)
+    }
     implementation(project(":core:main"))
     implementation(project(":core:terminal-view"))
     implementation(project(":core:terminal-emulator"))
@@ -194,6 +233,7 @@ dependencies {
 //    implementation(project(":lib"))
 
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.documentfile)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.livedata.ktx)
     implementation(libs.androidx.activity.compose)
@@ -210,14 +250,15 @@ dependencies {
     implementation(libs.work.runtime)
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.core.splashscreen)
+    implementation(libs.shizuku.provider)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.cio)
     implementation(libs.ktor.server.auth)
     implementation(libs.ktor.server.content.negotiation)
     implementation(libs.ktor.serialization.gson)
+    implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.ktor.server.call.logging)
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest )
 }
-

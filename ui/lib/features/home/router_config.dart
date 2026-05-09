@@ -24,10 +24,8 @@ import 'pages/settings/settings_page.dart';
 import 'pages/mcp/remote_mcp_servers_page.dart';
 import 'pages/skill_store/skill_store_page.dart';
 import 'pages/termux_setting/termux_setting_page.dart';
-import 'pages/utg/utg_dashboard_page.dart';
 import 'pages/scene_model_setting/scene_model_setting_page.dart';
 import 'pages/vlm_model_setting/vlm_model_setting_page.dart';
-import 'pages/local_models/local_models_page.dart';
 
 /// Home模块路由配置
 const String kNativeRouteFlag = '__from_native__';
@@ -231,6 +229,7 @@ List<GoRoute> homeRoutes = [
         enableJavaScript: params?['enableJavaScript'] ?? true,
         enableZoom: params?['enableZoom'] ?? true,
         showRefreshButton: params?['showRefreshButton'] ?? false,
+        appBarBackClosesPage: params?['appBarBackClosesPage'] ?? false,
       );
     },
   ),
@@ -314,16 +313,6 @@ List<GoRoute> homeRoutes = [
   ),
 
   GoRoute(
-    path: '/home/utg',
-    name: 'home/utg',
-    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
-      key: state.pageKey,
-      name: 'home/utg',
-      child: const UtgDashboardPage(),
-    ),
-  ),
-
-  GoRoute(
     path: '/home/storage_usage',
     name: 'home/storage_usage',
     pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
@@ -355,24 +344,14 @@ List<GoRoute> homeRoutes = [
   ),
 
   GoRoute(
-    path: '/home/local_models',
-    name: 'home/local_models',
-    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
-      key: state.pageKey,
-      name: 'home/local_models',
-      child: LocalModelsPage(
-        initialTab: state.uri.queryParameters['tab'] ?? 'service',
-      ),
-    ),
-  ),
-
-  GoRoute(
     path: '/home/termux_setting',
     name: 'home/termux_setting',
     pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
       key: state.pageKey,
       name: 'home/termux_setting',
-      child: const TermuxSettingPage(),
+      child: TermuxSettingPage(
+        focusPackageId: state.uri.queryParameters['focus'],
+      ),
     ),
   ),
 

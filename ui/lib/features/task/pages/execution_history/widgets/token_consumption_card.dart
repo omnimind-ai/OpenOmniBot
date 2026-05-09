@@ -8,6 +8,7 @@ class _WeeklyTokenData {
   final DateTime weekStart;
   int localTokens = 0;
   int cloudTokens = 0;
+  int cachedTokens = 0;
   int get totalTokens => localTokens + cloudTokens;
 
   _WeeklyTokenData({required this.weekStart});
@@ -29,6 +30,7 @@ class _TokenConsumptionCardState extends State<TokenConsumptionCard>
   bool _isLoading = true;
   int _totalLocal = 0;
   int _totalCloud = 0;
+  int _totalCached = 0;
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
@@ -73,7 +75,8 @@ class _TokenConsumptionCardState extends State<TokenConsumptionCard>
       for (final r in records) {
         debugPrint('[TokenConsumptionCard]   record id=${r.id}, model=${r.model}, isLocal=${r.isLocal}, '
             'prompt=${r.promptTokens}, completion=${r.completionTokens}, '
-            'reasoning=${r.reasoningTokens}, text=${r.textTokens}, totalTokens=${r.totalTokens}, '
+            'reasoning=${r.reasoningTokens}, text=${r.textTokens}, cached=${r.cachedTokens}, '
+            'totalTokens=${r.totalTokens}, '
             'createdAt=${DateTime.fromMillisecondsSinceEpoch(r.createdAt).toIso8601String()}');
       }
 
@@ -89,6 +92,7 @@ class _TokenConsumptionCardState extends State<TokenConsumptionCard>
 
       int totalLocal = 0;
       int totalCloud = 0;
+      int totalCached = 0;
 
       for (final record in records) {
         final recordDate = DateTime.fromMillisecondsSinceEpoch(record.createdAt);
@@ -98,6 +102,10 @@ class _TokenConsumptionCardState extends State<TokenConsumptionCard>
         if (weekIndex >= totalWeeks) continue;
 
         final tokens = record.totalTokens;
+
+        weeklyData[weekIndex].cachedTokens += record.cachedTokens;
+        totalCached += record.cachedTokens;
+
         if (record.isLocal) {
           weeklyData[weekIndex].localTokens += tokens;
           totalLocal += tokens;
@@ -108,13 +116,15 @@ class _TokenConsumptionCardState extends State<TokenConsumptionCard>
       }
 
       debugPrint('[TokenConsumptionCard] aggregated: totalLocal=$totalLocal, totalCloud=$totalCloud, '
-          'total=${totalLocal + totalCloud}, weeks with data=${weeklyData.where((w) => w.totalTokens > 0).length}');
+          'totalCached=$totalCached, total=${totalLocal + totalCloud + totalCached}, '
+          'weeks with data=${weeklyData.where((w) => w.totalTokens > 0).length}');
 
       if (mounted) {
         setState(() {
           _weeklyData = weeklyData;
           _totalLocal = totalLocal;
           _totalCloud = totalCloud;
+          _totalCached = totalCached;
           _isLoading = false;
         });
         _fadeController.forward();
@@ -162,6 +172,15 @@ class _TokenConsumptionCardState extends State<TokenConsumptionCard>
 
   Color _cloudPillText(bool isDark) =>
       isDark ? const Color(0xFF3B9FE8) : const Color(0xFF2C7FEB);
+
+  Color _cachedColor(bool isDark) =>
+      isDark ? const Color(0xFFB8860B) : const Color(0xFFD4A017);
+
+  Color _cachedPillBg(bool isDark) =>
+      isDark ? const Color(0xFF3A3018) : const Color(0xFFFFF3DC);
+
+  Color _cachedPillText(bool isDark) =>
+      isDark ? const Color(0xFFE8C547) : const Color(0xFFB8860B);
 
   @override
   Widget build(BuildContext context) {
@@ -271,15 +290,92 @@ class _TokenConsumptionCardState extends State<TokenConsumptionCard>
   Widget _buildHeader(OmniThemePalette palette, bool isDark) {
     return Row(
       children: [
-        // Total token stat
-        Icon(
-          Icons.bolt_rounded,
-          size: 14,
-          color: isDark ? const Color(0xFF7BBCE6) : const Color(0xFF2C7FEB),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Total token stat
+            Icon(
+              Icons.bolt_rounded,
+              size: 14,
+              color: isDark
+                  ? const Color(0xFF7BBCE6)
+                  : const Color(0xFF2C7FEB),
+            ),
+            const SizedBox(width: 3),
+            Text(
+              _formatTokenCount(_total),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: palette.textPrimary,
+              ),
+            ),
+            const SizedBox(width: 3),
+            Text(
+              'tokens',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w400,
+                color: palette.textTertiary,
+              ),
+            ),
+            if (_totalCached > 0) ...[
+              const SizedBox(width: 6),
+              _buildStatPill(
+                Icons.cached_rounded,
+                _formatTokenCount(_totalCached),
+                '缓存',
+                _cachedColor(isDark),
+                palette,
+              ),
+            ],
+          ],
         ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              // Local proportion pill
+              if (_totalLocal > 0)
+                _buildPropPill(
+                  label: '本地 ${_percentOf(_totalLocal, _total)}%',
+                  bgColor: _localPillBg(isDark),
+                  textColor: _localPillText(isDark),
+                  dotColor: _localColor(isDark),
+                ),
+              // Cloud proportion pill
+              if (_totalCloud > 0)
+                _buildPropPill(
+                  label: '云端 ${_percentOf(_totalCloud, _total)}%',
+                  bgColor: _cloudPillBg(isDark),
+                  textColor: _cloudPillText(isDark),
+                  dotColor: _cloudColor(isDark),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatPill(
+    IconData icon,
+    String value,
+    String label,
+    Color iconColor,
+    OmniThemePalette palette,
+  ) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: iconColor),
         const SizedBox(width: 3),
         Text(
-          _formatTokenCount(_total),
+          value,
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w700,
@@ -288,31 +384,13 @@ class _TokenConsumptionCardState extends State<TokenConsumptionCard>
         ),
         const SizedBox(width: 3),
         Text(
-          'tokens',
+          label,
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w400,
             color: palette.textTertiary,
           ),
         ),
-        const Spacer(),
-        // Local proportion pill
-        if (_totalLocal > 0)
-          _buildPropPill(
-            label: '本地 ${_percentOf(_totalLocal, _total)}%',
-            bgColor: _localPillBg(isDark),
-            textColor: _localPillText(isDark),
-            dotColor: _localColor(isDark),
-          ),
-        if (_totalLocal > 0 && _totalCloud > 0) const SizedBox(width: 6),
-        // Cloud proportion pill
-        if (_totalCloud > 0)
-          _buildPropPill(
-            label: '云端 ${_percentOf(_totalCloud, _total)}%',
-            bgColor: _cloudPillBg(isDark),
-            textColor: _cloudPillText(isDark),
-            dotColor: _cloudColor(isDark),
-          ),
       ],
     );
   }
@@ -391,7 +469,7 @@ class _TokenConsumptionCardState extends State<TokenConsumptionCard>
                 ),
                 child: Tooltip(
                   message: week.totalTokens > 0
-                      ? '本地 ${_formatTokenCount(week.localTokens)} · 云端 ${_formatTokenCount(week.cloudTokens)}'
+                      ? '本地 ${_formatTokenCount(week.localTokens)} · 云端 ${_formatTokenCount(week.cloudTokens)} · 缓存 ${_formatTokenCount(week.cachedTokens)}'
                       : '无消耗',
                   preferBelow: false,
                   verticalOffset: 12,

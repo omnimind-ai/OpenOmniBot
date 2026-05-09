@@ -112,7 +112,7 @@ class AppBackgroundVisualProfile {
       : const Color(0xFFD9E6FB);
 
   Color get userBubbleColor =>
-      usesLightText ? const Color(0x3322344B) : const Color(0xCCF1F8FF);
+      usesLightText ? const Color(0x3322344B) : const Color(0xE6F1F8FF);
 
   Color get attachmentSurfaceColor =>
       usesLightText ? const Color(0x33283D58) : const Color(0xFFE4EEFF);
@@ -134,16 +134,10 @@ class AppBackgroundVisualProfile {
       usesLightText ? const Color(0xFFA9F0B6) : const Color(0xFF52C41A);
 
   String get previewToneLabel => usesCustomTextColor
-      ? (LegacyTextLocalizer.isEnglish
-            ? 'Custom Color'
-            : '自定义颜色')
+      ? (LegacyTextLocalizer.isEnglish ? 'Custom Color' : '自定义颜色')
       : usesLightText
-      ? (LegacyTextLocalizer.isEnglish
-            ? 'Light Text'
-            : '浅色文本')
-      : (LegacyTextLocalizer.isEnglish
-            ? 'Dark Text'
-            : '深色文本');
+      ? (LegacyTextLocalizer.isEnglish ? 'Light Text' : '浅色文本')
+      : (LegacyTextLocalizer.isEnglish ? 'Dark Text' : '深色文本');
 
   static AppBackgroundVisualProfile derive({
     required AppBackgroundConfig config,
@@ -437,9 +431,11 @@ class AppBackgroundService {
   static Future<String> importLocalImage(String sourcePath) async {
     final sourceFile = File(sourcePath);
     if (!await sourceFile.exists()) {
-      throw Exception(LegacyTextLocalizer.isEnglish
-          ? 'Selected image does not exist'
-          : '所选图片不存在');
+      throw Exception(
+        LegacyTextLocalizer.isEnglish
+            ? 'Selected image does not exist'
+            : '所选图片不存在',
+      );
     }
     final directory = await _backgroundDirectory();
     final extension = _normalizedExtension(sourcePath);

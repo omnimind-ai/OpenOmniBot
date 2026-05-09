@@ -1,6 +1,10 @@
 package cn.com.omnimind.baselib.util
 
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 object OmniLog {
     enum class Level {
@@ -48,6 +52,65 @@ object OmniLog {
      */
     fun setLogLevel(level: Level) {
         this.minLevel = level
+    }
+
+    /**
+     * Whether to mirror ERROR, ASSERT, and crash logs to [RuntimeLogStore].
+     */
+    @Volatile
+    var runtimeLogEnabled: Boolean = true
+
+    private val runtimeLogScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private fun storeRuntimeLog(level: String, tag: String, message: String, throwable: Throwable?) {
+        if (!runtimeLogEnabled) return
+        if (tag == "RuntimeLogStore") return
+        if (tag == "[AssistsCoreChannel]") return
+        val stack = throwable?.let { buildStackTraceString(it) }
+        val entry = RuntimeLogEntry(
+            level = level,
+            tag = tag,
+            message = message,
+            stackTrace = stack,
+            isCrash = false,
+        )
+        runtimeLogScope.launch {
+            runCatching {
+                RuntimeLogStore.append(entry)
+            }.onFailure {
+                Log.w(globalTag + "RuntimeLogStore", "append runtime log failed", it)
+            }
+        }
+    }
+
+    fun storeCrashLog(tag: String, message: String, throwable: Throwable) {
+        if (!runtimeLogEnabled) return
+        runCatching {
+            RuntimeLogStore.append(
+                RuntimeLogEntry(
+                    level = "ERROR",
+                    tag = tag,
+                    message = message,
+                    stackTrace = buildStackTraceString(throwable),
+                    isCrash = true,
+                )
+            )
+        }.onFailure {
+            Log.w(globalTag + "RuntimeLogStore", "append crash log failed", it)
+        }
+    }
+
+    private fun buildStackTraceString(throwable: Throwable): String {
+        return buildString {
+            appendLine(throwable.toString())
+            throwable.stackTrace.forEach { appendLine("    at $it") }
+            var cause = throwable.cause
+            while (cause != null) {
+                appendLine("Caused by: $cause")
+                cause.stackTrace.forEach { appendLine("    at $it") }
+                cause = cause.cause
+            }
+        }
     }
 
     /**
@@ -128,6 +191,7 @@ object OmniLog {
         val actualTag = globalTag + tag
         Log.e(actualTag, message, throwable)
         notifyReporter(tag, message, "ERROR")
+        storeRuntimeLog("ERROR", tag, message, throwable)
     }
 
     /**
@@ -144,5 +208,6 @@ object OmniLog {
         val actualTag = globalTag + tag
         Log.wtf(actualTag, message, throwable)
         notifyReporter(tag, message, "ASSERT")
+        storeRuntimeLog("ASSERT", tag, message, throwable)
     }
 }

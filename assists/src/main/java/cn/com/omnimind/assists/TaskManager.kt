@@ -271,11 +271,7 @@ class TaskManager(
             params.packageName,
             params.onTaskFinishListener,
             params.skipGoHome,
-            params.stepSkillGuidance,
-            params.onRunFunction,
-            params.onPrepareExecution,
-            params.onCompileGateResolved,
-            params.onTaskRunLogReady
+            params.stepSkillGuidance
         )
     }
 

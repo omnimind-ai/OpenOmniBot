@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/widgets/omnibot_markdown_body.dart';
+import 'package:ui/widgets/omnibot_resource_widgets.dart';
 
 /// 思考中的加载文案（原始中文值，用于数据比较）
 const String kThinkingText = '小万正在思考...';
@@ -48,6 +49,20 @@ class StreamingText extends StatefulWidget {
   /// 尾随在文本末尾的内联组件
   final Widget? trailing;
 
+  /// 自定义聊天内资源打开方式。
+  final OmnibotResourceOpenCallback? onResourceOpen;
+
+  /// 已完成 Markdown 渲染的文本长度（字符数）。
+  ///
+  /// 当流式输出时，每 N 个 chunk 才执行一次 Markdown 渲染。该值表示上次
+  /// flush 时已渲染为 Markdown 的文本长度。超出该长度的新文本以纯文本追加，
+  /// 避免整段文本在 Markdown 与纯文本之间来回跳动。
+  ///
+  /// - `null`：整段文本按 Markdown 渲染（默认行为 / flush 后）
+  /// - `0`：尚未执行过 flush，全部按 Markdown 渲染（避免首批文本跳变）
+  /// - `> 0 && < fullText.length`：前缀按 Markdown 渲染，尾部按纯文本追加
+  final int? markdownRenderedLength;
+
   const StreamingText({
     super.key,
     required this.fullText,
@@ -56,6 +71,8 @@ class StreamingText extends StatefulWidget {
     this.selectable = false,
     this.onDisplayedTextChanged,
     this.trailing,
+    this.onResourceOpen,
+    this.markdownRenderedLength,
   });
 
   @override
@@ -67,6 +84,22 @@ class _StreamingTextState extends State<StreamingText> {
   bool _isFirstBuild = true;
   String? _lastSelectedContent; // 跟踪最后选中的内容
   int? _lastNotifiedDisplayLength;
+
+  // ── Markdown 前缀缓存 ──
+  // 当 mdText 不变时，复用同一 OmnibotMarkdownBody widget 对象，
+  // Flutter 的 identical() 检查会跳过整棵子树的更新（含 markdown 解析）。
+  // 变化的 trailing（纯文本尾部）通过 ValueNotifier 独立更新。
+  String? _cachedMdPrefixText;
+  TextStyle? _cachedMdPrefixStyle;
+  OmnibotResourceOpenCallback? _cachedMdPrefixOnResourceOpen;
+  Widget? _cachedMdPrefixWidget;
+  final ValueNotifier<Widget?> _trailingInlineNotifier = ValueNotifier(null);
+
+  @override
+  void dispose() {
+    _trailingInlineNotifier.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(StreamingText oldWidget) {
@@ -125,6 +158,7 @@ class _StreamingTextState extends State<StreamingText> {
               data: localizedText,
               baseStyle: widget.style,
               inlineResourcePlainStyle: true,
+              onResourceOpen: widget.onResourceOpen,
             )
           : Text(localizedText, style: widget.style);
 
@@ -141,6 +175,86 @@ class _StreamingTextState extends State<StreamingText> {
           : child;
     }
 
+    // ── 分段渲染快速路径（在 TweenAnimationBuilder 之外） ──
+    // 中间 chunk 不走逐字动画，避免每帧重建 OmnibotMarkdownBody。
+    // build() 仅在 props 变化时调用（每个 chunk 一次），而非每帧。
+    //
+    // 缓存策略：当 markdown 前缀文本不变时，复用同一 OmnibotMarkdownBody
+    // widget 对象。Flutter 的 Element.updateChild 对 identical widget 直接
+    // 跳过更新，从而完全避免 markdown 重解析。变化的纯文本尾部通过
+    // ValueNotifier → ValueListenableBuilder 独立刷新，不触碰 markdown 子树。
+    if (widget.enableMarkdown) {
+      final mdLen = widget.markdownRenderedLength;
+      if (mdLen != null && mdLen > 0 && mdLen < widget.fullText.length) {
+        final safeMdLen = _clampToCodePointBoundary(widget.fullText, mdLen);
+        final mdText = widget.fullText.substring(0, safeMdLen);
+        final plainTail = widget.fullText.substring(safeMdLen);
+
+        _notifyDisplayedTextChanged(widget.fullText.length);
+
+        // 将纯文本尾部 + 原始 trailing 组合为行内 Widget
+        Widget? inlineTrailing;
+        if (plainTail.isNotEmpty || widget.trailing != null) {
+          inlineTrailing = Text.rich(
+            TextSpan(
+              children: [
+                if (plainTail.isNotEmpty)
+                  TextSpan(text: plainTail, style: widget.style),
+                if (widget.trailing != null)
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.middle,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: widget.trailing!,
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }
+
+        // 缓存命中：mdText 和 style 均未变化 → 复用 identical widget，
+        // 仅通过 ValueNotifier 更新 trailing
+        if (_cachedMdPrefixText == mdText &&
+            _cachedMdPrefixStyle == widget.style &&
+            identical(_cachedMdPrefixOnResourceOpen, widget.onResourceOpen) &&
+            _cachedMdPrefixWidget != null) {
+          _trailingInlineNotifier.value = inlineTrailing;
+        } else {
+          // 缓存未命中：重建 OmnibotMarkdownBody 并缓存
+          _cachedMdPrefixText = mdText;
+          _cachedMdPrefixStyle = widget.style;
+          _cachedMdPrefixOnResourceOpen = widget.onResourceOpen;
+          _trailingInlineNotifier.value = inlineTrailing;
+          _cachedMdPrefixWidget = OmnibotMarkdownBody(
+            data: mdText,
+            baseStyle: widget.style,
+            inlineResourcePlainStyle: true,
+            onResourceOpen: widget.onResourceOpen,
+            trailingInline: ValueListenableBuilder<Widget?>(
+              valueListenable: _trailingInlineNotifier,
+              builder: (_, child, __) => child ?? const SizedBox.shrink(),
+            ),
+          );
+        }
+
+        Widget child = _cachedMdPrefixWidget!;
+
+        return widget.selectable
+            ? SelectionArea(
+                onSelectionChanged: (content) {
+                  _lastSelectedContent = content?.plainText;
+                },
+                contextMenuBuilder: (context, selectableRegionState) {
+                  return _buildSelectionContextMenu(selectableRegionState);
+                },
+                child: child,
+              )
+            : child;
+      }
+    }
+
+    // ── 全量渲染路径（flush 后 / 首批文本 / 非流式） ──
     // 如果从思考中文案切换到实际内容，从0开始
     final previousLength = _previousFullText == kThinkingText
         ? 0
@@ -172,12 +286,13 @@ class _StreamingTextState extends State<StreamingText> {
         final displayText = widget.fullText.substring(0, displayLength);
         _notifyDisplayedTextChanged(displayText.length);
 
-        // 如果启用Markdown，直接渲染Markdown内容
         if (widget.enableMarkdown) {
+          // 全量 Markdown 渲染（默认 / flush 后 / 首批文本）
           Widget child = OmnibotMarkdownBody(
             data: displayText,
             baseStyle: widget.style,
             inlineResourcePlainStyle: true,
+            onResourceOpen: widget.onResourceOpen,
             trailingInline: widget.trailing,
           );
 

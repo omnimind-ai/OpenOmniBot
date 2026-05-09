@@ -117,6 +117,9 @@ Do NOT translate or alter code snippets, file paths, identifiers, or error messa
             message.toolCalls?.takeIf { it.isNotEmpty() }?.let { toolCalls ->
                 payload["tool_calls"] = toolCalls.map(::toolCallToTransportMap)
             }
+            message.reasoningContent?.takeIf { it.isNotBlank() }?.let { reasoning ->
+                payload["reasoning_content"] = reasoning
+            }
             message.toolCallId?.takeIf { it.isNotBlank() }?.let { toolCallId ->
                 payload["tool_call_id"] = toolCallId
             }

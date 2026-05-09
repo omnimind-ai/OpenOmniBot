@@ -316,6 +316,14 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
   }
 
   Future<void> _loadMemorySuggestion() async {
+    await StorageService.remove(kMemorySuggestionKey);
+    await StorageService.remove(kMemorySuggestionTopThreeIdsKey);
+    _safeSetState(() {
+      _memorySuggestion = null;
+      _isSuggestionLoading = false;
+      _lastTopThreeIds = <String>[];
+    });
+    return;
     // 先加载持久化的建议
     String? savedSuggestion;
     try {
@@ -350,7 +358,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       unawaited(_generateMemorySuggestion(suggestionContext.records));
     } else {
       _safeSetState(() {
-        _memorySuggestion = savedSuggestion;
+        _memorySuggestion = _sanitizeMemorySuggestion(savedSuggestion);
         _isSuggestionLoading = false;
         print('记忆建议未变化，使用持久化数据: $_memorySuggestion');
       });
@@ -368,7 +376,9 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
         'sortTs': sortTs,
         'title': _normalizeSuggestionText(card.title),
         'description': _normalizeSuggestionText(card.description ?? ''),
-        'appName': _normalizeSuggestionText(card.appName ?? context.l10n.memoryShortTermTitle),
+        'appName': _normalizeSuggestionText(
+          card.appName ?? context.l10n.memoryShortTermTitle,
+        ),
       });
     }
 
@@ -412,6 +422,107 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
   String _normalizeSuggestionText(String text) {
     return text.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
+
+  String? _sanitizeMemorySuggestion(String? rawText) {
+    if (rawText == null) {
+      return null;
+    }
+
+    final normalized = rawText
+        .replaceAll('\r\n', '\n')
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .replaceAll(RegExp(r'\s*\n\s*'), '\n')
+        .trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+
+    final sanitizedLines = normalized
+        .split('\n')
+        .map(_trimDanglingSuggestionSuffixAscii)
+        .where((line) => line.isNotEmpty)
+        .toList();
+    if (sanitizedLines.isEmpty) {
+      return null;
+    }
+
+    final sanitized = sanitizedLines.join('\n').trim();
+    if (_looksBrokenMemorySuggestionAscii(sanitized)) {
+      return null;
+    }
+    return sanitized;
+  }
+
+  String _trimDanglingSuggestionSuffixAscii(String text) {
+    var result = text.trim();
+    final trailingPatterns = <RegExp>[
+      RegExp(r',\s*(?:a|an|the|and|or|but|to)$', caseSensitive: false),
+      RegExp(r"[-\u2013\u2014]\s*[A-Za-z'\u2019]{1,6}$"),
+      RegExp(r"\b(?:you['\u2019]?v?)$", caseSensitive: false),
+      RegExp(r'[,:;]\s*$'),
+    ];
+
+    var changed = true;
+    while (changed && result.isNotEmpty) {
+      changed = false;
+      for (final pattern in trailingPatterns) {
+        final next = result.replaceFirst(pattern, '').trimRight();
+        if (next != result) {
+          result = next;
+          changed = true;
+        }
+      }
+    }
+    return result.trim();
+  }
+
+  bool _looksBrokenMemorySuggestionAscii(String text) {
+    return RegExp(
+          r"(?:\b(?:a|an|the|and|or|but|to)|\byou['\u2019]?v?)$",
+          caseSensitive: false,
+        ).hasMatch(text) ||
+        RegExp(r'[-\u2013\u2014,:;]$').hasMatch(text);
+  }
+
+  /*
+  String _trimDanglingSuggestionSuffix(String text) {
+    var result = text.trim();
+    final trailingPatterns = <RegExp>[
+      RegExp(r'[,，]\s*(?:a|an|the|and|or|but|to)$', caseSensitive: false),
+      RegExp(r'[-–—]\s*[A-Za-z\'’]{1,6}$'),
+      RegExp(r'\b(?:you[\'’]?v?)$', caseSensitive: false),
+      RegExp(r'[,:;，、]\s*$'),
+    ];
+
+    var changed = true;
+    while (changed && result.isNotEmpty) {
+      changed = false;
+      for (final pattern in trailingPatterns) {
+        final next = result.replaceFirst(pattern, '').trimRight();
+        if (next != result) {
+          result = next;
+          changed = true;
+        }
+      }
+    }
+    return result.trim();
+  }
+
+  bool _looksBrokenMemorySuggestion(String text) {
+    return RegExp(
+          r'(?:\b(?:a|an|the|and|or|but|to)|\byou[\'’]?v?)$',
+          caseSensitive: false,
+        ).hasMatch(text) ||
+        RegExp(r'[-–—,:;，、]$').hasMatch(text);
+  }
+
+  */
+
+  String _trimDanglingSuggestionSuffix(String text) =>
+      _trimDanglingSuggestionSuffixAscii(text);
+
+  bool _looksBrokenMemorySuggestion(String text) =>
+      _looksBrokenMemorySuggestionAscii(text);
 
   String _clipSuggestionText(String text, {int maxLength = 24}) {
     if (text.length <= maxLength) {
@@ -492,9 +603,14 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       );
 
       if (response != null && response.isNotEmpty && mounted) {
+        final sanitized = _sanitizeMemorySuggestion(response);
         _safeSetState(() {
-          _memorySuggestion = response.trim();
-          StorageService.setString(kMemorySuggestionKey, _memorySuggestion!);
+          _memorySuggestion = sanitized;
+          if (sanitized != null) {
+            StorageService.setString(kMemorySuggestionKey, sanitized);
+          } else {
+            StorageService.remove(kMemorySuggestionKey);
+          }
           _isSuggestionLoading = false;
         });
       } else {
@@ -1011,7 +1127,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
     // 默认文案
     final defaultText = context.l10n.memoryGreeting;
     // 使用 LLM 生成的建议或默认文案
-    final suggestionText = _memorySuggestion ?? defaultText;
+    final suggestionText = defaultText;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1102,7 +1218,9 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           child: TextButton(
             onPressed: () => _toggleSelectAll(filteredCards),
             child: Text(
-              isAllSelected ? context.l10n.memoryDeselectAll : context.trLegacy('全选'),
+              isAllSelected
+                  ? context.l10n.memoryDeselectAll
+                  : context.trLegacy('全选'),
               style: TextStyle(
                 color: palette.accentPrimary,
                 fontSize: 14,
@@ -1196,8 +1314,14 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
             ),
             Row(
               children: [
-                _buildMemoryTabButton(label: LegacyTextLocalizer.localize('短期记忆'), tabIndex: _localMemoryTab),
-                _buildMemoryTabButton(label: LegacyTextLocalizer.localize('长期记忆'), tabIndex: _cloudMemoryTab),
+                _buildMemoryTabButton(
+                  label: LegacyTextLocalizer.localize('短期记忆'),
+                  tabIndex: _localMemoryTab,
+                ),
+                _buildMemoryTabButton(
+                  label: LegacyTextLocalizer.localize('长期记忆'),
+                  tabIndex: _cloudMemoryTab,
+                ),
               ],
             ),
           ],
@@ -1616,7 +1740,10 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
                         const SizedBox(height: 18),
                       _buildMem0DetailRow(context.l10n.memoryIdLabel, item.id),
                       if ((item.userId ?? '').isNotEmpty)
-                        _buildMem0DetailRow(context.l10n.skillUser, item.userId!),
+                        _buildMem0DetailRow(
+                          context.l10n.skillUser,
+                          item.userId!,
+                        ),
                       if ((item.agentId ?? '').isNotEmpty)
                         _buildMem0DetailRow('Agent', item.agentId!),
                       if (item.score != null)
@@ -1684,8 +1811,12 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       backgroundColor: Colors.transparent,
       builder: (context) {
         return Mem0MemoryEditorSheet(
-          title: initialItem == null ? context.l10n.memoryAddLongTerm : context.l10n.memoryEditLongTerm,
-          submitLabel: initialItem == null ? context.l10n.memorySaveToLongTerm : context.l10n.memorySaveChanges,
+          title: initialItem == null
+              ? context.l10n.memoryAddLongTerm
+              : context.l10n.memoryEditLongTerm,
+          submitLabel: initialItem == null
+              ? context.l10n.memorySaveToLongTerm
+              : context.l10n.memorySaveChanges,
           initialMemory: initialItem?.memory,
           initialCategories: initialItem?.categories ?? const [],
         );
@@ -1739,7 +1870,8 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
     final confirmed = await AppDialog.confirm(
       context,
       title: context.l10n.memoryDeleteLongTermConfirm,
-      content: '${context.l10n.memoryDeleteWarning}:\n${_clipMem0Memory(item.memory)}',
+      content:
+          '${context.l10n.memoryDeleteWarning}:\n${_clipMem0Memory(item.memory)}',
       confirmText: context.trLegacy('删除'),
       confirmButtonColor: AppColors.alertRed,
     );
@@ -1767,7 +1899,9 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       showToast(successMessage, type: ToastType.success);
     } catch (e) {
       showToast(
-        context.l10n.memoryLongTermFailed(e.toString().replaceFirst('Exception: ', '')),
+        context.l10n.memoryLongTermFailed(
+          e.toString().replaceFirst('Exception: ', ''),
+        ),
         type: ToastType.error,
       );
     } finally {

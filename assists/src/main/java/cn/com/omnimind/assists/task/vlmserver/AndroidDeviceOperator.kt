@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.assists.api.eventapi.ExecutionTaskEventApi
+import cn.com.omnimind.baselib.shizuku.ShizukuCapabilityManager
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.baselib.util.exception.PrivacyBlockedException
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
@@ -96,6 +97,14 @@ class AndroidDeviceOperator(
             }
             OperationResult(true, "输入文本成功: $text", null)
         } catch (e: Exception) {
+            val shizukuFallback = inputTextViaShizuku(text)
+            if (shizukuFallback.success) {
+                return shizukuFallback
+            }
+            val shellFallback = inputTextViaShell(text)
+            if (shellFallback.success) {
+                return shellFallback
+            }
             OperationResult(false, "输入失败: ${e.message}", null)
         }
     }
@@ -107,12 +116,31 @@ class AndroidDeviceOperator(
             OperationResult(true, "按下热键 $normalized 成功", null)
         } catch (primaryError: Exception) {
             if (normalized == "ENTER") {
+                val shizukuFallback = pressEnterViaShizuku()
+                if (shizukuFallback.success) {
+                    return shizukuFallback
+                }
                 val fallback = pressEnterViaShell()
                 if (fallback.success) {
                     return fallback
                 }
             }
             OperationResult(false, "热键执行失败: ${primaryError.message}", null)
+        }
+    }
+
+    private suspend fun inputTextViaShizuku(text: String): OperationResult {
+        val ctx = context ?: return OperationResult(false, "Shizuku 不可用", null)
+        return try {
+            val result = ShizukuCapabilityManager.get(ctx).inputText(text)
+            if (result.success) {
+                OperationResult(true, "通过 Shizuku 输入文本成功", null)
+            } else {
+                OperationResult(false, "Shizuku 输入失败: ${result.message}", null)
+            }
+        } catch (e: Exception) {
+            OmniLog.e(Tag, "inputTextViaShizuku failed: ${e.message}", e)
+            OperationResult(false, "Shizuku 输入失败: ${e.message}", null)
         }
     }
 
@@ -154,6 +182,20 @@ class AndroidDeviceOperator(
         } catch (e: Exception) {
             OmniLog.e(Tag, "inputTextViaShell failed: ${e.message}", e)
             OperationResult(false, "Shell输入失败: ${e.message}", null)
+        }
+    }
+
+    private suspend fun pressEnterViaShizuku(): OperationResult {
+        val ctx = context ?: return OperationResult(false, "Shizuku 不可用", null)
+        return try {
+            val result = ShizukuCapabilityManager.get(ctx).pressKeyEvent("ENTER")
+            if (result.success) {
+                OperationResult(true, "通过 Shizuku 按下 ENTER 成功", null)
+            } else {
+                OperationResult(false, "Shizuku 按下 ENTER 失败: ${result.message}", null)
+            }
+        } catch (e: Exception) {
+            OperationResult(false, "Shizuku 按下 ENTER 失败: ${e.message}", null)
         }
     }
 
@@ -340,7 +382,25 @@ class AndroidDeviceOperator(
             // 隐私限制异常需要终止任务，重新抛出
             throw e
         } catch (e: Exception) {
+            val shizukuFallback = launchApplicationViaShizuku(packageName)
+            if (shizukuFallback.success) {
+                return shizukuFallback
+            }
             OperationResult(false, "启动应用失败: ${e.message}", null)
+        }
+    }
+
+    private suspend fun launchApplicationViaShizuku(packageName: String): OperationResult {
+        val ctx = context ?: return OperationResult(false, "Shizuku 不可用", null)
+        return try {
+            val result = ShizukuCapabilityManager.get(ctx).launchApp(packageName)
+            if (result.success) {
+                OperationResult(true, "通过 Shizuku 启动应用成功", null)
+            } else {
+                OperationResult(false, "Shizuku 启动应用失败: ${result.message}", null)
+            }
+        } catch (e: Exception) {
+            OperationResult(false, "Shizuku 启动应用失败: ${e.message}", null)
         }
     }
 

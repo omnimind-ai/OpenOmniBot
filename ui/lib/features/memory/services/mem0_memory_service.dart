@@ -112,7 +112,8 @@ class Mem0MemoryService {
 
   static String _memoryId(int index, String memory) {
     final raw = base64Url.encode(utf8.encode('$index|$memory'));
-    return raw.replaceAll('=', '').substring(0, raw.length > 16 ? 16 : raw.length);
+    final cleaned = raw.replaceAll('=', '');
+    return cleaned.length > 16 ? cleaned.substring(0, 16) : cleaned;
   }
 
   static String? _replaceById(String content, String memoryId, String nextMemory) {

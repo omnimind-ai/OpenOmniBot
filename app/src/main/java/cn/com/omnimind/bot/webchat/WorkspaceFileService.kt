@@ -207,13 +207,14 @@ class WorkspaceFileService(
         workspace: AgentWorkspaceDescriptor
     ): Map<String, Any?> {
         val canonical = file.canonicalFile
+        val displayName = file.name.ifBlank { canonical.name.ifBlank { "/" } }
         val mimeType = if (canonical.isFile) {
             workspaceManager.guessMimeType(canonical)
         } else {
             "inode/directory"
         }
         return linkedMapOf(
-            "name" to canonical.name.ifBlank { "/" },
+            "name" to displayName,
             "path" to (workspaceManager.shellPathForAndroid(canonical) ?: canonical.absolutePath),
             "androidPath" to canonical.absolutePath,
             "uri" to workspaceManager.uriForFile(canonical),

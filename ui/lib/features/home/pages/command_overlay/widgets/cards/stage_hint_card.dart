@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import './bot_status.dart';
 
 /// 阶段提示卡片组件
@@ -52,11 +53,11 @@ class _StageHintCardState extends State<StageHintCard> {
 
   String _formatTime(int seconds) {
     if (seconds < 60) {
-      return '$seconds 秒';
+      return LegacyTextLocalizer.localize('$seconds 秒');
     } else {
       final minutes = seconds ~/ 60;
       final remainingSeconds = seconds % 60;
-      return '$minutes 分 $remainingSeconds 秒';
+      return LegacyTextLocalizer.localize('$minutes 分 $remainingSeconds 秒');
     }
   }
 
@@ -64,7 +65,7 @@ class _StageHintCardState extends State<StageHintCard> {
   Widget build(BuildContext context) {
     return BotStatus(
       status: BotStatusType.hint,
-      hintText: widget.hint,
+      hintText: LegacyTextLocalizer.localize(widget.hint),
       costTime: _elapsedSeconds > 0 ? _formatTime(_elapsedSeconds) : null,
     );
   }

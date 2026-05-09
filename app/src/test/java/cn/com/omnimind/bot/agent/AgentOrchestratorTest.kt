@@ -147,6 +147,68 @@ class AgentOrchestratorTest {
     }
 
     @Test
+    fun lengthFinishReasonContinuesAndPublishesCombinedFinalText() = runBlocking {
+        val llmClient = FakeLlmClient(
+            turns = listOf(
+                assistantTurn(
+                    content = "第一段还没说完",
+                    finishReason = "length"
+                ),
+                assistantTurn(
+                    content = "，后续完成。",
+                    finishReason = "stop"
+                )
+            )
+        )
+        val callback = RecordingCallback()
+
+        val result = createOrchestrator(llmClient, FakeToolExecutor()).run(
+            AgentOrchestrator.Input(
+                callback = callback,
+                initialMessages = initialMessages("写一个长回复"),
+                executionEnv = FakeExecutionEnvironment("写一个长回复")
+            )
+        )
+
+        assertEquals(2, llmClient.requests.size)
+        assertEquals("user", llmClient.requests[1].messages.last().role)
+        assertTrue(
+            llmClient.requests[1].messages.last().contentText().contains("输出长度上限")
+        )
+        assertEquals("第一段还没说完，后续完成。", callback.finalChatMessages().last())
+        assertTrue(callback.chatMessages.any { it.first == "第一段还没说完" && !it.second })
+        assertTrue(callback.chatMessages.any { it.first == "第一段还没说完，后续完成。" && !it.second })
+        assertTrue(result is AgentResult.Success)
+        assertEquals("stop", (result as AgentResult.Success).response.finishReason)
+    }
+
+    @Test
+    fun lengthContinuationStopsAfterGuardLimit() = runBlocking {
+        val llmClient = FakeLlmClient(
+            turns = listOf(
+                assistantTurn(content = "A", finishReason = "length"),
+                assistantTurn(content = "B", finishReason = "length"),
+                assistantTurn(content = "C", finishReason = "length"),
+                assistantTurn(content = "D", finishReason = "length")
+            )
+        )
+        val callback = RecordingCallback()
+
+        val result = createOrchestrator(llmClient, FakeToolExecutor()).run(
+            AgentOrchestrator.Input(
+                callback = callback,
+                initialMessages = initialMessages("持续输出"),
+                executionEnv = FakeExecutionEnvironment("持续输出")
+            )
+        )
+
+        assertEquals(4, llmClient.requests.size)
+        assertEquals("ABCD", callback.finalChatMessages().last())
+        assertTrue(result is AgentResult.Success)
+        assertEquals("length", (result as AgentResult.Success).response.finishReason)
+    }
+
+    @Test
     fun reasoningEffortIsForwardedIntoModelRequests() = runBlocking {
         val llmClient = FakeLlmClient(
             turns = listOf(
@@ -167,6 +229,33 @@ class AgentOrchestratorTest {
 
         assertEquals(1, llmClient.requests.size)
         assertEquals("low", llmClient.requests.first().reasoningEffort)
+    }
+
+    @Test
+    fun longReasoningUpdatesAreNotTruncated() = runBlocking {
+        val longReasoning = buildString {
+            repeat(900) { index ->
+                append("第${index}段思考内容，用于验证长文本流式更新不会被截断。")
+            }
+        }
+        val callback = ThinkingCaptureCallback()
+
+        createOrchestrator(
+            FakeLlmClient(
+                turns = listOf(assistantTurn(content = "已完成。")),
+                reasoningUpdates = listOf(listOf(longReasoning))
+            ),
+            FakeToolExecutor()
+        ).run(
+            AgentOrchestrator.Input(
+                callback = callback,
+                initialMessages = initialMessages("测试长思考"),
+                executionEnv = FakeExecutionEnvironment("测试长思考")
+            )
+        )
+
+        assertEquals(longReasoning, callback.thinkingUpdates.last())
+        assertTrue(callback.thinkingUpdates.last().length > 3000)
     }
 
     @Test
@@ -444,7 +533,8 @@ class AgentOrchestratorTest {
         toolCalls: List<AssistantToolCall> = emptyList(),
         promptTokens: Int? = null,
         prefillTokensPerSecond: Double? = null,
-        decodeTokensPerSecond: Double? = null
+        decodeTokensPerSecond: Double? = null,
+        finishReason: String? = null
     ): ChatCompletionTurn {
         return ChatCompletionTurn(
             message = ChatCompletionMessage(
@@ -452,6 +542,7 @@ class AgentOrchestratorTest {
                 content = if (content.isBlank()) null else JsonPrimitive(content),
                 toolCalls = toolCalls.ifEmpty { null }
             ),
+            finishReason = finishReason,
             usage =
                 if (
                     promptTokens == null &&
@@ -484,9 +575,13 @@ class AgentOrchestratorTest {
     }
 
     private class FakeLlmClient(
-        turns: List<ChatCompletionTurn>
+        turns: List<ChatCompletionTurn>,
+        reasoningUpdates: List<List<String>> = emptyList()
     ) : AgentLlmClient {
         private val queuedTurns = ArrayDeque(turns)
+        private val queuedReasoningUpdates = ArrayDeque(
+            reasoningUpdates.map { updates -> ArrayDeque(updates) }
+        )
         val requests = mutableListOf<ChatCompletionRequest>()
 
         override suspend fun streamTurn(
@@ -495,6 +590,14 @@ class AgentOrchestratorTest {
             onContentUpdate: (suspend (String) -> Unit)?
         ): ChatCompletionTurn {
             requests += request
+            val reasoningQueue = if (queuedReasoningUpdates.isEmpty()) {
+                null
+            } else {
+                queuedReasoningUpdates.removeFirst()
+            }
+            while (reasoningQueue != null && reasoningQueue.isNotEmpty()) {
+                onReasoningUpdate?.invoke(reasoningQueue.removeFirst())
+            }
             val turn = queuedTurns.removeFirst()
             val content = turn.message.contentText()
             if (content.isNotBlank()) {
@@ -615,6 +718,14 @@ class AgentOrchestratorTest {
 
         fun finalChatMessages(): List<String> {
             return chatMessages.filter { it.second }.map { it.first }
+        }
+    }
+
+    private class ThinkingCaptureCallback : RecordingCallback() {
+        val thinkingUpdates = mutableListOf<String>()
+
+        override suspend fun onThinkingUpdate(thinking: String) {
+            thinkingUpdates += thinking
         }
     }
 

@@ -1,16 +1,20 @@
 package com.rk.terminal.service
 
+import android.Manifest
 import android.app.*
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.rk.libcommons.TerminalCommand
 import com.rk.resources.drawables
 import com.rk.resources.strings
@@ -22,6 +26,8 @@ import com.termux.terminal.TerminalSession
 
 class SessionService : Service() {
     companion object {
+        private const val TAG = "SessionService"
+        private const val NOTIFICATION_ID = 1
         private const val DEFAULT_COLUMNS = 120
         private const val DEFAULT_ROWS = 40
         private const val DEFAULT_CELL_WIDTH = 10
@@ -195,10 +201,56 @@ class SessionService : Service() {
         val notification = createNotification()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            startForegroundForAndroid14(notification)
         } else {
-            startForeground(1, notification)
+            startForeground(NOTIFICATION_ID, notification)
         }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private fun startForegroundForAndroid14(notification: Notification) {
+        val preferredType = resolveForegroundServiceType()
+        if (tryStartForeground(notification, preferredType)) {
+            return
+        }
+
+        if (preferredType != ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC &&
+            hasPermission(Manifest.permission.FOREGROUND_SERVICE_DATA_SYNC) &&
+            tryStartForeground(notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        ) {
+            return
+        }
+
+        Log.e(TAG, "Unable to start SessionService as a foreground service; stopping.")
+        stopSelf()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private fun resolveForegroundServiceType(): Int {
+        return if (hasPermission(Manifest.permission.FOREGROUND_SERVICE_SPECIAL_USE)) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        } else {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private fun tryStartForeground(notification: Notification, foregroundServiceType: Int): Boolean {
+        return try {
+            startForeground(NOTIFICATION_ID, notification, foregroundServiceType)
+            true
+        } catch (error: RuntimeException) {
+            Log.e(
+                TAG,
+                "Failed to start foreground service with type=$foregroundServiceType",
+                error
+            )
+            false
+        }
+    }
+
+    private fun hasPermission(permission: String): Boolean {
+        return ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
     }
 
 
@@ -257,7 +309,7 @@ class SessionService : Service() {
 
     private fun updateNotification() {
         val notification = createNotification()
-        notificationManager.notify(1, notification)
+        notificationManager.notify(NOTIFICATION_ID, notification)
     }
 
     private fun getNotificationContentText(): String {

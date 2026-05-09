@@ -95,6 +95,23 @@ class AgentLlmStreamAccumulatorTest {
     }
 
     @Test
+    fun `can retain reasoning content on assistant message for deepseek tool rounds`() {
+        val accumulator = AgentLlmStreamAccumulator(
+            json = json,
+            includeReasoningInAssistantMessage = true
+        )
+
+        accumulator.consume(
+            """{"choices":[{"delta":{"reasoning_content":"需要查工具","content":"","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"get_time","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}"""
+        )
+
+        val turn = accumulator.buildTurn()
+
+        assertEquals("需要查工具", turn.reasoning)
+        assertEquals("需要查工具", turn.message.reasoningContent)
+    }
+
+    @Test
     fun `preserves surrogate pair split across chunks`() {
         val accumulator = AgentLlmStreamAccumulator(json = json)
 

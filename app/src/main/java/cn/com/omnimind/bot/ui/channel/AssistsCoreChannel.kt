@@ -36,7 +36,7 @@ class AssistsCoreChannel {
             AssistsCoreManager.bindMainEngineChannel(channel!!)
         }
         channel!!.setMethodCallHandler { call, result ->
-            OmniLog.e(TAG, "setMethodCallHandler " + call.method)            
+            OmniLog.d(TAG, "setMethodCallHandler " + call.method)
             when (call.method) {
                 "createCompanionTask" -> {
                     assistsCoreManager!!.createCompanionTask( call, result)
@@ -72,6 +72,12 @@ class AssistsCoreChannel {
                 }
                 "listRecentAiRequestLogs" -> {
                     assistsCoreManager!!.listRecentAiRequestLogs(call, result)
+                }
+                "listRuntimeLogs" -> {
+                    assistsCoreManager!!.listRuntimeLogs(call, result)
+                }
+                "clearRuntimeLogs" -> {
+                    assistsCoreManager!!.clearRuntimeLogs(call, result)
                 }
                 "saveModelProviderProfile" -> {
                     assistsCoreManager!!.saveModelProviderProfile(call, result)
@@ -168,7 +174,7 @@ class AssistsCoreChannel {
                 }
 
                 "cancelChatTask" -> {
-                    OmniLog.e(TAG, "cancelChatTask")
+                    OmniLog.d(TAG, "cancelChatTask")
                     assistsCoreManager!!.cancelChatTask( call, result)
                 }
 
@@ -195,43 +201,6 @@ class AssistsCoreChannel {
                 "pressHome" -> {
                     assistsCoreManager!!.pressHome(call, result)
                 }
-                "getUtgBridgeConfig" -> {
-                    assistsCoreManager!!.getUtgBridgeConfig(call, result)
-                }
-                "saveUtgBridgeConfig" -> {
-                    assistsCoreManager!!.saveUtgBridgeConfig(call, result)
-                }
-                "getUtgBridgeExecutionContext" -> {
-                    assistsCoreManager!!.getUtgBridgeExecutionContext(call, result)
-                }
-                "getVlmTaskRunLog" -> {
-                    assistsCoreManager!!.getVlmTaskRunLog(call, result)
-                }
-                "controlUtgProvider" -> {
-                    assistsCoreManager!!.controlUtgProvider(call, result)
-                }
-                "requestUtgJson" -> {
-                    assistsCoreManager!!.requestUtgJson(call, result)
-                }
-                "getEmbeddedProviderStatus" -> {
-                    assistsCoreManager!!.getEmbeddedProviderStatus(call, result)
-                }
-                "installEmbeddedProvider" -> {
-                    assistsCoreManager!!.installEmbeddedProvider(call, result)
-                }
-                "startEmbeddedProvider" -> {
-                    assistsCoreManager!!.startEmbeddedProvider(call, result)
-                }
-                "stopEmbeddedProvider" -> {
-                    assistsCoreManager!!.stopEmbeddedProvider(call, result)
-                }
-                "uninstallEmbeddedProvider" -> {
-                    assistsCoreManager!!.uninstallEmbeddedProvider(call, result)
-                }
-                "updateOmniFlowPackage" -> {
-                    assistsCoreManager!!.updateOmniFlowPackage(call, result)
-                }
-
                 "getInstalledApplications" -> {
                     assistsCoreManager!!.getInstalledApplications( call, result)
                 }
@@ -366,6 +335,9 @@ class AssistsCoreChannel {
                 }
                 "getConversationMessages" -> {
                     assistsCoreManager!!.getConversationMessages(call, result)
+                }
+                "getConversationMessagesPaged" -> {
+                    assistsCoreManager!!.getConversationMessagesPaged(call, result)
                 }
                 "replaceConversationMessages" -> {
                     assistsCoreManager!!.replaceConversationMessages(call, result)

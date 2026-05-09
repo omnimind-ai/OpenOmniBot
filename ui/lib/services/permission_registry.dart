@@ -15,7 +15,6 @@ enum PermissionLevel {
   fullExecution,
 }
 
-
 /// 权限规格定义
 /// 包含权限的基础信息和操作方法名
 class PermissionSpec {
@@ -85,10 +84,13 @@ class PermissionRegistry {
   PermissionRegistry._();
 
   /// 获取指定品牌的权限列表
-  /// 
+  ///
   /// [brand] 设备品牌，如 'huawei', 'xiaomi', 'oppo', 'vivo' 等
   /// 返回该品牌需要的权限规格列表
-  static List<PermissionSpec> getPermissions({required String brand}) {
+  static List<PermissionSpec> getPermissions({
+    required String brand,
+    bool includeOptionalAdvanced = false,
+  }) {
     // 基础权限列表（所有品牌通用）
     final basePermissions = [
       PermissionSpec(
@@ -97,7 +99,9 @@ class PermissionRegistry {
         iconWidth: 32.0,
         iconHeight: 32.0,
         name: LegacyTextLocalizer.isEnglish ? 'Overlay Permission' : '悬浮窗权限',
-        description: LegacyTextLocalizer.isEnglish ? 'Desktop overlay for quick access' : '桌面悬浮显示，快速唤起小万',
+        description: LegacyTextLocalizer.isEnglish
+            ? 'Desktop overlay for quick access'
+            : '桌面悬浮显示，快速唤起小万',
         openMethod: 'openOverlaySettings',
         checkMethod: 'isOverlayPermission',
       ),
@@ -106,18 +110,26 @@ class PermissionRegistry {
         iconPath: 'assets/welcome/permission_battery.svg',
         iconWidth: 32.0,
         iconHeight: 32.0,
-        name: LegacyTextLocalizer.isEnglish ? 'Allow background running' : '允许后台运行',
-        description: LegacyTextLocalizer.isEnglish ? 'Keep running in background' : '后台持续运行，切出APP不中断服务',
+        name: LegacyTextLocalizer.isEnglish
+            ? 'Allow background running'
+            : '允许后台运行',
+        description: LegacyTextLocalizer.isEnglish
+            ? 'Keep running in background'
+            : '后台持续运行，切出APP不中断服务',
         openMethod: 'openBatteryOptimizationSettings',
-        checkMethod: 'isIgnoringBatteryOptimizations',
+        checkMethod: 'isBackgroundRunAllowed',
       ),
       PermissionSpec(
         id: 'installed_apps',
         iconPath: 'assets/welcome/permission_installed_apps.svg',
         iconWidth: 32.0,
         iconHeight: 32.0,
-        name: LegacyTextLocalizer.isEnglish ? 'Installed Apps Access' : '应用列表读取',
-        description: LegacyTextLocalizer.isEnglish ? 'Enable cross-app automation' : '支持跨应用自动操作',
+        name: LegacyTextLocalizer.isEnglish
+            ? 'Installed Apps Access'
+            : '应用列表读取',
+        description: LegacyTextLocalizer.isEnglish
+            ? 'Enable cross-app automation'
+            : '支持跨应用自动操作',
         openMethod: 'openInstalledAppsSettings',
         checkMethod: 'isInstalledAppsPermissionGranted',
       ),
@@ -127,17 +139,45 @@ class PermissionRegistry {
         iconWidth: 30.0,
         iconHeight: 30.0,
         name: LegacyTextLocalizer.isEnglish ? 'Accessibility' : '无障碍辅助权限',
-        description: LegacyTextLocalizer.isEnglish ? 'Persistent automation for complex tasks' : '持久化自动操作，轻松完成复杂任务',
+        description: LegacyTextLocalizer.isEnglish
+            ? 'Persistent automation for complex tasks'
+            : '持久化自动操作，轻松完成复杂任务',
         openMethod: 'openAccessibilitySettings',
         checkMethod: 'isAccessibilityServiceEnabled',
         infoLabel: LegacyTextLocalizer.isEnglish ? 'Persistent' : '持久化',
+      ),
+    ];
+    final optionalPermissions = <PermissionSpec>[
+      PermissionSpec(
+        id: 'shizuku',
+        iconPath: 'assets/welcome/permission_installed_apps.svg',
+        iconWidth: 32.0,
+        iconHeight: 32.0,
+        name: LegacyTextLocalizer.isEnglish
+            ? 'Shizuku Permission'
+            : 'Shizuku 权限',
+        description: LegacyTextLocalizer.isEnglish
+            ? 'Optional advanced system actions for the agent'
+            : '可选的高级系统能力，用于扩展 agent 的系统级操作边界',
+        openMethod: 'openShizukuDownloadOrApp',
+        customCheckMethod: () async {
+          final status = await getShizukuStatus();
+          return status.isGranted;
+        },
+        customAuthMethod: (BuildContext context) async {
+          await ensureShizukuPermission(context);
+        },
       ),
     ];
 
     // 根据品牌追加额外权限
     final extraPermissions = _getExtraPermissions(brand);
 
-    return [...basePermissions, ...extraPermissions];
+    return [
+      ...basePermissions,
+      if (includeOptionalAdvanced) ...optionalPermissions,
+      ...extraPermissions,
+    ];
   }
 
   /// 获取特定品牌的额外权限
@@ -146,7 +186,7 @@ class PermissionRegistry {
     final normalizedBrand = brand.toLowerCase();
 
     switch (normalizedBrand) {
-  /// 构建自启动权限（仅华为和荣耀机型）
+      /// 构建自启动权限（仅华为和荣耀机型）
       case 'honor':
         return [
           PermissionSpec(
@@ -154,15 +194,22 @@ class PermissionRegistry {
             iconPath: 'assets/welcome/permission_autostart.svg',
             iconWidth: 32.0,
             iconHeight: 32.0,
-            name: LegacyTextLocalizer.isEnglish ? 'App launch management' : '应用启动管理',
-            description: LegacyTextLocalizer.isEnglish ? 'Prevent Omnibot from being killed by system' : '防止小万被系统关闭',
+            name: LegacyTextLocalizer.isEnglish
+                ? 'App launch management'
+                : '应用启动管理',
+            description: LegacyTextLocalizer.isEnglish
+                ? 'Prevent Omnibot from being killed by system'
+                : '防止小万被系统关闭',
             openMethod: 'openAutoStartSettings',
             applicableLevels: const {
               PermissionLevel.companionAutomation,
               PermissionLevel.fullExecution,
             },
             customCheckMethod: () async {
-              return StorageService.getBool(StorageKeys.autoStartPermissionGranted) ?? false;
+              return StorageService.getBool(
+                    StorageKeys.autoStartPermissionGranted,
+                  ) ??
+                  false;
             },
             customAuthMethod: (BuildContext context) async {
               await AutoStartGuideBottomSheet.show(
@@ -171,11 +218,14 @@ class PermissionRegistry {
                   await spePermission.invokeMethod('openAutoStartSettings');
                 },
                 onCompleted: () async {
-                  await StorageService.setBool(StorageKeys.autoStartPermissionGranted, true);
+                  await StorageService.setBool(
+                    StorageKeys.autoStartPermissionGranted,
+                    true,
+                  );
                 },
               );
             },
-          )
+          ),
         ];
       default:
         // 其他品牌无额外权限
@@ -185,7 +235,11 @@ class PermissionRegistry {
 
   /// 各权限层级对应的权限ID列表
   static const Map<PermissionLevel, List<String>> _levelPermissionIds = {
-    PermissionLevel.companionAutomation: ['overlay', 'battery', 'accessibility'],
+    PermissionLevel.companionAutomation: [
+      'overlay',
+      'battery',
+      'accessibility',
+    ],
     PermissionLevel.fullExecution: [
       'overlay',
       'battery',
@@ -202,8 +256,12 @@ class PermissionRegistry {
   static List<PermissionSpec> getPermissionsByLevel({
     required String brand,
     required PermissionLevel level,
+    bool includeOptionalAdvanced = false,
   }) {
-    final allPermissions = getPermissions(brand: brand);
+    final allPermissions = getPermissions(
+      brand: brand,
+      includeOptionalAdvanced: includeOptionalAdvanced,
+    );
     final requiredIds = _levelPermissionIds[level] ?? [];
     return allPermissions
         .where(

@@ -64,8 +64,11 @@ if [[ "${needs_kotlin_check}" == true ]]; then
     gradle_cmd=("./gradlew.bat")
   fi
 
-  echo "[pre-commit] kotlin compile check (:app:compileDevelopDebugKotlin)..."
-  "${gradle_cmd[@]}" --no-daemon :app:compileDevelopDebugKotlin -x :flutter:compileFlutterBuildDebug
+  echo "[pre-commit] kotlin compile check (:app:compileDevelopOmniinferDebugKotlin, :app:compileDevelopStandardDebugKotlin)..."
+  "${gradle_cmd[@]}" --no-daemon \
+    :app:compileDevelopOmniinferDebugKotlin \
+    :app:compileDevelopStandardDebugKotlin \
+    -x :flutter:compileFlutterBuildDebug
 fi
 
 # 4) Fast Dart static check for staged Dart files only.

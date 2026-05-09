@@ -10,6 +10,7 @@ class TokenUsageRecord {
   final int completionTokens;
   final int reasoningTokens;
   final int textTokens;
+  final int cachedTokens;
   final int createdAt;
 
   TokenUsageRecord({
@@ -21,6 +22,7 @@ class TokenUsageRecord {
     required this.completionTokens,
     required this.reasoningTokens,
     required this.textTokens,
+    required this.cachedTokens,
     required this.createdAt,
   });
 
@@ -40,6 +42,7 @@ class TokenUsageRecord {
       completionTokens: (json['completionTokens'] as num?)?.toInt() ?? 0,
       reasoningTokens: (json['reasoningTokens'] as num?)?.toInt() ?? 0,
       textTokens: (json['textTokens'] as num?)?.toInt() ?? 0,
+      cachedTokens: (json['cachedTokens'] as num?)?.toInt() ?? 0,
       createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
     );
   }

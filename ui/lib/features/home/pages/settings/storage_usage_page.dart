@@ -7,6 +7,7 @@ import 'package:ui/services/storage_usage_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
+import 'package:ui/widgets/settings_section_title.dart';
 
 class StorageUsagePage extends StatefulWidget {
   const StorageUsagePage({super.key});
@@ -352,17 +353,39 @@ class _StorageUsagePageState extends State<StorageUsagePage> {
               color: palette.accentPrimary,
               onRefresh: _loadSummary,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
                 children: [
-                  _buildOverviewCard(summary),
-                  const SizedBox(height: 12),
-                  _buildTrendCard(summary),
-                  const SizedBox(height: 12),
-                  _buildStrategyCard(summary),
-                  const SizedBox(height: 12),
-                  _buildPieCard(summary),
-                  const SizedBox(height: 12),
-                  _buildCategoryListCard(summary),
+                  SettingsSectionTitle(
+                    label: _t(context, '存储概览', 'Storage overview'),
+                    subtitle: _t(
+                      context,
+                      '查看当前占用总量、可清理空间和最近变化',
+                      'Review total usage, cleanable space, and recent changes',
+                    ),
+                  ),
+                  _buildOverviewSection(summary),
+                  if (summary.strategyPresets.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    SettingsSectionTitle(
+                      label: _t(context, '清理建议', 'Cleanup suggestions'),
+                      subtitle: _t(
+                        context,
+                        '根据当前占用情况执行推荐的清理策略',
+                        'Run recommended cleanup actions based on current usage',
+                      ),
+                    ),
+                    _buildStrategySection(summary),
+                  ],
+                  const SizedBox(height: 18),
+                  SettingsSectionTitle(
+                    label: _t(context, '分类占用', 'Usage by category'),
+                    subtitle: _t(
+                      context,
+                      '查看各类数据占用，并对可清理项进行处理',
+                      'Review occupied categories and clean removable data',
+                    ),
+                  ),
+                  _buildCategorySection(summary),
                 ],
               ),
             ),
@@ -389,453 +412,591 @@ class _StorageUsagePageState extends State<StorageUsagePage> {
     );
   }
 
-  Widget _buildOverviewCard(StorageUsageSummary summary) {
+  Widget _buildOverviewSection(StorageUsageSummary summary) {
     final palette = context.omniPalette;
     final sourceText = _metricsSourceText(summary.metricsSource);
+    final trend = summary.trend;
     final hasBothTotals =
         summary.systemTotalBytes > 0 && summary.scanTotalBytes > 0;
     final diffBytes = summary.systemTotalBytes - summary.scanTotalBytes;
-    return _buildCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _t(context, '总占用', 'Total usage'),
-            style: TextStyle(fontSize: 12, color: palette.textSecondary),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _formatBytes(summary.totalBytes),
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              color: palette.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildMetricCell(
-                  _t(context, '应用大小', 'App size'),
-                  _formatBytes(summary.appBinaryBytes),
-                ),
-              ),
-              Expanded(
-                child: _buildMetricCell(
-                  _t(context, '用户数据', 'User data'),
-                  _formatBytes(summary.userDataBytes),
-                ),
-              ),
-              Expanded(
-                child: _buildMetricCell(
-                  _t(context, '可清理', 'Cleanable'),
-                  _formatBytes(summary.cleanableBytes),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            _t(context, '统计口径：$sourceText', 'Metrics source: $sourceText'),
-            style: TextStyle(fontSize: 11, color: palette.textSecondary),
-          ),
-          if (summary.packageName.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(
-              _t(
-                context,
-                '当前包名：${summary.packageName}',
-                'Package: ${summary.packageName}',
-              ),
-              style: TextStyle(fontSize: 11, color: palette.textSecondary),
-            ),
-          ],
-          if (hasBothTotals && diffBytes != 0) ...[
-            const SizedBox(height: 2),
-            Text(
-              _t(
-                context,
-                '系统口径与扫描口径差异：${_signedBytes(diffBytes)}',
-                'Delta between system and scan totals: ${_signedBytes(diffBytes)}',
-              ),
-              style: TextStyle(fontSize: 11, color: palette.textSecondary),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTrendCard(StorageUsageSummary summary) {
-    final palette = context.omniPalette;
-    final trend = summary.trend;
     final totalDeltaText = _signedBytes(trend.deltaTotalBytes);
     final cleanableDeltaText = _signedBytes(trend.deltaCleanableBytes);
-    return _buildCard(
-      child: Row(
-        children: [
-          Icon(Icons.trending_up, color: palette.accentPrimary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: trend.hasPrevious
-                ? Text(
-                    _t(
-                      context,
-                      '较上次分析：总占用 $totalDeltaText，可清理 $cleanableDeltaText',
-                      'Since last analysis: total $totalDeltaText, cleanable $cleanableDeltaText',
-                    ),
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _t(context, '总占用', 'Total usage'),
+                    style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatBytes(summary.totalBytes),
                     style: TextStyle(
-                      fontSize: 12,
-                      color: palette.textSecondary,
-                    ),
-                  )
-                : Text(
-                    _t(
-                      context,
-                      '这是首次分析，后续将展示占用变化趋势',
-                      'This is the first analysis. Trend data will appear next time.',
-                    ),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: palette.textSecondary,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      color: palette.textPrimary,
                     ),
                   ),
+                ],
+              ),
+            ),
+            TextButton.icon(
+              onPressed: _loadSummary,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: Text(_t(context, '重新分析', 'Analyze again')),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _buildOverviewMetricRow(
+          _t(context, '应用大小', 'App size'),
+          _formatBytes(summary.appBinaryBytes),
+        ),
+        _buildSectionDivider(),
+        _buildOverviewMetricRow(
+          _t(context, '用户数据', 'User data'),
+          _formatBytes(summary.userDataBytes),
+        ),
+        _buildSectionDivider(),
+        _buildOverviewMetricRow(
+          _t(context, '可清理', 'Cleanable'),
+          _formatBytes(summary.cleanableBytes),
+          valueColor: summary.cleanableBytes > 0 ? palette.accentPrimary : null,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          _t(
+            context,
+            '最后分析：${_formatDateTime(summary.generatedAt)}',
+            'Analyzed at: ${_formatDateTime(summary.generatedAt)}',
+          ),
+          style: TextStyle(fontSize: 12, color: palette.textSecondary),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _t(context, '统计口径：$sourceText', 'Metrics source: $sourceText'),
+          style: TextStyle(fontSize: 12, color: palette.textSecondary),
+        ),
+        if (summary.packageName.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            _t(
+              context,
+              '当前包名：${summary.packageName}',
+              'Package: ${summary.packageName}',
+            ),
+            style: TextStyle(fontSize: 12, color: palette.textSecondary),
+          ),
+        ],
+        if (hasBothTotals && diffBytes != 0) ...[
+          const SizedBox(height: 4),
+          Text(
+            _t(
+              context,
+              '系统口径与扫描口径差异：${_signedBytes(diffBytes)}',
+              'Delta between system and scan totals: ${_signedBytes(diffBytes)}',
+            ),
+            style: TextStyle(fontSize: 12, color: palette.textSecondary),
+          ),
+        ],
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.trending_up_rounded,
+              size: 18,
+              color: palette.accentPrimary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                trend.hasPrevious
+                    ? _t(
+                        context,
+                        '较上次分析：总占用 $totalDeltaText，可清理 $cleanableDeltaText',
+                        'Since last analysis: total $totalDeltaText, cleanable $cleanableDeltaText',
+                      )
+                    : _t(
+                        context,
+                        '这是首次分析，后续将展示占用变化趋势',
+                        'This is the first analysis. Trend data will appear next time.',
+                      ),
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.5,
+                  color: palette.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOverviewMetricRow(
+    String title,
+    String value, {
+    Color? valueColor,
+  }) {
+    final palette = context.omniPalette;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(fontSize: 13, color: palette.textSecondary),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: valueColor ?? palette.textPrimary,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildStrategyCard(StorageUsageSummary summary) {
+  Widget _buildSectionDivider() {
+    final palette = context.omniPalette;
+    return Divider(
+      height: 1,
+      thickness: 1,
+      color: palette.borderSubtle.withValues(
+        alpha: context.isDarkTheme ? 0.56 : 0.8,
+      ),
+    );
+  }
+
+  Widget _buildStrategySection(StorageUsageSummary summary) {
     final palette = context.omniPalette;
     final colorScheme = Theme.of(context).colorScheme;
     final presets = summary.strategyPresets;
     if (presets.isEmpty) {
       return const SizedBox.shrink();
     }
-    return _buildCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _t(context, '智能清理策略', 'Cleanup strategies'),
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: palette.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...presets.map((preset) {
-            final applying = _applyingStrategyId == preset.id;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          preset.name,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: palette.textPrimary,
-                          ),
+
+    return Column(
+      children: List.generate(presets.length, (index) {
+        final preset = presets[index];
+        final applying = _applyingStrategyId == preset.id;
+        return Column(
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        preset.name,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: palette.textPrimary,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          preset.description,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: palette.textSecondary,
-                          ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        preset.description,
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.5,
+                          color: palette.textSecondary,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size(72, 34),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      backgroundColor: palette.accentPrimary,
-                      disabledBackgroundColor: palette.borderStrong,
-                      foregroundColor: colorScheme.onPrimary,
-                    ),
-                    onPressed: applying ? null : () => _applyStrategy(preset),
-                    child: applying
-                        ? SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                colorScheme.onPrimary,
-                              ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(72, 34),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    backgroundColor: palette.accentPrimary,
+                    disabledBackgroundColor: palette.borderStrong,
+                    foregroundColor: colorScheme.onPrimary,
+                  ),
+                  onPressed: applying ? null : () => _applyStrategy(preset),
+                  child: applying
+                      ? SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              colorScheme.onPrimary,
                             ),
-                          )
-                        : Text(_t(context, '执行', 'Run')),
-                  ),
-                ],
-              ),
-            );
-          }),
-        ],
-      ),
+                          ),
+                        )
+                      : Text(_t(context, '执行', 'Run')),
+                ),
+              ],
+            ),
+            if (index != presets.length - 1) ...[
+              const SizedBox(height: 14),
+              _buildSectionDivider(),
+              const SizedBox(height: 14),
+            ],
+          ],
+        );
+      }),
     );
   }
 
-  Widget _buildPieCard(StorageUsageSummary summary) {
-    final palette = context.omniPalette;
-    final categories = summary.categories
-        .where((item) => item.bytes > 0)
-        .toList();
-    final colorMap = _buildCategoryColorMap(summary.categories);
-    final segments = _buildChartSegments(categories, colorMap);
-    return _buildCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _t(context, '占用分析', 'Usage breakdown'),
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: palette.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _t(
-              context,
-              '最后分析：${_formatDateTime(summary.generatedAt)}',
-              'Analyzed at: ${_formatDateTime(summary.generatedAt)}',
-            ),
-            style: TextStyle(fontSize: 12, color: palette.textSecondary),
-          ),
-          const SizedBox(height: 12),
-          Center(
-            child: _StorageUsagePieChart(
-              totalBytes: summary.totalBytes,
-              segments: segments,
-              trackColor: palette.segmentTrack,
-              centerTextColor: palette.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: _loadSummary,
-            child: Text(_t(context, '重新分析', 'Analyze again')),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCategoryListCard(StorageUsageSummary summary) {
+  Widget _buildCategorySection(StorageUsageSummary summary) {
     final palette = context.omniPalette;
     final colorScheme = Theme.of(context).colorScheme;
     final categories = summary.categories.toList();
-    final colorMap = _buildCategoryColorMap(summary.categories);
+    final colorMap = _buildCategoryColorMap(categories);
     if (categories.isEmpty) {
-      return _buildCard(
-        child: Text(
-          _t(context, '暂无可展示数据', 'No storage data available'),
-          style: TextStyle(fontSize: 12, color: palette.textSecondary),
-        ),
+      return Text(
+        _t(context, '暂无可展示数据', 'No storage data available'),
+        style: TextStyle(fontSize: 12, color: palette.textSecondary),
       );
     }
-    return _buildCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: categories.map((category) {
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildCategoryVisualization(summary, categories, colorMap),
+        const SizedBox(height: 12),
+        Text(
+          _t(
+            context,
+            '最后分析：${_formatDateTime(summary.generatedAt)}',
+            'Analyzed at: ${_formatDateTime(summary.generatedAt)}',
+          ),
+          style: TextStyle(fontSize: 12, color: palette.textSecondary),
+        ),
+        const SizedBox(height: 14),
+        ...categories.asMap().entries.map((entry) {
+          final index = entry.key;
+          final category = entry.value;
           final percent = summary.totalBytes > 0
               ? category.bytes / summary.totalBytes * 100
               : 0.0;
           final isClearing = _clearingCategoryId == category.id;
           return Column(
             children: [
-              ListTile(
-                leading: Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: colorMap[category.id] ?? palette.textTertiary,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                title: Text(
-                  category.name,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: palette.textPrimary,
-                  ),
-                ),
-                subtitle: Text(
-                  '${category.description}\n${_t(context, '占比', 'Share')} ${percent.toStringAsFixed(1)}%',
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.45,
-                    color: palette.textSecondary,
-                  ),
-                ),
-                trailing: category.cleanable
-                    ? FilledButton(
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size(64, 32),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          backgroundColor: palette.accentPrimary,
-                          disabledBackgroundColor: palette.borderStrong,
-                          foregroundColor: colorScheme.onPrimary,
-                        ),
-                        onPressed: isClearing
-                            ? null
-                            : () => _onClearCategory(category),
-                        child: isClearing
-                            ? SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    colorScheme.onPrimary,
-                                  ),
-                                ),
-                              )
-                            : Text(_t(context, '清理', 'Clean')),
-                      )
-                    : null,
+              _buildCategoryRow(
+                category: category,
+                percent: percent,
+                color: colorMap[category.id] ?? palette.textTertiary,
+                colorScheme: colorScheme,
+                isClearing: isClearing,
               ),
-              Padding(
-                padding: const EdgeInsets.only(left: 50, right: 16, bottom: 10),
+              if (index != categories.length - 1) ...[
+                const SizedBox(height: 14),
+                _buildSectionDivider(),
+                const SizedBox(height: 14),
+              ],
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildCategoryVisualization(
+    StorageUsageSummary summary,
+    List<StorageUsageCategory> categories,
+    Map<String, Color> colorMap,
+  ) {
+    final palette = context.omniPalette;
+    final visibleCategories = categories.where((item) => item.bytes > 0).toList();
+    if (visibleCategories.isEmpty || summary.totalBytes <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    final segments = _buildChartSegments(visibleCategories, colorMap);
+    final legendEntries = segments.take(5).toList();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 380;
+        final pie = Center(
+          child: _StorageUsagePieChart(
+            totalBytes: summary.totalBytes,
+            segments: segments,
+            trackColor: palette.segmentTrack,
+            centerTextColor: palette.textPrimary,
+            size: compact ? 156 : 172,
+            strokeWidth: compact ? 18 : 20,
+          ),
+        );
+
+        final legend = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _t(context, '占用分布', 'Usage distribution'),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: palette.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...legendEntries.map((segment) {
+              final percent = summary.totalBytes > 0
+                  ? segment.bytes / summary.totalBytes * 100
+                  : 0.0;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: segment.color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        segment.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: palette.textPrimary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     Text(
-                      _formatBytes(category.bytes),
+                      '${percent.toStringAsFixed(1)}%',
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: 11,
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            Text(
+              _t(
+                context,
+                '饼图仅作为分类占用的快速预览，详细信息见下方列表',
+                'The pie chart is a quick preview; see the list below for details',
+              ),
+              style: TextStyle(fontSize: 11, color: palette.textSecondary),
+            ),
+          ],
+        );
+
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              pie,
+              const SizedBox(height: 12),
+              legend,
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(flex: 4, child: pie),
+            const SizedBox(width: 20),
+            Expanded(flex: 5, child: legend),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCategoryRow({
+    required StorageUsageCategory category,
+    required double percent,
+    required Color color,
+    required ColorScheme colorScheme,
+    required bool isClearing,
+  }) {
+    final palette = context.omniPalette;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          margin: const EdgeInsets.only(top: 6),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      category.name,
+                      style: TextStyle(
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: palette.textPrimary,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    _buildRiskTag(category.riskLevel),
-                  ],
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _formatBytes(category.bytes),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                category.description,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.5,
+                  color: palette.textSecondary,
                 ),
               ),
-              if (category.breakdown.isNotEmpty)
-                _buildCategoryBreakdown(category.breakdown),
-              if (category != categories.last)
-                Divider(
-                  height: 1,
-                  indent: 16,
-                  endIndent: 16,
-                  color: palette.borderSubtle.withValues(
-                    alpha: context.isDarkTheme ? 0.56 : 0.8,
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    _t(
+                      context,
+                      '占比 ${percent.toStringAsFixed(1)}%',
+                      'Share ${percent.toStringAsFixed(1)}%',
+                    ),
+                    style: TextStyle(fontSize: 11, color: palette.textSecondary),
                   ),
-                ),
+                  _buildRiskTag(category.riskLevel),
+                  if (!category.cleanable)
+                    Text(
+                      _t(context, '当前不可清理', 'Not cleanable'),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                ],
+              ),
+              if (category.breakdown.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _buildCategoryBreakdownFlat(category.breakdown),
+              ],
             ],
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  String _translateHint(String raw) {
-    final l = context.l10n;
-    if (raw.contains('历史未释放') || raw.contains('conversation_history')) return l.storageHintConversation;
-    if (raw.contains('模型被清理后') || raw.contains('local_models')) return l.storageHintLocalModels;
-    if (raw.contains('终端运行时被清理') || raw.contains('terminal')) return l.storageHintTerminal;
-    if (raw.contains('当前不可清理')) return l.storageHintNotCleanable;
-    if (raw.contains('已跳过') || raw.contains('skipped')) return l.storageHintSkipped;
-    return l.storageHintGeneral;
-  }
-
-  Widget _buildCard({required Widget child, EdgeInsetsGeometry? padding}) {
-    final palette = context.omniPalette;
-    return Container(
-      decoration: BoxDecoration(
-        color: palette.surfacePrimary,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: palette.borderSubtle.withValues(
-            alpha: context.isDarkTheme ? 0.6 : 0.86,
           ),
         ),
-        boxShadow: context.isDarkTheme
-            ? null
-            : [
-                BoxShadow(
-                  color: palette.shadowColor,
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-      ),
-      padding: padding ?? const EdgeInsets.all(16),
-      child: child,
+        if (category.cleanable) ...[
+          const SizedBox(width: 12),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(64, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              backgroundColor: palette.accentPrimary,
+              disabledBackgroundColor: palette.borderStrong,
+              foregroundColor: colorScheme.onPrimary,
+            ),
+            onPressed: isClearing ? null : () => _onClearCategory(category),
+            child: isClearing
+                ? SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        colorScheme.onPrimary,
+                      ),
+                    ),
+                  )
+                : Text(_t(context, '清理', 'Clean')),
+          ),
+        ],
+      ],
     );
   }
 
-  Widget _buildMetricCell(String title, String value) {
+  Widget _buildCategoryBreakdownFlat(List<StorageUsageBreakdownEntry> entries) {
     final palette = context.omniPalette;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          title,
-          style: TextStyle(fontSize: 12, color: palette.textSecondary),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
+          _t(context, '细项', 'Breakdown'),
           style: TextStyle(
-            fontSize: 14,
+            fontSize: 11,
             fontWeight: FontWeight.w600,
-            color: palette.textPrimary,
+            color: palette.textSecondary,
           ),
         ),
+        const SizedBox(height: 4),
+        ...entries.map((entry) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Text(
+              '${entry.label} · ${_formatBytes(entry.bytes)}',
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.4,
+                color: palette.textSecondary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        }),
       ],
     );
   }
 
-  Widget _buildCategoryBreakdown(List<StorageUsageBreakdownEntry> entries) {
-    final palette = context.omniPalette;
-    return Padding(
-      padding: const EdgeInsets.only(left: 50, right: 16, bottom: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _t(context, 'Native 库 Top 明细', 'Top native libs'),
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: palette.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          ...entries.map((entry) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Text(
-                '${entry.label} · ${_formatBytes(entry.bytes)}',
-                style: TextStyle(
-                  fontSize: 11,
-                  height: 1.4,
-                  color: palette.textSecondary,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            );
-          }),
-        ],
-      ),
-    );
+
+  String _translateHint(String raw) {
+    final l = context.l10n;
+    if (raw.contains('历史未释放') || raw.contains('conversation_history')) {
+      return l.storageHintConversation;
+    }
+    if (raw.contains('模型被清理后') || raw.contains('local_models')) {
+      return l.storageHintLocalModels;
+    }
+    if (raw.contains('终端运行时被清理') || raw.contains('terminal')) {
+      return l.storageHintTerminal;
+    }
+    if (raw.contains('当前不可清理')) {
+      return l.storageHintNotCleanable;
+    }
+    if (raw.contains('已跳过') || raw.contains('skipped')) {
+      return l.storageHintSkipped;
+    }
+    return l.storageHintGeneral;
   }
 
   Widget _buildRiskTag(String riskLevel) {
@@ -985,32 +1146,37 @@ class _StorageUsagePieChart extends StatelessWidget {
     required this.segments,
     required this.trackColor,
     required this.centerTextColor,
+    this.size = 210,
+    this.strokeWidth = 20,
   });
 
   final int totalBytes;
   final List<_PieChartSegment> segments;
   final Color trackColor;
   final Color centerTextColor;
+  final double size;
+  final double strokeWidth;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 210,
-      height: 210,
+      width: size,
+      height: size,
       child: Stack(
         alignment: Alignment.center,
         children: [
           CustomPaint(
-            size: const Size(210, 210),
+            size: Size.square(size),
             painter: _StorageUsagePiePainter(
               segments: segments,
               trackColor: trackColor,
+              strokeWidth: strokeWidth,
             ),
           ),
           Text(
             _formatBytes(totalBytes),
             style: TextStyle(
-              fontSize: 15,
+              fontSize: size >= 190 ? 15 : 13,
               fontWeight: FontWeight.w700,
               color: centerTextColor,
             ),
@@ -1037,19 +1203,24 @@ class _StorageUsagePieChart extends StatelessWidget {
 }
 
 class _StorageUsagePiePainter extends CustomPainter {
-  _StorageUsagePiePainter({required this.segments, required this.trackColor});
+  _StorageUsagePiePainter({
+    required this.segments,
+    required this.trackColor,
+    required this.strokeWidth,
+  });
 
   final List<_PieChartSegment> segments;
   final Color trackColor;
+  final double strokeWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = math.min(size.width, size.height) / 2 - 12;
+    final radius = math.min(size.width, size.height) / 2 - strokeWidth / 2 - 2;
     final rect = Rect.fromCircle(center: center, radius: radius);
     final paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 20
+      ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.butt;
 
     paint.color = trackColor;
@@ -1073,6 +1244,7 @@ class _StorageUsagePiePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _StorageUsagePiePainter oldDelegate) {
     if (trackColor != oldDelegate.trackColor) return true;
+    if (strokeWidth != oldDelegate.strokeWidth) return true;
     if (segments.length != oldDelegate.segments.length) return true;
     for (int i = 0; i < segments.length; i++) {
       if (segments[i].bytes != oldDelegate.segments[i].bytes ||

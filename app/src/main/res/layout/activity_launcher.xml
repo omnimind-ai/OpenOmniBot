@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center"
-    android:background="#FFFFFF"
+    android:background="#151617"
     android:padding="32dp">
 
     <!-- Logo -->
@@ -24,7 +24,7 @@
         android:layout_marginBottom="60dp"
         android:text="小万"
         android:textSize="32sp"
-        android:textColor="#2D2D2D"
+        android:textColor="#F5F7FA"
         android:textStyle="bold"
         android:fontFamily="sans-serif-medium" />
 
@@ -34,7 +34,7 @@
         android:layout_width="32dp"
         android:layout_height="32dp"
         android:layout_marginBottom="16dp"
-        android:indeterminateTint="#2D2D2D" />
+        android:indeterminateTint="#F5F7FA" />
 
     <!-- 加载文字 -->
     <TextView
@@ -43,7 +43,7 @@
         android:layout_height="wrap_content"
         android:text="正在初始化..."
         android:textSize="14sp"
-        android:textColor="#999999"
+        android:textColor="#A7ADB5"
         android:fontFamily="sans-serif" />
 
 </LinearLayout>

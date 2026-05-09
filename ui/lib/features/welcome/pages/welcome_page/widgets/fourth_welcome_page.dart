@@ -8,6 +8,7 @@ import 'package:ui/services/device_service.dart';
 import 'package:ui/services/special_permission.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/app_colors.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 
 class FourthWelcomePage extends StatefulWidget {
   final double screenWidth;
@@ -136,13 +137,13 @@ class _FourthWelcomePageState extends State<FourthWelcomePage>
       iconPath: 'assets/welcome/permission_installed_apps.svg',
       iconWidth: 32,
       iconHeight: 32,
-      name: 'Termux 终端能力',
-      description: '可选，允许 Agent 通过 Termux 执行终端命令',
+      name: LegacyTextLocalizer.localize('Termux 终端能力'),
+      description: LegacyTextLocalizer.localize('可选，允许 Agent 通过 Termux 执行终端命令'),
       onAuthorize: () async {
         await _showTermuxGuide();
       },
       checkAuthorization: _isTermuxGuideCompleted,
-      iconInfo: '可选',
+      iconInfo: LegacyTextLocalizer.localize('可选'),
       iconClick: () {
         _showTermuxGuide();
       },
@@ -206,7 +207,7 @@ class _FourthWelcomePageState extends State<FourthWelcomePage>
               const SizedBox(height: 85),
               // 顶部标题
               GradientText(
-                '让小万带你执行一次任务吧！',
+                LegacyTextLocalizer.localize('让小万带你执行一次任务吧！'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: const Color(0xFF91DCFF),
@@ -270,7 +271,7 @@ class _FourthWelcomePageState extends State<FourthWelcomePage>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '设置权限',
+          LegacyTextLocalizer.localize('设置权限'),
           style: TextStyle(
             color: AppColors.text,
             fontSize: 20,
@@ -281,7 +282,7 @@ class _FourthWelcomePageState extends State<FourthWelcomePage>
         ),
         const SizedBox(height: 4),
         Text(
-          '请放心，这些权限你随时可以收回',
+          LegacyTextLocalizer.localize('请放心，这些权限你随时可以收回'),
           style: TextStyle(
             color: Color(0xFF666666),
             fontSize: 14,
@@ -292,7 +293,7 @@ class _FourthWelcomePageState extends State<FourthWelcomePage>
         ),
         const SizedBox(height: 4),
         Text(
-          '其中 Termux 终端能力为可选项，未开启也不影响基础自动化',
+          LegacyTextLocalizer.localize('其中 Termux 终端能力为可选项，未开启也不影响基础自动化'),
           style: TextStyle(
             color: Color(0xFF999999),
             fontSize: 12,

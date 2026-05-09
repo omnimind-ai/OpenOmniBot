@@ -1,9 +1,9 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/chat_input_area.dart';
 
 void main() {
@@ -103,12 +103,110 @@ void main() {
 
     expect(tapped, isTrue);
   });
+
+  testWidgets('codex permission selector opens menu and selects mode', (
+    tester,
+  ) async {
+    CodexPermissionMode? selected;
+    await tester.pumpWidget(
+      _buildTestApp(
+        contextUsageRatio: null,
+        useLargeComposerStyle: true,
+        codexPermissionMode: CodexPermissionMode.fullAccess,
+        onCodexPermissionModeChanged: (mode) {
+          selected = mode;
+        },
+      ),
+    );
+    await tester.pump();
+
+    final permissionButton = find.byKey(
+      const ValueKey('chat-input-codex-permission-button'),
+    );
+    expect(
+      find.descendant(of: permissionButton, matching: find.byType(SvgPicture)),
+      findsOneWidget,
+    );
+
+    await tester.tap(permissionButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(
+      find.byKey(
+        const ValueKey('chat-input-codex-permission-option-defaultMode'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('chat-input-codex-permission-option-autoReview'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('chat-input-codex-permission-option-fullAccess'),
+      ),
+      findsOneWidget,
+    );
+    for (final mode in CodexPermissionMode.values) {
+      expect(
+        find.descendant(
+          of: find.byKey(
+            ValueKey('chat-input-codex-permission-option-${mode.name}'),
+          ),
+          matching: find.byType(SvgPicture),
+        ),
+        findsOneWidget,
+      );
+    }
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey('chat-input-codex-permission-option-autoReview'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(selected, CodexPermissionMode.autoReview);
+  });
+
+  testWidgets('large composer uses newline action for multiline input', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildTestApp(contextUsageRatio: null, useLargeComposerStyle: true),
+    );
+    await tester.pump();
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.keyboardType, TextInputType.multiline);
+    expect(field.textInputAction, TextInputAction.newline);
+    expect(field.maxLines, 2);
+  });
+
+  testWidgets('compact composer keeps send action', (tester) async {
+    await tester.pumpWidget(
+      _buildTestApp(contextUsageRatio: null, useLargeComposerStyle: false),
+    );
+    await tester.pump();
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.keyboardType, TextInputType.text);
+    expect(field.textInputAction, TextInputAction.send);
+    expect(field.maxLines, 1);
+  });
 }
 
 Widget _buildTestApp({
   required double? contextUsageRatio,
   VoidCallback? onLongPressContextUsageRing,
   VoidCallback? onTriggerSlashCommand,
+  bool useLargeComposerStyle = false,
+  CodexPermissionMode? codexPermissionMode,
+  ValueChanged<CodexPermissionMode>? onCodexPermissionModeChanged,
 }) {
   return DefaultAssetBundle(
     bundle: _TestAssetBundle(),
@@ -120,9 +218,12 @@ Widget _buildTestApp({
           isProcessing: false,
           onSendMessage: () {},
           onCancelTask: () {},
+          useLargeComposerStyle: useLargeComposerStyle,
           contextUsageRatio: contextUsageRatio,
           onLongPressContextUsageRing: onLongPressContextUsageRing,
           onTriggerSlashCommand: onTriggerSlashCommand,
+          codexPermissionMode: codexPermissionMode,
+          onCodexPermissionModeChanged: onCodexPermissionModeChanged,
         ),
       ),
     ),

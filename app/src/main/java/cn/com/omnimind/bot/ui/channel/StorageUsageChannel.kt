@@ -667,7 +667,7 @@ class StorageUsageChannel {
     }
 
     private fun cleanupStrategyPresets(context: Context): List<CleanupStrategyPreset> {
-        return listOf(
+        val presets = listOf(
             CleanupStrategyPreset(
                 id = "safe_quick",
                 name = "安全快速清理",
@@ -717,7 +717,8 @@ class StorageUsageChannel {
                     StrategyAction("local_models_files", required = false),
                 ),
             ),
-        ).map { preset -> localizeStrategyPreset(context, preset) }
+        )
+        return presets.map { preset -> localizeStrategyPreset(context, preset) }
     }
 
     private fun clearCategoryInternal(

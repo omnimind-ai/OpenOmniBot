@@ -14,12 +14,17 @@ import java.io.BufferedReader
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 object RemoteMcpClient {
     private const val TAG = "[RemoteMcpClient]"
+    private const val DEFAULT_PROTOCOL_VERSION = "2024-11-05"
+    private const val SESSION_ID_HEADER = "Mcp-Session-Id"
+    private const val PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version"
     private val gson = Gson()
     private val mapType = object : TypeToken<Map<String, Any?>>() {}.type
+    private val sessions = ConcurrentHashMap<String, RemoteMcpSession>()
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(40, TimeUnit.SECONDS)
@@ -29,6 +34,13 @@ object RemoteMcpClient {
     private data class HttpJsonResponse(
         val code: Int,
         val body: String,
+        val contentType: String?,
+        val sessionId: String?,
+    )
+
+    private data class RemoteMcpSession(
+        val sessionId: String?,
+        val protocolVersion: String = DEFAULT_PROTOCOL_VERSION,
     )
 
     private class HttpStatusException(
@@ -41,7 +53,7 @@ object RemoteMcpClient {
             config = config,
             method = "initialize",
             params = mapOf(
-                "protocolVersion" to "2024-11-05",
+                "protocolVersion" to DEFAULT_PROTOCOL_VERSION,
                 "capabilities" to mapOf("tools" to emptyMap<String, Any>()),
                 "clientInfo" to mapOf("name" to "omnibot-android", "version" to "1.0")
             )
@@ -109,6 +121,14 @@ object RemoteMcpClient {
         )
     }
 
+    fun invalidateSession(serverId: String? = null) {
+        if (serverId == null) {
+            sessions.clear()
+            return
+        }
+        sessions.remove(serverId)
+    }
+
     private suspend fun callJsonRpc(
         config: RemoteMcpServerConfig,
         method: String,
@@ -134,13 +154,23 @@ object RemoteMcpClient {
         val responseMap = runCatching {
             gson.fromJson<Map<String, Any?>>(responseBody, mapType)
         }.getOrElse {
-            throw IllegalStateException("Invalid MCP response: ${it.message}")
+            throw IllegalStateException(
+                "Invalid MCP response: ${it.message}; preview=${responseBody.take(200)}"
+            )
         }
         val errorMap = deepStringMap(responseMap["error"])
         if (errorMap != null) {
             val errorMessage = errorMap["message"]?.toString()?.takeIf { it.isNotBlank() }
                 ?: "Unknown MCP error"
             throw IllegalStateException(errorMessage)
+        }
+        if (method == "initialize") {
+            val negotiatedProtocol = deepStringMap(responseMap["result"])
+                ?.get("protocolVersion")
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+            updateSession(config.id, protocolVersion = negotiatedProtocol)
         }
         return responseMap["result"]
     }
@@ -155,9 +185,9 @@ object RemoteMcpClient {
             return executeSseRpc(config, payload, requestId, expectResponse)
         }
         return runCatching {
-            executeHttpJson(config, config.endpointUrl, payload).body
+            executeHttpRpc(config, config.endpointUrl, payload, requestId, expectResponse)
         }.getOrElse { throwable ->
-            if (throwable is HttpStatusException && throwable.code == 405) {
+            if (shouldTryLegacySseFallback(throwable)) {
                 return executeSseRpc(config, payload, requestId, expectResponse)
             }
             throw throwable
@@ -175,12 +205,17 @@ object RemoteMcpClient {
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream")
 
+        applyMcpSessionHeaders(config, requestBuilder)
+
         if (config.bearerToken.isNotBlank()) {
             requestBuilder.header("Authorization", "Bearer ${config.bearerToken}")
         }
 
         client.newCall(requestBuilder.build()).execute().use { response ->
             val responseBody = response.body?.string().orEmpty().trim()
+            val contentType = response.header("Content-Type")
+            val sessionId = response.header(SESSION_ID_HEADER)?.trim()?.takeIf { it.isNotEmpty() }
+            updateSession(config.id, sessionId = sessionId)
             if (!response.isSuccessful) {
                 throw HttpStatusException(
                     code = response.code,
@@ -190,7 +225,59 @@ object RemoteMcpClient {
             HttpJsonResponse(
                 code = response.code,
                 body = if (responseBody.isBlank()) "{}" else responseBody,
+                contentType = contentType,
+                sessionId = sessionId,
             )
+        }
+    }
+
+    private suspend fun executeHttpRpc(
+        config: RemoteMcpServerConfig,
+        url: String,
+        payload: String,
+        requestId: String,
+        expectResponse: Boolean,
+    ): String = withContext(Dispatchers.IO) {
+        val requestBuilder = Request.Builder()
+            .url(url)
+            .post(payload.toRequestBody(jsonMediaType))
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+
+        applyMcpSessionHeaders(config, requestBuilder)
+
+        if (config.bearerToken.isNotBlank()) {
+            requestBuilder.header("Authorization", "Bearer ${config.bearerToken}")
+        }
+
+        client.newCall(requestBuilder.build()).execute().use { response ->
+            val contentType = response.header("Content-Type")
+            val sessionId = response.header(SESSION_ID_HEADER)?.trim()?.takeIf { it.isNotEmpty() }
+            updateSession(config.id, sessionId = sessionId)
+
+            if (!response.isSuccessful) {
+                throw HttpStatusException(
+                    code = response.code,
+                    message = "HTTP ${response.code}: ${response.message}",
+                )
+            }
+            if (!expectResponse) {
+                return@withContext "{}"
+            }
+
+            val body = response.body ?: throw IllegalStateException("MCP response body is empty")
+            if (isEventStream(contentType)) {
+                return@withContext readSseJsonResponse(body.charStream().buffered(), requestId)
+            }
+
+            val responseBody = body.string().orEmpty().trim()
+            if (responseBody.isBlank()) {
+                return@withContext "{}"
+            }
+            if (looksLikeSseBody(responseBody)) {
+                return@withContext parseSseJsonResponseBody(responseBody, requestId)
+            }
+            responseBody
         }
     }
 
@@ -269,7 +356,7 @@ object RemoteMcpClient {
                     "id" to initId,
                     "method" to "initialize",
                     "params" to mapOf(
-                        "protocolVersion" to "2024-11-05",
+                        "protocolVersion" to DEFAULT_PROTOCOL_VERSION,
                         "capabilities" to mapOf("tools" to emptyMap<String, Any>()),
                         "clientInfo" to mapOf("name" to "omnibot-android", "version" to "1.0"),
                     ),
@@ -283,6 +370,12 @@ object RemoteMcpClient {
                     ?: "SSE initialize failed"
                 throw IllegalStateException(message)
             }
+            val negotiatedProtocol = deepStringMap(initResponseMap["result"])
+                ?.get("protocolVersion")
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+            updateSession(config.id, protocolVersion = negotiatedProtocol)
 
             val initializedNotification = gson.toJson(
                 mapOf(
@@ -315,11 +408,55 @@ object RemoteMcpClient {
         }
     }
 
+    private fun applyMcpSessionHeaders(
+        config: RemoteMcpServerConfig,
+        requestBuilder: Request.Builder,
+    ) {
+        val session = sessions[config.id] ?: return
+        requestBuilder.header(PROTOCOL_VERSION_HEADER, session.protocolVersion)
+        session.sessionId?.takeIf { it.isNotBlank() }?.let {
+            requestBuilder.header(SESSION_ID_HEADER, it)
+        }
+    }
+
+    private fun updateSession(
+        serverId: String,
+        sessionId: String? = null,
+        protocolVersion: String? = null,
+    ) {
+        if (sessionId == null && protocolVersion == null) return
+        sessions.compute(serverId) { _, current ->
+            RemoteMcpSession(
+                sessionId = sessionId ?: current?.sessionId,
+                protocolVersion = protocolVersion ?: current?.protocolVersion ?: DEFAULT_PROTOCOL_VERSION,
+            )
+        }
+    }
+
+    private fun shouldTryLegacySseFallback(throwable: Throwable): Boolean {
+        if (throwable !is HttpStatusException) return false
+        return throwable.code == 404 || throwable.code == 405
+    }
+
+    private fun isEventStream(contentType: String?): Boolean {
+        return contentType
+            ?.substringBefore(";")
+            ?.trim()
+            ?.equals("text/event-stream", ignoreCase = true) == true
+    }
+
+    private fun looksLikeSseBody(body: String): Boolean {
+        val trimmed = body.trimStart()
+        return trimmed.startsWith("event:") || trimmed.startsWith("data:") || trimmed.startsWith(":")
+    }
+
     private fun parseJsonMap(jsonText: String): Map<String, Any?> {
         return runCatching {
             gson.fromJson<Map<String, Any?>>(jsonText, mapType)
         }.getOrElse {
-            throw IllegalStateException("Invalid MCP response: ${it.message}")
+            throw IllegalStateException(
+                "Invalid MCP response: ${it.message}; preview=${jsonText.take(200)}"
+            )
         }
     }
 
@@ -349,6 +486,7 @@ object RemoteMcpClient {
         reader: BufferedReader,
         requestId: String,
     ): String {
+        val dataLines = mutableListOf<String>()
         while (true) {
             val line = try {
                 reader.readLine()
@@ -356,20 +494,54 @@ object RemoteMcpClient {
                 throw IllegalStateException("SSE response timeout")
             } ?: throw IllegalStateException("SSE stream closed before RPC response")
             val trimmed = line.trim()
-            if (!trimmed.startsWith("data:")) {
+            if (trimmed.isEmpty()) {
+                val payload = dataLines.joinToString("\n").trim()
+                dataLines.clear()
+                matchingJsonRpcPayload(payload, requestId)?.let { return it }
                 continue
             }
-            val payload = trimmed.removePrefix("data:").trim()
-            if (payload.isBlank() || payload == "[DONE]") {
-                continue
+            if (trimmed.startsWith("data:")) {
+                dataLines.add(trimmed.removePrefix("data:").trim())
             }
-            val map = runCatching {
-                gson.fromJson<Map<String, Any?>>(payload, mapType)
-            }.getOrNull() ?: continue
-            val payloadId = map["id"]?.toString()
-            if (payloadId == requestId || payloadId == "\"$requestId\"") {
-                return payload
+        }
+    }
+
+    private fun parseSseJsonResponseBody(
+        body: String,
+        requestId: String,
+    ): String {
+        val dataLines = mutableListOf<String>()
+        body.lineSequence().forEach { line ->
+            val trimmed = line.trim()
+            if (trimmed.isEmpty()) {
+                val payload = dataLines.joinToString("\n").trim()
+                dataLines.clear()
+                matchingJsonRpcPayload(payload, requestId)?.let { return it }
+                return@forEach
             }
+            if (trimmed.startsWith("data:")) {
+                dataLines.add(trimmed.removePrefix("data:").trim())
+            }
+        }
+
+        val trailingPayload = dataLines.joinToString("\n").trim()
+        matchingJsonRpcPayload(trailingPayload, requestId)?.let { return it }
+
+        throw IllegalStateException(
+            "SSE MCP response did not contain JSON-RPC response for id=$requestId; preview=${body.take(200)}"
+        )
+    }
+
+    private fun matchingJsonRpcPayload(payload: String, requestId: String): String? {
+        if (payload.isBlank() || payload == "[DONE]") return null
+        val map = runCatching {
+            gson.fromJson<Map<String, Any?>>(payload, mapType)
+        }.getOrNull() ?: return null
+        val payloadId = map["id"]?.toString()
+        return if (payloadId == requestId || payloadId == "\"$requestId\"") {
+            payload
+        } else {
+            null
         }
     }
 

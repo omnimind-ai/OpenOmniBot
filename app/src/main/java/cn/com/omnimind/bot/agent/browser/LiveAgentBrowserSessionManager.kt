@@ -57,6 +57,22 @@ object LiveAgentBrowserSessionManager {
         return store.current()?.liveSessionSnapshot() ?: BrowserUseEngine.unavailableSnapshot()
     }
 
+    suspend fun handleCurrentCall(
+        method: String,
+        arguments: Map<String, Any?> = emptyMap()
+    ): Any? {
+        val engine = store.current()
+        return if (engine == null) {
+            if (method == "getSnapshot" || method == "getLiveBrowserSessionSnapshot") {
+                BrowserUseEngine.unavailableSnapshot()
+            } else {
+                throw IllegalStateException("当前没有可用的浏览器会话")
+            }
+        } else {
+            engine.handleHostCall(method = method, arguments = arguments)
+        }
+    }
+
     suspend fun executeCurrent(request: BrowserUseRequest): BrowserUseOutcome? {
         return store.current()?.execute(request)
     }

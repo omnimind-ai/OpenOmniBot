@@ -16,28 +16,52 @@ class BotStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
+    if (status == BotStatusType.completed && isEnglish) {
+      final completedText = (costTime != null && costTime!.trim().isNotEmpty)
+          ? 'Thought for ${costTime!.trim()}'
+          : 'Thought complete';
+      return _buildStatusRow(
+        context,
+        icon: Icons.check_circle,
+        text: completedText,
+      );
+    }
+
     switch (status) {
       case BotStatusType.thinking:
         return _buildStatusRow(
           context,
           svgPath: 'assets/chatbot/thinking_icon.svg',
-          text: Localizations.localeOf(context).languageCode == 'en' ? 'Thinking...' : '正在思考...',
-          timeDesc: Localizations.localeOf(context).languageCode == 'en' ? 'Time taken' : '已用时',
+          text: Localizations.localeOf(context).languageCode == 'en'
+              ? 'Thinking...'
+              : '正在思考...',
+          timeDesc: Localizations.localeOf(context).languageCode == 'en'
+              ? 'Time taken'
+              : '已用时',
           costTime: costTime,
         );
       case BotStatusType.completed:
         return _buildStatusRow(
           context,
           icon: Icons.check_circle,
-          text: Localizations.localeOf(context).languageCode == 'en' ? 'Thinking complete' : '已完成思考',
-          timeDesc: Localizations.localeOf(context).languageCode == 'en' ? 'Total time' : '总用时',
+          text: Localizations.localeOf(context).languageCode == 'en'
+              ? 'Thinking complete'
+              : '已完成思考',
+          timeDesc: Localizations.localeOf(context).languageCode == 'en'
+              ? 'Total time'
+              : '总用时',
           costTime: costTime,
         );
       case BotStatusType.hint:
         return _buildStatusRow(
           context,
           svgPath: 'assets/chatbot/thinking_icon.svg',
-          text: hintText ?? (Localizations.localeOf(context).languageCode == 'en' ? 'Hint' : '提示'),
+          text:
+              hintText ??
+              (Localizations.localeOf(context).languageCode == 'en'
+                  ? 'Hint'
+                  : '提示'),
         );
     }
   }

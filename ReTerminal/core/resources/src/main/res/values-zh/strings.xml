@@ -66,4 +66,12 @@
     <string name="input_mode_type_null_desc">语义最正确，但可能导致部分输入法异常</string>
     <string name="input_mode_visible_password">旧版兼容模式</string>
     <string name="input_mode_visible_password_desc">修复三星键盘回显问题；可能导致 Gboard 中文输入失效</string>
+    <string name="alpine_package_mirror">Alpine 软件源</string>
+    <string name="alpine_package_mirror_official">官方源</string>
+    <string name="alpine_package_mirror_official_desc">dl-cdn.alpinelinux.org</string>
+    <string name="alpine_package_mirror_tsinghua">清华镜像源</string>
+    <string name="alpine_package_mirror_tsinghua_desc">mirrors.tuna.tsinghua.edu.cn/alpine（默认）</string>
+    <string name="alpine_package_mirror_applied">Alpine 软件源已更新。</string>
+    <string name="alpine_package_mirror_pending">已保存软件源设置，Alpine 初始化后会自动应用。</string>
+    <string name="alpine_package_mirror_failed">软件源更新失败：%1$s</string>
 </resources>

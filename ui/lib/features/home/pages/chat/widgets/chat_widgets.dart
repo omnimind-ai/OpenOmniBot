@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -8,58 +10,22 @@ import '../../../../../models/chat_message_model.dart';
 import '../../../../../services/app_background_service.dart';
 import '../../../../../widgets/app_background_widgets.dart';
 import '../chat_page_models.dart';
+import '../utils/agent_run_timeline.dart';
 import '../../command_overlay/widgets/message_bubble.dart';
 import '../../command_overlay/widgets/chat_input_area.dart';
+import 'agent_run_group_message.dart';
 
-const String _chatAppBarUpdateSparklesSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-    'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
-    'stroke-linecap="round" stroke-linejoin="round">'
-    '<path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 '
-    '1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 '
-    '1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-'
-    '1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-'
-    '1.594z"/>'
-    '<path d="M20 2v4"/>'
-    '<path d="M22 4h-4"/>'
-    '<circle cx="4" cy="20" r="2"/>'
-    '</svg>';
-
-const String _chatAppBarAgentIconSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-    'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
-    'stroke-linecap="round" stroke-linejoin="round">'
-    '<path d="M12 8V4H8"/>'
-    '<rect width="16" height="12" x="4" y="8" rx="2"/>'
-    '<path d="M2 14h2"/>'
-    '<path d="M20 14h2"/>'
-    '<path d="M15 13v2"/>'
-    '<path d="M9 13v2"/>'
-    '</svg>';
-
-const String _chatAppBarPureChatIconSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-    'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
-    'stroke-linecap="round" stroke-linejoin="round">'
-    '<path d="M14 3h2"/>'
-    '<path d="M16 19h-2"/>'
-    '<path d="M2 12v-2"/>'
-    '<path d="M2 16v5.286a.71.71 0 0 0 1.212.502l1.149-1.149"/>'
-    '<path d="M20 19a2 2 0 0 0 2-2v-1"/>'
-    '<path d="M22 10v2"/>'
-    '<path d="M22 6V5a2 2 0 0 0-2-2"/>'
-    '<path d="M4 3a2 2 0 0 0-2 2v1"/>'
-    '<path d="M8 19h2"/>'
-    '<path d="M8 3h2"/>'
-    '</svg>';
-
-const String _chatAppBarPureChatSelectedIconSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-    'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
-    'stroke-linecap="round" stroke-linejoin="round">'
-    '<path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202'
-    'A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/>'
-    '</svg>';
+const String _kChatAppBarUpdateSparklesAsset =
+    'assets/home/chat/update_sparkles.svg';
+const String _kChatAppBarAgentIconAsset = 'assets/home/chat/agent.svg';
+const String _kChatAppBarCodexIconAsset = 'assets/home/chat/codex.svg';
+const String _kChatAppBarModeMenuClosedIconAsset =
+    'assets/home/chat/mode_menu_closed.svg';
+const String _kChatAppBarModeMenuOpenIconAsset =
+    'assets/home/chat/mode_menu_open.svg';
+const String _kChatAppBarPureChatIconAsset = 'assets/home/chat/pure_chat.svg';
+const String _kChatAppBarWorkspaceIconAsset =
+    'assets/home/workspace_folder_icon.svg';
 
 const List<Color> _kDarkChatAccentGradient = <Color>[
   Color(0xFFAA9774),
@@ -82,7 +48,9 @@ const List<ChatSurfaceMode> kVisibleChatSurfaceModes = <ChatSurfaceMode>[
 /// 聊天页面 AppBar
 class ChatAppBar extends StatelessWidget {
   final VoidCallback onMenuTap;
+  final VoidCallback? onAgentTap;
   final VoidCallback? onPureChatToggleTap;
+  final VoidCallback? onCodexTap;
   final VoidCallback onCompanionTap;
   final ChatSurfaceMode activeMode;
   final ValueChanged<ChatSurfaceMode> onModeChanged;
@@ -99,6 +67,11 @@ class ChatAppBar extends StatelessWidget {
   final String? activeToolType;
   final bool isCompanionModeEnabled;
   final bool isCompanionToggleLoading;
+  final bool isCodexReady;
+  final bool isCodexConnected;
+  final bool isCodexLoading;
+  final bool isCodexSelected;
+  final bool isAgentSelected;
   final bool showAppUpdateIndicator;
   final VoidCallback? onAppUpdateTap;
   final String? appUpdateTooltip;
@@ -109,11 +82,15 @@ class ChatAppBar extends StatelessWidget {
   final bool showPureChatToggle;
   final bool isPureChatSelected;
   final bool isPureChatToggleLocked;
+  final bool showWorkspacePaneButton;
+  final VoidCallback? onWorkspacePaneTap;
 
   const ChatAppBar({
     super.key,
     required this.onMenuTap,
+    this.onAgentTap,
     this.onPureChatToggleTap,
+    this.onCodexTap,
     required this.onCompanionTap,
     required this.activeMode,
     required this.onModeChanged,
@@ -130,6 +107,11 @@ class ChatAppBar extends StatelessWidget {
     this.activeToolType,
     this.isCompanionModeEnabled = false,
     this.isCompanionToggleLoading = false,
+    this.isCodexReady = false,
+    this.isCodexConnected = false,
+    this.isCodexLoading = false,
+    this.isCodexSelected = false,
+    this.isAgentSelected = true,
     this.showAppUpdateIndicator = false,
     this.onAppUpdateTap,
     this.appUpdateTooltip,
@@ -140,6 +122,8 @@ class ChatAppBar extends StatelessWidget {
     this.showPureChatToggle = false,
     this.isPureChatSelected = false,
     this.isPureChatToggleLocked = true,
+    this.showWorkspacePaneButton = false,
+    this.onWorkspacePaneTap,
   });
 
   @override
@@ -150,24 +134,37 @@ class ChatAppBar extends StatelessWidget {
         : context.isDarkTheme
         ? palette.textPrimary
         : Colors.grey[800]!;
+    final primaryModeIconAsset = isCodexSelected
+        ? _kChatAppBarCodexIconAsset
+        : isPureChatSelected
+        ? _kChatAppBarPureChatIconAsset
+        : _kChatAppBarAgentIconAsset;
     const updateTint = Color(0xFFD4A017);
+    final showWorkspaceButton =
+        showWorkspacePaneButton && onWorkspacePaneTap != null;
+    final appBarBackgroundColor = showSurfaceSwitcher
+        ? palette.pageBackground
+        : palette.surfacePrimary;
     return ColoredBox(
-      color: translucent ? Colors.transparent : palette.pageBackground,
+      key: const ValueKey('chat-app-bar-background'),
+      color: translucent ? Colors.transparent : appBarBackgroundColor,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: SizedBox(
           height: 50,
           child: LayoutBuilder(
             builder: (context, constraints) {
+              const leftActionRowWidth = _kChatAppBarAccessoryButtonSize;
               final leftReservedSpace =
                   (showMenuButton ? _kChatAppBarMenuButtonSize : 0) +
-                  (showPureChatToggle
-                      ? _kChatAppBarAccessoryButtonSize +
-                            _kChatAppBarAccessoryGap * 2
-                      : 0);
+                  leftActionRowWidth +
+                  _kChatAppBarAccessoryGap * 2;
+              final rightActionCount =
+                  (showAppUpdateIndicator ? 1 : 0) +
+                  (showWorkspaceButton ? 1 : 0) +
+                  (showPureChatToggle ? 1 : 0);
               final rightReservedSpace =
-                  ((showAppUpdateIndicator ? 2 : 1) *
-                      _kChatAppBarRightActionSlotWidth) +
+                  rightActionCount * _kChatAppBarRightActionSlotWidth +
                   _kChatAppBarAccessoryGap;
               final symmetricReservedSpace = math.max(
                 leftReservedSpace,
@@ -188,21 +185,19 @@ class ChatAppBar extends StatelessWidget {
                   ? _kChatAppBarMenuButtonSize + _kChatAppBarAccessoryGap
                   : _kChatAppBarAccessoryGap;
               final accessoryRightEdge = islandLeft - _kChatAppBarAccessoryGap;
-              final maxPureLeft =
-                  accessoryRightEdge - _kChatAppBarAccessoryButtonSize;
-              final centeredPureLeft =
-                  accessoryLeftEdge +
-                  ((accessoryRightEdge -
-                              accessoryLeftEdge -
-                              _kChatAppBarAccessoryButtonSize) /
-                          2)
-                      .clamp(0, double.infinity)
+              final accessoryAvailableWidth = math
+                  .max(0, accessoryRightEdge - accessoryLeftEdge)
+                  .toDouble();
+              final accessoryMaxLeft = math.max(
+                accessoryLeftEdge,
+                accessoryRightEdge - leftActionRowWidth,
+              );
+              final accessoryRowLeft =
+                  (accessoryLeftEdge +
+                          ((accessoryAvailableWidth - leftActionRowWidth) / 2)
+                              .clamp(0, double.infinity))
+                      .clamp(accessoryLeftEdge, accessoryMaxLeft)
                       .toDouble();
-              final pureChatLeft = maxPureLeft >= accessoryLeftEdge
-                  ? centeredPureLeft
-                        .clamp(accessoryLeftEdge, maxPureLeft)
-                        .toDouble()
-                  : accessoryLeftEdge;
 
               return Stack(
                 alignment: Alignment.center,
@@ -233,54 +228,25 @@ class ChatAppBar extends StatelessWidget {
                         ),
                       ),
                     ),
-                  if (showPureChatToggle)
-                    Positioned(
-                      left: pureChatLeft,
-                      top: 0,
-                      bottom: 0,
-                      width: _kChatAppBarAccessoryButtonSize,
-                      child: Center(
-                        child: _ChatAppBarAccessoryButton(
-                          key: const ValueKey('chat-app-bar-pure-chat-button'),
-                          iconSvg: isPureChatSelected
-                              ? _chatAppBarPureChatSelectedIconSvg
-                              : _chatAppBarPureChatIconSvg,
-                          tooltip: isPureChatToggleLocked
-                              ? (isPureChatSelected
-                                    ? (Localizations.localeOf(
-                                                context,
-                                              ).languageCode ==
-                                              'en'
-                                          ? 'Current thread is locked to pure chat'
-                                          : '当前线程已锁定为纯聊天')
-                                    : (Localizations.localeOf(
-                                                context,
-                                              ).languageCode ==
-                                              'en'
-                                          ? 'Current thread mode is locked'
-                                          : '当前线程模式已锁定'))
-                              : (isPureChatSelected
-                                    ? (Localizations.localeOf(
-                                                context,
-                                              ).languageCode ==
-                                              'en'
-                                          ? 'Disable pure chat'
-                                          : '关闭纯聊天')
-                                    : (Localizations.localeOf(
-                                                context,
-                                              ).languageCode ==
-                                              'en'
-                                          ? 'Enable pure chat'
-                                          : '开启纯聊天')),
-                          selected: isPureChatSelected,
-                          disabled: isPureChatToggleLocked,
-                          onTap: isPureChatToggleLocked
-                              ? null
-                              : onPureChatToggleTap,
+                  Positioned(
+                    left: accessoryRowLeft,
+                    top: 0,
+                    bottom: 0,
+                    width: leftActionRowWidth.toDouble(),
+                    child: Row(
+                      children: [
+                        _ChatAppBarCompanionButton(
+                          isEnabled: isCompanionModeEnabled,
+                          isLoading: isCompanionToggleLoading,
                           iconTint: iconTint,
+                          selectedColor: context.isDarkTheme
+                              ? palette.accentPrimary
+                              : const Color(0xFF1930D9),
+                          onTap: onCompanionTap,
                         ),
-                      ),
+                      ],
                     ),
+                  ),
                   Center(
                     child: SizedBox(
                       key: const ValueKey('chat-app-bar-island'),
@@ -302,6 +268,7 @@ class ChatAppBar extends StatelessWidget {
                         translucent: translucent,
                         visualProfile: visualProfile,
                         showSurfaceLayer: showSurfaceSwitcher,
+                        primaryModeIconAsset: primaryModeIconAsset,
                       ),
                     ),
                   ),
@@ -319,8 +286,8 @@ class ChatAppBar extends StatelessWidget {
                               child: Container(
                                 color: Colors.transparent,
                                 padding: const EdgeInsets.all(15),
-                                child: SvgPicture.string(
-                                  _chatAppBarUpdateSparklesSvg,
+                                child: SvgPicture.asset(
+                                  _kChatAppBarUpdateSparklesAsset,
                                   width: 18,
                                   height: 18,
                                   colorFilter: const ColorFilter.mode(
@@ -331,43 +298,38 @@ class ChatAppBar extends StatelessWidget {
                               ),
                             ),
                           ),
-                        GestureDetector(
-                          onTap: isCompanionToggleLoading
-                              ? null
-                              : onCompanionTap,
-                          child: Container(
-                            color: Colors.transparent,
-                            padding: const EdgeInsets.all(15),
-                            child: isCompanionToggleLoading
-                                ? SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        isCompanionModeEnabled
-                                            ? (context.isDarkTheme
-                                                  ? palette.accentPrimary
-                                                  : const Color(0xFF1930D9))
-                                            : iconTint,
-                                      ),
-                                    ),
-                                  )
-                                : SvgPicture.asset(
-                                    'assets/home/avatar.svg',
-                                    width: 20,
-                                    height: 20,
-                                    colorFilter: ColorFilter.mode(
-                                      isCompanionModeEnabled
-                                          ? (context.isDarkTheme
-                                                ? palette.accentPrimary
-                                                : const Color(0xFF1930D9))
-                                          : iconTint,
-                                      BlendMode.srcIn,
-                                    ),
-                                  ),
+                        if (showWorkspaceButton)
+                          SizedBox(
+                            width: _kChatAppBarRightActionSlotWidth,
+                            height: _kChatAppBarRightActionSlotWidth,
+                            child: Center(
+                              child: _ChatAppBarWorkspaceButton(
+                                iconTint: iconTint,
+                                onTap: onWorkspacePaneTap!,
+                              ),
+                            ),
                           ),
-                        ),
+                        if (showPureChatToggle)
+                          SizedBox(
+                            width: _kChatAppBarRightActionSlotWidth,
+                            height: _kChatAppBarRightActionSlotWidth,
+                            child: Center(
+                              child: _ChatAppBarModeShortcutButton(
+                                key: const ValueKey(
+                                  'chat-app-bar-pure-chat-button',
+                                ),
+                                iconTint: iconTint,
+                                isCodexLoading: isCodexLoading,
+                                isCodexSelected: isCodexSelected,
+                                isAgentSelected: isAgentSelected,
+                                isPureChatSelected: isPureChatSelected,
+                                isPureChatToggleLocked: isPureChatToggleLocked,
+                                onAgentTap: onAgentTap,
+                                onCodexTap: onCodexTap,
+                                onPureChatToggleTap: onPureChatToggleTap,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -381,51 +343,340 @@ class ChatAppBar extends StatelessWidget {
   }
 }
 
-class _ChatAppBarAccessoryButton extends StatelessWidget {
-  const _ChatAppBarAccessoryButton({
-    super.key,
-    required this.iconSvg,
-    required this.tooltip,
-    required this.selected,
-    required this.disabled,
-    required this.onTap,
+enum _ChatAppBarModeShortcutAction { agent, codex, pureChat }
+
+class _ChatAppBarCompanionButton extends StatelessWidget {
+  const _ChatAppBarCompanionButton({
+    required this.isEnabled,
+    required this.isLoading,
     required this.iconTint,
+    required this.selectedColor,
+    required this.onTap,
   });
 
-  final String iconSvg;
-  final String tooltip;
-  final bool selected;
-  final bool disabled;
-  final VoidCallback? onTap;
+  final bool isEnabled;
+  final bool isLoading;
   final Color iconTint;
+  final Color selectedColor;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final selectedColor = palette.accentPrimary;
-    final effectiveIconColor = selected
-        ? selectedColor
-        : disabled
-        ? iconTint.withValues(alpha: 0.42)
-        : iconTint;
+    final color = isEnabled ? selectedColor : iconTint;
+    return GestureDetector(
+      key: const ValueKey('chat-app-companion-button'),
+      onTap: isLoading ? null : onTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: _kChatAppBarAccessoryButtonSize,
+        height: _kChatAppBarAccessoryButtonSize,
+        child: Center(
+          child: isLoading
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(color),
+                  ),
+                )
+              : SvgPicture.asset(
+                  'assets/home/avatar.svg',
+                  width: 20,
+                  height: 20,
+                  colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatAppBarWorkspaceButton extends StatelessWidget {
+  const _ChatAppBarWorkspaceButton({
+    required this.iconTint,
+    required this.onTap,
+  });
+
+  final Color iconTint;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
     return Tooltip(
-      message: tooltip,
+      message: LegacyTextLocalizer.isEnglish ? 'Show workspace' : '显示工作区',
       child: GestureDetector(
+        key: const ValueKey('chat-app-bar-workspace-pane-button'),
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
         child: SizedBox(
           width: _kChatAppBarAccessoryButtonSize,
           height: _kChatAppBarAccessoryButtonSize,
           child: Center(
-            child: SvgPicture.string(
-              iconSvg,
+            child: SvgPicture.asset(
+              _kChatAppBarWorkspaceIconAsset,
               width: 20,
               height: 20,
-              colorFilter: ColorFilter.mode(
-                effectiveIconColor,
-                BlendMode.srcIn,
-              ),
+              colorFilter: ColorFilter.mode(iconTint, BlendMode.srcIn),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatAppBarModeShortcutButton extends StatefulWidget {
+  const _ChatAppBarModeShortcutButton({
+    super.key,
+    required this.iconTint,
+    required this.isCodexLoading,
+    required this.isCodexSelected,
+    required this.isAgentSelected,
+    required this.isPureChatSelected,
+    required this.isPureChatToggleLocked,
+    required this.onAgentTap,
+    required this.onCodexTap,
+    required this.onPureChatToggleTap,
+  });
+
+  final Color iconTint;
+  final bool isCodexLoading;
+  final bool isCodexSelected;
+  final bool isAgentSelected;
+  final bool isPureChatSelected;
+  final bool isPureChatToggleLocked;
+  final VoidCallback? onAgentTap;
+  final VoidCallback? onCodexTap;
+  final VoidCallback? onPureChatToggleTap;
+
+  @override
+  State<_ChatAppBarModeShortcutButton> createState() =>
+      _ChatAppBarModeShortcutButtonState();
+}
+
+class _ChatAppBarModeShortcutButtonState
+    extends State<_ChatAppBarModeShortcutButton> {
+  bool _isOpen = false;
+
+  Future<void> _openMenu() async {
+    if (_isOpen) {
+      return;
+    }
+    final buttonBox = context.findRenderObject() as RenderBox?;
+    final overlayBox =
+        Navigator.of(context).overlay?.context.findRenderObject() as RenderBox?;
+    if (buttonBox == null || overlayBox == null) {
+      return;
+    }
+
+    setState(() => _isOpen = true);
+    final buttonOffset = buttonBox.localToGlobal(
+      Offset.zero,
+      ancestor: overlayBox,
+    );
+    final buttonRect = buttonOffset & buttonBox.size;
+    final menuAnchorRect = Rect.fromLTWH(
+      buttonRect.left,
+      buttonRect.bottom + 4,
+      buttonRect.width,
+      buttonRect.height,
+    );
+    final action = await showMenu<_ChatAppBarModeShortcutAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        menuAnchorRect,
+        Offset.zero & overlayBox.size,
+      ),
+      color: Colors.transparent,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      constraints: const BoxConstraints(minWidth: 40, maxWidth: 40),
+      items: _buildMenuItems(context),
+    );
+    if (mounted) {
+      setState(() => _isOpen = false);
+    }
+    switch (action) {
+      case _ChatAppBarModeShortcutAction.agent:
+        widget.onAgentTap?.call();
+        break;
+      case _ChatAppBarModeShortcutAction.codex:
+        widget.onCodexTap?.call();
+        break;
+      case _ChatAppBarModeShortcutAction.pureChat:
+        widget.onPureChatToggleTap?.call();
+        break;
+      case null:
+        break;
+    }
+  }
+
+  List<PopupMenuEntry<_ChatAppBarModeShortcutAction>> _buildMenuItems(
+    BuildContext context,
+  ) {
+    final palette = context.omniPalette;
+    final selectedColor = palette.accentPrimary;
+    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
+    final canSelectPureChat =
+        widget.isCodexSelected ||
+        (!widget.isPureChatToggleLocked && widget.onPureChatToggleTap != null);
+    return <PopupMenuEntry<_ChatAppBarModeShortcutAction>>[
+      PopupMenuItem<_ChatAppBarModeShortcutAction>(
+        key: const ValueKey('chat-app-bar-mode-menu-agent'),
+        value: _ChatAppBarModeShortcutAction.agent,
+        enabled: widget.onAgentTap != null,
+        height: 40,
+        padding: EdgeInsets.zero,
+        child: _ChatAppBarModeShortcutMenuIcon(
+          iconAsset: _kChatAppBarAgentIconAsset,
+          tooltip: isEnglish ? 'Agent mode' : 'Agent 模式',
+          selected: widget.isAgentSelected,
+          selectedColor: selectedColor,
+          iconTint: widget.iconTint,
+        ),
+      ),
+      PopupMenuItem<_ChatAppBarModeShortcutAction>(
+        key: const ValueKey('chat-app-bar-mode-menu-codex'),
+        value: _ChatAppBarModeShortcutAction.codex,
+        enabled: !widget.isCodexLoading && widget.onCodexTap != null,
+        height: 40,
+        padding: EdgeInsets.zero,
+        child: _ChatAppBarModeShortcutMenuIcon(
+          iconAsset: _kChatAppBarCodexIconAsset,
+          tooltip: isEnglish ? 'Codex mode' : 'Codex 模式',
+          selected: widget.isCodexSelected,
+          selectedColor: selectedColor,
+          iconTint: widget.iconTint,
+        ),
+      ),
+      PopupMenuItem<_ChatAppBarModeShortcutAction>(
+        key: const ValueKey('chat-app-bar-mode-menu-pure-chat'),
+        value: _ChatAppBarModeShortcutAction.pureChat,
+        enabled: canSelectPureChat,
+        height: 40,
+        padding: EdgeInsets.zero,
+        child: _ChatAppBarModeShortcutMenuIcon(
+          iconAsset: _kChatAppBarPureChatIconAsset,
+          tooltip: isEnglish ? 'Pure chat' : '纯聊天模式',
+          selected: widget.isPureChatSelected,
+          selectedColor: selectedColor,
+          iconSize: 18,
+          iconTint: canSelectPureChat
+              ? widget.iconTint
+              : widget.iconTint.withValues(alpha: 0.42),
+        ),
+      ),
+    ];
+  }
+
+  String _closedIconAsset() {
+    if (widget.isCodexSelected) {
+      return _kChatAppBarCodexIconAsset;
+    }
+    if (widget.isPureChatSelected) {
+      return _kChatAppBarPureChatIconAsset;
+    }
+    if (widget.isAgentSelected) {
+      return _kChatAppBarAgentIconAsset;
+    }
+    return _kChatAppBarModeMenuClosedIconAsset;
+  }
+
+  Widget _buildClosedIcon(Color color) {
+    if (widget.isCodexLoading && !widget.isCodexSelected) {
+      return SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          valueColor: AlwaysStoppedAnimation<Color>(color),
+        ),
+      );
+    }
+    final iconSize = widget.isCodexSelected ? 22.0 : 20.0;
+    return SvgPicture.asset(
+      _closedIconAsset(),
+      width: iconSize,
+      height: iconSize,
+      colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+    );
+  }
+
+  Widget _buildOpenIcon(Color color) {
+    return SvgPicture.asset(
+      _kChatAppBarModeMenuOpenIconAsset,
+      width: 20,
+      height: 20,
+      colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final selectedColor = palette.accentPrimary;
+    final hasSelectedMode =
+        widget.isAgentSelected ||
+        widget.isCodexSelected ||
+        widget.isPureChatSelected;
+    final effectiveIconColor = _isOpen || hasSelectedMode
+        ? selectedColor
+        : widget.iconTint;
+    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
+    return Tooltip(
+      message: _isOpen
+          ? (isEnglish ? 'Close mode menu' : '收起模式菜单')
+          : (isEnglish ? 'Switch chat mode' : '切换聊天模式'),
+      child: GestureDetector(
+        onTap: _openMenu,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: _kChatAppBarAccessoryButtonSize,
+          height: _kChatAppBarAccessoryButtonSize,
+          child: Center(
+            child: _isOpen
+                ? _buildOpenIcon(effectiveIconColor)
+                : _buildClosedIcon(effectiveIconColor),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatAppBarModeShortcutMenuIcon extends StatelessWidget {
+  const _ChatAppBarModeShortcutMenuIcon({
+    required this.iconAsset,
+    required this.tooltip,
+    required this.selected,
+    required this.selectedColor,
+    required this.iconTint,
+    this.iconSize = 20,
+  });
+
+  final String iconAsset;
+  final String tooltip;
+  final bool selected;
+  final Color selectedColor;
+  final Color iconTint;
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? selectedColor : iconTint;
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox(
+        width: 40,
+        height: 40,
+        child: Center(
+          child: SvgPicture.asset(
+            iconAsset,
+            width: iconSize,
+            height: iconSize,
+            colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
           ),
         ),
       ),
@@ -451,6 +702,7 @@ class _ChatModeModelSwitcher extends StatefulWidget {
     this.translucent = false,
     this.visualProfile = AppBackgroundVisualProfile.defaultProfile,
     this.showSurfaceLayer = true,
+    required this.primaryModeIconAsset,
   });
 
   final ChatSurfaceMode activeMode;
@@ -469,41 +721,17 @@ class _ChatModeModelSwitcher extends StatefulWidget {
   final bool translucent;
   final AppBackgroundVisualProfile visualProfile;
   final bool showSurfaceLayer;
+  final String primaryModeIconAsset;
 
   @override
   State<_ChatModeModelSwitcher> createState() => _ChatModeModelSwitcherState();
 }
 
 class _ChatModeModelSwitcherState extends State<_ChatModeModelSwitcher> {
-  static const String _terminalIconSvg =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-      'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
-      'stroke-linecap="round" stroke-linejoin="round">'
-      '<path d="m7 11 2-2-2-2"/>'
-      '<path d="M11 13h4"/>'
-      '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>'
-      '</svg>';
-  static const String _browserIconSvg =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-      'fill="none" viewBox="0 0 24 24">'
-      '<path stroke="currentColor" stroke-linecap="round" '
-      'stroke-linejoin="round" '
-      'd="M12 8C9.79086 8 8 9.79086 8 12C8 12.7286 8.19479 13.4117 8.53513 14'
-      'M12 8C14.2091 8 16 9.79086 16 12C16 13.0144 15.6224 13.9407 15 14.6458'
-      'M12 8H20.0645M15 14.6458C14.2671 15.4762 13.1947 16 12 16C10.5194 16 '
-      '9.22675 15.1956 8.53513 14M15 14.6458L10.7394 20.9124'
-      'M8.53513 14L4.36907 7.22607M4.36907 7.22607C3.50156 8.60982 3 10.2463 '
-      '3 12C3 16.5427 6.36566 20.2994 10.7394 20.9124M4.36907 7.22607'
-      'C5.9604 4.68775 8.7831 3 12 3C16.9706 3 21 7.02944 21 12C21 16.9706 '
-      '16.9706 21 12 21C11.5722 21 11.1513 20.9702 10.7394 20.9124"/>'
-      '</svg>';
-  static const String _environmentIconSvg =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-      'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
-      'stroke-linecap="round" stroke-linejoin="round">'
-      '<path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/>'
-      '<path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/>'
-      '</svg>';
+  static const String _terminalIconAsset = 'assets/home/chat/terminal.svg';
+  static const String _browserIconAsset = 'assets/home/chat/browser.svg';
+  static const String _environmentIconAsset =
+      'assets/home/chat/environment.svg';
   static const Duration _switchDuration = Duration(milliseconds: 460);
   static const double _verticalSwitchThreshold = 10;
   static const double _verticalVelocityThreshold = 240;
@@ -663,9 +891,9 @@ class _ChatModeModelSwitcherState extends State<_ChatModeModelSwitcher> {
       },
     );
     final toolLayerWidget = _ChatToolSlider(
-      environmentIconSvg: _environmentIconSvg,
-      terminalIconSvg: _terminalIconSvg,
-      browserIconSvg: _browserIconSvg,
+      environmentIconAsset: _environmentIconAsset,
+      terminalIconAsset: _terminalIconAsset,
+      browserIconAsset: _browserIconAsset,
       activeToolType: widget.activeToolType,
       hasTerminalEnvironment: widget.hasTerminalEnvironment,
       onTerminalEnvironmentTap: (anchorContext) {
@@ -738,6 +966,7 @@ class _ChatModeModelSwitcherState extends State<_ChatModeModelSwitcher> {
                             onChanged: widget.onModeChanged,
                             onInteracted: _handleSliderInteraction,
                             visualProfile: widget.visualProfile,
+                            primaryIconAsset: widget.primaryModeIconAsset,
                           ),
                         )
                       : const SizedBox.shrink(),
@@ -770,9 +999,9 @@ class _ChatModeModelSwitcherState extends State<_ChatModeModelSwitcher> {
 }
 
 class _ChatToolSlider extends StatelessWidget {
-  final String environmentIconSvg;
-  final String terminalIconSvg;
-  final String browserIconSvg;
+  final String environmentIconAsset;
+  final String terminalIconAsset;
+  final String browserIconAsset;
   final String? activeToolType;
   final bool hasTerminalEnvironment;
   final ValueChanged<BuildContext> onTerminalEnvironmentTap;
@@ -783,9 +1012,9 @@ class _ChatToolSlider extends StatelessWidget {
   final AppBackgroundVisualProfile visualProfile;
 
   const _ChatToolSlider({
-    required this.environmentIconSvg,
-    required this.terminalIconSvg,
-    required this.browserIconSvg,
+    required this.environmentIconAsset,
+    required this.terminalIconAsset,
+    required this.browserIconAsset,
     this.activeToolType,
     required this.hasTerminalEnvironment,
     required this.onTerminalEnvironmentTap,
@@ -850,8 +1079,8 @@ class _ChatToolSlider extends StatelessWidget {
                         ? 'Open terminal'
                         : '打开终端',
                     onTap: onTerminalTap,
-                    child: SvgPicture.string(
-                      terminalIconSvg,
+                    child: SvgPicture.asset(
+                      terminalIconAsset,
                       width: 16,
                       height: 16,
                     ),
@@ -871,8 +1100,8 @@ class _ChatToolSlider extends StatelessWidget {
                               ? 'No browser session available'
                               : '当前会话还没有可用的浏览器会话'),
                     onTap: onBrowserTap,
-                    child: SvgPicture.string(
-                      browserIconSvg,
+                    child: SvgPicture.asset(
+                      browserIconAsset,
                       width: 16,
                       height: 16,
                     ),
@@ -915,8 +1144,8 @@ class _ChatToolSlider extends StatelessWidget {
                 alignment: Alignment.center,
                 child: ColorFiltered(
                   colorFilter: ColorFilter.mode(inactiveColor, BlendMode.srcIn),
-                  child: SvgPicture.string(
-                    environmentIconSvg,
+                  child: SvgPicture.asset(
+                    environmentIconAsset,
                     width: 15,
                     height: 15,
                   ),
@@ -978,6 +1207,7 @@ class ChatModeSlider extends StatefulWidget {
   final ValueChanged<ChatSurfaceMode> onChanged;
   final VoidCallback? onInteracted;
   final AppBackgroundVisualProfile visualProfile;
+  final String primaryIconAsset;
 
   const ChatModeSlider({
     super.key,
@@ -985,6 +1215,7 @@ class ChatModeSlider extends StatefulWidget {
     required this.onChanged,
     this.onInteracted,
     this.visualProfile = AppBackgroundVisualProfile.defaultProfile,
+    this.primaryIconAsset = _kChatAppBarAgentIconAsset,
   });
 
   @override
@@ -992,15 +1223,7 @@ class ChatModeSlider extends StatefulWidget {
 }
 
 class _ChatModeSliderState extends State<ChatModeSlider> {
-  static const String _workspaceIconSvg =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-      'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
-      'stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folders-icon lucide-folders">'
-      '<path d="M20 5a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2.5a1.5 1.5 0 0 1 1.2.6l.6.8a1.5 1.5 0 0 0 1.2.6z"/>'
-      '<path d="M3 8.268a2 2 0 0 0-1 1.738V19a2 2 0 0 0 2 2h11a2 2 0 0 0 1.732-1"/>'
-      '</svg>';
-
-  static const String _normalChatIconSvg = _chatAppBarAgentIconSvg;
+  static const String _workspaceIconAsset = 'assets/home/chat/workspace.svg';
 
   double _dragDelta = 0;
 
@@ -1090,8 +1313,9 @@ class _ChatModeSliderState extends State<ChatModeSlider> {
                 Expanded(
                   child: _buildModeIcon(
                     isSelected: widget.activeMode == ChatSurfaceMode.normal,
-                    child: SvgPicture.string(
-                      _normalChatIconSvg,
+                    child: SvgPicture.asset(
+                      widget.primaryIconAsset,
+                      key: const ValueKey('chat-mode-slider-primary-icon'),
                       width: 16,
                       height: 16,
                     ),
@@ -1100,8 +1324,9 @@ class _ChatModeSliderState extends State<ChatModeSlider> {
                 Expanded(
                   child: _buildModeIcon(
                     isSelected: widget.activeMode == ChatSurfaceMode.workspace,
-                    child: SvgPicture.string(
-                      _workspaceIconSvg,
+                    child: SvgPicture.asset(
+                      _workspaceIconAsset,
+                      key: const ValueKey('chat-mode-slider-workspace-icon'),
                       width: 16,
                       height: 16,
                     ),
@@ -1146,6 +1371,15 @@ class ChatMessageList extends StatefulWidget {
   final double bottomOverlayInset;
   final void Function(ChatMessageModel message, LongPressStartDetails details)?
   onUserMessageLongPressStart;
+  final String? editingUserMessageId;
+  final TextEditingController? userMessageEditController;
+  final VoidCallback? onUserMessageEditCancelled;
+  final ValueChanged<ChatMessageModel>? onUserMessageEditSaved;
+  final Future<void> Function()? onLoadMore;
+  final bool hasMore;
+  final Set<String> activeAgentTaskIds;
+  final Set<String>? expandedAgentRunTaskIds;
+  final ValueChanged<Set<String>>? onExpandedAgentRunTaskIdsChanged;
   final AppBackgroundVisualProfile visualProfile;
   final AppBackgroundConfig appearanceConfig;
 
@@ -1158,6 +1392,15 @@ class ChatMessageList extends StatefulWidget {
     this.onRequestAuthorize,
     this.bottomOverlayInset = 0,
     this.onUserMessageLongPressStart,
+    this.editingUserMessageId,
+    this.userMessageEditController,
+    this.onUserMessageEditCancelled,
+    this.onUserMessageEditSaved,
+    this.onLoadMore,
+    this.hasMore = false,
+    this.activeAgentTaskIds = const <String>{},
+    this.expandedAgentRunTaskIds,
+    this.onExpandedAgentRunTaskIdsChanged,
     this.visualProfile = AppBackgroundVisualProfile.defaultProfile,
     this.appearanceConfig = AppBackgroundConfig.defaults,
   });
@@ -1167,40 +1410,93 @@ class ChatMessageList extends StatefulWidget {
 }
 
 class _ChatMessageListState extends State<ChatMessageList> {
+  static const Duration _kAgentRunToggleAutoStickSuppression = Duration(
+    milliseconds: 420,
+  );
   bool _stickToBottomScheduled = false;
   bool _autoStickToLatest = true;
   bool _outerScrollWasUserDriven = false;
+  bool _isAutoLoadingHistory = false;
+  final Set<String> _localExpandedAgentRunTaskIds = <String>{};
   static const double _latestEdgeTolerance = 48.0;
+  static const double _manualLatestAttachTolerance = 2.0;
+  static const double _historyLoadTriggerExtent = 180.0;
+  ObservableChatMessageList? _observableMessages;
+  DateTime? _autoStickSuppressedUntil;
+
+  Set<String> get _expandedAgentRunTaskIds =>
+      widget.expandedAgentRunTaskIds ?? _localExpandedAgentRunTaskIds;
+
+  bool get _isAutoStickTemporarilySuppressed {
+    final suppressedUntil = _autoStickSuppressedUntil;
+    if (suppressedUntil == null) {
+      return false;
+    }
+    if (DateTime.now().isBefore(suppressedUntil)) {
+      return true;
+    }
+    _autoStickSuppressedUntil = null;
+    return false;
+  }
 
   @override
   void initState() {
     super.initState();
+    _bindObservableMessages(widget.messages);
     _scheduleStickToBottom();
   }
 
   @override
   void didUpdateWidget(covariant ChatMessageList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _bindObservableMessages(widget.messages);
     if (oldWidget.scrollController != widget.scrollController) {
       _autoStickToLatest = true;
       _outerScrollWasUserDriven = false;
+      _autoStickSuppressedUntil = null;
     }
-    if (_autoStickToLatest || _isNearLatest()) {
+    if (_autoStickToLatest) {
+      _autoStickToLatest = true;
+      _scheduleStickToLatest();
+      return;
+    }
+    if (_isAutoStickTemporarilySuppressed) {
+      return;
+    }
+    if (_isNearLatest(null, _manualLatestAttachTolerance)) {
       _autoStickToLatest = true;
       _scheduleStickToLatest();
     }
   }
 
-  bool _isNearLatest([ScrollMetrics? metrics]) {
+  @override
+  void dispose() {
+    _observableMessages?.removeListener(_handleObservableMessagesChanged);
+    super.dispose();
+  }
+
+  List<ScrollPosition> _attachedPositions() {
+    if (!widget.scrollController.hasClients) {
+      return const <ScrollPosition>[];
+    }
+    return widget.scrollController.positions.toList(growable: false);
+  }
+
+  bool _isNearLatest([
+    ScrollMetrics? metrics,
+    double tolerance = _latestEdgeTolerance,
+  ]) {
     final resolvedMetrics = metrics;
     if (resolvedMetrics != null) {
-      return _distanceToLatest(resolvedMetrics) <= _latestEdgeTolerance;
+      return _distanceToLatest(resolvedMetrics) <= tolerance;
     }
-    if (!widget.scrollController.hasClients) {
+    final positions = _attachedPositions();
+    if (positions.isEmpty) {
       return true;
     }
-    final position = widget.scrollController.position;
-    return _distanceToLatest(position) <= _latestEdgeTolerance;
+    return positions.every(
+      (position) => _distanceToLatest(position) <= tolerance,
+    );
   }
 
   double _latestOffset(ScrollMetrics metrics) {
@@ -1217,7 +1513,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
   void _scheduleStickToBottom() => _scheduleStickToLatest();
 
   void _scheduleStickToLatest() {
-    if (!_autoStickToLatest) {
+    if (!_autoStickToLatest || _isAutoStickTemporarilySuppressed) {
       return;
     }
     if (_stickToBottomScheduled) {
@@ -1226,7 +1522,14 @@ class _ChatMessageListState extends State<ChatMessageList> {
     _stickToBottomScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _stickToBottomScheduled = false;
-      if (!mounted || !widget.scrollController.hasClients) {
+      if (!mounted) {
+        if (mounted) {
+          _scheduleStickToBottom();
+        }
+        return;
+      }
+      final positions = _attachedPositions();
+      if (positions.isEmpty) {
         if (mounted) {
           _scheduleStickToBottom();
         }
@@ -1235,19 +1538,42 @@ class _ChatMessageListState extends State<ChatMessageList> {
       if (!_autoStickToLatest) {
         return;
       }
-      final position = widget.scrollController.position;
-      final target = _latestOffset(position);
-      if ((target - position.pixels).abs() < 0.5) {
-        return;
+      for (final position in positions) {
+        final target = _latestOffset(position);
+        if ((target - position.pixels).abs() < 0.5) {
+          continue;
+        }
+        position.jumpTo(target);
       }
-      widget.scrollController.jumpTo(target);
     });
   }
 
   void _handleStreamingTextLayoutChanged() {
-    if (_autoStickToLatest) {
+    if (_autoStickToLatest && !_isAutoStickTemporarilySuppressed) {
       _scheduleStickToLatest();
     }
+  }
+
+  void _bindObservableMessages(List<ChatMessageModel> messages) {
+    final nextObservable = messages is ObservableChatMessageList
+        ? messages
+        : null;
+    if (identical(_observableMessages, nextObservable)) {
+      return;
+    }
+    _observableMessages?.removeListener(_handleObservableMessagesChanged);
+    _observableMessages = nextObservable;
+    _observableMessages?.addListener(_handleObservableMessagesChanged);
+  }
+
+  void _handleObservableMessagesChanged() {
+    if (!mounted) {
+      return;
+    }
+    if (_autoStickToLatest && !_isAutoStickTemporarilySuppressed) {
+      _scheduleStickToLatest();
+    }
+    setState(() {});
   }
 
   void _handleParentScrollHandoff() {
@@ -1255,10 +1581,136 @@ class _ChatMessageListState extends State<ChatMessageList> {
     _outerScrollWasUserDriven = false;
   }
 
+  void _suspendAutoStickForAgentRunToggle() {
+    _autoStickToLatest = false;
+    _outerScrollWasUserDriven = false;
+    _autoStickSuppressedUntil = DateTime.now().add(
+      _kAgentRunToggleAutoStickSuppression,
+    );
+  }
+
+  void _toggleAgentRunGroup(String taskId) {
+    final normalizedTaskId = taskId.trim();
+    if (normalizedTaskId.isEmpty) {
+      return;
+    }
+    _suspendAutoStickForAgentRunToggle();
+    final nextExpandedTaskIds = Set<String>.from(_expandedAgentRunTaskIds);
+    if (nextExpandedTaskIds.contains(normalizedTaskId)) {
+      nextExpandedTaskIds.remove(normalizedTaskId);
+    } else {
+      nextExpandedTaskIds.add(normalizedTaskId);
+    }
+    if (widget.expandedAgentRunTaskIds != null) {
+      widget.onExpandedAgentRunTaskIdsChanged?.call(nextExpandedTaskIds);
+    } else {
+      setState(() {
+        _localExpandedAgentRunTaskIds
+          ..clear()
+          ..addAll(nextExpandedTaskIds);
+      });
+      widget.onExpandedAgentRunTaskIdsChanged?.call(nextExpandedTaskIds);
+    }
+  }
+
+  double _distanceToOldest(ScrollMetrics metrics) {
+    return (metrics.pixels - metrics.minScrollExtent).abs();
+  }
+
+  ScrollPosition? _closestAttachedPosition({
+    required double pixels,
+    required double minScrollExtent,
+    required double maxScrollExtent,
+  }) {
+    final positions = _attachedPositions();
+    if (positions.isEmpty) {
+      return null;
+    }
+    ScrollPosition? bestMatch;
+    var bestScore = double.infinity;
+    for (final position in positions) {
+      final score =
+          (position.pixels - pixels).abs() +
+          (position.minScrollExtent - minScrollExtent).abs() +
+          (position.maxScrollExtent - maxScrollExtent).abs();
+      if (score < bestScore) {
+        bestScore = score;
+        bestMatch = position;
+      }
+    }
+    return bestMatch;
+  }
+
+  void _maybeLoadOlderMessages(ScrollMetrics metrics) {
+    if (_isAutoLoadingHistory || !widget.hasMore || widget.onLoadMore == null) {
+      return;
+    }
+    if (_distanceToOldest(metrics) > _historyLoadTriggerExtent) {
+      return;
+    }
+    _isAutoLoadingHistory = true;
+    unawaited(
+      _loadOlderMessagesAndPreserveViewport(
+        anchorPixels: metrics.pixels,
+        anchorMinScrollExtent: metrics.minScrollExtent,
+        anchorMaxScrollExtent: metrics.maxScrollExtent,
+      ),
+    );
+  }
+
+  Future<void> _loadOlderMessagesAndPreserveViewport({
+    required double anchorPixels,
+    required double anchorMinScrollExtent,
+    required double anchorMaxScrollExtent,
+  }) async {
+    try {
+      await widget.onLoadMore!.call();
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          _isAutoLoadingHistory = false;
+          return;
+        }
+        final position = _closestAttachedPosition(
+          pixels: anchorPixels,
+          minScrollExtent: anchorMinScrollExtent,
+          maxScrollExtent: anchorMaxScrollExtent,
+        );
+        if (position == null) {
+          _isAutoLoadingHistory = false;
+          return;
+        }
+        final extentDelta = position.maxScrollExtent - anchorMaxScrollExtent;
+        if (extentDelta.abs() >= 0.5) {
+          final targetOffset = (anchorPixels + extentDelta).clamp(
+            position.minScrollExtent,
+            position.maxScrollExtent,
+          );
+          if ((position.pixels - targetOffset).abs() >= 0.5) {
+            position.jumpTo(targetOffset);
+          }
+        }
+        _isAutoLoadingHistory = false;
+      });
+    } catch (_) {
+      _isAutoLoadingHistory = false;
+      rethrow;
+    }
+  }
+
   bool _handleListScrollNotification(ScrollNotification notification) {
     if (notification.depth != 0 || notification.metrics.axis != Axis.vertical) {
       return false;
     }
+
+    final shouldCheckAutoLoad =
+        notification is ScrollUpdateNotification ||
+        notification is OverscrollNotification ||
+        notification is ScrollEndNotification;
+    if (shouldCheckAutoLoad) {
+      _maybeLoadOlderMessages(notification.metrics);
+    }
+
     final isUserDrivenUpdate =
         (notification is ScrollUpdateNotification &&
             notification.dragDetails != null) ||
@@ -1266,11 +1718,15 @@ class _ChatMessageListState extends State<ChatMessageList> {
             notification.dragDetails != null);
     if (isUserDrivenUpdate) {
       _outerScrollWasUserDriven = true;
-      _autoStickToLatest = _isNearLatest(notification.metrics);
+      if (_distanceToLatest(notification.metrics) >
+          _manualLatestAttachTolerance) {
+        _autoStickToLatest = false;
+      }
       return false;
     }
     if (notification is ScrollEndNotification) {
-      if (_outerScrollWasUserDriven && _isNearLatest(notification.metrics)) {
+      if (_outerScrollWasUserDriven &&
+          _isNearLatest(notification.metrics, _manualLatestAttachTolerance)) {
         _autoStickToLatest = true;
       }
       _outerScrollWasUserDriven = false;
@@ -1278,8 +1734,138 @@ class _ChatMessageListState extends State<ChatMessageList> {
     return false;
   }
 
+  ValueListenable<ChatMessageModel>? _messageListenableFor(
+    ObservableChatMessageList messages,
+    String messageId,
+  ) {
+    final index = messages.indexWhere((message) => message.id == messageId);
+    if (index == -1) {
+      return null;
+    }
+    return messages.listenableAt(index);
+  }
+
+  List<Listenable> _groupMessageListenablesFor(
+    ObservableChatMessageList messages,
+    AgentRunTimelineGroup group,
+  ) {
+    final seenIds = <String>{};
+    final listenables = <Listenable>[];
+    for (final message in [
+      ...group.visibleMessagesNewestFirst,
+      ...group.processMessagesNewestFirst,
+    ]) {
+      if (!seenIds.add(message.id)) {
+        continue;
+      }
+      final listenable = _messageListenableFor(messages, message.id);
+      if (listenable != null) {
+        listenables.add(listenable);
+      }
+    }
+    return listenables;
+  }
+
+  AgentRunTimelineGroup _refreshTimelineGroup(
+    ObservableChatMessageList messages,
+    AgentRunTimelineGroup group,
+  ) {
+    final latestById = <String, ChatMessageModel>{
+      for (final message in messages) message.id: message,
+    };
+    List<ChatMessageModel> refresh(List<ChatMessageModel> source) {
+      return source
+          .map((message) => latestById[message.id] ?? message)
+          .toList(growable: false);
+    }
+
+    return AgentRunTimelineGroup(
+      taskId: group.taskId,
+      visibleMessagesNewestFirst: refresh(group.visibleMessagesNewestFirst),
+      processMessagesNewestFirst: refresh(group.processMessagesNewestFirst),
+    );
+  }
+
+  Widget _buildTimelineListRow({
+    required List<ChatMessageModel> messageSource,
+    required AgentRunTimelineEntry entry,
+    required String? latestUserMessageId,
+    required EdgeInsets padding,
+  }) {
+    final rowKey = ValueKey('chat-message-list-item-${entry.key}');
+
+    Widget buildRow(AgentRunTimelineEntry rowEntry, {Key? key}) {
+      return _ChatTimelineListRow(
+        key: key,
+        entry: rowEntry,
+        latestUserMessageId: latestUserMessageId,
+        editingUserMessageId: widget.editingUserMessageId,
+        userMessageEditController: widget.userMessageEditController,
+        onUserMessageEditCancelled: widget.onUserMessageEditCancelled,
+        onUserMessageEditSaved: widget.onUserMessageEditSaved,
+        padding: padding,
+        onBeforeTaskExecute: widget.onBeforeTaskExecute,
+        onCancelTask: widget.onCancelTask,
+        parentScrollController: widget.scrollController,
+        onParentScrollHandoff: _handleParentScrollHandoff,
+        onRequestAuthorize: widget.onRequestAuthorize,
+        onUserMessageLongPressStart: widget.onUserMessageLongPressStart,
+        onStreamingTextLayoutChanged: _handleStreamingTextLayoutChanged,
+        onToggleAgentRunGroup: _toggleAgentRunGroup,
+        expandedAgentRunTaskIds: _expandedAgentRunTaskIds,
+        visualProfile: widget.visualProfile,
+        appearanceConfig: widget.appearanceConfig,
+      );
+    }
+
+    final observableMessages = messageSource is ObservableChatMessageList
+        ? messageSource
+        : null;
+    if (observableMessages == null) {
+      return buildRow(entry, key: rowKey);
+    }
+
+    final message = entry.message;
+    if (message != null) {
+      final listenable = _messageListenableFor(observableMessages, message.id);
+      if (listenable == null) {
+        return buildRow(entry, key: rowKey);
+      }
+      return ValueListenableBuilder<ChatMessageModel>(
+        key: rowKey,
+        valueListenable: listenable,
+        builder: (context, latestMessage, _) {
+          return buildRow(AgentRunTimelineEntry.message(latestMessage));
+        },
+      );
+    }
+
+    final group = entry.group;
+    if (group == null) {
+      return buildRow(entry, key: rowKey);
+    }
+    final listenables = _groupMessageListenablesFor(observableMessages, group);
+    if (listenables.isEmpty) {
+      return buildRow(entry, key: rowKey);
+    }
+    return AnimatedBuilder(
+      key: rowKey,
+      animation: Listenable.merge(listenables),
+      builder: (context, _) {
+        return buildRow(
+          AgentRunTimelineEntry.group(
+            _refreshTimelineGroup(observableMessages, group),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final reservedBottomInset = widget.bottomOverlayInset
+        .clamp(0.0, double.infinity)
+        .toDouble();
     final pageBackgroundColor =
         !widget.appearanceConfig.isActive && context.isDarkTheme
         ? context.omniPalette.pageBackground
@@ -1287,93 +1873,187 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
     final Widget content;
     if (widget.messages.isEmpty) {
-      final emptyStateBottomInset = widget.bottomOverlayInset
-          .clamp(0.0, double.infinity)
-          .toDouble();
       content = GestureDetector(
         onVerticalDragUpdate: (_) {},
         behavior: HitTestBehavior.opaque,
-        child: AnimatedPadding(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          padding: EdgeInsets.only(bottom: emptyStateBottomInset),
-          child: Center(
-            child: Text(
-              Localizations.localeOf(context).languageCode == 'en'
-                  ? 'How can I help you?'
-                  : '有什么可以帮助你的？',
-              style: TextStyle(
-                color:
-                    !widget.appearanceConfig.isActive &&
-                        widget.appearanceConfig.chatTextColorMode !=
-                            AppBackgroundTextColorMode.custom
-                    ? context.omniPalette.textSecondary
-                    : widget.visualProfile.secondaryTextColor,
-                fontSize: 14,
-              ),
+        child: Center(
+          child: Text(
+            Localizations.localeOf(context).languageCode == 'en'
+                ? 'How can I help you?'
+                : '有什么可以帮助你的？',
+            style: TextStyle(
+              color:
+                  !widget.appearanceConfig.isActive &&
+                      widget.appearanceConfig.chatTextColorMode !=
+                          AppBackgroundTextColorMode.custom
+                  ? context.omniPalette.textSecondary
+                  : widget.visualProfile.secondaryTextColor,
+              fontSize: 14,
             ),
           ),
         ),
       );
     } else {
+      String? latestUserMessageId;
+      final messageSource = _observableMessages ?? widget.messages;
+      final timelineEntries = buildAgentRunTimelineEntries(
+        List<ChatMessageModel>.from(messageSource),
+        activeTaskIds: widget.activeAgentTaskIds,
+      );
+      for (final item in messageSource) {
+        if (item.user == 1) {
+          latestUserMessageId = item.id;
+          break;
+        }
+      }
+      Widget listView = ListView.builder(
+        controller: widget.scrollController,
+        reverse: false,
+        physics: const ClampingScrollPhysics(),
+        clipBehavior: Clip.hardEdge,
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+        itemCount: timelineEntries.length,
+        itemBuilder: (context, index) {
+          final dataIndex = timelineEntries.length - 1 - index;
+          final entry = timelineEntries[dataIndex];
+          final isOldestEntry = dataIndex == timelineEntries.length - 1;
+          final needTopPadding = isOldestEntry && !entry.isUserMessage;
+          return _buildTimelineListRow(
+            messageSource: messageSource,
+            entry: entry,
+            latestUserMessageId: latestUserMessageId,
+            padding: EdgeInsets.only(top: needTopPadding ? 24.0 : 0.0),
+          );
+        },
+      );
       content = ClipRect(
         child: Align(
           alignment: Alignment.topCenter,
           child: NotificationListener<ScrollNotification>(
             onNotification: _handleListScrollNotification,
-            child: ListView.builder(
-              controller: widget.scrollController,
-              reverse: false,
-              shrinkWrap: true,
-              physics: const ClampingScrollPhysics(),
-              clipBehavior: Clip.hardEdge,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-              itemCount: widget.messages.length,
-              itemBuilder: (context, index) {
-                final dataIndex = widget.messages.length - 1 - index;
-                final message = widget.messages[dataIndex];
-                final isNewestMessage = dataIndex == 0;
-                final isOldestMessage = dataIndex == widget.messages.length - 1;
-                final bottomPadding = isNewestMessage
-                    ? widget.bottomOverlayInset
-                    : 0.0;
-                final needTopPadding = isOldestMessage && message.user != 1;
-                return Padding(
-                  key: ValueKey('chat-message-list-item-$dataIndex'),
-                  padding: EdgeInsets.only(
-                    top: needTopPadding ? 24.0 : 0.0,
-                    bottom: bottomPadding,
-                  ),
-                  child: MessageBubble(
-                    message: message,
-                    key: ValueKey(
-                      message.dbId ?? message.contentId ?? message.id,
-                    ),
-                    onBeforeTaskExecute: widget.onBeforeTaskExecute,
-                    onCancelTask: widget.onCancelTask,
-                    enableThinkingCollapse: true,
-                    parentScrollController: widget.scrollController,
-                    onParentScrollHandoff: _handleParentScrollHandoff,
-                    onRequestAuthorize: widget.onRequestAuthorize,
-                    onUserMessageLongPressStart:
-                        widget.onUserMessageLongPressStart,
-                    onStreamingTextLayoutChanged:
-                        _handleStreamingTextLayoutChanged,
-                    visualProfile: widget.visualProfile,
-                    appearanceConfig: widget.appearanceConfig,
-                  ),
-                );
-              },
-            ),
+            child: listView,
           ),
         ),
       );
     }
 
+    final paddedContent = AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      padding: EdgeInsets.only(bottom: reservedBottomInset),
+      child: content,
+    );
+
     if (pageBackgroundColor == null) {
-      return content;
+      return paddedContent;
     }
-    return ColoredBox(color: pageBackgroundColor, child: content);
+    return ColoredBox(color: pageBackgroundColor, child: paddedContent);
+  }
+}
+
+class _ChatTimelineListRow extends StatelessWidget {
+  const _ChatTimelineListRow({
+    super.key,
+    required this.entry,
+    required this.padding,
+    required this.onBeforeTaskExecute,
+    this.latestUserMessageId,
+    this.editingUserMessageId,
+    this.userMessageEditController,
+    this.onUserMessageEditCancelled,
+    this.onUserMessageEditSaved,
+    this.onCancelTask,
+    this.parentScrollController,
+    this.onParentScrollHandoff,
+    this.onRequestAuthorize,
+    this.onUserMessageLongPressStart,
+    this.onStreamingTextLayoutChanged,
+    required this.onToggleAgentRunGroup,
+    required this.expandedAgentRunTaskIds,
+    required this.visualProfile,
+    required this.appearanceConfig,
+  });
+
+  final AgentRunTimelineEntry entry;
+  final EdgeInsets padding;
+  final Future<void> Function() onBeforeTaskExecute;
+  final String? latestUserMessageId;
+  final String? editingUserMessageId;
+  final TextEditingController? userMessageEditController;
+  final VoidCallback? onUserMessageEditCancelled;
+  final ValueChanged<ChatMessageModel>? onUserMessageEditSaved;
+  final void Function(String taskId)? onCancelTask;
+  final ScrollController? parentScrollController;
+  final VoidCallback? onParentScrollHandoff;
+  final void Function(List<String> requiredPermissionIds)? onRequestAuthorize;
+  final void Function(ChatMessageModel message, LongPressStartDetails details)?
+  onUserMessageLongPressStart;
+  final VoidCallback? onStreamingTextLayoutChanged;
+  final void Function(String taskId) onToggleAgentRunGroup;
+  final Set<String> expandedAgentRunTaskIds;
+  final AppBackgroundVisualProfile visualProfile;
+  final AppBackgroundConfig appearanceConfig;
+
+  @override
+  Widget build(BuildContext context) {
+    if (entry.message != null) {
+      return _buildBubble(entry.message!);
+    }
+    final group = entry.group!;
+    return Padding(
+      padding: padding,
+      child: AgentRunGroupMessage(
+        group: group,
+        expanded: expandedAgentRunTaskIds.contains(group.taskId),
+        onToggleExpanded: () => onToggleAgentRunGroup(group.taskId),
+        onBeforeTaskExecute: onBeforeTaskExecute,
+        onCancelTask: onCancelTask,
+        parentScrollController: parentScrollController,
+        onParentScrollHandoff: onParentScrollHandoff,
+        onRequestAuthorize: onRequestAuthorize,
+        onStreamingTextLayoutChanged: onStreamingTextLayoutChanged,
+        visualProfile: visualProfile,
+        appearanceConfig: appearanceConfig,
+      ),
+    );
+  }
+
+  Widget _buildBubble(ChatMessageModel currentMessage) {
+    final canEditUserMessage =
+        currentMessage.user == 1 && currentMessage.id == latestUserMessageId;
+    final isEditingUserMessage =
+        canEditUserMessage &&
+        editingUserMessageId == currentMessage.id &&
+        userMessageEditController != null;
+    return Padding(
+      padding: padding,
+      child: MessageBubble(
+        message: currentMessage,
+        key: ValueKey(
+          currentMessage.dbId ?? currentMessage.contentId ?? currentMessage.id,
+        ),
+        onBeforeTaskExecute: onBeforeTaskExecute,
+        onCancelTask: onCancelTask,
+        enableThinkingCollapse: true,
+        parentScrollController: parentScrollController,
+        onParentScrollHandoff: onParentScrollHandoff,
+        onRequestAuthorize: onRequestAuthorize,
+        onUserMessageLongPressStart: onUserMessageLongPressStart,
+        isUserMessageEditing: isEditingUserMessage,
+        userMessageEditController: isEditingUserMessage
+            ? userMessageEditController
+            : null,
+        onCancelUserEdit: isEditingUserMessage
+            ? onUserMessageEditCancelled
+            : null,
+        onSaveUserEdit: isEditingUserMessage
+            ? () => onUserMessageEditSaved?.call(currentMessage)
+            : null,
+        onStreamingTextLayoutChanged: onStreamingTextLayoutChanged,
+        visualProfile: visualProfile,
+        appearanceConfig: appearanceConfig,
+      ),
+    );
   }
 }
 
@@ -1500,6 +2180,8 @@ class ChatInputWrapper extends StatelessWidget {
   final String? contextUsageTooltipMessage;
   final VoidCallback? onLongPressContextUsageRing;
   final ValueChanged<double>? onInputHeightChanged;
+  final CodexPermissionMode? codexPermissionMode;
+  final ValueChanged<CodexPermissionMode>? onCodexPermissionModeChanged;
   final bool translucent;
 
   const ChatInputWrapper({
@@ -1528,6 +2210,8 @@ class ChatInputWrapper extends StatelessWidget {
     this.contextUsageTooltipMessage,
     this.onLongPressContextUsageRing,
     this.onInputHeightChanged,
+    this.codexPermissionMode,
+    this.onCodexPermissionModeChanged,
     this.translucent = false,
   });
 
@@ -1564,6 +2248,8 @@ class ChatInputWrapper extends StatelessWidget {
             contextUsageRatio: contextUsageRatio,
             contextUsageTooltipMessage: contextUsageTooltipMessage,
             onLongPressContextUsageRing: onLongPressContextUsageRing,
+            codexPermissionMode: codexPermissionMode,
+            onCodexPermissionModeChanged: onCodexPermissionModeChanged,
             onInputHeightChanged: onInputHeightChanged,
           ),
         ],
