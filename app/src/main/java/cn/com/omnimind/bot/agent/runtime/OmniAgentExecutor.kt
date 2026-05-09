@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.agent
 import android.content.Context
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.bot.mcp.RemoteMcpDiscoveryRegistry
+import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.json.Json
@@ -73,6 +74,9 @@ class OmniAgentExecutor(
             val promptMemoryContext = runCatching {
                 memoryService.buildPromptContext()
             }.getOrNull()
+            val activeWorkbenchProjectContext = runCatching {
+                WorkbenchProjectStore(context).activeProjectPromptContext()
+            }.getOrNull()
             val skillIndexService = SkillIndexService(context, workspaceManager)
             val skillLoader = SkillLoader(workspaceManager)
             val installedSkills = skillIndexService.listInstalledSkills()
@@ -109,7 +113,8 @@ class OmniAgentExecutor(
                     ?: workspaceManager.skillsRoot().absolutePath,
                 skillsRootAndroidPath = workspaceManager.skillsRoot().absolutePath,
                 resolvedSkills = resolvedSkills,
-                memoryContext = promptMemoryContext
+                memoryContext = promptMemoryContext,
+                activeWorkbenchProjectContext = activeWorkbenchProjectContext
             )
 
             val llmClient = HttpAgentLlmClient(
@@ -181,7 +186,8 @@ class OmniAgentExecutor(
         skillsRootShellPath: String,
         skillsRootAndroidPath: String,
         resolvedSkills: List<ResolvedSkillContext>,
-        memoryContext: WorkspaceMemoryPromptContext?
+        memoryContext: WorkspaceMemoryPromptContext?,
+        activeWorkbenchProjectContext: String?
     ): List<cn.com.omnimind.baselib.llm.ChatCompletionMessage> {
         val historyMessages = promptSeed.historyMessages.toMutableList()
         if (historyMessages.lastOrNull()?.role == "user") {
@@ -195,6 +201,7 @@ class OmniAgentExecutor(
             skillsRootAndroidPath = skillsRootAndroidPath,
             resolvedSkills = resolvedSkills,
             memoryContext = memoryContext,
+            activeWorkbenchProjectContext = activeWorkbenchProjectContext,
             locale = AppLocaleManager.resolvePromptLocale(context)
         )
         messages.add(

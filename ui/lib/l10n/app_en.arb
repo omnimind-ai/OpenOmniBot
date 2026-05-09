@@ -1001,11 +1001,11 @@
   "workbenchProjectModeTitle": "Project Workbench",
   "workbenchFlutterDisplay": "Flutter Display",
   "workbenchProjectSwitcher": "Switch Project",
-  "workbenchProjectGenerateTitle": "Continue a Vibe Project from Home",
-  "workbenchProjectGenerateSubtitle": "This keeps the same input habit as Home: one requirement is split by the built-in OOB skill into a Project, multiple frontend Displays, business APIs, and persistent data.",
-  "workbenchProjectPromptHint": "Describe the Project you want",
+  "workbenchProjectGenerateTitle": "Project container",
+  "workbenchProjectGenerateSubtitle": "This page only selects and opens Project containers. Create, edit, and hot update from the Home input with the active Project toolbox.",
+  "workbenchProjectPromptHint": "Return Home to describe the Project",
   "workbenchProjectDefaultPrompt": "I want to create a simple todolist management system that can add todos and archive todos",
-  "workbenchProjectGenerateButton": "Create and enter use mode",
+  "workbenchProjectGenerateButton": "Continue from Home",
   "workbenchInputProjectTooltip": "Open Project Workbench",
   "workbenchGeneratedTodoProjectName": "Todo List Workbench",
   "workbenchPromptSeedAddTodo": "Verify adding a todo",
@@ -1028,10 +1028,11 @@
   },
   "workbenchUnnamedDisplay": "Unnamed display",
   "workbenchOpenDisplay": "Open this frontend",
+  "workbenchDebugDisplay": "Debug this frontend",
   "workbenchProjectCurrentTitle": "Project use surface",
-  "workbenchProjectCurrentSubtitle": "By default this opens usable frontends and returns to Home. Debug info, assets, and APIs stay in Debug mode.",
+  "workbenchProjectCurrentSubtitle": "Default opens return to Home; debug opens return to the Workbench. Hot updates run from the Home input with the active Project.",
   "workbenchProjectModeCreateTitle": "Vibe project entry",
-  "workbenchProjectModeSubtitle": "Open Project info, generated frontend, Workspace, and distribution package here. Business APIs still run through the same backend.",
+  "workbenchProjectModeSubtitle": "Select a Project as the Agent workspace, open its Flutter displays, inspect API execution counts, and manage Workspace, export, and delete.",
   "workbenchProjectModeCreateButton": "Create Todo demo",
   "workbenchProjectModeProjectsTitle": "Current Project APIs",
   "workbenchProjectApiForProject": "{projectName} APIs",
@@ -1071,6 +1072,7 @@
   "workbenchProjectInfoRuntimeValue": "data/todos.json / logs/api_calls.jsonl",
   "workbenchDebugToolsTitle": "Debug tools",
   "workbenchDebugHotUpdate": "Use floating Xiaowan to hot-update this Project",
+  "workbenchDebugHotUpdateHomeInput": "Return to the Home input and describe the edit; the Agent will use the active Project toolbox for the hot update",
   "workbenchDebugVlmTest": "Run a VLM human-operation simulation",
   "workbenchDebugComingSoon": "Pending",
   "workbenchExportProjectPackage": "Export package",
@@ -1105,6 +1107,40 @@
     }
   },
   "workbenchAndroidAssetsEmpty": "No imported Android apps or projects yet",
+  "workbenchProjectActivateFailed": "Project activation failed",
+  "workbenchProjectActivated": "Activated {projectName}",
+  "@workbenchProjectActivated": {
+    "placeholders": {
+      "projectName": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchActiveProject": "Active",
+  "workbenchInactiveProject": "Inactive",
+  "workbenchContinueInHome": "Activate and return Home",
+  "workbenchProjectHelpTooltip": "Project Workbench help",
+  "workbenchProjectHelpTitle": "Project Workbench",
+  "workbenchProjectHelpHomeInput": "Create, edit, and hot update Projects from the Home input.",
+  "workbenchProjectHelpSelect": "Select a Project here to activate it as the Agent workspace.",
+  "workbenchProjectHelpDisplays": "Each Project can own multiple Flutter Displays; open containers from here.",
+  "workbenchProjectHelpApis": "Project APIs are the current Project business toolbox and stay separate from MCP tools.",
+  "workbenchActiveProjectChip": "Project: {projectName}",
+  "@workbenchActiveProjectChip": {
+    "placeholders": {
+      "projectName": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchAndroidAssetCount": "{count} Android assets",
+  "@workbenchAndroidAssetCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "workbenchTodoCount": "{openCount} open / {finishedCount} finished",
   "@workbenchTodoCount": {
     "placeholders": {

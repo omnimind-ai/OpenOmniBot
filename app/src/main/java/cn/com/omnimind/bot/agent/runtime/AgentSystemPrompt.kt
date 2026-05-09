@@ -12,6 +12,7 @@ object AgentSystemPrompt {
         skillsRootAndroidPath: String,
         resolvedSkills: List<ResolvedSkillContext>,
         memoryContext: WorkspaceMemoryPromptContext?,
+        activeWorkbenchProjectContext: String?,
         locale: PromptLocale = AppLocaleManager.currentPromptLocale()
     ): String {
         val visibleInstalledSkills = installedSkills.filter { skill ->
@@ -135,6 +136,24 @@ object AgentSystemPrompt {
             enUS = "Workspace memory is unavailable, so continue without memory context for this turn."
         ).resolve(locale)
 
+        val workbenchProjectSection = activeWorkbenchProjectContext
+            ?.takeIf { it.isNotBlank() }
+            ?.let { contextText ->
+                when (locale) {
+                    PromptLocale.ZH_CN -> """
+                        当前激活的 OOB Workbench Project：
+                        $contextText
+                    """.trimIndent()
+                    PromptLocale.EN_US -> """
+                        Active OOB Workbench Project:
+                        $contextText
+                    """.trimIndent()
+                }
+            } ?: LocalizedText(
+                zhCN = "当前未激活 OOB Workbench Project。只有用户选择 Project 后，才把 Project API 当作当前工作环境 toolbox。",
+                enUS = "No OOB Workbench Project is active. Treat Project APIs as the current toolbox only after the user selects a Project."
+            ).resolve(locale)
+
         return when (locale) {
             PromptLocale.ZH_CN -> """
                 你是在 Alpine 工作环境内的 AI Agent，你同时能通过工具调用操作用户的手机。
@@ -195,6 +214,7 @@ object AgentSystemPrompt {
                 $loadedSkillSection
                 $soulSection
                 $memorySection
+                $workbenchProjectSection
             """.trimIndent()
             PromptLocale.EN_US -> """
                 You are an AI Agent operating inside an Alpine workspace environment, and you can also control the user's phone through tool calls.
@@ -255,6 +275,7 @@ object AgentSystemPrompt {
                 $loadedSkillSection
                 $soulSection
                 $memorySection
+                $workbenchProjectSection
             """.trimIndent()
         }
     }

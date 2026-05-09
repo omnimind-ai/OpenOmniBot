@@ -301,6 +301,8 @@ void main() {
             switch (call.method) {
               case 'workbenchProjectList':
                 return [_projectPayload()];
+              case 'workbenchProjectActiveGet':
+                return {'success': true, 'project': null};
               case 'workbenchProjectExport':
                 return {
                   'success': true,
@@ -342,9 +344,11 @@ void main() {
 
       expect(calls, [
         'workbenchProjectList',
+        'workbenchProjectActiveGet',
         'workbenchProjectExport',
         'workbenchProjectDelete',
         'workbenchProjectList',
+        'workbenchProjectActiveGet',
       ]);
       expect(export?.success, isTrue);
       expect(export?.displayPath, '/workspace/projects/exports/export.zip');
@@ -356,6 +360,70 @@ void main() {
       expect(deleted?.remainingProjectCount, 0);
     },
   );
+
+  test('project mode activates and clears active project context', () async {
+    final service = _projectModeService();
+
+    await service.refresh();
+    final active = await service.activateProject(service.projects.single);
+
+    expect(active?.projectId, workbenchTodoDefaultProjectId);
+    expect(service.activeProject?.projectId, workbenchTodoDefaultProjectId);
+
+    await service.deactivateProject();
+
+    expect(service.activeProject, isNull);
+  });
+
+  test('native service activates project through MethodChannel', () async {
+    const channel = MethodChannel('cn.com.omnimind.bot/AssistCoreEvent');
+    final calls = <String>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call.method);
+          switch (call.method) {
+            case 'workbenchProjectList':
+              return [_projectPayload()];
+            case 'workbenchProjectActiveGet':
+              return {'success': true, 'project': null};
+            case 'workbenchProjectActivate':
+              return {
+                'success': true,
+                'activeProject': {
+                  'projectId': workbenchTodoDefaultProjectId,
+                  'skillId': 'oob-native-workbench',
+                },
+                'project': _projectPayload(),
+              };
+            case 'workbenchProjectDeactivate':
+              return {
+                'success': true,
+                'previousProjectId': workbenchTodoDefaultProjectId,
+              };
+            default:
+              fail('Unexpected method ${call.method}');
+          }
+        });
+
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final service = WorkbenchProjectModeService.native();
+    await service.refresh();
+    final active = await service.activateProject(service.projects.single);
+    await service.deactivateProject();
+
+    expect(calls, [
+      'workbenchProjectList',
+      'workbenchProjectActiveGet',
+      'workbenchProjectActivate',
+      'workbenchProjectDeactivate',
+    ]);
+    expect(active?.projectId, workbenchTodoDefaultProjectId);
+    expect(service.activeProject, isNull);
+  });
 
   test(
     'native service hot updates project through MethodChannel control API',
@@ -450,6 +518,8 @@ void main() {
             switch (call.method) {
               case 'workbenchProjectList':
                 return [_projectPayload()];
+              case 'workbenchProjectActiveGet':
+                return {'success': true, 'project': null};
               case 'workbenchProjectIngestAndroid':
                 expect(
                   call.arguments['sourcePath'],
@@ -484,7 +554,11 @@ void main() {
         '/workspace/apps/demo.apk',
       );
 
-      expect(calls, ['workbenchProjectList', 'workbenchProjectIngestAndroid']);
+      expect(calls, [
+        'workbenchProjectList',
+        'workbenchProjectActiveGet',
+        'workbenchProjectIngestAndroid',
+      ]);
       expect(result?.success, isTrue);
       expect(result?.androidManifestPath, contains('android/manifest.json'));
       expect(service.projects.single.androidAssets.single.sourceKind, 'apk');
@@ -513,6 +587,7 @@ class _TestWorkbenchProjectBackend implements WorkbenchProjectBackend {
   int _todoSequence;
   final Map<String, int> _apiCallCounts = {};
   bool _hasProject = true;
+  WorkbenchProject? _activeProject;
 
   @override
   Future<WorkbenchProject> createProject({
@@ -550,6 +625,20 @@ class _TestWorkbenchProjectBackend implements WorkbenchProjectBackend {
   @override
   Future<List<WorkbenchProject>> listProjects() async =>
       _hasProject ? [_project] : const [];
+
+  @override
+  Future<WorkbenchProject?> activateProject(String projectId) async {
+    _activeProject = _project;
+    return _activeProject;
+  }
+
+  @override
+  Future<WorkbenchProject?> getActiveProject() async => _activeProject;
+
+  @override
+  Future<void> deactivateProject() async {
+    _activeProject = null;
+  }
 
   @override
   Future<List<WorkbenchToolSpec>> listApis(String projectId) async {
@@ -661,6 +750,9 @@ class _TestWorkbenchProjectBackend implements WorkbenchProjectBackend {
     _project = WorkbenchTodoProjectFactory.create();
     _apiCallCounts.clear();
     _hasProject = false;
+    if (_activeProject?.projectId == deletedProjectId) {
+      _activeProject = null;
+    }
     return WorkbenchProjectDeleteResult(
       success: true,
       projectId: deletedProjectId,

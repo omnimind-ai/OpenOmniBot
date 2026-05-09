@@ -98,7 +98,8 @@ class SkillRuntimeBehaviorTest {
             skillsRootShellPath = "/workspace/.omnibot/skills",
             skillsRootAndroidPath = "/data/user/0/cn.com.omnimind.bot/workspace/.omnibot/skills",
             resolvedSkills = emptyList(),
-            memoryContext = null
+            memoryContext = null,
+            activeWorkbenchProjectContext = null
         )
 
         assertTrue(prompt.contains("id=active-skill"))

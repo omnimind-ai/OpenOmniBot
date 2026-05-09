@@ -4066,6 +4066,49 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
+    fun workbenchProjectActivate(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                val projectId = call.argument<String>("projectId")?.trim().orEmpty()
+                workbenchProjectStore.activateProject(projectId)
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_ACTIVATE_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
+    fun workbenchProjectActiveGet(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                workbenchProjectStore.getActiveProject()
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_ACTIVE_GET_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
+    fun workbenchProjectDeactivate(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                workbenchProjectStore.deactivateProject()
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_DEACTIVATE_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
     fun workbenchProjectDelete(call: MethodCall, result: MethodChannel.Result) {
         workJob.launch {
             runCatching {

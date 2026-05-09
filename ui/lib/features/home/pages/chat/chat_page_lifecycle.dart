@@ -26,6 +26,10 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
 
     _runtimeCoordinator.ensureInitialized();
     _runtimeCoordinator.addListener(_handleRuntimeCoordinatorChanged);
+    _workbenchActiveProjectService.addListener(
+      _handleWorkbenchActiveProjectChanged,
+    );
+    unawaited(_workbenchActiveProjectService.refresh());
     AppUpdateService.statusNotifier.addListener(_handleAppUpdateStatusChanged);
     _appUpdateStatus = AppUpdateService.statusNotifier.value;
     unawaited(AppUpdateService.initialize());
@@ -538,6 +542,10 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       _subscribedRoute = null;
     }
     _runtimeCoordinator.removeListener(_handleRuntimeCoordinatorChanged);
+    _workbenchActiveProjectService.removeListener(
+      _handleWorkbenchActiveProjectChanged,
+    );
+    _workbenchActiveProjectService.dispose();
     AppUpdateService.statusNotifier.removeListener(
       _handleAppUpdateStatusChanged,
     );
@@ -577,6 +585,14 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     await _loadNormalChatModelContext();
     if (!mounted) return;
     await _refreshLiveBrowserSessionSnapshot(syncRuntime: true);
+    if (!mounted) return;
+    await _workbenchActiveProjectService.refresh();
+  }
+
+  void _handleWorkbenchActiveProjectChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _handleExternalConversationListChanged() async {

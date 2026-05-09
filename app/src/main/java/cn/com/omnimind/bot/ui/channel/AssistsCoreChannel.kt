@@ -322,6 +322,15 @@ class AssistsCoreChannel {
                 "workbenchProjectOpen" -> {
                     assistsCoreManager!!.workbenchProjectOpen(call, result)
                 }
+                "workbenchProjectActivate" -> {
+                    assistsCoreManager!!.workbenchProjectActivate(call, result)
+                }
+                "workbenchProjectActiveGet" -> {
+                    assistsCoreManager!!.workbenchProjectActiveGet(call, result)
+                }
+                "workbenchProjectDeactivate" -> {
+                    assistsCoreManager!!.workbenchProjectDeactivate(call, result)
+                }
                 "workbenchProjectDelete" -> {
                     assistsCoreManager!!.workbenchProjectDelete(call, result)
                 }

@@ -912,6 +912,7 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                       onOpenWorkbenchProject: () {
                         GoRouterManager.push('/workbench/projects');
                       },
+                      topBanner: _buildActiveWorkbenchProjectBanner(),
                       attachments: _pendingAttachments,
                       onRemoveAttachment: _removePendingAttachment,
                       selectedModelOverrideId:
@@ -1024,6 +1025,59 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
           ),
         _buildBrowserOverlay(constraints),
       ],
+    );
+  }
+
+  Widget? _buildActiveWorkbenchProjectBanner() {
+    final project = _workbenchActiveProjectService.activeProject;
+    if (project == null || _activeMode != ChatPageMode.normal) {
+      return null;
+    }
+    final palette = context.omniPalette;
+    final name = project.name.trim().isEmpty ? project.projectId : project.name;
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 360),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: palette.surfacePrimary,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.dashboard_customize_outlined,
+            size: 16,
+            color: palette.accentPrimary,
+          ),
+          const SizedBox(width: 7),
+          Flexible(
+            child: Text(
+              context.l10n.workbenchActiveProjectChip(name),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: palette.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              unawaited(_workbenchActiveProjectService.deactivate());
+            },
+            child: Icon(
+              Icons.close_rounded,
+              size: 16,
+              color: palette.textTertiary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

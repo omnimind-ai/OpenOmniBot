@@ -23,6 +23,9 @@ List<GoRoute> workbenchRoutes = [
         projectId: state.uri.queryParameters['projectId'],
         displayId: state.uri.queryParameters['displayId'],
         returnTo: state.uri.queryParameters['returnTo'],
+        debugMode:
+            state.uri.queryParameters['debug'] == '1' ||
+            state.uri.queryParameters['debug'] == 'true',
       ),
     ),
   ),

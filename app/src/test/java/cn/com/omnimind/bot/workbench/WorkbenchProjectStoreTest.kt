@@ -233,6 +233,32 @@ class WorkbenchProjectStoreTest {
     }
 
     @Test
+    fun activeProjectPersistsToolboxManifestAndClearsOnDelete() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        store.createProject(mapOf("projectId" to WORKBENCH_DEFAULT_PROJECT_ID))
+
+        val activated = store.activateProject(WORKBENCH_DEFAULT_PROJECT_ID)
+        val active = store.getActiveProject()
+        val promptContext = store.activeProjectPromptContext().orEmpty()
+
+        assertTrue(activated["success"] == true)
+        assertTrue(root.resolve("projects/active_project.json").exists())
+        assertEquals(
+            WORKBENCH_DEFAULT_PROJECT_ID,
+            (active["project"] as Map<*, *>)["projectId"]
+        )
+        assertTrue(promptContext.contains(WORKBENCH_DEFAULT_PROJECT_ID))
+        assertTrue(promptContext.contains(WORKBENCH_TODO_ADD_TOOL_ID))
+        assertTrue(promptContext.contains("workbench_api_call"))
+
+        store.deleteProject(WORKBENCH_DEFAULT_PROJECT_ID)
+
+        assertFalse(root.resolve("projects/active_project.json").exists())
+        assertEquals(null, store.getActiveProject()["project"])
+    }
+
+    @Test
     fun ingestAndroidAssetWritesManifestLogAndKeepsApiRegistryClean() {
         val root = Files.createTempDirectory("workbench-store-test").toFile()
         val store = WorkbenchProjectStore(root)

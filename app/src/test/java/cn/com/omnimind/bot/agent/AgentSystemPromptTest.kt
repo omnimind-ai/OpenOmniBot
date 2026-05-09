@@ -26,6 +26,7 @@ class AgentSystemPromptTest {
             skillsRootAndroidPath = "/data/user/0/cn.com.omnimind.bot/workspace/.omnibot/skills",
             resolvedSkills = emptyList(),
             memoryContext = null,
+            activeWorkbenchProjectContext = null,
             locale = PromptLocale.ZH_CN
         )
 
@@ -67,11 +68,39 @@ class AgentSystemPromptTest {
             skillsRootAndroidPath = "/data/user/0/cn.com.omnimind.bot/workspace/.omnibot/skills",
             resolvedSkills = emptyList(),
             memoryContext = null,
+            activeWorkbenchProjectContext = null,
             locale = PromptLocale.EN_US
         )
 
         assertTrue(prompt.contains("You are an AI Agent operating inside an Alpine workspace environment"))
         assertTrue(prompt.contains("File and artifact rules"))
         assertTrue(prompt.contains("Skills:"))
+    }
+
+    @Test
+    fun buildInjectsActiveWorkbenchProjectContext() {
+        val prompt = AgentSystemPrompt.build(
+            workspace = AgentWorkspaceDescriptor(
+                id = "conversation-1",
+                rootPath = "/workspace",
+                androidRootPath = "/data/user/0/cn.com.omnimind.bot/workspace",
+                uriRoot = "omnibot://workspace",
+                currentCwd = "/workspace/demo",
+                androidCurrentCwd = "/data/user/0/cn.com.omnimind.bot/workspace/demo",
+                shellRootPath = "/workspace",
+                retentionPolicy = "shared_root"
+            ),
+            installedSkills = emptyList(),
+            skillsRootShellPath = "/workspace/.omnibot/skills",
+            skillsRootAndroidPath = "/data/user/0/cn.com.omnimind.bot/workspace/.omnibot/skills",
+            resolvedSkills = emptyList(),
+            memoryContext = null,
+            activeWorkbenchProjectContext = "projectId: oob-workbench-todo-log\napi: todo.add",
+            locale = PromptLocale.ZH_CN
+        )
+
+        assertTrue(prompt.contains("当前激活的 OOB Workbench Project"))
+        assertTrue(prompt.contains("oob-workbench-todo-log"))
+        assertTrue(prompt.contains("todo.add"))
     }
 }

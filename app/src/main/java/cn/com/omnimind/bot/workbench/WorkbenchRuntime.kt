@@ -148,6 +148,8 @@ class WorkbenchProjectStore(
         get() = File(projectsRoot, "registry.json")
     private val apiRegistryFile: File
         get() = File(projectsRoot, "api_registry.json")
+    private val activeProjectFile: File
+        get() = File(projectsRoot, "active_project.json")
     private val exportsRoot: File
         get() = File(projectsRoot, "exports")
 
@@ -239,6 +241,103 @@ class WorkbenchProjectStore(
     }
 
     /**
+     * Marks one registered Project as the active Workbench context for the Agent.
+     *
+     * @param projectId Project whose APIs, displays, Workspace path, and skill should be injected
+     * into the next Agent prompt as the current Project toolbox.
+     * @return Active Project manifest plus the refreshed Project payload.
+     */
+    @Synchronized
+    fun activateProject(projectId: String): Map<String, Any?> {
+        val record = findProject(projectId)
+        val manifest = activeProjectManifest(record, nowIso())
+        projectsRoot.mkdirs()
+        activeProjectFile.writeText(gson.toJson(manifest))
+        return linkedMapOf(
+            "success" to true,
+            "activeProject" to manifest,
+            "project" to projectPayload(record)
+        )
+    }
+
+    /**
+     * Loads the active Workbench Project context when one is still registered.
+     *
+     * @return A nullable active Project payload. Stale active ids are cleared and reported as
+     * inactive, so callers can safely refresh the Home input chip.
+     */
+    @Synchronized
+    fun getActiveProject(): Map<String, Any?> {
+        val activeProjectId = readActiveProjectId()
+        if (activeProjectId.isNullOrBlank()) {
+            return linkedMapOf("success" to true, "activeProject" to null, "project" to null)
+        }
+        val record = readProjectRegistry().firstOrNull { it.projectId == activeProjectId }
+        if (record == null) {
+            activeProjectFile.delete()
+            return linkedMapOf("success" to true, "activeProject" to null, "project" to null)
+        }
+        return linkedMapOf(
+            "success" to true,
+            "activeProject" to activeProjectManifest(record),
+            "project" to projectPayload(record)
+        )
+    }
+
+    /**
+     * Clears the active Workbench Project without deleting the Project itself.
+     *
+     * @return Small status payload for MethodChannel and UI callers.
+     */
+    @Synchronized
+    fun deactivateProject(): Map<String, Any?> {
+        val previousProjectId = readActiveProjectId()
+        activeProjectFile.delete()
+        return linkedMapOf(
+            "success" to true,
+            "previousProjectId" to previousProjectId
+        )
+    }
+
+    /**
+     * Builds the compact prompt section injected into the Agent system prompt.
+     *
+     * @return Markdown-like text describing the active Project toolbox, or null when inactive.
+     */
+    @Synchronized
+    fun activeProjectPromptContext(): String? {
+        val activeProjectId = readActiveProjectId() ?: return null
+        val record = readProjectRegistry().firstOrNull { it.projectId == activeProjectId }
+            ?: run {
+                activeProjectFile.delete()
+                return null
+            }
+        val displays = workbenchDisplays(record).joinToString("\n") { display ->
+            val title = display["title"]?.toString().orEmpty()
+            val shortName = display["shortName"]?.toString().orEmpty()
+            val route = display["route"]?.toString().orEmpty()
+            "- ${display["id"]}: $title ($shortName) -> $route"
+        }
+        val counts = apiExecutionCounts(record.projectId)
+        val apis = projectApis(record.projectId).joinToString("\n") { api ->
+            "- ${api.apiId}: ${api.displayName}; inputs=${api.inputSchema.keys}; " +
+                "outputs=${api.outputSchema.keys}; executionCount=${counts[api.apiId] ?: 0}"
+        }
+        return """
+            Active OOB Workbench Project:
+            - projectId: ${record.projectId}
+            - name: ${record.name}
+            - workspace: ${record.spacePath}
+            - skill: oob-native-workbench
+            - displays:
+            $displays
+            - project business APIs:
+            $apis
+            Rules: treat these APIs as the active Project toolbox, not as MCP tools. To use them, call `workbench_api_call` with this projectId and the apiId. To create, export, delete, open, or hot-update the Project, use the `workbench_project_*` control tools instead of writing registry files.
+        """.trimIndent()
+    }
+
+    /**
      * Deletes one registered Workbench project and removes its registered APIs and files.
      *
      * @param projectId Project id stored in the registry. The same normalization as create/get is
@@ -255,6 +354,9 @@ class WorkbenchProjectStore(
         writeApiRegistry(remainingApis)
         if (projectPath.exists()) {
             projectPath.deleteRecursively()
+        }
+        if (readActiveProjectId() == record.projectId) {
+            activeProjectFile.delete()
         }
         return linkedMapOf(
             "success" to true,
@@ -573,6 +675,23 @@ class WorkbenchProjectStore(
             "todos" to todos.map { it.toPayload() },
             "createdAt" to record.createdAt,
             "updatedAt" to record.updatedAt
+        )
+    }
+
+    private fun activeProjectManifest(
+        record: WorkbenchProjectRecord,
+        activatedAt: String? = null
+    ): Map<String, Any?> {
+        val counts = apiExecutionCounts(record.projectId)
+        return linkedMapOf(
+            "projectId" to record.projectId,
+            "name" to record.name,
+            "route" to record.route,
+            "spacePath" to record.spacePath,
+            "skillId" to "oob-native-workbench",
+            "displays" to workbenchDisplays(record),
+            "apis" to projectApis(record.projectId).map { it.toPayload(counts[it.apiId] ?: 0) },
+            "activatedAt" to (activatedAt ?: readActiveProjectActivatedAt())
         )
     }
 
@@ -1131,6 +1250,28 @@ class WorkbenchProjectStore(
         return projectApis(projectId).firstOrNull { api ->
             api.apiId == normalized || api.toolId == normalized
         } ?: throw IllegalArgumentException("Workbench API not found: $apiIdOrToolId")
+    }
+
+    private fun readActiveProjectId(): String? {
+        if (!activeProjectFile.exists()) return null
+        return runCatching {
+            val payload = gson.fromJson<Map<String, Any?>>(
+                activeProjectFile.readText(),
+                mapType
+            ) ?: return null
+            payload["projectId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        }.getOrNull()
+    }
+
+    private fun readActiveProjectActivatedAt(): String? {
+        if (!activeProjectFile.exists()) return null
+        return runCatching {
+            val payload = gson.fromJson<Map<String, Any?>>(
+                activeProjectFile.readText(),
+                mapType
+            ) ?: return null
+            payload["activatedAt"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        }.getOrNull()
     }
 
     private fun readProjectRegistry(): List<WorkbenchProjectRecord> {

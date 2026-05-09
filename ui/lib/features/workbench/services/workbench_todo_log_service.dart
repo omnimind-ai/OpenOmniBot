@@ -18,6 +18,12 @@ abstract class WorkbenchProjectBackend {
 
   Future<List<WorkbenchProject>> listProjects();
 
+  Future<WorkbenchProject?> activateProject(String projectId);
+
+  Future<WorkbenchProject?> getActiveProject();
+
+  Future<void> deactivateProject();
+
   Future<List<WorkbenchToolSpec>> listApis(String projectId);
 
   Future<WorkbenchToolRunResult> callApi({
@@ -99,6 +105,36 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
         .whereType<Map<dynamic, dynamic>>()
         .map(WorkbenchProject.fromMap)
         .toList(growable: false);
+  }
+
+  @override
+  Future<WorkbenchProject?> activateProject(String projectId) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'workbenchProjectActivate',
+      {'projectId': projectId},
+    );
+    final project = result?['project'];
+    return project is Map<dynamic, dynamic>
+        ? WorkbenchProject.fromMap(project)
+        : null;
+  }
+
+  @override
+  Future<WorkbenchProject?> getActiveProject() async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'workbenchProjectActiveGet',
+    );
+    final project = result?['project'];
+    return project is Map<dynamic, dynamic>
+        ? WorkbenchProject.fromMap(project)
+        : null;
+  }
+
+  @override
+  Future<void> deactivateProject() async {
+    await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'workbenchProjectDeactivate',
+    );
   }
 
   @override
@@ -305,10 +341,12 @@ class WorkbenchProjectModeService extends ChangeNotifier {
 
   final WorkbenchProjectBackend _backend;
   List<WorkbenchProject> _projects = const [];
+  WorkbenchProject? _activeProject;
   bool _loading = false;
   String? _errorMessage;
 
   List<WorkbenchProject> get projects => _projects;
+  WorkbenchProject? get activeProject => _activeProject;
   bool get loading => _loading;
   String? get errorMessage => _errorMessage;
 
@@ -318,6 +356,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     notifyListeners();
     try {
       _projects = await _backend.listProjects();
+      _activeProject = await _backend.getActiveProject();
     } catch (error) {
       _errorMessage = error.toString();
     } finally {
@@ -346,6 +385,54 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       return null;
     } finally {
       _loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<WorkbenchProject?> activateProject(WorkbenchProject project) async {
+    _loading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final active = await _backend.activateProject(project.projectId);
+      _activeProject = active ?? project;
+      _projects = _projects
+          .map(
+            (item) => item.projectId == _activeProject!.projectId
+                ? _activeProject!
+                : item,
+          )
+          .toList(growable: false);
+      return _activeProject;
+    } catch (error) {
+      _errorMessage = error.toString();
+      return null;
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<WorkbenchProject?> getActiveProject() async {
+    try {
+      _activeProject = await _backend.getActiveProject();
+      notifyListeners();
+      return _activeProject;
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<void> deactivateProject() async {
+    try {
+      await _backend.deactivateProject();
+      _activeProject = null;
+      _errorMessage = null;
+      notifyListeners();
+    } catch (error) {
+      _errorMessage = error.toString();
       notifyListeners();
     }
   }
@@ -483,6 +570,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       final result = await _backend.deleteProject(project.projectId);
       if (result.success) {
         _projects = await _backend.listProjects();
+        _activeProject = await _backend.getActiveProject();
       }
       return result;
     } catch (error) {
@@ -575,5 +663,40 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+  }
+}
+
+class WorkbenchActiveProjectService extends ChangeNotifier {
+  WorkbenchActiveProjectService({required WorkbenchProjectBackend backend})
+    : _backend = backend;
+
+  factory WorkbenchActiveProjectService.native() {
+    return WorkbenchActiveProjectService(
+      backend: NativeWorkbenchProjectBackend(),
+    );
+  }
+
+  final WorkbenchProjectBackend _backend;
+  WorkbenchProject? _activeProject;
+  bool _loading = false;
+
+  WorkbenchProject? get activeProject => _activeProject;
+  bool get loading => _loading;
+
+  Future<void> refresh() async {
+    _loading = true;
+    notifyListeners();
+    try {
+      _activeProject = await _backend.getActiveProject();
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> deactivate() async {
+    await _backend.deactivateProject();
+    _activeProject = null;
+    notifyListeners();
   }
 }

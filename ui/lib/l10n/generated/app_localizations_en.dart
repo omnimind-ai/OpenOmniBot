@@ -2899,22 +2899,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchProjectSwitcher => 'Switch Project';
 
   @override
-  String get workbenchProjectGenerateTitle =>
-      'Continue a Vibe Project from Home';
+  String get workbenchProjectGenerateTitle => 'Project container';
 
   @override
   String get workbenchProjectGenerateSubtitle =>
-      'This keeps the same input habit as Home: one requirement is split by the built-in OOB skill into a Project, multiple frontend Displays, business APIs, and persistent data.';
+      'This page only selects and opens Project containers. Create, edit, and hot update from the Home input with the active Project toolbox.';
 
   @override
-  String get workbenchProjectPromptHint => 'Describe the Project you want';
+  String get workbenchProjectPromptHint =>
+      'Return Home to describe the Project';
 
   @override
   String get workbenchProjectDefaultPrompt =>
       'I want to create a simple todolist management system that can add todos and archive todos';
 
   @override
-  String get workbenchProjectGenerateButton => 'Create and enter use mode';
+  String get workbenchProjectGenerateButton => 'Continue from Home';
 
   @override
   String get workbenchInputProjectTooltip => 'Open Project Workbench';
@@ -2967,18 +2967,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchOpenDisplay => 'Open this frontend';
 
   @override
+  String get workbenchDebugDisplay => 'Debug this frontend';
+
+  @override
   String get workbenchProjectCurrentTitle => 'Project use surface';
 
   @override
   String get workbenchProjectCurrentSubtitle =>
-      'By default this opens usable frontends and returns to Home. Debug info, assets, and APIs stay in Debug mode.';
+      'Default opens return to Home; debug opens return to the Workbench. Hot updates run from the Home input with the active Project.';
 
   @override
   String get workbenchProjectModeCreateTitle => 'Vibe project entry';
 
   @override
   String get workbenchProjectModeSubtitle =>
-      'Open Project info, generated frontend, Workspace, and distribution package here. Business APIs still run through the same backend.';
+      'Select a Project as the Agent workspace, open its Flutter displays, inspect API execution counts, and manage Workspace, export, and delete.';
 
   @override
   String get workbenchProjectModeCreateButton => 'Create Todo demo';
@@ -3064,6 +3067,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Use floating Xiaowan to hot-update this Project';
 
   @override
+  String get workbenchDebugHotUpdateHomeInput =>
+      'Return to the Home input and describe the edit; the Agent will use the active Project toolbox for the hot update';
+
+  @override
   String get workbenchDebugVlmTest => 'Run a VLM human-operation simulation';
 
   @override
@@ -3110,6 +3117,55 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get workbenchAndroidAssetsEmpty =>
       'No imported Android apps or projects yet';
+
+  @override
+  String get workbenchProjectActivateFailed => 'Project activation failed';
+
+  @override
+  String workbenchProjectActivated(String projectName) {
+    return 'Activated $projectName';
+  }
+
+  @override
+  String get workbenchActiveProject => 'Active';
+
+  @override
+  String get workbenchInactiveProject => 'Inactive';
+
+  @override
+  String get workbenchContinueInHome => 'Activate and return Home';
+
+  @override
+  String get workbenchProjectHelpTooltip => 'Project Workbench help';
+
+  @override
+  String get workbenchProjectHelpTitle => 'Project Workbench';
+
+  @override
+  String get workbenchProjectHelpHomeInput =>
+      'Create, edit, and hot update Projects from the Home input.';
+
+  @override
+  String get workbenchProjectHelpSelect =>
+      'Select a Project here to activate it as the Agent workspace.';
+
+  @override
+  String get workbenchProjectHelpDisplays =>
+      'Each Project can own multiple Flutter Displays; open containers from here.';
+
+  @override
+  String get workbenchProjectHelpApis =>
+      'Project APIs are the current Project business toolbox and stay separate from MCP tools.';
+
+  @override
+  String workbenchActiveProjectChip(String projectName) {
+    return 'Project: $projectName';
+  }
+
+  @override
+  String workbenchAndroidAssetCount(int count) {
+    return '$count Android assets';
+  }
 
   @override
   String workbenchTodoCount(int openCount, int finishedCount) {

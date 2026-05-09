@@ -5345,19 +5345,19 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectGenerateTitle.
   ///
   /// In zh, this message translates to:
-  /// **'从首页继续 Vibe Project'**
+  /// **'Project 容器'**
   String get workbenchProjectGenerateTitle;
 
   /// No description provided for @workbenchProjectGenerateSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'这里复用首页输入习惯：一句需求会被 OOB 内置 skill 拆成 Project、多个前端 Display、业务 API 和持久化数据。'**
+  /// **'这里只选择和打开 Project 容器。创建、编辑和热更新继续回到首页大输入框，由当前激活的 Project toolbox 承接。'**
   String get workbenchProjectGenerateSubtitle;
 
   /// No description provided for @workbenchProjectPromptHint.
   ///
   /// In zh, this message translates to:
-  /// **'描述你想创建的 Project'**
+  /// **'回到首页输入 Project 需求'**
   String get workbenchProjectPromptHint;
 
   /// No description provided for @workbenchProjectDefaultPrompt.
@@ -5369,7 +5369,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectGenerateButton.
   ///
   /// In zh, this message translates to:
-  /// **'创建并进入使用模式'**
+  /// **'回到首页继续'**
   String get workbenchProjectGenerateButton;
 
   /// No description provided for @workbenchInputProjectTooltip.
@@ -5462,6 +5462,12 @@ abstract class AppLocalizations {
   /// **'打开这个前端'**
   String get workbenchOpenDisplay;
 
+  /// No description provided for @workbenchDebugDisplay.
+  ///
+  /// In zh, this message translates to:
+  /// **'调试这个前端'**
+  String get workbenchDebugDisplay;
+
   /// No description provided for @workbenchProjectCurrentTitle.
   ///
   /// In zh, this message translates to:
@@ -5471,7 +5477,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectCurrentSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'默认只进入可用前端；返回时回到首页。Debug 信息、资产和 API 放在 Debug 模式里。'**
+  /// **'默认打开前端会回到首页；调试打开会回到工作台。热更新通过首页大输入框和当前激活 Project 完成。'**
   String get workbenchProjectCurrentSubtitle;
 
   /// No description provided for @workbenchProjectModeCreateTitle.
@@ -5483,7 +5489,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectModeSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'在这里打开 Project 信息、生成前端、Workspace 和分发包；业务 API 仍通过同一个后端执行。'**
+  /// **'选择一个 Project 作为 Agent 当前工作环境；打开它的 Flutter 前端、查看 API 执行次数，并管理 Workspace、导出和删除。'**
   String get workbenchProjectModeSubtitle;
 
   /// No description provided for @workbenchProjectModeCreateButton.
@@ -5636,6 +5642,12 @@ abstract class AppLocalizations {
   /// **'悬浮小万实时修改当前 Project'**
   String get workbenchDebugHotUpdate;
 
+  /// No description provided for @workbenchDebugHotUpdateHomeInput.
+  ///
+  /// In zh, this message translates to:
+  /// **'回到首页大输入框描述修改，Agent 会带着当前 Project toolbox 执行热更新'**
+  String get workbenchDebugHotUpdateHomeInput;
+
   /// No description provided for @workbenchDebugVlmTest.
   ///
   /// In zh, this message translates to:
@@ -5713,6 +5725,84 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'暂无导入的 Android 应用或项目'**
   String get workbenchAndroidAssetsEmpty;
+
+  /// No description provided for @workbenchProjectActivateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project 激活失败'**
+  String get workbenchProjectActivateFailed;
+
+  /// No description provided for @workbenchProjectActivated.
+  ///
+  /// In zh, this message translates to:
+  /// **'已激活 {projectName}'**
+  String workbenchProjectActivated(String projectName);
+
+  /// No description provided for @workbenchActiveProject.
+  ///
+  /// In zh, this message translates to:
+  /// **'已激活'**
+  String get workbenchActiveProject;
+
+  /// No description provided for @workbenchInactiveProject.
+  ///
+  /// In zh, this message translates to:
+  /// **'未激活'**
+  String get workbenchInactiveProject;
+
+  /// No description provided for @workbenchContinueInHome.
+  ///
+  /// In zh, this message translates to:
+  /// **'激活并回到首页输入'**
+  String get workbenchContinueInHome;
+
+  /// No description provided for @workbenchProjectHelpTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project 工作台说明'**
+  String get workbenchProjectHelpTooltip;
+
+  /// No description provided for @workbenchProjectHelpTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project 工作台'**
+  String get workbenchProjectHelpTitle;
+
+  /// No description provided for @workbenchProjectHelpHomeInput.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建、编辑和热更新都在首页大输入框里完成。'**
+  String get workbenchProjectHelpHomeInput;
+
+  /// No description provided for @workbenchProjectHelpSelect.
+  ///
+  /// In zh, this message translates to:
+  /// **'这里选择一个 Project，把它激活为 Agent 当前工作环境。'**
+  String get workbenchProjectHelpSelect;
+
+  /// No description provided for @workbenchProjectHelpDisplays.
+  ///
+  /// In zh, this message translates to:
+  /// **'每个 Project 可以有多个 Flutter 前端 Display，从这里打开容器。'**
+  String get workbenchProjectHelpDisplays;
+
+  /// No description provided for @workbenchProjectHelpApis.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project API 是当前 Project 的业务 toolbox，和 MCP tools 分开管理。'**
+  String get workbenchProjectHelpApis;
+
+  /// No description provided for @workbenchActiveProjectChip.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project：{projectName}'**
+  String workbenchActiveProjectChip(String projectName);
+
+  /// No description provided for @workbenchAndroidAssetCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 个 Android 资产'**
+  String workbenchAndroidAssetCount(int count);
 
   /// No description provided for @workbenchTodoCount.
   ///

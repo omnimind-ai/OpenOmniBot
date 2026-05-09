@@ -2770,21 +2770,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchProjectSwitcher => '切换 Project';
 
   @override
-  String get workbenchProjectGenerateTitle => '从首页继续 Vibe Project';
+  String get workbenchProjectGenerateTitle => 'Project 容器';
 
   @override
   String get workbenchProjectGenerateSubtitle =>
-      '这里复用首页输入习惯：一句需求会被 OOB 内置 skill 拆成 Project、多个前端 Display、业务 API 和持久化数据。';
+      '这里只选择和打开 Project 容器。创建、编辑和热更新继续回到首页大输入框，由当前激活的 Project toolbox 承接。';
 
   @override
-  String get workbenchProjectPromptHint => '描述你想创建的 Project';
+  String get workbenchProjectPromptHint => '回到首页输入 Project 需求';
 
   @override
   String get workbenchProjectDefaultPrompt =>
       '我想创建一个简单的 todolist 管理系统，要求可以增加 todo，归档 todo';
 
   @override
-  String get workbenchProjectGenerateButton => '创建并进入使用模式';
+  String get workbenchProjectGenerateButton => '回到首页继续';
 
   @override
   String get workbenchInputProjectTooltip => '打开 Project 工作台';
@@ -2834,18 +2834,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchOpenDisplay => '打开这个前端';
 
   @override
+  String get workbenchDebugDisplay => '调试这个前端';
+
+  @override
   String get workbenchProjectCurrentTitle => 'Project 使用台';
 
   @override
   String get workbenchProjectCurrentSubtitle =>
-      '默认只进入可用前端；返回时回到首页。Debug 信息、资产和 API 放在 Debug 模式里。';
+      '默认打开前端会回到首页；调试打开会回到工作台。热更新通过首页大输入框和当前激活 Project 完成。';
 
   @override
   String get workbenchProjectModeCreateTitle => 'Vibe Project 入口';
 
   @override
   String get workbenchProjectModeSubtitle =>
-      '在这里打开 Project 信息、生成前端、Workspace 和分发包；业务 API 仍通过同一个后端执行。';
+      '选择一个 Project 作为 Agent 当前工作环境；打开它的 Flutter 前端、查看 API 执行次数，并管理 Workspace、导出和删除。';
 
   @override
   String get workbenchProjectModeCreateButton => '创建 Todo demo';
@@ -2929,6 +2932,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchDebugHotUpdate => '悬浮小万实时修改当前 Project';
 
   @override
+  String get workbenchDebugHotUpdateHomeInput =>
+      '回到首页大输入框描述修改，Agent 会带着当前 Project toolbox 执行热更新';
+
+  @override
   String get workbenchDebugVlmTest => '根据 VLM 模拟人类操作测试';
 
   @override
@@ -2973,6 +2980,53 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get workbenchAndroidAssetsEmpty => '暂无导入的 Android 应用或项目';
+
+  @override
+  String get workbenchProjectActivateFailed => 'Project 激活失败';
+
+  @override
+  String workbenchProjectActivated(String projectName) {
+    return '已激活 $projectName';
+  }
+
+  @override
+  String get workbenchActiveProject => '已激活';
+
+  @override
+  String get workbenchInactiveProject => '未激活';
+
+  @override
+  String get workbenchContinueInHome => '激活并回到首页输入';
+
+  @override
+  String get workbenchProjectHelpTooltip => 'Project 工作台说明';
+
+  @override
+  String get workbenchProjectHelpTitle => 'Project 工作台';
+
+  @override
+  String get workbenchProjectHelpHomeInput => '创建、编辑和热更新都在首页大输入框里完成。';
+
+  @override
+  String get workbenchProjectHelpSelect => '这里选择一个 Project，把它激活为 Agent 当前工作环境。';
+
+  @override
+  String get workbenchProjectHelpDisplays =>
+      '每个 Project 可以有多个 Flutter 前端 Display，从这里打开容器。';
+
+  @override
+  String get workbenchProjectHelpApis =>
+      'Project API 是当前 Project 的业务 toolbox，和 MCP tools 分开管理。';
+
+  @override
+  String workbenchActiveProjectChip(String projectName) {
+    return 'Project：$projectName';
+  }
+
+  @override
+  String workbenchAndroidAssetCount(int count) {
+    return '$count 个 Android 资产';
+  }
 
   @override
   String workbenchTodoCount(int openCount, int finishedCount) {
