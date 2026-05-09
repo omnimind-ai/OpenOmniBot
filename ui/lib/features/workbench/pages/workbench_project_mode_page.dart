@@ -13,9 +13,12 @@ class WorkbenchProjectModePage extends StatefulWidget {
   const WorkbenchProjectModePage({
     super.key,
     WorkbenchProjectModeService? service,
-  }) : _service = service;
+    String? initialProjectId,
+  }) : _service = service,
+       _initialProjectId = initialProjectId;
 
   final WorkbenchProjectModeService? _service;
+  final String? _initialProjectId;
 
   @override
   State<WorkbenchProjectModePage> createState() =>
@@ -31,7 +34,16 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   void initState() {
     super.initState();
     _service = widget._service ?? WorkbenchProjectModeService.native();
-    _refreshProjects();
+    _selectedProjectId = widget._initialProjectId?.trim();
+    _refreshProjects(selectProjectId: _selectedProjectId);
+  }
+
+  @override
+  void didUpdateWidget(covariant WorkbenchProjectModePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget._initialProjectId != widget._initialProjectId) {
+      _refreshProjects(selectProjectId: widget._initialProjectId?.trim());
+    }
   }
 
   Future<void> _refreshProjects({String? selectProjectId}) async {

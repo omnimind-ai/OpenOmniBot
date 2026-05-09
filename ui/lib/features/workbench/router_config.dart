@@ -11,7 +11,9 @@ List<GoRoute> workbenchRoutes = [
     pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
       key: state.pageKey,
       name: 'workbench/projects',
-      child: const WorkbenchProjectModePage(),
+      child: WorkbenchProjectModePage(
+        initialProjectId: state.uri.queryParameters['projectId'],
+      ),
     ),
   ),
   GoRoute(

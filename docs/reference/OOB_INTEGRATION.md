@@ -22,6 +22,8 @@ This note tracks the native Workbench boundary used by OOB Project editing.
 
 The Home Project surface embeds the active Project display as a child window. Schema Projects use the generic Flutter schema display; `todo_log_demo` remains a regression/demo template. The Project manager remains a secondary control surface for activation, opening displays, Workspace, export, delete, and API execution counts.
 
+The embedded Project toolbar stays fixed to four actions: open the current Project management page, show Project info, open the current Display fullscreen, and refresh the Project payload. Project switching and deeper management stay in `/workbench/projects`.
+
 ## Workspace Cache Boundary
 
 Workspace entry restores the last cached Workspace container state first. If the user last viewed file browsing, OOB reopens the cached Workspace directory when it still exists under `/workspace`. If the user last viewed the Project Display container, OOB reopens that Project frontend surface. The top Workbench mark is the explicit toggle between the active Project frontend and Workspace file browsing; direct Workspace entry should not reset the user back to a fixed default page.

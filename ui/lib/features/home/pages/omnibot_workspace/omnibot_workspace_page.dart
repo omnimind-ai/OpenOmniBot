@@ -12,7 +12,6 @@ import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/app_background_service.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/theme_context.dart';
-import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/app_background_widgets.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 
@@ -727,18 +726,6 @@ class _OmnibotWorkspaceProjectFrontendsState
     await _service.activateProject(_service.projects.first);
   }
 
-  Future<void> _activateProject(WorkbenchProject project) async {
-    final active = await _service.activateProject(project);
-    if (!mounted) return;
-    if (active == null) {
-      showToast(
-        context.l10n.workbenchWorkspaceProjectOpenFailed,
-        type: ToastType.error,
-      );
-      return;
-    }
-  }
-
   void _showWorkbenchGuide() {
     showModalBottomSheet<void>(
       context: context,
@@ -778,6 +765,13 @@ class _OmnibotWorkspaceProjectFrontendsState
     GoRouterManager.push(_displayRoute(project, display));
   }
 
+  void _openProjectManager(WorkbenchProject? project) {
+    GoRouterManager.push(
+      '/workbench/projects',
+      queryParams: project == null ? null : {'projectId': project.projectId},
+    );
+  }
+
   WorkbenchProject? _currentProject(List<WorkbenchProject> projects) {
     final activeProjectId = _service.activeProject?.projectId;
     if (activeProjectId != null) {
@@ -806,16 +800,14 @@ class _OmnibotWorkspaceProjectFrontendsState
         _WorkspaceProjectMiniBar(
           project: project,
           display: display,
-          projects: projects,
           projectName: project == null ? null : _projectDisplayName(project),
           translucent: widget.translucentSurfaces,
+          onOpenProjectManager: () => _openProjectManager(project),
           onRefresh: _refreshAndEnsureActive,
           onOpenDisplay: project == null || display == null
               ? null
               : () => _openDisplayRoute(project, display),
           onShowGuide: _showWorkbenchGuide,
-          onProjectSelected: (selectedProject) =>
-              unawaited(_activateProject(selectedProject)),
         ),
         Expanded(
           child: Padding(
@@ -865,29 +857,26 @@ class _WorkspaceProjectMiniBar extends StatelessWidget {
   const _WorkspaceProjectMiniBar({
     required this.project,
     required this.display,
-    required this.projects,
     required this.projectName,
     required this.translucent,
+    required this.onOpenProjectManager,
     required this.onRefresh,
     required this.onOpenDisplay,
     required this.onShowGuide,
-    required this.onProjectSelected,
   });
 
   final WorkbenchProject? project;
   final WorkbenchDisplaySpec? display;
-  final List<WorkbenchProject> projects;
   final String? projectName;
   final bool translucent;
+  final VoidCallback onOpenProjectManager;
   final Future<void> Function() onRefresh;
   final VoidCallback? onOpenDisplay;
   final VoidCallback onShowGuide;
-  final ValueChanged<WorkbenchProject> onProjectSelected;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
-    final activeProject = project;
     final activeDisplay = display;
     final displayLabel = activeDisplay == null
         ? context.l10n.workbenchWorkspaceProjectFrontendsTitle
@@ -937,56 +926,13 @@ class _WorkspaceProjectMiniBar extends StatelessWidget {
               ],
             ),
           ),
-          PopupMenuButton<String>(
-            tooltip: context.l10n.workbenchProjectSwitcher,
-            enabled: projects.isNotEmpty,
+          IconButton(
+            tooltip: context.l10n.workbenchWorkspaceOpenProjectConsole,
+            onPressed: onOpenProjectManager,
             icon: Icon(
-              Icons.unfold_more_rounded,
-              color: projects.isEmpty
-                  ? palette.textTertiary
-                  : palette.textSecondary,
+              Icons.dashboard_customize_outlined,
+              color: palette.textSecondary,
             ),
-            onSelected: (projectId) {
-              for (final item in projects) {
-                if (item.projectId == projectId) {
-                  onProjectSelected(item);
-                  return;
-                }
-              }
-            },
-            itemBuilder: (context) {
-              return projects
-                  .map((item) {
-                    final name = item.name.trim().isEmpty
-                        ? item.projectId
-                        : item.name.trim();
-                    return PopupMenuItem<String>(
-                      value: item.projectId,
-                      child: Row(
-                        children: [
-                          Icon(
-                            item.projectId == activeProject?.projectId
-                                ? Icons.check_rounded
-                                : Icons.widgets_outlined,
-                            size: 18,
-                            color: item.projectId == activeProject?.projectId
-                                ? palette.accentPrimary
-                                : palette.textTertiary,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  })
-                  .toList(growable: false);
-            },
           ),
           IconButton(
             tooltip: context.l10n.workbenchWorkspaceGuideTooltip,
