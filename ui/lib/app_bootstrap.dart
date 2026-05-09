@@ -164,22 +164,15 @@ class _MyAppState extends ConsumerState<MyApp> {
       routerConfig: _router,
       locale: resolvedLocale.locale,
       builder: (context, child) {
-        final mediaQuery = MediaQuery.of(context);
         final brightness = Theme.of(context).brightness;
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: AppTheme.overlayStyleForBrightness(brightness),
-          child: MediaQuery(
-            data: mediaQuery.copyWith(
-              padding: mediaQuery.padding.copyWith(bottom: 0),
-              viewPadding: mediaQuery.viewPadding.copyWith(bottom: 0),
-            ),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                child ?? const SizedBox.shrink(),
-                const EmbeddedTerminalInitToastListener(),
-              ],
-            ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              child ?? const SizedBox.shrink(),
+              const EmbeddedTerminalInitToastListener(),
+            ],
           ),
         );
       },
