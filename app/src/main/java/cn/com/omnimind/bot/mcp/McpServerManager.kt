@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.mcp
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Base64
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.webchat.AgentRunService
@@ -474,17 +475,16 @@ private object TokenVault {
      * 从应用签名证书的 SHA-256 摘要派生 AES 密钥。
      * 同一 APK 签名 → 同一密钥；换签名后旧密文无法解密（需重新生成 token）。
      */
-    @Suppress("DiscouragedPrivateApi")
     private fun deriveKey(context: Context): SecretKeySpec {
         cachedKey?.let { return it }
         val pm = context.packageManager
         val packageName = context.packageName
-        val flags =
-            pm.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNATURES).signatures
-                ?: emptyArray()
+        val packageInfo = pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+        val signatures = packageInfo.signingInfo?.apkContentsSigners.orEmpty()
+        check(signatures.isNotEmpty()) { "No APK signing certificates found" }
         val digest = MessageDigest.getInstance("SHA-256")
         // 取所有签名做摘要，保证同一 APK 一致
-        for (sig in flags) {
+        for (sig in signatures) {
             digest.update(sig.toByteArray())
         }
         val keyBytes = digest.digest().copyOf(AES_KEY_SIZE)

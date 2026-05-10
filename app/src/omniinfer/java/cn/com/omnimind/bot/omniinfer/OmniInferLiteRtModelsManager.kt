@@ -223,17 +223,18 @@ object OmniInferLiteRtModelsManager {
             OmniLog.w(TAG, "[startApiService] model not found: $targetModelId")
             return getConfig()
         }
+        val extraConfig = buildLiteRtExtraConfig(resolved.id)
         OmniLog.i(
             TAG,
             "[startApiService] modelId=${resolved.id}, path=${resolved.path}, " +
-                "backend=$BACKEND_NAME, backendType=gpu, nCtx=$DEFAULT_N_CTX"
+                "backend=$BACKEND_NAME, nCtx=$DEFAULT_N_CTX, extraConfig=$extraConfig"
         )
         mmkv.encode(KEY_ACTIVE_MODEL_ID, resolved.id)
         OmniInferLocalRuntime.loadModel(
             modelId = resolved.id,
             modelPath = resolved.path,
             backend = BACKEND_NAME,
-            extraConfig = mapOf("backend_type" to "gpu"),
+            extraConfig = extraConfig,
             nCtx = DEFAULT_N_CTX,
         )
         emitConfigChanged()
@@ -249,12 +250,13 @@ object OmniInferLiteRtModelsManager {
         if (OmniInferLocalRuntime.isModelLoaded(BACKEND_NAME, resolved.id)) {
             return true
         }
+        val extraConfig = buildLiteRtExtraConfig(resolved.id)
         mmkv.encode(KEY_ACTIVE_MODEL_ID, resolved.id)
         return OmniInferLocalRuntime.loadModel(
             modelId = resolved.id,
             modelPath = resolved.path,
             backend = BACKEND_NAME,
-            extraConfig = mapOf("backend_type" to "gpu"),
+            extraConfig = extraConfig,
             nCtx = DEFAULT_N_CTX,
         )
     }
@@ -612,6 +614,20 @@ object OmniInferLiteRtModelsManager {
                 model.fileName.equals(normalized, ignoreCase = true) ||
                 model.fileName.removeSuffixIgnoreCase(LITERT_EXTENSION)
                     .equals(normalized, ignoreCase = true)
+        }
+    }
+
+    private fun buildLiteRtExtraConfig(modelId: String): Map<String, String> {
+        val marketModel = findMarketModel(modelId)
+        return if (marketModel != null) {
+            mapOf(
+                "backend_type" to "gpu",
+                "vision_backend" to "gpu",
+                "max_images" to "5",
+                "enable_speculative_decoding" to "true",
+            )
+        } else {
+            mapOf("backend_type" to "gpu")
         }
     }
 

@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Optional release tag to create/update. Leave empty to upload artifacts only.'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -30,11 +35,51 @@ jobs:
         with:
           submodules: false
 
+      - name: Resolve release reference
+        id: release_ref
+        shell: bash
+        env:
+          DISPATCH_TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+
+          release_tag_name=""
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            release_tag_name="${GITHUB_REF_NAME}"
+          elif [[ -n "${DISPATCH_TAG_NAME:-}" ]]; then
+            release_tag_name="${DISPATCH_TAG_NAME#refs/tags/}"
+          fi
+
+          artifact_ref_name="${release_tag_name:-${GITHUB_REF_NAME}}"
+          safe_ref_name="$(printf '%s' "${artifact_ref_name}" | sed 's#[^A-Za-z0-9._-]#-#g')"
+
+          if [[ -z "${safe_ref_name}" ]]; then
+            echo "Unable to derive a non-empty artifact reference name." >&2
+            exit 1
+          fi
+
+          if [[ -n "${release_tag_name}" && "${release_tag_name}" =~ [[:space:]] ]]; then
+            echo "Release tag name must not contain whitespace: ${release_tag_name}" >&2
+            exit 1
+          fi
+
+          echo "artifact_ref_name=${artifact_ref_name}" >> "$GITHUB_OUTPUT"
+          echo "safe_ref_name=${safe_ref_name}" >> "$GITHUB_OUTPUT"
+          echo "release_tag_name=${release_tag_name}" >> "$GITHUB_OUTPUT"
+
+          if [[ -n "${release_tag_name}" ]]; then
+            echo "publish_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Determine release mode
         id: release_mode
         shell: bash
+        env:
+          RELEASE_REF_NAME: ${{ steps.release_ref.outputs.artifact_ref_name }}
         run: |
-          NORMALIZED_REF="${GITHUB_REF_NAME#v}"
+          NORMALIZED_REF="${RELEASE_REF_NAME#v}"
           if [[ "$NORMALIZED_REF" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "track=beta" >> "$GITHUB_OUTPUT"
             echo "draft=false" >> "$GITHUB_OUTPUT"
@@ -190,9 +235,10 @@ jobs:
 
       - name: Stage release artifacts
         shell: bash
+        env:
+          SAFE_REF_NAME: ${{ steps.release_ref.outputs.safe_ref_name }}
         run: |
           RELEASE_DIR="app/build/outputs/release-artifacts"
-          SAFE_REF_NAME="$(printf '%s' "${GITHUB_REF_NAME}" | sed 's#[^A-Za-z0-9._-]#-#g')"
           STAGED_DIR="app/build/outputs/release-artifacts/tagged"
           mkdir -p "$STAGED_DIR"
           for edition in omniinfer standard; do
@@ -216,8 +262,11 @@ jobs:
             ${{ env.RELEASE_ASSET_DIR }}/OpenOmniBot-${{ env.SAFE_REF_NAME }}-standard.apk.sha256
 
       - name: Create GitHub Release
+        if: steps.release_ref.outputs.publish_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release_ref.outputs.release_tag_name }}
+          target_commitish: ${{ github.sha }}
           draft: ${{ steps.release_mode.outputs.draft == 'true' }}
           prerelease: ${{ steps.release_mode.outputs.prerelease == 'true' }}
           generate_release_notes: true

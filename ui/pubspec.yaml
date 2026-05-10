@@ -47,10 +47,10 @@ dependencies:
   riverpod_annotation: ^2.3.5
   webview_flutter: ^4.4.2
   webview_flutter_android: 4.10.13
-  fluttertoast: ^8.2.4
+  fluttertoast: ^9.0.0
   go_router: ^14.2.7
   flutter_svg: ^2.0.10+1
-  gal: ^1.0.0
+  gal: ^2.3.2
   image_picker: ^1.2.0
   cached_network_image: ^3.4.1
   dio: ^5.9.0

@@ -1137,6 +1137,7 @@ object AgentToolDefinitions {
                         }
                     }
                     putJsonObject("keywords") {
+                        put("type", "string")
                         put(
                             "description",
                             "get_cookies 的 cookie 名过滤关键词。可传空格分隔字符串，兼容数组字符串输入。fuzzy=true 时要求所有关键词都包含在 cookie 名中；fuzzy=false 时要求精确命中任一 cookie 名。"

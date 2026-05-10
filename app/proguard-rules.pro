@@ -231,6 +231,19 @@
 -keep class com.omniinfer.server.OmniInferBridge { *; }
 -keep class com.omniinfer.server.OmniInferServer { *; }
 
+# LiteRT-LM native code calls these callback methods by exact Java names.
+# Release R8 obfuscation can otherwise rename them and crash in
+# LiteRtLmJni.nativeSendMessageAsync when generation starts.
+-keep class com.google.ai.edge.litertlm.LiteRtLmJni { *; }
+-keep class com.google.ai.edge.litertlm.LiteRtLmJni$JniMessageCallback { *; }
+-keep class com.google.ai.edge.litertlm.LiteRtLmJni$JniInferenceCallback { *; }
+-keep class com.google.ai.edge.litertlm.Conversation$JniMessageCallbackImpl { *; }
+-keep class com.google.ai.edge.litertlm.Session$JniInferenceCallbackImpl { *; }
+
+# LiteRT-LM constructs BenchmarkInfo from native code when benchmark metrics are enabled.
+# Keep the class and constructor so native Conversation.getBenchmarkInfo() can resolve them.
+-keep class com.google.ai.edge.litertlm.BenchmarkInfo { *; }
+
 # ==================== Detection 模块数据模型 ====================
 # 这些类涉及 Gson JSON 反序列化，字段名不能被混淆
 
