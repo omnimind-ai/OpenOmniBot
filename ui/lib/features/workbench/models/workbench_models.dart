@@ -390,19 +390,47 @@ class WorkbenchDisplaySpec {
   static WorkbenchDisplaySpec quickCapture({
     required String projectId,
     required String route,
+    String displayId = 'quick-capture-capture',
+    String title = '随手记',
+    bool isDefault = true,
   }) {
     final resolvedRoute = route.trim().isEmpty
-        ? '/workbench/quick_capture?projectId=$projectId'
+        ? '/workbench/quick_capture?projectId=$projectId&displayId=$displayId'
         : route.trim();
     return WorkbenchDisplaySpec(
-      id: 'quick-capture-display',
-      title: '随手记 Inbox',
+      id: displayId,
+      title: title,
       shortName: 'NOTE',
-      route: resolvedRoute,
-      description: 'Quick capture inbox bound to Project APIs.',
+      route: resolvedRoute.contains('displayId=')
+          ? resolvedRoute
+          : '$resolvedRoute${resolvedRoute.contains('?') ? '&' : '?'}displayId=$displayId',
+      description: 'Quick Capture page in one shared Project app.',
       kind: 'oob_quick_capture_inbox',
-      isDefault: true,
+      isDefault: isDefault,
     );
+  }
+
+  static List<WorkbenchDisplaySpec> quickCaptureDisplays({
+    required String projectId,
+    required String route,
+  }) {
+    return [
+      quickCapture(projectId: projectId, route: route),
+      quickCapture(
+        projectId: projectId,
+        route: route,
+        displayId: 'quick-capture-inbox',
+        title: '收件箱',
+        isDefault: false,
+      ),
+      quickCapture(
+        projectId: projectId,
+        route: route,
+        displayId: 'quick-capture-archive',
+        title: '归档',
+        isDefault: false,
+      ),
+    ];
   }
 }
 
@@ -498,17 +526,17 @@ class WorkbenchProject {
           ? pageIds.map((item) => item.toString()).toList(growable: false)
           : const [],
       displays: parsedDisplays.isEmpty
-          ? [
-              (map['templateId'] ?? '').toString() == 'quick_capture_inbox'
-                  ? WorkbenchDisplaySpec.quickCapture(
-                      projectId: projectId,
-                      route: route,
-                    )
-                  : WorkbenchDisplaySpec.todoLog(
+          ? (map['templateId'] ?? '').toString() == 'quick_capture_inbox'
+                ? WorkbenchDisplaySpec.quickCaptureDisplays(
+                    projectId: projectId,
+                    route: route,
+                  )
+                : [
+                    WorkbenchDisplaySpec.todoLog(
                       projectId: projectId,
                       route: route,
                     ),
-            ]
+                  ]
           : parsedDisplays,
       tools: tools is List
           ? tools
@@ -827,19 +855,15 @@ class WorkbenchQuickCaptureProjectFactory {
       templateId: 'quick_capture_inbox',
       route: '/workbench/quick_capture?projectId=oob-workbench-quick-capture',
       spacePath: '/workspace/projects/oob-workbench-quick-capture',
-      pageIds: const ['quick-capture-page'],
-      displays: const [
-        WorkbenchDisplaySpec(
-          id: 'quick-capture-display',
-          title: '随手记 Inbox',
-          shortName: 'NOTE',
-          route:
-              '/workbench/quick_capture?projectId=oob-workbench-quick-capture',
-          description: 'Quick capture inbox bound to Project APIs.',
-          kind: 'oob_quick_capture_inbox',
-          isDefault: true,
-        ),
+      pageIds: const [
+        'quick-capture-capture-page',
+        'quick-capture-inbox-page',
+        'quick-capture-archive-page',
       ],
+      displays: WorkbenchDisplaySpec.quickCaptureDisplays(
+        projectId: 'oob-workbench-quick-capture',
+        route: '/workbench/quick_capture?projectId=oob-workbench-quick-capture',
+      ),
       tools: const [
         WorkbenchToolSpec(
           id: WorkbenchQuickCaptureToolIds.ingest,

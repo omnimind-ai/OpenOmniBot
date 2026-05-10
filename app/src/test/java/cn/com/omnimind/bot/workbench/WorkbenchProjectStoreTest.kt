@@ -100,7 +100,7 @@ class WorkbenchProjectStoreTest {
 
         assertTrue(projectJson.contains(prompt))
         assertTrue(projectJson.contains("oob-native-workbench"))
-        assertTrue(frontendSpec.contains("Controls -> Project API calls"))
+        assertTrue(frontendSpec.contains("Visible controls -> domain actions"))
         assertTrue(backendSpec.contains("\"archiveTodo\""))
         assertTrue(backendSpec.contains(WORKBENCH_TODO_FINISH_TOOL_ID))
     }
@@ -235,6 +235,126 @@ class WorkbenchProjectStoreTest {
         val apis = store.listApis("notes")
         assertEquals(1, apis.first { it["apiId"] == "note.create" }["executionCount"])
         assertEquals(1, apis.first { it["apiId"] == "note.archive" }["executionCount"])
+    }
+
+    @Test
+    fun projectUpdateExtendsSameProjectDisplaysAndBusinessApis() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        val projectId = "customer-iteration"
+        store.createProject(
+            mapOf(
+                "templateId" to WORKBENCH_SCHEMA_TEMPLATE_ID,
+                "projectId" to projectId,
+                "entityName" to "Customer"
+            )
+        )
+
+        val updated = store.updateProject(
+            mapOf(
+                "projectId" to projectId,
+                "prompt" to "给客户项目增加详情页和编辑客户能力",
+                "displays" to listOf(
+                    mapOf(
+                        "id" to "customer-detail-display",
+                        "pageId" to "customer-detail-page",
+                        "title" to "客户详情",
+                        "shortName" to "DETAIL",
+                        "description" to "查看和编辑单个客户记录"
+                    )
+                ),
+                "apis" to listOf(
+                    mapOf(
+                        "apiId" to "customer.update",
+                        "displayName" to "Update Customer",
+                        "description" to "Update one customer record.",
+                        "inputSchema" to mapOf("item_id" to "string", "title" to "string?"),
+                        "outputSchema" to mapOf("item" to "object"),
+                        "executorKind" to WORKBENCH_SCHEMA_EXECUTOR_KIND
+                    ),
+                    mapOf(
+                        "apiId" to "customer.list",
+                        "displayName" to "List Customers",
+                        "description" to "List customer records.",
+                        "inputSchema" to emptyMap<String, Any?>(),
+                        "outputSchema" to mapOf("items" to "array"),
+                        "executorKind" to WORKBENCH_SCHEMA_EXECUTOR_KIND
+                    )
+                ),
+                "flutterFiles" to listOf(
+                    mapOf(
+                        "path" to "lib/customer_app.dart",
+                        "content" to "class CustomerApp {}"
+                    ),
+                    mapOf(
+                        "path" to "pubspec.yaml",
+                        "content" to "name: customer_iteration\n"
+                    )
+                )
+            ),
+            caller = "test"
+        )
+        val created = store.callApi(
+            projectId = projectId,
+            apiId = "customer.create",
+            inputs = mapOf("title" to "张三"),
+            caller = "ai"
+        )
+        val item = ((created["outputs"] as Map<*, *>)["item"] as Map<*, *>)
+        val updateResult = store.callApi(
+            projectId = projectId,
+            apiId = "customer.update",
+            inputs = mapOf("item_id" to item["id"], "title" to "张三：已报价"),
+            caller = "ai"
+        )
+        val listResult = store.callApi(
+            projectId = projectId,
+            apiId = "customer.list",
+            inputs = emptyMap(),
+            caller = "ui"
+        )
+
+        assertEquals(projectId, updated["projectId"])
+        assertEquals(
+            listOf("customer.archive", "customer.create", "customer.list", "customer.update"),
+            store.listApis(projectId).map { it["apiId"].toString() }.sorted()
+        )
+        assertTrue(updateResult["success"] == true)
+        assertTrue(listResult["success"] == true)
+        val displays = (store.getProject(projectId)["displays"] as List<*>)
+            .map { (it as Map<*, *>)["id"].toString() }
+        assertTrue(displays.contains("customer-detail-display"))
+        assertTrue(
+            root.resolve("projects/$projectId/frontend/page_spec.json")
+                .readText()
+                .contains("customer-detail-display")
+        )
+        assertTrue(
+            root.resolve("projects/$projectId/backend/api_spec.json")
+                .readText()
+                .contains("customer.update")
+        )
+        assertTrue(
+            root.resolve("projects/$projectId/logs/hot_updates.jsonl")
+                .readText()
+                .contains("business_api_extended")
+        )
+        assertTrue(
+            root.resolve("projects/$projectId/logs/hot_updates.jsonl")
+                .readText()
+                .contains("flutter_source_updated")
+        )
+        assertTrue(
+            root.resolve("projects/$projectId/frontend/flutter/README.md").exists()
+        )
+        assertTrue(
+            root.resolve("projects/$projectId/frontend/flutter/lib/customer_app.dart").exists()
+        )
+        assertTrue(
+            root.resolve("projects/$projectId/frontend/flutter/manifest.json")
+                .readText()
+                .contains("frontend/flutter/lib/customer_app.dart")
+        )
     }
 
     @Test

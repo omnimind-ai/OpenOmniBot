@@ -1450,7 +1450,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_create")
             put("displayName", "创建 Workbench Project")
             put("toolType", "workbench")
-            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是审慎控制面能力，只有用户明确要求创建/新建 Project 时才调用，不会出现在 Project 自己的业务 API 列表里。支持 todo_log_demo、schema_app 和 quick_capture_inbox；不要直接写 registry 文件，也不要生成 HTML/WebView。")
+            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是审慎控制面能力，只有用户明确要求创建/新建 Project 时才调用，不会出现在 Project 自己的业务 API 列表里。支持 todo_log_demo、schema_app 和 quick_capture_inbox；不要直接写 registry 文件，也不要生成 HTML/WebView。生成的 Display 必须是用户应用界面，只展示业务工作流，不展示 Project id、API 数量、executor、Toolbox、Workspace 或日志路径等控制面摘要。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1485,7 +1485,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("description") {
                         put("type", "string")
-                        put("description", "schema_app 使用。生成前端的简短说明。")
+                        put("description", "schema_app 使用。生成应用界面的简短业务说明；不要写 Project/API/Toolbox/日志/Workspace 等控制面摘要。")
                     }
                     putJsonObject("initialItems") {
                         put("type", "array")
@@ -1559,6 +1559,56 @@ object AgentToolDefinitions {
         }
     }
 
+    val workbenchProjectUpdateTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "workbench_project_update")
+            put("displayName", "更新 Workbench Project")
+            put("toolType", "workbench")
+            put("description", "在同一个 OOB Workbench Project 内追加或更新用户可见名称、Display 页面、业务 API 和 Project-owned Flutter 源码资产。用于 Project 迭代，不应为了加功能重新创建 Project。它会合并 frontend/page_spec.json、backend/api_spec.json、Project API Registry，安全写入 frontend/flutter/，并写入 logs/hot_updates.jsonl。即时显示仍通过 page_spec + OOB 内置 renderer；高度自定义 Flutter 源码可以作为 frontend/flutter/ 资产生成和导出，但要变成已安装 App 内可运行代码需要统一构建/编译。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("projectId") {
+                        put("type", "string")
+                        put("description", "要迭代的 Project id。")
+                    }
+                    putJsonObject("name") {
+                        put("type", "string")
+                        put("description", "可选。更新 Project 展示名称。")
+                    }
+                    putJsonObject("shortName") {
+                        put("type", "string")
+                        put("description", "可选。更新 Project 短名，建议 2-8 个字符。")
+                    }
+                    putJsonObject("description") {
+                        put("type", "string")
+                        put("description", "可选。更新应用视角的一句话说明，不要写 Project/API/Toolbox/路径等控制面内容。")
+                    }
+                    putJsonObject("displays") {
+                        put("type", "array")
+                        put("description", "可选。追加或替换 Display 页面。每项可包含 id/pageId/title/shortName/route/renderer/description/isDefault。多页跳转只发生在右侧 Workbench Display surface。")
+                    }
+                    putJsonObject("apis") {
+                        put("type", "array")
+                        put("description", "可选。追加或替换 Project 业务 API。每项可包含 apiId、toolId、displayName、description、inputSchema、outputSchema、executorKind。控制面 API 不允许放入这里。")
+                    }
+                    putJsonObject("flutterFiles") {
+                        put("type", "array")
+                        put("description", "可选。写入 Project 自有 Flutter 源码资产，路径限定在 frontend/flutter/ 内。每项包含 path 和 content。该源码可由 Alpine 生成/编辑，用于导出或受控 build/install；不会被已安装 APK 直接热加载。")
+                    }
+                    putJsonObject("prompt") {
+                        put("type", "string")
+                        put("description", "可选。用户本次迭代需求，会写入 hot update 审计日志。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("projectId")
+                }
+            }
+        }
+    }
+
     val workbenchApiCallTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -1619,7 +1669,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_open")
             put("displayName", "打开 Workbench Project")
             put("toolType", "workbench")
-            put("description", "打开某个 Workbench Project 的 OOB 原生页面。用于完成 Project 创建和 API 调用后把结果展示给用户。")
+            put("description", "打开某个 Workbench Project 的 OOB 原生 Display。用于完成 Project 创建和 API 调用后把应用界面展示给用户；可见页面应是业务应用视角，不是 Project/API/Toolbox 摘要。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1713,7 +1763,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_hot_update")
             put("displayName", "热更新 Workbench Project")
             put("toolType", "workbench")
-            put("description", "根据用户在 Project 页面里和小万悬浮窗、画图标注或 VLM 输入得到的 prompt，对已有 Workbench Project 做一次控制面热更新，并返回刷新后的 OOB 原生页面状态。调用时尽量附带当前 Flutter Display 的 frontendContext，例如 route、displayId、可见状态、用户选择的控件、选区、drawingPaths、annotationMeta 或截图摘要。形状和 UI 语义由 VLM 结合截图分析，不由前端预识别。它不会注册成 Project 业务 API，也不会出现在 workbench_api_list。")
+            put("description", "根据用户在 Project 页面里和小万悬浮窗、画图标注或 VLM 输入得到的 prompt，对已有 Workbench Project 做一次控制面热更新，并返回刷新后的 OOB 原生页面状态。调用时尽量附带当前 Flutter Display 的 frontendContext，例如 route、displayId、可见状态、用户选择的控件、选区、drawingPaths、annotationMeta 或截图摘要。形状和 UI 语义由 VLM 结合截图分析，不由前端预识别。热更新必须保持 Display 的应用视角，只改业务工作流、输入、列表、筛选、状态或业务按钮；不要把 Project id、API 数量、executor、Toolbox、Workspace、data/log 路径等控制面信息写进可见界面。它不会注册成 Project 业务 API，也不会出现在 workbench_api_list。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1723,7 +1773,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("prompt") {
                         put("type", "string")
-                        put("description", "用户希望修改当前 Project 或生成前端的自然语言请求。")
+                        put("description", "用户希望修改当前 Project 或生成前端的自然语言请求。应按应用界面理解用户意图，避免生成 Project/API/Toolbox/日志/Workspace 等控制面摘要。")
                     }
                     putJsonObject("frontendContext") {
                         put("type", "object")
@@ -2432,6 +2482,7 @@ object AgentToolDefinitions {
         workbenchProjectCreateTool,
         workbenchProjectListTool,
         workbenchProjectGetTool,
+        workbenchProjectUpdateTool,
         workbenchApiListTool,
         workbenchApiCallTool,
         workbenchProjectExportTool,

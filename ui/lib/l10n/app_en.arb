@@ -1130,7 +1130,7 @@
   "workbenchToolList": "Project APIs",
   "workbenchProjectControlSubtitle": "Only registered business APIs are shown here. Project create/open stays in the OOB Workbench control surface.",
   "workbenchOpenWorkspace": "Open Workspace",
-  "workbenchApiEmpty": "No registered Project APIs",
+  "workbenchApiEmpty": "No tools yet",
   "workbenchToolListDefaultTodo": "Project API clicked the shared backend",
   "workbenchToolExecutionCount": "Executed {count}",
   "@workbenchToolExecutionCount": {
@@ -1156,7 +1156,25 @@
   "workbenchTodoFinishedToast": "Todo archived",
   "workbenchTodoInputRequired": "Enter a todo first",
   "workbenchQuickCaptureTitle": "Quick Capture Inbox",
-  "workbenchQuickCaptureSubtitle": "Drop text, links, share snippets, or screenshots here. The Project API turns them into todos, summaries, link cards, or later-read items.",
+  "workbenchQuickCaptureSubtitle": "Drop text, links, share snippets, or screenshots here, then sort them into todos, summaries, link cards, or later-read items.",
+  "workbenchQuickCapturePageCapture": "Capture",
+  "workbenchQuickCapturePageInbox": "Inbox",
+  "workbenchQuickCaptureInboxSubtitle": "{count} active items.",
+  "@workbenchQuickCaptureInboxSubtitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchQuickCaptureArchiveSubtitle": "{count} archived items.",
+  "@workbenchQuickCaptureArchiveSubtitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "workbenchQuickCaptureInputHint": "Paste a note, link, or share text",
   "workbenchQuickCaptureAction": "Capture",
   "workbenchQuickCaptureCaptured": "Captured",
@@ -1268,7 +1286,7 @@
   "workbenchProjectPlanData": "Persist data and API call logs",
   "workbenchUseMode": "Use mode",
   "workbenchDebugMode": "Debug mode",
-  "workbenchDisplaysTitle": "Frontend Displays",
+  "workbenchDisplaysTitle": "Pages",
   "workbenchDisplayCount": "{count} displays",
   "@workbenchDisplayCount": {
     "placeholders": {
@@ -1283,22 +1301,15 @@
   "workbenchProjectCurrentTitle": "Project use surface",
   "workbenchProjectCurrentSubtitle": "Default opens return to Home; debug opens return to the Workbench. Hot updates run from the Home input with the active Project.",
   "workbenchProjectModeCreateTitle": "Vibe project entry",
-  "workbenchProjectModeSubtitle": "This page only shows the Project list and the active Project. Open a Project to inspect displays, APIs, Workspace, export, and delete.",
-  "workbenchProjectActiveTitle": "Active Project",
+  "workbenchProjectModeSubtitle": "This page only shows projects and the active item.",
+  "workbenchProjectActiveTitle": "Active",
   "workbenchProjectActiveEmpty": "No active Project yet",
-  "workbenchProjectListTitle": "Project list",
-  "workbenchProjectDetailTitle": "Project detail",
+  "workbenchProjectListTitle": "Projects",
+  "workbenchProjectDetailTitle": "Project",
   "workbenchProjectModeCreateButton": "Create from Home",
   "workbenchProjectCreateFromHome": "Return to the Home input and say create project or describe the page you want.",
   "workbenchProjectModeProjectsTitle": "Current Project APIs",
-  "workbenchProjectApiForProject": "{projectName} APIs",
-  "@workbenchProjectApiForProject": {
-    "placeholders": {
-      "projectName": {
-        "type": "String"
-      }
-    }
-  },
+  "workbenchProjectApiForProject": "Tools",
   "workbenchProjectModeOpen": "Open project",
   "workbenchProjectModeEmpty": "No Workbench projects yet",
   "workbenchProjectModeLoadFailed": "Project mode failed to load",
@@ -1396,7 +1407,7 @@
       }
     }
   },
-  "workbenchAndroidAssetsTitle": "Android assets",
+  "workbenchAndroidAssetsTitle": "Apps",
   "workbenchAndroidSourceHint": "Enter an APK or Android project path, for example /workspace/apps/demo.apk",
   "workbenchAndroidIngestButton": "Import into current Project",
   "workbenchAndroidSourceRequired": "Enter an Android app or project path",
@@ -1419,9 +1430,21 @@
       }
     }
   },
+  "workbenchProjectDeactivateFailed": "Project deactivation failed",
+  "workbenchProjectDeactivated": "Project deactivated",
+  "workbenchActivateProject": "Activate Project",
+  "workbenchDeactivateProject": "Deactivate",
+  "workbenchEditProjectLabels": "Edit labels",
+  "workbenchProjectNameLabel": "Name",
+  "workbenchProjectShortNameLabel": "Short name",
+  "workbenchSaveProjectLabels": "Save",
+  "workbenchProjectNameRequired": "Enter a name",
+  "workbenchProjectLabelsUpdated": "Saved",
+  "workbenchProjectLabelsUpdateFailed": "Save failed",
+  "workbenchProjectMoreActions": "More actions",
   "workbenchActiveProject": "Active",
   "workbenchInactiveProject": "Inactive",
-  "workbenchContinueInHome": "Activate and return Home",
+  "workbenchContinueInHome": "Activate Project",
   "workbenchProjectHelpTooltip": "Project Workbench help",
   "workbenchProjectHelpTitle": "Project Workbench",
   "workbenchProjectHelpHomeInput": "Create, edit, and hot update Projects from the Home input.",
@@ -1432,6 +1455,16 @@
   "@workbenchActiveProjectChip": {
     "placeholders": {
       "projectName": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchProjectSummaryQuickCapture": "Capture text, links, shares, and screenshots into todos, summaries, link cards, or later-read items.",
+  "workbenchProjectSummaryTodo": "Track todos and archive them when they are done.",
+  "workbenchProjectSummarySchema": "Manage {entityName} records with saved status and quick actions.",
+  "@workbenchProjectSummarySchema": {
+    "placeholders": {
+      "entityName": {
         "type": "String"
       }
     }

@@ -190,6 +190,14 @@ mixin _ChatInputAreaComposerMixin
           ),
           const SizedBox(width: 4),
         ],
+        if (widget.onToggleAnnotation != null) ...[
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: _buildAnnotationButton(iconSize: 20),
+          ),
+          const SizedBox(width: 4),
+        ],
         if (_shouldShowCodexPermissionSelector) ...[
           SizedBox(
             width: 28,
@@ -675,6 +683,14 @@ mixin _ChatInputAreaComposerMixin
           ),
           const SizedBox(width: 4),
         ],
+        if (widget.onToggleAnnotation != null) ...[
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: _buildAnnotationButton(iconSize: 18),
+          ),
+          const SizedBox(width: 2),
+        ],
         if (_shouldShowCodexPermissionSelector) ...[
           SizedBox(
             width: 24,
@@ -703,6 +719,43 @@ mixin _ChatInputAreaComposerMixin
   bool get _shouldShowCodexPermissionSelector =>
       widget.codexPermissionMode != null &&
       widget.onCodexPermissionModeChanged != null;
+
+  Widget _buildAnnotationButton({required double iconSize}) {
+    final palette = context.omniPalette;
+    final selected = widget.annotationEnabled;
+    final activeColor = context.isDarkTheme
+        ? palette.accentPrimary
+        : const Color(0xFFE53935);
+    final inactiveColor = context.isDarkTheme
+        ? palette.textSecondary
+        : const Color(0xFF5E6C84);
+    return IconButton(
+      key: const ValueKey('chat-input-annotation-button'),
+      padding: EdgeInsets.zero,
+      iconSize: iconSize,
+      tooltip: Localizations.localeOf(context).languageCode == 'en'
+          ? (selected ? 'Close drawing' : 'Draw on screen')
+          : (selected ? '关闭标注' : '屏幕标注'),
+      icon: AnimatedContainer(
+        duration: _buttonAnimationDuration,
+        curve: _buttonAnimationCurve,
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: selected
+              ? activeColor.withValues(alpha: 0.14)
+              : Colors.transparent,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          selected ? Icons.edit_off_outlined : Icons.draw_outlined,
+          size: iconSize,
+          color: selected ? activeColor : inactiveColor,
+        ),
+      ),
+      onPressed: widget.onToggleAnnotation,
+    );
+  }
 
   Widget _buildCodexPermissionButton({required double iconSize}) {
     final selected =

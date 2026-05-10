@@ -21,6 +21,9 @@ fun prop(name: String): String {
             "https://dashscope.aliyuncs.com/compatible-mode/v1"
         "OMNIBOT_DEFAULT_MODEL_PROVIDER_API_KEY" ->
             System.getenv("DASHSCOPE_API_KEY")?.trim().orEmpty()
+        "OMNIBOT_DEFAULT_MODEL_PROVIDER_MODEL_ID" ->
+            System.getenv("OPENAI_MODEL")?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "qwen-vl-max-latest"
         else -> ""
     }
 }
@@ -101,6 +104,7 @@ android {
             buildConfigField("String", "BASE_URL", "\"${prop("OMNIBOT_BASE_URL")}\"")
             buildConfigField("String", "DEFAULT_MODEL_PROVIDER_BASE_URL", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_BASE_URL")}\"")
             buildConfigField("String", "DEFAULT_MODEL_PROVIDER_API_KEY", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_API_KEY")}\"")
+            buildConfigField("String", "DEFAULT_MODEL_PROVIDER_MODEL_ID", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_MODEL_ID")}\"")
             resValue("bool", "is_accessibility_tool", "true")
         }
 
@@ -109,6 +113,7 @@ android {
             buildConfigField("String", "BASE_URL", "\"${prop("OMNIBOT_BASE_URL")}\"")
             buildConfigField("String", "DEFAULT_MODEL_PROVIDER_BASE_URL", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_BASE_URL")}\"")
             buildConfigField("String", "DEFAULT_MODEL_PROVIDER_API_KEY", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_API_KEY")}\"")
+            buildConfigField("String", "DEFAULT_MODEL_PROVIDER_MODEL_ID", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_MODEL_ID")}\"")
             resValue("bool", "is_accessibility_tool", "true")
         }
 

@@ -44,7 +44,7 @@ OOB Workbench has three backend/runtime layers:
 - Control plane: `workbench_project_*` tools and MethodChannel calls. These create/manage/import/export/hot-update Projects and must not appear in Project API Registry.
 - Project API plane: `workbench_api_list` and `workbench_api_call`. These expose only business APIs owned by a Project, such as `todo.add`, `customer.create`, or `capture.ingest`.
 - MCP Toolbox plane: external MCP clients see fixed OOB tools plus active Project dynamic tools in `<toolbox_id>.<api_slug>` form. Dynamic tools dispatch back to `workbench_api_call` with `caller=mcp_toolbox`.
-- Runtime container: `/workspace/projects/<project-id>/` with `project.json`, `frontend/page_spec.json`, `backend/api_spec.json`, `data/`, `logs/`, `source/`, `android/`, and export packages.
+- Runtime container: `/workspace/projects/<project-id>/` with `project.json`, `frontend/page_spec.json`, `frontend/flutter/`, `frontend/flutter/manifest.json`, `backend/api_spec.json`, `data/`, `logs/`, `source/`, `android/`, and export packages.
 
 The key product claim is: OOB puts the backend on the phone. A Project should carry backend abilities, source assets, data, API logs, progress, and executor contracts as persistent runtime state.
 
@@ -52,6 +52,62 @@ For `quick_capture_inbox`, the current frontend-supported buckets are `todo`,
 `summary`, `link`, and `later`. Backend ingest should preserve those explicit
 types, map `read_later`/`read-later` to `later`, and map receipt/invoice/expense
 inputs to `summary` until a dedicated expense bucket exists in the frontend.
+
+## Display Contract Boundary
+
+The Project runtime can carry rich backend metadata, but the generated Display
+is an app surface, not the metadata viewer.
+
+The app Display should show:
+
+- domain records and state;
+- input forms, filters, and product actions;
+- product-language empty/loading/error states.
+- multiple Display pages when the product needs hierarchy. Display navigation
+  stays inside the right-side Workbench Project surface; the left Home chat
+  stays visible.
+
+Keep these out of the app Display:
+
+- Project id, template id, API count, executor kind, schema name;
+- Toolbox/MCP tool names and `backend/api_spec.json`;
+- Workspace/data/log paths and progress rows;
+- export/delete controls, API execution counts, and implementation badges such
+  as `OOB native UI`.
+
+Those details belong in `/workbench/projects`, the info popup, MCP resources,
+logs, or developer docs. When changing prompt generation, `frontend/page_spec.json`,
+or hot update behavior, preserve this app/control split.
+
+Project iteration mutates the same Project. Add features through
+`workbench_project_update` by extending `frontend/page_spec.json`
+displays/actions, `backend/api_spec.json` business tools, and optional
+`frontend/flutter/` source files through `flutterFiles`, then record the change
+in `logs/hot_updates.jsonl`. Do not create a replacement Project unless the user
+explicitly asks for a separate app.
+
+Custom Flutter source belongs under `frontend/flutter/` as an editable Project
+asset that Alpine can generate or modify directly or through
+`workbench_project_update.flutterFiles`. OOB refreshes
+`frontend/flutter/manifest.json` after bounded writes. It is exportable and
+buildable, but it is not hot-loaded into the already installed OOB APK. For
+immediate display and hot update, keep a `page_spec.json` renderer surface. Use
+custom Flutter when the Project needs source-level customization or export/build,
+not as the default instant preview mechanism.
+
+The `/workbench/projects` manager is still a control surface, but its compact
+landing list should stay human-readable: the active card and each Project row
+show one product-language sentence about what the Project does. Project ids,
+template ids, API counts, executor names, and paths move to detail/debug views.
+Activation is a direct state toggle: the check control activates or deactivates
+a Project, and the detail view shows either Activate Project or Deactivate
+without coupling activation to returning Home.
+
+The Workbench manager should match OOB UI style: use simple icon actions with
+tooltips for activate/deactivate, open, Workspace, export, delete, and label
+editing. Avoid long visible explanations or unexplained technical chips in the
+main visual layer. Project display name and `shortName` are editable user
+metadata and should update both the registry payload and `frontend/page_spec.json`.
 
 ## Design Claims To Preserve
 
@@ -65,6 +121,7 @@ Do not spend this pass on frontend visual polish. The backend claim is valid onl
 ## Current Control APIs
 
 - `workbench_project_create`: create a Project from `todo_log_demo`, `schema_app`, or `quick_capture_inbox`.
+- `workbench_project_update`: iterate an existing Project by merging user-facing metadata, Display pages, business APIs, and optional `flutterFiles` source assets into the same Project.
 - `workbench_project_activate`: make one Project the active Agent toolbox.
 - `workbench_project_active_get`: read the active Project manifest.
 - `workbench_project_progress_get`: read `logs/project_progress.jsonl` or latest progress summary.
@@ -83,6 +140,8 @@ Every created Project should be able to carry these files:
 README.md
 project.json
 frontend/page_spec.json
+frontend/flutter/
+frontend/flutter/manifest.json
 backend/api_spec.json
 data/
 logs/api_calls.jsonl
@@ -148,7 +207,8 @@ Never satisfy this scenario by hand-writing registry, data, source, or log files
 Current state:
 
 - `native_template`: stable native todo executor.
-- `native_schema_collection`: stable native generic collection executor.
+- `native_schema_collection`: stable native generic collection executor for
+  create/archive/update/list-style schema APIs.
 - `workspace_python_script`: stable Project API contract, currently native-backed for reliability.
 
 Important: `workspace_python_script` is intentionally shaped so a later BridgeServer/Alpine Python executor can replace the native-backed implementation without changing `workbench_api_call`, API ids, Display bindings, data paths, or logs.
@@ -252,7 +312,7 @@ Project: oob-workbench-vlm-quick-note
 Template: quick_capture_inbox
 Visible route: /workbench/quick_capture?projectId=oob-workbench-vlm-quick-note
 Visible title: 随手记 Inbox · NOTE
-Visible counters: 3 active / 1 archived, OOB native UI, 4 APIs
+Visible app state: capture workflow with persisted active/archived items
 Visible receipt classification: Invoice receipt item is tagged Summary
 Runtime proof:
   workspace/projects/oob-workbench-vlm-quick-note/project.json

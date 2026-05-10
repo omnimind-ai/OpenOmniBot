@@ -933,6 +933,46 @@ class _TestWorkbenchProjectBackend implements WorkbenchProjectBackend {
   Future<WorkbenchProject> getProject(String projectId) async => _project;
 
   @override
+  Future<WorkbenchProject> updateProjectMetadata({
+    required String projectId,
+    String? name,
+    String? shortName,
+    String? description,
+    List<Map<String, Object?>>? displays,
+    List<Map<String, Object?>>? apis,
+    List<Map<String, Object?>>? flutterFiles,
+    String? prompt,
+  }) async {
+    final normalizedName = name?.trim();
+    final normalizedShortName = shortName?.trim();
+    final displays = _project.displays
+        .map((display) {
+          if (!display.isDefault && display.id != _project.primaryDisplay.id) {
+            return display;
+          }
+          return WorkbenchDisplaySpec(
+            id: display.id,
+            title: normalizedName?.isNotEmpty == true
+                ? normalizedName!
+                : display.title,
+            shortName: normalizedShortName?.isNotEmpty == true
+                ? normalizedShortName!
+                : display.shortName,
+            route: display.route,
+            description: display.description,
+            kind: display.kind,
+            isDefault: display.isDefault,
+          );
+        })
+        .toList(growable: false);
+    _project = _project.copyWith(
+      name: normalizedName?.isNotEmpty == true ? normalizedName : _project.name,
+      displays: displays,
+    );
+    return _project;
+  }
+
+  @override
   Future<List<WorkbenchProject>> listProjects() async =>
       _hasProject ? [_project] : const [];
 

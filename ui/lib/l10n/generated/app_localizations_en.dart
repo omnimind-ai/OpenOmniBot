@@ -3092,7 +3092,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchOpenWorkspace => 'Open Workspace';
 
   @override
-  String get workbenchApiEmpty => 'No registered Project APIs';
+  String get workbenchApiEmpty => 'No tools yet';
 
   @override
   String get workbenchToolListDefaultTodo =>
@@ -3156,7 +3156,23 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchQuickCaptureSubtitle =>
-      'Drop text, links, share snippets, or screenshots here. The Project API turns them into todos, summaries, link cards, or later-read items.';
+      'Drop text, links, share snippets, or screenshots here, then sort them into todos, summaries, link cards, or later-read items.';
+
+  @override
+  String get workbenchQuickCapturePageCapture => 'Capture';
+
+  @override
+  String get workbenchQuickCapturePageInbox => 'Inbox';
+
+  @override
+  String workbenchQuickCaptureInboxSubtitle(int count) {
+    return '$count active items.';
+  }
+
+  @override
+  String workbenchQuickCaptureArchiveSubtitle(int count) {
+    return '$count archived items.';
+  }
 
   @override
   String get workbenchQuickCaptureInputHint =>
@@ -3368,7 +3384,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchDebugMode => 'Debug mode';
 
   @override
-  String get workbenchDisplaysTitle => 'Frontend Displays';
+  String get workbenchDisplaysTitle => 'Pages';
 
   @override
   String workbenchDisplayCount(int count) {
@@ -3396,19 +3412,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchProjectModeSubtitle =>
-      'This page only shows the Project list and the active Project. Open a Project to inspect displays, APIs, Workspace, export, and delete.';
+      'This page only shows projects and the active item.';
 
   @override
-  String get workbenchProjectActiveTitle => 'Active Project';
+  String get workbenchProjectActiveTitle => 'Active';
 
   @override
   String get workbenchProjectActiveEmpty => 'No active Project yet';
 
   @override
-  String get workbenchProjectListTitle => 'Project list';
+  String get workbenchProjectListTitle => 'Projects';
 
   @override
-  String get workbenchProjectDetailTitle => 'Project detail';
+  String get workbenchProjectDetailTitle => 'Project';
 
   @override
   String get workbenchProjectModeCreateButton => 'Create from Home';
@@ -3421,9 +3437,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchProjectModeProjectsTitle => 'Current Project APIs';
 
   @override
-  String workbenchProjectApiForProject(String projectName) {
-    return '$projectName APIs';
-  }
+  String get workbenchProjectApiForProject => 'Tools';
 
   @override
   String get workbenchProjectModeOpen => 'Open project';
@@ -3595,7 +3609,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get workbenchAndroidAssetsTitle => 'Android assets';
+  String get workbenchAndroidAssetsTitle => 'Apps';
 
   @override
   String get workbenchAndroidSourceHint =>
@@ -3629,13 +3643,49 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get workbenchProjectDeactivateFailed => 'Project deactivation failed';
+
+  @override
+  String get workbenchProjectDeactivated => 'Project deactivated';
+
+  @override
+  String get workbenchActivateProject => 'Activate Project';
+
+  @override
+  String get workbenchDeactivateProject => 'Deactivate';
+
+  @override
+  String get workbenchEditProjectLabels => 'Edit labels';
+
+  @override
+  String get workbenchProjectNameLabel => 'Name';
+
+  @override
+  String get workbenchProjectShortNameLabel => 'Short name';
+
+  @override
+  String get workbenchSaveProjectLabels => 'Save';
+
+  @override
+  String get workbenchProjectNameRequired => 'Enter a name';
+
+  @override
+  String get workbenchProjectLabelsUpdated => 'Saved';
+
+  @override
+  String get workbenchProjectLabelsUpdateFailed => 'Save failed';
+
+  @override
+  String get workbenchProjectMoreActions => 'More actions';
+
+  @override
   String get workbenchActiveProject => 'Active';
 
   @override
   String get workbenchInactiveProject => 'Inactive';
 
   @override
-  String get workbenchContinueInHome => 'Activate and return Home';
+  String get workbenchContinueInHome => 'Activate Project';
 
   @override
   String get workbenchProjectHelpTooltip => 'Project Workbench help';
@@ -3662,6 +3712,19 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String workbenchActiveProjectChip(String projectName) {
     return 'Project: $projectName';
+  }
+
+  @override
+  String get workbenchProjectSummaryQuickCapture =>
+      'Capture text, links, shares, and screenshots into todos, summaries, link cards, or later-read items.';
+
+  @override
+  String get workbenchProjectSummaryTodo =>
+      'Track todos and archive them when they are done.';
+
+  @override
+  String workbenchProjectSummarySchema(String entityName) {
+    return 'Manage $entityName records with saved status and quick actions.';
   }
 
   @override

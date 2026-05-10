@@ -406,6 +406,219 @@ class WorkbenchProjectStore(
     }
 
     /**
+     * Updates user-facing Project labels without changing its id, APIs, or data files.
+     *
+     * @param projectId Stable Project id whose registry record and page spec should be updated.
+     * @param name Optional new Project/display title. Blank values keep the existing name.
+     * @param shortName Optional compact display label shown in Workbench surfaces.
+     * @param description Optional app-language summary stored in the Display contract.
+     * @param displays Optional Display pages to merge into `frontend/page_spec.json`.
+     * @param apis Optional business APIs to merge into Project API Registry and Tool Contract.
+     * @param flutterFiles Optional Project-owned Flutter source files to write under
+     * `frontend/flutter/`. Paths must be relative and stay inside that directory.
+     * @param prompt Optional user iteration request written into `logs/hot_updates.jsonl`.
+     * @param caller Caller label stored in progress and audit logs.
+     * @return Updated Project payload for Flutter, MCP debug, or Agent callers.
+     */
+    @Synchronized
+    fun updateProjectMetadata(
+        projectId: String,
+        name: String? = null,
+        shortName: String? = null,
+        description: String? = null,
+        displays: Any? = null,
+        apis: Any? = null,
+        flutterFiles: Any? = null,
+        prompt: String? = null,
+        caller: String = "unknown"
+    ): Map<String, Any?> {
+        val record = findProject(projectId)
+        val updatedName = name?.trim()?.takeIf { it.isNotEmpty() }
+        val updatedShortName = shortName?.trim()?.takeIf { it.isNotEmpty() }
+        val updatedDescription = description?.trim()?.takeIf { it.isNotEmpty() }
+        val updatePrompt = prompt?.trim()?.takeIf { it.isNotEmpty() }
+        val newDisplays = normalizeDisplaySpecs(record, displays)
+        val newApis = explicitApiRecords(record.projectId, mapOf("apis" to apis))
+        val requestedFlutterFiles = normalizeFrontendFlutterFiles(flutterFiles)
+        require(
+            updatedName != null ||
+                updatedShortName != null ||
+                updatedDescription != null ||
+                newDisplays.isNotEmpty() ||
+                newApis.isNotEmpty() ||
+                requestedFlutterFiles.isNotEmpty() ||
+                updatePrompt != null
+        ) {
+            "Project update requires name, shortName, description, displays, apis, flutterFiles, or prompt."
+        }
+        val mergedApis = mergeApiRecords(projectApis(record.projectId), newApis)
+        val now = nowIso()
+        val newApiIds = mergedApis.map { it.apiId }
+        val updatedApiIds = if (newApiIds == record.apiIds) record.apiIds else newApiIds
+        val updatedRecord = record.copy(
+            name = updatedName ?: record.name,
+            apiIds = updatedApiIds,
+            updatedAt = now
+        )
+        writeProjectRegistry(
+            readProjectRegistry().map { item ->
+                if (item.projectId == record.projectId) updatedRecord else item
+            }
+        )
+        if (newApis.isNotEmpty()) {
+            writeApiRegistry(
+                readApiRegistry().filterNot { it.projectId == record.projectId } + mergedApis
+            )
+        }
+        ensureProjectSourceFiles(updatedRecord, mergedApis)
+        val pageSpecFile = File(projectDir(updatedRecord.projectId), "frontend/page_spec.json")
+        val pageSpec = if (pageSpecFile.exists()) {
+            runCatching {
+                gson.fromJson<Map<String, Any?>>(pageSpecFile.readText(), mapType)
+            }.getOrNull().orEmpty()
+        } else {
+            emptyMap()
+        }.toMutableMap()
+        if (updatedName != null) {
+            pageSpec["title"] = updatedName
+            pageSpec["displayName"] = updatedName
+        }
+        if (updatedShortName != null) {
+            pageSpec["shortName"] = updatedShortName
+        }
+        if (updatedDescription != null) {
+            pageSpec["description"] = updatedDescription
+        }
+        val displaysValue = pageSpec["displays"]
+        if (displaysValue is List<*>) {
+            pageSpec["displays"] = displaysValue.map { item ->
+                @Suppress("UNCHECKED_CAST")
+                val display = (item as? Map<String, Any?>)?.toMutableMap() ?: return@map item
+                if (display["isDefault"] == true || display["id"] == pageSpec["displayId"]) {
+                    if (updatedName != null) display["title"] = updatedName
+                    if (updatedShortName != null) display["shortName"] = updatedShortName
+                    if (updatedDescription != null) display["description"] = updatedDescription
+                }
+                display
+            }
+        }
+        val mergedDisplays = mergeDisplaySpecs(
+            base = (pageSpec["displays"] as? List<*>) ?: workbenchDisplays(record),
+            additions = newDisplays
+        )
+        if (mergedDisplays.isNotEmpty()) {
+            pageSpec["displays"] = mergedDisplays
+            val defaultDisplay = mergedDisplays.firstOrNull { it["isDefault"] == true }
+                ?: mergedDisplays.first()
+            pageSpec["displayId"] = defaultDisplay["id"] ?: defaultDisplay["displayId"]
+            pageSpec["pageId"] = defaultDisplay["pageId"] ?: pageSpec["pageId"]
+            pageSpec["navigationScope"] = "right_workbench_display"
+        }
+        if (newApis.isNotEmpty()) {
+            pageSpec["actions"] = mergePageActions(pageSpec["actions"], newApis)
+        }
+        val writtenFlutterFiles = writeFrontendFlutterFiles(
+            projectId = updatedRecord.projectId,
+            files = requestedFlutterFiles
+        )
+        pageSpec["iterationContract"] = projectIterationContract()
+        if (updatePrompt != null) {
+            pageSpec["lastUpdatePrompt"] = updatePrompt
+        }
+        pageSpecFile.writeText(gson.toJson(pageSpec))
+        writeBackendApiSpec(updatedRecord, mergedApis, readProjectSourcePrompt(updatedRecord.projectId))
+        if (
+            newDisplays.isNotEmpty() ||
+            newApis.isNotEmpty() ||
+            writtenFlutterFiles.isNotEmpty() ||
+            updatedDescription != null ||
+            updatePrompt != null
+        ) {
+            val actions = mutableListOf<Map<String, Any?>>()
+            if (newDisplays.isNotEmpty()) {
+                actions += linkedMapOf(
+                    "kind" to "display_contract_extended",
+                    "displayIds" to newDisplays.map { it["id"] ?: it["displayId"] ?: it["pageId"] }
+                )
+            }
+            if (newApis.isNotEmpty()) {
+                actions += linkedMapOf(
+                    "kind" to "business_api_extended",
+                    "apiIds" to newApis.map { it.apiId }
+                )
+            }
+            if (writtenFlutterFiles.isNotEmpty()) {
+                actions += linkedMapOf(
+                    "kind" to "flutter_source_updated",
+                    "paths" to writtenFlutterFiles.map { it["path"] }
+                )
+            }
+            if (updatedDescription != null) {
+                actions += linkedMapOf("kind" to "description_updated")
+            }
+            appendHotUpdate(
+                projectId = updatedRecord.projectId,
+                prompt = updatePrompt ?: "Project contract updated.",
+                caller = caller,
+                appliedActions = actions,
+                frontendContext = linkedMapOf(
+                    "source" to "workbench_project_update",
+                    "displayIds" to mergedDisplays.map { it["id"] ?: it["displayId"] ?: it["pageId"] },
+                    "apiIds" to mergedApis.map { it.apiId },
+                    "flutterFiles" to writtenFlutterFiles.map { it["path"] }
+                )
+            )
+            appendProjectProgress(
+                projectId = updatedRecord.projectId,
+                stage = "project_contract_updated",
+                status = "completed",
+                message = "Project displays, business API contract, and source assets updated.",
+                percent = 100,
+                caller = caller,
+                details = linkedMapOf(
+                    "displayIds" to mergedDisplays.map { it["id"] ?: it["displayId"] ?: it["pageId"] },
+                    "apiIds" to mergedApis.map { it.apiId },
+                    "flutterFiles" to writtenFlutterFiles.map { it["path"] }
+                )
+            )
+        }
+        writeProjectJson(updatedRecord, mergedApis)
+        if (readActiveProjectId() == updatedRecord.projectId) {
+            activeProjectFile.writeText(
+                gson.toJson(activeProjectManifest(updatedRecord, readActiveProjectActivatedAt()))
+            )
+        }
+        return linkedMapOf(
+            "success" to true,
+            "projectId" to updatedRecord.projectId,
+            "project" to projectPayload(updatedRecord)
+        )
+    }
+
+    /**
+     * Applies a map-shaped Project update request from MethodChannel, Agent tools, or MCP debug.
+     *
+     * @param args Update arguments. Supports `name`, `shortName`, `description`, `displays`,
+     * `apis`, `flutterFiles`, and `prompt`; unknown fields are ignored for forward compatibility.
+     * @param caller Caller label persisted into progress and hot-update logs.
+     * @return Updated Project payload.
+     */
+    @Synchronized
+    fun updateProject(args: Map<String, Any?>, caller: String = "unknown"): Map<String, Any?> {
+        return updateProjectMetadata(
+            projectId = stringConfigArg(args, "projectId"),
+            name = args["name"]?.toString(),
+            shortName = args["shortName"]?.toString(),
+            description = args["description"]?.toString(),
+            displays = args["displays"],
+            apis = args["apis"] ?: args["apiSpecs"],
+            flutterFiles = args["flutterFiles"] ?: args["frontendFlutterFiles"],
+            prompt = args["prompt"]?.toString(),
+            caller = caller
+        )
+    }
+
+    /**
      * Marks one registered Project as the active Workbench context for the Agent.
      *
      * @param projectId Project whose APIs, displays, Workspace path, and skill should be injected
@@ -1451,16 +1664,23 @@ class WorkbenchProjectStore(
                 "prompt" to prompt,
                 "decomposition" to listOf(
                     "Project registry",
-                    "OOB native Flutter frontend",
+                    "App Display surface",
+                    "Editable Flutter source assets",
                     "Project business APIs",
                     "Persistent data and API logs"
-                )
+                ),
+                "displayContract" to "Generated Displays are user app surfaces. Project ids, API counts, executor kinds, Toolbox manifests, Workspace paths, and data/log paths belong to control/debug surfaces."
             ),
             "page" to linkedMapOf(
                 "pageId" to ((displays.firstOrNull()?.get("pageId") ?: displays.firstOrNull()?.get("id"))
                     ?: "workbench-page"),
                 "renderer" to (workbenchPageSpec(record)["renderer"] ?: "oob_native_schema"),
                 "route" to record.route
+            ),
+            "frontendSource" to linkedMapOf(
+                "instantRuntime" to "frontend/page_spec.json",
+                "editableFlutterSource" to "frontend/flutter/",
+                "compileBoundary" to "Flutter source under frontend/flutter/ is a Project asset for Alpine/build/export. The installed OOB APK renders page_spec immediately; running new Dart code inside the installed app requires a controlled build/install path."
             ),
             "displays" to displays,
             "schema" to workbenchPageSpec(record),
@@ -1532,6 +1752,9 @@ class WorkbenchProjectStore(
                 return displays
             }
         }
+        if (record.templateId == WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID) {
+            return quickCaptureDisplays(record, spec)
+        }
         if (spec.isNotEmpty() && spec["route"]?.toString()?.trim()?.isNotEmpty() == true) {
             return listOf(
                 linkedMapOf(
@@ -1561,19 +1784,7 @@ class WorkbenchProjectStore(
                     "description" to "Schema display bound to this Project API registry."
                 )
             )
-            WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID -> listOf(
-                linkedMapOf(
-                    "id" to "quick-capture-display",
-                    "pageId" to "quick-capture-page",
-                    "title" to "随手记 Inbox",
-                    "shortName" to "NOTE",
-                    "route" to record.route,
-                    "kind" to "oob_flutter",
-                    "renderer" to "oob_quick_capture_inbox",
-                    "isDefault" to true,
-                    "description" to "Quick capture inbox bound to capture Project APIs."
-                )
-            )
+            WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID -> quickCaptureDisplays(record, spec)
             else -> listOf(
                 linkedMapOf(
                     "id" to "todo-log-display",
@@ -1588,6 +1799,353 @@ class WorkbenchProjectStore(
                 )
             )
         }
+    }
+
+    /**
+     * Builds the v0.1 multi-display Quick Capture app shell.
+     *
+     * @param record Project registry record used for stable route and display ownership.
+     * @param spec Optional existing `frontend/page_spec.json`; title/short name are preserved
+     * when the user has renamed the Project.
+     * @return Display pages that share one Project data/API contract while navigating inside the
+     * right-side Workbench display surface.
+     */
+    private fun quickCaptureDisplays(
+        record: WorkbenchProjectRecord,
+        spec: Map<String, Any?> = emptyMap()
+    ): List<Map<String, Any?>> {
+        val baseRoute = record.route.ifBlank {
+            "/workbench/quick_capture?projectId=${record.projectId}"
+        }
+        val title = spec["title"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: record.name.ifBlank { "随手记" }
+        val shortName = spec["shortName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "NOTE"
+        fun display(
+            id: String,
+            pageId: String,
+            pageTitle: String,
+            isDefault: Boolean = false
+        ): Map<String, Any?> {
+            val separator = if (baseRoute.contains("?")) "&" else "?"
+            return linkedMapOf(
+                "id" to id,
+                "pageId" to pageId,
+                "title" to pageTitle,
+                "shortName" to shortName,
+                "route" to "$baseRoute${separator}displayId=$id",
+                "kind" to "oob_flutter",
+                "renderer" to "oob_quick_capture_inbox",
+                "surfaceKind" to "app_display",
+                "navigationScope" to "right_workbench_display",
+                "isDefault" to isDefault,
+                "description" to "Quick Capture page in one shared Project app."
+            )
+        }
+        return listOf(
+            display("quick-capture-capture", "quick-capture-capture-page", title, isDefault = true),
+            display("quick-capture-inbox", "quick-capture-inbox-page", "收件箱"),
+            display("quick-capture-archive", "quick-capture-archive-page", "归档")
+        )
+    }
+
+    /**
+     * Normalizes Project update display specs into the same app-display shape used by creation.
+     *
+     * @param record Project whose route is used when a display omits its own route.
+     * @param value Optional `displays` array from `workbench_project_update`.
+     * @return Valid display maps keyed by `id`, ready to merge into `frontend/page_spec.json`.
+     */
+    private fun normalizeDisplaySpecs(
+        record: WorkbenchProjectRecord,
+        value: Any?
+    ): List<Map<String, Any?>> {
+        val raw = value as? Iterable<*> ?: return emptyList()
+        return raw.mapNotNull { item ->
+            val display = item as? Map<*, *> ?: return@mapNotNull null
+            val id = display["id"]?.toString()?.trim()
+                ?: display["displayId"]?.toString()?.trim()
+                ?: display["pageId"]?.toString()?.trim()
+                ?: return@mapNotNull null
+            if (id.isEmpty()) return@mapNotNull null
+            val pageId = display["pageId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "$id-page"
+            val route = display["route"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                ?: displayRouteWithId(record.route, id)
+            linkedMapOf(
+                "id" to id,
+                "pageId" to pageId,
+                "title" to (
+                    display["title"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: display["displayName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: id
+                    ),
+                "shortName" to (
+                    display["shortName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: display["abbr"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: "APP"
+                    ),
+                "route" to route,
+                "kind" to (display["kind"]?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: "oob_flutter"),
+                "renderer" to (
+                    display["renderer"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: workbenchPageSpec(record)["renderer"]
+                        ?: "oob_schema_collection"
+                    ),
+                "surfaceKind" to "app_display",
+                "navigationScope" to "right_workbench_display",
+                "isDefault" to (display["isDefault"] == true),
+                "description" to display["description"]?.toString()?.trim().orEmpty()
+            )
+        }
+    }
+
+    /**
+     * Merges display updates without losing existing pages.
+     *
+     * @param base Current display payloads from `frontend/page_spec.json` or runtime fallback.
+     * @param additions New display payloads from the update request.
+     * @return Ordered display list where additions replace matching ids and append new ids.
+     */
+    private fun mergeDisplaySpecs(
+        base: List<*>,
+        additions: List<Map<String, Any?>>
+    ): List<Map<String, Any?>> {
+        val byId = linkedMapOf<String, Map<String, Any?>>()
+        base.forEach { item ->
+            @Suppress("UNCHECKED_CAST")
+            val map = item as? Map<String, Any?> ?: return@forEach
+            val id = displayKey(map)
+            if (id.isNotEmpty()) byId[id] = map
+        }
+        additions.forEach { display ->
+            val id = displayKey(display)
+            if (id.isNotEmpty()) byId[id] = display
+        }
+        val merged = byId.values.toList()
+        if (merged.any { it["isDefault"] == true }) return merged
+        return merged.mapIndexed { index, display ->
+            if (index != 0) {
+                display
+            } else {
+                display + ("isDefault" to true)
+            }
+        }
+    }
+
+    /**
+     * Merges API registry records by `apiId` while preserving existing order.
+     *
+     * @param base Existing Project business APIs.
+     * @param additions New or replacement business APIs from a Project update.
+     * @return Updated API record list for `api_registry.json` and Tool Contract output.
+     */
+    private fun mergeApiRecords(
+        base: List<WorkbenchApiRecord>,
+        additions: List<WorkbenchApiRecord>
+    ): List<WorkbenchApiRecord> {
+        if (additions.isEmpty()) return base
+        val byId = linkedMapOf<String, WorkbenchApiRecord>()
+        base.forEach { byId[it.apiId] = it }
+        additions.forEach { byId[it.apiId] = it }
+        return byId.values.toList()
+    }
+
+    /**
+     * Appends frontend action bindings for newly registered business APIs.
+     *
+     * @param value Existing `actions` value from `frontend/page_spec.json`.
+     * @param apis Business APIs that should become available to the renderer.
+     * @return JSON-safe action list with no duplicate API ids.
+     */
+    private fun mergePageActions(value: Any?, apis: List<WorkbenchApiRecord>): List<Map<String, Any?>> {
+        val existing = (value as? Iterable<*>)
+            ?.mapNotNull { it as? Map<*, *> }
+            ?.map { raw -> raw.entries.associate { it.key.toString() to it.value } }
+            ?.toMutableList()
+            ?: mutableListOf()
+        val existingApiIds = existing.mapNotNull { it["apiId"]?.toString() }.toMutableSet()
+        apis.forEach { api ->
+            if (existingApiIds.add(api.apiId)) {
+                existing += linkedMapOf(
+                    "apiId" to api.apiId,
+                    "kind" to schemaApiAction(api),
+                    "label" to api.displayName,
+                    "inputs" to when (schemaApiAction(api)) {
+                        "archive", "update" -> linkedMapOf("item_id" to "item.id")
+                        "list" -> emptyMap<String, String>()
+                        else -> linkedMapOf("title" to "page.input.title")
+                    }
+                )
+            }
+        }
+        return existing
+    }
+
+    /**
+     * Builds the stable Project iteration contract embedded in `frontend/page_spec.json`.
+     *
+     * @return JSON-safe rule payload used by later agents and hot-update passes.
+     */
+    private fun projectIterationContract(): Map<String, Any?> = linkedMapOf(
+        "scope" to "same_project",
+        "mutationTargets" to listOf(
+            "frontend/page_spec.json",
+            "frontend/flutter/",
+            "backend/api_spec.json",
+            "data/items.json",
+            "logs/hot_updates.jsonl"
+        ),
+        "displayNavigationScope" to "right_workbench_display",
+        "rule" to "Add features by extending displays, actions, and Project business tools; do not create a replacement Project unless the user asks."
+    )
+
+    private fun displayKey(display: Map<String, Any?>): String {
+        return display["id"]?.toString()?.trim()
+            ?: display["displayId"]?.toString()?.trim()
+            ?: display["pageId"]?.toString()?.trim()
+            ?: ""
+    }
+
+    private fun displayRouteWithId(route: String, displayId: String): String {
+        val base = route.ifBlank { "/workbench/schema_app" }
+        val separator = if (base.contains("?")) "&" else "?"
+        return if (base.contains("displayId=")) base else "$base${separator}displayId=$displayId"
+    }
+
+    /**
+     * Normalizes Project-owned Flutter source updates into relative-path/content pairs.
+     *
+     * @param value Tool or MethodChannel payload. Supported shapes are a map of
+     * `path -> content`, a list of `{path, content}`, or `{files: [...]}`.
+     * @return Sanitized relative file specs ready for bounded writes under `frontend/flutter/`.
+     */
+    private fun normalizeFrontendFlutterFiles(value: Any?): List<Pair<String, String>> {
+        if (value == null) return emptyList()
+        if (value is Map<*, *>) {
+            val map = asStringKeyMap(value)
+            val directPath = map["path"] ?: map["relativePath"] ?: map["filePath"]
+            val directContent = map["content"] ?: map["source"] ?: map["text"]
+            if (directPath != null && directContent != null) {
+                return listOf(frontendFlutterFileSpec(directPath, directContent))
+            }
+            val nested = map["files"] ?: map["items"]
+            if (nested is Iterable<*>) {
+                return normalizeFrontendFlutterFiles(nested)
+            }
+            return map.mapNotNull { (path, content) ->
+                if (path == "files" || path == "items") null else frontendFlutterFileSpec(path, content)
+            }.distinctBy { it.first }
+        }
+        val raw = value as? Iterable<*> ?: return emptyList()
+        return raw.mapNotNull { item ->
+            val map = item as? Map<*, *> ?: return@mapNotNull null
+            val file = asStringKeyMap(map)
+            val path = file["path"] ?: file["relativePath"] ?: file["filePath"] ?: return@mapNotNull null
+            val content = file["content"] ?: file["source"] ?: file["text"] ?: return@mapNotNull null
+            frontendFlutterFileSpec(path, content)
+        }.distinctBy { it.first }
+    }
+
+    /**
+     * Converts one untrusted Flutter source payload into a bounded relative path and content.
+     *
+     * @param path Raw project-local path supplied by AI, UI, or MCP.
+     * @param content Source text that should be persisted as UTF-8.
+     * @return Pair of sanitized path and source content.
+     */
+    private fun frontendFlutterFileSpec(path: Any?, content: Any?): Pair<String, String> {
+        val normalized = cleanFrontendFlutterPath(path?.toString().orEmpty())
+        return normalized to content?.toString().orEmpty()
+    }
+
+    /**
+     * Enforces the `frontend/flutter/` source boundary before any file write occurs.
+     *
+     * @param rawPath Relative path requested by a Project update.
+     * @return Slash-normalized path with no absolute, parent, or manifest overwrite segments.
+     */
+    private fun cleanFrontendFlutterPath(rawPath: String): String {
+        val normalized = rawPath.replace('\\', '/').trim().removePrefix("/")
+        require(normalized.isNotEmpty()) { "Flutter source file path is required." }
+        require(!normalized.contains(":")) { "Flutter source file path must be relative." }
+        val parts = normalized.split('/').filter { it.isNotBlank() }
+        require(parts.none { it == ".." }) { "Flutter source file path cannot escape frontend/flutter/." }
+        require(parts.lastOrNull() != "manifest.json") {
+            "frontend/flutter/manifest.json is generated by OOB."
+        }
+        return parts.joinToString("/")
+    }
+
+    /**
+     * Writes Project-owned Flutter source files and refreshes `frontend/flutter/manifest.json`.
+     *
+     * @param projectId Project id whose `frontend/flutter/` directory owns the files.
+     * @param files Sanitized relative-path/content pairs from `normalizeFrontendFlutterFiles`.
+     * @return Project-relative paths and byte sizes that were written in this update.
+     */
+    private fun writeFrontendFlutterFiles(
+        projectId: String,
+        files: List<Pair<String, String>>
+    ): List<Map<String, Any?>> {
+        if (files.isEmpty()) return emptyList()
+        val flutterDir = File(projectDir(projectId), "frontend/flutter")
+        flutterDir.mkdirs()
+        val root = flutterDir.canonicalFile
+        val rootPrefix = root.path + File.separator
+        val writtenAt = nowIso()
+        val written = files.map { (relativePath, content) ->
+            val target = File(root, relativePath).canonicalFile
+            require(target.path == root.path || target.path.startsWith(rootPrefix)) {
+                "Flutter source file path cannot escape frontend/flutter/."
+            }
+            target.parentFile?.mkdirs()
+            target.writeText(content)
+            linkedMapOf<String, Any?>(
+                "path" to "frontend/flutter/$relativePath",
+                "bytes" to content.toByteArray(Charsets.UTF_8).size,
+                "updatedAt" to writtenAt
+            )
+        }
+        writeFrontendFlutterManifest(projectId)
+        return written
+    }
+
+    /**
+     * Rebuilds the Project Flutter source manifest from files currently on disk.
+     *
+     * @param projectId Project id whose `frontend/flutter/manifest.json` should be materialized.
+     * @return Current file summary, excluding the generated manifest itself.
+     */
+    private fun writeFrontendFlutterManifest(projectId: String): List<Map<String, Any?>> {
+        val flutterDir = File(projectDir(projectId), "frontend/flutter")
+        flutterDir.mkdirs()
+        val root = flutterDir.canonicalFile
+        val files = flutterDir.walkTopDown()
+            .filter { it.isFile && it.name != "manifest.json" }
+            .map { file ->
+                val relative = root.toPath()
+                    .relativize(file.canonicalFile.toPath())
+                    .toString()
+                    .replace(File.separatorChar, '/')
+                linkedMapOf<String, Any?>(
+                    "path" to "frontend/flutter/$relative",
+                    "bytes" to file.length(),
+                    "updatedAt" to Instant.ofEpochMilli(file.lastModified()).toString()
+                )
+            }
+            .sortedBy { it["path"]?.toString().orEmpty() }
+            .toList()
+        File(flutterDir, "manifest.json").writeText(
+            gson.toJson(
+                linkedMapOf(
+                    "generatedAt" to nowIso(),
+                    "runtimeBoundary" to "source_asset_not_hot_loaded",
+                    "files" to files
+                )
+            )
+        )
+        return files
     }
 
     /**
@@ -1633,6 +2191,16 @@ class WorkbenchProjectStore(
                 |contract lives in `frontend/page_spec.json`; OOB binds visible controls to
                 |Project APIs through `workbenchApiCall`.
                 |
+                |If the Project needs custom Flutter, generate or edit source under
+                |`frontend/flutter/` from the Alpine workspace. That source is a Project asset
+                |for export/build/future renderer promotion; it is not hot-loaded into the
+                |already installed OOB APK without a controlled build/install step.
+                |
+                |The Display is the user-facing app surface. It should show the product workflow,
+                |domain records, input forms, filters, and business actions. Project ids,
+                |API counts, executor names, Toolbox metadata, Workspace paths, and data/log
+                |paths belong in Workbench control/debug surfaces, not the app home.
+                |
                 |## Backend
                 |Business APIs are declared in `backend/api_spec.json`. API execution stays behind
                 |the Workbench runtime boundary, so AI calls and UI clicks share one backend path.
@@ -1657,6 +2225,31 @@ class WorkbenchProjectStore(
         frontendDir.mkdirs()
         backendDir.mkdirs()
         scriptsDir.mkdirs()
+        val flutterDir = File(frontendDir, "flutter")
+        flutterDir.mkdirs()
+        val flutterReadme = File(flutterDir, "README.md")
+        if (!flutterReadme.exists()) {
+            flutterReadme.writeText(
+                """
+                |# Flutter Source Asset
+                |
+                |This directory is reserved for Project-owned Flutter source generated or edited
+                |from the Alpine workspace.
+                |
+                |Runtime boundary:
+                |- `frontend/page_spec.json` is the immediate OOB Display contract rendered by the
+                |  installed app.
+                |- `frontend/flutter/` is editable source for export, build, or future renderer
+                |  promotion.
+                |- New Dart code written here is not hot-loaded into the already installed OOB APK.
+                |  It needs a controlled Flutter build/install path before it can run as native code.
+                |
+                |Use this directory when a Project needs highly custom Flutter beyond the current
+                |page-spec renderer. Keep `page_spec.json` as the fast preview surface.
+                |
+                """.trimMargin()
+            )
+        }
         val pageSpec = File(frontendDir, "page_spec.json")
         if (!pageSpec.exists()) {
             pageSpec.writeText(gson.toJson(defaultPageSpec(record, apis, sourcePrompt, config)))
@@ -1668,65 +2261,7 @@ class WorkbenchProjectStore(
             !apiSpecText.contains("\"toolName\"") ||
             !apiSpecText.contains("\"apiVersion\"")
         if (needsToolContractUpgrade) {
-            val counts = apiExecutionCounts(record.projectId)
-            val persistedPrompt = sourcePrompt ?: readProjectSourcePrompt(record.projectId)
-            apiSpec.writeText(
-                gson.toJson(
-                    linkedMapOf<String, Any?>(
-                        "executorBoundary" to "oob_native_workbench",
-                        "sourcePrompt" to persistedPrompt,
-                        "templateId" to record.templateId,
-                        "runtime" to linkedMapOf(
-                            "workspace" to record.spacePath,
-                            "progressLog" to "logs/project_progress.jsonl",
-                            "sourceManifest" to "source/manifest.json",
-                            "androidManifest" to "android/manifest.json",
-                            "executorKinds" to apis.map { it.executorKind }.distinct()
-                        ),
-                        "controlApis" to listOf(
-                            "workbench_project_progress_get",
-                            "workbench_project_ingest_oss",
-                            "workbench_project_ingest_android",
-                            "workbench_project_hot_update",
-                            "workbench_project_export"
-                        ),
-                        "toolbox" to WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts),
-                        "promptDecomposition" to promptDecomposition(record, apis),
-                        "apis" to apis.map { api ->
-                            api.toPayload(counts[api.apiId] ?: 0) + linkedMapOf(
-                                "runtime" to linkedMapOf(
-                                    "executorBoundary" to "oob_native_workbench",
-                                    "executorKind" to api.executorKind,
-                                    "workingDirectory" to "backend",
-                                    "status" to if (api.executorKind == WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND) {
-                                        "native_backed_workspace_script_contract"
-                                    } else {
-                                        "native_executor"
-                                    },
-                                    "scriptPath" to if (api.executorKind == WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND) {
-                                        "backend/scripts/${api.apiId.replace('.', '_')}.py"
-                                    } else {
-                                        null
-                                    }
-                                ),
-                                "sourceRefs" to listOf(
-                                    linkedMapOf(
-                                        "kind" to "page_spec",
-                                        "path" to "frontend/page_spec.json"
-                                    ),
-                                    linkedMapOf(
-                                        "kind" to "api_spec",
-                                        "path" to "backend/api_spec.json"
-                                    )
-                                ),
-                                "persistence" to persistenceFiles(record),
-                                "frontendBinding" to "frontend/page_spec.json",
-                                "aiUsage" to "Call through workbench_api_call with this projectId."
-                            )
-                        }
-                    )
-                )
-            )
+            writeBackendApiSpec(record, apis, sourcePrompt ?: readProjectSourcePrompt(record.projectId))
         }
         val sourceDir = File(projectDir, "source")
         sourceDir.mkdirs()
@@ -1774,6 +2309,79 @@ class WorkbenchProjectStore(
     }
 
     /**
+     * Rewrites `backend/api_spec.json` from the current Project API registry.
+     *
+     * @param record Project whose backend contract is being materialized.
+     * @param apis Business APIs owned by the Project; control APIs are intentionally excluded.
+     * @param sourcePrompt Original creation prompt, when known.
+     */
+    private fun writeBackendApiSpec(
+        record: WorkbenchProjectRecord,
+        apis: List<WorkbenchApiRecord>,
+        sourcePrompt: String?
+    ) {
+        val apiSpec = File(projectDir(record.projectId), "backend/api_spec.json")
+        apiSpec.parentFile?.mkdirs()
+        val counts = apiExecutionCounts(record.projectId)
+        apiSpec.writeText(
+            gson.toJson(
+                linkedMapOf<String, Any?>(
+                    "executorBoundary" to "oob_native_workbench",
+                    "sourcePrompt" to sourcePrompt,
+                    "templateId" to record.templateId,
+                        "runtime" to linkedMapOf(
+                            "workspace" to record.spacePath,
+                            "frontendPageSpec" to "frontend/page_spec.json",
+                            "frontendFlutterSource" to "frontend/flutter/",
+                            "frontendFlutterManifest" to "frontend/flutter/manifest.json",
+                            "progressLog" to "logs/project_progress.jsonl",
+                            "sourceManifest" to "source/manifest.json",
+                            "androidManifest" to "android/manifest.json",
+                            "executorKinds" to apis.map { it.executorKind }.distinct()
+                        ),
+                    "iterationContract" to projectIterationContract(),
+                    "controlApis" to listOf(
+                        "workbench_project_update",
+                        "workbench_project_progress_get",
+                        "workbench_project_ingest_oss",
+                        "workbench_project_ingest_android",
+                        "workbench_project_hot_update",
+                        "workbench_project_export"
+                    ),
+                    "toolbox" to WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts),
+                    "promptDecomposition" to promptDecomposition(record, apis),
+                    "apis" to apis.map { api ->
+                        api.toPayload(counts[api.apiId] ?: 0) + linkedMapOf(
+                            "runtime" to linkedMapOf(
+                                "executorBoundary" to "oob_native_workbench",
+                                "executorKind" to api.executorKind,
+                                "workingDirectory" to "backend",
+                                "status" to if (api.executorKind == WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND) {
+                                    "native_backed_workspace_script_contract"
+                                } else {
+                                    "native_executor"
+                                },
+                                "scriptPath" to if (api.executorKind == WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND) {
+                                    "backend/scripts/${api.apiId.replace('.', '_')}.py"
+                                } else {
+                                    null
+                                }
+                            ),
+                            "sourceRefs" to listOf(
+                                linkedMapOf("kind" to "page_spec", "path" to "frontend/page_spec.json"),
+                                linkedMapOf("kind" to "api_spec", "path" to "backend/api_spec.json")
+                            ),
+                            "persistence" to persistenceFiles(record),
+                            "frontendBinding" to "frontend/page_spec.json",
+                            "aiUsage" to "Call through workbench_api_call with this projectId."
+                        )
+                    }
+                )
+            )
+        )
+    }
+
+    /**
      * Builds the editable frontend contract for a new Project.
      *
      * @param record Project registry record used for route and identity.
@@ -1796,15 +2404,30 @@ class WorkbenchProjectStore(
                 "shortName" to "NOTE",
                 "description" to "Capture text, links, share content, and screenshots into Todo, Summary, Link Card, and later-read items.",
                 "renderer" to "oob_quick_capture_inbox",
+                "surfaceKind" to "app_display",
                 "route" to record.route,
                 "templateId" to record.templateId,
                 "sourcePrompt" to sourcePrompt,
+                "navigationScope" to "right_workbench_display",
+                "frontendRuntime" to linkedMapOf(
+                    "instantSurface" to "frontend/page_spec.json",
+                    "editableFlutterSource" to "frontend/flutter/",
+                    "compileBoundary" to "Flutter source is generated and edited in the Project workspace; it is not hot-loaded into the installed OOB APK without a controlled build/install step."
+                ),
+                "displays" to quickCaptureDisplays(record),
                 "decomposition" to listOf(
                     "Explicit Project creation prompt -> Project registry",
-                    "Quick capture frontend -> OOB native Flutter inbox renderer",
-                    "Controls -> capture Project API calls",
-                    "State -> project data/items.json and logs"
+                    "App Display -> quick capture workflow and inbox state",
+                    "Multiple Displays -> capture, inbox, and archive pages inside one Project",
+                    "Visible controls -> domain actions",
+                    "Control/debug surfaces -> Project metadata, API counts, Toolbox, logs, and Workspace"
                 ),
+                "iterationContract" to linkedMapOf(
+                    "scope" to "same_project",
+                    "mutationTargets" to listOf("frontend/page_spec.json", "backend/api_spec.json", "data/items.json", "logs/hot_updates.jsonl"),
+                    "rule" to "Add features by extending displays, actions, and Project business tools; do not create a replacement Project unless the user asks."
+                ),
+                "displayRules" to appDisplayRules(),
                 "state" to linkedMapOf("items" to "data/items.json"),
                 "categories" to listOf("todo", "summary", "link", "later"),
                 "bindings" to listOf(
@@ -1837,7 +2460,7 @@ class WorkbenchProjectStore(
                 ?: config["displayName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 ?: record.name
             val description = config["description"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                ?: "Prompt-generated OOB native schema display."
+                ?: "Manage $entityName records with saved status and quick actions."
             return linkedMapOf(
                 "pageId" to "schema-main-page",
                 "displayId" to "schema-main-display",
@@ -1845,6 +2468,7 @@ class WorkbenchProjectStore(
                 "shortName" to schemaShortName(entityName),
                 "description" to description,
                 "renderer" to "oob_schema_collection",
+                "surfaceKind" to "app_display",
                 "route" to record.route,
                 "templateId" to record.templateId,
                 "sourcePrompt" to sourcePrompt,
@@ -1852,11 +2476,17 @@ class WorkbenchProjectStore(
                 "primaryField" to "title",
                 "decomposition" to listOf(
                     "Prompt requirement -> Project registry",
-                    "Frontend display -> OOB schema Flutter renderer",
-                    "Controls -> Project API calls",
-                    "State -> project data/items.json and logs"
+                    "App Display -> user workflow for $entityName",
+                    "Visible controls -> domain actions",
+                    "Control/debug surfaces -> Project metadata, API counts, Toolbox, logs, and Workspace"
                 ),
+                "displayRules" to appDisplayRules(),
                 "state" to linkedMapOf("items" to "data/items.json"),
+                "frontendRuntime" to linkedMapOf(
+                    "instantSurface" to "frontend/page_spec.json",
+                    "editableFlutterSource" to "frontend/flutter/",
+                    "compileBoundary" to "Flutter source is generated and edited in the Project workspace; it is not hot-loaded into the installed OOB APK without a controlled build/install step."
+                ),
                 "fields" to listOf(
                     linkedMapOf(
                         "id" to "title",
@@ -1885,16 +2515,23 @@ class WorkbenchProjectStore(
             "title" to "Todo 日志",
             "shortName" to "TODO",
             "renderer" to "oob_native_flutter_display",
+            "surfaceKind" to "app_display",
             "route" to record.route,
             "templateId" to record.templateId,
             "sourcePrompt" to sourcePrompt,
             "decomposition" to listOf(
                 "Prompt requirement -> Project registry",
-                "Frontend display -> OOB native Flutter route",
-                "Controls -> Project API calls",
-                "State -> project data and logs"
+                "App Display -> todo workflow",
+                "Visible controls -> domain actions",
+                "Control/debug surfaces -> Project metadata, API counts, Toolbox, logs, and Workspace"
             ),
+            "displayRules" to appDisplayRules(),
             "state" to linkedMapOf("todos" to "data/todos.json"),
+            "frontendRuntime" to linkedMapOf(
+                "instantSurface" to "frontend/page_spec.json",
+                "editableFlutterSource" to "frontend/flutter/",
+                "compileBoundary" to "Flutter source is generated and edited in the Project workspace; it is not hot-loaded into the installed OOB APK without a controlled build/install step."
+            ),
             "bindings" to listOf(
                 linkedMapOf(
                     "controlId" to "add-todo-button",
@@ -1909,6 +2546,41 @@ class WorkbenchProjectStore(
             )
         )
     }
+
+    /**
+     * Returns the app/control surface split that every generated Display must preserve.
+     *
+     * The payload is persisted into `frontend/page_spec.json` so future agents and hot-update
+     * passes keep user-facing app screens separate from Workbench management/debug metadata.
+     */
+    private fun appDisplayRules(): Map<String, Any?> = linkedMapOf(
+        "appSurfaceMustShow" to listOf(
+            "domain workflow",
+            "input forms",
+            "current records or state",
+            "filters and business actions",
+            "empty/loading/error states",
+            "in-app navigation between Project displays when the workflow has multiple pages"
+        ),
+        "displayNavigation" to linkedMapOf(
+            "scope" to "right_workbench_display",
+            "leftChat" to "unchanged",
+            "rule" to "Display-to-display navigation changes only the Workbench app surface, not the Home chat."
+        ),
+        "controlSurfaceOnly" to listOf(
+            "project id",
+            "template id",
+            "API count",
+            "executor kind",
+            "Toolbox manifest",
+            "Workspace path",
+            "data/log paths",
+            "backend/api_spec.json",
+            "frontend/page_spec.json",
+            "progress rows",
+            "export/delete controls"
+        )
+    )
 
     /**
      * Explains the prompt-to-runtime split in `backend/api_spec.json`.
@@ -2938,6 +3610,8 @@ class WorkbenchProjectStore(
         return when (schemaApiAction(api)) {
             "create" -> createSchemaItem(projectId, api, inputs)
             "archive" -> archiveSchemaItem(projectId, api, inputs)
+            "update" -> updateSchemaItem(projectId, api, inputs)
+            "list" -> listSchemaItems(projectId, api)
             else -> apiError(api, "UNKNOWN_SCHEMA_ACTION", "Unknown schema API: ${api.apiId}")
         }
     }
@@ -2996,6 +3670,68 @@ class WorkbenchProjectStore(
         return apiSuccess(api, mapOf("item" to archived.toPayload()))
     }
 
+    /**
+     * Updates fields on one generic schema item.
+     *
+     * @param projectId Project whose `data/items.json` owns the item.
+     * @param api API registry record using an update-like id.
+     * @param inputs Caller payload; `item_id`/`itemId`/`id` selects the item and remaining keys
+     * update the title or custom fields.
+     * @return Tool-style result containing the updated item.
+     */
+    private fun updateSchemaItem(
+        projectId: String,
+        api: WorkbenchApiRecord,
+        inputs: Map<String, Any?>
+    ): Map<String, Any?> {
+        val itemId = inputs["item_id"]?.toString()?.trim()
+            ?: inputs["itemId"]?.toString()?.trim()
+            ?: inputs["id"]?.toString()?.trim()
+            ?: ""
+        if (itemId.isEmpty()) {
+            return apiError(api, "MISSING_ITEM_ID", "item_id is required.")
+        }
+        val items = readSchemaItems(projectId)
+        val index = items.indexOfFirst { it.id == itemId }
+        if (index < 0) {
+            return apiError(api, "ITEM_NOT_FOUND", "Item not found: $itemId")
+        }
+        val current = items[index]
+        val title = inputs["title"]?.toString()?.trim()
+            ?: inputs["name"]?.toString()?.trim()
+            ?: current.title
+        val fieldUpdates = inputs.filterKeys { key ->
+            key !in setOf("id", "item_id", "itemId", "title", "name", "label", "status")
+        }.filterValues { value -> value != null }
+        val updated = current.copy(
+            title = title.take(160).ifBlank { current.title },
+            fields = current.fields + fieldUpdates
+        )
+        val next = items.toMutableList()
+        next[index] = updated
+        writeSchemaItems(projectId, next)
+        return apiSuccess(api, mapOf("item" to updated.toPayload()))
+    }
+
+    /**
+     * Reads generic schema items without mutating Project data.
+     *
+     * @param projectId Project whose `data/items.json` should be read.
+     * @param api API registry record using a list/read/query-like id.
+     * @return Tool-style result containing all items plus active/archive subsets.
+     */
+    private fun listSchemaItems(projectId: String, api: WorkbenchApiRecord): Map<String, Any?> {
+        val items = readSchemaItems(projectId)
+        return apiSuccess(
+            api,
+            mapOf(
+                "items" to items.map { it.toPayload() },
+                "activeItems" to items.filter { it.status != "archived" }.map { it.toPayload() },
+                "archivedItems" to items.filter { it.status == "archived" }.map { it.toPayload() }
+            )
+        )
+    }
+
     private fun schemaItemTitle(inputs: Map<String, Any?>): String {
         val direct = inputs["title"]?.toString()?.trim()
             ?: inputs["name"]?.toString()?.trim()
@@ -3011,6 +3747,10 @@ class WorkbenchProjectStore(
         return when {
             listOf(".archive", ".finish", ".complete", ".done").any { id.contains(it) } ->
                 "archive"
+            listOf(".update", ".edit", ".patch").any { id.contains(it) } ->
+                "update"
+            listOf(".list", ".read", ".query", ".search").any { id.contains(it) } ->
+                "list"
             listOf(".create", ".add", ".new").any { id.contains(it) } ->
                 "create"
             else -> "custom"
@@ -4046,6 +4786,11 @@ class WorkbenchProjectStore(
         val relative = projectRoot.toPath().relativize(file.toPath()).toString()
             .replace(File.separatorChar, '/')
         return "${AgentWorkspaceManager.SHELL_ROOT_PATH}/projects/$projectId/$relative"
+    }
+
+    private fun stringConfigArg(args: Map<String, Any?>, key: String): String {
+        return args[key]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: throw IllegalArgumentException("$key is required.")
     }
 
     private fun defaultProjectId(templateId: String, config: Map<String, Any?>): String {

@@ -1,5 +1,4 @@
 import 'package:go_router/go_router.dart';
-import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/workbench/pages/workbench_project_mode_page.dart';
 import 'package:ui/features/workbench/pages/workbench_quick_capture_page.dart';
 import 'package:ui/features/workbench/pages/workbench_schema_project_page.dart';
@@ -9,7 +8,7 @@ List<GoRoute> workbenchRoutes = [
   GoRoute(
     path: '/workbench/projects',
     name: 'workbench/projects',
-    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
+    pageBuilder: (context, state) => NoTransitionPage(
       key: state.pageKey,
       name: 'workbench/projects',
       child: WorkbenchProjectModePage(
@@ -20,7 +19,7 @@ List<GoRoute> workbenchRoutes = [
   GoRoute(
     path: '/workbench/schema_app',
     name: 'workbench/schema_app',
-    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
+    pageBuilder: (context, state) => NoTransitionPage(
       key: state.pageKey,
       name: 'workbench/schema_app',
       child: WorkbenchSchemaProjectPage(
@@ -36,7 +35,7 @@ List<GoRoute> workbenchRoutes = [
   GoRoute(
     path: '/workbench/quick_capture',
     name: 'workbench/quick_capture',
-    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
+    pageBuilder: (context, state) => NoTransitionPage(
       key: state.pageKey,
       name: 'workbench/quick_capture',
       child: WorkbenchQuickCapturePage(
@@ -52,7 +51,7 @@ List<GoRoute> workbenchRoutes = [
   GoRoute(
     path: '/workbench/todo_log',
     name: 'workbench/todo_log',
-    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
+    pageBuilder: (context, state) => NoTransitionPage(
       key: state.pageKey,
       name: 'workbench/todo_log',
       child: WorkbenchTodoLogPage(

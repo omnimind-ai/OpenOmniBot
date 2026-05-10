@@ -23,6 +23,8 @@ Each Project lives under:
   README.md
   project.json
   frontend/page_spec.json
+  frontend/flutter/
+  frontend/flutter/manifest.json
   backend/api_spec.json
   data/
   logs/api_calls.jsonl
@@ -38,6 +40,8 @@ Each Project lives under:
 
 `project.json` is the runtime summary. It includes Project identity, displays, schema, business APIs, Toolbox manifest, Android assets, source assets, progress summary, last error, and state counters.
 
+`frontend/page_spec.json` is the immediate Display contract rendered by the installed OOB app. `frontend/flutter/` is editable Project-owned Flutter source for Alpine generation, export, or a controlled build/install path; it is not hot-loaded into the already installed APK. `workbench_project_update` may write source files through `flutterFiles` / `frontendFlutterFiles`, and OOB regenerates `frontend/flutter/manifest.json` after each bounded write.
+
 `backend/api_spec.json` is the backend Tool Contract. It includes API ids, MCP `toolName`, `apiVersion`, schemas, executor kind, capabilities, side effects, data/log files, runtime metadata, control API names, persistence paths, source refs, examples, and frontend binding.
 
 `source/manifest.json` records OSS/GitHub source assets. It is intentionally separate from `backend/api_spec.json` so source ingestion can happen before API binding.
@@ -52,6 +56,7 @@ Workbench control APIs manage Project lifecycle and runtime assets:
 workbench_project_create
 workbench_project_list
 workbench_project_get
+workbench_project_update
 workbench_project_open
 workbench_project_activate
 workbench_project_active_get
@@ -72,6 +77,12 @@ workbench_api_call
 ```
 
 Rule: lifecycle/import/progress/export/hot-update controls must not appear in `workbench_api_list`.
+`workbench_project_update` is the Project iteration control API. It can update
+user-facing metadata and merge new Display pages plus business APIs into the
+same Project. It updates the registry payload, `frontend/page_spec.json`,
+`backend/api_spec.json`, `logs/hot_updates.jsonl`, and
+`logs/project_progress.jsonl`; it does not change Project id or replace the
+Project container.
 
 ## Backend Capability Surface
 
@@ -80,7 +91,12 @@ This pass is deliberately the backend/runtime foundation, not the final visual e
 The implemented capability surface is:
 
 - Project creation and reuse with append-only progress stages.
-- Generic `schema_app` Projects with business APIs such as `<entity>.create` and `<entity>.archive`.
+- Generic `schema_app` Projects with business APIs such as `<entity>.create`,
+  `<entity>.archive`, `<entity>.update`, and `<entity>.list`.
+- Same-Project iteration through `workbench_project_update`, which can add
+  Display pages and business APIs without creating a replacement Project.
+- Editable Flutter source assets under `frontend/flutter/` for Alpine-generated
+  custom source, export, or a later controlled build path.
 - Quick capture Projects with `workspace_python_script` API ids that already write script/SDK artifacts, while execution remains native-backed for reliability. Supported buckets are `todo`, `summary`, `link`, and `later`; receipt/invoice/expense inputs are mapped to `summary` until the frontend adds a dedicated expense bucket.
 - Android asset ingest as Project runtime metadata under `android/`.
 - OSS/GitHub source ingest as Project runtime metadata under `source/`.
@@ -184,7 +200,8 @@ Status values are `running`, `waiting`, `completed`, or `failed`.
 Current executor kinds:
 
 - `native_template`: native todo executor.
-- `native_schema_collection`: native generic CRUD-style collection executor.
+- `native_schema_collection`: native generic collection executor for create,
+  archive, update, and list-style schema APIs.
 - `workspace_python_script`: script executor contract, currently native-backed.
 
 `workspace_python_script` already writes editable SDK/script artifacts under `backend/oob_sdk/` and `backend/scripts/`. This is a replacement point for:
@@ -203,6 +220,50 @@ The replacement must preserve:
 - data files;
 - `logs/api_calls.jsonl`;
 - `logs/script_runs.jsonl`.
+
+## Display Generation Contract
+
+`frontend/page_spec.json` is the user app contract, not the Project control
+manifest. A generated Display must open like a complete application surface:
+
+- show the user's domain workflow, records, input, filters, and business actions;
+- bind controls to Project business APIs through metadata;
+- keep empty/loading/error states in product language.
+- support multiple Display pages when the workflow needs hierarchy. Page
+  changes happen inside the right-side Workbench Project surface and do not
+  replace the left Home conversation.
+
+The following are control/debug metadata and must not be visible in the app
+surface:
+
+- Project id, template id, API count, executor kind, schema name;
+- Toolbox manifest, MCP tool names, `backend/api_spec.json`;
+- Workspace path, data/log paths, progress rows;
+- export/delete controls and API execution-count panels;
+- implementation badges such as `OOB native UI` or "generated frontend".
+
+Those details belong in `/workbench/projects`, the compact info popup, MCP
+resources, logs, or developer documentation. This split is part of the Project
+generation contract and applies to creation, hot update, and future page-spec
+iteration. A Project iteration should call `workbench_project_update` and mutate
+the same Project by extending `frontend/page_spec.json` displays/actions,
+`backend/api_spec.json` business tools, and optionally `frontend/flutter/`
+source files through `flutterFiles`; `logs/hot_updates.jsonl` remains the audit
+trail. Creating a replacement Project is only correct when the user asks for a
+separate app.
+
+Highly custom Flutter belongs under `frontend/flutter/` as editable source.
+Alpine can create or modify that source inside the Project workspace directly
+or via `workbench_project_update.flutterFiles`, but the installed OOB app does
+not hot-load new Dart code. Use `page_spec.json` for instant preview and hot
+update; use `frontend/flutter/` for export, controlled build/install, or future
+promotion into an OOB renderer.
+
+The `/workbench/projects` manager is also a compact OOB control surface, not a
+documentation page. It should present name, short name, one-line purpose, and
+icon actions first. Routes, paths, ids, executor names, and implementation
+counts must stay behind detail/debug affordances instead of filling the primary
+view.
 
 ## MCP Toolbox Surface
 
@@ -331,8 +392,8 @@ Validated flow:
 5. Activated the Project.
 6. Seeded one item through `workbench_api_call(capture.ingest)`.
 7. Opened the Project through `workbench_project_open`.
-8. Verified the device screen shows the OOB-native `随手记 Inbox · NOTE` page with `3 active / 0 archived`, `OOB native UI`, and `4 APIs`.
-9. Re-ran the same shape with `projectId=oob-workbench-vlm-quick-note`, then added one receipt item through the native Flutter UI and archived a malformed smoke item. The final device screen showed `3 active / 1 archived`, `OOB native UI`, and `4 APIs`; the top receipt card was classified as `Summary`.
+8. Verified the device screen showed the OOB-native `随手记 Inbox · NOTE` app surface with captured items and product counters.
+9. Re-ran the same shape with `projectId=oob-workbench-vlm-quick-note`, then added one receipt item through the native Flutter UI and archived a malformed smoke item. The final device screen showed the capture workflow and persisted items; the top receipt card was classified as `Summary`.
 
 Device files verified through `adb -s emulator-5554 shell run-as cn.com.omnimind.bot.debug`:
 

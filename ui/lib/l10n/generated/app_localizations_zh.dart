@@ -2954,7 +2954,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchOpenWorkspace => '打开 Workspace';
 
   @override
-  String get workbenchApiEmpty => '暂无已注册 Project API';
+  String get workbenchApiEmpty => '暂无工具';
 
   @override
   String get workbenchToolListDefaultTodo => 'Project API 点击了同一个后端';
@@ -3014,7 +3014,23 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get workbenchQuickCaptureSubtitle =>
-      '把文字、链接、分享内容或截图丢进来。Project API 会整理成 Todo、摘要、链接卡片或稍后读。';
+      '把文字、链接、分享内容或截图丢进来，自动整理成待办、摘要、链接卡片或稍后读。';
+
+  @override
+  String get workbenchQuickCapturePageCapture => '收集';
+
+  @override
+  String get workbenchQuickCapturePageInbox => '收件箱';
+
+  @override
+  String workbenchQuickCaptureInboxSubtitle(int count) {
+    return '$count 条正在处理的内容。';
+  }
+
+  @override
+  String workbenchQuickCaptureArchiveSubtitle(int count) {
+    return '$count 条已归档内容。';
+  }
 
   @override
   String get workbenchQuickCaptureInputHint => '粘贴一句话、链接或分享文本';
@@ -3160,7 +3176,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchAssistantHotUpdateFailed => 'Project 热更新失败';
 
   @override
-  String get workbenchProjectModeTitle => 'Projects';
+  String get workbenchProjectModeTitle => '项目';
 
   @override
   String get workbenchFlutterDisplay => 'Flutter 显示器';
@@ -3219,7 +3235,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchDebugMode => 'Debug 模式';
 
   @override
-  String get workbenchDisplaysTitle => '前端 Displays';
+  String get workbenchDisplaysTitle => '页面';
 
   @override
   String workbenchDisplayCount(int count) {
@@ -3246,20 +3262,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchProjectModeCreateTitle => 'Vibe Project 入口';
 
   @override
-  String get workbenchProjectModeSubtitle =>
-      '这里只显示 Project 列表和当前激活项。点进 Project 后再看前端、API、Workspace、导出和删除。';
+  String get workbenchProjectModeSubtitle => '这里只显示项目和当前激活项。';
 
   @override
-  String get workbenchProjectActiveTitle => '当前激活';
+  String get workbenchProjectActiveTitle => '当前项目';
 
   @override
   String get workbenchProjectActiveEmpty => '尚未激活 Project';
 
   @override
-  String get workbenchProjectListTitle => 'Project 列表';
+  String get workbenchProjectListTitle => '项目';
 
   @override
-  String get workbenchProjectDetailTitle => 'Project 详情';
+  String get workbenchProjectDetailTitle => '项目';
 
   @override
   String get workbenchProjectModeCreateButton => '去首页创建';
@@ -3272,9 +3287,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchProjectModeProjectsTitle => '当前 Project API';
 
   @override
-  String workbenchProjectApiForProject(String projectName) {
-    return '$projectName 的 API';
-  }
+  String get workbenchProjectApiForProject => '工具';
 
   @override
   String get workbenchProjectModeOpen => '打开 Project';
@@ -3440,7 +3453,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get workbenchAndroidAssetsTitle => 'Android 资产';
+  String get workbenchAndroidAssetsTitle => '应用';
 
   @override
   String get workbenchAndroidSourceHint =>
@@ -3472,13 +3485,49 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get workbenchProjectDeactivateFailed => 'Project 取消激活失败';
+
+  @override
+  String get workbenchProjectDeactivated => '已取消激活 Project';
+
+  @override
+  String get workbenchActivateProject => '激活 Project';
+
+  @override
+  String get workbenchDeactivateProject => '取消激活';
+
+  @override
+  String get workbenchEditProjectLabels => '编辑名称';
+
+  @override
+  String get workbenchProjectNameLabel => '名称';
+
+  @override
+  String get workbenchProjectShortNameLabel => '简写';
+
+  @override
+  String get workbenchSaveProjectLabels => '保存';
+
+  @override
+  String get workbenchProjectNameRequired => '请输入名称';
+
+  @override
+  String get workbenchProjectLabelsUpdated => '已保存';
+
+  @override
+  String get workbenchProjectLabelsUpdateFailed => '保存失败';
+
+  @override
+  String get workbenchProjectMoreActions => '更多操作';
+
+  @override
   String get workbenchActiveProject => '已激活';
 
   @override
   String get workbenchInactiveProject => '未激活';
 
   @override
-  String get workbenchContinueInHome => '激活并回到首页输入';
+  String get workbenchContinueInHome => '激活 Project';
 
   @override
   String get workbenchProjectHelpTooltip => 'Project 工作台说明';
@@ -3503,6 +3552,18 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String workbenchActiveProjectChip(String projectName) {
     return 'Project：$projectName';
+  }
+
+  @override
+  String get workbenchProjectSummaryQuickCapture =>
+      '收集文字、链接、分享和截图，沉淀成待办、摘要、链接卡片或稍后读。';
+
+  @override
+  String get workbenchProjectSummaryTodo => '记录待办事项，并在完成后归档。';
+
+  @override
+  String workbenchProjectSummarySchema(String entityName) {
+    return '管理 $entityName 记录，并保留状态和快捷操作。';
   }
 
   @override

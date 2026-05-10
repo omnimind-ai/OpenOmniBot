@@ -22,6 +22,17 @@ abstract class WorkbenchProjectBackend {
 
   Future<WorkbenchProject> getProject(String projectId);
 
+  Future<WorkbenchProject> updateProjectMetadata({
+    required String projectId,
+    String? name,
+    String? shortName,
+    String? description,
+    List<Map<String, Object?>>? displays,
+    List<Map<String, Object?>>? apis,
+    List<Map<String, Object?>>? flutterFiles,
+    String? prompt,
+  });
+
   Future<List<WorkbenchProject>> listProjects();
 
   Future<WorkbenchProject?> activateProject(String projectId);
@@ -112,6 +123,39 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
       {'projectId': projectId},
     );
     return WorkbenchProject.fromMap(result ?? const {});
+  }
+
+  @override
+  Future<WorkbenchProject> updateProjectMetadata({
+    required String projectId,
+    String? name,
+    String? shortName,
+    String? description,
+    List<Map<String, Object?>>? displays,
+    List<Map<String, Object?>>? apis,
+    List<Map<String, Object?>>? flutterFiles,
+    String? prompt,
+  }) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'workbenchProjectUpdate',
+      {
+        'projectId': projectId,
+        if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
+        if (shortName != null && shortName.trim().isNotEmpty)
+          'shortName': shortName.trim(),
+        if (description != null && description.trim().isNotEmpty)
+          'description': description.trim(),
+        if (displays != null && displays.isNotEmpty) 'displays': displays,
+        if (apis != null && apis.isNotEmpty) 'apis': apis,
+        if (flutterFiles != null && flutterFiles.isNotEmpty)
+          'flutterFiles': flutterFiles,
+        if (prompt != null && prompt.trim().isNotEmpty) 'prompt': prompt.trim(),
+      },
+    );
+    final project = result?['project'];
+    return project is Map<dynamic, dynamic>
+        ? WorkbenchProject.fromMap(project)
+        : WorkbenchProject.fromMap(result ?? const {});
   }
 
   @override
@@ -476,6 +520,59 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     }
   }
 
+  Future<WorkbenchProject?> updateProjectMetadata(
+    WorkbenchProject project, {
+    String? name,
+    String? shortName,
+    String? description,
+    List<Map<String, Object?>>? displays,
+    List<Map<String, Object?>>? apis,
+    List<Map<String, Object?>>? flutterFiles,
+    String? prompt,
+  }) async {
+    final normalizedName = name?.trim();
+    final normalizedShortName = shortName?.trim();
+    final normalizedDescription = description?.trim();
+    final normalizedPrompt = prompt?.trim();
+    if ((normalizedName == null || normalizedName.isEmpty) &&
+        (normalizedShortName == null || normalizedShortName.isEmpty) &&
+        (normalizedDescription == null || normalizedDescription.isEmpty) &&
+        (normalizedPrompt == null || normalizedPrompt.isEmpty) &&
+        (displays == null || displays.isEmpty) &&
+        (apis == null || apis.isEmpty) &&
+        (flutterFiles == null || flutterFiles.isEmpty)) {
+      return null;
+    }
+    _loading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final updated = await _backend.updateProjectMetadata(
+        projectId: project.projectId,
+        name: normalizedName,
+        shortName: normalizedShortName,
+        description: normalizedDescription,
+        displays: displays,
+        apis: apis,
+        flutterFiles: flutterFiles,
+        prompt: normalizedPrompt,
+      );
+      _projects = _projects
+          .map((item) => item.projectId == updated.projectId ? updated : item)
+          .toList(growable: false);
+      if (_activeProject?.projectId == updated.projectId) {
+        _activeProject = updated;
+      }
+      return updated;
+    } catch (error) {
+      _errorMessage = error.toString();
+      return null;
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
   Future<WorkbenchProject?> getActiveProject() async {
     try {
       _activeProject = await _backend.getActiveProject();
@@ -488,14 +585,19 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     }
   }
 
-  Future<void> deactivateProject() async {
+  Future<bool> deactivateProject() async {
+    _loading = true;
+    _errorMessage = null;
+    notifyListeners();
     try {
       await _backend.deactivateProject();
       _activeProject = null;
-      _errorMessage = null;
-      notifyListeners();
+      return true;
     } catch (error) {
       _errorMessage = error.toString();
+      return false;
+    } finally {
+      _loading = false;
       notifyListeners();
     }
   }

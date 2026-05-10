@@ -3781,6 +3781,23 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
+    fun workbenchProjectUpdate(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            runCatching {
+                workbenchProjectStore.updateProject(
+                    args = normalizeMethodCallMap(call.arguments),
+                    caller = "ui"
+                )
+            }.onSuccess { payload ->
+                withContext(Dispatchers.Main) { result.success(payload) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    result.error("WORKBENCH_PROJECT_UPDATE_ERROR", error.message, null)
+                }
+            }
+        }
+    }
+
     fun workbenchProjectList(call: MethodCall, result: MethodChannel.Result) {
         workJob.launch {
             runCatching {

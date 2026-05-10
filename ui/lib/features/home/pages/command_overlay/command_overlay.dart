@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,10 @@ import 'package:ui/services/screen_dialog_service.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/constants/openclaw/openclaw_keys.dart';
 import 'package:ui/features/home/pages/common/openclaw_connection_checker.dart';
+import 'package:ui/features/workbench/models/workbench_models.dart';
+import 'package:ui/features/workbench/services/workbench_todo_log_service.dart';
+import 'package:ui/features/workbench/widgets/workbench_annotation_context.dart';
+import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart';
 import 'package:ui/utils/data_parser.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/image/cached_image.dart';
@@ -44,6 +49,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
   String _openClawUserId = '';
   bool _showSlashCommandPanel = false;
   bool _openClawPanelExpanded = false;
+  bool _annotationMode = false;
   final TextEditingController _openClawBaseUrlController =
       TextEditingController();
   final TextEditingController _openClawTokenController =
@@ -131,6 +137,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
     await StorageService.setBool(kOpenClawEnabledKey, enabled);
   }
 
+  // ignore: unused_element
   Future<void> _showOpenClawConfigDialog() async {
     final result = await showDialog<_OpenClawConfigDraft>(
       context: context,
@@ -165,39 +172,6 @@ class _CommandOverlayState extends State<CommandOverlay> {
   /// 检查 OpenClaw 服务连接状态
   Future<void> _checkOpenClawConnection() async {
     await OpenClawConnectionChecker.checkAndToast(_openClawBaseUrl);
-  }
-
-  Widget _buildOpenClawToggle() {
-    return Row(
-      children: [
-        const Text(
-          'OpenClaw',
-          style: TextStyle(fontSize: 12, color: Color(0xFF666666)),
-        ),
-        const SizedBox(width: 8),
-        Switch.adaptive(
-          value: _openClawEnabled,
-          onChanged: _recordingState != RecordingState.idle
-              ? null
-              : (value) => _setOpenClawEnabled(value),
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        const Spacer(),
-        TextButton.icon(
-          onPressed: _showOpenClawConfigDialog,
-          icon: const Icon(Icons.settings, size: 16, color: Color(0xFF666666)),
-          label: const Text(
-            '配置',
-            style: TextStyle(fontSize: 12, color: Color(0xFF666666)),
-          ),
-          style: TextButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            foregroundColor: const Color(0xFF666666),
-          ),
-        ),
-      ],
-    );
   }
 
   void _handleSlashCommandInput() {
@@ -443,6 +417,8 @@ class _CommandOverlayState extends State<CommandOverlay> {
   void _showChatSheetWithScene(
     ChatBotLaunchScene launchScene, {
     String? initialMessage,
+    String? initialDisplayMessage,
+    List<Map<String, dynamic>> initialAttachments = const [],
   }) {
     showModalBottomSheet(
       context: context,
@@ -454,6 +430,8 @@ class _CommandOverlayState extends State<CommandOverlay> {
       enableDrag: false,
       builder: (context) => ChatBotSheet(
         initialMessage: initialMessage,
+        initialDisplayMessage: initialDisplayMessage,
+        initialAttachments: initialAttachments,
         launchScene: launchScene,
         openClawEnabled: _openClawEnabled,
       ),
@@ -481,6 +459,197 @@ class _CommandOverlayState extends State<CommandOverlay> {
     setState(() {
       _chatInputAreaHeight = height;
     });
+  }
+
+  void _toggleAnnotationMode() {
+    _inputFocusNode.unfocus();
+    _hideSlashCommandPanel();
+    if (!mounted) return;
+    setState(() {
+      _annotationMode = !_annotationMode;
+      if (_annotationMode) {
+        _isPopupVisible = false;
+      }
+    });
+  }
+
+  Future<Map<String, Object?>> _buildFloatingAnnotationContext(
+    WorkbenchAnnotationPayload payload,
+    String prompt,
+  ) async {
+    try {
+      final backend = NativeWorkbenchProjectBackend();
+      final project = await backend.getActiveProject();
+      if (project != null) {
+        final activeFrontendContext = await backend.getActiveFrontendContext();
+        final display = _displayForActiveFrontendContext(
+          project,
+          activeFrontendContext,
+        );
+        return {
+          ...buildWorkbenchAnnotationFrontendContext(
+            project: project,
+            display: display,
+            payload: payload,
+            prompt: prompt,
+            source: 'xiaowan_floating_annotation_canvas',
+          ),
+          if (activeFrontendContext != null)
+            'activeFlutterContext': activeFrontendContext,
+          'screenshotSummary':
+              'VLM should inspect the current screen screenshot together with drawingPaths. The Flutter client does not classify the shape or target UI.',
+        };
+      }
+    } catch (error) {
+      debugPrint('读取激活 Workbench Project 失败: $error');
+    }
+    return {
+      ...payload.toFrontendContext(
+        projectId: '',
+        displayId: 'current-screen',
+        route: 'current_screen',
+        source: 'xiaowan_floating_annotation_canvas',
+        visibleState: const {
+          'origin': 'xiaowan_floating_window',
+          'activeProjectAvailable': false,
+        },
+      ),
+      'screenshotSummary':
+          'VLM should inspect the current screen screenshot together with drawingPaths. The Flutter client does not classify the shape or target UI.',
+    };
+  }
+
+  WorkbenchDisplaySpec _displayForActiveFrontendContext(
+    WorkbenchProject project,
+    Map<String, dynamic>? activeFrontendContext,
+  ) {
+    final contextProjectId = activeFrontendContext?['projectId']
+        ?.toString()
+        .trim();
+    final contextDisplayId = activeFrontendContext?['displayId']
+        ?.toString()
+        .trim();
+    if (contextProjectId == project.projectId &&
+        contextDisplayId != null &&
+        contextDisplayId.isNotEmpty) {
+      for (final display in project.displays) {
+        if (display.id == contextDisplayId) {
+          return display;
+        }
+      }
+    }
+    return project.primaryDisplay;
+  }
+
+  String _buildAnnotationAgentMessage(
+    String prompt,
+    Map<String, Object?> frontendContext,
+  ) {
+    const encoder = JsonEncoder.withIndent('  ');
+    final contextJson = encoder.convert(frontendContext);
+    return '''
+$prompt
+
+小万悬浮窗画布上下文如下。已附上“当前屏幕 + 红色笔迹”的合成截图，请用 VLM 直接看图判断用户标注的形状和目标 UI，不要在前端做形状识别。若这是 Workbench Project 前端迭代，请把下面 JSON 原样作为 frontendContext 调用 workbench_project_hot_update。
+
+```json
+$contextJson
+```
+''';
+  }
+
+  List<Map<String, dynamic>> _drawingPathsForNative(
+    WorkbenchAnnotationPayload payload,
+  ) {
+    return payload.strokes
+        .map(
+          (stroke) =>
+              Map<String, dynamic>.from(stroke.toMap(payload.canvasSize)),
+        )
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>?> _captureAnnotationAttachment(
+    WorkbenchAnnotationPayload payload,
+  ) async {
+    if (payload.canvasSize.width <= 0 || payload.canvasSize.height <= 0) {
+      return null;
+    }
+    return AssistsMessageService.captureWorkbenchAnnotationAttachment(
+      canvasWidth: payload.canvasSize.width,
+      canvasHeight: payload.canvasSize.height,
+      drawingPaths: _drawingPathsForNative(payload),
+    );
+  }
+
+  Map<String, Object?> _annotationImageContext(
+    WorkbenchAnnotationPayload payload,
+    Map<String, dynamic> attachment,
+  ) {
+    final width = attachment['width'];
+    final height = attachment['height'];
+    final imageWidth = width is num ? width.toDouble() : 0.0;
+    final imageHeight = height is num ? height.toDouble() : 0.0;
+    return {
+      'attachmentId': attachment['id']?.toString(),
+      'name': attachment['name']?.toString(),
+      'mimeType': attachment['mimeType']?.toString(),
+      'path': attachment['path']?.toString(),
+      'uri': attachment['uri']?.toString(),
+      'width': width,
+      'height': height,
+      'coordinateSpace': 'screenshot_pixels',
+      'canvasToImageScale': {
+        'x': payload.canvasSize.width <= 0
+            ? 1
+            : imageWidth / payload.canvasSize.width,
+        'y': payload.canvasSize.height <= 0
+            ? 1
+            : imageHeight / payload.canvasSize.height,
+      },
+    };
+  }
+
+  Future<bool> _submitAnnotation(
+    WorkbenchAnnotationPayload payload,
+    String prompt,
+  ) async {
+    final baseFrontendContext = await _buildFloatingAnnotationContext(
+      payload,
+      prompt,
+    );
+    final annotationAttachment = await _captureAnnotationAttachment(payload);
+    if (!mounted) return false;
+    final frontendContext = <String, Object?>{
+      ...baseFrontendContext,
+      if (annotationAttachment != null)
+        'annotationImage': _annotationImageContext(
+          payload,
+          annotationAttachment,
+        ),
+      'screenshotSummary': annotationAttachment == null
+          ? 'Screenshot capture failed; VLM should fall back to current screen state and drawingPaths. The Flutter client does not classify the shape or target UI.'
+          : 'An attached image contains the current screen screenshot composited with the user red strokes. VLM should infer shape and target UI from that image plus drawingPaths.',
+    };
+    if (annotationAttachment == null) {
+      AppToast.show(
+        LegacyTextLocalizer.isEnglish
+            ? 'Screenshot capture failed; sending red strokes as fallback.'
+            : '截图合成失败，先用红线坐标兜底发送。',
+      );
+    }
+    if (!mounted) return false;
+    final agentMessage = _buildAnnotationAgentMessage(prompt, frontendContext);
+    setState(() => _annotationMode = false);
+    _showChatSheetWithScene(
+      ChatBotLaunchScene.normal,
+      initialMessage: agentMessage,
+      initialDisplayMessage: prompt,
+      initialAttachments: annotationAttachment == null
+          ? const []
+          : [annotationAttachment],
+    );
+    return true;
   }
 
   Widget _buildSlashCommandPanel() {
@@ -596,111 +765,124 @@ class _CommandOverlayState extends State<CommandOverlay> {
     const double inputHeaderOffset = 0;
 
     final showSlashPanel = _showSlashCommandPanel || _openClawPanelExpanded;
+    final annotationToolbarBottom =
+        bottomPadding + _chatInputAreaHeight + inputHeaderOffset + 8;
+    final content = Stack(
+      children: [
+        // 蒙层背景 - 点击关闭页面
+        Positioned.fill(
+          child: GestureDetector(
+            onTap: _closePage,
+            behavior: HitTestBehavior.opaque,
+            child: Container(color: Colors.black.withValues(alpha: 0)),
+          ),
+        ),
+        // 快捷提示气泡 - 随键盘移动
+        Positioned(
+          left: 24,
+          right: 24,
+          bottom: bottomPadding + _chatInputAreaHeight + inputHeaderOffset,
+          child: IgnorePointer(
+            ignoring: showSlashPanel,
+            child: AnimatedOpacity(
+              opacity: showSlashPanel ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 150),
+              child: _recordingState != RecordingState.idle
+                  ? SizedBox(
+                      width: double.infinity,
+                      child: Text(
+                        _getRecordingText(),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontFamily: 'PingFang SC',
+                          fontWeight: FontWeight.w400,
+                          height: 1.50,
+                          letterSpacing: 0.333,
+                        ),
+                      ),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [],
+                    ),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: bottomPadding + _chatInputAreaHeight + inputHeaderOffset,
+          child: _buildSlashCommandPanel(),
+        ),
+        // 底部输入框区域
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: bottomPadding,
+          child: Container(
+            key: _inputAreaKey,
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ChatInputArea(
+                  key: _chatInputAreaKey,
+                  controller: _messageController,
+                  focusNode: _inputFocusNode,
+                  isProcessing: false,
+                  onSendMessage: _sendMessage,
+                  onCancelTask: _onCancelTask,
+                  onPopupVisibilityChanged: _onPopupVisibilityChanged,
+                  onRecordingStateChanged: _onRecordingStateChanged,
+                  onInputHeightChanged: _onInputHeightChanged,
+                  openClawEnabled: _openClawEnabled,
+                  onToggleOpenClaw: _setOpenClawEnabled,
+                  onLongPressOpenClaw: () =>
+                      _showOpenClawCommandPanel(expand: true),
+                  annotationEnabled: _annotationMode,
+                  onToggleAnnotation: _toggleAnnotationMode,
+                  useFrostedGlass: true, // command_overlay 使用毛玻璃效果
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_isPopupVisible)
+          Positioned(
+            right: 24,
+            bottom: bottomPadding + 52 + inputHeaderOffset,
+            child:
+                _chatInputAreaKey.currentState?.buildPopupMenu() ??
+                const SizedBox.shrink(),
+          ),
+        if (_scheduleInfo != null &&
+            (_scheduleInfo!['scheduleStatus'] == 'SCHEDULED' ||
+                _scheduleInfo!['scheduleStatus'] == 'FAILED'))
+          Positioned(
+            right: 24,
+            bottom: bottomPadding + 52 + inputHeaderOffset,
+            child: _buildScheduleBubble(),
+          ),
+      ],
+    );
+    final bodyChild = _annotationMode
+        ? WorkbenchAnnotationOverlay(
+            toolbarBottomInset: annotationToolbarBottom,
+            onClose: _toggleAnnotationMode,
+            onSubmit: _submitAnnotation,
+            child: content,
+          )
+        : content;
     return Scaffold(
       backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: false,
       body: Listener(
         behavior: HitTestBehavior.translucent,
         onPointerDown: (event) => _handleOutsideTap(event.position),
-        child: Stack(
-          children: [
-            // 蒙层背景 - 点击关闭页面
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: _closePage,
-                behavior: HitTestBehavior.opaque,
-                child: Container(color: Colors.black.withValues(alpha: 0)),
-              ),
-            ),
-            // 快捷提示气泡 - 随键盘移动
-            Positioned(
-              left: 24,
-              right: 24,
-              bottom: bottomPadding + _chatInputAreaHeight + inputHeaderOffset,
-              child: IgnorePointer(
-                ignoring: showSlashPanel,
-                child: AnimatedOpacity(
-                  opacity: showSlashPanel ? 0.0 : 1.0,
-                  duration: const Duration(milliseconds: 150),
-                  child: _recordingState != RecordingState.idle
-                      ? SizedBox(
-                          width: double.infinity,
-                          child: Text(
-                            _getRecordingText(),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontFamily: 'PingFang SC',
-                              fontWeight: FontWeight.w400,
-                              height: 1.50,
-                              letterSpacing: 0.333,
-                            ),
-                          ),
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [],
-                        ),
-                ),
-              ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: bottomPadding + _chatInputAreaHeight + inputHeaderOffset,
-              child: _buildSlashCommandPanel(),
-            ),
-            // 底部输入框区域
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: bottomPadding,
-              child: Container(
-                key: _inputAreaKey,
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ChatInputArea(
-                      key: _chatInputAreaKey,
-                      controller: _messageController,
-                      focusNode: _inputFocusNode,
-                      isProcessing: false,
-                      onSendMessage: _sendMessage,
-                      onCancelTask: _onCancelTask,
-                      onPopupVisibilityChanged: _onPopupVisibilityChanged,
-                      onRecordingStateChanged: _onRecordingStateChanged,
-                      onInputHeightChanged: _onInputHeightChanged,
-                      openClawEnabled: _openClawEnabled,
-                      onToggleOpenClaw: _setOpenClawEnabled,
-                      onLongPressOpenClaw: () =>
-                          _showOpenClawCommandPanel(expand: true),
-                      useFrostedGlass: true, // command_overlay 使用毛玻璃效果
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (_isPopupVisible)
-              Positioned(
-                right: 24,
-                bottom: bottomPadding + 52 + inputHeaderOffset,
-                child:
-                    _chatInputAreaKey.currentState?.buildPopupMenu() ??
-                    const SizedBox.shrink(),
-              ),
-            if (_scheduleInfo != null &&
-                (_scheduleInfo!['scheduleStatus'] == 'SCHEDULED' ||
-                    _scheduleInfo!['scheduleStatus'] == 'FAILED'))
-              Positioned(
-                right: 24,
-                bottom: bottomPadding + 52 + inputHeaderOffset,
-                child: _buildScheduleBubble(),
-              ),
-          ],
-        ),
+        child: bodyChild,
       ),
     );
   }
@@ -729,7 +911,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
 
   Widget _buildScheduleBubble() {
     final extraJsonStr =
-        safeDecodeMap(_scheduleInfo?['taskParamsJson'])?['extraJson'] ?? '';
+        safeDecodeMap(_scheduleInfo?['taskParamsJson'])['extraJson'] ?? '';
     final extraJson = safeDecodeMap(extraJsonStr);
     final taskIconUrl = extraJson['taskIconUrl'] as String? ?? '';
     final scheduleStatus = _scheduleInfo?['scheduleStatus'] as String? ?? '';
@@ -904,10 +1086,7 @@ class _OpenClawConfigDialogState extends State<_OpenClawConfigDialog> {
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => _close(),
-            child: const Text('取消'),
-          ),
+          TextButton(onPressed: () => _close(), child: const Text('取消')),
           ElevatedButton(
             onPressed: () => _close(
               _OpenClawConfigDraft(

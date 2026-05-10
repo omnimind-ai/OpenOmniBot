@@ -288,6 +288,9 @@ class AssistsCoreChannel {
                 "workbenchProjectGet" -> {
                     assistsCoreManager!!.workbenchProjectGet(call, result)
                 }
+                "workbenchProjectUpdate" -> {
+                    assistsCoreManager!!.workbenchProjectUpdate(call, result)
+                }
                 "workbenchProjectList" -> {
                     assistsCoreManager!!.workbenchProjectList(call, result)
                 }

@@ -5,7 +5,7 @@ import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart'
 String workbenchRouteForDisplay(
   WorkbenchProject project,
   WorkbenchDisplaySpec display, {
-  String fallbackRoute = '/workbench/todo_log',
+  String fallbackRoute = '/workbench/quick_capture',
 }) {
   final route = display.route.trim().isEmpty
       ? project.route.trim()
@@ -22,7 +22,7 @@ Map<String, Object?> buildWorkbenchAnnotationFrontendContext({
   required WorkbenchAnnotationPayload payload,
   required String prompt,
   String source = 'workbench_annotation_canvas',
-  String fallbackRoute = '/workbench/todo_log',
+  String fallbackRoute = '/workbench/quick_capture',
 }) {
   return payload.toFrontendContext(
     projectId: project.projectId,
@@ -41,7 +41,7 @@ Map<String, Object?> buildWorkbenchVisibleFrontendContext({
   required WorkbenchProject project,
   required WorkbenchDisplaySpec display,
   String source = 'workbench_flutter_display',
-  String fallbackRoute = '/workbench/todo_log',
+  String fallbackRoute = '/workbench/quick_capture',
   Map<String, Object?> extraVisibleState = const {},
 }) {
   return {
@@ -100,6 +100,18 @@ Map<String, Object?> _visibleStateForProject(
           .map((item) => item.title)
           .toList(growable: false),
       'schemaKeys': project.schema.keys.toList(growable: false),
+    };
+  }
+  if (project.templateId == workbenchQuickCaptureTemplateId ||
+      display.route.startsWith('/workbench/quick_capture')) {
+    return {
+      ...common,
+      'activeItemCount': project.activeCaptureItems.length,
+      'archivedItemCount': project.archivedCaptureItems.length,
+      'itemTitles': project.captureItems
+          .take(8)
+          .map((item) => item.title)
+          .toList(growable: false),
     };
   }
   return common;

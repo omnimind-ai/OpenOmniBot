@@ -48,6 +48,8 @@ enum ChatBotLaunchScene {
 
 class ChatBotSheet extends StatefulWidget {
   final String? initialMessage;
+  final String? initialDisplayMessage;
+  final List<Map<String, dynamic>> initialAttachments;
   final Map<String, dynamic>? initialScheduleInfo;
 
   /// 启动场景，用于控制是否加载之前保存的上下文
@@ -57,6 +59,8 @@ class ChatBotSheet extends StatefulWidget {
   const ChatBotSheet({
     super.key,
     this.initialMessage,
+    this.initialDisplayMessage,
+    this.initialAttachments = const [],
     this.initialScheduleInfo,
     this.launchScene = ChatBotLaunchScene.normal,
     this.openClawEnabled,
@@ -290,7 +294,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       // 如果有初始消息，立即发送
       if (widget.initialMessage != null && widget.initialMessage!.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _sendMessage(text: widget.initialMessage!);
+          _sendMessage(
+            text: widget.initialMessage!,
+            displayText: widget.initialDisplayMessage,
+            attachments: widget.initialAttachments,
+          );
         });
       }
 
@@ -1648,6 +1656,8 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   /// 发送消息（支持输入框发送、初始消息和恢复场景重发）
   Future<void> _sendMessage({
     String? text,
+    String? displayText,
+    List<Map<String, dynamic>> attachments = const [],
     bool appendUserBubble = true,
   }) async {
     final messageText = text ?? _messageController.text.trim();
@@ -1659,7 +1669,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     _inputFocusNode.unfocus();
     late final ({String userMessageId, String aiMessageId}) messageIds;
     if (appendUserBubble) {
-      messageIds = _addUserMessage(messageText);
+      messageIds = _addUserMessage(
+        displayText ?? messageText,
+        attachments: attachments,
+      );
       await _saveConversationToDb();
     } else {
       final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
@@ -1672,7 +1685,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       });
     }
 
-    if (_openClawEnabled) {
+    if (_openClawEnabled && attachments.isEmpty) {
       _sendChatMessage(messageIds.aiMessageId);
       return;
     }
@@ -1680,6 +1693,8 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     final handled = await _handleExecutableTask(
       messageIds.aiMessageId,
       messageIds.userMessageId,
+      attachments: attachments,
+      userMessageOverride: messageText,
     );
     if (!handled &&
         mounted &&
@@ -1692,7 +1707,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     }
   }
 
-  ({String userMessageId, String aiMessageId}) _addUserMessage(String text) {
+  ({String userMessageId, String aiMessageId}) _addUserMessage(
+    String text, {
+    List<Map<String, dynamic>> attachments = const [],
+  }) {
     final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
     final userMessageId = '$timestamp-user';
     final aiMessageId = '$timestamp-ai';
@@ -1704,7 +1722,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
           id: userMessageId,
           type: 1,
           user: 1,
-          content: {'text': text, 'id': userMessageId},
+          content: {
+            'text': text,
+            'id': userMessageId,
+            if (attachments.isNotEmpty) 'attachments': attachments,
+          },
         ),
       );
       _messageController.clear();
@@ -1717,18 +1739,30 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
   Future<bool> _handleExecutableTask(
     String aiMessageId,
-    String userMessageId,
-  ) async {
+    String userMessageId, {
+    List<Map<String, dynamic>> attachments = const [],
+    String? userMessageOverride,
+  }) async {
     _isCheckingExecutableTask = true;
     try {
-      return await _tryAgentFlow(aiMessageId, userMessageId);
+      return await _tryAgentFlow(
+        aiMessageId,
+        userMessageId,
+        attachments: attachments,
+        userMessageOverride: userMessageOverride,
+      );
     } finally {
       _isCheckingExecutableTask = false;
     }
   }
 
   // 新增：Agent 流程
-  Future<bool> _tryAgentFlow(String aiMessageId, String userMessageId) async {
+  Future<bool> _tryAgentFlow(
+    String aiMessageId,
+    String userMessageId, {
+    List<Map<String, dynamic>> attachments = const [],
+    String? userMessageOverride,
+  }) async {
     try {
       setState(() {
         _currentDispatchTaskId = aiMessageId;
@@ -1739,10 +1773,13 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
       _createThinkingCard(aiMessageId);
 
-      final userMessage = _latestUserUtterance();
+      final userMessage = userMessageOverride?.trim().isNotEmpty == true
+          ? userMessageOverride!.trim()
+          : _latestUserUtterance();
       final success = await AssistsMessageService.createAgentTask(
         taskId: aiMessageId,
         userMessage: userMessage,
+        attachments: attachments,
         conversationId: _currentConversationId,
         conversationMode: ConversationMode.normal.storageValue,
       );
@@ -1752,18 +1789,6 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       debugPrint('Agent flow error: $e');
       return false;
     }
-  }
-
-  List<Map<String, dynamic>> _historyBeforeLatestUser(
-    List<Map<String, dynamic>> history,
-  ) {
-    if (history.isEmpty) return history;
-    final normalized = List<Map<String, dynamic>>.from(history);
-    final last = normalized.last;
-    if ((last['role'] as String?) == 'user') {
-      normalized.removeLast();
-    }
-    return normalized;
   }
 
   String _latestUserUtterance() {

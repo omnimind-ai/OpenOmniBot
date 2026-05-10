@@ -25,6 +25,8 @@ class WorkbenchProjectModePage extends StatefulWidget {
       _WorkbenchProjectModePageState();
 }
 
+enum _ProjectMenuAction { workspace, export, delete }
+
 class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   late final WorkbenchProjectModeService _service;
   String? _selectedProjectId;
@@ -80,7 +82,8 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     selected ??= _service.activeProject == null
         ? null
         : _findProject(_service.activeProject!.projectId);
-    selected ??= _findProject(workbenchTodoDefaultProjectId);
+    selected ??= _findProject(workbenchQuickCaptureProjectId);
+    selected ??= _firstNonTodoProject(projects);
     selected ??= projects.first;
     if (_selectedProjectId != selected.projectId) {
       setState(() => _selectedProjectId = selected!.projectId);
@@ -99,6 +102,13 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     return null;
   }
 
+  WorkbenchProject? _firstNonTodoProject(List<WorkbenchProject> projects) {
+    for (final project in projects) {
+      if (project.templateId != workbenchTodoTemplateId) return project;
+    }
+    return null;
+  }
+
   bool _isActiveProject(WorkbenchProject project) {
     return _service.activeProject?.projectId == project.projectId;
   }
@@ -108,10 +118,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     return name.isEmpty ? project.projectId : name;
   }
 
-  Future<void> _activateProject(
-    WorkbenchProject project, {
-    bool returnHome = false,
-  }) async {
+  Future<void> _activateProject(WorkbenchProject project) async {
     final active = await _service.activateProject(project);
     if (!mounted) return;
     if (active == null) {
@@ -126,9 +133,110 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
       context.l10n.workbenchProjectActivated(_projectDisplayName(active)),
       type: ToastType.success,
     );
-    if (returnHome) {
-      context.go(GoRouterManager.homeRoute);
+  }
+
+  Future<void> _deactivateProject() async {
+    final success = await _service.deactivateProject();
+    if (!mounted) return;
+    if (!success) {
+      showToast(
+        context.l10n.workbenchProjectDeactivateFailed,
+        type: ToastType.error,
+      );
+      return;
     }
+    showToast(
+      context.l10n.workbenchProjectDeactivated,
+      type: ToastType.success,
+    );
+  }
+
+  Future<void> _toggleProjectActivation(WorkbenchProject project) {
+    return _isActiveProject(project)
+        ? _deactivateProject()
+        : _activateProject(project);
+  }
+
+  Future<void> _editProjectLabels(WorkbenchProject project) async {
+    final l10n = context.l10n;
+    final nameController = TextEditingController(
+      text: _projectDisplayName(project),
+    );
+    final shortNameController = TextEditingController(
+      text: project.primaryDisplay.shortName,
+    );
+    final values = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(l10n.workbenchEditProjectLabels),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                textInputAction: TextInputAction.next,
+                decoration: InputDecoration(
+                  labelText: l10n.workbenchProjectNameLabel,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: shortNameController,
+                textInputAction: TextInputAction.done,
+                textCapitalization: TextCapitalization.characters,
+                maxLength: 8,
+                decoration: InputDecoration(
+                  labelText: l10n.workbenchProjectShortNameLabel,
+                  counterText: '',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(l10n.workbenchDeleteProjectCancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop({
+                'name': nameController.text.trim(),
+                'shortName': shortNameController.text.trim(),
+              }),
+              child: Text(l10n.workbenchSaveProjectLabels),
+            ),
+          ],
+        );
+      },
+    );
+    nameController.dispose();
+    shortNameController.dispose();
+    if (!mounted) return;
+    if (values == null) return;
+    final name = values['name']?.trim() ?? '';
+    final shortName = values['shortName']?.trim() ?? '';
+    if (name.isEmpty) {
+      showToast(l10n.workbenchProjectNameRequired, type: ToastType.error);
+      return;
+    }
+    final updated = await _service.updateProjectMetadata(
+      project,
+      name: name,
+      shortName: shortName,
+    );
+    if (!mounted) return;
+    if (updated == null) {
+      showToast(l10n.workbenchProjectLabelsUpdateFailed, type: ToastType.error);
+      return;
+    }
+    setState(() {
+      _selectedProjectId = updated.projectId;
+      if (_detailProjectId == project.projectId) {
+        _detailProjectId = updated.projectId;
+      }
+    });
+    showToast(l10n.workbenchProjectLabelsUpdated, type: ToastType.success);
   }
 
   void _openDisplay(
@@ -152,8 +260,12 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     final rawRoute = display.route.trim().isEmpty
         ? project.route.trim()
         : display.route.trim();
-    final resolvedRoute = rawRoute.isEmpty
-        ? '/workbench/todo_log?projectId=${Uri.encodeQueryComponent(project.projectId)}'
+    final fallbackRoute = _fallbackDisplayRoute(project);
+    final resolvedRoute =
+        rawRoute.isEmpty ||
+            (rawRoute.startsWith('/workbench/todo_log') &&
+                project.templateId != workbenchTodoTemplateId)
+        ? fallbackRoute
         : rawRoute;
     final uri = Uri.parse(resolvedRoute);
     final params = <String, String>{
@@ -169,6 +281,20 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
       params.remove('returnTo');
     }
     return uri.replace(queryParameters: params).toString();
+  }
+
+  String _fallbackDisplayRoute(WorkbenchProject project) {
+    final encodedProjectId = Uri.encodeQueryComponent(project.projectId);
+    if (project.templateId == workbenchQuickCaptureTemplateId ||
+        project.tools.any(
+          (tool) => tool.id.startsWith(WorkbenchQuickCaptureToolIds.ingest),
+        )) {
+      return '/workbench/quick_capture?projectId=$encodedProjectId';
+    }
+    if (project.templateId == 'schema_app') {
+      return '/workbench/schema_app?projectId=$encodedProjectId';
+    }
+    return '/workbench/quick_capture?projectId=$encodedProjectId';
   }
 
   Future<void> _openWorkspace(WorkbenchProject project) async {
@@ -334,7 +460,11 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
             icon: Icons.check_circle_outline_rounded,
             trailing: activeProject == null
                 ? null
-                : _buildCountBadge(context.l10n.workbenchActiveProject),
+                : IconButton(
+                    tooltip: context.l10n.workbenchDeactivateProject,
+                    onPressed: _service.loading ? null : _deactivateProject,
+                    icon: const Icon(Icons.link_off_rounded),
+                  ),
           ),
           const SizedBox(height: 10),
           if (activeProject == null)
@@ -355,20 +485,16 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
               ),
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _buildTinyCode(activeProject.projectId),
-                _buildCountBadge(
-                  context.l10n.workbenchDisplayCount(
-                    activeProject.displays.length,
-                  ),
-                ),
-                _buildCountBadge(
-                  context.l10n.workbenchApiCount(activeProject.tools.length),
-                ),
-              ],
+            Text(
+              _projectOneLineSummary(activeProject),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: palette.textSecondary,
+                fontSize: 13,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ],
@@ -449,29 +575,36 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                     ),
                   ),
                   const SizedBox(height: 7),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      _buildTinyCode(project.projectId),
-                      if (project.templateId.trim().isNotEmpty)
-                        _buildCountBadge(project.templateId),
-                      _buildCountBadge(
-                        context.l10n.workbenchDisplayCount(
-                          project.displays.length,
-                        ),
-                      ),
-                      _buildCountBadge(
-                        context.l10n.workbenchApiCount(project.tools.length),
-                      ),
-                      if (active)
-                        _buildCountBadge(context.l10n.workbenchActiveProject),
-                    ],
+                  Text(
+                    _projectOneLineSummary(project),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.textSecondary,
+                      fontSize: 12,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 8),
+            IconButton(
+              tooltip: active
+                  ? context.l10n.workbenchDeactivateProject
+                  : context.l10n.workbenchActivateProject,
+              onPressed: _service.loading
+                  ? null
+                  : () => _toggleProjectActivation(project),
+              icon: Icon(
+                active
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+              ),
+              color: active ? palette.accentPrimary : palette.textTertiary,
+            ),
+            const SizedBox(width: 2),
             Icon(Icons.chevron_right_rounded, color: palette.textTertiary),
           ],
         ),
@@ -491,55 +624,30 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
             children: [
               Expanded(child: _buildProjectIdentity(project)),
               const SizedBox(width: 8),
-              _buildCountBadge(
-                active
-                    ? context.l10n.workbenchActiveProject
-                    : context.l10n.workbenchInactiveProject,
+              IconButton(
+                tooltip: context.l10n.workbenchEditProjectLabels,
+                onPressed: _service.loading
+                    ? null
+                    : () => _editProjectLabels(project),
+                icon: const Icon(Icons.edit_outlined),
               ),
+              const SizedBox(width: 4),
+              IconButton.filledTonal(
+                tooltip: active
+                    ? context.l10n.workbenchDeactivateProject
+                    : context.l10n.workbenchActivateProject,
+                onPressed: _service.loading
+                    ? null
+                    : () => _toggleProjectActivation(project),
+                icon: Icon(
+                  active
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                ),
+              ),
+              const SizedBox(width: 4),
+              _buildProjectMenu(project),
             ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _buildTinyCode(project.projectId),
-              _buildCountBadge(
-                context.l10n.workbenchDisplayCount(project.displays.length),
-              ),
-              _buildCountBadge(
-                context.l10n.workbenchApiCount(project.tools.length),
-              ),
-              _buildCountBadge(
-                context.l10n.workbenchTodoCount(
-                  project.openTodos.length,
-                  project.finishedTodos.length,
-                ),
-              ),
-              if (project.templateId == 'schema_app')
-                _buildCountBadge(
-                  context.l10n.workbenchSchemaItemCount(
-                    project.activeItems.length,
-                    project.archivedItems.length,
-                  ),
-                ),
-              _buildCountBadge(
-                context.l10n.workbenchAndroidAssetCount(
-                  project.androidAssets.length,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: _service.loading
-                  ? null
-                  : () => _activateProject(project, returnHome: true),
-              icon: const Icon(Icons.keyboard_return_rounded),
-              label: Text(context.l10n.workbenchContinueInHome),
-            ),
           ),
           const SizedBox(height: 14),
           _buildDisplayList(project),
@@ -547,9 +655,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
           Divider(color: palette.borderSubtle, height: 1),
           const SizedBox(height: 14),
           _buildSectionHeader(
-            title: context.l10n.workbenchProjectApiForProject(
-              _projectDisplayName(project),
-            ),
+            title: context.l10n.workbenchProjectApiForProject,
             icon: Icons.api_rounded,
             trailing: _buildCountBadge(
               context.l10n.workbenchApiCount(project.tools.length),
@@ -559,8 +665,6 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
           _buildApiList(project),
           const SizedBox(height: 14),
           _buildAndroidAssets(project),
-          const SizedBox(height: 14),
-          _buildProjectActions(project),
           if (_lastExportResult != null) ...[
             const SizedBox(height: 10),
             _buildInlineStatus(
@@ -621,6 +725,8 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   ) {
     final palette = context.omniPalette;
     final description = display.description.trim();
+    final visibleDescription =
+        description.isNotEmpty && !_looksLikeControlCopy(description);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -648,7 +754,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                if (description.isNotEmpty) ...[
+                if (visibleDescription) ...[
                   const SizedBox(height: 4),
                   Text(
                     description,
@@ -661,15 +767,6 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    _buildTinyCode(display.id),
-                    _buildTinyCode(display.route),
-                  ],
-                ),
               ],
             ),
           ),
@@ -714,6 +811,10 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   Widget _buildToolRow(WorkbenchToolSpec tool) {
     final palette = context.omniPalette;
     final description = tool.description?.trim();
+    final visibleDescription =
+        description != null &&
+        description.isNotEmpty &&
+        !_looksLikeControlCopy(description);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -739,7 +840,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                if (description != null && description.isNotEmpty) ...[
+                if (visibleDescription) ...[
                   const SizedBox(height: 4),
                   Text(
                     description,
@@ -752,19 +853,14 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    _buildTinyCode(tool.id),
-                    _buildCountBadge(
-                      context.l10n.workbenchToolExecutionCount(
-                        tool.executionCount,
-                      ),
+                if (tool.executionCount > 0) ...[
+                  const SizedBox(height: 6),
+                  _buildCountBadge(
+                    context.l10n.workbenchToolExecutionCount(
+                      tool.executionCount,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -838,17 +934,19 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 5),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    _buildTinyCode(asset.sourceKind),
-                    if (asset.packageName?.trim().isNotEmpty == true)
-                      _buildTinyCode(asset.packageName!),
-                    _buildTinyCode(asset.displayPath),
-                  ],
-                ),
+                if (asset.packageName?.trim().isNotEmpty == true) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    asset.packageName!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -857,29 +955,57 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     );
   }
 
-  Widget _buildProjectActions(WorkbenchProject project) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+  Widget _buildProjectMenu(WorkbenchProject project) {
+    final palette = context.omniPalette;
+    return PopupMenuButton<_ProjectMenuAction>(
+      tooltip: context.l10n.workbenchProjectMoreActions,
+      enabled: !_service.loading,
+      icon: const Icon(Icons.more_vert_rounded),
+      onSelected: (action) {
+        switch (action) {
+          case _ProjectMenuAction.workspace:
+            _openWorkspace(project);
+          case _ProjectMenuAction.export:
+            _exportProject(project);
+          case _ProjectMenuAction.delete:
+            _confirmDeleteProject(project);
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: _ProjectMenuAction.workspace,
+          child: _buildProjectMenuItem(
+            Icons.folder_open_rounded,
+            context.l10n.workbenchOpenWorkspace,
+            palette.textPrimary,
+          ),
+        ),
+        PopupMenuItem(
+          value: _ProjectMenuAction.export,
+          child: _buildProjectMenuItem(
+            Icons.inventory_2_outlined,
+            context.l10n.workbenchExportProjectPackage,
+            palette.textPrimary,
+          ),
+        ),
+        PopupMenuItem(
+          value: _ProjectMenuAction.delete,
+          child: _buildProjectMenuItem(
+            Icons.delete_outline_rounded,
+            context.l10n.workbenchDeleteProject,
+            const Color(0xFFDC2626),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProjectMenuItem(IconData icon, String label, Color color) {
+    return Row(
       children: [
-        OutlinedButton.icon(
-          onPressed: () => _openWorkspace(project),
-          icon: const Icon(Icons.folder_open_rounded),
-          label: Text(context.l10n.workbenchOpenWorkspace),
-        ),
-        OutlinedButton.icon(
-          onPressed: _service.loading ? null : () => _exportProject(project),
-          icon: const Icon(Icons.inventory_2_outlined),
-          label: Text(context.l10n.workbenchExportProjectPackage),
-        ),
-        TextButton.icon(
-          onPressed: _service.loading
-              ? null
-              : () => _confirmDeleteProject(project),
-          icon: const Icon(Icons.delete_outline_rounded),
-          label: Text(context.l10n.workbenchDeleteProject),
-          style: TextButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
-        ),
+        Icon(icon, size: 20, color: color),
+        const SizedBox(width: 10),
+        Text(label, style: TextStyle(color: color)),
       ],
     );
   }
@@ -907,27 +1033,39 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
 
   Widget _buildProjectIdentity(WorkbenchProject project) {
     final palette = context.omniPalette;
+    final shortName = project.primaryDisplay.shortName.trim();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          _projectDisplayName(project),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: palette.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _projectDisplayName(project),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            if (shortName.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              _buildCountBadge(shortName),
+            ],
+          ],
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Text(
-          project.spacePath,
-          maxLines: 1,
+          _projectOneLineSummary(project),
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: palette.textSecondary,
             fontSize: 12,
+            height: 1.35,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -970,28 +1108,6 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
         ),
         if (trailing != null) trailing,
       ],
-    );
-  }
-
-  Widget _buildTinyCode(String value) {
-    final palette = context.omniPalette;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: palette.surfacePrimary,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: palette.borderSubtle),
-      ),
-      child: Text(
-        value,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: palette.textSecondary,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
     );
   }
 
@@ -1062,6 +1178,39 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
         : tool.id == WorkbenchTodoToolIds.finishTodo
         ? context.l10n.workbenchToolFinishTodoTitle
         : tool.id;
+  }
+
+  String _projectOneLineSummary(WorkbenchProject project) {
+    final description = project.schema['description']?.toString().trim();
+    if (description != null &&
+        description.isNotEmpty &&
+        !_looksLikeControlCopy(description)) {
+      return description;
+    }
+    if (project.templateId == workbenchQuickCaptureTemplateId) {
+      return context.l10n.workbenchProjectSummaryQuickCapture;
+    }
+    if (project.templateId == workbenchTodoTemplateId) {
+      return context.l10n.workbenchProjectSummaryTodo;
+    }
+    final entityName =
+        project.schema['entityName']?.toString().trim().isNotEmpty == true
+        ? project.schema['entityName'].toString().trim()
+        : context.l10n.workbenchSchemaDefaultEntity;
+    return context.l10n.workbenchProjectSummarySchema(entityName);
+  }
+
+  bool _looksLikeControlCopy(String value) {
+    final lower = value.toLowerCase();
+    return lower.contains('project') ||
+        lower.contains('api') ||
+        lower.contains('toolbox') ||
+        lower.contains('workspace') ||
+        lower.contains('backend') ||
+        lower.contains('frontend') ||
+        lower.contains('executor') ||
+        lower.contains('generated') ||
+        lower.contains('oob native');
   }
 
   String _androidWorkspacePath(

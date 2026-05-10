@@ -13,6 +13,8 @@ import 'package:ui/widgets/common_app_bar.dart';
 
 enum _QuickCaptureFilter { all, todo, summary, link, later, archived }
 
+enum _QuickCapturePage { capture, inbox, archive }
+
 class WorkbenchQuickCapturePage extends StatefulWidget {
   const WorkbenchQuickCapturePage({
     super.key,
@@ -46,11 +48,13 @@ class _WorkbenchQuickCapturePageState extends State<WorkbenchQuickCapturePage> {
   late final bool _ownsService = widget._service == null;
   final TextEditingController _captureController = TextEditingController();
   _QuickCaptureFilter _filter = _QuickCaptureFilter.all;
+  late _QuickCapturePage _page;
   String? _lastReportedFrontendKey;
 
   @override
   void initState() {
     super.initState();
+    _page = _pageFromDisplayId(widget._displayId);
     _service =
         widget._service ??
         WorkbenchTodoLogService(
@@ -60,6 +64,14 @@ class _WorkbenchQuickCapturePageState extends State<WorkbenchQuickCapturePage> {
           autoCreateTodoIfMissing: false,
         );
     _service.initialize();
+  }
+
+  @override
+  void didUpdateWidget(covariant WorkbenchQuickCapturePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget._displayId != widget._displayId) {
+      _page = _pageFromDisplayId(widget._displayId);
+    }
   }
 
   @override
@@ -200,11 +212,18 @@ class _WorkbenchQuickCapturePageState extends State<WorkbenchQuickCapturePage> {
               _buildDebugBanner(project),
             ],
             const SizedBox(height: 12),
-            _buildCaptureCard(),
+            _buildDisplayTabs(),
             const SizedBox(height: 12),
-            _buildFilterChips(),
-            const SizedBox(height: 12),
-            _buildItems(project),
+            if (_page == _QuickCapturePage.capture) ...[
+              _buildCaptureCard(),
+              const SizedBox(height: 12),
+              _buildItems(project),
+            ] else if (_page == _QuickCapturePage.inbox) ...[
+              _buildFilterChips(),
+              const SizedBox(height: 12),
+              _buildItems(project),
+            ] else
+              _buildItems(project),
           ],
         );
         return content;
@@ -248,7 +267,7 @@ class _WorkbenchQuickCapturePageState extends State<WorkbenchQuickCapturePage> {
         ),
         const SizedBox(height: 6),
         Text(
-          context.l10n.workbenchQuickCaptureSubtitle,
+          _pageSubtitle(project),
           style: TextStyle(
             color: palette.textSecondary,
             fontSize: 14,
@@ -256,26 +275,35 @@ class _WorkbenchQuickCapturePageState extends State<WorkbenchQuickCapturePage> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _buildPill(
-              Icons.inbox_outlined,
-              context.l10n.workbenchQuickCaptureCount(
-                project.activeCaptureItems.length,
-                project.archivedCaptureItems.length,
-              ),
-            ),
-            _buildPill(Icons.widgets_rounded, context.l10n.workbenchNativeUi),
-            _buildPill(
-              Icons.api_rounded,
-              context.l10n.workbenchApiCount(project.tools.length),
-            ),
-          ],
-        ),
       ],
+    );
+  }
+
+  Widget _buildDisplayTabs() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: _QuickCapturePage.values
+            .map((page) {
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  selected: _page == page,
+                  avatar: Icon(_pageIcon(page), size: 16),
+                  label: Text(_pageLabel(page)),
+                  onSelected: (_) => setState(() {
+                    _page = page;
+                    if (page == _QuickCapturePage.archive) {
+                      _filter = _QuickCaptureFilter.archived;
+                    } else if (_filter == _QuickCaptureFilter.archived) {
+                      _filter = _QuickCaptureFilter.all;
+                    }
+                  }),
+                ),
+              );
+            })
+            .toList(growable: false),
+      ),
     );
   }
 
@@ -352,7 +380,7 @@ class _WorkbenchQuickCapturePageState extends State<WorkbenchQuickCapturePage> {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
-        children: _QuickCaptureFilter.values
+        children: _activeFilters
             .map((filter) {
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
@@ -600,6 +628,15 @@ class _WorkbenchQuickCapturePageState extends State<WorkbenchQuickCapturePage> {
 
   List<WorkbenchQuickCaptureItem> _filteredItems(WorkbenchProject project) {
     final items = project.captureItems;
+    if (_page == _QuickCapturePage.capture) {
+      return items
+          .where((item) => !item.isArchived)
+          .take(5)
+          .toList(growable: false);
+    }
+    if (_page == _QuickCapturePage.archive) {
+      return items.where((item) => item.isArchived).toList(growable: false);
+    }
     return switch (_filter) {
       _QuickCaptureFilter.all =>
         items.where((item) => !item.isArchived).toList(growable: false),
@@ -621,6 +658,52 @@ class _WorkbenchQuickCapturePageState extends State<WorkbenchQuickCapturePage> {
             .toList(growable: false),
       _QuickCaptureFilter.archived =>
         items.where((item) => item.isArchived).toList(growable: false),
+    };
+  }
+
+  List<_QuickCaptureFilter> get _activeFilters => const [
+    _QuickCaptureFilter.all,
+    _QuickCaptureFilter.todo,
+    _QuickCaptureFilter.summary,
+    _QuickCaptureFilter.link,
+    _QuickCaptureFilter.later,
+  ];
+
+  _QuickCapturePage _pageFromDisplayId(String? displayId) {
+    final id = displayId?.trim().toLowerCase() ?? '';
+    if (id.contains('archive')) return _QuickCapturePage.archive;
+    if (id.contains('inbox')) return _QuickCapturePage.inbox;
+    return _QuickCapturePage.capture;
+  }
+
+  String _pageLabel(_QuickCapturePage page) {
+    return switch (page) {
+      _QuickCapturePage.capture =>
+        context.l10n.workbenchQuickCapturePageCapture,
+      _QuickCapturePage.inbox => context.l10n.workbenchQuickCapturePageInbox,
+      _QuickCapturePage.archive => context.l10n.workbenchQuickCaptureArchived,
+    };
+  }
+
+  String _pageSubtitle(WorkbenchProject project) {
+    return switch (_page) {
+      _QuickCapturePage.capture => context.l10n.workbenchQuickCaptureSubtitle,
+      _QuickCapturePage.inbox =>
+        context.l10n.workbenchQuickCaptureInboxSubtitle(
+          project.activeCaptureItems.length,
+        ),
+      _QuickCapturePage.archive =>
+        context.l10n.workbenchQuickCaptureArchiveSubtitle(
+          project.archivedCaptureItems.length,
+        ),
+    };
+  }
+
+  IconData _pageIcon(_QuickCapturePage page) {
+    return switch (page) {
+      _QuickCapturePage.capture => Icons.add_circle_outline_rounded,
+      _QuickCapturePage.inbox => Icons.inbox_outlined,
+      _QuickCapturePage.archive => Icons.archive_outlined,
     };
   }
 

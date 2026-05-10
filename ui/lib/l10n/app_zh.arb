@@ -1130,7 +1130,7 @@
   "workbenchToolList": "Project API",
   "workbenchProjectControlSubtitle": "这里只展示已注册的业务 API。Project 创建和打开仍属于 OOB Workbench 控制面。",
   "workbenchOpenWorkspace": "打开 Workspace",
-  "workbenchApiEmpty": "暂无已注册 Project API",
+  "workbenchApiEmpty": "暂无工具",
   "workbenchToolListDefaultTodo": "Project API 点击了同一个后端",
   "workbenchToolExecutionCount": "已执行 {count} 次",
   "@workbenchToolExecutionCount": {
@@ -1156,7 +1156,25 @@
   "workbenchTodoFinishedToast": "Todo 已归档",
   "workbenchTodoInputRequired": "请先输入 todo",
   "workbenchQuickCaptureTitle": "随手记 Inbox",
-  "workbenchQuickCaptureSubtitle": "把文字、链接、分享内容或截图丢进来。Project API 会整理成 Todo、摘要、链接卡片或稍后读。",
+  "workbenchQuickCaptureSubtitle": "把文字、链接、分享内容或截图丢进来，自动整理成待办、摘要、链接卡片或稍后读。",
+  "workbenchQuickCapturePageCapture": "收集",
+  "workbenchQuickCapturePageInbox": "收件箱",
+  "workbenchQuickCaptureInboxSubtitle": "{count} 条正在处理的内容。",
+  "@workbenchQuickCaptureInboxSubtitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchQuickCaptureArchiveSubtitle": "{count} 条已归档内容。",
+  "@workbenchQuickCaptureArchiveSubtitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "workbenchQuickCaptureInputHint": "粘贴一句话、链接或分享文本",
   "workbenchQuickCaptureAction": "收进来",
   "workbenchQuickCaptureCaptured": "已收进随手记",
@@ -1249,7 +1267,7 @@
   "workbenchAssistantPromptRequired": "请先输入要调整的内容",
   "workbenchAssistantNoProject": "请先选择一个 Project",
   "workbenchAssistantHotUpdateFailed": "Project 热更新失败",
-  "workbenchProjectModeTitle": "Projects",
+  "workbenchProjectModeTitle": "项目",
   "workbenchFlutterDisplay": "Flutter 显示器",
   "workbenchProjectSwitcher": "切换 Project",
   "workbenchProjectGenerateTitle": "Project 容器",
@@ -1268,7 +1286,7 @@
   "workbenchProjectPlanData": "写入持久化数据和 API 日志",
   "workbenchUseMode": "使用模式",
   "workbenchDebugMode": "Debug 模式",
-  "workbenchDisplaysTitle": "前端 Displays",
+  "workbenchDisplaysTitle": "页面",
   "workbenchDisplayCount": "{count} 个前端",
   "@workbenchDisplayCount": {
     "placeholders": {
@@ -1283,22 +1301,15 @@
   "workbenchProjectCurrentTitle": "Project 使用台",
   "workbenchProjectCurrentSubtitle": "默认打开前端会回到首页；调试打开会回到工作台。热更新通过首页大输入框和当前激活 Project 完成。",
   "workbenchProjectModeCreateTitle": "Vibe Project 入口",
-  "workbenchProjectModeSubtitle": "这里只显示 Project 列表和当前激活项。点进 Project 后再看前端、API、Workspace、导出和删除。",
-  "workbenchProjectActiveTitle": "当前激活",
+  "workbenchProjectModeSubtitle": "这里只显示项目和当前激活项。",
+  "workbenchProjectActiveTitle": "当前项目",
   "workbenchProjectActiveEmpty": "尚未激活 Project",
-  "workbenchProjectListTitle": "Project 列表",
-  "workbenchProjectDetailTitle": "Project 详情",
+  "workbenchProjectListTitle": "项目",
+  "workbenchProjectDetailTitle": "项目",
   "workbenchProjectModeCreateButton": "去首页创建",
   "workbenchProjectCreateFromHome": "回到首页输入框，直接说 create project 或描述你想做的页面。",
   "workbenchProjectModeProjectsTitle": "当前 Project API",
-  "workbenchProjectApiForProject": "{projectName} 的 API",
-  "@workbenchProjectApiForProject": {
-    "placeholders": {
-      "projectName": {
-        "type": "String"
-      }
-    }
-  },
+  "workbenchProjectApiForProject": "工具",
   "workbenchProjectModeOpen": "打开 Project",
   "workbenchProjectModeEmpty": "暂无 Workbench Project",
   "workbenchProjectModeLoadFailed": "Project 模式加载失败",
@@ -1396,7 +1407,7 @@
       }
     }
   },
-  "workbenchAndroidAssetsTitle": "Android 资产",
+  "workbenchAndroidAssetsTitle": "应用",
   "workbenchAndroidSourceHint": "输入 APK 或 Android 项目路径，例如 /workspace/apps/demo.apk",
   "workbenchAndroidIngestButton": "导入到当前 Project",
   "workbenchAndroidSourceRequired": "请输入 Android 应用或项目路径",
@@ -1419,9 +1430,21 @@
       }
     }
   },
+  "workbenchProjectDeactivateFailed": "Project 取消激活失败",
+  "workbenchProjectDeactivated": "已取消激活 Project",
+  "workbenchActivateProject": "激活 Project",
+  "workbenchDeactivateProject": "取消激活",
+  "workbenchEditProjectLabels": "编辑名称",
+  "workbenchProjectNameLabel": "名称",
+  "workbenchProjectShortNameLabel": "简写",
+  "workbenchSaveProjectLabels": "保存",
+  "workbenchProjectNameRequired": "请输入名称",
+  "workbenchProjectLabelsUpdated": "已保存",
+  "workbenchProjectLabelsUpdateFailed": "保存失败",
+  "workbenchProjectMoreActions": "更多操作",
   "workbenchActiveProject": "已激活",
   "workbenchInactiveProject": "未激活",
-  "workbenchContinueInHome": "激活并回到首页输入",
+  "workbenchContinueInHome": "激活 Project",
   "workbenchProjectHelpTooltip": "Project 工作台说明",
   "workbenchProjectHelpTitle": "Project 工作台",
   "workbenchProjectHelpHomeInput": "创建、编辑和热更新都在首页大输入框里完成。",
@@ -1432,6 +1455,16 @@
   "@workbenchActiveProjectChip": {
     "placeholders": {
       "projectName": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchProjectSummaryQuickCapture": "收集文字、链接、分享和截图，沉淀成待办、摘要、链接卡片或稍后读。",
+  "workbenchProjectSummaryTodo": "记录待办事项，并在完成后归档。",
+  "workbenchProjectSummarySchema": "管理 {entityName} 记录，并保留状态和快捷操作。",
+  "@workbenchProjectSummarySchema": {
+    "placeholders": {
+      "entityName": {
         "type": "String"
       }
     }

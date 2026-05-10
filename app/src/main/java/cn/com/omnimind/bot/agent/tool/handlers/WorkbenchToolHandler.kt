@@ -25,6 +25,7 @@ class WorkbenchToolHandler(
         "workbench_project_create",
         "workbench_project_list",
         "workbench_project_get",
+        "workbench_project_update",
         "workbench_api_list",
         "workbench_api_call",
         "workbench_project_export",
@@ -53,6 +54,7 @@ class WorkbenchToolHandler(
             "workbench_project_create" -> executeWorkbenchProjectCreate(args, env, callback)
             "workbench_project_list" -> executeWorkbenchProjectList(env, callback)
             "workbench_project_get" -> executeWorkbenchProjectGet(args, env, callback)
+            "workbench_project_update" -> executeWorkbenchProjectUpdate(args, env, callback)
             "workbench_api_list" -> executeWorkbenchApiList(args, env, callback)
             "workbench_api_call" -> executeWorkbenchApiCall(args, env, callback)
             "workbench_project_export" -> executeWorkbenchProjectExport(args, env, callback)
@@ -144,6 +146,32 @@ class WorkbenchToolHandler(
             throw e
         } catch (e: Exception) {
             helper.errorResult(toolName, e.message, "Workbench project get failed")
+        }
+    }
+
+    private suspend fun executeWorkbenchProjectUpdate(
+        args: JsonObject,
+        env: AgentExecutionEnvironment,
+        callback: AgentCallback
+    ): ToolExecutionResult {
+        val toolName = "workbench_project_update"
+        return try {
+            helper.reportToolProgress(callback, toolName, "Updating Workbench project contract")
+            val payload = workbenchProjectStore.updateProject(
+                args = helper.jsonObjectToMap(args),
+                caller = "ai"
+            )
+            contextResult(
+                toolName = toolName,
+                summaryText = "Workbench project updated",
+                payload = payload,
+                success = payload["success"] == true,
+                env = env
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            helper.errorResult(toolName, e.message, "Workbench project update failed")
         }
     }
 

@@ -1,8 +1,12 @@
 package cn.com.omnimind.bot
 
 import BaseApplication
+import android.content.Context
 import cn.com.omnimind.baselib.database.DatabaseHelper
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
+import cn.com.omnimind.baselib.llm.ModelProviderConfigStore
+import cn.com.omnimind.baselib.llm.SceneModelBindingStore
+import cn.com.omnimind.baselib.shizuku.ShizukuCapabilityManager
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.AgentAiCapabilityConfigSync
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
@@ -11,11 +15,11 @@ import cn.com.omnimind.bot.agent.WorkspaceMemoryRollupScheduler
 import cn.com.omnimind.bot.agent.WorkspaceScheduledTaskScheduler
 import cn.com.omnimind.bot.activity.StartupThemeResolver
 import cn.com.omnimind.bot.localmodel.LocalModelFeatureInstaller
+import cn.com.omnimind.bot.manager.AssistsCoreManager
 import cn.com.omnimind.bot.mcp.McpServerManager
 import cn.com.omnimind.bot.terminal.EmbeddedTerminalRuntime
 import cn.com.omnimind.bot.update.AppUpdateManager
 import cn.com.omnimind.bot.util.NestedBackgroundStateUtil
-import cn.com.omnimind.baselib.shizuku.ShizukuCapabilityManager
 import com.rk.resources.Res
 import com.tencent.mmkv.MMKV
 import io.flutter.FlutterInjector
@@ -26,6 +30,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 
 class App : BaseApplication() {
     companion object {
@@ -117,6 +123,11 @@ class App : BaseApplication() {
             "ModelSceneRegistry.init cost: ${System.currentTimeMillis() - registryStart}ms"
         )
         runCatching {
+            seedDefaultModelProviderFromBuildConfigIfNeeded()
+        }.onFailure {
+            OmniLog.w("AppStartup", "seed default model provider failed: ${it.message}")
+        }
+        runCatching {
             val workspaceManager = AgentWorkspaceManager(this)
             workspaceManager.ensureRuntimeDirectories()
             SkillIndexService(this, workspaceManager).seedBuiltinSkillsIfNeeded()
@@ -145,6 +156,85 @@ class App : BaseApplication() {
             "AppStartup",
             "App onCreate total cost: ${System.currentTimeMillis() - appStartTime}ms"
         )
+    }
+
+    /**
+     * Seeds local model-provider config from install-time BuildConfig values.
+     *
+     * The OOB install script injects an OpenAI-compatible base URL, API key, and model id into
+     * debug builds. On a fresh device this writes the normal provider/profile and scene-binding
+     * stores, so Agent/VLM paths can start without manual key entry. Empty values and release builds
+     * are ignored.
+     */
+    private fun seedDefaultModelProviderFromBuildConfigIfNeeded() {
+        if (!BuildConfig.DEBUG) return
+        val baseUrl = BuildConfig.DEFAULT_MODEL_PROVIDER_BASE_URL.trim()
+        val apiKey = BuildConfig.DEFAULT_MODEL_PROVIDER_API_KEY.trim()
+        val modelId = BuildConfig.DEFAULT_MODEL_PROVIDER_MODEL_ID.trim()
+        if (baseUrl.isEmpty() || apiKey.isEmpty() || modelId.isEmpty()) return
+
+        val profile = ModelProviderConfigStore.saveProfile(
+            id = "dashboard-local",
+            name = "Dashboard Local",
+            baseUrl = baseUrl,
+            apiKey = apiKey,
+            protocolType = "openai_compatible"
+        )
+        listOf(
+            "scene.dispatch.model",
+            "scene.vlm.operation.primary",
+            "scene.compactor.context",
+            "scene.compactor.context.chat"
+        ).forEach { sceneId ->
+            SceneModelBindingStore.saveBinding(
+                sceneId = sceneId,
+                providerProfileId = profile.id,
+                modelId = modelId
+            )
+        }
+        seedFlutterManualModelId(
+            profileId = profile.id,
+            modelId = modelId
+        )
+        AgentAiCapabilityConfigSync.get(this).syncFileFromStores()
+        AssistsCoreManager.dispatchAgentAiConfigChanged(
+            source = "debug_install",
+            path = "build_config_default_model_provider"
+        )
+    }
+
+    /**
+     * Mirrors the debug install model id into Flutter's provider-model cache.
+     *
+     * @param profileId Provider profile id that owns the seeded model. It must match the native
+     * scene binding profile id so the Flutter settings and chat model picker can resolve it.
+     * @param modelId OpenAI-compatible model id injected by the install script. Existing entries
+     * are preserved and the model is only appended when missing.
+     */
+    private fun seedFlutterManualModelId(profileId: String, modelId: String) {
+        val normalizedProfileId = profileId.trim()
+        val normalizedModelId = modelId.trim()
+        if (normalizedProfileId.isEmpty() || normalizedModelId.isEmpty()) return
+
+        val prefs = applicationContext.getSharedPreferences(
+            "FlutterSharedPreferences",
+            Context.MODE_PRIVATE
+        )
+        val key = "flutter.manual_provider_model_ids_v2"
+        val current = runCatching {
+            JSONObject(prefs.getString(key, null).orEmpty())
+        }.getOrElse {
+            JSONObject()
+        }
+        val ids = current.optJSONArray(normalizedProfileId) ?: JSONArray()
+        val exists = (0 until ids.length()).any { index ->
+            ids.optString(index).trim() == normalizedModelId
+        }
+        if (!exists) {
+            ids.put(normalizedModelId)
+        }
+        current.put(normalizedProfileId, ids)
+        prefs.edit().putString(key, current.toString()).apply()
     }
 
     private fun setupUncaughtExceptionHandler() {

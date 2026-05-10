@@ -176,8 +176,10 @@ object WorkbenchToolboxBuilder {
     }
 
     private fun sideEffectsFor(api: WorkbenchApiRecord): List<String> {
-        return when (api.apiId) {
-            WORKBENCH_CAPTURE_SUMMARIZE_TOOL_ID -> listOf("data_write", "log_write")
+        val action = "${api.apiId}.${api.toolId}".lowercase()
+        return when {
+            listOf(".list", ".read", ".query", ".search").any { action.contains(it) } ->
+                listOf("data_read", "log_write")
             else -> listOf("data_write", "log_write")
         }
     }
@@ -203,11 +205,16 @@ object WorkbenchToolboxBuilder {
     }
 
     private fun examplesFor(api: WorkbenchApiRecord): List<Map<String, Any?>> {
-        val inputs = when (api.apiId) {
-            WORKBENCH_CAPTURE_INGEST_TOOL_ID -> linkedMapOf("text" to "记一下：明天 3 点开会")
-            WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID,
-            WORKBENCH_CAPTURE_PROMOTE_TOOL_ID,
-            WORKBENCH_CAPTURE_SUMMARIZE_TOOL_ID -> linkedMapOf("item_id" to "capture-example")
+        val inputs = when {
+            api.apiId == WORKBENCH_CAPTURE_INGEST_TOOL_ID ->
+                linkedMapOf("text" to "记一下：明天 3 点开会")
+            api.apiId in listOf(
+                WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID,
+                WORKBENCH_CAPTURE_PROMOTE_TOOL_ID,
+                WORKBENCH_CAPTURE_SUMMARIZE_TOOL_ID
+            ) -> linkedMapOf("item_id" to "capture-example")
+            api.apiId.endsWith(".list") || api.apiId.endsWith(".read") -> linkedMapOf<String, Any?>()
+            api.apiId.endsWith(".update") -> linkedMapOf("item_id" to "item-example", "title" to "Updated item")
             else -> if (api.apiId.endsWith(".archive")) {
                 linkedMapOf("item_id" to "item-example")
             } else {

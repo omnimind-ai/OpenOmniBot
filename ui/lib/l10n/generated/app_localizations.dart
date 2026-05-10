@@ -5615,7 +5615,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchApiEmpty.
   ///
   /// In zh, this message translates to:
-  /// **'暂无已注册 Project API'**
+  /// **'暂无工具'**
   String get workbenchApiEmpty;
 
   /// No description provided for @workbenchToolListDefaultTodo.
@@ -5729,8 +5729,32 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchQuickCaptureSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'把文字、链接、分享内容或截图丢进来。Project API 会整理成 Todo、摘要、链接卡片或稍后读。'**
+  /// **'把文字、链接、分享内容或截图丢进来，自动整理成待办、摘要、链接卡片或稍后读。'**
   String get workbenchQuickCaptureSubtitle;
+
+  /// No description provided for @workbenchQuickCapturePageCapture.
+  ///
+  /// In zh, this message translates to:
+  /// **'收集'**
+  String get workbenchQuickCapturePageCapture;
+
+  /// No description provided for @workbenchQuickCapturePageInbox.
+  ///
+  /// In zh, this message translates to:
+  /// **'收件箱'**
+  String get workbenchQuickCapturePageInbox;
+
+  /// No description provided for @workbenchQuickCaptureInboxSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 条正在处理的内容。'**
+  String workbenchQuickCaptureInboxSubtitle(int count);
+
+  /// No description provided for @workbenchQuickCaptureArchiveSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 条已归档内容。'**
+  String workbenchQuickCaptureArchiveSubtitle(int count);
 
   /// No description provided for @workbenchQuickCaptureInputHint.
   ///
@@ -5993,7 +6017,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectModeTitle.
   ///
   /// In zh, this message translates to:
-  /// **'Projects'**
+  /// **'项目'**
   String get workbenchProjectModeTitle;
 
   /// No description provided for @workbenchFlutterDisplay.
@@ -6107,7 +6131,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchDisplaysTitle.
   ///
   /// In zh, this message translates to:
-  /// **'前端 Displays'**
+  /// **'页面'**
   String get workbenchDisplaysTitle;
 
   /// No description provided for @workbenchDisplayCount.
@@ -6155,13 +6179,13 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectModeSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'这里只显示 Project 列表和当前激活项。点进 Project 后再看前端、API、Workspace、导出和删除。'**
+  /// **'这里只显示项目和当前激活项。'**
   String get workbenchProjectModeSubtitle;
 
   /// No description provided for @workbenchProjectActiveTitle.
   ///
   /// In zh, this message translates to:
-  /// **'当前激活'**
+  /// **'当前项目'**
   String get workbenchProjectActiveTitle;
 
   /// No description provided for @workbenchProjectActiveEmpty.
@@ -6173,13 +6197,13 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectListTitle.
   ///
   /// In zh, this message translates to:
-  /// **'Project 列表'**
+  /// **'项目'**
   String get workbenchProjectListTitle;
 
   /// No description provided for @workbenchProjectDetailTitle.
   ///
   /// In zh, this message translates to:
-  /// **'Project 详情'**
+  /// **'项目'**
   String get workbenchProjectDetailTitle;
 
   /// No description provided for @workbenchProjectModeCreateButton.
@@ -6203,8 +6227,8 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchProjectApiForProject.
   ///
   /// In zh, this message translates to:
-  /// **'{projectName} 的 API'**
-  String workbenchProjectApiForProject(String projectName);
+  /// **'工具'**
+  String get workbenchProjectApiForProject;
 
   /// No description provided for @workbenchProjectModeOpen.
   ///
@@ -6497,7 +6521,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchAndroidAssetsTitle.
   ///
   /// In zh, this message translates to:
-  /// **'Android 资产'**
+  /// **'应用'**
   String get workbenchAndroidAssetsTitle;
 
   /// No description provided for @workbenchAndroidSourceHint.
@@ -6548,6 +6572,78 @@ abstract class AppLocalizations {
   /// **'已激活 {projectName}'**
   String workbenchProjectActivated(String projectName);
 
+  /// No description provided for @workbenchProjectDeactivateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'Project 取消激活失败'**
+  String get workbenchProjectDeactivateFailed;
+
+  /// No description provided for @workbenchProjectDeactivated.
+  ///
+  /// In zh, this message translates to:
+  /// **'已取消激活 Project'**
+  String get workbenchProjectDeactivated;
+
+  /// No description provided for @workbenchActivateProject.
+  ///
+  /// In zh, this message translates to:
+  /// **'激活 Project'**
+  String get workbenchActivateProject;
+
+  /// No description provided for @workbenchDeactivateProject.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消激活'**
+  String get workbenchDeactivateProject;
+
+  /// No description provided for @workbenchEditProjectLabels.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑名称'**
+  String get workbenchEditProjectLabels;
+
+  /// No description provided for @workbenchProjectNameLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'名称'**
+  String get workbenchProjectNameLabel;
+
+  /// No description provided for @workbenchProjectShortNameLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'简写'**
+  String get workbenchProjectShortNameLabel;
+
+  /// No description provided for @workbenchSaveProjectLabels.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存'**
+  String get workbenchSaveProjectLabels;
+
+  /// No description provided for @workbenchProjectNameRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入名称'**
+  String get workbenchProjectNameRequired;
+
+  /// No description provided for @workbenchProjectLabelsUpdated.
+  ///
+  /// In zh, this message translates to:
+  /// **'已保存'**
+  String get workbenchProjectLabelsUpdated;
+
+  /// No description provided for @workbenchProjectLabelsUpdateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存失败'**
+  String get workbenchProjectLabelsUpdateFailed;
+
+  /// No description provided for @workbenchProjectMoreActions.
+  ///
+  /// In zh, this message translates to:
+  /// **'更多操作'**
+  String get workbenchProjectMoreActions;
+
   /// No description provided for @workbenchActiveProject.
   ///
   /// In zh, this message translates to:
@@ -6563,7 +6659,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchContinueInHome.
   ///
   /// In zh, this message translates to:
-  /// **'激活并回到首页输入'**
+  /// **'激活 Project'**
   String get workbenchContinueInHome;
 
   /// No description provided for @workbenchProjectHelpTooltip.
@@ -6607,6 +6703,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'Project：{projectName}'**
   String workbenchActiveProjectChip(String projectName);
+
+  /// No description provided for @workbenchProjectSummaryQuickCapture.
+  ///
+  /// In zh, this message translates to:
+  /// **'收集文字、链接、分享和截图，沉淀成待办、摘要、链接卡片或稍后读。'**
+  String get workbenchProjectSummaryQuickCapture;
+
+  /// No description provided for @workbenchProjectSummaryTodo.
+  ///
+  /// In zh, this message translates to:
+  /// **'记录待办事项，并在完成后归档。'**
+  String get workbenchProjectSummaryTodo;
+
+  /// No description provided for @workbenchProjectSummarySchema.
+  ///
+  /// In zh, this message translates to:
+  /// **'管理 {entityName} 记录，并保留状态和快捷操作。'**
+  String workbenchProjectSummarySchema(String entityName);
 
   /// No description provided for @workbenchAndroidAssetCount.
   ///

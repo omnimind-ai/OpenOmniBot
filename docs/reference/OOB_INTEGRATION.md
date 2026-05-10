@@ -5,12 +5,16 @@ This note tracks the native Workbench boundary used by OOB Project editing.
 ## Project Templates
 
 - `todo_log_demo` is only the demo template. It registers `todo.add` and `todo.finish`, persists `data/todos.json`, and renders `/workbench/todo_log`.
-- `schema_app` is the first generic Project template. It creates an OOB-native schema display, registers Project APIs such as `<entity>.create` and `<entity>.archive`, persists `data/items.json`, and renders `/workbench/schema_app`.
+- `schema_app` is the first generic Project template. It creates an OOB-native schema display, registers Project APIs such as `<entity>.create`, `<entity>.archive`, `<entity>.update`, and `<entity>.list`, persists `data/items.json`, and renders `/workbench/schema_app`.
 - `quick_capture_inbox` is the daily-use validation template for 随手记/Inbox Projects. It registers `capture.ingest`, `capture.archive`, `capture.promote_to_todo`, and `capture.summarize`, persists `data/items.json`, writes workspace-script contract artifacts under `backend/`, and renders `/workbench/quick_capture`.
 
 ## Frontend And Backend Contract
 
 - Project creation remains a Workbench control API: `workbench_project_create`.
+- Project iteration remains a Workbench control API: `workbench_project_update`
+  updates name/shortName/description and can merge new Display pages plus
+  Project business APIs into the same Project. It must not create a replacement
+  Project just to add features.
 - Active Project selection remains a Workbench control API:
   `workbench_project_activate`, `workbench_project_active_get`, and
   `workbench_project_deactivate`.
@@ -23,7 +27,16 @@ This note tracks the native Workbench boundary used by OOB Project editing.
   `workbench_api_call(projectId, apiId)` shape.
 - Project creation/import progress remains a Workbench control API: `workbench_project_progress_get`.
 - OSS/GitHub source ingest remains a Workbench control API: `workbench_project_ingest_oss`. URL-only ingest records `requiresFetch=true`; local downloaded source paths are copied and analyzed.
-- Generated frontend contracts live in `frontend/page_spec.json`.
+- Generated frontend contracts live in `frontend/page_spec.json`. This is the
+  immediate runtime surface rendered by the installed OOB app.
+- Custom Flutter source can live under `frontend/flutter/` as a Project asset
+  generated or edited from Alpine directly or through
+  `workbench_project_update.flutterFiles`. OOB refreshes
+  `frontend/flutter/manifest.json` after bounded writes. It is editable,
+  exportable, and buildable, but new Dart code there is not hot-loaded into the
+  already installed OOB APK; it needs a controlled Flutter build/install path
+  before it can run as native code. Keep `page_spec.json` as the fast
+  preview/hot-update surface.
 - Backend Tool Contracts live in `backend/api_spec.json` and include MCP
   `toolName`, `apiVersion`, schemas, capabilities, side effects, data/log files,
   and examples.
@@ -38,9 +51,15 @@ This note tracks the native Workbench boundary used by OOB Project editing.
 
 ## Display Boundary
 
-The Home Project surface embeds the active Project display as a child window. Schema Projects use the generic Flutter schema display; Quick Capture Projects use the native `workbench_quick_capture` display; `todo_log_demo` remains a regression/demo template. The Project manager remains a secondary control surface, but its landing page is only a compact Project list plus the current active Project. Tap a Project row to open details for activation, displays, Workspace, export, delete, and API execution counts.
+The Home Project surface embeds the active Project display as a child window. Schema Projects use the generic Flutter schema display; Quick Capture Projects use the native `workbench_quick_capture` display with multiple Display pages (`capture`, `inbox`, `archive`) that share one Project data/API contract; `todo_log_demo` remains a regression/demo template. Display navigation belongs inside the right-side Workbench Project surface, so switching pages never replaces the left Home conversation. The Project manager remains a secondary control surface, but its landing page is only a compact Project list plus the current active Project. The active summary and each Project row should show one product-language sentence about what the Project does; Project ids, API counts, template ids, and paths stay out of this compact list. Tap a Project row to open details for displays, Workspace, export, delete, and read-only API execution counts. Activation is a direct state toggle: the check control activates an inactive Project and deactivates the active Project, while details expose the same state as an icon action without coupling activation to returning Home. Project display name and short name are user-editable metadata and must update the Project registry plus `frontend/page_spec.json`.
+
+Workbench management UI should follow the rest of OOB: icon-first controls with short tooltips, not long explanatory blocks. Keep technical ids, routes, paths, executor names, and implementation counts out of the first visual layer; show names, one-line purpose, small status, and direct icon actions first.
 
 The embedded Project toolbar stays fixed to four actions: open the current Project management page, show Project info, open the current Display fullscreen, and refresh the Project payload. Project switching and deeper management stay in `/workbench/projects`.
+
+Generated Displays are application surfaces, not Project summary cards. The first viewport should show domain objects, inputs, filters, product status, and business actions. `frontend/page_spec.json` may carry API binding metadata, but visible UI must not expose Project id, template id, Toolbox/MCP tool names, API count, executor kind, Workspace path, `backend/api_spec.json`, data/log paths, progress rows, or implementation badges such as `OOB native UI`. Those belong in `/workbench/projects`, the info popup, MCP resources, logs, or developer documentation.
+
+Project iteration updates the same Project. Adding a feature should call `workbench_project_update` to extend `frontend/page_spec.json` displays/actions, `backend/api_spec.json` business tools, and optional Project-owned Flutter source through `flutterFiles`; it then records the change in `logs/hot_updates.jsonl` and refreshes `frontend/flutter/manifest.json`. It should not create a replacement Project unless the user explicitly asks for a new app. Generic schema Projects currently execute `create/archive/update/list` style business APIs through the native collection executor. More custom verbs can be declared as Tool Contract entries first, then backed by `workspace_python_script`, provider, or a later Flutter/source build flow.
 
 ## Workspace Cache Boundary
 
@@ -60,9 +79,9 @@ Dashboard-token call -> `workbench_project_create` -> `workbench_project_activat
 `/workbench/quick_capture?projectId=oob-workbench-vlm-quick-note` on
 `emulator-5554`. The proof must include app-data files under
 `workspace/projects/oob-workbench-vlm-quick-note/` and a live screenshot of
-`随手记 Inbox · NOTE`. The 2026-05-10 final smoke showed `3 active / 1 archived`,
-`OOB native UI`, `4 APIs`, and Project API writes through both `mcp_dashboard`
-and the native Flutter UI. Receipt/invoice text now lands in the current
+`随手记 Inbox · NOTE` as an app surface. The 2026-05-10 final smoke showed
+persisted active/archived items and Project API writes through both
+`mcp_dashboard` and the native Flutter UI. Receipt/invoice text now lands in the current
 frontend-supported `summary` bucket instead of being misclassified as `todo`.
 
 The same run also validated the model-provider setup path enough for `vlm_task`

@@ -353,6 +353,7 @@ object McpRoutes {
                 "workbench_project_create" -> store.createProject(args)
                 "workbench_project_list" -> store.listProjects()
                 "workbench_project_get" -> store.getProject(stringArg(args, "projectId"))
+                "workbench_project_update" -> store.updateProject(args, caller = "mcp_dashboard")
                 "workbench_project_open" -> {
                     val projectId = stringArg(args, "projectId")
                     val route = store.routeForProject(projectId)
