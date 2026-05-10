@@ -11,6 +11,9 @@ const Color _kInterruptedStatusColor = Color(0xFFFFC04D);
 const BorderRadius _kTranscriptSurfaceRadius = BorderRadius.all(
   Radius.circular(20),
 );
+const ValueKey<String> kAgentToolDetailSheetKey = ValueKey<String>(
+  'agent-tool-detail-sheet',
+);
 
 class AgentToolTranscript {
   const AgentToolTranscript({
@@ -59,18 +62,6 @@ Future<void> showAgentToolDetailDialog(
   BuildContext context, {
   required Map<String, dynamic> cardData,
 }) {
-  final transcript = buildAgentToolTranscript(
-    cardData,
-    maxOutputLines: 80,
-    maxPreviewLines: 4,
-    maxPreviewChars: 420,
-  );
-  final title = resolveAgentToolTitle(cardData);
-  final typeLabel = resolveAgentToolTypeLabel(cardData);
-  final status = (cardData['status'] ?? 'running').toString();
-  final statusLabel = resolveAgentToolStatusLabel(cardData);
-  final detailSpan = _buildDetailTextSpan(transcript);
-
   return showDialog<void>(
     context: context,
     useRootNavigator: false,
@@ -95,43 +86,31 @@ Future<void> showAgentToolDetailDialog(
               ),
             ],
           ),
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
-                child: Row(
-                  children: [
-                    const _TerminalTrafficLights(),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFFF2F7FF),
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    _DialogMetaTag(label: typeLabel),
-                    const SizedBox(width: 6),
-                    _DialogStatusTag(status: status, label: statusLabel),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
-                  child: SelectableText.rich(detailSpan),
-                ),
-              ),
-            ],
+          child: _AgentToolDetailContent(
+            cardData: cardData,
+            headerPadding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
+            scrollPadding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
           ),
         ),
       );
+    },
+  );
+}
+
+Future<void> showAgentToolDetailSheet(
+  BuildContext context, {
+  required Map<String, dynamic> cardData,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    isDismissible: true,
+    enableDrag: false,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.28),
+    builder: (sheetContext) {
+      return _AgentToolDetailSheetFrame(cardData: cardData);
     },
   );
 }
@@ -760,6 +739,184 @@ class _TerminalTrafficLights extends StatelessWidget {
         dot(const Color(0xFFFEBB2E)),
         const SizedBox(width: 5),
         dot(const Color(0xFF28C840)),
+      ],
+    );
+  }
+}
+
+class _AgentToolDetailSheetFrame extends StatefulWidget {
+  const _AgentToolDetailSheetFrame({required this.cardData});
+
+  final Map<String, dynamic> cardData;
+
+  @override
+  State<_AgentToolDetailSheetFrame> createState() =>
+      _AgentToolDetailSheetFrameState();
+}
+
+class _AgentToolDetailSheetFrameState
+    extends State<_AgentToolDetailSheetFrame> {
+  static const double _minHeightFactor = 0.36;
+  static const double _maxHeightFactor = 0.94;
+
+  double? _heightFactor;
+
+  double _initialHeightFactor(double viewportHeight) {
+    return viewportHeight < 720 ? 0.72 : 0.62;
+  }
+
+  void _handleDragUpdate(DragUpdateDetails details, double availableHeight) {
+    if (availableHeight <= 0) {
+      return;
+    }
+    final delta = details.primaryDelta ?? details.delta.dy;
+    setState(() {
+      final current =
+          _heightFactor ??
+          _initialHeightFactor(MediaQuery.sizeOf(context).height);
+      _heightFactor = (current - delta / availableHeight).clamp(
+        _minHeightFactor,
+        _maxHeightFactor,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final availableHeight = math.max(
+      320.0,
+      mediaQuery.size.height -
+          mediaQuery.padding.top -
+          mediaQuery.viewInsets.bottom,
+    );
+    final heightFactor =
+        _heightFactor ?? _initialHeightFactor(mediaQuery.size.height);
+    const borderRadius = BorderRadius.vertical(top: Radius.circular(24));
+
+    return SafeArea(
+      top: false,
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+        child: SizedBox(
+          key: kAgentToolDetailSheetKey,
+          height: availableHeight * heightFactor,
+          width: double.infinity,
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              color: kTerminalSurfaceBlack,
+              borderRadius: borderRadius,
+              boxShadow: [
+                BoxShadow(
+                  color: kTerminalSurfaceShadow,
+                  blurRadius: 32,
+                  offset: Offset(0, -8),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: borderRadius,
+              child: Material(
+                color: kTerminalSurfaceBlack,
+                child: Column(
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragUpdate: (details) =>
+                          _handleDragUpdate(details, availableHeight),
+                      child: SizedBox(
+                        height: 22,
+                        width: double.infinity,
+                        child: Center(
+                          child: Container(
+                            width: 42,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.24),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: _AgentToolDetailContent(
+                        cardData: widget.cardData,
+                        headerPadding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+                        scrollPadding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AgentToolDetailContent extends StatelessWidget {
+  const _AgentToolDetailContent({
+    required this.cardData,
+    required this.headerPadding,
+    required this.scrollPadding,
+  });
+
+  final Map<String, dynamic> cardData;
+  final EdgeInsetsGeometry headerPadding;
+  final EdgeInsetsGeometry scrollPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final transcript = buildAgentToolTranscript(
+      cardData,
+      maxOutputLines: 80,
+      maxPreviewLines: 4,
+      maxPreviewChars: 420,
+    );
+    final title = resolveAgentToolTitle(cardData);
+    final typeLabel = resolveAgentToolTypeLabel(cardData);
+    final status = (cardData['status'] ?? 'running').toString();
+    final statusLabel = resolveAgentToolStatusLabel(cardData);
+    final detailSpan = _buildDetailTextSpan(transcript);
+
+    return Column(
+      children: [
+        Padding(
+          padding: headerPadding,
+          child: Row(
+            children: [
+              const _TerminalTrafficLights(),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFF2F7FF),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              _DialogMetaTag(label: typeLabel),
+              const SizedBox(width: 6),
+              _DialogStatusTag(status: status, label: statusLabel),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: scrollPadding,
+            child: SelectableText.rich(detailSpan),
+          ),
+        ),
       ],
     );
   }

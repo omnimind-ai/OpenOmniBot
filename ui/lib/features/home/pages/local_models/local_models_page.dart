@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/mnn_local_models_service.dart';
 import 'package:ui/theme/app_text_styles.dart';
 import 'package:ui/theme/omni_theme_palette.dart';
@@ -16,11 +17,22 @@ enum _AccentTone { neutral, accent, success, info, warning, danger }
 
 const String _llamaCppBackend = 'llama.cpp';
 const String _omniinferMnnBackend = 'omniinfer-mnn';
+const String _omniinferQnnBackend = 'executorch-qnn';
+const String _omniinferLiteRtBackend = 'litert';
 
 class LocalModelsPage extends StatefulWidget {
-  const LocalModelsPage({super.key, this.initialTab = 'service'});
+  const LocalModelsPage({
+    super.key,
+    this.initialTab = 'service',
+    this.initialBackend,
+    this.pinnedModelId,
+  });
 
   final String initialTab;
+  final String? initialBackend;
+
+  /// When set, the market tab will pin this model to the top of the list.
+  final String? pinnedModelId;
 
   @override
   State<LocalModelsPage> createState() => _LocalModelsPageState();
@@ -58,7 +70,10 @@ class _LocalModelsPageState extends State<LocalModelsPage>
   bool _loadingInstalled = true;
   bool _loadingMarket = true;
   bool _loadingConfig = true;
-  bool _togglingApiService = false;
+
+  bool _importing = false;
+  double _importProgress = 0.0;
+  String _importModelId = '';
 
   @override
   void initState() {
@@ -70,7 +85,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     );
     _tabController.addListener(_handleTabChanged);
     _eventSubscription = MnnLocalModelsService.eventStream.listen(_handleEvent);
-    _bootstrap();
+    _bootstrap(preferredBackend: widget.initialBackend);
     _startPolling();
   }
 
@@ -128,7 +143,15 @@ class _LocalModelsPageState extends State<LocalModelsPage>
 
   List<MnnLocalModel> get _sortedMarketModels {
     final sorted = List<MnnLocalModel>.from(_marketModels);
+    final pinId = widget.pinnedModelId;
     sorted.sort((a, b) {
+      // Pin the recommended model to the top
+      if (pinId != null && pinId.isNotEmpty) {
+        final aPin = a.id.contains(pinId) || a.name.contains(pinId);
+        final bPin = b.id.contains(pinId) || b.name.contains(pinId);
+        if (aPin && !bPin) return -1;
+        if (!aPin && bPin) return 1;
+      }
       final sizeCompare = _modelSizeSortValue(
         a,
       ).compareTo(_modelSizeSortValue(b));
@@ -140,8 +163,14 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     return sorted;
   }
 
-  Future<void> _bootstrap() async {
+  Future<void> _bootstrap({String? preferredBackend}) async {
     try {
+      final normalizedPreferredBackend = _normalizeBackendName(
+        preferredBackend,
+      );
+      if (normalizedPreferredBackend != null) {
+        await MnnLocalModelsService.setBackend(normalizedPreferredBackend);
+      }
       final overview = await MnnLocalModelsService.getOverview(
         installedQuery: _installedSearchController.text.trim(),
         marketQuery: _marketSearchController.text.trim(),
@@ -163,6 +192,25 @@ class _LocalModelsPageState extends State<LocalModelsPage>
         _refreshInstalled(silent: true),
         _refreshMarket(silent: true),
       ]);
+    }
+  }
+
+  String? _normalizeBackendName(String? raw) {
+    switch (raw?.trim().toLowerCase()) {
+      case _llamaCppBackend:
+        return _llamaCppBackend;
+      case 'mnn':
+      case _omniinferMnnBackend:
+        return _omniinferMnnBackend;
+      case 'qnn':
+      case _omniinferQnnBackend:
+        return _omniinferQnnBackend;
+      case 'litert':
+      case 'litert-lm':
+      case 'litertlm':
+        return _omniinferLiteRtBackend;
+      default:
+        return null;
     }
   }
 
@@ -219,7 +267,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     } catch (_) {
       if (!mounted) return;
       if (!silent) {
-        showToast('加载本地模型配置失败', type: ToastType.error);
+        showToast(context.l10n.localModelsConfigLoadFailed, type: ToastType.error);
       }
       setState(() => _loadingConfig = false);
     }
@@ -239,7 +287,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     } catch (_) {
       if (!mounted) return;
       if (!silent) {
-        showToast('加载已安装模型失败', type: ToastType.error);
+        showToast(context.l10n.localModelsInstalledLoadFailed, type: ToastType.error);
       }
       setState(() => _loadingInstalled = false);
     }
@@ -266,7 +314,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     } catch (_) {
       if (!mounted) return;
       if (!silent) {
-        showToast('加载模型市场失败', type: ToastType.error);
+        showToast(context.l10n.localModelsMarketLoadFailed, type: ToastType.error);
       }
       setState(() => _loadingMarket = false);
     }
@@ -274,6 +322,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
 
   void _handleEvent(MnnLocalEvent event) {
     if (!mounted) return;
+    debugPrint('[LocalModels] event: ${event.type}, payload keys: ${event.payload.keys}');
     switch (event.type) {
       case 'download_update':
         final modelId = (event.payload['modelId'] ?? '').toString();
@@ -281,14 +330,56 @@ class _LocalModelsPageState extends State<LocalModelsPage>
         final download = rawDownload is Map
             ? MnnLocalDownloadInfo.fromMap(rawDownload)
             : null;
+        final prevState = _marketModels
+            .where((m) => m.id == modelId)
+            .firstOrNull
+            ?.download
+            ?.stateLabel ?? 'not_started';
+        debugPrint('[LocalModels] download_update: model=$modelId, '
+            'prevState=$prevState -> newState=${download?.stateLabel}, '
+            'progress=${download?.progress.toStringAsFixed(2)}, '
+            'error=${download?.errorMessage}');
+        _showDownloadStateToast(modelId, download);
         _updateMarketDownloadState(modelId, download);
         if (download?.isCompleted == true) {
           _refreshInstalled(silent: true);
         }
         break;
+      case 'download_error':
+        final errorModelId = (event.payload['modelId'] ?? '').toString();
+        final errorMsg = (event.payload['error'] ?? '').toString();
+        debugPrint('[LocalModels] download_error: model=$errorModelId, error=$errorMsg');
+        if (errorModelId.isNotEmpty) {
+          final name = _displayModelName(errorModelId);
+          final reason = errorMsg.trim().isNotEmpty
+              ? errorMsg.trim()
+              : context.l10n.localModelsDownloadErrorUnknown;
+          showToast(
+            context.l10n.localModelsDownloadFailedToast(name, reason),
+            type: ToastType.error,
+          );
+          _refreshMarket(silent: true);
+        }
+        break;
       case 'downloads_changed':
+        debugPrint('[LocalModels] downloads_changed: ${event.payload}');
         _refreshInstalled(silent: true);
         _refreshMarket(silent: true);
+        break;
+      case 'import_progress':
+        final importModelId = (event.payload['modelId'] ?? '').toString();
+        final importProgress =
+            (event.payload['progress'] as num?)?.toDouble() ?? 0.0;
+        if (mounted) {
+          setState(() {
+            _importProgress = importProgress;
+            _importModelId = importModelId;
+            if (importProgress >= 1.0) {
+              _importing = false;
+              _refreshInstalled(silent: true);
+            }
+          });
+        }
         break;
       case 'config_changed':
         final configPayload = event.payload['config'];
@@ -305,6 +396,43 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     }
   }
 
+  void _showDownloadStateToast(String modelId, MnnLocalDownloadInfo? download) {
+    if (download == null || modelId.isEmpty) return;
+    final newState = download.stateLabel;
+    // Look up previous state from the current market model list.
+    final prevModel = _marketModels.where((m) => m.id == modelId).firstOrNull;
+    final prevState = prevModel?.download?.stateLabel ?? 'not_started';
+    if (newState == prevState) return;
+
+    final name = _displayModelName(modelId);
+    final l10n = context.l10n;
+    debugPrint('[LocalModels] state transition: model=$modelId ($name), '
+        '$prevState -> $newState');
+
+    // Toast for terminal/async state transitions only.
+    // User-initiated actions (start/pause) are toasted from button handlers.
+    switch (newState) {
+      case 'completed':
+        debugPrint('[LocalModels] toast: download completed -> $name');
+        showToast(l10n.localModelsDownloadCompletedToast(name), type: ToastType.success);
+        break;
+      case 'failed':
+        final reason = download.errorMessage.trim().isNotEmpty
+            ? download.errorMessage.trim()
+            : l10n.localModelsDownloadErrorUnknown;
+        debugPrint('[LocalModels] toast: download failed -> $name, reason=$reason');
+        showToast(l10n.localModelsDownloadFailedToast(name, reason), type: ToastType.error);
+        break;
+      case 'cancelled':
+        final reason = download.errorMessage.trim().isNotEmpty
+            ? download.errorMessage.trim()
+            : l10n.localModelsDownloadErrorUnknown;
+        debugPrint('[LocalModels] toast: download cancelled -> $name, reason=$reason');
+        showToast(l10n.localModelsDownloadCancelledToast(name, reason), type: ToastType.error);
+        break;
+    }
+  }
+
   Future<void> _switchInferenceBackend(String backend) async {
     try {
       await MnnLocalModelsService.setBackend(backend);
@@ -317,7 +445,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
       await _bootstrap();
     } catch (_) {
       if (!mounted) return;
-      showToast('切换推理后端失败', type: ToastType.error);
+      showToast(context.l10n.localModelsSwitchBackendFailed, type: ToastType.error);
     }
   }
 
@@ -327,9 +455,9 @@ class _LocalModelsPageState extends State<LocalModelsPage>
       if (!mounted) return;
       setState(() => _config = config);
       _refreshInstalled(silent: true);
-      showToast('已更新当前模型');
+      showToast(context.l10n.localModelsActiveModelUpdated);
     } catch (_) {
-      showToast('设置当前模型失败', type: ToastType.error);
+      showToast(context.l10n.localModelsSetActiveFailed, type: ToastType.error);
     }
   }
 
@@ -338,7 +466,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     final port = int.tryParse(text);
     if (port == null || port <= 0) {
       if (!silent) {
-        showToast('端口号无效', type: ToastType.error);
+        showToast(context.l10n.localModelsPortInvalid, type: ToastType.error);
       }
       if (_config != null) {
         _syncConfigControllers(_config!);
@@ -351,11 +479,11 @@ class _LocalModelsPageState extends State<LocalModelsPage>
       setState(() => _config = config);
       _syncConfigControllers(config);
       if (!silent) {
-        showToast('已更新服务端口');
+        showToast(context.l10n.localModelsPortUpdated);
       }
     } catch (_) {
       if (!silent) {
-        showToast('保存端口失败', type: ToastType.error);
+        showToast(context.l10n.localModelsPortSaveFailed, type: ToastType.error);
       }
     }
   }
@@ -376,7 +504,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
       if (!mounted) return;
       setState(() => _config = config);
     } catch (_) {
-      showToast('保存自动预热设置失败', type: ToastType.error);
+      showToast(context.l10n.localModelsAutoPreheatSaveFailed, type: ToastType.error);
     }
   }
 
@@ -389,46 +517,48 @@ class _LocalModelsPageState extends State<LocalModelsPage>
       setState(() => _config = config);
       _refreshMarket(silent: true);
     } catch (_) {
-      showToast('切换下载源失败', type: ToastType.error);
+      showToast(context.l10n.localModelsDownloadSourceSwitchFailed, type: ToastType.error);
     }
   }
 
-  Future<void> _toggleApiService(bool enable) async {
-    final config = _config;
-    if (config == null || _togglingApiService) {
-      return;
-    }
-    setState(() => _togglingApiService = true);
+  Future<void> _importModel() async {
+    setState(() {
+      _importing = true;
+      _importProgress = 0.0;
+      _importModelId = '';
+    });
+
     try {
-      final nextConfig = enable
-          ? await MnnLocalModelsService.startApiService(
-              modelId: config.activeModelId.isEmpty
-                  ? null
-                  : config.activeModelId,
-            )
-          : await MnnLocalModelsService.stopApiService();
+      final response = await MnnLocalModelsService.importModel();
       if (!mounted) return;
-      setState(() => _config = nextConfig);
-      _refreshInstalled(silent: true);
-      final apiRunning = nextConfig.apiRunning;
-      if (enable) {
+
+      final success = response['success'] == true;
+      final error = (response['error'] ?? '').toString();
+
+      if (error == 'cancelled') {
+        // User cancelled the file picker, do nothing
+      } else if (success) {
         showToast(
-          apiRunning ? '本地服务已启动' : '启动服务失败',
-          type: apiRunning ? ToastType.success : ToastType.error,
+          context.l10n.localModelsImportSuccess,
+          type: ToastType.success,
         );
+        _refreshInstalled(silent: true);
       } else {
         showToast(
-          apiRunning ? '停止服务失败' : '本地服务已停止',
-          type: apiRunning ? ToastType.error : ToastType.success,
+          context.l10n.localModelsImportFailed(error),
+          type: ToastType.error,
         );
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        showToast(enable ? '启动服务失败' : '停止服务失败', type: ToastType.error);
+        showToast(
+          context.l10n.localModelsImportFailed(e.toString()),
+          type: ToastType.error,
+        );
       }
     } finally {
       if (mounted) {
-        setState(() => _togglingApiService = false);
+        setState(() => _importing = false);
       }
     }
   }
@@ -493,29 +623,25 @@ class _LocalModelsPageState extends State<LocalModelsPage>
   }
 
   String _downloadStatusLabel(MnnLocalDownloadInfo download) {
+    final l10n = context.l10n;
     switch (download.stateLabel) {
       case 'preparing':
-        return '准备中';
+        return l10n.localModelsDownloadPreparing;
       case 'downloading':
         return download.progressStage.trim().isNotEmpty
             ? download.progressStage.trim()
-            : '下载中';
+            : l10n.localModelsDownloading;
       case 'paused':
-        return '已暂停';
+        return l10n.localModelsDownloadPaused;
       case 'completed':
-        return '已完成';
+        return l10n.localModelsDownloadCompleted;
       case 'failed':
-        return '下载失败';
+        return l10n.localModelsDownloadFailed;
       case 'cancelled':
-        return '已取消';
+        return l10n.localModelsDownloadCancelled;
       default:
-        return '未下载';
+        return l10n.localModelsNotDownloaded;
     }
-  }
-
-  bool _shouldEnableStart(MnnLocalConfig config) {
-    return !_togglingApiService &&
-        !(config.activeModelId.isEmpty && _serviceModels.isEmpty);
   }
 
   Color _blend(Color first, Color second, double t) {
@@ -596,7 +722,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
       parts.add(model.id.trim());
     }
     if (parts.isEmpty) {
-      return '本地推理模型';
+      return context.l10n.localModelsLocalInference;
     }
     return parts.join('  ·  ');
   }
@@ -832,7 +958,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
               TextSpan(
                 children: [
                   TextSpan(
-                    text: '$title：',
+                    text: '$title: ',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -989,7 +1115,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
   Widget _buildBackendDropdown({required String backend}) {
     return _buildDropdownField(
       key: ValueKey('backend-$backend'),
-      label: '推理后端',
+      label: context.l10n.localModelsInferenceBackend,
       icon: Icons.settings_input_component_rounded,
       value: backend,
       items: const [
@@ -1001,35 +1127,19 @@ class _LocalModelsPageState extends State<LocalModelsPage>
           value: _omniinferMnnBackend,
           child: Text('omniinfer-mnn'),
         ),
+        DropdownMenuItem(
+          value: _omniinferQnnBackend,
+          child: Text('omniinfer-npu'),
+        ),
+        DropdownMenuItem(
+          value: _omniinferLiteRtBackend,
+          child: Text('LiteRT-LM'),
+        ),
       ],
       onChanged: (value) async {
         if (value == null || value == backend) return;
         await _switchInferenceBackend(value);
       },
-    );
-  }
-
-  Widget _buildServiceActionButton(MnnLocalConfig config) {
-    final shouldStop = config.apiRunning;
-    final enabled = shouldStop
-        ? !_togglingApiService
-        : _shouldEnableStart(config);
-    final tone = shouldStop ? _AccentTone.danger : _AccentTone.accent;
-    final label = _togglingApiService
-        ? (shouldStop ? '停止中…' : '启动中…')
-        : (shouldStop ? '停止服务' : '启动服务');
-
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton.icon(
-        onPressed: enabled ? () => _toggleApiService(!shouldStop) : null,
-        style: _filledButtonStyle(tone: tone),
-        icon: Icon(
-          shouldStop ? Icons.stop_circle_outlined : Icons.play_arrow_rounded,
-          size: 18,
-        ),
-        label: Text(label),
-      ),
     );
   }
 
@@ -1039,7 +1149,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     }
     final config = _config;
     if (config == null) {
-      return _buildEmptyState(title: '无法加载本地模型配置', subtitle: '请稍后重试。');
+      return _buildEmptyState(title: context.l10n.localModelsConfigLoadFailed, subtitle: context.l10n.localModelsConfigLoadFailedDesc);
     }
     return RefreshIndicator(
       color: _palette.accentPrimary,
@@ -1056,9 +1166,9 @@ class _LocalModelsPageState extends State<LocalModelsPage>
         ),
         padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
         children: [
-          const SettingsSectionTitle(
-            label: '服务控制',
-            subtitle: '切换推理后端、当前模型和监听端口。',
+          SettingsSectionTitle(
+            label: context.l10n.localModelsServiceControl,
+            subtitle: context.l10n.localModelsServiceControlDesc,
           ),
           _buildBackendDropdown(backend: config.backend),
           const SizedBox(height: 12),
@@ -1066,8 +1176,8 @@ class _LocalModelsPageState extends State<LocalModelsPage>
             key: ValueKey(
               'active-model-${config.backend}-${config.activeModelId}',
             ),
-            label: '当前模型',
-            helper: '启动服务时会加载这里选择的模型。',
+            label: context.l10n.localModelsCurrentModel,
+            helper: context.l10n.localModelsCurrentModelHint,
             icon: Icons.memory_rounded,
             value:
                 config.activeModelId.isNotEmpty &&
@@ -1076,7 +1186,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                     )
                 ? config.activeModelId
                 : null,
-            hintText: _serviceModels.isEmpty ? '暂无可用模型' : '选择一个模型',
+            hintText: _serviceModels.isEmpty ? context.l10n.localModelsNoAvailableModels : context.l10n.localModelsSelectModel,
             items: _serviceModels
                 .map(
                   (item) => DropdownMenuItem<String>(
@@ -1089,11 +1199,11 @@ class _LocalModelsPageState extends State<LocalModelsPage>
           ),
           const SizedBox(height: 12),
           _buildTextFieldShell(
-            label: '服务端口',
+            label: context.l10n.localModelsServicePort,
             icon: Icons.settings_ethernet_rounded,
             controller: _portController,
             keyboardType: TextInputType.number,
-            hintText: '请输入端口号',
+            hintText: context.l10n.localModelsServicePortHint,
             onChanged: (_) {
               setState(() {});
               _schedulePortSave();
@@ -1105,32 +1215,78 @@ class _LocalModelsPageState extends State<LocalModelsPage>
             _buildInlineNotice(
               tone: _AccentTone.success,
               icon: Icons.check_circle_rounded,
-              title: '当前已加载',
+              title: context.l10n.localModelsCurrentlyLoaded,
               message:
                   '${_backendLabel(config.loadedBackend)} / ${_displayModelName(config.loadedModelId)}',
             ),
           ],
-          const SizedBox(height: 12),
-          _buildServiceActionButton(config),
           const SizedBox(height: 24),
-          const SettingsSectionTitle(
-            label: '自动预热',
-            subtitle: '打开 App 后自动启动本地服务并加载当前模型。',
+          SettingsSectionTitle(
+            label: context.l10n.localModelsAutoPreheatSection,
+            subtitle: context.l10n.localModelsAutoPreheatSectionDesc,
           ),
           _buildSwitchRow(
-            title: '打开 App 时自动预热',
-            subtitle: '进入应用后自动启动本地服务，并直接加载当前模型。',
+            title: context.l10n.localModelsAutoPreheat,
+            subtitle: context.l10n.localModelsAutoPreheatDesc,
             value: config.autoStartOnAppOpen,
             onChanged: _toggleAutoStart,
           ),
           const SizedBox(height: 24),
           SettingsSectionTitle(
-            label: '已安装模型',
-            subtitle: '搜索、切换默认模型或删除当前设备上的模型。',
+            label: context.l10n.localModelsInstalled,
+            subtitle: context.l10n.localModelsInstalledDesc,
           ),
+          if (_importing)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    context.l10n.localModelsImporting(_importModelId),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: _secondaryTextColor,
+                      fontFamily: AppTextStyles.fontFamily,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: _importProgress,
+                      minHeight: 8,
+                      backgroundColor: _alpha(_secondaryTextColor, 0.14),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        _toneBaseColor(_AccentTone.info),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${(_importProgress * 100).toStringAsFixed(1)}%',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _secondaryTextColor,
+                      fontFamily: AppTextStyles.fontFamily,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: FilledButton.icon(
+                onPressed: _importModel,
+                style: _softButtonStyle(tone: _AccentTone.accent),
+                icon: const Icon(Icons.folder_open_rounded, size: 18),
+                label: Text(context.l10n.localModelsImportFromDevice),
+              ),
+            ),
           _buildSearchBar(
             controller: _installedSearchController,
-            hintText: '搜索模型名称、ID 或标签',
+            hintText: context.l10n.localModelsSearchHint,
             onSubmitted: (_) => setState(() {}),
             onRefresh: () => _refreshInstalled(),
           ),
@@ -1142,8 +1298,8 @@ class _LocalModelsPageState extends State<LocalModelsPage>
             )
           else if (_filteredInstalledModels.isEmpty)
             _buildEmptyState(
-              title: '还没有可用的本地模型',
-              subtitle: '先去模型市场下载一个模型，或者手动放置 MNN 模型目录。',
+              title: context.l10n.localModelsEmpty,
+              subtitle: context.l10n.localModelsEmptyDesc,
             )
           else
             _buildModelList(
@@ -1167,43 +1323,45 @@ class _LocalModelsPageState extends State<LocalModelsPage>
         ),
         padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
         children: [
-          const SettingsSectionTitle(
-            label: '筛选与来源',
-            subtitle: '切换推理后端和下载源，影响当前市场列表。',
+          SettingsSectionTitle(
+            label: context.l10n.localModelsFilterAndSource,
+            subtitle: context.l10n.localModelsFilterAndSourceDesc,
           ),
           _buildBackendDropdown(backend: config?.backend ?? _llamaCppBackend),
-          const SizedBox(height: 12),
-          _buildDropdownField(
-            key: ValueKey(
-              'download-provider-${config?.downloadProvider ?? 'ModelScope'}',
+          if (config?.availableSources.isNotEmpty == true) ...[
+            const SizedBox(height: 12),
+            _buildDropdownField(
+              key: ValueKey(
+                'download-provider-${config?.downloadProvider ?? 'ModelScope'}',
+              ),
+              label: context.l10n.localModelsDownloadSource,
+              icon: Icons.public_rounded,
+              value: config?.downloadProvider.isNotEmpty == true
+                  ? config!.downloadProvider
+                  : null,
+              hintText: context.l10n.localModelsSelectDownloadSource,
+              items: config!.availableSources
+                  .map(
+                    (value) => DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                _changeDownloadProvider(value);
+              },
             ),
-            label: '下载源',
-            icon: Icons.public_rounded,
-            value: config?.downloadProvider.isNotEmpty == true
-                ? config!.downloadProvider
-                : null,
-            hintText: '选择下载源',
-            items: (config?.availableSources ?? const <String>[])
-                .map(
-                  (value) => DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) {
-              if (value == null) return;
-              _changeDownloadProvider(value);
-            },
-          ),
+          ],
           const SizedBox(height: 24),
-          const SettingsSectionTitle(
-            label: '市场模型',
-            subtitle: '搜索、下载、暂停或删除市场中的模型。',
+          SettingsSectionTitle(
+            label: context.l10n.localModelsMarketModels,
+            subtitle: context.l10n.localModelsMarketModelsDesc,
           ),
           _buildSearchBar(
             controller: _marketSearchController,
-            hintText: '搜索市场模型名称、描述或标签',
+            hintText: context.l10n.localModelsMarketSearchHint,
             onSubmitted: (_) => _refreshMarket(),
             onRefresh: () => _refreshMarket(refresh: true),
           ),
@@ -1214,7 +1372,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
               child: Center(child: CircularProgressIndicator()),
             )
           else if (_marketModels.isEmpty)
-            _buildEmptyState(title: '模型市场暂时为空', subtitle: '请检查下载源，或者下拉刷新重试。')
+            _buildEmptyState(title: context.l10n.localModelsMarketEmpty, subtitle: context.l10n.localModelsMarketEmptyDesc)
           else
             _buildModelList(
               items: _sortedMarketModels,
@@ -1282,7 +1440,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                     ),
                   ),
                   child: Text(
-                    model.active ? '当前默认' : '已加载',
+                    model.active ? context.l10n.localModelsCurrentDefault : context.l10n.localModelsLoaded,
                     style: TextStyle(
                       fontSize: 12,
                       color: _toneTextColor(
@@ -1307,12 +1465,12 @@ class _LocalModelsPageState extends State<LocalModelsPage>
             ],
           ),
           if (modelSizeText != null)
-            _buildMetaLine(label: '文件大小', value: modelSizeText),
+            _buildMetaLine(label: context.l10n.localModelsFileSize, value: modelSizeText),
           if (model.path.isNotEmpty)
-            _buildMetaLine(label: '模型目录', value: model.path, monospace: true),
+            _buildMetaLine(label: context.l10n.localModelsModelDir, value: model.path, monospace: true),
           const SizedBox(height: 10),
           Text(
-            model.readOnly ? '这是手动放置目录，App 内不提供删除。' : '该模型可由 OmniInfer 直接加载。',
+            model.readOnly ? context.l10n.localModelsManualDir : context.l10n.localModelsOmniInferLoadable,
             style: TextStyle(
               fontSize: 12,
               height: 1.5,
@@ -1335,7 +1493,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                     Icons.playlist_add_check_circle_rounded,
                     size: 18,
                   ),
-                  label: const Text('设为当前'),
+                  label: Text(context.l10n.localModelsSetAsCurrent),
                 ),
               if (!model.readOnly)
                 OutlinedButton.icon(
@@ -1346,13 +1504,19 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                   },
                   style: _outlinedButtonStyle(tone: _AccentTone.danger),
                   icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                  label: const Text('删除'),
+                  label: Text(context.l10n.localModelsDelete),
                 ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  bool _isPinnedModel(MnnLocalModel model) {
+    final pinId = widget.pinnedModelId;
+    if (pinId == null || pinId.isEmpty) return false;
+    return model.id.contains(pinId) || model.name.contains(pinId);
   }
 
   Widget _buildMarketCard(MnnLocalModel model) {
@@ -1434,15 +1598,16 @@ class _LocalModelsPageState extends State<LocalModelsPage>
             spacing: 8,
             runSpacing: 8,
             children: [
+              if (_isPinnedModel(model)) _buildAccentTag(context.trLegacy('推荐')),
               _buildTag(model.category.toUpperCase()),
               if (model.source.isNotEmpty) _buildTag(model.source),
               if (model.vendor.isNotEmpty) _buildTag(model.vendor),
-              if (model.hasUpdate) _buildTag('有更新'),
+              if (model.hasUpdate) _buildTag(context.l10n.localModelsHasUpdate),
               for (final tag in model.tags.take(4)) _buildTag(tag),
             ],
           ),
           if (modelSizeText != null)
-            _buildMetaLine(label: '文件大小', value: modelSizeText),
+            _buildMetaLine(label: context.l10n.localModelsFileSize, value: modelSizeText),
           if (download != null && (isDownloading || isPaused || isFailed))
             Padding(
               padding: const EdgeInsets.only(top: 12),
@@ -1475,12 +1640,12 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                   ),
                   if (download.progressStage.trim().isNotEmpty)
                     _buildMetaLine(
-                      label: '阶段',
+                      label: context.l10n.localModelsStage,
                       value: download.progressStage.trim(),
                     ),
                   if (isFailed && download.errorMessage.trim().isNotEmpty)
                     _buildMetaLine(
-                      label: '错误信息',
+                      label: context.l10n.localModelsErrorInfo,
                       value: download.errorMessage.trim(),
                       valueColor: _toneTextColor(_AccentTone.danger),
                     ),
@@ -1495,6 +1660,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
               if (!isCompleted && !isDownloading)
                 FilledButton.icon(
                   onPressed: () async {
+                    debugPrint('[LocalModels] button: startDownload model=${model.id} (${model.name}), isPaused=$isPaused, isFailed=$isFailed');
                     _updateMarketDownloadState(
                       model.id,
                       _downloadPlaceholder(
@@ -1505,10 +1671,18 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                     );
                     try {
                       await MnnLocalModelsService.startDownload(model.id);
+                      debugPrint('[LocalModels] button: startDownload success model=${model.id}');
+                      if (mounted) {
+                        showToast(
+                          context.l10n.localModelsDownloadStartedToast(model.name),
+                          type: ToastType.success,
+                        );
+                      }
                       _refreshMarket(silent: true);
-                    } catch (_) {
+                    } catch (e) {
+                      debugPrint('[LocalModels] button: startDownload error model=${model.id}, error=$e');
                       _refreshMarket(silent: true);
-                      showToast('启动下载失败', type: ToastType.error);
+                      showToast(context.l10n.localModelsDownloadStartFailed, type: ToastType.error);
                     }
                   },
                   style: _filledButtonStyle(tone: _AccentTone.accent),
@@ -1520,15 +1694,16 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                   ),
                   label: Text(
                     isPaused
-                        ? '继续下载'
+                         ? context.l10n.localModelsResumeDownload
                         : isFailed
-                        ? '重新下载'
-                        : '下载模型',
+                         ? context.l10n.localModelsRetryDownload
+                         : context.l10n.localModelsDownloadModel,
                   ),
                 ),
               if (isDownloading)
                 OutlinedButton.icon(
                   onPressed: () async {
+                    debugPrint('[LocalModels] button: pauseDownload model=${model.id} (${model.name})');
                     _updateMarketDownloadState(
                       model.id,
                       _downloadPlaceholder(
@@ -1539,15 +1714,46 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                     );
                     try {
                       await MnnLocalModelsService.pauseDownload(model.id);
+                      debugPrint('[LocalModels] button: pauseDownload success model=${model.id}');
+                      if (mounted) {
+                        showToast(
+                          context.l10n.localModelsDownloadPausedToast(model.name),
+                          type: ToastType.warning,
+                        );
+                      }
                       _refreshMarket(silent: true);
-                    } catch (_) {
+                    } catch (e) {
+                      debugPrint('[LocalModels] button: pauseDownload error model=${model.id}, error=$e');
                       _refreshMarket(silent: true);
-                      showToast('暂停下载失败', type: ToastType.error);
+                      showToast(context.l10n.localModelsDownloadPauseFailed, type: ToastType.error);
                     }
                   },
                   style: _outlinedButtonStyle(tone: _AccentTone.warning),
                   icon: const Icon(Icons.pause_rounded, size: 18),
-                  label: const Text('暂停'),
+                  label: Text(context.l10n.localModelsPause),
+                ),
+              if (isPaused || isFailed)
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    debugPrint('[LocalModels] button: deletePartFiles model=${model.id} (${model.name})');
+                    try {
+                      await MnnLocalModelsService.deleteModel(model.id);
+                      if (mounted) {
+                        showToast(
+                          context.l10n.localModelsDelete,
+                          type: ToastType.success,
+                        );
+                      }
+                      _refreshMarket(silent: true);
+                      _refreshInstalled(silent: true);
+                    } catch (e) {
+                      debugPrint('[LocalModels] button: deletePartFiles error model=${model.id}, error=$e');
+                      _refreshMarket(silent: true);
+                    }
+                  },
+                  style: _outlinedButtonStyle(tone: _AccentTone.danger),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                  label: Text(context.l10n.localModelsDelete),
                 ),
               if (isCompleted)
                 FilledButton.icon(
@@ -1562,7 +1768,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                         : _AccentTone.neutral,
                   ),
                   icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                  label: Text(model.hasUpdate ? '删除旧版本' : '删除'),
+                  label: Text(model.hasUpdate ? context.l10n.localModelsDeleteOldVersion : context.l10n.localModelsDelete),
                 ),
             ],
           ),
@@ -1577,16 +1783,16 @@ class _LocalModelsPageState extends State<LocalModelsPage>
       builder: (context, _) {
         final tabAnimationValue =
             _tabController.animation?.value ?? _tabController.index.toDouble();
-        const options = <OmniSegmentedOption<_LocalModelsTab>>[
+        final options = <OmniSegmentedOption<_LocalModelsTab>>[
           OmniSegmentedOption<_LocalModelsTab>(
             value: _LocalModelsTab.service,
-            label: '服务',
+            label: context.l10n.localModelsTabService,
             icon: Icons.hub_rounded,
             id: 'service',
           ),
           OmniSegmentedOption<_LocalModelsTab>(
             value: _LocalModelsTab.market,
-            label: '市场',
+            label: context.l10n.localModelsTabMarket,
             icon: Icons.storefront_rounded,
             id: 'market',
           ),
@@ -1676,7 +1882,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
           Container(width: 1, height: 18, color: _borderColor),
           const SizedBox(width: 8),
           IconButton(
-            tooltip: '刷新',
+            tooltip: context.l10n.localModelsRefresh,
             onPressed: onRefresh,
             style: IconButton.styleFrom(
               minimumSize: const Size(34, 34),
@@ -1688,6 +1894,27 @@ class _LocalModelsPageState extends State<LocalModelsPage>
             icon: const Icon(Icons.refresh_rounded, size: 18),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAccentTag(String value) {
+    final accentColor = _palette.accentPrimary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: accentColor.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accentColor.withOpacity(0.3)),
+      ),
+      child: Text(
+        value,
+        style: TextStyle(
+          fontSize: 12,
+          color: accentColor,
+          fontWeight: FontWeight.w700,
+          fontFamily: AppTextStyles.fontFamily,
+        ),
       ),
     );
   }
@@ -1764,6 +1991,10 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     switch (backend) {
       case _omniinferMnnBackend:
         return 'omniinfer-mnn';
+      case _omniinferQnnBackend:
+        return 'omniinfer-npu';
+      case _omniinferLiteRtBackend:
+        return 'LiteRT-LM';
       case _llamaCppBackend:
       default:
         return 'OmniInfer-llama';
@@ -1810,7 +2041,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _palette.pageBackground,
-      appBar: const CommonAppBar(title: '本地模型', primary: true),
+      appBar: CommonAppBar(title: context.l10n.localModelsTitle, primary: true),
       body: SafeArea(
         top: false,
         child: Column(

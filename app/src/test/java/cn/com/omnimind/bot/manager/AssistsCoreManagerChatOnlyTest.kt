@@ -201,6 +201,8 @@ class AssistsCoreManagerChatOnlyTest {
 
     @Test
     fun `normalizeReasoningEffort accepts supported values only`() {
+        assertEquals("no", normalizeReasoningEffort("no"))
+        assertEquals("no", normalizeReasoningEffort(" NO "))
         assertEquals("low", normalizeReasoningEffort(" low "))
         assertEquals("high", normalizeReasoningEffort("HIGH"))
         assertNull(normalizeReasoningEffort("medium"))

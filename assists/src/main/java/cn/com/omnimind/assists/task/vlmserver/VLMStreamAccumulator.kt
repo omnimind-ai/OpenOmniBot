@@ -5,6 +5,7 @@ import cn.com.omnimind.baselib.llm.AssistantToolCallFunction
 import cn.com.omnimind.baselib.llm.ChatCompletionMessage
 import cn.com.omnimind.baselib.llm.ChatCompletionTurn
 import cn.com.omnimind.baselib.llm.ChatCompletionUsage
+import cn.com.omnimind.baselib.llm.decodeChatCompletionUsage
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -156,6 +157,8 @@ class VLMStreamAccumulator(
     }
 
     fun currentReasoning(): String = reasoningBuffer.toString()
+
+    fun currentReasoningLength(): Int = reasoningBuffer.length
 
     fun buildTurn(): ChatCompletionTurn {
         if (!seenChunk) {
@@ -338,17 +341,6 @@ class VLMStreamAccumulator(
     }
 
     private fun decodeUsage(element: JsonElement?): ChatCompletionUsage? {
-        val obj = element as? JsonObject ?: return null
-        return ChatCompletionUsage(
-            promptTokens = obj["prompt_tokens"]?.jsonPrimitive?.intOrNull,
-            completionTokens = obj["completion_tokens"]?.jsonPrimitive?.intOrNull,
-            totalTokens = obj["total_tokens"]?.jsonPrimitive?.intOrNull,
-            prefillTokensPerSecond =
-                obj["prefill_tokens_per_second"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull(),
-            decodeTokensPerSecond =
-                obj["decode_tokens_per_second"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull(),
-            promptTokensDetails = obj["prompt_tokens_details"],
-            completionTokensDetails = obj["completion_tokens_details"]
-        )
+        return decodeChatCompletionUsage(element)
     }
 }

@@ -190,6 +190,14 @@ mixin _ChatInputAreaComposerMixin
           ),
           const SizedBox(width: 4),
         ],
+        if (_shouldShowCodexPermissionSelector) ...[
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: _buildCodexPermissionButton(iconSize: 20),
+          ),
+          const SizedBox(width: 4),
+        ],
         SizedBox(
           width: 28,
           height: 28,
@@ -667,6 +675,14 @@ mixin _ChatInputAreaComposerMixin
           ),
           const SizedBox(width: 4),
         ],
+        if (_shouldShowCodexPermissionSelector) ...[
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: _buildCodexPermissionButton(iconSize: 18),
+          ),
+          const SizedBox(width: 2),
+        ],
         SizedBox(
           width: 24,
           height: 24,
@@ -682,6 +698,143 @@ mixin _ChatInputAreaComposerMixin
   /// 构建带动画的麦克风按钮（点击开始/停止录音）
   Widget? _buildMicButtonAnimated({required ThemeData theme}) {
     return _buildMicControlButton(iconSize: 18);
+  }
+
+  bool get _shouldShowCodexPermissionSelector =>
+      widget.codexPermissionMode != null &&
+      widget.onCodexPermissionModeChanged != null;
+
+  Widget _buildCodexPermissionButton({required double iconSize}) {
+    final selected =
+        widget.codexPermissionMode ?? CodexPermissionMode.fullAccess;
+    final palette = context.omniPalette;
+    final selectedColor = context.isDarkTheme
+        ? palette.accentPrimary
+        : const Color(0xFF2F65D9);
+    final inactiveColor = context.isDarkTheme
+        ? palette.textSecondary
+        : const Color(0xFF5E6C84);
+
+    return PopupMenuButton<CodexPermissionMode>(
+      key: const ValueKey('chat-input-codex-permission-button'),
+      padding: EdgeInsets.zero,
+      tooltip: _codexPermissionTooltip(),
+      position: PopupMenuPosition.over,
+      offset: const Offset(0, -8),
+      color: context.isDarkTheme ? palette.surfaceElevated : Colors.white,
+      elevation: 10,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      constraints: const BoxConstraints(minWidth: 184),
+      onSelected: widget.onCodexPermissionModeChanged,
+      itemBuilder: (context) {
+        return CodexPermissionMode.values
+            .map((mode) {
+              final isSelected = mode == selected;
+              return PopupMenuItem<CodexPermissionMode>(
+                key: ValueKey(
+                  'chat-input-codex-permission-option-${mode.name}',
+                ),
+                value: mode,
+                height: 42,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildCodexPermissionIcon(
+                      mode,
+                      size: 18,
+                      color: isSelected ? selectedColor : inactiveColor,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _codexPermissionLabel(mode),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.2,
+                          color: context.isDarkTheme
+                              ? palette.textPrimary
+                              : const Color(0xFF232D3D),
+                          fontWeight: isSelected
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    AnimatedOpacity(
+                      duration: _buttonAnimationDuration,
+                      opacity: isSelected ? 1 : 0,
+                      child: Icon(
+                        Icons.check_rounded,
+                        size: 18,
+                        color: selectedColor,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            })
+            .toList(growable: false);
+      },
+      child: AnimatedContainer(
+        duration: _buttonAnimationDuration,
+        curve: _buttonAnimationCurve,
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: context.isDarkTheme
+              ? palette.surfaceSecondary.withValues(alpha: 0.72)
+              : const Color(0xFFEAF1FF),
+          shape: BoxShape.circle,
+        ),
+        child: Center(
+          child: _buildCodexPermissionIcon(
+            selected,
+            size: iconSize,
+            color: selectedColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _codexPermissionTooltip() {
+    return Localizations.localeOf(context).languageCode == 'en'
+        ? 'Codex permissions'
+        : 'Codex 权限';
+  }
+
+  String _codexPermissionLabel(CodexPermissionMode mode) {
+    final english = Localizations.localeOf(context).languageCode == 'en';
+    return switch (mode) {
+      CodexPermissionMode.defaultMode =>
+        english ? 'Default permissions' : '默认权限',
+      CodexPermissionMode.autoReview => english ? 'Auto review' : '自动审查',
+      CodexPermissionMode.fullAccess => english ? 'Full access' : '完全访问权限',
+    };
+  }
+
+  String _codexPermissionIconAsset(CodexPermissionMode mode) {
+    return switch (mode) {
+      CodexPermissionMode.defaultMode => _kCodexPermissionDefaultIconAsset,
+      CodexPermissionMode.autoReview => _kCodexPermissionAutoReviewIconAsset,
+      CodexPermissionMode.fullAccess => _kCodexPermissionFullAccessIconAsset,
+    };
+  }
+
+  Widget _buildCodexPermissionIcon(
+    CodexPermissionMode mode, {
+    required double size,
+    required Color color,
+  }) {
+    return SvgPicture.asset(
+      _codexPermissionIconAsset(mode),
+      width: size,
+      height: size,
+      colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+    );
   }
 
   Widget _buildMicControlButton({required double iconSize}) {
@@ -728,6 +881,12 @@ mixin _ChatInputAreaComposerMixin
   /// 统一的输入框组件（录音模式和输入模式共用）
   Widget _buildTextField({bool multiline = false}) {
     final palette = context.omniPalette;
+    final keyboardType = multiline
+        ? TextInputType.multiline
+        : TextInputType.text;
+    final textInputAction = multiline
+        ? TextInputAction.newline
+        : TextInputAction.send;
     final textColor = context.isDarkTheme
         ? palette.textPrimary
         : const Color(0xFF353E53);
@@ -755,10 +914,20 @@ mixin _ChatInputAreaComposerMixin
           controller: widget.controller,
           focusNode: widget.focusNode,
           scrollController: _textFieldScrollController,
-          keyboardType: TextInputType.text,
+          keyboardType: keyboardType,
+          textInputAction: textInputAction,
           minLines: 1,
           maxLines: multiline ? 2 : 1,
           scrollPhysics: const ClampingScrollPhysics(),
+          onSubmitted: multiline
+              ? null
+              : (_) {
+                  if (widget.controller.text.trim().isNotEmpty) {
+                    widget.onSendMessage();
+                  } else {
+                    widget.focusNode.requestFocus();
+                  }
+                },
           textAlignVertical: multiline
               ? TextAlignVertical.top
               : TextAlignVertical.center,
@@ -767,7 +936,13 @@ mixin _ChatInputAreaComposerMixin
           contextMenuBuilder: (context, editableTextState) =>
               TextInputContextMenu(editableTextState: editableTextState),
           decoration: InputDecoration(
-            hintText: isRecording ? '输入或直接说，我在听' : '请输入内容',
+            hintText: isRecording
+                ? (Localizations.localeOf(context).languageCode == 'en'
+                      ? 'Type or speak directly, I am listening'
+                      : '输入或直接说，我在听')
+                : (Localizations.localeOf(context).languageCode == 'en'
+                      ? 'Type your message'
+                      : '请输入内容'),
             hintStyle: TextStyle(
               fontSize: multiline ? 15.0 : 14.0,
               color: hintColor,

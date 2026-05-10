@@ -36,7 +36,7 @@ class AssistsCoreChannel {
             AssistsCoreManager.bindMainEngineChannel(channel!!)
         }
         channel!!.setMethodCallHandler { call, result ->
-            OmniLog.e(TAG, "setMethodCallHandler " + call.method)            
+            OmniLog.d(TAG, "setMethodCallHandler " + call.method)
             when (call.method) {
                 "createCompanionTask" -> {
                     assistsCoreManager!!.createCompanionTask( call, result)
@@ -73,6 +73,12 @@ class AssistsCoreChannel {
                 "listRecentAiRequestLogs" -> {
                     assistsCoreManager!!.listRecentAiRequestLogs(call, result)
                 }
+                "listRuntimeLogs" -> {
+                    assistsCoreManager!!.listRuntimeLogs(call, result)
+                }
+                "clearRuntimeLogs" -> {
+                    assistsCoreManager!!.clearRuntimeLogs(call, result)
+                }
                 "saveModelProviderProfile" -> {
                     assistsCoreManager!!.saveModelProviderProfile(call, result)
                 }
@@ -102,6 +108,12 @@ class AssistsCoreChannel {
                 }
                 "clearSceneModelBinding" -> {
                     assistsCoreManager!!.clearSceneModelBinding(call, result)
+                }
+                "getSceneVoiceConfig" -> {
+                    assistsCoreManager!!.getSceneVoiceConfig(call, result)
+                }
+                "saveSceneVoiceConfig" -> {
+                    assistsCoreManager!!.saveSceneVoiceConfig(call, result)
                 }
                 "getSceneModelOverrides" -> {
                     assistsCoreManager!!.getSceneModelOverrides(call, result)
@@ -162,7 +174,7 @@ class AssistsCoreChannel {
                 }
 
                 "cancelChatTask" -> {
-                    OmniLog.e(TAG, "cancelChatTask")
+                    OmniLog.d(TAG, "cancelChatTask")
                     assistsCoreManager!!.cancelChatTask( call, result)
                 }
 
@@ -277,11 +289,17 @@ class AssistsCoreChannel {
                 "hideScheduledTaskReminder" -> {
                     assistsCoreManager!!.hideScheduledTaskReminder(call, result)
                 }
+                "getTokenUsageRecords" -> {
+                    assistsCoreManager!!.getTokenUsageRecords(call, result)
+                }
                 "getConversations" -> {
                     assistsCoreManager!!.getConversations(call, result)
                 }
                 "getConversationMessages" -> {
                     assistsCoreManager!!.getConversationMessages(call, result)
+                }
+                "getConversationMessagesPaged" -> {
+                    assistsCoreManager!!.getConversationMessagesPaged(call, result)
                 }
                 "replaceConversationMessages" -> {
                     assistsCoreManager!!.replaceConversationMessages(call, result)

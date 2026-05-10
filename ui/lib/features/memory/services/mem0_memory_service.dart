@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:ui/features/memory/models/mem0_memory_item.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/workspace_memory_service.dart';
 
 class Mem0MemoryService {
@@ -18,7 +19,11 @@ class Mem0MemoryService {
         fetchedAt: DateTime.now(),
         fromCache: false,
         isStale: false,
-        infoMessage: items.isEmpty ? 'workspace 长期记忆为空' : null,
+        infoMessage: items.isEmpty
+            ? (LegacyTextLocalizer.isEnglish
+                ? 'Workspace long-term memory is empty'
+                : 'workspace 长期记忆为空')
+            : null,
       );
     } catch (e) {
       return Mem0MemorySnapshot(
@@ -35,7 +40,9 @@ class Mem0MemoryService {
   }) async {
     final trimmed = memory.trim();
     if (trimmed.isEmpty) {
-      throw Exception('记忆内容不能为空');
+      throw Exception(LegacyTextLocalizer.isEnglish
+          ? 'Memory content cannot be empty'
+          : '记忆内容不能为空');
     }
     final content = await WorkspaceMemoryService.getLongMemory();
     final lines = content.split('\n');
@@ -51,12 +58,16 @@ class Mem0MemoryService {
   }) async {
     final trimmed = memory.trim();
     if (trimmed.isEmpty) {
-      throw Exception('记忆内容不能为空');
+      throw Exception(LegacyTextLocalizer.isEnglish
+          ? 'Memory content cannot be empty'
+          : '记忆内容不能为空');
     }
     final content = await WorkspaceMemoryService.getLongMemory();
     final updated = _replaceById(content, memoryId, trimmed);
     if (updated == null) {
-      throw Exception('未找到对应记忆');
+      throw Exception(LegacyTextLocalizer.isEnglish
+          ? 'Memory not found'
+          : '未找到对应记忆');
     }
     await WorkspaceMemoryService.saveLongMemory(updated);
   }
@@ -65,7 +76,9 @@ class Mem0MemoryService {
     final content = await WorkspaceMemoryService.getLongMemory();
     final deleted = _deleteById(content, memoryId);
     if (deleted == null) {
-      throw Exception('未找到对应记忆');
+      throw Exception(LegacyTextLocalizer.isEnglish
+          ? 'Memory not found'
+          : '未找到对应记忆');
     }
     await WorkspaceMemoryService.saveLongMemory(deleted);
   }
@@ -99,7 +112,8 @@ class Mem0MemoryService {
 
   static String _memoryId(int index, String memory) {
     final raw = base64Url.encode(utf8.encode('$index|$memory'));
-    return raw.replaceAll('=', '').substring(0, raw.length > 16 ? 16 : raw.length);
+    final cleaned = raw.replaceAll('=', '');
+    return cleaned.length > 16 ? cleaned.substring(0, 16) : cleaned;
   }
 
   static String? _replaceById(String content, String memoryId, String nextMemory) {

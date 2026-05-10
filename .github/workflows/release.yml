@@ -1,10 +1,15 @@
-name: Release APK (Draft)
+name: Release APK
 
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Optional release tag to create/update. Leave empty to upload artifacts only.'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -12,12 +17,17 @@ permissions:
 env:
   JAVA_VERSION: '17'
   FLUTTER_VERSION: '3.38.7'
+  ANDROID_BUILD_TOOLS_VERSION: '36.0.0'
+  ANDROID_PLATFORM_VERSION: '36'
   NDK_VERSION: '28.2.13676358'
   ALLOWED_THIRD_PARTY_WRAPPER_SHA: 'ee3739525a995bcb5601621a6e2daec1f183bbefc375743acc235cec33547e04'
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
 
     steps:
       - name: Checkout repository
@@ -25,13 +35,121 @@ jobs:
         with:
           submodules: false
 
+      - name: Resolve release reference
+        id: release_ref
+        shell: bash
+        env:
+          DISPATCH_TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+
+          release_tag_name=""
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            release_tag_name="${GITHUB_REF_NAME}"
+          elif [[ -n "${DISPATCH_TAG_NAME:-}" ]]; then
+            release_tag_name="${DISPATCH_TAG_NAME#refs/tags/}"
+          fi
+
+          artifact_ref_name="${release_tag_name:-${GITHUB_REF_NAME}}"
+          safe_ref_name="$(printf '%s' "${artifact_ref_name}" | sed 's#[^A-Za-z0-9._-]#-#g')"
+
+          if [[ -z "${safe_ref_name}" ]]; then
+            echo "Unable to derive a non-empty artifact reference name." >&2
+            exit 1
+          fi
+
+          if [[ -n "${release_tag_name}" && "${release_tag_name}" =~ [[:space:]] ]]; then
+            echo "Release tag name must not contain whitespace: ${release_tag_name}" >&2
+            exit 1
+          fi
+
+          echo "artifact_ref_name=${artifact_ref_name}" >> "$GITHUB_OUTPUT"
+          echo "safe_ref_name=${safe_ref_name}" >> "$GITHUB_OUTPUT"
+          echo "release_tag_name=${release_tag_name}" >> "$GITHUB_OUTPUT"
+
+          if [[ -n "${release_tag_name}" ]]; then
+            echo "publish_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Determine release mode
+        id: release_mode
+        shell: bash
+        env:
+          RELEASE_REF_NAME: ${{ steps.release_ref.outputs.artifact_ref_name }}
+        run: |
+          NORMALIZED_REF="${RELEASE_REF_NAME#v}"
+          if [[ "$NORMALIZED_REF" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "track=beta" >> "$GITHUB_OUTPUT"
+            echo "draft=false" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$NORMALIZED_REF" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "track=stable" >> "$GITHUB_OUTPUT"
+            echo "draft=true" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "track=custom" >> "$GITHUB_OUTPUT"
+            echo "draft=true" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Initialize required OmniInfer submodules
         run: |
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule update --init third_party/omniinfer
           git -C third_party/omniinfer submodule update --init framework/mnn framework/llama.cpp
 
+      - name: Use preinstalled JDK 17 when available
+        id: preinstalled_jdk
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          declare -a CANDIDATES=()
+
+          if [[ -n "${JAVA_HOME_17_X64:-}" ]]; then
+            CANDIDATES+=("${JAVA_HOME_17_X64}")
+          fi
+
+          if [[ -n "${JAVA_HOME_17:-}" ]]; then
+            CANDIDATES+=("${JAVA_HOME_17}")
+          fi
+
+          if command -v java >/dev/null 2>&1; then
+            java_bin="$(readlink -f "$(command -v java)")"
+            CANDIDATES+=("$(cd "$(dirname "${java_bin}")/.." && pwd)")
+          fi
+
+          CANDIDATES+=(
+            "/usr/lib/jvm/temurin-17-jdk-amd64"
+            "/usr/lib/jvm/java-17-openjdk-amd64"
+            "/usr/lib/jvm/jdk-17"
+            "/opt/jdk-17"
+            "/opt/jdk17"
+          )
+
+          for candidate in "${CANDIDATES[@]}"; do
+            if [[ ! -x "${candidate}/bin/java" ]]; then
+              continue
+            fi
+
+            version_output="$("${candidate}/bin/java" -version 2>&1 | head -n 1)"
+            if [[ "${version_output}" == *'version "17'* ]] || [[ "${version_output}" == *' 17.'* ]]; then
+              echo "Using preinstalled JDK 17 from ${candidate}"
+              echo "JAVA_HOME=${candidate}" >> "$GITHUB_ENV"
+              echo "${candidate}/bin" >> "$GITHUB_PATH"
+              echo "found=true" >> "$GITHUB_OUTPUT"
+              "${candidate}/bin/java" -version
+              exit 0
+            fi
+          done
+
+          echo "No preinstalled JDK 17 found on the runner."
+          echo "found=false" >> "$GITHUB_OUTPUT"
+
       - name: Set up JDK 17
+        if: steps.preinstalled_jdk.outputs.found != 'true'
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -45,7 +163,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          cache-read-only: false
+          cache-disabled: true
           validate-wrappers: false
 
       - name: Set up Flutter
@@ -53,86 +171,165 @@ jobs:
         with:
           channel: 'stable'
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
+          cache: false
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Cache Android NDK
-        id: cache-android-ndk
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
-            ${{ env.ANDROID_SDK_ROOT }}/licenses
-          key: ${{ runner.os }}-android-ndk-${{ env.NDK_VERSION }}
-
-      - name: Install Android NDK
-        if: steps.cache-android-ndk.outputs.cache-hit != 'true'
+      - name: Ensure required Android SDK components
+        shell: bash
         run: |
+          set +o pipefail
           yes | sdkmanager --licenses >/dev/null
-          sdkmanager "ndk;${{ env.NDK_VERSION }}"
+          license_status=$?
+          set -o pipefail
+
+          if [[ "$license_status" -ne 0 ]]; then
+            echo "sdkmanager --licenses failed with exit code ${license_status}" >&2
+            exit "$license_status"
+          fi
+
+          declare -a MISSING_PACKAGES=()
+
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" ]]; then
+            MISSING_PACKAGES+=("ndk;${{ env.NDK_VERSION }}")
+          fi
+
+          if [[ ! -d "$ANDROID_SDK_ROOT/platforms/android-${{ env.ANDROID_PLATFORM_VERSION }}" ]]; then
+            MISSING_PACKAGES+=("platforms;android-${{ env.ANDROID_PLATFORM_VERSION }}")
+          fi
+
+          if [[ ! -d "$ANDROID_SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS_VERSION }}" ]]; then
+            MISSING_PACKAGES+=("build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}")
+          fi
+
+          if (( ${#MISSING_PACKAGES[@]} == 0 )); then
+            echo "Required Android SDK components are already installed."
+            exit 0
+          fi
+
+          echo "Installing missing Android SDK components:"
+          printf '%s\n' "${MISSING_PACKAGES[@]}"
+          sdkmanager "${MISSING_PACKAGES[@]}"
 
       - name: Export Android NDK environment
         run: |
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> "$GITHUB_ENV"
 
-      - name: Install Flutter dependencies
-        working-directory: ui
-        run: flutter pub get --enforce-lockfile
-
       - name: Decode release keystore
         run: |
           echo "${{ secrets.RELEASE_KEYSTORE }}" | base64 -d > ${{ runner.temp }}/release.jks
 
-      - name: Build production release APK
+      - name: Build production release APKs
         env:
-          # Keep enough heap for R8 while still leaving room for parallel workers.
+          # Keep enough heap for R8 during release shrinking.
           GRADLE_OPTS: >-
             -Dorg.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8 --enable-native-access=ALL-UNNAMED
+          OMNI_RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
+          OMNI_RELEASE_STORE_PWD: ${{ secrets.RELEASE_PASSWORD }}
+          OMNI_RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          OMNI_RELEASE_KEY_PWD: ${{ secrets.RELEASE_PASSWORD }}
         run: |
-          CPU_COUNT="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)"
-          if [ "$CPU_COUNT" -ge 4 ]; then
-            MAX_WORKERS=4
-          elif [ "$CPU_COUNT" -ge 2 ]; then
-            MAX_WORKERS="$CPU_COUNT"
-          else
-            MAX_WORKERS=2
-          fi
-          echo "Using Gradle max workers: ${MAX_WORKERS}"
-          ./gradlew --no-daemon --parallel --build-cache --max-workers="${MAX_WORKERS}" assembleProductionRelease \
-            -POMNI_RELEASE_STORE_FILE=${{ runner.temp }}/release.jks \
-            -POMNI_RELEASE_STORE_PWD=${{ secrets.RELEASE_PASSWORD }} \
-            -POMNI_RELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }} \
-            -POMNI_RELEASE_KEY_PWD=${{ secrets.RELEASE_PASSWORD }}
+          bash scripts/build-local-release.sh --skip-submodules --edition both
 
-      - name: Generate SHA256 checksum
+      - name: Stage release artifacts
+        shell: bash
+        env:
+          SAFE_REF_NAME: ${{ steps.release_ref.outputs.safe_ref_name }}
         run: |
-          sha256sum app/build/outputs/apk/production/release/app-production-release.apk \
-            > app/build/outputs/apk/production/release/app-production-release.apk.sha256
-
-      - name: Rename release artifacts
-        run: |
-          RELEASE_DIR="app/build/outputs/apk/production/release"
-          RELEASE_APK_NAME="OpenOmniBot-${GITHUB_REF_NAME}.apk"
-          mv "${RELEASE_DIR}/app-production-release.apk" "${RELEASE_DIR}/${RELEASE_APK_NAME}"
-          mv "${RELEASE_DIR}/app-production-release.apk.sha256" "${RELEASE_DIR}/${RELEASE_APK_NAME}.sha256"
-          echo "RELEASE_APK_NAME=${RELEASE_APK_NAME}" >> "$GITHUB_ENV"
+          RELEASE_DIR="app/build/outputs/release-artifacts"
+          STAGED_DIR="app/build/outputs/release-artifacts/tagged"
+          mkdir -p "$STAGED_DIR"
+          for edition in omniinfer standard; do
+            source_apk="${RELEASE_DIR}/OpenOmniBot-${edition}.apk"
+            target_apk="${STAGED_DIR}/OpenOmniBot-${SAFE_REF_NAME}-${edition}.apk"
+            cp "$source_apk" "$target_apk"
+            target_name="$(basename "$target_apk")"
+            (cd "$STAGED_DIR" && sha256sum "$target_name" > "${target_name}.sha256")
+          done
+          echo "SAFE_REF_NAME=${SAFE_REF_NAME}" >> "$GITHUB_ENV"
+          echo "RELEASE_ASSET_DIR=${STAGED_DIR}" >> "$GITHUB_ENV"
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk-${{ github.ref_name }}
+          name: release-apk-${{ env.SAFE_REF_NAME }}
           path: |
-            app/build/outputs/apk/production/release/${{ env.RELEASE_APK_NAME }}
-            app/build/outputs/apk/production/release/${{ env.RELEASE_APK_NAME }}.sha256
+            ${{ env.RELEASE_ASSET_DIR }}/OpenOmniBot-${{ env.SAFE_REF_NAME }}-omniinfer.apk
+            ${{ env.RELEASE_ASSET_DIR }}/OpenOmniBot-${{ env.SAFE_REF_NAME }}-omniinfer.apk.sha256
+            ${{ env.RELEASE_ASSET_DIR }}/OpenOmniBot-${{ env.SAFE_REF_NAME }}-standard.apk
+            ${{ env.RELEASE_ASSET_DIR }}/OpenOmniBot-${{ env.SAFE_REF_NAME }}-standard.apk.sha256
 
-      - name: Create Draft GitHub Release
+      - name: Create GitHub Release
+        if: steps.release_ref.outputs.publish_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          tag_name: ${{ steps.release_ref.outputs.release_tag_name }}
+          target_commitish: ${{ github.sha }}
+          draft: ${{ steps.release_mode.outputs.draft == 'true' }}
+          prerelease: ${{ steps.release_mode.outputs.prerelease == 'true' }}
           generate_release_notes: true
           files: |
-            app/build/outputs/apk/production/release/${{ env.RELEASE_APK_NAME }}
-            app/build/outputs/apk/production/release/${{ env.RELEASE_APK_NAME }}.sha256
+            ${{ env.RELEASE_ASSET_DIR }}/OpenOmniBot-${{ env.SAFE_REF_NAME }}-omniinfer.apk
+            ${{ env.RELEASE_ASSET_DIR }}/OpenOmniBot-${{ env.SAFE_REF_NAME }}-omniinfer.apk.sha256
+            ${{ env.RELEASE_ASSET_DIR }}/OpenOmniBot-${{ env.SAFE_REF_NAME }}-standard.apk
+            ${{ env.RELEASE_ASSET_DIR }}/OpenOmniBot-${{ env.SAFE_REF_NAME }}-standard.apk.sha256
+
+      - name: Set up Node.js for CNB CLI
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install CNB CLI
+        if: startsWith(github.ref, 'refs/tags/')
+        run: npm install --global @cnbcool/cnb-cli
+
+      - name: Mirror GitHub release to CNB
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN != '' && secrets.CNB_TOKEN || secrets.GIT_PASSWORD }}
+          CNB_API_ENDPOINT: ${{ secrets.CNB_API_ENDPOINT != '' && secrets.CNB_API_ENDPOINT || 'https://api.cnb.cool' }}
+          CNB_REPO_SLUG: o.a/OpenOmniBot
+          CNB_RELEASE_BODY: |
+            Mirrored from GitHub release:
+            https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+
+            Commit: ${{ github.sha }}
+        run: |
+          if [[ -z "${CNB_TOKEN}" ]]; then
+            echo "CNB mirror token is empty. Configure repository or organization secret CNB_TOKEN, or provide GIT_PASSWORD as a fallback." >&2
+            exit 1
+          fi
+
+          if ! command -v python3.11 >/dev/null 2>&1; then
+            echo "python3.11 is required for scripts/mirror_github_release_to_cnb.py. Install Python 3.11 on the self-hosted runner." >&2
+            exit 1
+          fi
+
+          PYTHON_BIN=python3.11
+          echo "Using Python interpreter: ${PYTHON_BIN}"
+          "${PYTHON_BIN}" --version
+
+          ARGS=(
+            --repo "${CNB_REPO_SLUG}"
+            --tag "${GITHUB_REF_NAME}"
+            --target-commitish "${GITHUB_SHA}"
+            --name "${GITHUB_REF_NAME}"
+            --body "${CNB_RELEASE_BODY}"
+            --make-latest false
+            --asset "${RELEASE_ASSET_DIR}/OpenOmniBot-${SAFE_REF_NAME}-omniinfer.apk"
+            --asset "${RELEASE_ASSET_DIR}/OpenOmniBot-${SAFE_REF_NAME}-omniinfer.apk.sha256"
+            --asset "${RELEASE_ASSET_DIR}/OpenOmniBot-${SAFE_REF_NAME}-standard.apk"
+            --asset "${RELEASE_ASSET_DIR}/OpenOmniBot-${SAFE_REF_NAME}-standard.apk.sha256"
+          )
+
+          if [[ "${{ steps.release_mode.outputs.draft }}" == 'true' ]]; then
+            ARGS+=(--draft)
+          fi
+          if [[ "${{ steps.release_mode.outputs.prerelease }}" == 'true' ]]; then
+            ARGS+=(--prerelease)
+          fi
+
+          "${PYTHON_BIN}" scripts/mirror_github_release_to_cnb.py "${ARGS[@]}"

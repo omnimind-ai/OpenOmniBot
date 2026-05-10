@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 import '../buttons_group_two.dart';
@@ -88,10 +89,10 @@ class _EditTaskCardState extends State<EditTaskCard> {
                   children: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('取消'),
+                      child: Text(LegacyTextLocalizer.localize('取消')),
                     ),
-                    const Text(
-                      '时间',
+                    Text(
+                      LegacyTextLocalizer.localize('时间'),
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -105,13 +106,12 @@ class _EditTaskCardState extends State<EditTaskCard> {
                         widget.onTimeChanged?.call(tempTime);
                         Navigator.pop(context);
                       },
-                      child: const Text('确定'),
+                      child: Text(LegacyTextLocalizer.localize('确定')),
                     ),
                   ],
                 ),
               ),
               const Divider(height: 1),
-              // 滚轮时间选择器
               Expanded(
                 child: Localizations.override(
                   context: context,
@@ -162,10 +162,10 @@ class _EditTaskCardState extends State<EditTaskCard> {
                   children: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('取消'),
+                      child: Text(LegacyTextLocalizer.localize('取消')),
                     ),
-                    const Text(
-                      '日期',
+                    Text(
+                      LegacyTextLocalizer.localize('日期'),
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -179,7 +179,7 @@ class _EditTaskCardState extends State<EditTaskCard> {
                         widget.onDateChanged?.call(tempDate);
                         Navigator.pop(context);
                       },
-                      child: const Text('确定'),
+                      child: Text(LegacyTextLocalizer.localize('确定')),
                     ),
                   ],
                 ),
@@ -226,25 +226,25 @@ class _EditTaskCardState extends State<EditTaskCard> {
         PopupMenuItem(
           value: 'never',
           child: Row(
-            children: [ Text('永不'), ],
+            children: [ Text(LegacyTextLocalizer.localize('永不')), ],
           ),
         ),
         PopupMenuItem(
           value: 'daily',
           child: Row(
-            children: [ Text('每天'), ],
+            children: [ Text(LegacyTextLocalizer.localize('每日')), ],
           ),
         ),
         PopupMenuItem(
           value: 'weekly',
           child: Row(
-            children: [ Text('每周'), ],
+            children: [ Text(LegacyTextLocalizer.localize('每周')), ],
           ),
         ),
         PopupMenuItem(
           value: 'monthly',
           child: Row(
-            children: [ Text('每月'), ],
+            children: [ Text(LegacyTextLocalizer.localize('每月')), ],
           ),
         ),
       ],
@@ -274,9 +274,14 @@ class _EditTaskCardState extends State<EditTaskCard> {
   }
 
   String _formatDate(DateTime date) {
-    final weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    final en = LegacyTextLocalizer.isEnglish;
+    final weekdays = en
+        ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+        : ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
     final weekday = weekdays[date.weekday - 1];
-    return '${date.year}年${date.month}月${date.day}日 $weekday';
+    return en
+        ? '${date.month}/${date.day} $weekday'
+        : '${date.year}年${date.month}月${date.day}日 $weekday';
   }
 
   String _formatTime(TimeOfDay time) {
@@ -299,16 +304,16 @@ class _EditTaskCardState extends State<EditTaskCard> {
             children: [
               // 时间设置
               _buildSettingItem(
-                title: '时间',
+                title: LegacyTextLocalizer.localize('时间'),
                 value: _formatTime(_selectedTime),
                 onTap: (position) => _selectTime(),
               ),
-              
+
               const Divider(height: 1, indent: 16, endIndent: 16),
-              
+
               // 日期设置
               _buildSettingItem(
-                title: '日期',
+                title: LegacyTextLocalizer.localize('日期'),
                 value: _formatDate(_selectedDate),
                 onTap: (position) => _selectDate(),
               ),
@@ -326,8 +331,8 @@ class _EditTaskCardState extends State<EditTaskCard> {
             children: [
               // 重复设置
               _buildSettingItem(
-                title: '重复',
-                value: _repeatOption.label,
+                title: LegacyTextLocalizer.localize('重复'),
+                value: _repeatOption.displayLabel,
                 onTap: (position) => _showRepeatOptions(position),
                 showArrow: false,
               ),
@@ -340,11 +345,11 @@ class _EditTaskCardState extends State<EditTaskCard> {
           padding: const EdgeInsets.only(bottom: 16),
           child: ButtonsGroupTwo(
             leftButton: ButtonModel(
-              text: '取消',
+              text: LegacyTextLocalizer.localize('取消'),
               action: 'cancel',
             ),
             rightButton: ButtonModel(
-              text: '保存',
+              text: LegacyTextLocalizer.localize('保存'),
               action: 'confirm',
             ),
             onButtonPressed: onButtonPressed,

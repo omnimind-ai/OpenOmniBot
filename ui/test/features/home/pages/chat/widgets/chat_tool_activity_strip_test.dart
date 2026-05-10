@@ -3,11 +3,22 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/chat/widgets/chat_tool_activity_strip.dart';
 import 'package:ui/features/home/pages/command_overlay/services/tool_card_detail_gesture_gate.dart';
+import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/models/chat_message_model.dart';
 
 void main() {
+  setUp(() {
+    LegacyTextLocalizer.setResolvedLocale(const Locale('zh'));
+  });
+
+  tearDown(() {
+    LegacyTextLocalizer.clearResolvedLocale();
+  });
+
   testWidgets('command strip renders all commands without expand toggle', (
     tester,
   ) async {
@@ -47,6 +58,370 @@ void main() {
     expect(find.text('/compact'), findsOneWidget);
     expect(find.text('/effort'), findsOneWidget);
     expect(find.byKey(kChatToolActivityToggleKey), findsNothing);
+  });
+
+  test(
+    'filters tool messages by active task ids while keeping completed cards',
+    () {
+      final messages = [
+        ChatMessageModel.cardMessage(
+          {
+            'type': 'agent_tool_summary',
+            'taskId': 'task-active',
+            'status': 'success',
+            'toolTitle': '已完成工具',
+          },
+          id: 'tool-complete',
+          streamMeta: const {'parentTaskId': 'task-active'},
+        ),
+        ChatMessageModel.cardMessage(
+          {
+            'type': 'agent_tool_summary',
+            'taskId': 'task-active',
+            'status': 'running',
+            'toolTitle': '运行中工具',
+          },
+          id: 'tool-running',
+          streamMeta: const {'parentTaskId': 'task-active'},
+        ),
+        ChatMessageModel.cardMessage(
+          {
+            'type': 'agent_tool_summary',
+            'taskId': 'task-old',
+            'status': 'success',
+            'toolTitle': '旧任务工具',
+          },
+          id: 'tool-old',
+          streamMeta: const {'parentTaskId': 'task-old'},
+        ),
+      ];
+
+      final filtered = filterAgentToolMessagesByTaskIds(messages, const {
+        'task-active',
+      });
+
+      expect(filtered.map((message) => message.id), [
+        'tool-complete',
+        'tool-running',
+      ]);
+    },
+  );
+
+  test('completed run keeps latest tool history pinned after folding', () {
+    final messages = [
+      ChatMessageModel(
+        id: 'task-latest-text',
+        type: 1,
+        user: 2,
+        content: const {'text': '最终回答', 'id': 'task-latest-text'},
+        streamMeta: const {
+          'parentTaskId': 'task-latest',
+          'kind': 'completed',
+          'isFinal': true,
+          'seq': 4,
+        },
+      ),
+      ChatMessageModel.cardMessage(
+        {
+          'type': 'agent_tool_summary',
+          'taskId': 'task-latest',
+          'status': 'success',
+          'toolTitle': '最新工具',
+        },
+        id: 'task-latest-tool',
+        streamMeta: const {
+          'parentTaskId': 'task-latest',
+          'kind': 'tool_completed',
+          'seq': 3,
+        },
+      ),
+      ChatMessageModel.cardMessage(
+        {
+          'type': 'deep_thinking',
+          'taskID': 'task-latest',
+          'thinkingContent': '思考中',
+        },
+        id: 'task-latest-thinking',
+        streamMeta: const {
+          'parentTaskId': 'task-latest',
+          'kind': 'thinking_snapshot',
+          'seq': 2,
+        },
+      ),
+      ChatMessageModel.userMessage('上一条用户消息', id: 'user-1'),
+    ];
+
+    final snapshot = resolveAgentToolActivitySnapshot(messages);
+
+    expect(snapshot.isActiveRun, isFalse);
+    expect(snapshot.taskId, 'task-latest');
+    expect(snapshot.messages.map((message) => message.id), [
+      'task-latest-tool',
+    ]);
+  });
+
+  test(
+    'completed tool history stays hidden until the matching run group expands',
+    () {
+      final messages = [
+        ChatMessageModel(
+          id: 'task-latest-text',
+          type: 1,
+          user: 2,
+          content: const {'text': '最终回答', 'id': 'task-latest-text'},
+          streamMeta: const {
+            'parentTaskId': 'task-latest',
+            'kind': 'completed',
+            'isFinal': true,
+            'seq': 4,
+          },
+        ),
+        ChatMessageModel.cardMessage(
+          {
+            'type': 'agent_tool_summary',
+            'taskId': 'task-latest',
+            'status': 'success',
+            'toolTitle': '最新工具',
+          },
+          id: 'task-latest-tool',
+          streamMeta: const {
+            'parentTaskId': 'task-latest',
+            'kind': 'tool_completed',
+            'seq': 3,
+          },
+        ),
+      ];
+
+      final snapshot = resolveAgentToolActivitySnapshot(messages);
+
+      expect(shouldShowAgentToolActivitySnapshot(snapshot), isFalse);
+      expect(
+        shouldShowAgentToolActivitySnapshot(
+          snapshot,
+          expandedTaskIds: const {'task-latest'},
+        ),
+        isTrue,
+      );
+      expect(
+        shouldShowAgentToolActivitySnapshot(
+          snapshot,
+          expandedTaskIds: const {'task-other'},
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'preferred expanded run shows its own tool history instead of latest run',
+    () {
+      final messages = [
+        ChatMessageModel.userMessage('更新的用户问题', id: 'user-latest'),
+        ChatMessageModel(
+          id: 'task-latest-text',
+          type: 1,
+          user: 2,
+          content: const {'text': '最新回答', 'id': 'task-latest-text'},
+          streamMeta: const {
+            'parentTaskId': 'task-latest',
+            'kind': 'completed',
+            'isFinal': true,
+            'seq': 8,
+          },
+        ),
+        ChatMessageModel.cardMessage(
+          {
+            'type': 'agent_tool_summary',
+            'taskId': 'task-latest',
+            'status': 'success',
+            'toolTitle': '最新工具',
+          },
+          id: 'task-latest-tool',
+          streamMeta: const {
+            'parentTaskId': 'task-latest',
+            'kind': 'tool_completed',
+            'seq': 7,
+          },
+        ),
+        ChatMessageModel(
+          id: 'task-older-text',
+          type: 1,
+          user: 2,
+          content: const {'text': '更早回答', 'id': 'task-older-text'},
+          streamMeta: const {
+            'parentTaskId': 'task-older',
+            'kind': 'completed',
+            'isFinal': true,
+            'seq': 4,
+          },
+        ),
+        ChatMessageModel.cardMessage(
+          {
+            'type': 'agent_tool_summary',
+            'taskId': 'task-older',
+            'status': 'success',
+            'toolTitle': '更早工具',
+          },
+          id: 'task-older-tool',
+          streamMeta: const {
+            'parentTaskId': 'task-older',
+            'kind': 'tool_completed',
+            'seq': 3,
+          },
+        ),
+      ];
+
+      final snapshot = resolveAgentToolActivitySnapshot(
+        messages,
+        preferredCompletedTaskId: 'task-older',
+      );
+
+      expect(snapshot.isActiveRun, isFalse);
+      expect(snapshot.taskId, 'task-older');
+      expect(snapshot.messages.map((message) => message.id), [
+        'task-older-tool',
+      ]);
+      expect(
+        shouldShowAgentToolActivitySnapshot(
+          snapshot,
+          expandedTaskIds: const {'task-older'},
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test('newer user turn clears pinned tool history from prior agent run', () {
+    final messages = [
+      ChatMessageModel.userMessage('新的用户问题', id: 'user-latest'),
+      ChatMessageModel(
+        id: 'task-latest-text',
+        type: 1,
+        user: 2,
+        content: const {'text': '最终回答', 'id': 'task-latest-text'},
+        streamMeta: const {
+          'parentTaskId': 'task-latest',
+          'kind': 'completed',
+          'isFinal': true,
+          'seq': 4,
+        },
+      ),
+      ChatMessageModel.cardMessage(
+        {
+          'type': 'agent_tool_summary',
+          'taskId': 'task-latest',
+          'status': 'success',
+          'toolTitle': '最新工具',
+        },
+        id: 'task-latest-tool',
+        streamMeta: const {
+          'parentTaskId': 'task-latest',
+          'kind': 'tool_completed',
+          'seq': 3,
+        },
+      ),
+    ];
+
+    final snapshot = resolveAgentToolActivitySnapshot(messages);
+
+    expect(snapshot.isActiveRun, isFalse);
+    expect(snapshot.messages, isEmpty);
+  });
+
+  test(
+    'active run without tool cards does not reuse previous tool history',
+    () {
+      final messages = [
+        ChatMessageModel(
+          id: 'task-active-text',
+          type: 1,
+          user: 2,
+          content: const {'text': '新的回复', 'id': 'task-active-text'},
+          streamMeta: const {
+            'parentTaskId': 'task-active',
+            'kind': 'text_snapshot',
+            'seq': 10,
+            'isFinal': false,
+          },
+        ),
+        ChatMessageModel.cardMessage(
+          {
+            'type': 'deep_thinking',
+            'taskID': 'task-active',
+            'thinkingContent': '思考中',
+          },
+          id: 'task-active-thinking',
+          streamMeta: const {
+            'parentTaskId': 'task-active',
+            'kind': 'thinking_snapshot',
+            'seq': 9,
+          },
+        ),
+        ChatMessageModel.cardMessage(
+          {
+            'type': 'agent_tool_summary',
+            'taskId': 'task-old',
+            'status': 'success',
+            'toolTitle': '旧工具',
+          },
+          id: 'task-old-tool',
+          streamMeta: const {
+            'parentTaskId': 'task-old',
+            'kind': 'tool_completed',
+            'seq': 3,
+          },
+        ),
+        ChatMessageModel(
+          id: 'task-old-text',
+          type: 1,
+          user: 2,
+          content: const {'text': '旧回答', 'id': 'task-old-text'},
+          streamMeta: const {
+            'parentTaskId': 'task-old',
+            'kind': 'completed',
+            'isFinal': true,
+            'seq': 4,
+          },
+        ),
+      ];
+
+      final snapshot = resolveAgentToolActivitySnapshot(
+        messages,
+        activeTaskIds: const {'task-active'},
+      );
+
+      expect(snapshot.isActiveRun, isTrue);
+      expect(snapshot.messages, isEmpty);
+      expect(shouldShowAgentToolActivitySnapshot(snapshot), isFalse);
+    },
+  );
+
+  test('active tool history remains visible without requiring expansion', () {
+    final messages = [
+      ChatMessageModel.cardMessage(
+        {
+          'type': 'agent_tool_summary',
+          'taskId': 'task-active',
+          'status': 'running',
+          'toolTitle': '运行中工具',
+        },
+        id: 'task-active-tool',
+        streamMeta: const {
+          'parentTaskId': 'task-active',
+          'kind': 'tool_running',
+          'seq': 2,
+        },
+      ),
+    ];
+
+    final snapshot = resolveAgentToolActivitySnapshot(
+      messages,
+      activeTaskIds: const {'task-active'},
+    );
+
+    expect(snapshot.isActiveRun, isTrue);
+    expect(snapshot.taskId, 'task-active');
+    expect(shouldShowAgentToolActivitySnapshot(snapshot), isTrue);
   });
 
   testWidgets(
@@ -106,6 +481,40 @@ void main() {
       expect(runningTagRight, closeTo(successTagRight, 1));
     },
   );
+
+  testWidgets('running-only strip hides completed tool cards entirely', (
+    tester,
+  ) async {
+    final messages = [
+      ChatMessageModel.cardMessage({
+        'type': 'agent_tool_summary',
+        'status': 'success',
+        'toolType': 'terminal',
+        'toolTitle': '已完成的工具',
+        'summary': '终端执行完成',
+      }),
+      ChatMessageModel.cardMessage({
+        'type': 'agent_tool_summary',
+        'status': 'timeout',
+        'toolType': 'browser',
+        'toolTitle': '已结束的浏览器工具',
+        'summary': '页面等待超时',
+      }),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChatToolActivityStrip(messages: messages, runningOnly: true),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(kChatToolActivityBarKey), findsNothing);
+    expect(find.byKey(kChatToolActivityPreviewKey), findsNothing);
+    expect(find.byKey(kChatToolActivityPanelKey), findsNothing);
+  });
 
   testWidgets(
     'expanded history stacks previous calls by recency from bottom to top',
@@ -252,48 +661,120 @@ void main() {
     await tester.tap(find.byKey(kChatToolActivityPreviewKey));
     await tester.pumpAndSettle();
 
-    final dialog = find.byType(Dialog);
+    final sheet = find.byKey(kAgentToolDetailSheetKey);
 
     expect(
-      find.descendant(of: dialog, matching: find.text('查看日志')),
+      find.descendant(of: sheet, matching: find.text('查看日志')),
       findsOneWidget,
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining('tail -n 2 app.log', findRichText: true),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining('line 2', findRichText: true),
       ),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: dialog, matching: find.text('打开官网')),
+      find.descendant(of: sheet, matching: find.text('打开官网')),
       findsNothing,
     );
     expect(
-      find.descendant(of: dialog, matching: find.text('页面已加载')),
+      find.descendant(of: sheet, matching: find.text('页面已加载')),
       findsNothing,
     );
     expect(find.byIcon(Icons.close_rounded), findsNothing);
     expect(
-      find.descendant(of: dialog, matching: find.text('终端')),
+      find.descendant(of: sheet, matching: find.text('终端')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: dialog, matching: find.text('成功')),
+      find.descendant(of: sheet, matching: find.text('成功')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: dialog, matching: find.textContaining('终端 · 成功')),
+      find.descendant(of: sheet, matching: find.textContaining('终端 · 成功')),
       findsNothing,
     );
   });
+
+  testWidgets(
+    'completed tool strip hides thumbnail and opens detail from row',
+    (tester) async {
+      final messages = [
+        ChatMessageModel.cardMessage({
+          'type': 'agent_tool_summary',
+          'status': 'success',
+          'toolType': 'terminal',
+          'toolName': 'terminal_execute',
+          'toolTitle': '查看日志',
+          'summary': '终端执行完成',
+          'argsJson': jsonEncode({
+            'command': 'tail -n 2 app.log',
+            'workingDirectory': '/workspace',
+          }),
+          'terminalOutput': 'line 1\nline 2',
+        }),
+        ChatMessageModel.cardMessage({
+          'type': 'agent_tool_summary',
+          'status': 'success',
+          'toolType': 'browser',
+          'toolName': 'browser_use',
+          'toolTitle': '打开官网',
+          'summary': '页面已加载',
+          'argsJson': jsonEncode({'url': 'https://omnimind.ai'}),
+        }),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatToolActivityStrip(
+              messages: messages,
+              showPreviewThumbnail: false,
+              openActiveCardOnTap: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(kChatToolActivityPreviewKey), findsNothing);
+
+      await tester.tap(find.text('查看日志'));
+      await tester.pumpAndSettle();
+
+      final sheet = find.byKey(kAgentToolDetailSheetKey);
+
+      expect(
+        find.descendant(of: sheet, matching: find.text('查看日志')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: sheet,
+          matching: find.textContaining(
+            'tail -n 2 app.log',
+            findRichText: true,
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: sheet,
+          matching: find.textContaining('line 2', findRichText: true),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('running active tool shows stop button and taps stop only', (
     tester,
@@ -449,15 +930,15 @@ void main() {
     await tester.tap(find.text('打开官网'));
     await tester.pumpAndSettle();
 
-    final dialog = find.byType(Dialog);
+    final sheet = find.byKey(kAgentToolDetailSheetKey);
 
     expect(
-      find.descendant(of: dialog, matching: find.text('打开官网')),
+      find.descendant(of: sheet, matching: find.text('打开官网')),
       findsOneWidget,
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining(
           'browser_use --url https://omnimind.ai/docs --query docs',
           findRichText: true,
@@ -467,7 +948,7 @@ void main() {
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining(
           'currentUrl: https://omnimind.ai/docs',
           findRichText: true,
@@ -477,7 +958,7 @@ void main() {
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining(
           'title: Omnimind Docs',
           findRichText: true,
@@ -487,22 +968,22 @@ void main() {
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining('line 2', findRichText: true),
       ),
       findsNothing,
     );
     expect(
-      find.descendant(of: dialog, matching: find.text('浏览器')),
+      find.descendant(of: sheet, matching: find.text('浏览器')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: dialog, matching: find.text('成功')),
+      find.descendant(of: sheet, matching: find.text('成功')),
       findsOneWidget,
     );
   });
 
-  testWidgets('timeout thumbnail and detail dialog render dedicated status', (
+  testWidgets('timeout thumbnail and detail sheet render dedicated status', (
     tester,
   ) async {
     final messages = [
@@ -539,22 +1020,22 @@ void main() {
     await tester.tap(find.byKey(kChatToolActivityPreviewKey));
     await tester.pumpAndSettle();
 
-    final dialog = find.byType(Dialog);
+    final sheet = find.byKey(kAgentToolDetailSheetKey);
 
     expect(
-      find.descendant(of: dialog, matching: find.text('超时')),
+      find.descendant(of: sheet, matching: find.text('超时')),
       findsOneWidget,
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining('sleep 10', findRichText: true),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
-        of: dialog,
+        of: sheet,
         matching: find.textContaining('still running', findRichText: true),
       ),
       findsOneWidget,

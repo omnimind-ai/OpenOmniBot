@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
 import 'package:ui/utils/ui.dart';
 
@@ -431,10 +432,10 @@ class _OmnibotInteractiveImageViewState
         mimeType: metadata.mimeType,
       );
       if (!shared) {
-        showToast('分享失败，请稍后重试', type: ToastType.error);
+        showToast(LegacyTextLocalizer.isEnglish ? 'Share failed, please try again later' : '分享失败，请稍后重试', type: ToastType.error);
       }
     } catch (error) {
-      showToast('分享失败：$error', type: ToastType.error);
+      showToast(LegacyTextLocalizer.isEnglish ? 'Share failed: $error' : '分享失败：$error', type: ToastType.error);
     }
   }
 
@@ -627,12 +628,12 @@ class _OmnibotInteractiveImageViewState
   }
 
   static Widget _buildError() {
-    return const Column(
+    return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.broken_image_outlined, size: 48, color: Colors.white54),
-        SizedBox(height: 8),
-        Text('无法加载图片', style: TextStyle(color: Colors.white54, fontSize: 14)),
+        const Icon(Icons.broken_image_outlined, size: 48, color: Colors.white54),
+        const SizedBox(height: 8),
+        Text(LegacyTextLocalizer.isEnglish ? 'Unable to load image' : '无法加载图片', style: const TextStyle(color: Colors.white54, fontSize: 14)),
       ],
     );
   }

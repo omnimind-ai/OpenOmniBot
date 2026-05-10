@@ -33,6 +33,8 @@ class AgentSystemPromptTest {
         assertTrue(prompt.contains("uv"))
         assertTrue(prompt.contains("--copies"))
         assertTrue(prompt.contains("--break-system-packages"))
+        assertTrue(prompt.contains("shell.exec"))
+        assertTrue(prompt.contains("android_privileged_session_*"))
     }
 
     @Test
@@ -73,5 +75,7 @@ class AgentSystemPromptTest {
         assertTrue(prompt.contains("You are an AI Agent operating inside an Alpine workspace environment"))
         assertTrue(prompt.contains("File and artifact rules"))
         assertTrue(prompt.contains("Skills:"))
+        assertTrue(prompt.contains("action=shell.exec"))
+        assertTrue(prompt.contains("android_privileged_session_*"))
     }
 }

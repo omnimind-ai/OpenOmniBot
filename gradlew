@@ -65,7 +65,7 @@ for arg in "$@" ; do
     case "$arg" in
         -*)
             ;;
-        *Debug*|*debug*)
+        *Omniinfer*|*omniinfer*|build|:build|assemble|:assemble|check|:check|test|:test)
             should_bootstrap_omniinfer=true
             ;;
     esac
@@ -85,10 +85,10 @@ bootstrap_omniinfer_submodules () {
         return 0
     fi
 
-    command -v git >/dev/null 2>&1 || die "ERROR: git is required to initialize OmniInfer submodules for debug builds."
+    command -v git >/dev/null 2>&1 || die "ERROR: git is required to initialize OmniInfer submodules for OmniInfer builds."
     [ -e "$APP_HOME/.git" ] || die "ERROR: Missing .git metadata; cannot auto-initialize OmniInfer submodules in this checkout."
 
-    echo "Bootstrapping required OmniInfer submodules for debug build..."
+    echo "Bootstrapping required OmniInfer submodules..."
 
     if [ ! -f "$OMNIINFER_SERVER_MARKER" ] ; then
         git -C "$APP_HOME" submodule update --init third_party/omniinfer || die "ERROR: Failed to initialize third_party/omniinfer."

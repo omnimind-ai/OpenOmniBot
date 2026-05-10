@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'widgets/history_card.dart';
 import 'package:intl/intl.dart';
 import 'package:ui/models/task_models.dart';
@@ -12,16 +13,16 @@ class TaskExecutionHistoryPage extends StatelessWidget {
     final List<TaskHistorySection> sections = [];
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
-      appBar: const CommonAppBar(title: '执行历史', primary: true),
+      appBar: CommonAppBar(title: context.l10n.executionHistoryTitle, primary: true),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
             child: Column(
-              children: const [
+              children: [
                 Text(
-                  '近3次任务执行历史',
+                  context.l10n.executionHistorySubtitle,
                   style: TextStyle(
                     fontSize: 16,
                     color: Colors.black87,
@@ -33,9 +34,9 @@ class TaskExecutionHistoryPage extends StatelessWidget {
           ),
           Expanded(
             child: sections.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
-                      '暂无执行历史',
+                      context.l10n.executionHistoryEmpty,
                       style: TextStyle(fontSize: 14, color: Colors.black54),
                     ),
                   )
@@ -85,7 +86,7 @@ class _HistorySection extends StatelessWidget {
                 borderRadius: BorderRadius.circular(5),
               ),
               child: Text(
-                '${section.repeatOption.label}任务',
+                context.l10n.executionHistoryTaskLabel(section.repeatOption.label),
                 style: const TextStyle(fontSize: 10, color: Colors.black54),
               ),
             ),

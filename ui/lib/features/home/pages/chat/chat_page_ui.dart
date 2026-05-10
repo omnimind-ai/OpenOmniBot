@@ -8,12 +8,19 @@ const double _kSlashCommandDrawerRadius = 18.0;
 const double _kSlashCommandDrawerHandleWidth = 36.0;
 const double _kSlashCommandDrawerHandleHeight = 4.0;
 
-enum _UserMessageQuickAction { copy, retry }
+enum _UserMessageQuickAction { copy, edit, retry }
 
 mixin _ChatPageUiMixin on _ChatPageStateBase {
   ChatPaneOverlayAnchorGeometry? _lastStableToolActivityAnchorGeometry;
   static const double _kChatInputWrapperTopPadding = 8.0;
   static const double _kChatInputFallbackHeight = 80.0;
+  static const double _kHdPadPaneCollapseWidthRatio = 0.12;
+  static const double _kHdPadPaneCollapseMinWidthFactor = 0.72;
+
+  ChatPageMode get _primaryChatMessagePageMode =>
+      _activeMode == ChatPageMode.codex
+      ? ChatPageMode.codex
+      : ChatPageMode.normal;
 
   _IosChatShortcutAction? _shortcutActionFromSpec(HomeShortcutSpec spec) {
     return switch (spec.destination) {
@@ -146,6 +153,17 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         _kChatMessageBottomSafeSpacing;
   }
 
+  double _resolveHdPadPaneCollapseThreshold({
+    required double availableWidth,
+    required double minPaneWidth,
+  }) {
+    final ratioThreshold = availableWidth * _kHdPadPaneCollapseWidthRatio;
+    final minWidthThreshold = minPaneWidth * _kHdPadPaneCollapseMinWidthFactor;
+    return math
+        .min(minPaneWidth - 1, math.max(ratioThreshold, minWidthThreshold))
+        .toDouble();
+  }
+
   void _scheduleSlashCommandPanelInsetSync(bool visible) {
     final mode = _activeMode;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -186,11 +204,14 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
 
   List<Map<String, dynamic>> _buildSlashCommandCards() {
     final route = _resolveSlashCommandPanelRoute(_messageController.text);
+    if (_activeMode == ChatPageMode.codex) {
+      return _buildCodexSlashCommandCards(route);
+    }
     if (route == _SlashCommandPanelRoute.effort &&
         _supportsReasoningEffortCommand) {
       final activeEffort = _activeConversationReasoningEffort;
       final query = _slashCommandRouteQuery(route).toLowerCase();
-      final efforts = <String>['low', 'high']
+      final efforts = <String>['no', 'low', 'high']
           .where((effort) {
             return query.isEmpty || effort.contains(query);
           })
@@ -204,11 +225,35 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               'toolTitle': effort,
               'displayName': effort,
               'toolType': 'command',
-              'toolTypeLabel': '思考',
+              'toolTypeLabel': LegacyTextLocalizer.isEnglish
+                  ? 'Thinking'
+                  : '思考',
               'status': isSelected ? 'success' : 'running',
-              'statusLabel': isSelected ? '已选' : '可选',
-              'summary': isSelected ? '当前思考强度：$effort' : '将思考强度切换为 $effort',
-              'progress': '用于后续请求的 reasoning_effort 参数',
+              'statusLabel': isSelected
+                  ? (LegacyTextLocalizer.isEnglish ? 'Selected' : '已选')
+                  : (LegacyTextLocalizer.isEnglish ? 'Available' : '可选'),
+              'summary': effort == 'no'
+                  ? (isSelected
+                        ? (LegacyTextLocalizer.isEnglish
+                              ? 'Thinking disabled'
+                              : '已关闭思考')
+                        : (LegacyTextLocalizer.isEnglish
+                              ? 'Disable thinking'
+                              : '关闭思考'))
+                  : (isSelected
+                        ? (LegacyTextLocalizer.isEnglish
+                              ? 'Current effort: $effort'
+                              : '当前思考强度：$effort')
+                        : (LegacyTextLocalizer.isEnglish
+                              ? 'Switch reasoning effort to $effort'
+                              : '将思考强度切换为 $effort')),
+              'progress': effort == 'no'
+                  ? (LegacyTextLocalizer.isEnglish
+                        ? 'enable_thinking=false for subsequent requests'
+                        : '后续请求将设置 enable_thinking=false')
+                  : (LegacyTextLocalizer.isEnglish
+                        ? 'reasoning_effort parameter for subsequent requests'
+                        : '用于后续请求的 reasoning_effort 参数'),
             };
           })
           .toList(growable: false);
@@ -222,11 +267,15 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         'toolTitle': '/compact',
         'displayName': '/compact',
         'toolType': 'command',
-        'toolTypeLabel': '上下文',
+        'toolTypeLabel': LegacyTextLocalizer.isEnglish ? 'Context' : '上下文',
         'status': 'running',
-        'statusLabel': '命令',
-        'summary': '手动压缩当前对话上下文',
-        'progress': '把当前会话历史压缩成 replacement summary',
+        'statusLabel': LegacyTextLocalizer.isEnglish ? 'Command' : '命令',
+        'summary': LegacyTextLocalizer.isEnglish
+            ? 'Manually compress conversation context'
+            : '手动压缩当前对话上下文',
+        'progress': LegacyTextLocalizer.isEnglish
+            ? 'Compress current session history into a replacement summary'
+            : '把当前会话历史压缩成 replacement summary',
       });
     }
     if (_supportsReasoningEffortCommand) {
@@ -237,13 +286,20 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         'toolTitle': '/effort',
         'displayName': '/effort',
         'toolType': 'command',
-        'toolTypeLabel': '思考',
+        'toolTypeLabel': LegacyTextLocalizer.isEnglish ? 'Thinking' : '思考',
         'status': activeEffort == null ? 'running' : 'success',
-        'statusLabel': activeEffort ?? '命令',
+        'statusLabel':
+            activeEffort ?? (LegacyTextLocalizer.isEnglish ? 'Command' : '命令'),
         'summary': activeEffort == null
-            ? '设置当前会话的思考强度'
-            : '当前思考强度：$activeEffort',
-        'progress': '点击后选择 low 或 high',
+            ? (LegacyTextLocalizer.isEnglish
+                  ? 'Set reasoning effort for this session'
+                  : '设置当前会话的思考强度')
+            : (LegacyTextLocalizer.isEnglish
+                  ? 'Current effort: $activeEffort'
+                  : '当前思考强度：$activeEffort'),
+        'progress': LegacyTextLocalizer.isEnglish
+            ? 'Choose no, low or high'
+            : '点击后选择 no、low 或 high',
       });
     }
     if (_isOpenClawSurface) {
@@ -253,17 +309,231 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         'toolTitle': '/openclaw',
         'displayName': '/openclaw',
         'toolType': 'command',
-        'toolTypeLabel': '网关',
+        'toolTypeLabel': LegacyTextLocalizer.isEnglish ? 'Gateway' : '网关',
         'status': 'running',
-        'statusLabel': '命令',
-        'summary': '手动配置远端或自定义 OpenClaw 网关',
-        'progress': '填写 Base URL、Token 与 User ID',
+        'statusLabel': LegacyTextLocalizer.isEnglish ? 'Command' : '命令',
+        'summary': LegacyTextLocalizer.isEnglish
+            ? 'Manually configure a remote or custom OpenClaw gateway'
+            : '手动配置远端或自定义 OpenClaw 网关',
+        'progress': LegacyTextLocalizer.isEnglish
+            ? 'Enter Base URL, Token, and User ID'
+            : '填写 Base URL、Token 与 User ID',
       });
     }
     return commands;
   }
 
+  List<Map<String, dynamic>> _buildCodexSlashCommandCards(
+    _SlashCommandPanelRoute route,
+  ) {
+    if (route == _SlashCommandPanelRoute.codexModel) {
+      return _buildCodexModelCards();
+    }
+    return _buildCodexRootCommandCards();
+  }
+
+  List<Map<String, dynamic>> _buildCodexRootCommandCards() {
+    final query = _messageController.text.trimLeft().toLowerCase();
+    final commands = <Map<String, dynamic>>[
+      _buildCodexCommandCard(
+        cardId: 'slash-command-codex-model',
+        toolTitle: '/model',
+        displayName: '/model',
+        toolTypeLabel: LegacyTextLocalizer.isEnglish ? 'Model' : '模型',
+        status: _activeCodexModelId == null ? 'running' : 'success',
+        statusLabel: _activeCodexModelId == null
+            ? (LegacyTextLocalizer.isEnglish ? 'Select' : '选择')
+            : (_activeCodexModelId!),
+        summary: _activeCodexModelId == null
+            ? (LegacyTextLocalizer.isEnglish
+                  ? 'Choose a Codex model'
+                  : '选择 Codex 模型')
+            : (LegacyTextLocalizer.isEnglish
+                  ? 'Current model: $_activeCodexModelId'
+                  : '当前模型：$_activeCodexModelId'),
+        progress: _codexModelListError != null
+            ? _codexModelListError!
+            : _isCodexModelListLoading
+            ? (LegacyTextLocalizer.isEnglish ? 'Loading models' : '加载模型中')
+            : (_codexModelOptions.isEmpty
+                  ? (LegacyTextLocalizer.isEnglish
+                        ? 'Tap to load models'
+                        : '点击加载模型')
+                  : (_codexModelOptions.length == 1
+                        ? '1 model'
+                        : '${_codexModelOptions.length} models')),
+      ),
+      _buildCodexCommandCard(
+        cardId: 'slash-command-codex-review',
+        toolTitle: '/review',
+        displayName: '/review',
+        toolTypeLabel: LegacyTextLocalizer.isEnglish ? 'Review' : '审查',
+        status: 'running',
+        statusLabel: LegacyTextLocalizer.isEnglish ? 'Command' : '命令',
+        summary: LegacyTextLocalizer.isEnglish
+            ? 'Review changes in the current workspace'
+            : '审查当前工作区改动',
+        progress: LegacyTextLocalizer.isEnglish
+            ? 'Runs Codex review on the active thread'
+            : '在当前线程中启动 Codex review',
+      ),
+      _buildCodexCommandCard(
+        cardId: 'slash-command-codex-init',
+        toolTitle: '/init',
+        displayName: '/init',
+        toolTypeLabel: LegacyTextLocalizer.isEnglish ? 'Init' : '初始化',
+        status: 'running',
+        statusLabel: LegacyTextLocalizer.isEnglish ? 'Command' : '命令',
+        summary: LegacyTextLocalizer.isEnglish
+            ? 'Generate or update AGENTS.md'
+            : '生成或更新 AGENTS.md',
+        progress: LegacyTextLocalizer.isEnglish
+            ? 'Creates Codex initialization guidance'
+            : '生成 Codex 初始化指引',
+      ),
+      _buildCodexCommandCard(
+        cardId: 'slash-command-codex-plan',
+        toolTitle: '/plan',
+        displayName: '/plan',
+        toolTypeLabel: LegacyTextLocalizer.isEnglish ? 'Plan' : '计划',
+        status: _isCodexPlanMode(_activeCodexCollaborationMode)
+            ? 'success'
+            : 'running',
+        statusLabel: _isCodexPlanMode(_activeCodexCollaborationMode)
+            ? (LegacyTextLocalizer.isEnglish ? 'Selected' : '已选')
+            : (LegacyTextLocalizer.isEnglish ? 'Command' : '命令'),
+        summary: _isCodexPlanMode(_activeCodexCollaborationMode)
+            ? (LegacyTextLocalizer.isEnglish
+                  ? 'Plan mode is active'
+                  : '当前已启用 Plan 模式')
+            : (LegacyTextLocalizer.isEnglish
+                  ? 'Switch Codex to plan mode'
+                  : '切换 Codex 到 Plan 模式'),
+        progress: _codexCollaborationModeListError != null
+            ? _codexCollaborationModeListError!
+            : _isCodexCollaborationModeListLoading
+            ? (LegacyTextLocalizer.isEnglish ? 'Loading modes' : '加载模式中')
+            : (_codexCollaborationModes.isEmpty
+                  ? (LegacyTextLocalizer.isEnglish
+                        ? 'Tap to load modes'
+                        : '点击加载模式')
+                  : (_codexCollaborationModes.length == 1
+                        ? '1 mode'
+                        : '${_codexCollaborationModes.length} modes')),
+      ),
+    ];
+    if (query.isEmpty) {
+      return commands;
+    }
+    return commands
+        .where((card) {
+          final title = (card['toolTitle'] ?? '').toString().toLowerCase();
+          return title.startsWith(query);
+        })
+        .toList(growable: false);
+  }
+
+  List<Map<String, dynamic>> _buildCodexModelCards() {
+    if (_codexModelOptions.isEmpty &&
+        !_isCodexModelListLoading &&
+        _codexModelListError == null) {
+      unawaited(_loadCodexModelOptions());
+    }
+    final query = _slashCommandRouteQuery(
+      _SlashCommandPanelRoute.codexModel,
+    ).toLowerCase();
+    final availableModels = _codexModelOptions.isEmpty
+        ? <String>[]
+        : _codexModelOptions;
+    final filteredModels = availableModels
+        .where(
+          (modelId) => query.isEmpty || modelId.toLowerCase().contains(query),
+        )
+        .toList(growable: false);
+    final selectedModel = _activeCodexModelId;
+    final orderedModels = <String>[
+      if (selectedModel != null && filteredModels.contains(selectedModel))
+        selectedModel,
+      ...filteredModels.where((modelId) => modelId != selectedModel),
+    ];
+    if (orderedModels.isEmpty) {
+      final statusLabel = _codexModelListError != null
+          ? (LegacyTextLocalizer.isEnglish ? 'Error' : '错误')
+          : _isCodexModelListLoading
+          ? (LegacyTextLocalizer.isEnglish ? 'Loading' : '加载中')
+          : (LegacyTextLocalizer.isEnglish ? 'No models' : '暂无模型');
+      return <Map<String, dynamic>>[
+        _buildCodexCommandCard(
+          cardId: 'slash-command-codex-model-placeholder',
+          toolTitle: '/model',
+          displayName: '/model',
+          toolTypeLabel: LegacyTextLocalizer.isEnglish ? 'Model' : '模型',
+          status: _codexModelListError != null ? 'failed' : 'running',
+          statusLabel: statusLabel,
+          summary:
+              _codexModelListError ??
+              (_isCodexModelListLoading
+                  ? (LegacyTextLocalizer.isEnglish
+                        ? 'Loading available models'
+                        : '正在加载可用模型')
+                  : (LegacyTextLocalizer.isEnglish
+                        ? 'Open /model to load Codex models'
+                        : '输入 /model 加载 Codex 模型')),
+          progress: query.isEmpty ? '/model' : query,
+        ),
+      ];
+    }
+    return orderedModels
+        .map(
+          (modelId) => _buildCodexCommandCard(
+            cardId: 'slash-command-codex-model-$modelId',
+            toolTitle: modelId,
+            displayName: modelId,
+            toolTypeLabel: LegacyTextLocalizer.isEnglish ? 'Model' : '模型',
+            status: modelId == selectedModel ? 'success' : 'running',
+            statusLabel: modelId == selectedModel
+                ? (LegacyTextLocalizer.isEnglish ? 'Selected' : '已选')
+                : (LegacyTextLocalizer.isEnglish ? 'Available' : '可选'),
+            summary: modelId == selectedModel
+                ? (LegacyTextLocalizer.isEnglish ? 'Current model' : '当前模型')
+                : (LegacyTextLocalizer.isEnglish
+                      ? 'Switch to $modelId'
+                      : '切换到 $modelId'),
+            progress: modelId,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Map<String, dynamic> _buildCodexCommandCard({
+    required String cardId,
+    required String toolTitle,
+    required String displayName,
+    required String toolTypeLabel,
+    required String status,
+    required String statusLabel,
+    required String summary,
+    required String progress,
+  }) {
+    return <String, dynamic>{
+      'cardId': cardId,
+      'toolName': toolTitle,
+      'toolTitle': toolTitle,
+      'displayName': displayName,
+      'toolType': 'command',
+      'toolTypeLabel': toolTypeLabel,
+      'status': status,
+      'statusLabel': statusLabel,
+      'summary': summary,
+      'progress': progress,
+    };
+  }
+
   void _handleSlashCommandCardSelected(Map<String, dynamic> cardData) {
+    if (_activeMode == ChatPageMode.codex) {
+      unawaited(_handleCodexSlashCommandCardSelected(cardData));
+      return;
+    }
     final command = (cardData['toolTitle'] ?? cardData['displayName'] ?? '')
         .toString()
         .trim();
@@ -279,6 +549,7 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         _inputFocusNode.requestFocus();
         _handleSlashCommandInput();
         break;
+      case 'no':
       case 'low':
       case 'high':
         unawaited(_applyConversationReasoningEffort(command));
@@ -478,6 +749,22 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     });
   }
 
+  bool _shouldShowToolActivityStripForMode({
+    required ChatPageMode mode,
+    required AgentToolActivitySnapshot snapshot,
+  }) {
+    if (mode != _activeMode ||
+        !_isInputAreaVisible ||
+        _showSlashCommandPanel ||
+        _openClawPanelExpanded) {
+      return false;
+    }
+    return shouldShowAgentToolActivitySnapshot(
+      snapshot,
+      expandedTaskIds: _expandedAgentRunTaskIdsForMode(mode),
+    );
+  }
+
   void _handleInputAreaHeightChanged(double height) {
     final normalized = height.isFinite ? height : 0.0;
     if ((_inputAreaHeight - normalized).abs() < 0.5) {
@@ -490,61 +777,6 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     setState(() {
       _inputAreaHeightByMode[_activeMode] = normalized;
     });
-  }
-
-  Widget _buildContextCompressingHint() {
-    return IgnorePointer(
-      child: SafeArea(
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: const Color(0xE61C2430),
-                borderRadius: BorderRadius.circular(999),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x26000000),
-                    blurRadius: 12,
-                    offset: Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Color(0xFFF6FAFF),
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: 10),
-                    Text(
-                      '正在压缩上下文',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFFF6FAFF),
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.1,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   Widget _buildNormalSurfaceTransition({
@@ -633,7 +865,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'OpenClaw 配置',
+                                    LegacyTextLocalizer.isEnglish
+                                        ? 'OpenClaw Configuration'
+                                        : 'OpenClaw 配置',
                                     style: TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
@@ -652,17 +886,23 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                                   const SizedBox(height: 6),
                                   TextField(
                                     controller: _openClawTokenController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Token（可选）',
-                                      hintText: '为空表示无需 token',
+                                    decoration: InputDecoration(
+                                      labelText: LegacyTextLocalizer.isEnglish
+                                          ? 'Token (optional)'
+                                          : 'Token（可选）',
+                                      hintText: LegacyTextLocalizer.isEnglish
+                                          ? 'Leave empty if no token needed'
+                                          : '为空表示无需 token',
                                       isDense: true,
                                     ),
                                   ),
                                   const SizedBox(height: 6),
                                   TextField(
                                     controller: _openClawUserIdController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'User ID（可选）',
+                                    decoration: InputDecoration(
+                                      labelText: LegacyTextLocalizer.isEnglish
+                                          ? 'User ID (optional)'
+                                          : 'User ID（可选）',
                                       isDense: true,
                                     ),
                                   ),
@@ -684,14 +924,23 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
   }) {
     final runtime = _runtimeForMode(mode);
     final resolvedMessages = runtime?.messages ?? _messagesByMode[mode]!;
-    final showToolActivityStrip =
-        mode == _activeMode &&
-        _isInputAreaVisible &&
-        !_showSlashCommandPanel &&
-        !_openClawPanelExpanded &&
-        extractAgentToolCards(resolvedMessages).isNotEmpty;
+    final activeAgentTaskIds = runtime?.activeAgentTaskIds ?? const <String>{};
+    final toolActivitySnapshot = resolveAgentToolActivitySnapshot(
+      List<ChatMessageModel>.from(resolvedMessages),
+      activeTaskIds: activeAgentTaskIds,
+      preferredCompletedTaskId: _latestExpandedAgentRunTaskIdForMode(mode),
+    );
+    final showToolActivityStrip = _shouldShowToolActivityStripForMode(
+      mode: mode,
+      snapshot: toolActivitySnapshot,
+    );
     return ChatMessageList(
       messages: resolvedMessages,
+      activeAgentTaskIds: activeAgentTaskIds,
+      expandedAgentRunTaskIds: _expandedAgentRunTaskIdsForMode(mode),
+      onExpandedAgentRunTaskIdsChanged: (taskIds) {
+        _updateExpandedAgentRunTaskIds(mode, taskIds);
+      },
       scrollController: _scrollControllerForMode(mode),
       bottomOverlayInset:
           bottomOverlayInset +
@@ -705,6 +954,20 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
       onUserMessageLongPressStart: mode == ChatPageMode.normal
           ? _handleUserMessageLongPressStart
           : null,
+      editingUserMessageId: mode == ChatPageMode.normal
+          ? _editingUserMessageIdByMode[mode]
+          : null,
+      userMessageEditController: mode == ChatPageMode.normal
+          ? _userMessageEditControllerForMode(mode)
+          : null,
+      onUserMessageEditCancelled: mode == ChatPageMode.normal
+          ? _cancelUserMessageEditing
+          : null,
+      onUserMessageEditSaved: mode == ChatPageMode.normal
+          ? _saveAndResendEditedUserMessage
+          : null,
+      onLoadMore: loadMoreMessages,
+      hasMore: hasMoreMessages,
       visualProfile: visualProfile,
       appearanceConfig: appearanceConfig,
     );
@@ -762,6 +1025,8 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     required Widget child,
     required bool translucent,
     required AppBackgroundVisualProfile visualProfile,
+    bool showBorder = true,
+    bool showShadow = true,
   }) {
     final palette = context.omniPalette;
     return DecoratedBox(
@@ -772,18 +1037,22 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
           opacity: translucent ? 0.72 : 1,
         ),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: translucent
-              ? visualProfile.islandBorderColor
-              : const Color(0xFFD9E6FB),
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x121A2433),
-            blurRadius: 28,
-            offset: Offset(0, 12),
-          ),
-        ],
+        border: showBorder
+            ? Border.all(
+                color: translucent
+                    ? visualProfile.islandBorderColor
+                    : const Color(0xFFD9E6FB),
+              )
+            : null,
+        boxShadow: showShadow
+            ? const [
+                BoxShadow(
+                  color: Color(0x121A2433),
+                  blurRadius: 28,
+                  offset: Offset(0, 12),
+                ),
+              ]
+            : null,
       ),
       child: ClipRRect(borderRadius: BorderRadius.circular(24), child: child),
     );
@@ -803,10 +1072,22 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     required bool showMenuButton,
     required bool showSurfaceSwitcher,
     required VoidCallback onMenuTap,
+    VoidCallback? onWorkspacePaneTap,
+    bool showWorkspacePaneButton = false,
   }) {
     final canPopFromChatPage = Navigator.of(context).canPop();
     final useIosToolbarMenu = Platform.isIOS;
-    final toolActivityCards = extractAgentToolCards(_messages);
+    final toolActivitySnapshot = resolveAgentToolActivitySnapshot(
+      List<ChatMessageModel>.from(_messages),
+      activeTaskIds: _activeRuntime?.activeAgentTaskIds ?? const <String>{},
+      preferredCompletedTaskId: _latestExpandedAgentRunTaskIdForMode(
+        _activeMode,
+      ),
+    );
+    final toolActivityMessages = toolActivitySnapshot.messages;
+    final toolActivityCards = extractAgentToolCards(toolActivityMessages);
+    final isPinnedCompletedToolActivity =
+        toolActivityCards.isNotEmpty && !toolActivitySnapshot.isActiveRun;
     final slashCommandCards =
         _showSlashCommandPanel &&
             !_showModelMentionPanel &&
@@ -815,11 +1096,10 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         : const <Map<String, dynamic>>[];
     final showSlashCommandStrip =
         _isInputAreaVisible && slashCommandCards.isNotEmpty;
-    final showToolActivityStrip =
-        _isInputAreaVisible &&
-        toolActivityCards.isNotEmpty &&
-        !_showSlashCommandPanel &&
-        !_openClawPanelExpanded;
+    final showToolActivityStrip = _shouldShowToolActivityStripForMode(
+      mode: _activeMode,
+      snapshot: toolActivitySnapshot,
+    );
     final toolActivityCanExpand = toolActivityCards.length > 1;
     final suppressToolActivitySurfaceShadow =
         _inputFocusNode.hasFocus &&
@@ -843,7 +1123,8 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         _slashCommandPanelOccupiedHeight > 0) {
       _scheduleSlashCommandOccupiedHeightSync(0);
     }
-    if (!toolActivityCanExpand && _isToolActivityExpanded) {
+    if ((!toolActivityCanExpand || !showToolActivityStrip) &&
+        _isToolActivityExpanded) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _setToolActivityExpanded(false);
       });
@@ -857,11 +1138,38 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         !hideWorkspaceOverlays &&
         AppUpdateService.shouldShowBanner(_appUpdateStatus);
     final appUpdateTooltip = _appUpdateStatus == null
-        ? '发现新版本'
-        : '发现新版本 ${_appUpdateStatus!.latestVersionLabel}';
+        ? (LegacyTextLocalizer.isEnglish ? 'New version available' : '发现新版本')
+        : (LegacyTextLocalizer.isEnglish
+              ? 'New version ${_appUpdateStatus!.latestVersionLabel} available'
+              : '发现新版本 ${_appUpdateStatus!.latestVersionLabel}');
     final appBarMode = showSurfaceSwitcher
         ? _activeSurfaceMode
         : ChatSurfaceMode.normal;
+    final activeAppBarModelId = appBarMode == ChatSurfaceMode.normal
+        ? switch (_activeMode) {
+            ChatPageMode.normal => _activeNormalChatModelId,
+            ChatPageMode.codex => _activeCodexModelId,
+            ChatPageMode.openclaw => null,
+          }
+        : null;
+    final ValueChanged<BuildContext>? onAppBarModelTap =
+        appBarMode == ChatSurfaceMode.normal
+        ? switch (_activeMode) {
+            ChatPageMode.normal => (anchorContext) {
+              unawaited(_openConversationModelSelector(anchorContext));
+            },
+            ChatPageMode.codex => (anchorContext) {
+              _messageController.value = const TextEditingValue(
+                text: '/model ',
+                selection: TextSelection.collapsed(offset: 7),
+              );
+              _inputFocusNode.requestFocus();
+              _handleSlashCommandInput();
+              unawaited(_loadCodexModelOptions());
+            },
+            ChatPageMode.openclaw => null,
+          }
+        : null;
     final bottomRegionBackgroundColor = !backgroundActive && context.isDarkTheme
         ? context.omniPalette.pageBackground
         : Colors.transparent;
@@ -878,8 +1186,14 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
             ChatAppBar(
               onMenuTap: onMenuTap,
               showBackButton: canPopFromChatPage,
+              onAgentTap: () {
+                unawaited(_handleAgentModeShortcutTap());
+              },
               onPureChatToggleTap: () {
-                unawaited(_togglePureChatConversationMode());
+                unawaited(_handlePureChatModeShortcutTap());
+              },
+              onCodexTap: () {
+                unawaited(_handleCodexTap());
               },
               onCompanionTap: () {
                 unawaited(_toggleCompanionMode());
@@ -888,14 +1202,8 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               onModeChanged: (value) {
                 unawaited(_switchChatMode(value, syncPage: true));
               },
-              activeModelId: appBarMode == ChatSurfaceMode.normal
-                  ? _activeNormalChatModelId
-                  : null,
-              onModelTap: appBarMode == ChatSurfaceMode.normal
-                  ? (anchorContext) {
-                      unawaited(_openConversationModelSelector(anchorContext));
-                    }
-                  : null,
+              activeModelId: activeAppBarModelId,
+              onModelTap: onAppBarModelTap,
               displayLayer: _resolveChatPaneDisplayLayer(
                 showSurfaceSwitcher: showSurfaceSwitcher,
               ),
@@ -911,6 +1219,12 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               activeToolType: _lastAgentToolType,
               isCompanionModeEnabled: _isCompanionModeEnabled,
               isCompanionToggleLoading: _isCompanionToggleLoading,
+              isCodexReady: _codexStatus.ready,
+              isCodexConnected: _codexStatus.connected,
+              isCodexLoading: _isCodexStatusLoading,
+              isCodexSelected: _activeMode == ChatPageMode.codex,
+              isAgentSelected:
+                  _activeMode == ChatPageMode.normal && !_isPureChatSelected,
               showAppUpdateIndicator: showAppUpdateIndicator,
               appUpdateTooltip: appUpdateTooltip,
               onAppUpdateTap: showAppUpdateIndicator
@@ -922,9 +1236,13 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               visualProfile: visualProfile,
               showMenuButton: showMenuButton,
               showSurfaceSwitcher: showSurfaceSwitcher,
-              showPureChatToggle: _activeMode == ChatPageMode.normal,
+              showPureChatToggle:
+                  _activeMode == ChatPageMode.normal ||
+                  _activeMode == ChatPageMode.codex,
               isPureChatSelected: _isPureChatSelected,
               isPureChatToggleLocked: _isPureChatToggleLocked,
+              showWorkspacePaneButton: showWorkspacePaneButton,
+              onWorkspacePaneTap: onWorkspacePaneTap,
               trailingAction: useIosToolbarMenu
                   ? _buildIosShortcutMenuButton(
                       visualProfile: visualProfile,
@@ -932,18 +1250,6 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                     )
                   : null,
             ),
-            if (_isCompanionModeEnabled && _showCompanionCountdown)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  '$_companionCountdown秒后自动回到桌面',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: visualProfile.secondaryTextColor,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
             Expanded(child: conversationBody),
           ],
         ),
@@ -1006,6 +1312,17 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                           _activeMode == ChatPageMode.normal
                           ? _handleContextUsageRingLongPress
                           : null,
+                      codexPermissionMode: _activeMode == ChatPageMode.codex
+                          ? _codexPermissionMode
+                          : null,
+                      onCodexPermissionModeChanged:
+                          _activeMode == ChatPageMode.codex
+                          ? (mode) {
+                              setState(() {
+                                _codexPermissionMode = mode;
+                              });
+                            }
+                          : null,
                       onInputHeightChanged: _handleInputAreaHeightChanged,
                       onClearSelectedModelOverride:
                           _activeMode == ChatPageMode.normal &&
@@ -1040,7 +1357,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
             child: _buildNormalSurfaceTransition(
               viewportWidth: constraints.maxWidth,
               child: ChatToolActivityStrip(
-                messages: _messages,
+                messages: toolActivityMessages,
+                showPreviewThumbnail: toolActivitySnapshot.isActiveRun,
+                openActiveCardOnTap: isPinnedCompletedToolActivity,
                 anchorRect: overlayAnchor?.rect,
                 onOccupiedHeightChanged: _scheduleToolActivityInsetSync,
                 expanded: _isToolActivityExpanded,
@@ -1168,6 +1487,15 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
           preferredLeftWidth: _hdPadLeftPaneWidth,
           preferredRightWidth: _hdPadRightPaneWidth,
           collapseLeftPane: _hdPadLeftPaneCollapsed,
+          collapseRightPane: _hdPadRightPaneCollapsed,
+        );
+        final leftCollapseThreshold = _resolveHdPadPaneCollapseThreshold(
+          availableWidth: availableWidth,
+          minPaneWidth: HdPadPaneLayoutResolver.minLeftWidth,
+        );
+        final rightCollapseThreshold = _resolveHdPadPaneCollapseThreshold(
+          availableWidth: availableWidth,
+          minPaneWidth: HdPadPaneLayoutResolver.minRightWidth,
         );
         final paneDuration = _isHdPadPaneDragging
             ? Duration.zero
@@ -1226,15 +1554,34 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                     ? const SizedBox.shrink()
                     : _PaneResizeHandle(
                         onDragStart: () {
-                          setState(() => _isHdPadPaneDragging = true);
-                        },
-                        onDragUpdate: (delta) {
                           setState(() {
-                            _hdPadLeftPaneWidth = layout.leftWidth + delta;
+                            _isHdPadPaneDragging = true;
+                            _hdPadPaneDragStartWidth = layout.leftWidth;
+                            _hdPadPaneDragDelta = 0;
                           });
                         },
+                        onDragUpdate: (delta) {
+                          _hdPadPaneDragDelta += delta;
+                          final nextWidth =
+                              (_hdPadPaneDragStartWidth ?? layout.leftWidth) +
+                              _hdPadPaneDragDelta;
+                          final shouldCollapse =
+                              nextWidth <= leftCollapseThreshold;
+                          setState(() {
+                            if (shouldCollapse) {
+                              _hdPadLeftPaneCollapsed = true;
+                              _resetHdPadPaneDragState();
+                            } else {
+                              _hdPadLeftPaneCollapsed = false;
+                              _hdPadLeftPaneWidth = nextWidth;
+                            }
+                          });
+                          if (shouldCollapse) {
+                            _persistHdPadPanePreferences();
+                          }
+                        },
                         onDragEnd: () {
-                          setState(() => _isHdPadPaneDragging = false);
+                          setState(_resetHdPadPaneDragState);
                           _persistHdPadPanePreferences();
                         },
                       ),
@@ -1264,7 +1611,7 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                           keyboardSpacer: keyboardSpacer,
                           commandPanelBottomOffset: commandPanelBottomOffset,
                           conversationBody: _buildModeMessagePage(
-                            ChatPageMode.normal,
+                            _primaryChatMessagePageMode,
                             backgroundConfig,
                             visualProfile,
                             bottomOverlayInset:
@@ -1277,36 +1624,88 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                           showMenuButton: true,
                           showSurfaceSwitcher: false,
                           onMenuTap: _toggleHdPadLeftPaneCollapsed,
+                          showWorkspacePaneButton: _hdPadRightPaneCollapsed,
+                          onWorkspacePaneTap: _toggleHdPadRightPaneCollapsed,
                         );
                       },
                     ),
                   ),
                 ),
               ),
-              _PaneResizeHandle(
-                onDragStart: () {
-                  setState(() => _isHdPadPaneDragging = true);
-                },
-                onDragUpdate: (delta) {
-                  setState(() {
-                    _hdPadRightPaneWidth = layout.rightWidth - delta;
-                  });
-                },
-                onDragEnd: () {
-                  setState(() => _isHdPadPaneDragging = false);
-                  _persistHdPadPanePreferences();
-                },
+              AnimatedContainer(
+                duration: paneDuration,
+                curve: paneCurve,
+                width: _hdPadRightPaneCollapsed
+                    ? 0
+                    : HdPadPaneLayoutResolver.dividerHitWidth,
+                child: _hdPadRightPaneCollapsed
+                    ? const SizedBox.shrink()
+                    : _PaneResizeHandle(
+                        onDragStart: () {
+                          setState(() {
+                            _isHdPadPaneDragging = true;
+                            _hdPadPaneDragStartWidth = layout.rightWidth;
+                            _hdPadPaneDragDelta = 0;
+                          });
+                        },
+                        onDragUpdate: (delta) {
+                          _hdPadPaneDragDelta += delta;
+                          final nextWidth =
+                              (_hdPadPaneDragStartWidth ?? layout.rightWidth) -
+                              _hdPadPaneDragDelta;
+                          final shouldCollapse =
+                              nextWidth <= rightCollapseThreshold;
+                          setState(() {
+                            if (shouldCollapse) {
+                              _hdPadRightPaneCollapsed = true;
+                              _resetHdPadPaneDragState();
+                            } else {
+                              _hdPadRightPaneCollapsed = false;
+                              _hdPadRightPaneWidth = nextWidth;
+                            }
+                          });
+                          if (shouldCollapse) {
+                            _persistHdPadPanePreferences();
+                          }
+                        },
+                        onDragEnd: () {
+                          setState(_resetHdPadPaneDragState);
+                          _persistHdPadPanePreferences();
+                        },
+                      ),
               ),
               AnimatedContainer(
                 duration: paneDuration,
                 curve: paneCurve,
                 width: layout.rightWidth,
-                child: _buildPaneSurface(
-                  translucent: backgroundActive,
-                  visualProfile: visualProfile,
-                  child: _buildHdPadWorkspacePane(
-                    backgroundActive: backgroundActive,
-                    visualProfile: visualProfile,
+                child: ClipRect(
+                  child: OverflowBox(
+                    alignment: Alignment.centerRight,
+                    minWidth: expandedLayout.rightWidth,
+                    maxWidth: expandedLayout.rightWidth,
+                    child: SizedBox(
+                      width: expandedLayout.rightWidth,
+                      child: IgnorePointer(
+                        ignoring: _hdPadRightPaneCollapsed,
+                        child: AnimatedSlide(
+                          duration: const Duration(milliseconds: 280),
+                          curve: Curves.easeInOutCubic,
+                          offset: _hdPadRightPaneCollapsed
+                              ? const Offset(0.08, 0)
+                              : Offset.zero,
+                          child: _buildPaneSurface(
+                            translucent: backgroundActive,
+                            visualProfile: visualProfile,
+                            showBorder: false,
+                            showShadow: false,
+                            child: _buildHdPadWorkspacePane(
+                              backgroundActive: backgroundActive,
+                              visualProfile: visualProfile,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -1351,7 +1750,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               canPop: false,
               onPopInvokedWithResult: (didPop, _) {
                 if (didPop) return;
-                if (isHdPadLandscape && _workspaceBrowserCanGoUp) {
+                if (isHdPadLandscape &&
+                    !_hdPadRightPaneCollapsed &&
+                    _workspaceBrowserCanGoUp) {
                   _hdPadWorkspaceBrowserKey.currentState?.openParentDirectory();
                   return;
                 }
@@ -1409,7 +1810,6 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                         child: Listener(
                           behavior: HitTestBehavior.translucent,
                           onPointerDown: (event) {
-                            _interruptCompanionAutoHomeIfNeeded();
                             unawaited(_handleOutsideTap(event.position));
                             if (!isHdPadLandscape) {
                               _handlePagePointerDown(event);
@@ -1456,7 +1856,7 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                                                 _handleModePageChanged,
                                             children: [
                                               _buildModeMessagePage(
-                                                ChatPageMode.normal,
+                                                _primaryChatMessagePageMode,
                                                 backgroundConfig,
                                                 visualProfile,
                                                 bottomOverlayInset:
@@ -1506,24 +1906,32 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
       return null;
     }
     if (conversation.promptTokenThreshold <= 0) {
-      return '当前对话还没有可用的上下文阈值';
+      return LegacyTextLocalizer.isEnglish
+          ? 'No context threshold set for this conversation'
+          : '当前对话还没有可用的上下文阈值';
     }
     if (conversation.latestPromptTokensUpdatedAt <= 0 &&
         conversation.latestPromptTokens <= 0) {
-      return '当前对话还没有上下文 token 统计\n长按可调整阈值';
+      return LegacyTextLocalizer.isEnglish
+          ? 'No context token statistics yet\nLong press to adjust threshold'
+          : '当前对话还没有上下文 token 统计\n长按可调整阈值';
     }
 
     final usedTokens = conversation.latestPromptTokens;
     final thresholdTokens = conversation.promptTokenThreshold;
     return '${_formatTokenCount(usedTokens)} / '
         '${_formatTokenCount(thresholdTokens)} tokens'
-        '\n长按可调整阈值';
+        '\n${LegacyTextLocalizer.isEnglish ? 'Long press to adjust threshold' : '长按可调整阈值'}';
   }
 
   Future<void> _handleContextUsageRingLongPress() async {
     final conversation = _currentConversation;
     if (conversation == null || conversation.id <= 0) {
-      _showSnackBar('当前对话还没有可调整的上下文阈值');
+      _showSnackBar(
+        LegacyTextLocalizer.isEnglish
+            ? 'No adjustable context threshold for this conversation'
+            : '当前对话还没有可调整的上下文阈值',
+      );
       return;
     }
 
@@ -1593,20 +2001,34 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     final text = (message.text ?? '').trim();
     final hasAttachments = _extractRetryAttachments(message).isNotEmpty;
     if (text.isEmpty && !hasAttachments) {
-      showToast('这条用户消息没有可操作的文本', type: ToastType.warning);
+      showToast(
+        LegacyTextLocalizer.isEnglish
+            ? 'No actionable text in this user message'
+            : '这条用户消息没有可操作的文本',
+        type: ToastType.warning,
+      );
       return;
     }
 
     final action = await _showUserMessageQuickMenu(
       details.globalPosition,
+      showEditAction: _canEditUserMessage(message),
       showRetryAction: _canRetryUserMessage(message),
     );
     if (!mounted || action == null) return;
 
     switch (action) {
+      case _UserMessageQuickAction.edit:
+        _startEditingLatestUserMessage(message);
+        return;
       case _UserMessageQuickAction.copy:
         if (text.isEmpty) {
-          showToast('这条用户消息没有可复制的文本', type: ToastType.warning);
+          showToast(
+            LegacyTextLocalizer.isEnglish
+                ? 'No text to copy in this user message'
+                : '这条用户消息没有可复制的文本',
+            type: ToastType.warning,
+          );
           return;
         }
         await _copyUserMessageText(text);
@@ -1619,9 +2041,12 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
 
   Future<_UserMessageQuickAction?> _showUserMessageQuickMenu(
     Offset globalPosition, {
+    required bool showEditAction,
     required bool showRetryAction,
   }) {
-    final estimatedMenuHeight = showRetryAction ? 116.0 : 60.0;
+    final actionCount =
+        1 + (showEditAction ? 1 : 0) + (showRetryAction ? 1 : 0);
+    final estimatedMenuHeight = 4 + actionCount * 48.0 + (actionCount - 1);
     final position = PopupMenuAnchorPosition.fromGlobalOffset(
       context: context,
       globalOffset: globalPosition,
@@ -1642,6 +2067,7 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         _UserMessageQuickMenuEntry(
           width: 188,
           estimatedHeight: estimatedMenuHeight,
+          showEditAction: showEditAction,
           showRetryAction: showRetryAction,
         ),
       ],
@@ -1649,12 +2075,76 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
   }
 
   bool _canRetryUserMessage(ChatMessageModel message) {
+    return _isLatestUserMessage(message);
+  }
+
+  bool _canEditUserMessage(ChatMessageModel message) {
+    return _isLatestUserMessage(message);
+  }
+
+  bool _isLatestUserMessage(ChatMessageModel message) {
     if (message.user != 1) return false;
     for (final item in _messages) {
       if (item.user != 1) continue;
       return item.id == message.id;
     }
     return false;
+  }
+
+  void _startEditingLatestUserMessage(ChatMessageModel message) {
+    if (!_isLatestUserMessage(message)) {
+      showToast(
+        'Only the latest user message can be edited',
+        type: ToastType.warning,
+      );
+      return;
+    }
+    final originalText = message.text ?? '';
+    setState(() {
+      _editingUserMessageId = message.id;
+      _editingUserMessageController.value = TextEditingValue(
+        text: originalText,
+        selection: TextSelection.collapsed(offset: originalText.length),
+      );
+    });
+  }
+
+  void _cancelUserMessageEditing() {
+    if (_editingUserMessageId == null &&
+        _editingUserMessageController.text.isEmpty) {
+      return;
+    }
+    setState(() {
+      _editingUserMessageId = null;
+      _editingUserMessageController.clear();
+    });
+  }
+
+  Future<void> _saveAndResendEditedUserMessage(ChatMessageModel message) async {
+    if (_editingUserMessageId != message.id) return;
+    if (!_isLatestUserMessage(message)) {
+      _cancelUserMessageEditing();
+      showToast(
+        'Only the latest user message can be edited',
+        type: ToastType.warning,
+      );
+      return;
+    }
+
+    final editedText = _editingUserMessageController.text.trim();
+    final attachments = _extractRetryAttachments(message);
+    if (editedText.isEmpty && attachments.isEmpty) {
+      showToast('No content to send after editing', type: ToastType.warning);
+      return;
+    }
+
+    _cancelUserMessageEditing();
+    if (!mounted) return;
+
+    await _clearRetriedMessageRound(message);
+    if (!mounted) return;
+
+    await _retryUserMessageText(editedText, attachments: attachments);
   }
 
   int _retryMessageRoundLength(ChatMessageModel message) {
@@ -1673,7 +2163,12 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     final removeCount = _retryMessageRoundLength(message);
     if (removeCount <= 0) return;
 
+    final shouldClearEditState = _editingUserMessageId == message.id;
     setState(() {
+      if (shouldClearEditState) {
+        _editingUserMessageId = null;
+        _editingUserMessageController.clear();
+      }
       _messages.removeRange(0, removeCount);
     });
 
@@ -1691,7 +2186,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     final success = await AssistsMessageService.copyToClipboard(text);
     if (!mounted) return;
     showToast(
-      success ? '已复制消息内容' : '复制失败',
+      success
+          ? (LegacyTextLocalizer.isEnglish ? 'Message copied' : '已复制消息内容')
+          : (LegacyTextLocalizer.isEnglish ? 'Copy failed' : '复制失败'),
       type: success ? ToastType.success : ToastType.error,
     );
   }
@@ -1700,16 +2197,31 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     final text = (message.text ?? '').trim();
     final attachments = _extractRetryAttachments(message);
     if (text.isEmpty && attachments.isEmpty) {
-      showToast('这条用户消息没有可重试的内容', type: ToastType.warning);
+      showToast(
+        LegacyTextLocalizer.isEnglish
+            ? 'No content to retry in this user message'
+            : '这条用户消息没有可重试的内容',
+        type: ToastType.warning,
+      );
       return;
     }
     if (!_canRetryUserMessage(message)) {
-      showToast('只有最新一条用户消息支持重试', type: ToastType.warning);
+      showToast(
+        LegacyTextLocalizer.isEnglish
+            ? 'Only the latest user message can be retried'
+            : '只有最新一条用户消息支持重试',
+        type: ToastType.warning,
+      );
       return;
     }
 
     if (text.isNotEmpty) {
       await AssistsMessageService.copyToClipboard(text);
+      if (!mounted) return;
+    }
+
+    if (_editingUserMessageId == message.id) {
+      _cancelUserMessageEditing();
       if (!mounted) return;
     }
 
@@ -1731,17 +2243,6 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         .toList();
   }
 
-  String _formatThresholdLabel(int threshold) {
-    if (threshold >= 1000) {
-      final kilo = threshold / 1000;
-      final normalized = kilo % 1 == 0
-          ? kilo.toStringAsFixed(0)
-          : kilo.toStringAsFixed(1);
-      return '${normalized}k';
-    }
-    return threshold.toString();
-  }
-
   String _formatTokenCount(int value) {
     return value.toString().replaceAllMapped(
       RegExp(r'\B(?=(\d{3})+(?!\d))'),
@@ -1755,11 +2256,13 @@ class _UserMessageQuickMenuEntry
   const _UserMessageQuickMenuEntry({
     required this.width,
     required this.estimatedHeight,
+    required this.showEditAction,
     required this.showRetryAction,
   });
 
   final double width;
   final double estimatedHeight;
+  final bool showEditAction;
   final bool showRetryAction;
 
   @override
@@ -1833,9 +2336,21 @@ class _UserMessageQuickMenuEntryState
             children: [
               _buildAction(
                 icon: Icons.content_copy_rounded,
-                label: '复制',
+                label: LegacyTextLocalizer.isEnglish ? 'Copy' : '复制',
                 onTap: () => _select(_UserMessageQuickAction.copy),
               ),
+              if (widget.showEditAction) ...[
+                const Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Color(0x14000000),
+                ),
+                _buildAction(
+                  icon: Icons.edit_outlined,
+                  label: LegacyTextLocalizer.isEnglish ? 'Edit' : '编辑',
+                  onTap: () => _select(_UserMessageQuickAction.edit),
+                ),
+              ],
               if (widget.showRetryAction) ...[
                 const Divider(
                   height: 1,
@@ -1844,7 +2359,7 @@ class _UserMessageQuickMenuEntryState
                 ),
                 _buildAction(
                   icon: Icons.refresh_rounded,
-                  label: '重试这条消息',
+                  label: LegacyTextLocalizer.isEnglish ? 'Retry' : '重试这条消息',
                   onTap: () => _select(_UserMessageQuickAction.retry),
                 ),
               ],
@@ -1870,7 +2385,7 @@ class _PaneResizeHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      behavior: HitTestBehavior.translucent,
+      behavior: HitTestBehavior.opaque,
       onHorizontalDragStart: (_) => onDragStart?.call(),
       onHorizontalDragUpdate: (details) => onDragUpdate(details.delta.dx),
       onHorizontalDragEnd: (_) => onDragEnd?.call(),
@@ -1984,7 +2499,9 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
     if (raw.isEmpty) {
       if (showEmptyError) {
         setState(() {
-          _errorText = '请输入阈值';
+          _errorText = LegacyTextLocalizer.isEnglish
+              ? 'Please enter a threshold'
+              : '请输入阈值';
         });
       }
       return null;
@@ -1992,15 +2509,18 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
     final parsed = int.tryParse(raw);
     if (parsed == null) {
       setState(() {
-        _errorText = '阈值必须是整数';
+        _errorText = LegacyTextLocalizer.isEnglish
+            ? 'Threshold must be an integer'
+            : '阈值必须是整数';
       });
       return null;
     }
     if (parsed < _kMinContextTokenThreshold ||
         parsed > _kMaxContextTokenThreshold) {
       setState(() {
-        _errorText =
-            '阈值范围为 $_kMinContextTokenThreshold 到 $_kMaxContextTokenThreshold';
+        _errorText = LegacyTextLocalizer.isEnglish
+            ? 'Threshold range: $_kMinContextTokenThreshold to $_kMaxContextTokenThreshold'
+            : '阈值范围为 $_kMinContextTokenThreshold 到 $_kMaxContextTokenThreshold';
       });
       return null;
     }
@@ -2057,7 +2577,9 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
       }
       setState(() {
         _isSaving = false;
-        _saveErrorText = '自动保存失败，请稍后重试';
+        _saveErrorText = LegacyTextLocalizer.isEnglish
+            ? 'Auto-save failed, please try again later'
+            : '自动保存失败，请稍后重试';
       });
       break;
     }
@@ -2121,18 +2643,35 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
     final pendingAutoSave = _autoSaveTimer?.isActive ?? false;
     final statusText = switch ((_saveErrorText, _isSaving, pendingAutoSave)) {
       (final String message?, _, _) => message,
-      (_, true, _) => '正在自动保存…',
-      (_, false, true) => '即将自动保存',
-      _ => draftThreshold == _lastSavedThreshold ? '已自动保存' : '修改后自动保存',
+      (_, true, _) => LegacyTextLocalizer.isEnglish ? 'Saving…' : '正在自动保存…',
+      (_, false, true) =>
+        LegacyTextLocalizer.isEnglish ? 'Pending auto-save' : '即将自动保存',
+      _ =>
+        draftThreshold == _lastSavedThreshold
+            ? (LegacyTextLocalizer.isEnglish ? 'Auto-saved' : '已自动保存')
+            : (LegacyTextLocalizer.isEnglish
+                  ? 'Auto-save on change'
+                  : '修改后自动保存'),
     };
     final statusColor = _saveErrorText != null
         ? warningColor
         : _isSaving || pendingAutoSave
         ? accentColor
         : palette.textSecondary;
+    final navigator = Navigator.of(context);
 
-    return WillPopScope(
-      onWillPop: _handleWillPop,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        unawaited(
+          _handleWillPop().then((shouldPop) {
+            if (shouldPop && mounted) {
+              navigator.pop();
+            }
+          }),
+        );
+      },
       child: SafeArea(
         top: false,
         child: Padding(
@@ -2172,7 +2711,9 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    '调整上下文阈值',
+                    LegacyTextLocalizer.isEnglish
+                        ? 'Adjust Context Threshold'
+                        : '调整上下文阈值',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
@@ -2181,7 +2722,9 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '修改后自动保存，新的阈值会立刻用于当前对话。',
+                    LegacyTextLocalizer.isEnglish
+                        ? 'Changes are auto-saved. The new threshold takes effect immediately.'
+                        : '修改后自动保存，新的阈值会立刻用于当前对话。',
                     style: TextStyle(
                       fontSize: 13,
                       height: 1.4,
@@ -2201,7 +2744,9 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
                       children: [
                         Expanded(
                           child: _ThresholdMetric(
-                            label: '当前上下文',
+                            label: LegacyTextLocalizer.isEnglish
+                                ? 'Current context'
+                                : '当前上下文',
                             value: _formatTokenCount(widget.currentUsageTokens),
                             accent: palette.textPrimary,
                           ),
@@ -2209,7 +2754,9 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
                         Container(width: 1, height: 38, color: dividerColor),
                         Expanded(
                           child: _ThresholdMetric(
-                            label: '目标阈值',
+                            label: LegacyTextLocalizer.isEnglish
+                                ? 'Target threshold'
+                                : '目标阈值',
                             value: _formatTokenCount(draftThreshold),
                             accent: accentColor,
                           ),
@@ -2217,7 +2764,9 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
                         Container(width: 1, height: 38, color: dividerColor),
                         Expanded(
                           child: _ThresholdMetric(
-                            label: '占用比例',
+                            label: LegacyTextLocalizer.isEnglish
+                                ? 'Usage'
+                                : '占用比例',
                             value: _formatUsagePercent(usageRatio),
                             accent: usageRatio >= 1
                                 ? warningColor

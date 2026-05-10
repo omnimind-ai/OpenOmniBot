@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/features/home/pages/omnibot_workspace/omnibot_artifact_preview_page.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
 
 class ArtifactCard extends StatelessWidget {
@@ -14,7 +15,6 @@ class ArtifactCard extends StatelessWidget {
     final size = artifact['size']?.toString() ?? '';
     final shellPath = artifact['workspacePath']?.toString() ?? '';
     final path = artifact['androidPath']?.toString() ?? '';
-    final uri = artifact['uri']?.toString();
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -50,20 +50,7 @@ class ArtifactCard extends StatelessWidget {
             spacing: 8,
             children: [
               TextButton(
-                onPressed: () {
-                  if (path.isNotEmpty) {
-                    OmnibotResourceService.openFilePath(
-                      path,
-                      uri: uri,
-                      title: title,
-                      previewKind: artifact['previewKind']?.toString(),
-                      mimeType: mimeType,
-                      shellPath: shellPath,
-                    );
-                  } else if (uri != null) {
-                    OmnibotResourceService.openUri(uri);
-                  }
-                },
+                onPressed: () => _openPreview(context),
                 child: const Text('预览'),
               ),
               if (path.isNotEmpty)
@@ -86,5 +73,39 @@ class ArtifactCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _openPreview(BuildContext context) async {
+    final title = (artifact['title'] ?? artifact['fileName'] ?? 'artifact')
+        .toString();
+    final mimeType = (artifact['mimeType'] ?? '').toString();
+    final shellPath = artifact['workspacePath']?.toString() ?? '';
+    final path = artifact['androidPath']?.toString() ?? '';
+    final uri = artifact['uri']?.toString();
+    final previewKind = artifact['previewKind']?.toString();
+
+    if (path.isNotEmpty) {
+      final metadata = OmnibotResourceService.describePath(
+        path,
+        uri: uri,
+        title: title,
+        previewKind: previewKind,
+        mimeType: mimeType,
+        shellPath: shellPath.isEmpty ? null : shellPath,
+      );
+      await showOmnibotArtifactPreviewSheet(context, metadata);
+      return;
+    }
+    if (uri == null || uri.isEmpty) {
+      return;
+    }
+    await OmnibotResourceService.ensureWorkspacePathsLoaded();
+    if (!context.mounted) return;
+    final metadata = OmnibotResourceService.resolveUri(uri);
+    if (metadata != null) {
+      await showOmnibotArtifactPreviewSheet(context, metadata);
+      return;
+    }
+    await OmnibotResourceService.openUri(uri);
   }
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/special_permission.dart';
 import 'package:ui/utils/ui.dart';
 
@@ -73,7 +74,7 @@ class _EmbeddedTerminalInitToastListenerState
         return;
       }
       showToast(
-        '开始准备 Alpine 环境',
+        LegacyTextLocalizer.isEnglish ? 'Preparing Alpine environment' : '开始准备 Alpine 环境',
         type: ToastType.info,
         duration: const Duration(seconds: 2),
       );
@@ -85,8 +86,8 @@ class _EmbeddedTerminalInitToastListenerState
     final message = snapshot.stage.isNotEmpty
         ? snapshot.stage
         : success
-        ? 'Alpine 环境已准备完成'
-        : 'Alpine 环境准备失败';
+        ? (LegacyTextLocalizer.isEnglish ? 'Alpine environment ready' : 'Alpine 环境已准备完成')
+        : (LegacyTextLocalizer.isEnglish ? 'Alpine environment preparation failed' : 'Alpine 环境准备失败');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;

@@ -57,7 +57,16 @@ const String _kLucideCommandSvg =
     '<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>'
     '</svg>';
 
+const String _kCodexPermissionDefaultIconAsset =
+    'assets/home/chat/permission_hand.svg';
+const String _kCodexPermissionAutoReviewIconAsset =
+    'assets/home/chat/codex.svg';
+const String _kCodexPermissionFullAccessIconAsset =
+    'assets/home/chat/permission_shield_alert.svg';
+
 enum RecordingState { idle, starting, recording, stopping, waitingServerStop }
+
+enum CodexPermissionMode { defaultMode, autoReview, fullAccess }
 
 class ChatInputAttachment {
   final String id;
@@ -114,6 +123,8 @@ class ChatInputArea extends StatefulWidget {
   final double? contextUsageRatio;
   final String? contextUsageTooltipMessage;
   final VoidCallback? onLongPressContextUsageRing;
+  final CodexPermissionMode? codexPermissionMode;
+  final ValueChanged<CodexPermissionMode>? onCodexPermissionModeChanged;
 
   const ChatInputArea({
     super.key,
@@ -140,6 +151,8 @@ class ChatInputArea extends StatefulWidget {
     this.contextUsageRatio,
     this.contextUsageTooltipMessage,
     this.onLongPressContextUsageRing,
+    this.codexPermissionMode,
+    this.onCodexPermissionModeChanged,
   });
 
   @override

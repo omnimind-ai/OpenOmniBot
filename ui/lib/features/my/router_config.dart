@@ -4,6 +4,7 @@ import 'package:ui/features/my/pages/my/my_page.dart';
 import 'package:ui/features/my/pages/theme_color/theme_color_page.dart';
 import 'package:ui/features/my/pages/about/about_page.dart';
 import 'package:ui/features/my/pages/about/ai_request_logs_page.dart';
+import 'package:ui/features/my/pages/about/runtime_logs_page.dart';
 
 /// My模块路由配置
 List<GoRoute> myRoutes = [
@@ -39,6 +40,16 @@ List<GoRoute> myRoutes = [
       key: state.pageKey,
       name: 'my/about/request-logs',
       child: const AiRequestLogsPage(),
+    ),
+  ),
+
+  GoRoute(
+    path: '/my/about/runtime-logs',
+    name: 'my/about/runtime-logs',
+    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
+      key: state.pageKey,
+      name: 'my/about/runtime-logs',
+      child: const RuntimeLogsPage(),
     ),
   ),
 ];

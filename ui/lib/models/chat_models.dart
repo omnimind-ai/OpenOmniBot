@@ -1,6 +1,7 @@
 // lib/models/chat_models.dart
 
 import 'package:flutter/foundation.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'block_models.dart';
 
 // --- 简化的聊天消息数据模型 ---
@@ -102,7 +103,7 @@ class ChatMessage {
   factory ChatMessage.fromBotMessage(BotMessage botMessage) {
     return ChatMessage(
       id: botMessage.id,
-      text: botMessage.text ?? '正在回复...',
+      text: botMessage.text ?? LegacyTextLocalizer.localize('正在回复...'),
       type: MessageType.bot,
       timestamp: botMessage.timestamp,
       blocks: botMessage.blocks,

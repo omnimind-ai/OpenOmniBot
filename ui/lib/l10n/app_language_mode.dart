@@ -53,8 +53,8 @@ ResolvedAppLocale resolveAppLocale({
 }
 
 Locale _normalizeSupportedLocale(Locale locale) {
-  if (locale.languageCode.toLowerCase() == 'en') {
-    return const Locale('en', 'US');
+  if (locale.languageCode.toLowerCase() == 'zh') {
+      return const Locale('zh', 'CN');
   }
-  return const Locale('zh', 'CN');
+    return const Locale('en', 'US');
 }

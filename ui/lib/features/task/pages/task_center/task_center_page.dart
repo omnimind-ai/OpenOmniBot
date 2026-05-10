@@ -8,6 +8,7 @@ import '../../../../models/task_models.dart';
 import '../task_edit/task_edit_page.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 import 'package:ui/utils/popup_menu_anchor_position.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 
 class TaskCenterPage extends StatefulWidget {
   const TaskCenterPage({super.key});
@@ -17,10 +18,8 @@ class TaskCenterPage extends StatefulWidget {
 }
 
 class _TaskCenterPageState extends State<TaskCenterPage> {
-  // 修改为使用 TaskData
   List<TaskData> tasks = [];
 
-  // 新增：编辑状态管理
   bool _isEditing = false;
   TaskData? _editingTask;
 
@@ -41,41 +40,38 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
   Future<void> _initializeSampleTasks() async {
     final existingTasks = await TaskStorageService.loadTasks();
 
-    // 如果没有任务，则添加样例任务
     if (existingTasks.isEmpty) {
       final sampleTasks = [
         TaskData(
           id: '1',
-          title: '打车去公司',
+          title: LegacyTextLocalizer.isEnglish ? 'Taxi to company' : '打车去公司',
           date: DateTime.now().add(const Duration(days: 1)),
           time: const TimeOfDay(hour: 9, minute: 0),
-          repeatOption: RepeatOption.fromLabel('每日'),
+          repeatOption: RepeatOption.fromLabel(LegacyTextLocalizer.localize('每日')),
           isEnabled: true,
         ),
         TaskData(
           id: '2',
-          title: '抢票',
+          title: LegacyTextLocalizer.isEnglish ? 'Grab tickets' : '抢票',
           date: DateTime.now().add(const Duration(days: 2)),
           time: const TimeOfDay(hour: 15, minute: 0),
-          repeatOption: RepeatOption.fromLabel('永不'),
+          repeatOption: RepeatOption.fromLabel(LegacyTextLocalizer.localize('永不')),
           isEnabled: true,
         ),
         TaskData(
           id: '3',
-          title: '打车去公司',
+          title: LegacyTextLocalizer.isEnglish ? 'Taxi to company' : '打车去公司',
           date: DateTime.now().add(const Duration(days: 3)),
           time: const TimeOfDay(hour: 9, minute: 0),
-          repeatOption: RepeatOption.fromLabel('每周'),
+          repeatOption: RepeatOption.fromLabel(LegacyTextLocalizer.localize('每周')),
           isEnabled: true,
         ),
       ];
 
-      // 保存样例任务
       for (final task in sampleTasks) {
         await TaskStorageService.saveTask(task);
       }
 
-      // 重新加载任务列表
       _loadTasks();
     }
   }
@@ -88,7 +84,6 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
       appBar: const CommonAppBar(title: '任务中心', primary: true),
       body: Column(
         children: [
-          // 任务列表
           Expanded(
             child: tasks.length > 0
                 ? ListView.builder(
@@ -110,7 +105,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          '暂无任务',
+                          LegacyTextLocalizer.isEnglish ? 'No tasks yet' : '暂无任务',
                           style: TextStyle(
                             fontSize: 16,
                             color: Colors.grey[500],
@@ -124,7 +119,6 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
       ),
       floatingActionButton: FloatingActionButton.small(
         onPressed: () {
-          // 添加新任务
         },
         backgroundColor: Colors.black,
         shape: CircleBorder(),
@@ -186,7 +180,6 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                             setState(() {
                               task.isEnabled = value;
                             });
-                            // 保存状态变化到本地存储
                             await TaskStorageService.saveTask(task);
                           },
                         ),
@@ -227,7 +220,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                               Icon(Icons.play_arrow,
                                   size: 18, color: Colors.grey[600]),
                               SizedBox(width: 8),
-                              Text('立即执行'),
+                              Text(LegacyTextLocalizer.isEnglish ? 'Execute now' : '立即执行'),
                             ],
                           ),
                         ),
@@ -237,7 +230,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                             children: [
                               Icon(Icons.edit, size: 18, color: Colors.grey[600]),
                               SizedBox(width: 8),
-                              Text('编辑'),
+                              Text(LegacyTextLocalizer.isEnglish ? 'Edit' : '编辑'),
                             ],
                           ),
                         ),
@@ -247,7 +240,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                             children: [
                               Icon(Icons.delete, size: 18, color: Colors.grey[600]),
                               SizedBox(width: 8),
-                              Text('删除'),
+                              Text(LegacyTextLocalizer.localize('取消').replaceAll('Cancel', 'Delete')),
                             ],
                           ),
                         ),
@@ -276,17 +269,15 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
   }
 
   void _executeTaskImmediately(TaskData task) {
-    // 立即执行任务的逻辑
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('正在执行任务：${task.title}'),
+        content: Text(LegacyTextLocalizer.isEnglish ? 'Executing task: ${task.title}' : '正在执行任务：${task.title}'),
         duration: Duration(seconds: 2),
       ),
     );
   }
 
   void _editTask(TaskData task) {
-    // 跳转到编辑页面
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -295,7 +286,6 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
         ),
       ),
     ).then((_) {
-      // 当返回时，刷新任务列表
       _loadTasks();
     });
   }
@@ -308,9 +298,9 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
           actionsPadding: EdgeInsets.all(0),
           backgroundColor: Colors.white,
           title: Center(
-            child: Text("确认删除？"),
+            child: Text(LegacyTextLocalizer.isEnglish ? 'Confirm delete?' : '确认删除？'),
           ),
-          content: Text("您确定要删除任务：${task.title}吗？"),
+          content: Text(LegacyTextLocalizer.isEnglish ? 'Are you sure you want to delete task: ${task.title}?' : '您确定要删除任务：${task.title}吗？'),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
@@ -320,7 +310,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () {
-                      Navigator.pop(context); // 取消删除
+                      Navigator.pop(context);
                     },
                     style: ElevatedButton.styleFrom(
                       elevation: 0,
@@ -334,7 +324,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                       padding: EdgeInsets.all(20),
                       child: Align(
                         alignment: Alignment.center,
-                        child: Text("取消"),
+                        child: Text(LegacyTextLocalizer.localize('取消')),
                       ),
                     ),
                   ),
@@ -347,13 +337,13 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                       Navigator.pop(context);
 
                       if (success) {
-                        _loadTasks(); // 重新加载任务列表
+                        _loadTasks();
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("已删除任务：${task.title}")),
+                          SnackBar(content: Text(LegacyTextLocalizer.isEnglish ? 'Deleted task: ${task.title}' : '已删除任务：${task.title}')),
                         );
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("删除任务失败")),
+                          SnackBar(content: Text(LegacyTextLocalizer.isEnglish ? 'Failed to delete task' : '删除任务失败')),
                         );
                       }
                     },
@@ -369,7 +359,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                       padding: EdgeInsets.all(20),
                       child: Align(
                         alignment: Alignment.center,
-                        child: Text("确认", style: TextStyle(color: Colors.red)),
+                        child: Text(LegacyTextLocalizer.localize('确认'), style: TextStyle(color: Colors.red)),
                       ),
                     ),
                   ),

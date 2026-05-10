@@ -3,11 +3,17 @@ package cn.com.omnimind.bot.agent
 import cn.com.omnimind.assists.controller.http.HttpController
 import cn.com.omnimind.baselib.llm.ChatCompletionRequest
 import cn.com.omnimind.baselib.llm.ChatCompletionTurn
+import cn.com.omnimind.baselib.llm.DeepSeekProvider
 import cn.com.omnimind.baselib.llm.LocalModelProviderBridge
+import cn.com.omnimind.baselib.llm.ModelProviderConfigStore
+import cn.com.omnimind.baselib.llm.ReasoningStreamUpdatePolicy
 import cn.com.omnimind.baselib.util.OmniLog
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -38,6 +44,11 @@ class HttpAgentLlmClient(
     }
 ) : AgentLlmClient {
     private val tag = "HttpAgentLlmClient"
+
+    private companion object {
+        const val REASONING_UPDATE_INTERVAL_MS =
+            ReasoningStreamUpdatePolicy.DEFAULT_INTERVAL_MS
+    }
 
     private data class StreamRequestVariant(
         val name: String,
@@ -116,6 +127,30 @@ class HttpAgentLlmClient(
         onReasoningUpdate: (suspend (String) -> Unit)?,
         onContentUpdate: (suspend (String) -> Unit)?
     ): ChatCompletionTurn {
+        return try {
+            doStreamTurnOnce(model, requestJson, onReasoningUpdate, onContentUpdate, forceHttp1 = false)
+        } catch (e: StreamRequestFailure) {
+            if (isHttp2ProtocolError(e)) {
+                OmniLog.w(tag, "HTTP/2 stream PROTOCOL_ERROR, retrying with HTTP/1.1")
+                doStreamTurnOnce(model, requestJson, onReasoningUpdate, onContentUpdate, forceHttp1 = true)
+            } else {
+                throw e
+            }
+        }
+    }
+
+    private fun isHttp2ProtocolError(error: StreamRequestFailure): Boolean {
+        return error.reason.contains("PROTOCOL_ERROR", ignoreCase = true)
+                || error.reason.contains("stream was reset", ignoreCase = true)
+    }
+
+    private suspend fun doStreamTurnOnce(
+        model: String,
+        requestJson: String,
+        onReasoningUpdate: (suspend (String) -> Unit)?,
+        onContentUpdate: (suspend (String) -> Unit)?,
+        forceHttp1: Boolean
+    ): ChatCompletionTurn {
         val streamDone = CompletableDeferred<ChatCompletionTurn>()
         val completed = AtomicBoolean(false)
         val accumulator = AgentLlmStreamAccumulator(
@@ -123,32 +158,105 @@ class HttpAgentLlmClient(
             preferInlineThinkTags = LocalModelProviderBridge.isBuiltinLocalProvider(
                 modelOverride?.providerProfileId,
                 modelOverride?.apiBase
-            )
+            ),
+            includeReasoningInAssistantMessage = isOfficialDeepSeekTarget()
         )
         var lastReasoning = ""
+        var lastReasoningEmitLength = 0
+        var lastReasoningEmitAt = 0L
+        var reasoningEmitJob: Job? = null
+        val reasoningLock = Any()
         var lastContent = ""
         var eventSource: EventSource? = null
+        val emissionQueue = Channel<suspend () -> Unit>(Channel.UNLIMITED)
+        val emissionJob = scope.launch {
+            for (block in emissionQueue) {
+                runCatching { block.invoke() }
+                    .onFailure { OmniLog.w(tag, "stream emission failed: ${it.message}") }
+            }
+        }
+        var hasPublishedReasoningForTurn = false
 
-        fun emitReasoning() {
-            val reasoning = accumulator.currentReasoning()
-            if (reasoning.isBlank() || reasoning == lastReasoning) return
+        fun enqueueEmission(block: suspend () -> Unit) {
+            if (emissionQueue.isClosedForSend) {
+                return
+            }
+            emissionQueue.trySend(block)
+        }
+
+        fun dispatchReasoningSnapshot(reasoning: String) {
             lastReasoning = reasoning
+            hasPublishedReasoningForTurn = true
             if (onReasoningUpdate != null) {
-                scope.launch {
-                    runCatching { onReasoningUpdate.invoke(reasoning) }
-                        .onFailure { OmniLog.w(tag, "emit reasoning update failed: ${it.message}") }
+                enqueueEmission {
+                    onReasoningUpdate.invoke(reasoning)
                 }
+            }
+        }
+
+        fun collectReasoningSnapshotLocked(): String? {
+            val length = accumulator.currentReasoningLength()
+            if (length <= 0 || length == lastReasoningEmitLength) return null
+            val reasoning = accumulator.currentReasoning()
+            lastReasoningEmitLength = length
+            if (reasoning.isBlank() || reasoning == lastReasoning) return null
+            lastReasoning = reasoning
+            lastReasoningEmitAt = System.currentTimeMillis()
+            return reasoning
+        }
+
+        fun scheduleReasoningSnapshotLocked(delayMs: Long) {
+            reasoningEmitJob = scope.launch {
+                delay(delayMs)
+                val snapshot = synchronized(reasoningLock) {
+                    reasoningEmitJob = null
+                    collectReasoningSnapshotLocked()
+                }
+                if (snapshot != null) {
+                    dispatchReasoningSnapshot(snapshot)
+                }
+            }
+        }
+
+        fun emitReasoning(force: Boolean = false) {
+            var snapshot: String? = null
+            synchronized(reasoningLock) {
+                val length = accumulator.currentReasoningLength()
+                if (length <= 0 || length == lastReasoningEmitLength) return
+                if (force) {
+                    reasoningEmitJob?.cancel()
+                    reasoningEmitJob = null
+                    snapshot = collectReasoningSnapshotLocked()
+                    return@synchronized
+                }
+                if (reasoningEmitJob?.isActive == true) return
+                val delayMs = ReasoningStreamUpdatePolicy.nextDelayMs(
+                    hasEmittedBefore = lastReasoningEmitLength > 0,
+                    lastEmitAtMs = lastReasoningEmitAt,
+                    nowMs = System.currentTimeMillis(),
+                    intervalMs = REASONING_UPDATE_INTERVAL_MS
+                )
+                if (delayMs <= 0L) {
+                    snapshot = collectReasoningSnapshotLocked()
+                } else {
+                    scheduleReasoningSnapshotLocked(delayMs)
+                }
+            }
+            if (snapshot != null) {
+                dispatchReasoningSnapshot(snapshot!!)
             }
         }
 
         fun emitContent() {
             val content = accumulator.currentContent()
             if (content.isEmpty() || content == lastContent) return
+            if (!hasPublishedReasoningForTurn && accumulator.currentReasoningLength() > 0) {
+                emitReasoning(force = true)
+            }
             lastContent = content
             if (onContentUpdate != null) {
-                scope.launch {
-                    runCatching { onContentUpdate.invoke(content) }
-                        .onFailure { OmniLog.w(tag, "emit content update failed: ${it.message}") }
+                enqueueEmission {
+                    onContentUpdate.invoke(content)
                 }
             }
         }
@@ -157,7 +265,7 @@ class HttpAgentLlmClient(
             if (!completed.compareAndSet(false, true)) return
             runCatching {
                 val turn = accumulator.buildTurn()
-                emitReasoning()
+                emitReasoning(force = true)
                 emitContent()
                 turn
             }.onSuccess { turn ->
@@ -220,11 +328,15 @@ class HttpAgentLlmClient(
                 explicitApiBase = modelOverride?.apiBase,
                 explicitApiKey = modelOverride?.apiKey,
                 explicitModel = modelOverride?.modelId,
-                explicitProtocolType = modelOverride?.protocolType
+                explicitProtocolType = modelOverride?.protocolType,
+                forceHttp1 = forceHttp1
             )
             return streamDone.await()
         } finally {
+            reasoningEmitJob?.cancel()
             eventSource?.cancel()
+            emissionQueue.close()
+            runCatching { emissionJob.join() }
         }
     }
 
@@ -267,6 +379,21 @@ class HttpAgentLlmClient(
             )
         }
         return variants
+    }
+
+    private fun isOfficialDeepSeekTarget(): Boolean {
+        if (modelOverride != null) {
+            return DeepSeekProvider.shouldUseOfficialAdapter(
+                protocolType = modelOverride.protocolType,
+                apiBase = modelOverride.apiBase
+            )
+        }
+        val profile = runCatching { ModelProviderConfigStore.getEditingProfile() }
+            .getOrNull()
+        return DeepSeekProvider.shouldUseOfficialAdapter(
+            protocolType = profile?.protocolType,
+            apiBase = profile?.baseUrl
+        )
     }
 
     private fun toLegacyFunctionCall(toolChoice: JsonElement?): JsonElement? {

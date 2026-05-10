@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:ui/services/assists_core_service.dart';
@@ -22,6 +23,10 @@ class OmnibotArtifactPreviewPage extends StatefulWidget {
   final String? shellPath;
   final bool exists;
   final bool startInEditMode;
+  final bool showPathBar;
+  final bool appBarPrimary;
+  final bool showLeading;
+  final VoidCallback? onClose;
 
   const OmnibotArtifactPreviewPage({
     super.key,
@@ -33,6 +38,10 @@ class OmnibotArtifactPreviewPage extends StatefulWidget {
     this.uri,
     this.exists = true,
     this.startInEditMode = false,
+    this.showPathBar = true,
+    this.appBarPrimary = true,
+    this.showLeading = true,
+    this.onClose,
   });
 
   @override
@@ -175,10 +184,18 @@ class _OmnibotArtifactPreviewPageState
     if (_isDirty) {
       final confirmed = await AppDialog.confirm(
         context,
-        title: '放弃修改',
-        content: '当前有未保存修改，确认放弃吗？',
-        cancelText: '继续编辑',
-        confirmText: '放弃',
+        title: Localizations.localeOf(context).languageCode == 'en'
+            ? 'Discard changes'
+            : '放弃修改',
+        content: Localizations.localeOf(context).languageCode == 'en'
+            ? 'There are unsaved changes. Discard them?'
+            : '当前有未保存修改，确认放弃吗？',
+        cancelText: Localizations.localeOf(context).languageCode == 'en'
+            ? 'Keep editing'
+            : '继续编辑',
+        confirmText: Localizations.localeOf(context).languageCode == 'en'
+            ? 'Discard'
+            : '放弃',
       );
       if (confirmed != true || !mounted) {
         return;
@@ -209,10 +226,20 @@ class _OmnibotArtifactPreviewPageState
       await Future<void>.delayed(const Duration(milliseconds: 250));
       await _loadIfNeeded(showLoading: false);
       if (!mounted) return;
-      showToast('文件已保存', type: ToastType.success);
+      showToast(
+        Localizations.localeOf(context).languageCode == 'en'
+            ? 'File saved'
+            : '文件已保存',
+        type: ToastType.success,
+      );
     } catch (error) {
       if (!mounted) return;
-      showToast('保存失败：$error', type: ToastType.error);
+      showToast(
+        Localizations.localeOf(context).languageCode == 'en'
+            ? 'Save failed: $error'
+            : '保存失败：$error',
+        type: ToastType.error,
+      );
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -221,31 +248,51 @@ class _OmnibotArtifactPreviewPageState
   }
 
   Future<void> _handleOpenWithSystem() async {
+    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
     try {
       final opened = await OmnibotResourceService.openWithSystem(
         sourcePath: widget.path,
         mimeType: widget.mimeType,
       );
+      if (!mounted) return;
       if (!opened) {
-        showToast('系统打开失败，请稍后重试', type: ToastType.error);
+        showToast(
+          isEnglish
+              ? 'Open with system failed. Please try again later.'
+              : '系统打开失败，请稍后重试',
+          type: ToastType.error,
+        );
       }
     } catch (error) {
-      showToast('系统打开失败：$error', type: ToastType.error);
+      if (!mounted) return;
+      showToast(
+        isEnglish ? 'Open with system failed: $error' : '系统打开失败：$error',
+        type: ToastType.error,
+      );
     }
   }
 
   Future<void> _handleShareFile() async {
+    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
     try {
       final shared = await OmnibotResourceService.shareFile(
         sourcePath: widget.path,
         fileName: widget.title,
         mimeType: widget.mimeType,
       );
+      if (!mounted) return;
       if (!shared) {
-        showToast('分享失败，请稍后重试', type: ToastType.error);
+        showToast(
+          isEnglish ? 'Share failed. Please try again later.' : '分享失败，请稍后重试',
+          type: ToastType.error,
+        );
       }
     } catch (error) {
-      showToast('分享失败：$error', type: ToastType.error);
+      if (!mounted) return;
+      showToast(
+        isEnglish ? 'Share failed: $error' : '分享失败：$error',
+        type: ToastType.error,
+      );
     }
   }
 
@@ -266,10 +313,18 @@ class _OmnibotArtifactPreviewPageState
     }
     final confirmed = await AppDialog.confirm(
       context,
-      title: '退出编辑',
-      content: '当前有未保存修改，确认退出吗？',
-      cancelText: '继续编辑',
-      confirmText: '退出',
+      title: Localizations.localeOf(context).languageCode == 'en'
+          ? 'Exit editing'
+          : '退出编辑',
+      content: Localizations.localeOf(context).languageCode == 'en'
+          ? 'There are unsaved changes. Exit editing?'
+          : '当前有未保存修改，确认退出吗？',
+      cancelText: Localizations.localeOf(context).languageCode == 'en'
+          ? 'Keep editing'
+          : '继续编辑',
+      confirmText: Localizations.localeOf(context).languageCode == 'en'
+          ? 'Exit'
+          : '退出',
     );
     if (confirmed != true || !mounted) {
       return;
@@ -298,11 +353,13 @@ class _OmnibotArtifactPreviewPageState
     final preview = OmnibotInlineResourceEmbed(
       metadata: metadata,
       maxWidth: maxWidth,
-      preferredHeight: metadata.previewKind == 'pdf'
-          ? (MediaQuery.sizeOf(context).height - 220).clamp(320.0, 960.0)
-          : null,
+      preferredHeight: switch (metadata.previewKind) {
+        'pdf' => (MediaQuery.sizeOf(context).height - 220).clamp(320.0, 960.0),
+        'html' => (MediaQuery.sizeOf(context).height - 220).clamp(280.0, 960.0),
+        _ => null,
+      },
     );
-    if (metadata.previewKind == 'pdf') {
+    if (metadata.previewKind == 'pdf' || metadata.previewKind == 'html') {
       return Padding(
         padding: const EdgeInsets.all(16),
         child: Center(child: preview),
@@ -326,7 +383,13 @@ class _OmnibotArtifactPreviewPageState
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           color: palette.surfaceSecondary,
           child: Text(
-            _isDirty ? '编辑中，存在未保存修改' : '编辑中，保存后会立即写回 workspace',
+            _isDirty
+                ? (Localizations.localeOf(context).languageCode == 'en'
+                      ? 'Editing with unsaved changes'
+                      : '编辑中，存在未保存修改')
+                : (Localizations.localeOf(context).languageCode == 'en'
+                      ? 'Editing. Save will write back to workspace immediately'
+                      : '编辑中，保存后会立即写回 workspace'),
             style: TextStyle(fontSize: 12, color: palette.textSecondary),
           ),
         ),
@@ -350,7 +413,9 @@ class _OmnibotArtifactPreviewPageState
               decoration: InputDecoration(
                 filled: true,
                 fillColor: palette.surfacePrimary,
-                hintText: '输入文件内容',
+                hintText: Localizations.localeOf(context).languageCode == 'en'
+                    ? 'Enter file content'
+                    : '输入文件内容',
                 alignLabelWithHint: true,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -374,7 +439,13 @@ class _OmnibotArtifactPreviewPageState
 
   Widget _buildBody() {
     if (!widget.exists) {
-      return const Center(child: Text('文件不存在'));
+      return Center(
+        child: Text(
+          Localizations.localeOf(context).languageCode == 'en'
+              ? 'File does not exist'
+              : '文件不存在',
+        ),
+      );
     }
     if (_error != null) {
       return Center(child: Text(_error!));
@@ -409,7 +480,13 @@ class _OmnibotArtifactPreviewPageState
           return const Center(child: CircularProgressIndicator());
         }
         if (_textContent == null) {
-          return const Center(child: Text('暂无内容'));
+          return Center(
+            child: Text(
+              Localizations.localeOf(context).languageCode == 'en'
+                  ? 'No content'
+                  : '暂无内容',
+            ),
+          );
         }
         if (widget.mimeType == 'text/markdown') {
           return SingleChildScrollView(
@@ -451,7 +528,11 @@ class _OmnibotArtifactPreviewPageState
                 FilledButton.icon(
                   onPressed: _handleOpenWithSystem,
                   icon: const Icon(Icons.open_in_new_outlined),
-                  label: const Text('系统打开'),
+                  label: Text(
+                    Localizations.localeOf(context).languageCode == 'en'
+                        ? 'Open with system'
+                        : '系统打开',
+                  ),
                 ),
               ],
             ),
@@ -498,17 +579,27 @@ class _OmnibotArtifactPreviewPageState
       actions.add(
         PopupMenuButton<_ArtifactPreviewAction>(
           key: const ValueKey('artifact-preview-more-actions'),
-          tooltip: '更多操作',
+          tooltip: Localizations.localeOf(context).languageCode == 'en'
+              ? 'More actions'
+              : '更多操作',
           splashRadius: 18,
           onSelected: _handleToolbarAction,
-          itemBuilder: (context) => const [
+          itemBuilder: (context) => [
             PopupMenuItem<_ArtifactPreviewAction>(
               value: _ArtifactPreviewAction.openWithSystem,
-              child: Text('系统打开'),
+              child: Text(
+                Localizations.localeOf(context).languageCode == 'en'
+                    ? 'Open with system'
+                    : '系统打开',
+              ),
             ),
             PopupMenuItem<_ArtifactPreviewAction>(
               value: _ArtifactPreviewAction.shareFile,
-              child: Text('分享文件'),
+              child: Text(
+                Localizations.localeOf(context).languageCode == 'en'
+                    ? 'Share file'
+                    : '分享文件',
+              ),
             ),
           ],
           icon: const Icon(Icons.more_horiz_rounded),
@@ -528,24 +619,185 @@ class _OmnibotArtifactPreviewPageState
         backgroundColor: palette.pageBackground,
         appBar: CommonAppBar(
           title: widget.title,
-          primary: true,
+          primary: widget.appBarPrimary,
+          showLeading: widget.showLeading,
+          onBackPressed: widget.onClose,
           actions: _buildActions(),
         ),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              key: const ValueKey('artifact-preview-path-bar'),
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              color: palette.surfaceSecondary,
-              child: Text(
-                widget.path,
-                style: TextStyle(fontSize: 12, color: palette.textSecondary),
+            if (widget.showPathBar)
+              Container(
+                key: const ValueKey('artifact-preview-path-bar'),
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                color: palette.surfaceSecondary,
+                child: Text(
+                  widget.path,
+                  style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                ),
               ),
-            ),
             Expanded(child: _buildBody()),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> showOmnibotArtifactPreviewSheet(
+  BuildContext context,
+  OmnibotResourceMetadata metadata,
+) async {
+  await OmnibotResourceService.ensureWorkspacePathsLoaded();
+  final uriMetadata = metadata.uri == null
+      ? null
+      : OmnibotResourceService.resolveUri(metadata.uri!);
+  final sourceMetadata = uriMetadata ?? metadata;
+  final resolvedMetadata = OmnibotResourceService.describePath(
+    sourceMetadata.path,
+    uri: sourceMetadata.uri,
+    shellPath: sourceMetadata.shellPath,
+    title: sourceMetadata.title,
+    previewKind: sourceMetadata.previewKind,
+    mimeType: sourceMetadata.mimeType,
+  );
+  if (!await OmnibotResourceService.ensureResourceAccess(
+    path: resolvedMetadata.path,
+    uri: resolvedMetadata.uri,
+  )) {
+    return;
+  }
+  if (resolvedMetadata.isDirectory) {
+    await OmnibotResourceService.openWorkspace(
+      absolutePath: resolvedMetadata.path,
+      shellPath: resolvedMetadata.shellPath,
+      uri: resolvedMetadata.uri,
+    );
+    return;
+  }
+  if (!context.mounted) {
+    return;
+  }
+
+  await showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    isDismissible: true,
+    enableDrag: false,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.28),
+    builder: (sheetContext) {
+      return _OmnibotArtifactPreviewSheetFrame(metadata: resolvedMetadata);
+    },
+  );
+}
+
+class _OmnibotArtifactPreviewSheetFrame extends StatefulWidget {
+  const _OmnibotArtifactPreviewSheetFrame({required this.metadata});
+
+  final OmnibotResourceMetadata metadata;
+
+  @override
+  State<_OmnibotArtifactPreviewSheetFrame> createState() =>
+      _OmnibotArtifactPreviewSheetFrameState();
+}
+
+class _OmnibotArtifactPreviewSheetFrameState
+    extends State<_OmnibotArtifactPreviewSheetFrame> {
+  static const double _minHeightFactor = 0.36;
+  static const double _maxHeightFactor = 0.94;
+
+  double? _heightFactor;
+
+  double _initialHeightFactor(double viewportHeight) {
+    return viewportHeight < 720 ? 0.72 : 0.62;
+  }
+
+  void _handleDragUpdate(DragUpdateDetails details, double availableHeight) {
+    if (availableHeight <= 0) {
+      return;
+    }
+    final delta = details.primaryDelta ?? details.delta.dy;
+    setState(() {
+      final current =
+          _heightFactor ??
+          _initialHeightFactor(MediaQuery.sizeOf(context).height);
+      _heightFactor = (current - delta / availableHeight).clamp(
+        _minHeightFactor,
+        _maxHeightFactor,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final mediaQuery = MediaQuery.of(context);
+    final availableHeight = math.max(
+      320.0,
+      mediaQuery.size.height -
+          mediaQuery.padding.top -
+          mediaQuery.viewInsets.bottom,
+    );
+    final heightFactor =
+        _heightFactor ?? _initialHeightFactor(mediaQuery.size.height);
+    return SafeArea(
+      top: false,
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+        child: SizedBox(
+          height: availableHeight * heightFactor,
+          width: double.infinity,
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            child: Material(
+              color: palette.pageBackground,
+              child: Column(
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onVerticalDragUpdate: (details) =>
+                        _handleDragUpdate(details, availableHeight),
+                    child: SizedBox(
+                      height: 22,
+                      width: double.infinity,
+                      child: Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: palette.textSecondary.withValues(
+                              alpha: 0.28,
+                            ),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: OmnibotArtifactPreviewPage(
+                      path: widget.metadata.path,
+                      uri: widget.metadata.uri,
+                      title: widget.metadata.title,
+                      previewKind: widget.metadata.previewKind,
+                      mimeType: widget.metadata.mimeType,
+                      shellPath: widget.metadata.shellPath,
+                      exists: widget.metadata.exists,
+                      showPathBar: false,
+                      appBarPrimary: false,
+                      showLeading: false,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/assists_core_service.dart';
 
 /// 文本上下文菜单
@@ -28,14 +29,14 @@ class TextInputContextMenu extends StatelessWidget {
       buttonItems: [
         if (editableTextState.textEditingValue.text.isNotEmpty)
           ContextMenuButtonItem(
-            label: '全选',
+            label: LegacyTextLocalizer.isEnglish ? 'Select all' : '全选',
             onPressed: () {
               editableTextState.selectAll(SelectionChangedCause.toolbar);
             },
           ),
         if (!readOnly && !editableTextState.textEditingValue.selection.isCollapsed)
           ContextMenuButtonItem(
-            label: '剪切',
+            label: LegacyTextLocalizer.isEnglish ? 'Cut' : '剪切',
             onPressed: () {
               final selection = editableTextState.textEditingValue.selection;
               final selectedText = selection.textInside(editableTextState.textEditingValue.text);
@@ -56,7 +57,7 @@ class TextInputContextMenu extends StatelessWidget {
           ),
         if (!editableTextState.textEditingValue.selection.isCollapsed)
           ContextMenuButtonItem(
-            label: '复制',
+            label: LegacyTextLocalizer.isEnglish ? 'Copy' : '复制',
             onPressed: () {
               final selection = editableTextState.textEditingValue.selection;
               final selectedText = selection.textInside(editableTextState.textEditingValue.text);
@@ -70,7 +71,7 @@ class TextInputContextMenu extends StatelessWidget {
           ),
         if (!readOnly)
           ContextMenuButtonItem(
-            label: '粘贴',
+            label: LegacyTextLocalizer.isEnglish ? 'Paste' : '粘贴',
             onPressed: () async {
             final value = editableTextState.textEditingValue;
             final selection = value.selection.isValid

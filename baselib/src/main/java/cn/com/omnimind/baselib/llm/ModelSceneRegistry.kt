@@ -336,7 +336,7 @@ object ModelSceneRegistry {
             // 转换为 SceneInfo
             val sceneMap = mutableMapOf<String, SceneInfo>()
             rawMap.forEach { (sceneId, config) ->
-                val sceneInfo = parseSceneInfo(config)
+                val sceneInfo = parseSceneInfo(sceneId, config)
                 if (sceneInfo != null) {
                     sceneMap[sceneId] = sceneInfo
                 } else {
@@ -549,8 +549,13 @@ object ModelSceneRegistry {
         return null
     }
 
-    private fun parseSceneInfo(config: Map<String, Any?>): SceneInfo? {
-        val model = (config["model"] as? String)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    private fun parseSceneInfo(sceneId: String, config: Map<String, Any?>): SceneInfo? {
+        val rawModel = (config["model"] as? String)?.trim().orEmpty()
+        val model = when {
+            rawModel.isNotEmpty() -> rawModel
+            sceneId == SceneVoiceConfigStore.SCENE_ID -> ""
+            else -> return null
+        }
         return SceneInfo(
             model = model,
             prompt = config["prompt"] as? String,
@@ -608,6 +613,7 @@ object ModelSceneRegistry {
     private fun defaultTransportForScene(sceneId: String): SceneTransport {
         return when (sceneId) {
             "scene.vlm.operation.primary",
+            "scene.voice",
             "scene.dispatch.model",
             "scene.compactor.context",
             "scene.compactor.context.chat",
@@ -626,6 +632,7 @@ object ModelSceneRegistry {
             "scene.loading.sprite",
             "scene.memory.embedding",
             "scene.memory.rollup",
+            "scene.voice",
             "scene.dispatch.model" -> ResponseParser.TEXT_CONTENT
             else -> ResponseParser.TEXT_CONTENT
         }

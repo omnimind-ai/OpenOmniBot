@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
-import '../../../../../models/chat_message_model.dart';
-import '../../../../../services/assists_core_service.dart';
-import '../../command_overlay/constants/messages.dart';
+import 'package:ui/features/home/pages/chat/utils/stream_text_merge.dart';
+import 'package:ui/models/chat_message_model.dart';
+import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/utils/data_parser.dart';
 
-/// 聊天消息处理 Mixin
-/// 负责处理AI消息流、VLM用户输入等功能
-mixin ChatMessageHandler<T extends StatefulWidget> on State<T> {
-  // ===================== 抽象属性/方法（需要在主类中实现）=====================
+import '../../command_overlay/constants/messages.dart';
 
+/// 聊天消息处理 Mixin
+/// 负责处理 AI 消息流、VLM 用户输入等功能
+mixin ChatMessageHandler<T extends StatefulWidget> on State<T> {
   List<ChatMessageModel> get messages;
   bool get isAiResponding;
   set isAiResponding(bool value);
@@ -21,9 +21,6 @@ mixin ChatMessageHandler<T extends StatefulWidget> on State<T> {
 
   Future<void> saveConversation();
 
-  // ===================== Loading 消息管理 =====================
-
-  /// 添加 loading 消息
   void addLoadingMessage() {
     final loadingId = '${DateTime.now().millisecondsSinceEpoch}-loading';
     setState(() {
@@ -40,7 +37,6 @@ mixin ChatMessageHandler<T extends StatefulWidget> on State<T> {
     });
   }
 
-  /// 移除最新的 loading 消息（如果存在）
   void removeLatestLoadingIfExists() {
     if (messages.isNotEmpty && messages[0].isLoading) {
       setState(() {
@@ -49,9 +45,6 @@ mixin ChatMessageHandler<T extends StatefulWidget> on State<T> {
     }
   }
 
-  // ===================== AI 消息处理 =====================
-
-  /// 处理 AI 消息流
   void handleAiMessage(String taskId, String content, String? type) async {
     final isErrorMessage = type == 'error';
     final isRateLimited = type == 'rate_limited';
@@ -59,9 +52,16 @@ mixin ChatMessageHandler<T extends StatefulWidget> on State<T> {
     final isOpenClawAttachment = type == 'openclaw_attachment';
     final payload = safeDecodeMap(content);
     final payloadAttachments = _parseAttachments(payload['attachments']);
+    final prefillTokensPerSecond = extractChatTaskPrefillTokensPerSecond(
+      content,
+    );
+    final decodeTokensPerSecond = extractChatTaskDecodeTokensPerSecond(content);
+    final hasPerformanceMetrics =
+        prefillTokensPerSecond != null || decodeTokensPerSecond != null;
     String messageText;
     bool isError;
     bool isSummarizing;
+    bool shouldUpdateAiMessage = true;
 
     final isFirstChunk = !currentAiMessages.containsKey(taskId);
     if (isFirstChunk) {
@@ -79,7 +79,6 @@ mixin ChatMessageHandler<T extends StatefulWidget> on State<T> {
       isSummarizing = false;
       currentAiMessages.remove(taskId);
     } else if (isSummaryStart) {
-      // 总结开始，显示"总结中"状态
       messageText = '';
       isError = false;
       isSummarizing = true;
@@ -90,34 +89,55 @@ mixin ChatMessageHandler<T extends StatefulWidget> on State<T> {
       isSummarizing = false;
     } else {
       final text = extractChatTaskText(content, fallbackToRawText: false);
-      currentAiMessages[taskId] = (currentAiMessages[taskId] ?? '') + text;
+      if (text.isNotEmpty) {
+        currentAiMessages[taskId] = mergeLegacyStreamingText(
+          currentAiMessages[taskId] ?? '',
+          text,
+        );
+      }
       messageText = currentAiMessages[taskId] ?? '';
       isError = false;
       isSummarizing = false;
+      shouldUpdateAiMessage =
+          messageText.isNotEmpty ||
+          payloadAttachments.isNotEmpty ||
+          (hasPerformanceMetrics &&
+              messages.any((message) => message.id == taskId));
     }
 
-    updateOrAddAiMessage(
-      taskId,
-      messageText,
-      isError,
-      isSummarizing: isSummarizing,
-      attachments: payloadAttachments,
-    );
+    if (shouldUpdateAiMessage) {
+      updateOrAddAiMessage(
+        taskId,
+        messageText,
+        isError,
+        isSummarizing: isSummarizing,
+        attachments: payloadAttachments,
+        prefillTokensPerSecond: prefillTokensPerSecond,
+        decodeTokensPerSecond: decodeTokensPerSecond,
+      );
+    }
   }
 
-  /// 更新或添加 AI 消息
   void updateOrAddAiMessage(
     String taskId,
     String text,
     bool isError, {
     bool isSummarizing = false,
     List<Map<String, dynamic>> attachments = const [],
+    double? prefillTokensPerSecond,
+    double? decodeTokensPerSecond,
   }) {
     final index = messages.indexWhere((msg) => msg.id == taskId);
 
     setState(() {
       if (index == -1) {
         final content = <String, dynamic>{'text': text, 'id': taskId};
+        if (prefillTokensPerSecond != null) {
+          content['prefillTokensPerSecond'] = prefillTokensPerSecond;
+        }
+        if (decodeTokensPerSecond != null) {
+          content['decodeTokensPerSecond'] = decodeTokensPerSecond;
+        }
         if (attachments.isNotEmpty) {
           content['attachments'] = attachments;
         }
@@ -138,6 +158,12 @@ mixin ChatMessageHandler<T extends StatefulWidget> on State<T> {
         final content = Map<String, dynamic>.from(existing.content ?? {});
         final existingText = content['text'] as String? ?? '';
         content['text'] = text.isNotEmpty ? text : existingText;
+        if (prefillTokensPerSecond != null) {
+          content['prefillTokensPerSecond'] = prefillTokensPerSecond;
+        }
+        if (decodeTokensPerSecond != null) {
+          content['decodeTokensPerSecond'] = decodeTokensPerSecond;
+        }
         final mergedAttachments = _mergeAttachments(
           _parseAttachments(content['attachments']),
           attachments,
@@ -155,7 +181,6 @@ mixin ChatMessageHandler<T extends StatefulWidget> on State<T> {
     });
   }
 
-  /// 处理 AI 消息结束
   void handleAiMessageEnd(String taskId) async {
     setState(() => isAiResponding = false);
 
@@ -175,13 +200,12 @@ mixin ChatMessageHandler<T extends StatefulWidget> on State<T> {
     saveConversation();
   }
 
-  // ===================== VLM 用户输入处理 =====================
-
-  /// 提交 VLM 用户输入
   Future<void> onSubmitVlmInfo() async {
     if (isSubmittingVlmReply || vlmInfoQuestion == null) return;
     final reply = vlmAnswerController.text.trim().isEmpty
-        ? '已完成操作，继续执行'
+        ? (Localizations.localeOf(context).languageCode == 'en'
+              ? 'Completed action, continue execution'
+              : '已完成操作，继续执行')
         : vlmAnswerController.text.trim();
     setState(() {
       isSubmittingVlmReply = true;
@@ -199,7 +223,6 @@ mixin ChatMessageHandler<T extends StatefulWidget> on State<T> {
     });
   }
 
-  /// 关闭 VLM 输入提示
   void dismissVlmInfo() {
     setState(() {
       vlmInfoQuestion = null;

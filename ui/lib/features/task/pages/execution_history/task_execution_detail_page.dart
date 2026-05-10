@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:ui/models/execution_record.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/app_text_styles.dart';
@@ -323,7 +324,7 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
     return Row(
       children: [
         Text(
-          '最近执行：$lastTimeLabel',
+          '${context.trLegacy('最近执行')} $lastTimeLabel',
           style: TextStyle(
             fontSize: 10,
             color: context.isDarkTheme
@@ -339,7 +340,7 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
           color: context.isDarkTheme ? palette.textSecondary : AppColors.text70,
         ),
         Text(
-          '共执行 ${_executionRecords.isNotEmpty ? _executionRecords.length : widget.params.totalCount} 次',
+          '${_executionRecords.isNotEmpty ? _executionRecords.length : widget.params.totalCount}x',
           style: TextStyle(
             fontSize: 10,
             color: context.isDarkTheme
@@ -373,7 +374,7 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
         padding: const EdgeInsets.all(32),
         child: Center(
           child: Text(
-            '暂无总结内容',
+            context.trLegacy('暂无总结内容'),
             style: TextStyle(
               fontSize: AppTextStyles.fontSizeMain,
               color: context.isDarkTheme
@@ -389,7 +390,7 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '小万总结',
+          context.l10n.brandNameEnglish,
           style: TextStyle(
             color: palette.textPrimary,
             fontSize: 16,
@@ -559,7 +560,7 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
       padding: const EdgeInsets.all(32),
       child: Center(
         child: Text(
-          '暂无执行记录',
+          context.l10n.trajectoryNoRecords,
           style: TextStyle(
             fontSize: AppTextStyles.fontSizeMain,
             color: context.isDarkTheme
@@ -587,7 +588,7 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
 
   /// 格式化最后执行时间
   String _formatLastExecutionTime(int timestamp) {
-    if (timestamp == 0) return '未知';
+    if (timestamp == 0) return context.trLegacy('未知');
 
     final now = DateTime.now();
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
@@ -595,11 +596,11 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
     if (date.year == now.year &&
         date.month == now.month &&
         date.day == now.day) {
-      return '今天 ${DateFormat('HH:mm').format(date)}';
+      return '${context.trLegacy('今天')} ${DateFormat('HH:mm').format(date)}';
     } else if (date.year == now.year &&
         date.month == now.month &&
         date.day == now.day - 1) {
-      return '昨天 ${DateFormat('HH:mm').format(date)}';
+      return '${context.trLegacy('昨天')} ${DateFormat('HH:mm').format(date)}';
     } else {
       return DateFormat('yyyy/MM/dd HH:mm').format(date);
     }
@@ -607,7 +608,7 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
 
   /// 格式化记录时间
   String _formatRecordTime(int timestamp) {
-    if (timestamp == 0) return '未知';
+    if (timestamp == 0) return context.trLegacy('未知');
 
     final now = DateTime.now();
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
@@ -615,11 +616,11 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
     if (date.year == now.year &&
         date.month == now.month &&
         date.day == now.day) {
-      return '今天 ${DateFormat('HH:mm').format(date)}';
+      return '${context.trLegacy('今天')} ${DateFormat('HH:mm').format(date)}';
     } else if (date.year == now.year &&
         date.month == now.month &&
         date.day == now.day - 1) {
-      return '昨天 ${DateFormat('HH:mm').format(date)}';
+      return '${context.trLegacy('昨天')} ${DateFormat('HH:mm').format(date)}';
     } else {
       return DateFormat('yyyy/MM/dd HH:mm').format(date);
     }

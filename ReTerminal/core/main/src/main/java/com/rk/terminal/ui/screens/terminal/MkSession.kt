@@ -17,6 +17,7 @@ import com.rk.settings.Settings
 import com.rk.terminal.App
 import com.rk.terminal.App.Companion.getTempDir
 import com.rk.terminal.BuildConfig
+import com.rk.terminal.runtime.AlpineRepositoryManager
 import com.rk.terminal.ui.screens.settings.WorkingMode
 import com.termux.terminal.TerminalEmulator
 import com.termux.terminal.TerminalSession
@@ -90,6 +91,7 @@ object MkSession {
                 "RISH_APPLICATION_ID=${packageName}",
                 "PKG_PATH=${applicationInfo.sourceDir}",
                 "OMNIBOT_HOST_WORKSPACE=${hostWorkspaceDir.absolutePath}",
+                "OMNIBOT_ALPINE_APK_REPOSITORY_BASE=${AlpineRepositoryManager.selectedBaseUrl()}",
                 "PROOT_TMP_DIR=${getTempDir().child(session_id).also { if (it.exists().not()){it.mkdirs()} }}",
                 "TMPDIR=${getTempDir().absolutePath}"
             )

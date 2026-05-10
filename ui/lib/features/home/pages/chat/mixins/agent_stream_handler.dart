@@ -1,7 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/authorize/authorize_page_args.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/models/chat_message_model.dart';
+import 'package:ui/services/agent_stream_reducer.dart';
+import 'package:ui/services/agent_stream_meta.dart';
 import 'package:ui/services/assists_core_service.dart';
+import 'package:ui/services/voice_playback_coordinator.dart';
 
 enum ThinkingStage {
   thinking(1),
@@ -26,18 +33,23 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
   static const Map<String, String> _executionPermissionNameToId =
       <String, String>{
         '无障碍权限': kAccessibilityPermissionId,
+        'Accessibility': kAccessibilityPermissionId,
         '悬浮窗权限': kOverlayPermissionId,
+        'Overlay': kOverlayPermissionId,
         '应用列表读取权限': kInstalledAppsPermissionId,
+        'Installed Apps Access': kInstalledAppsPermissionId,
+        'Shizuku 权限': kShizukuPermissionId,
+        'Shizuku Permission': kShizukuPermissionId,
         '公共文件访问': kPublicStoragePermissionId,
+        'Public Storage Access': kPublicStoragePermissionId,
       };
 
   String? _lastAgentTaskId;
   String? _activeToolCardId;
   String? _activeThinkingCardId;
   String? _pendingAgentTextTaskId;
-  bool _pendingThinkingRoundSplit = false;
-  int _toolCardSequence = 0;
-  int _thinkingRound = 0;
+  final AgentStreamReducer _agentStreamReducer = const AgentStreamReducer();
+  AgentStreamTaskState? _agentStreamState;
 
   String? get currentDispatchTaskId;
 
@@ -65,6 +77,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     String? thinkingContent,
     bool? isLoading,
     int? stage,
+    Map<String, dynamic>? streamMeta,
   }) {
     createThinkingCard(taskID);
   }
@@ -75,6 +88,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     String? thinkingContent,
     bool? isLoading,
     int? stage,
+    Map<String, dynamic>? streamMeta,
     bool lockCompleted = true,
   }) {
     updateThinkingCard(taskID);
@@ -88,314 +102,396 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
 
   Future<void> persistAgentConversation();
 
-  void handleAgentThinkingStart() {
-    final taskId = currentDispatchTaskId ?? _lastAgentTaskId;
-    if (taskId == null) return;
+  // Agent 文本消息更新后交给具体页面决定是否补充额外结构化内容。
+  void onAgentTextMessageUpdated(String messageId, {bool isFinal = true}) {}
 
-    _lastAgentTaskId = taskId;
-    currentThinkingStage = ThinkingStage.thinking.value;
-    isDeepThinking = true;
+  @protected
+  Set<String> activeAgentStreamTaskIds() {
+    final ids = <String>{};
+    final currentTaskId = currentDispatchTaskId?.trim() ?? '';
+    if (currentTaskId.isNotEmpty) {
+      ids.add(currentTaskId);
+    }
+    final lastTaskId = _lastAgentTaskId?.trim() ?? '';
+    if (isAiResponding && lastTaskId.isNotEmpty) {
+      ids.add(lastTaskId);
+    }
+    final pendingTaskId = _pendingAgentTextTaskId?.trim() ?? '';
+    if (pendingTaskId.isNotEmpty) {
+      ids.add(pendingTaskId);
+    }
+    return ids;
+  }
 
-    if (_thinkingRound == 0) {
-      _thinkingRound = 1;
-      _activeThinkingCardId = _baseThinkingCardId(taskId);
-      final exists = messages.any((msg) => msg.id == _activeThinkingCardId);
+  void handleAgentStreamEvent(AgentStreamEvent event) {
+    final reduceResult = _agentStreamReducer.reduce(_agentStreamState, event);
+    if (!reduceResult.accepted) {
+      return;
+    }
+    final thinkingCardToFinalize = _resolveThinkingCardToFinalize(
+      reduceResult,
+      event,
+    );
+    _agentStreamState = reduceResult.nextState;
+    _lastAgentTaskId = event.taskId;
+    _activeThinkingCardId = reduceResult.nextState.activeThinkingEntryId;
+    currentThinkingStage = reduceResult.nextState.thinkingStage;
+    isDeepThinking = reduceResult.nextState.isDeepThinking;
+    _pendingAgentTextTaskId =
+        event.kind == AgentStreamEventKind.textSnapshot && !event.isFinal
+        ? event.taskId
+        : null;
+
+    switch (event.kind) {
+      case AgentStreamEventKind.thinkingStarted:
+      case AgentStreamEventKind.thinkingSnapshot:
+        _applyAgentThinkingStreamEvent(
+          event,
+          completedThinkingCardId: thinkingCardToFinalize,
+        );
+        return;
+      case AgentStreamEventKind.textSnapshot:
+        _applyAgentTextStreamEvent(
+          event,
+          completedThinkingCardId: thinkingCardToFinalize,
+        );
+        return;
+      case AgentStreamEventKind.toolStarted:
+      case AgentStreamEventKind.toolProgress:
+      case AgentStreamEventKind.toolCompleted:
+        _applyAgentToolStreamEvent(
+          event,
+          completedThinkingCardId: thinkingCardToFinalize,
+        );
+        return;
+      case AgentStreamEventKind.clarifyRequired:
+        _applyAgentClarifyStreamEvent(
+          event,
+          completedThinkingCardId: thinkingCardToFinalize,
+        );
+        return;
+      case AgentStreamEventKind.completed:
+        _applyAgentCompletedStreamEvent(
+          completedThinkingCardId: thinkingCardToFinalize,
+        );
+        return;
+      case AgentStreamEventKind.error:
+        _applyAgentErrorStreamEvent(
+          event,
+          completedThinkingCardId: thinkingCardToFinalize,
+        );
+        return;
+      case AgentStreamEventKind.permissionRequired:
+        _applyAgentPermissionStreamEvent(
+          event,
+          completedThinkingCardId: thinkingCardToFinalize,
+        );
+        return;
+    }
+  }
+
+  void _applyAgentThinkingStreamEvent(
+    AgentStreamEvent event, {
+    String? completedThinkingCardId,
+  }) {
+    final cardId = (event.entryId ?? '').trim();
+    if (cardId.isEmpty) return;
+    if (event.thinking.isNotEmpty) {
+      deepThinkingContent = event.thinking;
+    }
+    setState(() {
+      _finalizeThinkingCardInMessages(event.taskId, completedThinkingCardId);
+      final exists = messages.any((msg) => msg.id == cardId);
       if (exists) {
         updateThinkingCardForAgent(
-          taskId,
-          cardId: _activeThinkingCardId,
+          event.taskId,
+          cardId: cardId,
+          thinkingContent: event.thinking.isNotEmpty ? event.thinking : null,
           isLoading: true,
-          stage: ThinkingStage.thinking.value,
+          stage: event.stage <= 0 ? ThinkingStage.thinking.value : event.stage,
+          streamMeta: _streamMetaFromEvent(event),
+          lockCompleted: false,
         );
       } else {
         createThinkingCardForAgent(
-          taskId,
-          cardId: _activeThinkingCardId,
+          event.taskId,
+          cardId: cardId,
+          thinkingContent: event.thinking,
           isLoading: true,
-          stage: ThinkingStage.thinking.value,
+          stage: event.stage <= 0 ? ThinkingStage.thinking.value : event.stage,
+          streamMeta: _streamMetaFromEvent(event),
         );
       }
-      return;
-    }
-
-    _pendingThinkingRoundSplit = true;
+      isAiResponding = true;
+    });
+    _persistAgentConversationSafely();
   }
 
-  void handleAgentThinkingUpdate(String thinking) {
-    final taskId = currentDispatchTaskId ?? _lastAgentTaskId;
-    if (taskId == null) return;
-    if (_shouldIgnoreRegressiveSnapshot(deepThinkingContent, thinking)) {
-      return;
-    }
-
-    if (_pendingThinkingRoundSplit) {
-      if (thinking.trim().isEmpty) {
-        return;
-      }
-
-      final previousThinkingCardId = _resolveThinkingCardId(taskId);
-      if (previousThinkingCardId != null) {
-        updateThinkingCardForAgent(
-          taskId,
-          cardId: previousThinkingCardId,
-          isLoading: false,
-          stage: ThinkingStage.complete.value,
-          lockCompleted: false,
-        );
-      }
-
-      _thinkingRound += 1;
-      _activeThinkingCardId = '$taskId-thinking-$_thinkingRound';
-      createThinkingCardForAgent(
-        taskId,
-        cardId: _activeThinkingCardId,
-        thinkingContent: thinking,
-        isLoading: true,
-        stage: ThinkingStage.thinking.value,
-      );
-      deepThinkingContent = thinking;
-      _pendingThinkingRoundSplit = false;
-      return;
-    }
-
-    deepThinkingContent = thinking;
-    final thinkingCardId = _resolveThinkingCardId(taskId);
-    if (thinkingCardId == null) return;
-
-    updateThinkingCardForAgent(
-      taskId,
-      cardId: thinkingCardId,
-      thinkingContent: thinking,
-      isLoading: true,
-      stage: currentThinkingStage,
-    );
-  }
-
-  void handleAgentToolCallStart(AgentToolEventData event) {
-    final taskId = currentDispatchTaskId ?? _lastAgentTaskId;
-    if (taskId == null) return;
-
-    _finalizePendingAgentTextIfNeeded(taskId);
-    currentThinkingStage = ThinkingStage.toolCall.value;
-    _toolCardSequence += 1;
-    _activeToolCardId = '$taskId-tool-$_toolCardSequence';
-    _upsertToolCard(
-      taskId: taskId,
-      cardId: _activeToolCardId!,
-      event: event,
-      status: 'running',
-      summary: event.summary.isNotEmpty ? event.summary : '正在调用工具',
-      progress: event.progress,
-      resultPreviewJson: event.resultPreviewJson,
-      rawResultJson: event.rawResultJson,
-    );
-    final thinkingCardId = _resolveThinkingCardId(taskId);
-    if (thinkingCardId != null) {
-      updateThinkingCardForAgent(
-        taskId,
-        cardId: thinkingCardId,
-        isLoading: isDeepThinking,
-        stage: ThinkingStage.toolCall.value,
-      );
-    }
-  }
-
-  void handleAgentToolCallProgress(AgentToolEventData event) {
-    final taskId = currentDispatchTaskId ?? _lastAgentTaskId;
-    if (taskId == null) return;
-
-    if (_activeToolCardId != null) {
-      _upsertToolCard(
-        taskId: taskId,
-        cardId: _activeToolCardId!,
-        event: event,
-        status: 'running',
-        summary: event.summary.isNotEmpty ? event.summary : '正在调用工具',
-        progress: event.progress,
-        resultPreviewJson: event.resultPreviewJson,
-        rawResultJson: event.rawResultJson,
-      );
-    }
-  }
-
-  void handleAgentToolCallComplete(AgentToolEventData event) {
-    final taskId = currentDispatchTaskId ?? _lastAgentTaskId;
-    if (taskId == null || _activeToolCardId == null) return;
-
-    _upsertToolCard(
-      taskId: taskId,
-      cardId: _activeToolCardId!,
-      event: event,
-      status: _resolveToolStatus(event),
-      summary: event.summary,
-      progress: event.progress,
-      resultPreviewJson: event.resultPreviewJson,
-      rawResultJson: event.rawResultJson,
-    );
-    _activeToolCardId = null;
-  }
-
-  void handleAgentChatMessage(
-    String message, {
-    bool isFinal = true,
-    double? prefillTokensPerSecond,
-    double? decodeTokensPerSecond,
+  void _applyAgentTextStreamEvent(
+    AgentStreamEvent event, {
+    String? completedThinkingCardId,
   }) {
-    final taskId = currentDispatchTaskId ?? _lastAgentTaskId;
-    if (taskId == null) return;
+    final messageId = (event.entryId ?? '').trim();
+    final text = event.text.trim();
+    if (messageId.isEmpty || text.isEmpty) return;
+    final streamMeta = ensureAgentStreamMessageMeta(
+      _streamMetaFromEvent(event),
+      entryId: messageId,
+      isFinal: event.isFinal,
+    );
 
-    final aiTextMessageId =
-        _resolvePendingAgentTextMessageId(taskId) ??
-        _nextAgentTextMessageId(taskId);
     setState(() {
-      final index = messages.indexWhere((msg) => msg.id == aiTextMessageId);
+      _finalizeThinkingCardInMessages(event.taskId, completedThinkingCardId);
+      final index = messages.indexWhere((msg) => msg.id == messageId);
       if (index == -1) {
         messages.insert(
           0,
           ChatMessageModel(
-            id: aiTextMessageId,
+            id: messageId,
             type: 1,
             user: 2,
             content: {
-              'text': message,
-              'id': aiTextMessageId,
-              if (isFinal && prefillTokensPerSecond != null)
-                'prefillTokensPerSecond': prefillTokensPerSecond,
-              if (isFinal && decodeTokensPerSecond != null)
-                'decodeTokensPerSecond': decodeTokensPerSecond,
+              'text': text,
+              'id': messageId,
+              if (event.isFinal && event.prefillTokensPerSecond != null)
+                'prefillTokensPerSecond': event.prefillTokensPerSecond,
+              if (event.isFinal && event.decodeTokensPerSecond != null)
+                'decodeTokensPerSecond': event.decodeTokensPerSecond,
             },
+            streamMeta: streamMeta,
           ),
         );
       } else {
         final existing = messages[index];
         final content = Map<String, dynamic>.from(existing.content ?? {});
-        final currentText = (content['text'] ?? '').toString();
-        if (!_shouldIgnoreRegressiveSnapshot(currentText, message)) {
-          content['text'] = message;
-          if (isFinal && prefillTokensPerSecond != null) {
-            content['prefillTokensPerSecond'] = prefillTokensPerSecond;
-          }
-          if (isFinal && decodeTokensPerSecond != null) {
-            content['decodeTokensPerSecond'] = decodeTokensPerSecond;
-          }
-          messages[index] = existing.copyWith(content: content);
+        content['text'] = text;
+        if (event.isFinal && event.prefillTokensPerSecond != null) {
+          content['prefillTokensPerSecond'] = event.prefillTokensPerSecond;
         }
+        if (event.isFinal && event.decodeTokensPerSecond != null) {
+          content['decodeTokensPerSecond'] = event.decodeTokensPerSecond;
+        }
+        messages[index] = existing.copyWith(
+          content: content,
+          streamMeta: streamMeta,
+        );
       }
-      if (isFinal) {
-        isAiResponding = false;
-      }
+      isAiResponding = true;
     });
-    _pendingAgentTextTaskId = isFinal ? null : taskId;
-    if (isFinal && currentDispatchTaskId == null) {
-      _lastAgentTaskId = null;
-    }
-    if (isFinal) {
-      _persistAgentConversationSafely();
-    }
+    onAgentTextMessageUpdated(messageId, isFinal: event.isFinal);
+    unawaited(
+      VoicePlaybackCoordinator.instance.onAssistantMessageUpdated(
+        messageId: messageId,
+        text: text,
+        isFinal: event.isFinal,
+      ),
+    );
+    _persistAgentConversationSafely();
   }
 
-  bool _shouldIgnoreRegressiveSnapshot(String current, String incoming) {
-    if (current.isEmpty || incoming.isEmpty) {
-      return false;
-    }
-    return incoming.length < current.length && current.startsWith(incoming);
-  }
+  void _applyAgentToolStreamEvent(
+    AgentStreamEvent event, {
+    String? completedThinkingCardId,
+  }) {
+    final taskId = event.taskId;
+    final cardId = (event.entryId ?? '').trim();
+    if (cardId.isEmpty) return;
 
-  void handleAgentClarifyRequired(String question, List<String> missingFields) {
-    if (currentDispatchTaskId == null) return;
-
-    currentThinkingStage = ThinkingStage.complete.value;
-    isDeepThinking = false;
-    final taskId = currentDispatchTaskId!;
-    final thinkingCardId = _resolveThinkingCardId(taskId);
-    if (thinkingCardId != null) {
-      updateThinkingCardForAgent(
-        taskId,
-        cardId: thinkingCardId,
-        isLoading: false,
-        stage: ThinkingStage.complete.value,
+    final toolEvent = AgentToolEventData.fromMap(event.raw);
+    _activeToolCardId = event.kind == AgentStreamEventKind.toolCompleted
+        ? null
+        : cardId;
+    setState(() {
+      isAiResponding = true;
+      _finalizeThinkingCardInMessages(taskId, completedThinkingCardId);
+      _upsertToolCard(
+        taskId: taskId,
+        cardId: cardId,
+        event: toolEvent,
+        status: event.kind == AgentStreamEventKind.toolCompleted
+            ? _resolveToolStatus(toolEvent)
+            : 'running',
+        summary: toolEvent.summary.isNotEmpty
+            ? toolEvent.summary
+            : (LegacyTextLocalizer.isEnglish ? 'Calling tool' : '正在调用工具'),
+        progress: toolEvent.progress,
+        resultPreviewJson: toolEvent.resultPreviewJson,
+        rawResultJson: toolEvent.rawResultJson,
+        streamMeta: _streamMetaFromEvent(event),
       );
-    }
-
-    handleExecutableTaskClarify(taskId, {
-      'response': question,
-      'is_task_but_incomplete': true,
-      'missing_fields': missingFields,
     });
     _persistAgentConversationSafely();
   }
 
-  void handleAgentComplete(
-    bool success, {
-    String outputKind = 'none',
-    bool hasUserVisibleOutput = false,
+  void _applyAgentClarifyStreamEvent(
+    AgentStreamEvent event, {
+    String? completedThinkingCardId,
   }) {
-    final taskId = currentDispatchTaskId ?? _lastAgentTaskId;
-    if (taskId == null) return;
-
-    currentThinkingStage = ThinkingStage.complete.value;
-    isDeepThinking = false;
-    final thinkingCardId = _resolveThinkingCardId(taskId);
-    if (thinkingCardId != null) {
-      updateThinkingCardForAgent(
-        taskId,
-        cardId: thinkingCardId,
-        isLoading: false,
-        stage: ThinkingStage.complete.value,
-      );
-    }
-
-    if (success) {
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (!mounted) return;
-
-        final normalizedOutputKind = outputKind.trim().toLowerCase();
-        final hasVisibleOutput = messages.any((msg) {
-          if (!msg.id.startsWith(taskId)) return false;
-          if (msg.type == 1 && msg.user == 2) return true;
-          final cardType = msg.cardData?['type'] as String?;
-          return cardType == 'agent_tool_summary' ||
-              cardType == 'permission_section';
-        });
-        final shouldInjectFallback =
-            normalizedOutputKind == 'none' &&
-            !hasUserVisibleOutput &&
-            !hasVisibleOutput;
-        if (shouldInjectFallback) {
-          final fallbackId = _nextAgentTextMessageId(taskId);
-          final index = messages.indexWhere((msg) => msg.id == fallbackId);
-          setState(() {
-            if (index == -1) {
-              messages.insert(
-                0,
-                ChatMessageModel(
-                  id: fallbackId,
-                  type: 1,
-                  user: 2,
-                  content: {'text': '我已完成思考，但暂时无法生成回复，请重试。', 'id': fallbackId},
-                ),
-              );
-            }
-            isAiResponding = false;
-          });
-        } else {
-          setState(() {
-            isAiResponding = false;
-          });
-        }
-        clearAgentStreamSessionState();
-        resetDispatchState();
-        _persistAgentConversationSafely();
-      });
-      return;
-    }
-
+    final text = event.question.trim().isNotEmpty
+        ? event.question.trim()
+        : event.text.trim();
+    final messageId = (event.entryId ?? '').trim();
+    final streamMeta = ensureAgentStreamMessageMeta(
+      _streamMetaFromEvent(event),
+      entryId: messageId,
+      isFinal: true,
+    );
     setState(() {
+      currentThinkingStage = ThinkingStage.complete.value;
+      isDeepThinking = false;
+      _finalizeThinkingCardInMessages(event.taskId, completedThinkingCardId);
+      if (messageId.isNotEmpty && text.isNotEmpty) {
+        final index = messages.indexWhere((msg) => msg.id == messageId);
+        if (index == -1) {
+          messages.insert(
+            0,
+            ChatMessageModel(
+              id: messageId,
+              type: 1,
+              user: 2,
+              content: {'text': text, 'id': messageId},
+              streamMeta: streamMeta,
+            ),
+          );
+        } else {
+          messages[index] = messages[index].copyWith(
+            content: {'text': text, 'id': messageId},
+            streamMeta: streamMeta,
+          );
+        }
+      }
       isAiResponding = false;
     });
     clearAgentStreamSessionState();
     resetDispatchState();
     _persistAgentConversationSafely();
+  }
+
+  void _applyAgentCompletedStreamEvent({String? completedThinkingCardId}) {
+    setState(() {
+      currentThinkingStage = ThinkingStage.complete.value;
+      isDeepThinking = false;
+      _finalizeThinkingCardInMessages(
+        _lastAgentTaskId ?? '',
+        completedThinkingCardId,
+      );
+      isAiResponding = false;
+    });
+    clearAgentStreamSessionState();
+    resetDispatchState();
+    _persistAgentConversationSafely();
+  }
+
+  void _applyAgentErrorStreamEvent(
+    AgentStreamEvent event, {
+    String? completedThinkingCardId,
+  }) {
+    final entryId = (event.entryId ?? '').trim();
+    final shouldMarkError = event.raw['persistAsError'] == true;
+    setState(() {
+      currentThinkingStage = ThinkingStage.complete.value;
+      isDeepThinking = false;
+      _finalizeThinkingCardInMessages(event.taskId, completedThinkingCardId);
+      if (shouldMarkError && entryId.isNotEmpty) {
+        final index = messages.indexWhere((msg) => msg.id == entryId);
+        if (index != -1) {
+          messages[index] = messages[index].copyWith(isError: true);
+        }
+      }
+      isAiResponding = false;
+    });
+    clearAgentStreamSessionState();
+    resetDispatchState();
+    _persistAgentConversationSafely();
+  }
+
+  void _applyAgentPermissionStreamEvent(
+    AgentStreamEvent event, {
+    String? completedThinkingCardId,
+  }) {
+    final taskId = event.taskId;
+    final messageId = (event.entryId ?? '').trim();
+    final text = event.text.trim();
+    final permissionCardId =
+        (event.raw['permissionCardId'] ?? '$taskId-permission').toString();
+    final executionPermissionIds = _resolveExecutionPermissionIds(
+      event.missingPermissions,
+    );
+    final replyStreamMeta = ensureAgentStreamMessageMeta(
+      _streamMetaFromEvent(event),
+      entryId: messageId,
+      isFinal: true,
+    );
+    final cardStreamMeta = ensureAgentStreamMessageMeta(
+      _streamMetaFromEvent(event),
+      entryId: permissionCardId,
+      isFinal: true,
+    );
+    setState(() {
+      currentThinkingStage = ThinkingStage.complete.value;
+      isDeepThinking = false;
+      _finalizeThinkingCardInMessages(taskId, completedThinkingCardId);
+      if (messageId.isNotEmpty && text.isNotEmpty) {
+        final index = messages.indexWhere((msg) => msg.id == messageId);
+        if (index == -1) {
+          messages.insert(
+            0,
+            ChatMessageModel(
+              id: messageId,
+              type: 1,
+              user: 2,
+              content: {'text': text, 'id': messageId},
+              streamMeta: replyStreamMeta,
+            ),
+          );
+        } else {
+          messages[index] = messages[index].copyWith(
+            content: {'text': text, 'id': messageId},
+            streamMeta: replyStreamMeta,
+          );
+        }
+      }
+      if (executionPermissionIds.isNotEmpty) {
+        final cardIndex = messages.indexWhere(
+          (msg) => msg.id == permissionCardId,
+        );
+        final card = ChatMessageModel(
+          id: permissionCardId,
+          type: 2,
+          user: 3,
+          content: {
+            'cardData': {
+              'type': 'permission_section',
+              'requiredPermissionIds': executionPermissionIds,
+            },
+            'id': permissionCardId,
+          },
+          streamMeta: cardStreamMeta,
+        );
+        if (cardIndex == -1) {
+          messages.insert(0, card);
+        } else {
+          messages[cardIndex] = messages[cardIndex].copyWith(
+            content: {
+              'cardData': {
+                'type': 'permission_section',
+                'requiredPermissionIds': executionPermissionIds,
+              },
+              'id': permissionCardId,
+            },
+            streamMeta: cardStreamMeta,
+          );
+        }
+      }
+      isAiResponding = false;
+    });
+    clearAgentStreamSessionState();
+    resetDispatchState();
+    _persistAgentConversationSafely();
+  }
+
+  Map<String, dynamic> _streamMetaFromEvent(AgentStreamEvent event) {
+    return buildAgentStreamMetaFromEvent(event);
   }
 
   void handleAgentError(String error) {
@@ -416,14 +512,22 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       );
     }
 
-    final message = error.trim().isEmpty
-        ? '抱歉，执行失败，请稍后重试。'
-        : '抱歉，执行失败：${error.trim()}';
     final textId =
         _resolvePendingAgentTextMessageId(taskId) ??
         _nextAgentTextMessageId(taskId);
+    final index = messages.indexWhere((msg) => msg.id == textId);
+    final existingText = index == -1
+        ? ''
+        : (messages[index].content?['text'] as String? ?? '');
+    final preservedText = existingText.trim();
+    final fallbackMessage = error.trim().isEmpty
+        ? (LegacyTextLocalizer.isEnglish
+              ? "I can't generate a reply right now. Please try again."
+              : '暂时无法生成回复，请重试。')
+        : (LegacyTextLocalizer.isEnglish
+              ? "I can't generate a reply right now. Please try again. ${error.trim()}"
+              : '暂时无法生成回复，请重试。${error.trim()}');
     setState(() {
-      final index = messages.indexWhere((msg) => msg.id == textId);
       if (index == -1) {
         messages.insert(
           0,
@@ -431,83 +535,36 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
             id: textId,
             type: 1,
             user: 2,
-            content: {'text': message, 'id': textId},
-            isError: true,
+            content: {
+              'text': preservedText.isNotEmpty
+                  ? preservedText
+                  : fallbackMessage,
+              'id': textId,
+            },
+            isError: preservedText.isEmpty,
           ),
         );
       } else {
         final existing = messages[index];
         messages[index] = existing.copyWith(
-          content: {'text': message, 'id': textId},
-          isError: true,
+          content: {
+            'text': preservedText.isNotEmpty ? preservedText : fallbackMessage,
+            'id': textId,
+          },
+          isError: preservedText.isEmpty,
         );
       }
       isAiResponding = false;
     });
     _pendingAgentTextTaskId = null;
-
-    clearAgentStreamSessionState();
-    resetDispatchState();
-    _persistAgentConversationSafely();
-  }
-
-  void handleAgentPermissionRequired(List<String> missing) {
-    if (currentDispatchTaskId == null) return;
-
-    currentThinkingStage = ThinkingStage.complete.value;
-    isDeepThinking = false;
-    final taskId = currentDispatchTaskId!;
-    final thinkingCardId = _resolveThinkingCardId(taskId);
-    if (thinkingCardId != null) {
-      updateThinkingCardForAgent(
-        taskId,
-        cardId: thinkingCardId,
-        isLoading: false,
-        stage: ThinkingStage.complete.value,
-      );
-    }
-
-    final executionPermissionIds = _resolveExecutionPermissionIds(missing);
-    final shouldShowPermissionCard =
-        executionPermissionIds.isNotEmpty &&
-        executionPermissionIds.length == missing.length;
-    final names = missing.join('、');
-    final message = names.isEmpty ? '执行任务前需要先开启权限' : '执行任务前，请先开启：$names';
-
-    interruptActiveToolCard();
-
-    final textMessageId = _nextAgentTextMessageId(taskId);
-    final cardMessageId = '$taskId-permission';
-
-    setState(() {
-      messages.insert(
-        0,
-        ChatMessageModel(
-          id: textMessageId,
-          type: 1,
-          user: 2,
-          content: {'text': message, 'id': textMessageId},
+    if (preservedText.isNotEmpty) {
+      unawaited(
+        VoicePlaybackCoordinator.instance.onAssistantMessageCompleted(
+          messageId: textId,
+          text: preservedText,
         ),
       );
-      if (shouldShowPermissionCard) {
-        messages.insert(
-          0,
-          ChatMessageModel(
-            id: cardMessageId,
-            type: 2,
-            user: 3,
-            content: {
-              'cardData': {
-                'type': 'permission_section',
-                'requiredPermissionIds': executionPermissionIds,
-              },
-              'id': cardMessageId,
-            },
-          ),
-        );
-      }
-      isAiResponding = false;
-    });
+    }
 
     clearAgentStreamSessionState();
     resetDispatchState();
@@ -525,6 +582,61 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
 
   String _baseThinkingCardId(String taskId) => '$taskId-thinking';
   String _agentTextBaseId(String taskId) => '$taskId-text';
+
+  String? _resolveThinkingCardToFinalize(
+    AgentStreamReduceResult reduceResult,
+    AgentStreamEvent event,
+  ) {
+    switch (event.kind) {
+      case AgentStreamEventKind.thinkingStarted:
+      case AgentStreamEventKind.thinkingSnapshot:
+        return reduceResult.isNewThinkingEntry
+            ? reduceResult.previousThinkingEntryId
+            : null;
+      case AgentStreamEventKind.textSnapshot:
+      case AgentStreamEventKind.toolStarted:
+      case AgentStreamEventKind.toolProgress:
+      case AgentStreamEventKind.toolCompleted:
+      case AgentStreamEventKind.completed:
+      case AgentStreamEventKind.error:
+      case AgentStreamEventKind.permissionRequired:
+      case AgentStreamEventKind.clarifyRequired:
+        return reduceResult.previousThinkingEntryId;
+    }
+  }
+
+  void _finalizeThinkingCardInMessages(String taskId, String? cardId) {
+    final resolvedCardId = (cardId ?? '').trim();
+    if (taskId.trim().isEmpty || resolvedCardId.isEmpty) {
+      return;
+    }
+    final index = messages.indexWhere((msg) => msg.id == resolvedCardId);
+    if (index == -1) {
+      return;
+    }
+
+    final existing = messages[index];
+    final content = Map<String, dynamic>.from(existing.content ?? const {});
+    final cardData = Map<String, dynamic>.from(content['cardData'] ?? const {});
+    final currentStageRaw = cardData['stage'];
+    final currentStage = currentStageRaw is num
+        ? currentStageRaw.toInt()
+        : int.tryParse(currentStageRaw?.toString() ?? '');
+    final isLoading = cardData['isLoading'] == true;
+    if (!isLoading && currentStage == ThinkingStage.complete.value) {
+      return;
+    }
+
+    cardData['thinkingContent'] =
+        cardData['thinkingContent'] ?? deepThinkingContent;
+    cardData['isLoading'] = false;
+    cardData['stage'] = ThinkingStage.complete.value;
+    cardData['taskID'] = taskId;
+    cardData['cardId'] = resolvedCardId;
+    cardData['endTime'] ??= DateTime.now().millisecondsSinceEpoch;
+    content['cardData'] = cardData;
+    messages[index] = existing.copyWith(content: content);
+  }
 
   String? _resolveThinkingCardId(String taskId) {
     if (_activeThinkingCardId != null) {
@@ -578,17 +690,12 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     return int.tryParse(messageId.substring(baseId.length + 1)) ?? 0;
   }
 
-  void _resetThinkingRoundState() {
-    _activeThinkingCardId = null;
-    _thinkingRound = 0;
-    _pendingThinkingRoundSplit = false;
-  }
-
   void clearAgentStreamSessionState() {
     _lastAgentTaskId = null;
     _pendingAgentTextTaskId = null;
     _activeToolCardId = null;
-    _resetThinkingRoundState();
+    _agentStreamState = null;
+    _activeThinkingCardId = null;
   }
 
   void interruptActiveToolCard({String? summary}) {
@@ -618,22 +725,6 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     _activeToolCardId = null;
   }
 
-  void _finalizePendingAgentTextIfNeeded(String taskId) {
-    final pendingTextMessageId = _resolvePendingAgentTextMessageId(taskId);
-    if (pendingTextMessageId == null) {
-      _pendingAgentTextTaskId = null;
-      return;
-    }
-    setState(() {
-      messages.removeWhere(
-        (msg) =>
-            msg.id == pendingTextMessageId &&
-            (msg.text?.trim().isEmpty ?? true),
-      );
-    });
-    _pendingAgentTextTaskId = null;
-  }
-
   void _persistAgentConversationSafely() {
     Future<void>.microtask(() async {
       try {
@@ -653,6 +744,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     required String progress,
     required String resultPreviewJson,
     required String rawResultJson,
+    Map<String, dynamic>? streamMeta,
   }) {
     setState(() {
       final index = messages.indexWhere((msg) => msg.id == cardId);
@@ -714,10 +806,24 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       };
 
       if (index == -1) {
-        messages.insert(0, ChatMessageModel.cardMessage(cardData, id: cardId));
+        messages.insert(
+          0,
+          ChatMessageModel.cardMessage(
+            cardData,
+            id: cardId,
+            streamMeta: ensureAgentStreamMessageMeta(
+              streamMeta,
+              entryId: cardId,
+            ),
+          ),
+        );
       } else {
         messages[index] = messages[index].copyWith(
           content: {'cardData': cardData, 'id': cardId},
+          streamMeta: ensureAgentStreamMessageMeta(
+            streamMeta ?? messages[index].streamMeta,
+            entryId: cardId,
+          ),
         );
       }
     });

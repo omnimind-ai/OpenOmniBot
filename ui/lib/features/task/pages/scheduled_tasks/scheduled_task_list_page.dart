@@ -14,6 +14,7 @@ import 'package:ui/utils/ui.dart';
 import 'package:ui/utils/cache_util.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 import 'package:ui/widgets/image/cached_image.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 
 /// 定时任务列表页面
 class ScheduledTaskListPage extends StatefulWidget {
@@ -186,20 +187,20 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
                 ? BorderSide(color: palette.borderSubtle)
                 : BorderSide.none,
           ),
-          title: Text('删除定时任务', style: TextStyle(color: palette.textPrimary)),
+          title: Text(LegacyTextLocalizer.isEnglish ? 'Delete scheduled task' : '删除定时任务', style: TextStyle(color: palette.textPrimary)),
           content: Text(
-            '确定要删除"${task.title}"的定时任务吗？',
+            LegacyTextLocalizer.isEnglish ? 'Are you sure you want to delete the scheduled task "${task.title}"?' : '确定要删除"${task.title}"的定时任务吗？',
             style: TextStyle(color: palette.textSecondary),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: Text('取消', style: TextStyle(color: palette.textSecondary)),
+              child: Text(LegacyTextLocalizer.localize('取消'), style: TextStyle(color: palette.textSecondary)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
               style: TextButton.styleFrom(foregroundColor: AppColors.alertRed),
-              child: const Text('删除'),
+              child: Text(LegacyTextLocalizer.isEnglish ? 'Delete' : '删除'),
             ),
           ],
         );
@@ -214,7 +215,7 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('定时任务已删除'),
+            content: Text(LegacyTextLocalizer.isEnglish ? 'Scheduled task deleted' : '定时任务已删除'),
             behavior: SnackBarBehavior.floating,
             backgroundColor: context.isDarkTheme
                 ? context.omniPalette.surfaceElevated
@@ -246,20 +247,20 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
                 ? BorderSide(color: palette.borderSubtle)
                 : BorderSide.none,
           ),
-          title: Text('删除闹钟', style: TextStyle(color: palette.textPrimary)),
+          title: Text(LegacyTextLocalizer.isEnglish ? 'Delete alarm' : '删除闹钟', style: TextStyle(color: palette.textPrimary)),
           content: Text(
-            '确定要删除"${alarm.title}"吗？',
+            LegacyTextLocalizer.isEnglish ? 'Are you sure you want to delete "${alarm.title}"?' : '确定要删除"${alarm.title}"吗？',
             style: TextStyle(color: palette.textSecondary),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: Text('取消', style: TextStyle(color: palette.textSecondary)),
+              child: Text(LegacyTextLocalizer.localize('取消'), style: TextStyle(color: palette.textSecondary)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
               style: TextButton.styleFrom(foregroundColor: AppColors.alertRed),
-              child: const Text('删除'),
+              child: Text(LegacyTextLocalizer.isEnglish ? 'Delete' : '删除'),
             ),
           ],
         );
@@ -275,11 +276,11 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
 
     if (deleted) {
       await _reloadExactAlarmsOnly();
-      showToast('闹钟已删除', type: ToastType.success);
+      showToast(LegacyTextLocalizer.isEnglish ? 'Alarm deleted' : '闹钟已删除', type: ToastType.success);
       return;
     }
 
-    showToast('删除闹钟失败，请稍后重试', type: ToastType.error);
+    showToast(LegacyTextLocalizer.isEnglish ? 'Failed to delete alarm, please try again later' : '删除闹钟失败，请稍后重试', type: ToastType.error);
   }
 
   void _showSuccessOverlay(ScheduledTask task) {
@@ -356,7 +357,7 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '定时任务已更新',
+                          LegacyTextLocalizer.isEnglish ? 'Scheduled task updated' : '定时任务已更新',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -367,7 +368,7 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '将在 ${task.getDisplayTimeText()} 执行',
+                          LegacyTextLocalizer.isEnglish ? 'Will execute at ${task.getDisplayTimeText()}' : '将在 ${task.getDisplayTimeText()} 执行',
                           style: TextStyle(
                             fontSize: 12,
                             color: rootContext.isDarkTheme
@@ -426,7 +427,7 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
       backgroundColor: context.isDarkTheme
           ? palette.pageBackground
           : AppColors.background,
-      appBar: const CommonAppBar(title: '定时', primary: true),
+      appBar: CommonAppBar(title: LegacyTextLocalizer.isEnglish ? 'Scheduled' : '定时', primary: true),
       body: Column(
         children: [
           const SizedBox(height: 8),
@@ -538,8 +539,8 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
                 ),
                 Row(
                   children: [
-                    _buildTabButton(label: '定时任务', tabIndex: _scheduleTab),
-                    _buildTabButton(label: '闹钟列表', tabIndex: _alarmTab),
+                    _buildTabButton(label: LegacyTextLocalizer.isEnglish ? 'Scheduled Tasks' : '定时任务', tabIndex: _scheduleTab),
+                    _buildTabButton(label: LegacyTextLocalizer.isEnglish ? 'Alarms' : '闹钟列表', tabIndex: _alarmTab),
                   ],
                 ),
               ],
@@ -621,7 +622,7 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
           ),
           const SizedBox(height: 16),
           Text(
-            '暂无定时任务',
+            LegacyTextLocalizer.isEnglish ? 'No scheduled tasks' : '暂无定时任务',
             style: TextStyle(
               fontSize: 16,
               color: context.isDarkTheme
@@ -631,7 +632,7 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            '在任务记录中点击闹钟图标添加',
+            LegacyTextLocalizer.isEnglish ? 'Tap the alarm icon in task records to add' : '在任务记录中点击闹钟图标添加',
             style: TextStyle(
               fontSize: 14,
               color: context.isDarkTheme
@@ -659,7 +660,7 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
           ),
           const SizedBox(height: 16),
           Text(
-            '暂无应用内闹钟',
+            LegacyTextLocalizer.isEnglish ? 'No in-app alarms' : '暂无应用内闹钟',
             style: TextStyle(
               fontSize: 16,
               color: context.isDarkTheme
@@ -669,7 +670,7 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            '通过统一 Agent 创建 exact_alarm 后会显示在这里',
+            LegacyTextLocalizer.isEnglish ? 'Alarms created via Agent will appear here' : '通过统一 Agent 创建 exact_alarm 后会显示在这里',
             style: TextStyle(
               fontSize: 14,
               color: context.isDarkTheme
@@ -913,7 +914,9 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
                             !task.notificationEnabled) ...[
                           const SizedBox(width: 6),
                           Text(
-                            '通知关闭',
+                            Localizations.localeOf(context).languageCode == 'en'
+                                ? 'Notifications off'
+                                : '通知关闭',
                             style: TextStyle(
                               fontSize: 10,
                               color: secondaryTextColor,
@@ -982,7 +985,7 @@ class _ScheduledTaskListPageState extends State<ScheduledTaskListPage> {
                                   : null,
                             ),
                             child: Text(
-                              '每日',
+                              LegacyTextLocalizer.localize('每日'),
                               style: TextStyle(
                                 fontSize: 10,
                                 color: accentColor,

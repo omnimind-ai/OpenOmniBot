@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,8 +31,9 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     nativeMessages = <String, List<Map<String, dynamic>>>{};
     messenger.setMockMethodCallHandler(channel, (call) async {
-      final args =
-          Map<String, dynamic>.from((call.arguments as Map?) ?? const {});
+      final args = Map<String, dynamic>.from(
+        (call.arguments as Map?) ?? const {},
+      );
       final conversationId = (args['conversationId'] as num?)?.toInt() ?? 0;
       final mode = ConversationMode.fromStorageValue(args['mode'] as String?);
       final key = threadKey(conversationId, mode);
@@ -40,6 +43,16 @@ void main() {
           return 'SUCCESS';
         case 'getConversationMessages':
           return nativeMessages[key] ?? <Map<String, dynamic>>[];
+        case 'getConversationMessagesPaged':
+          final allMessages = nativeMessages[key] ?? <Map<String, dynamic>>[];
+          final limit = (args['limit'] as num?)?.toInt() ?? 20;
+          final offset = (args['offset'] as num?)?.toInt() ?? 0;
+          final start = offset.clamp(0, allMessages.length).toInt();
+          final end = (start + limit).clamp(0, allMessages.length).toInt();
+          return <String, dynamic>{
+            'messages': allMessages.sublist(start, end),
+            'hasMore': end < allMessages.length,
+          };
         case 'clearConversationMessages':
           nativeMessages.remove(key);
           return 'SUCCESS';
@@ -174,31 +187,194 @@ void main() {
     },
   );
 
-  test('stores conversation messages independently per mode through native', () async {
-    await ConversationHistoryService.saveConversationMessages(
-      1,
-      <ChatMessageModel>[ChatMessageModel.userMessage('normal thread')],
+  test(
+    'stores conversation messages independently per mode through native',
+    () async {
+      await ConversationHistoryService.saveConversationMessages(
+        1,
+        <ChatMessageModel>[ChatMessageModel.userMessage('normal thread')],
+        mode: ConversationMode.normal,
+      );
+      await ConversationHistoryService.saveConversationMessages(
+        2,
+        <ChatMessageModel>[ChatMessageModel.userMessage('openclaw thread')],
+        mode: ConversationMode.openclaw,
+      );
+
+      final normalMessages =
+          await ConversationHistoryService.getConversationMessages(
+            1,
+            mode: ConversationMode.normal,
+          );
+      final openClawMessages =
+          await ConversationHistoryService.getConversationMessages(
+            2,
+            mode: ConversationMode.openclaw,
+          );
+
+      expect(normalMessages.single.text, 'normal thread');
+      expect(openClawMessages.single.text, 'openclaw thread');
+    },
+  );
+
+  test(
+    'migrates mode-scoped legacy messages when native storage is empty',
+    () async {
+      final prefs = await SharedPreferences.getInstance();
+      final legacyMessages = <ChatMessageModel>[
+        ChatMessageModel.userMessage('legacy normal thread'),
+      ];
+      await prefs.setString(
+        ConversationHistoryService.conversationMessagesKey(
+          3,
+          mode: ConversationMode.normal,
+        ),
+        jsonEncode(legacyMessages.map((message) => message.toJson()).toList()),
+      );
+
+      final restored = await ConversationHistoryService.getConversationMessages(
+        3,
+        mode: ConversationMode.normal,
+      );
+
+      expect(restored.single.text, 'legacy normal thread');
+      expect(nativeMessages['normal:3']?.single['id'], restored.single.id);
+      expect(
+        prefs.getString(
+          ConversationHistoryService.conversationMessagesKey(
+            3,
+            mode: ConversationMode.normal,
+          ),
+        ),
+        isNull,
+      );
+    },
+  );
+
+  test('migrates pre-mode legacy normal messages', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final legacyMessages = <ChatMessageModel>[
+      ChatMessageModel.userMessage('legacy before modes'),
+    ];
+    await prefs.setString(
+      'conversation_messages_4',
+      jsonEncode(legacyMessages.map((message) => message.toJson()).toList()),
+    );
+
+    final restored = await ConversationHistoryService.getConversationMessages(
+      4,
       mode: ConversationMode.normal,
     );
-    await ConversationHistoryService.saveConversationMessages(
-      2,
-      <ChatMessageModel>[ChatMessageModel.userMessage('openclaw thread')],
-      mode: ConversationMode.openclaw,
+
+    expect(restored.single.text, 'legacy before modes');
+    expect(nativeMessages['normal:4'], hasLength(1));
+    expect(prefs.getString('conversation_messages_4'), isNull);
+  });
+
+  test('paged load restores first page from legacy storage', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final legacyMessages = <ChatMessageModel>[
+      ChatMessageModel.userMessage('newest'),
+      ChatMessageModel.userMessage('middle'),
+      ChatMessageModel.userMessage('oldest'),
+    ];
+    await prefs.setString(
+      ConversationHistoryService.conversationMessagesKey(
+        5,
+        mode: ConversationMode.chatOnly,
+      ),
+      jsonEncode(legacyMessages.map((message) => message.toJson()).toList()),
     );
 
-    final normalMessages =
-        await ConversationHistoryService.getConversationMessages(
-          1,
-          mode: ConversationMode.normal,
-        );
-    final openClawMessages =
-        await ConversationHistoryService.getConversationMessages(
-          2,
-          mode: ConversationMode.openclaw,
+    final restored =
+        await ConversationHistoryService.getConversationMessagesPaged(
+          5,
+          mode: ConversationMode.chatOnly,
+          limit: 2,
+          offset: 0,
         );
 
-    expect(normalMessages.single.text, 'normal thread');
-    expect(openClawMessages.single.text, 'openclaw thread');
+    expect(restored.messages.map((message) => message.text), [
+      'newest',
+      'middle',
+    ]);
+    expect(restored.hasMore, isTrue);
+    expect(nativeMessages['chat_only:5'], hasLength(3));
+  });
+
+  test('merges partial native history with richer legacy snapshot', () async {
+    final prefs = await SharedPreferences.getInstance();
+    nativeMessages['normal:6'] = <Map<String, dynamic>>[
+      ChatMessageModel.userMessage(
+        'new native message',
+        id: 'native-new',
+      ).toJson(),
+    ];
+    final legacyMessages = <ChatMessageModel>[
+      ChatMessageModel.userMessage('legacy newest', id: 'legacy-newest'),
+      ChatMessageModel.userMessage('legacy oldest', id: 'legacy-oldest'),
+    ];
+    await prefs.setString(
+      ConversationHistoryService.conversationMessagesKey(
+        6,
+        mode: ConversationMode.normal,
+      ),
+      jsonEncode(legacyMessages.map((message) => message.toJson()).toList()),
+    );
+
+    final restored = await ConversationHistoryService.getConversationMessages(
+      6,
+      mode: ConversationMode.normal,
+    );
+
+    expect(
+      restored.map((message) => message.text),
+      contains('new native message'),
+    );
+    expect(restored.map((message) => message.text), contains('legacy newest'));
+    expect(restored.map((message) => message.text), contains('legacy oldest'));
+    expect(nativeMessages['normal:6'], hasLength(3));
+    expect(
+      prefs.getString(
+        ConversationHistoryService.conversationMessagesKey(
+          6,
+          mode: ConversationMode.normal,
+        ),
+      ),
+      isNull,
+    );
+  });
+
+  test('does not revive legacy messages when metadata expects none', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final legacyMessages = <ChatMessageModel>[
+      ChatMessageModel.userMessage('stale cleared message'),
+    ];
+    await prefs.setString(
+      ConversationHistoryService.conversationMessagesKey(
+        8,
+        mode: ConversationMode.normal,
+      ),
+      jsonEncode(legacyMessages.map((message) => message.toJson()).toList()),
+    );
+
+    final restored = await ConversationHistoryService.getConversationMessages(
+      8,
+      mode: ConversationMode.normal,
+      expectedMessageCount: 0,
+    );
+
+    expect(restored, isEmpty);
+    expect(nativeMessages['normal:8'], isNull);
+    expect(
+      prefs.getString(
+        ConversationHistoryService.conversationMessagesKey(
+          8,
+          mode: ConversationMode.normal,
+        ),
+      ),
+      isNull,
+    );
   });
 
   test('clears conversation messages through native', () async {
@@ -206,6 +382,14 @@ void main() {
       7,
       <ChatMessageModel>[ChatMessageModel.userMessage('to be cleared')],
       mode: ConversationMode.subagent,
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      ConversationHistoryService.conversationMessagesKey(
+        7,
+        mode: ConversationMode.subagent,
+      ),
+      '[]',
     );
 
     await ConversationHistoryService.clearConversationMessages(
@@ -218,5 +402,14 @@ void main() {
       mode: ConversationMode.subagent,
     );
     expect(messages, isEmpty);
+    expect(
+      prefs.getString(
+        ConversationHistoryService.conversationMessagesKey(
+          7,
+          mode: ConversationMode.subagent,
+        ),
+      ),
+      isNull,
+    );
   });
 }

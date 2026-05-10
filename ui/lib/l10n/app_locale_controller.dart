@@ -1,5 +1,8 @@
+import 'dart:ui';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ui/l10n/app_language_mode.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/l10n/system_locale_controller.dart';
 import 'package:ui/services/app_state_service.dart';
 import 'package:ui/services/storage_service.dart';
@@ -16,12 +19,19 @@ final appResolvedLocaleProvider = Provider<ResolvedAppLocale>((ref) {
 });
 
 class AppLocaleController extends StateNotifier<AppLanguageMode> {
-  AppLocaleController() : super(StorageService.getLanguageMode());
+  AppLocaleController() : super(StorageService.getLanguageMode()) {
+    LegacyTextLocalizer.setResolvedLocale(StorageService.getResolvedLocale());
+  }
 
   Future<void> setLanguageMode(AppLanguageMode mode) async {
     if (state == mode) {
       return;
     }
+    final resolvedLocale = resolveAppLocale(
+      mode: mode,
+      systemLocale: PlatformDispatcher.instance.locale,
+    );
+    LegacyTextLocalizer.setResolvedLocale(resolvedLocale.locale);
     state = mode;
     await StorageService.setLanguageMode(mode);
     await AppStateService.applyLanguagePreference();

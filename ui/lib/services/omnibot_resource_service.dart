@@ -282,6 +282,10 @@ class OmnibotResourceService {
     return result == true;
   }
 
+  static Future<bool> ensureResourceAccess({String? path, String? uri}) {
+    return _ensureResourceAccess(path: path, uri: uri);
+  }
+
   static Future<bool> _ensureResourceAccess({String? path, String? uri}) async {
     final requiredPermissionId = _requiredPermissionIdForPathOrUri(
       path: path,
@@ -388,12 +392,17 @@ class OmnibotResourceService {
     if (!uri.startsWith('omnibot://')) return null;
     final parsed = Uri.tryParse(uri);
     final authority = parsed?.host;
-    if (authority == null || authority.isEmpty) return null;
+    if (authority == null) return null;
+    if (authority.isEmpty) {
+      return _resolveAbsoluteOmnibotPath(parsed);
+    }
     final segments = parsed?.pathSegments ?? const <String>[];
     final base = switch (authority) {
       'attachments' => '$internalRootPath/attachments',
       'workspace' => rootPath,
       'public' => '/storage',
+      'storage' => '/storage',
+      'sdcard' => '/sdcard',
       'shared' => '$internalRootPath/shared',
       'offloads' => '$internalRootPath/offloads',
       'browser' => '$internalRootPath/browser',
@@ -413,13 +422,18 @@ class OmnibotResourceService {
     if (!uri.startsWith('omnibot://')) return null;
     final parsed = Uri.tryParse(uri);
     final authority = parsed?.host;
-    if (authority == null || authority.isEmpty) return null;
+    if (authority == null) return null;
+    if (authority.isEmpty) {
+      return _resolveAbsoluteOmnibotShellPath(parsed);
+    }
     final suffix = (parsed?.pathSegments ?? const <String>[])
         .where((segment) => segment.isNotEmpty && segment != '..')
         .join('/');
     final base = switch (authority) {
       'workspace' => shellRootPath,
       'public' => '/storage',
+      'storage' => '/storage',
+      'sdcard' => '/sdcard',
       _ => '$shellRootPath/.omnibot/$authority',
     };
     return suffix.isEmpty ? base : '$base/$suffix';
@@ -593,6 +607,40 @@ class OmnibotResourceService {
 
   static bool _matchesAny(String value, List<String> suffixes) {
     return suffixes.any(value.endsWith);
+  }
+
+  static String? _resolveAbsoluteOmnibotPath(Uri? parsed) {
+    final absolutePath = _absoluteOmnibotPath(parsed);
+    if (absolutePath == null) return null;
+    final workspaceMapped = androidPathForShellPath(absolutePath);
+    if (workspaceMapped != null) {
+      return workspaceMapped;
+    }
+    if (_isPublicAndroidPath(absolutePath)) {
+      return absolutePath;
+    }
+    return null;
+  }
+
+  static String? _resolveAbsoluteOmnibotShellPath(Uri? parsed) {
+    final absolutePath = _absoluteOmnibotPath(parsed);
+    if (absolutePath == null) return null;
+    final workspaceMapped = androidPathForShellPath(absolutePath);
+    if (workspaceMapped != null) {
+      return absolutePath;
+    }
+    if (_isPublicShellPath(absolutePath)) {
+      return absolutePath;
+    }
+    return null;
+  }
+
+  static String? _absoluteOmnibotPath(Uri? parsed) {
+    final path = parsed?.path.trim() ?? '';
+    if (path.isEmpty) {
+      return null;
+    }
+    return path.startsWith('/') ? path : '/$path';
   }
 
   static bool _isPublicAndroidPath(String path) {

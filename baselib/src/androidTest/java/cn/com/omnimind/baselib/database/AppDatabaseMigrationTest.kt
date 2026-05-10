@@ -72,6 +72,30 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate12To13_addsCodexThreadBindingTable() = runBlocking {
+        createVersion12Database()
+
+        val database = openMigratedDatabase()
+        try {
+            val binding = CodexThreadBinding(
+                conversationId = 1L,
+                threadId = "thread-codex-1",
+                cwd = "/workspace",
+                createdAt = 1000L,
+                updatedAt = 2000L
+            )
+            database.codexThreadBindingDao().upsert(binding)
+
+            val byConversation = database.codexThreadBindingDao().getByConversationId(1L)
+            val byThread = database.codexThreadBindingDao().getByThreadId("thread-codex-1")
+            assertEquals(binding, byConversation)
+            assertEquals(binding, byThread)
+        } finally {
+            database.close()
+        }
+    }
+
     private fun openMigratedDatabase(): AppDatabase {
         return Room.databaseBuilder(testContext, AppDatabase::class.java, TEST_DB_NAME)
             .allowMainThreadQueries()
@@ -168,6 +192,105 @@ class AppDatabaseMigrationTest {
                 (id, conversationId, conversationMode, entryId, entryType, status, summary, payloadJson, createdAt, updatedAt)
                 VALUES
                 (1, 1, 'agent', 'entry-1', 'message', 'queued', 'legacy entry', '{"text":"hello"}', 7000, 8000)
+                """.trimIndent()
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    private fun createVersion12Database() {
+        val database = openLegacyDatabase(version = 12)
+        try {
+            createCommonPreConversationTables(database)
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `conversations` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `title` TEXT NOT NULL,
+                    `mode` TEXT NOT NULL DEFAULT 'normal',
+                    `isArchived` INTEGER NOT NULL DEFAULT 0,
+                    `summary` TEXT,
+                    `contextSummary` TEXT,
+                    `contextSummaryCutoffEntryDbId` INTEGER,
+                    `contextSummaryUpdatedAt` INTEGER NOT NULL DEFAULT 0,
+                    `status` INTEGER NOT NULL DEFAULT 0,
+                    `lastMessage` TEXT,
+                    `messageCount` INTEGER NOT NULL DEFAULT 0,
+                    `latestPromptTokens` INTEGER NOT NULL DEFAULT 0,
+                    `promptTokenThreshold` INTEGER NOT NULL DEFAULT 128000,
+                    `latestPromptTokensUpdatedAt` INTEGER NOT NULL DEFAULT 0,
+                    `createdAt` INTEGER NOT NULL,
+                    `updatedAt` INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                INSERT INTO conversations
+                (id, title, mode, isArchived, summary, contextSummary, contextSummaryCutoffEntryDbId,
+                 contextSummaryUpdatedAt, status, lastMessage, messageCount, latestPromptTokens,
+                 promptTokenThreshold, latestPromptTokensUpdatedAt, createdAt, updatedAt)
+                VALUES
+                (1, 'Codex seed', 'codex', 0, NULL, NULL, NULL, 0, 0, NULL, 0, 0, 128000, 0, 1000, 1000)
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `agent_conversation_entries` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `conversationId` INTEGER NOT NULL,
+                    `conversationMode` TEXT NOT NULL,
+                    `entryId` TEXT NOT NULL,
+                    `entryType` TEXT NOT NULL,
+                    `status` TEXT NOT NULL,
+                    `summary` TEXT NOT NULL,
+                    `payloadJson` TEXT NOT NULL,
+                    `createdAt` INTEGER NOT NULL,
+                    `updatedAt` INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                `index_agent_conversation_entries_conversationId_conversationMode_entryId`
+                ON `agent_conversation_entries` (`conversationId`, `conversationMode`, `entryId`)
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS
+                `index_agent_conversation_entries_conversationId_conversationMode_updatedAt`
+                ON `agent_conversation_entries` (`conversationId`, `conversationMode`, `updatedAt`)
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `token_usage_records` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `conversationId` INTEGER NOT NULL,
+                    `isLocal` INTEGER NOT NULL DEFAULT 0,
+                    `model` TEXT NOT NULL DEFAULT '',
+                    `promptTokens` INTEGER NOT NULL DEFAULT 0,
+                    `completionTokens` INTEGER NOT NULL DEFAULT 0,
+                    `reasoningTokens` INTEGER NOT NULL DEFAULT 0,
+                    `textTokens` INTEGER NOT NULL DEFAULT 0,
+                    `cachedTokens` INTEGER NOT NULL DEFAULT 0,
+                    `createdAt` INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS `index_token_usage_records_createdAt`
+                ON `token_usage_records` (`createdAt`)
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS `index_token_usage_records_conversationId`
+                ON `token_usage_records` (`conversationId`)
                 """.trimIndent()
             )
         } finally {

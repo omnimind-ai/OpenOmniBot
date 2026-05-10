@@ -16,6 +16,46 @@ class AppUpdateManagerTest {
         assertEquals(1, AppUpdateManager.compareVersions("0.0.2", "0.0.1"))
         assertEquals(0, AppUpdateManager.compareVersions("v1.2.0", "1.2"))
         assertEquals(-1, AppUpdateManager.compareVersions("1.9.9", "2.0.0"))
+        assertEquals(1, AppUpdateManager.compareVersions("1.6.1.2", "1.6.1"))
+    }
+
+    @Test
+    fun classifyReleaseTrackTreatsFourSegmentsAsBeta() {
+        assertEquals(ReleaseTrack.STABLE, AppUpdateManager.classifyReleaseTrack("1.6.1"))
+        assertEquals(ReleaseTrack.BETA, AppUpdateManager.classifyReleaseTrack("1.6.1.2"))
+        assertEquals(
+            ReleaseTrack.BETA,
+            AppUpdateManager.classifyReleaseTrack("1.6.1", prerelease = true)
+        )
+    }
+
+    @Test
+    fun selectLatestReleaseHonorsBetaOptIn() {
+        val stable = ReleaseCandidate(
+            version = "1.6.2",
+            track = ReleaseTrack.STABLE,
+            publishedAt = 1L,
+            releaseUrl = "https://example.com/stable",
+            releaseNotes = "",
+            assets = emptyList()
+        )
+        val beta = ReleaseCandidate(
+            version = "1.6.2.3",
+            track = ReleaseTrack.BETA,
+            publishedAt = 2L,
+            releaseUrl = "https://example.com/beta",
+            releaseNotes = "",
+            assets = emptyList()
+        )
+
+        assertEquals(
+            "1.6.2",
+            AppUpdateManager.selectLatestRelease(listOf(stable, beta), includeBeta = false)?.version
+        )
+        assertEquals(
+            "1.6.2.3",
+            AppUpdateManager.selectLatestRelease(listOf(stable, beta), includeBeta = true)?.version
+        )
     }
 
     @Test
@@ -31,13 +71,67 @@ class AppUpdateManagerTest {
             )
         )
 
-        val selected = AppUpdateManager.selectPreferredApkAsset(assets)
+        val selected = AppUpdateManager.selectPreferredApkAsset(assets, "omniinfer")
         assertEquals("OpenOmniBot-v0.0.2.apk", selected?.name)
+    }
+
+    @Test
+    fun selectPreferredApkAssetSelectsMatchingEdition() {
+        val assets = listOf(
+            ReleaseAsset(
+                name = "OpenOmniBot-v0.4.0-standard.apk",
+                downloadUrl = "https://example.com/OpenOmniBot-v0.4.0-standard.apk"
+            ),
+            ReleaseAsset(
+                name = "OpenOmniBot-v0.4.0-omniinfer.apk",
+                downloadUrl = "https://example.com/OpenOmniBot-v0.4.0-omniinfer.apk"
+            )
+        )
+
+        assertEquals(
+            "OpenOmniBot-v0.4.0-standard.apk",
+            AppUpdateManager.selectPreferredApkAsset(assets, "standard")?.name
+        )
+        assertEquals(
+            "OpenOmniBot-v0.4.0-omniinfer.apk",
+            AppUpdateManager.selectPreferredApkAsset(assets, "omniinfer")?.name
+        )
+    }
+
+    @Test
+    fun selectPreferredApkAssetDoesNotCrossInstallSplitEdition() {
+        val selected = AppUpdateManager.selectPreferredApkAsset(
+            listOf(
+                ReleaseAsset(
+                    name = "OpenOmniBot-v0.4.0-standard.apk",
+                    downloadUrl = "https://example.com/OpenOmniBot-v0.4.0-standard.apk"
+                )
+            ),
+            "omniinfer"
+        )
+        assertNull(selected)
     }
 
     @Test
     fun selectPreferredApkAssetReturnsNullWhenNoApkExists() {
         val selected = AppUpdateManager.selectPreferredApkAsset(emptyList())
         assertNull(selected)
+    }
+
+    @Test
+    fun resolveApkDownloadUrlBuildsUrlForSelectedSource() {
+        val asset = ReleaseAsset(
+            name = "OpenOmniBot-v0.3.7.5.apk",
+            downloadUrl = "https://example.com/OpenOmniBot-v0.3.7.5.apk"
+        )
+
+        assertEquals(
+            "https://cnb.cool/o.a/OpenOmniBot/-/releases/download/v0.3.7.5/OpenOmniBot-v0.3.7.5.apk",
+            AppUpdateManager.resolveApkDownloadUrl(ApkDownloadSource.CNB, "0.3.7.5", asset)
+        )
+        assertEquals(
+            "https://github.com/omnimind-ai/OpenOmniBot/releases/download/v0.3.7.5/OpenOmniBot-v0.3.7.5.apk",
+            AppUpdateManager.resolveApkDownloadUrl(ApkDownloadSource.GITHUB, "0.3.7.5", asset)
+        )
     }
 }

@@ -1,5 +1,18 @@
 part of 'chat_page.dart';
 
+ConversationThreadTarget _newThreadTargetForConversationMode(
+  ConversationMode mode,
+) {
+  return ConversationThreadTarget.newConversation(
+    mode: mode,
+    requestKey: DateTime.now().microsecondsSinceEpoch.toString(),
+  );
+}
+
+ConversationThreadTarget _newCodexThreadTarget() {
+  return _newThreadTargetForConversationMode(ConversationMode.codex);
+}
+
 mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   @override
   void initState() {
@@ -15,7 +28,6 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       setState(() {
         _isCompanionModeEnabled = false;
       });
-      _resetCompanionCountdown();
     });
 
     SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -41,6 +53,13 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
         .listen((event) {
           unawaited(_handleExternalConversationMessagesChanged(event));
         });
+    _browserSessionSnapshotChangedSubscription = AssistsMessageService
+        .browserSessionSnapshotChangedStream
+        .listen(_handleBrowserSessionSnapshotChanged);
+    _codexEventSubscription = CodexAppServerService.events.listen(
+      _handleCodexAppServerEvent,
+    );
+    unawaited(_refreshCodexStatus());
 
     _inputFocusNode.addListener(_onFocusChange);
     _messageController.addListener(_handleSlashCommandInput);
@@ -108,7 +127,10 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     if (normalizedPreferredMode == null) {
       final lastVisible =
           await ConversationHistoryService.getLastVisibleThreadTarget();
-      final normalizedLastVisible = _normalizeVisibleThreadTarget(lastVisible);
+      final normalizedLastVisible = _normalizeVisibleThreadTarget(
+        lastVisible,
+        freshCodexOnImplicitRestore: true,
+      );
       if (normalizedLastVisible != null) {
         return normalizedLastVisible;
       }
@@ -136,25 +158,36 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   }
 
   ConversationThreadTarget? _normalizeVisibleThreadTarget(
-    ConversationThreadTarget? target,
-  ) {
+    ConversationThreadTarget? target, {
+    bool freshCodexOnImplicitRestore = false,
+  }) {
     if (target == null) {
       return null;
     }
     if (target.mode == ConversationMode.openclaw) {
       return null;
     }
+    if (freshCodexOnImplicitRestore && target.mode == ConversationMode.codex) {
+      return _newCodexThreadTarget();
+    }
     return target;
   }
 
   @override
   Future<void> _bootstrapConversationThread() async {
+    final requestId = _beginConversationTargetRequest();
     await _loadOpenClawConfig();
+    if (!_isConversationTargetRequestCurrent(requestId)) return;
     await _loadTerminalEnvironmentVariables();
+    if (!_isConversationTargetRequestCurrent(requestId)) return;
     final target = await _resolveConversationThreadTarget(widget.threadTarget);
-    if (!mounted) return;
-    await _applyConversationThreadTarget(target, syncPage: false);
-    if (!mounted) return;
+    if (!_isConversationTargetRequestCurrent(requestId)) return;
+    await _applyConversationThreadTarget(
+      target,
+      syncPage: false,
+      requestId: requestId,
+    );
+    if (!_isConversationTargetRequestCurrent(requestId)) return;
     unawaited(_loadNormalChatModelContext());
     unawaited(_refreshLiveBrowserSessionSnapshot(syncRuntime: true));
     _notifySummarySheetReadyIfNeeded();
@@ -162,10 +195,11 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
 
   @override
   Future<void> _reloadConversationForCurrentTarget() async {
+    final requestId = _beginConversationTargetRequest();
     final target = await _resolveConversationThreadTarget(widget.threadTarget);
-    if (!mounted) return;
-    await _applyConversationThreadTarget(target);
-    if (!mounted) return;
+    if (!_isConversationTargetRequestCurrent(requestId)) return;
+    await _applyConversationThreadTarget(target, requestId: requestId);
+    if (!_isConversationTargetRequestCurrent(requestId)) return;
     _notifySummarySheetReadyIfNeeded();
   }
 
@@ -173,14 +207,37 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   Future<void> _applyConversationThreadTarget(
     ConversationThreadTarget target, {
     bool syncPage = true,
+    int? requestId,
   }) async {
+    final activeRequestId = requestId ?? _beginConversationTargetRequest();
+    bool isStaleRequest() =>
+        !_isConversationTargetRequestCurrent(activeRequestId);
+    invalidateConversationLifecycle();
+    final lifecycleToken = captureConversationLifecycleToken();
     final effectiveTarget = await _overrideTargetWithSharedDraftIfNeeded(
       target,
     );
+    if (isStaleRequest()) return;
+    final isOpeningExistingConversation =
+        !effectiveTarget.isNewConversation &&
+        effectiveTarget.conversationId != null;
+    if (_isLocalModelPureChatLocked &&
+        effectiveTarget.mode != ConversationMode.chatOnly &&
+        !isOpeningExistingConversation) {
+      _showLocalModelPureChatLockToast();
+      if (syncPage) {
+        _jumpToCurrentModePage(animate: false);
+      }
+      return;
+    }
     final targetMode = _pageModeForConversationMode(effectiveTarget.mode);
     _storeDraftForActiveConversationMode();
+    if (effectiveTarget.isNewConversation) {
+      _draftMessageByMode[targetMode] = '';
+      _pendingAttachmentsByMode[targetMode]?.clear();
+    }
     _cancelNormalSurfaceModelReveal();
-    if (!mounted) return;
+    if (isStaleRequest()) return;
     setState(() {
       _resolvedThreadTarget = effectiveTarget;
       _activeConversationMode = targetMode;
@@ -195,9 +252,16 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     _resetLocalConversationState(targetMode);
     _vlmAnswerController.clear();
     _applyDraftForConversationMode(targetMode);
-    await initializeConversation();
+    await initializeConversation(lifecycleToken: lifecycleToken);
+    if (isStaleRequest()) return;
+    if (_activeConversationMode == ChatPageMode.codex) {
+      await _refreshCodexCommandPreferences();
+      if (isStaleRequest()) return;
+    }
     await _applyStagedSharedDraftIfNeeded(effectiveTarget);
+    if (isStaleRequest()) return;
     await _persistVisibleThreadTargetIfNeeded();
+    if (isStaleRequest()) return;
     if (syncPage) {
       _jumpToCurrentModePage(animate: false);
     }
@@ -227,10 +291,12 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
         _pendingAttachmentsByMode[mode]!.isNotEmpty;
   }
 
+  @override
   Future<void> _prepareConversationModeState(
     ChatPageMode mode,
     ConversationThreadTarget target,
   ) async {
+    final lifecycleToken = captureConversationLifecycleToken();
     if (target.isNewConversation) {
       return;
     }
@@ -251,7 +317,9 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     final conversations = await ConversationService.getAllConversations(
       includeArchived: true,
     );
-    if (!mounted) return;
+    if (!mounted || !isConversationLifecycleTokenCurrent(lifecycleToken)) {
+      return;
+    }
 
     ConversationModel? conversation;
     try {
@@ -270,8 +338,11 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
         await ConversationHistoryService.getConversationMessages(
           conversationId,
           mode: _conversationModeForPageMode(mode),
+          expectedMessageCount: resolvedConversation?.messageCount,
         );
-    if (!mounted) return;
+    if (!mounted || !isConversationLifecycleTokenCurrent(lifecycleToken)) {
+      return;
+    }
 
     _currentConversationIdByMode[mode] = conversationId;
     _currentConversationByMode[mode] = resolvedConversation;
@@ -334,16 +405,12 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       setState(() {
         _isCompanionModeEnabled = isRunning;
       });
-      if (!isRunning) {
-        _resetCompanionCountdown();
-      }
     } catch (e) {
       debugPrint('检查陪伴状态失败: $e');
       if (!mounted) return;
       setState(() {
         _isCompanionModeEnabled = false;
       });
-      _resetCompanionCountdown();
     }
   }
 
@@ -352,6 +419,10 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     if (_isCompanionToggleLoading) return;
     if (_isCompanionModeEnabled) {
       await _cancelCompanionMode();
+      return;
+    }
+    if (_isLocalModelPureChatLocked) {
+      _showLocalModelPureChatLockToast();
       return;
     }
     await _startCompanionMode();
@@ -424,10 +495,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       setState(() {
         _isCompanionModeEnabled = true;
         _isCompanionToggleLoading = false;
-        _companionCountdown = _ChatPageStateBase.kCompanionCountdownDuration;
-        _showCompanionCountdown = true;
       });
-      _startCompanionCountdown();
     } catch (e) {
       debugPrint('开启陪伴失败: $e');
       showToast('开启陪伴失败', type: ToastType.error);
@@ -455,7 +523,6 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
         _isCompanionModeEnabled = false;
         _isCompanionToggleLoading = false;
       });
-      _resetCompanionCountdown();
     } catch (e) {
       debugPrint('结束陪伴失败: $e');
       showToast('结束陪伴失败', type: ToastType.error);
@@ -468,74 +535,14 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   }
 
   @override
-  void _startCompanionCountdown() {
-    _companionCountdownTimer?.cancel();
-    _companionCountdownTimer = Timer.periodic(const Duration(seconds: 1), (
-      timer,
-    ) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-
-      var shouldPressHome = false;
-      setState(() {
-        _companionCountdown -= 1;
-        if (_companionCountdown <= 0) {
-          _showCompanionCountdown = false;
-          shouldPressHome = true;
-          timer.cancel();
-        }
-      });
-
-      if (shouldPressHome) {
-        unawaited(_pressHomeAfterCompanionCountdown());
-      }
-    });
-  }
-
-  @override
-  void _resetCompanionCountdown() {
-    _companionCountdownTimer?.cancel();
-    _companionCountdownTimer = null;
-    if (!mounted) {
-      _companionCountdown = _ChatPageStateBase.kCompanionCountdownDuration;
-      _showCompanionCountdown = false;
-      return;
-    }
-    setState(() {
-      _companionCountdown = _ChatPageStateBase.kCompanionCountdownDuration;
-      _showCompanionCountdown = false;
-    });
-  }
-
-  @override
-  void _interruptCompanionAutoHomeIfNeeded() {
-    if (!_isCompanionModeEnabled || !_showCompanionCountdown) {
-      return;
-    }
-    _resetCompanionCountdown();
-    unawaited(AssistsMessageService.cancelCompanionGoHome());
-  }
-
-  @override
-  Future<void> _pressHomeAfterCompanionCountdown() async {
-    if (!_isCompanionModeEnabled) return;
-    final success = await AssistsMessageService.pressHome();
-    if (!success && mounted) {
-      showToast('Auto return home failed', type: ToastType.error);
-    }
-  }
-
-  @override
   void dispose() {
     unawaited(IosChromeService.setBottomTabBarHidden(false));
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_runtimeCoordinator.flushAllPendingPersistence());
-    unawaited(_persistVisibleThreadTargetIfNeeded());
     _cancelNormalSurfaceModelReveal();
     _conversationListChangedSubscription?.cancel();
     _conversationMessagesChangedSubscription?.cancel();
+    _browserSessionSnapshotChangedSubscription?.cancel();
     if (_subscribedRoute != null) {
       GoRouterManager.routeObserver.unsubscribe(this);
       _subscribedRoute = null;
@@ -548,13 +555,17 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     _messageController.dispose();
     _normalMessageScrollController.dispose();
     _openClawMessageScrollController.dispose();
+    _codexMessageScrollController.dispose();
     _modePageController.dispose();
     _inputFocusNode.dispose();
     _vlmAnswerController.dispose();
+    _normalUserMessageEditController.dispose();
+    _openClawUserMessageEditController.dispose();
+    _codexUserMessageEditController.dispose();
     _openClawBaseUrlController.dispose();
     _openClawTokenController.dispose();
     _openClawUserIdController.dispose();
-    _companionCountdownTimer?.cancel();
+    _codexEventSubscription?.cancel();
     super.dispose();
   }
 
@@ -575,31 +586,46 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   }
 
   Future<void> _handleDidPopNext() async {
-    await checkConversationExists();
-    if (!mounted) return;
+    final lifecycleToken = captureConversationLifecycleToken();
+    await checkConversationExists(lifecycleToken: lifecycleToken);
+    if (!mounted || !isConversationLifecycleTokenCurrent(lifecycleToken)) {
+      return;
+    }
     await _loadNormalChatModelContext();
-    if (!mounted) return;
+    if (!mounted || !isConversationLifecycleTokenCurrent(lifecycleToken)) {
+      return;
+    }
     await _refreshLiveBrowserSessionSnapshot(syncRuntime: true);
   }
 
   Future<void> _handleExternalConversationListChanged() async {
+    final lifecycleToken = captureConversationLifecycleToken();
     final conversationId = _currentConversationId;
-    await checkConversationExists();
-    if (!mounted || conversationId == null) {
+    await checkConversationExists(lifecycleToken: lifecycleToken);
+    if (!mounted ||
+        !isConversationLifecycleTokenCurrent(lifecycleToken) ||
+        conversationId == null ||
+        conversationId != _currentConversationId) {
       return;
     }
     final runtime = _runtimeForMode(_activeMode);
     await loadConversation(
       conversationId,
       preferInMemory: runtime?.hasInFlightTask == true,
+      lifecycleToken: lifecycleToken,
     );
-    if (!mounted) return;
+    if (!mounted ||
+        !isConversationLifecycleTokenCurrent(lifecycleToken) ||
+        conversationId != _currentConversationId) {
+      return;
+    }
     setState(() {});
   }
 
   Future<void> _handleExternalConversationMessagesChanged(
     Map<String, dynamic> event,
   ) async {
+    final lifecycleToken = captureConversationLifecycleToken();
     final conversationId = _currentConversationId;
     if (conversationId == null) {
       return;
@@ -616,8 +642,13 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     await loadConversation(
       conversationId,
       preferInMemory: runtime?.hasInFlightTask == true,
+      lifecycleToken: lifecycleToken,
     );
-    if (!mounted) return;
+    if (!mounted ||
+        !isConversationLifecycleTokenCurrent(lifecycleToken) ||
+        conversationId != _currentConversationId) {
+      return;
+    }
     setState(() {});
   }
 
@@ -666,6 +697,8 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   ScrollController _scrollControllerForMode(ChatPageMode mode) {
     return mode == ChatPageMode.openclaw
         ? _openClawMessageScrollController
+        : mode == ChatPageMode.codex
+        ? _codexMessageScrollController
         : _normalMessageScrollController;
   }
 
@@ -700,6 +733,14 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     final resolvedTargetMode = targetMode == ChatSurfaceMode.openclaw
         ? ChatSurfaceMode.normal
         : targetMode;
+    if (_isLocalModelPureChatLocked &&
+        resolvedTargetMode != ChatSurfaceMode.normal) {
+      _showLocalModelPureChatLockToast();
+      if (syncPage || _modePageController.hasClients) {
+        _jumpToCurrentModePage();
+      }
+      return;
+    }
     final requestId = ++_surfaceSwitchRequestId;
     bool isStaleRequest() => !mounted || requestId != _surfaceSwitchRequestId;
     if (!mounted) return;
@@ -738,22 +779,27 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       return;
     }
 
-    await _ensureConversationModeReady(ChatPageMode.normal);
+    final targetConversationMode = _activeConversationMode == ChatPageMode.codex
+        ? ChatPageMode.codex
+        : ChatPageMode.normal;
+    await _ensureConversationModeReady(targetConversationMode);
     if (isStaleRequest()) return;
     setState(() {
       _activeSurfaceMode = ChatSurfaceMode.normal;
-      _activeConversationMode = ChatPageMode.normal;
+      _activeConversationMode = targetConversationMode;
       _resetNormalSurfaceModelRevealInterruption();
       _setChatIslandDisplayLayerForMode(
-        ChatPageMode.normal,
+        targetConversationMode,
         ChatIslandDisplayLayer.mode,
       );
     });
-    _applyDraftForConversationMode(ChatPageMode.normal);
+    _applyDraftForConversationMode(targetConversationMode);
     await _persistVisibleThreadTargetIfNeeded();
     if (isStaleRequest()) return;
     _hideSlashCommandPanel();
-    unawaited(_loadNormalChatModelContext());
+    if (targetConversationMode == ChatPageMode.normal) {
+      unawaited(_loadNormalChatModelContext());
+    }
     if (syncPage) _jumpToCurrentModePage();
     if (!_isSurfacePageScrolling &&
         (!syncPage || !_modePageController.hasClients)) {
@@ -884,8 +930,6 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
         state == AppLifecycleState.detached) {
       unawaited(_runtimeCoordinator.flushAllPendingPersistence());
       unawaited(_persistVisibleThreadTargetIfNeeded());
-      _resetCompanionCountdown();
-      unawaited(AssistsMessageService.cancelCompanionGoHome());
     }
   }
 }

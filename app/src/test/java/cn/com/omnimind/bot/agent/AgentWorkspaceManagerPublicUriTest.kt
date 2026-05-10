@@ -30,4 +30,26 @@ class AgentWorkspaceManagerPublicUriTest {
         )
         assertNull(AgentWorkspaceManager.publicUriForStoragePath("/workspace/demo.txt"))
     }
+
+    @Test
+    fun resolvesAbsoluteOmnibotPublicStorageUris() {
+        assertEquals(
+            "/storage/emulated/0/Pictures/demo.jpg",
+            AgentWorkspaceManager.storagePathForPublicUri(
+                "omnibot:///storage/emulated/0/Pictures/demo.jpg"
+            )
+        )
+        assertEquals(
+            "/storage/emulated/0/Pictures/demo.jpg",
+            AgentWorkspaceManager.storagePathForPublicUri(
+                "omnibot://storage/emulated/0/Pictures/demo.jpg"
+            )
+        )
+        assertEquals(
+            "/sdcard/Download/demo.txt",
+            AgentWorkspaceManager.storagePathForPublicUri(
+                "omnibot:///sdcard/Download/demo.txt"
+            )
+        )
+    }
 }

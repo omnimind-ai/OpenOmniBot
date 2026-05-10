@@ -7,6 +7,7 @@ import cn.com.omnimind.bot.termux.TermuxCommandBuilder
 import cn.com.omnimind.bot.termux.TermuxLiveUpdate
 import com.ai.assistance.operit.terminal.TerminalManager
 import com.ai.assistance.operit.terminal.provider.type.HiddenExecResult
+import com.rk.terminal.runtime.AlpineRepositoryManager
 import com.rk.terminal.App
 import com.termux.terminal.TerminalSession
 import kotlinx.coroutines.Dispatchers
@@ -156,33 +157,36 @@ object EmbeddedTerminalRuntime {
     )
     private val shellPromptRegex = Regex("""^[^\r\n]*[#$] ?$""")
 
-    private val basePackageBootstrapCommand = """
-        export PATH="${'$'}HOME/.local/bin:${'$'}PATH"
-        apk update &&
-        apk add --no-cache \
-          bash \
-          ca-certificates \
-          curl \
-          gcompat \
-          git \
-          glib \
-          nodejs \
-          npm \
-          procps \
-          psmisc \
-          python3 \
-          py3-pip \
-          py3-virtualenv \
-          ripgrep \
-          tmux \
-          xz && \
-        ln -sf /usr/bin/python3 /usr/local/bin/python || true && \
-        python3 -m pip install --upgrade pip >/dev/null 2>&1 || true && \
-        python3 -m pip install --upgrade uv >/dev/null 2>&1 || true && \
-        npm install -g pnpm --no-audit --no-fund >/dev/null 2>&1 || true && \
-        if [ -x "${'$'}HOME/.local/bin/uv" ]; then ln -sf "${'$'}HOME/.local/bin/uv" /usr/local/bin/uv; fi && \
-        if [ -x "${'$'}HOME/.local/bin/uvx" ]; then ln -sf "${'$'}HOME/.local/bin/uvx" /usr/local/bin/uvx; fi
-    """.trimIndent()
+    private fun buildBasePackageBootstrapCommand(): String {
+        return """
+            ${AlpineRepositoryManager.buildSelectedRepositorySetupCommand()}
+            export PATH="${'$'}HOME/.local/bin:${'$'}PATH"
+            apk update &&
+            apk add --no-cache \
+              bash \
+              ca-certificates \
+              curl \
+              gcompat \
+              git \
+              glib \
+              nodejs \
+              npm \
+              procps \
+              psmisc \
+              python3 \
+              py3-pip \
+              py3-virtualenv \
+              ripgrep \
+              tmux \
+              xz && \
+            ln -sf /usr/bin/python3 /usr/local/bin/python || true && \
+            python3 -m pip install --upgrade pip >/dev/null 2>&1 || true && \
+            python3 -m pip install --upgrade uv >/dev/null 2>&1 || true && \
+            npm install -g pnpm --no-audit --no-fund >/dev/null 2>&1 || true && \
+            if [ -x "${'$'}HOME/.local/bin/uv" ]; then ln -sf "${'$'}HOME/.local/bin/uv" /usr/local/bin/uv; fi && \
+            if [ -x "${'$'}HOME/.local/bin/uvx" ]; then ln -sf "${'$'}HOME/.local/bin/uvx" /usr/local/bin/uvx; fi
+        """.trimIndent()
+    }
 
     fun isSupportedDevice(): Boolean {
         return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
@@ -435,7 +439,7 @@ object EmbeddedTerminalRuntime {
                 )
             )
             val installResult = manager.executeHiddenCommand(
-                command = basePackageBootstrapCommand,
+                command = buildBasePackageBootstrapCommand(),
                 executorKey = "embedded-bootstrap",
                 timeoutMs = 15 * 60 * 1000L,
                 onOutputChunk = { chunk ->

@@ -10,6 +10,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import cn.com.omnimind.baselib.service.DeviceInfoService
 import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.bot.BuildConfig
 import cn.com.omnimind.bot.manager.ExternalApkInstallResult
 import cn.com.omnimind.bot.manager.ExternalApkInstaller
 import kotlinx.coroutines.CoroutineScope
@@ -18,8 +19,9 @@ import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
-import org.json.JSONObject
 import java.io.IOException
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -54,9 +56,39 @@ internal data class ReleaseAsset(
     val downloadUrl: String
 )
 
+@VisibleForTesting
+internal enum class ApkDownloadSource(val value: String) {
+    CNB("cnb"),
+    GITHUB("github");
+
+    companion object {
+        fun fromValue(raw: String?): ApkDownloadSource {
+            return entries.firstOrNull { it.value.equals(raw?.trim(), ignoreCase = true) } ?: CNB
+        }
+    }
+}
+
+@VisibleForTesting
+internal enum class ReleaseTrack {
+    STABLE,
+    BETA,
+    UNSUPPORTED
+}
+
+@VisibleForTesting
+internal data class ReleaseCandidate(
+    val version: String,
+    val track: ReleaseTrack,
+    val publishedAt: Long,
+    val releaseUrl: String,
+    val releaseNotes: String,
+    val assets: List<ReleaseAsset>
+)
+
 object AppUpdateManager {
     private const val TAG = "AppUpdateManager"
     private const val PREFS_NAME = "app_update_state"
+    private const val KEY_BETA_OPT_IN = "beta_opt_in"
     private const val KEY_LATEST_VERSION = "latest_version"
     private const val KEY_HAS_UPDATE = "has_update"
     private const val KEY_CHECKED_AT = "checked_at"
@@ -65,13 +97,20 @@ object AppUpdateManager {
     private const val KEY_RELEASE_NOTES = "release_notes"
     private const val KEY_APK_NAME = "apk_name"
     private const val KEY_APK_DOWNLOAD_URL = "apk_download_url"
+    private const val KEY_APK_DOWNLOAD_SOURCE = "apk_download_source"
 
-    private const val LATEST_RELEASE_URL =
-        "https://api.github.com/repos/omnimind-ai/OpenOmniBot/releases/latest"
+    private const val RELEASES_URL =
+        "https://api.github.com/repos/omnimind-ai/OpenOmniBot/releases?per_page=30"
+    private const val GITHUB_RELEASE_DOWNLOAD_PREFIX =
+        "https://github.com/omnimind-ai/OpenOmniBot/releases/download"
+    private const val CNB_RELEASE_DOWNLOAD_PREFIX =
+        "https://cnb.cool/o.a/OpenOmniBot/-/releases/download"
     private const val WORK_NAME = "app_update_periodic_check"
     private const val PERIODIC_CHECK_HOURS = 12L
     private const val SILENT_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L
     private const val USER_AGENT = "OpenOmniBot-App"
+    private const val EDITION_STANDARD = "standard"
+    private const val EDITION_OMNIINFER = "omniinfer"
 
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -113,19 +152,61 @@ object AppUpdateManager {
     }
 
     fun getCachedStatus(context: Context): AppUpdateState {
-        return readState(context.applicationContext, currentVersion(context.applicationContext))
+        val appContext = context.applicationContext
+        return readState(
+            context = appContext,
+            currentVersion = currentVersion(appContext),
+            includeBeta = isBetaOptIn(appContext)
+        )
+    }
+
+    fun isBetaOptIn(context: Context): Boolean {
+        return context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_BETA_OPT_IN, false)
+    }
+
+    internal fun getApkDownloadSource(context: Context): ApkDownloadSource {
+        val rawValue = context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_APK_DOWNLOAD_SOURCE, null)
+        return ApkDownloadSource.fromValue(rawValue)
+    }
+
+    fun setBetaOptIn(context: Context, enabled: Boolean): Boolean {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val changed = prefs.getBoolean(KEY_BETA_OPT_IN, false) != enabled
+        prefs.edit().apply {
+            putBoolean(KEY_BETA_OPT_IN, enabled)
+            if (changed) {
+                putLong(KEY_CHECKED_AT, 0L)
+            }
+        }.apply()
+        return enabled
+    }
+
+    internal fun setApkDownloadSource(context: Context, rawValue: String?): ApkDownloadSource {
+        val source = ApkDownloadSource.fromValue(rawValue)
+        context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_APK_DOWNLOAD_SOURCE, source.value)
+            .apply()
+        return source
     }
 
     suspend fun checkNow(context: Context, force: Boolean): AppUpdateState {
         val appContext = context.applicationContext
         val now = System.currentTimeMillis()
         val currentVersion = currentVersion(appContext)
-        val cached = readState(appContext, currentVersion)
+        val includeBeta = isBetaOptIn(appContext)
+        val downloadSource = getApkDownloadSource(appContext)
+        val cached = readState(appContext, currentVersion, includeBeta)
         if (!force && now - cached.checkedAt < SILENT_CHECK_INTERVAL_MS) {
             return cached
         }
 
-        val fetched = fetchLatestReleaseState(currentVersion)
+        val fetched = fetchLatestReleaseState(currentVersion, includeBeta, downloadSource)
             .copy(checkedAt = now)
         saveState(appContext, fetched)
         return fetched
@@ -169,9 +250,9 @@ object AppUpdateManager {
         val right = normalizeVersion(rightRaw)
         if (left == right) return 0
 
-        val leftParts = left.split('.').mapNotNull { it.toIntOrNull() }
-        val rightParts = right.split('.').mapNotNull { it.toIntOrNull() }
-        if (leftParts.isNotEmpty() && rightParts.isNotEmpty()) {
+        val leftParts = parseNumericVersionParts(left)
+        val rightParts = parseNumericVersionParts(right)
+        if (leftParts != null && rightParts != null) {
             val maxLength = maxOf(leftParts.size, rightParts.size)
             for (index in 0 until maxLength) {
                 val leftValue = leftParts.getOrElse(index) { 0 }
@@ -187,14 +268,75 @@ object AppUpdateManager {
     }
 
     @VisibleForTesting
-    internal fun selectPreferredApkAsset(assets: List<ReleaseAsset>): ReleaseAsset? {
-        if (assets.isEmpty()) return null
-        val preferred = assets.firstOrNull {
+    internal fun versionSegmentCount(raw: String?): Int {
+        val normalized = normalizeVersion(raw)
+        if (normalized.isBlank()) return 0
+        val parts = normalized.split('.')
+        if (parts.any { part -> part.isBlank() || part.any { !it.isDigit() } }) {
+            return 0
+        }
+        return parts.size
+    }
+
+    @VisibleForTesting
+    internal fun classifyReleaseTrack(rawVersion: String?, prerelease: Boolean = false): ReleaseTrack {
+        if (prerelease) {
+            return ReleaseTrack.BETA
+        }
+        return when (versionSegmentCount(rawVersion)) {
+            3 -> ReleaseTrack.STABLE
+            4 -> ReleaseTrack.BETA
+            else -> ReleaseTrack.UNSUPPORTED
+        }
+    }
+
+    @VisibleForTesting
+    internal fun selectLatestRelease(
+        candidates: List<ReleaseCandidate>,
+        includeBeta: Boolean
+    ): ReleaseCandidate? {
+        var selected: ReleaseCandidate? = null
+        for (candidate in candidates) {
+            if (!shouldIncludeTrack(candidate.track, includeBeta)) continue
+            val currentSelected = selected
+            if (
+                currentSelected == null ||
+                compareVersions(candidate.version, currentSelected.version) > 0 ||
+                (
+                    compareVersions(candidate.version, currentSelected.version) == 0 &&
+                        candidate.publishedAt > currentSelected.publishedAt
+                    )
+            ) {
+                selected = candidate
+            }
+        }
+        return selected
+    }
+
+    @VisibleForTesting
+    internal fun selectPreferredApkAsset(
+        assets: List<ReleaseAsset>,
+        edition: String = BuildConfig.APP_EDITION,
+    ): ReleaseAsset? {
+        val apkAssets = assets.filter { it.name.lowercase(Locale.ROOT).endsWith(".apk") }
+        if (apkAssets.isEmpty()) return null
+
+        val normalizedEdition = normalizeEdition(edition)
+        val editionAsset = apkAssets.firstOrNull {
+            isEditionApkAsset(it.name, normalizedEdition)
+        }
+        if (editionAsset != null) return editionAsset
+
+        if (apkAssets.any { isKnownEditionApkAsset(it.name) }) {
+            return null
+        }
+
+        val preferred = apkAssets.firstOrNull {
             it.name.startsWith("OpenOmniBot-v", ignoreCase = true) &&
                 it.name.lowercase(Locale.ROOT).endsWith(".apk")
         }
         if (preferred != null) return preferred
-        return assets.firstOrNull { it.name.lowercase(Locale.ROOT).endsWith(".apk") }
+        return apkAssets.firstOrNull()
     }
 
     private suspend fun resolveInstallState(context: Context): AppUpdateState {
@@ -205,23 +347,31 @@ object AppUpdateManager {
         return checkNow(context, force = true)
     }
 
-    private fun readState(context: Context, currentVersion: String): AppUpdateState {
+    private fun readState(context: Context, currentVersion: String, includeBeta: Boolean): AppUpdateState {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val latestVersion = prefs.getString(KEY_LATEST_VERSION, currentVersion).orEmpty().ifBlank {
-            currentVersion
-        }
-        val hasUpdate = prefs.getBoolean(KEY_HAS_UPDATE, false) &&
-            compareVersions(latestVersion, currentVersion) > 0
-        return AppUpdateState(
+        val storedState = AppUpdateState(
             currentVersion = currentVersion,
-            latestVersion = latestVersion,
-            hasUpdate = hasUpdate,
+            latestVersion = prefs.getString(KEY_LATEST_VERSION, currentVersion).orEmpty().ifBlank {
+                currentVersion
+            },
+            hasUpdate = prefs.getBoolean(KEY_HAS_UPDATE, false),
             checkedAt = prefs.getLong(KEY_CHECKED_AT, 0L),
             publishedAt = prefs.getLong(KEY_PUBLISHED_AT, 0L),
             releaseUrl = prefs.getString(KEY_RELEASE_URL, "").orEmpty(),
             releaseNotes = prefs.getString(KEY_RELEASE_NOTES, "").orEmpty(),
             apkName = prefs.getString(KEY_APK_NAME, "").orEmpty(),
             apkDownloadUrl = prefs.getString(KEY_APK_DOWNLOAD_URL, "").orEmpty()
+        )
+        val stateWithPreferredSource = applyPreferredDownloadSource(
+            storedState,
+            getApkDownloadSource(context)
+        )
+        if (!shouldIncludeTrack(classifyReleaseTrack(stateWithPreferredSource.latestVersion), includeBeta)) {
+            return emptyState(currentVersion = currentVersion, checkedAt = stateWithPreferredSource.checkedAt)
+        }
+        return stateWithPreferredSource.copy(
+            hasUpdate = stateWithPreferredSource.hasUpdate &&
+                compareVersions(stateWithPreferredSource.latestVersion, currentVersion) > 0
         )
     }
 
@@ -246,9 +396,13 @@ object AppUpdateManager {
             ?: "0.0.0"
     }
 
-    private fun fetchLatestReleaseState(currentVersion: String): AppUpdateState {
+    private fun fetchLatestReleaseState(
+        currentVersion: String,
+        includeBeta: Boolean,
+        downloadSource: ApkDownloadSource
+    ): AppUpdateState {
         val request = Request.Builder()
-            .url(LATEST_RELEASE_URL)
+            .url(RELEASES_URL)
             .addHeader("Accept", "application/vnd.github+json")
             .addHeader("X-GitHub-Api-Version", "2022-11-28")
             .addHeader("User-Agent", USER_AGENT)
@@ -265,40 +419,90 @@ object AppUpdateManager {
                 throw IOException("GitHub release response body is empty")
             }
 
-            val release = JSONObject(body)
-            if (release.optBoolean("draft") || release.optBoolean("prerelease")) {
-                return AppUpdateState(
-                    currentVersion = currentVersion,
-                    latestVersion = currentVersion,
-                    hasUpdate = false,
-                    checkedAt = System.currentTimeMillis(),
-                    publishedAt = 0L,
-                    releaseUrl = "",
-                    releaseNotes = "",
-                    apkName = "",
-                    apkDownloadUrl = ""
-                )
-            }
-            val latestVersion = normalizeVersion(release.optString("tag_name"))
-                .ifBlank { currentVersion }
-            val releaseUrl = release.optString("html_url")
-            val releaseNotes = release.optString("body")
-            val publishedAt = parseGithubTimeToMillis(release.optString("published_at"))
-            val assets = parseAssets(release.optJSONArray("assets"))
-            val preferredAsset = selectPreferredApkAsset(assets)
+            val selectedRelease = selectLatestRelease(
+                candidates = parseReleaseCandidates(JSONArray(body)),
+                includeBeta = includeBeta
+            ) ?: return emptyState(currentVersion, checkedAt = System.currentTimeMillis())
+            val preferredAsset = selectPreferredApkAsset(selectedRelease.assets, BuildConfig.APP_EDITION)
 
+            val hasInstallableUpdate = preferredAsset != null &&
+                compareVersions(selectedRelease.version, currentVersion) > 0
             return AppUpdateState(
                 currentVersion = currentVersion,
-                latestVersion = latestVersion,
-                hasUpdate = compareVersions(latestVersion, currentVersion) > 0,
+                latestVersion = selectedRelease.version,
+                hasUpdate = hasInstallableUpdate,
                 checkedAt = System.currentTimeMillis(),
-                publishedAt = publishedAt,
-                releaseUrl = releaseUrl,
-                releaseNotes = releaseNotes,
+                publishedAt = selectedRelease.publishedAt,
+                releaseUrl = selectedRelease.releaseUrl,
+                releaseNotes = selectedRelease.releaseNotes,
                 apkName = preferredAsset?.name.orEmpty(),
-                apkDownloadUrl = preferredAsset?.downloadUrl.orEmpty()
+                apkDownloadUrl = preferredAsset?.let {
+                    resolveApkDownloadUrl(downloadSource, selectedRelease.version, it)
+                }.orEmpty()
             )
         }
+    }
+
+    private fun applyPreferredDownloadSource(
+        state: AppUpdateState,
+        downloadSource: ApkDownloadSource
+    ): AppUpdateState {
+        if (state.latestVersion.isBlank() || state.apkName.isBlank()) {
+            return state
+        }
+        return state.copy(
+            apkDownloadUrl = resolveApkDownloadUrl(
+                downloadSource = downloadSource,
+                version = state.latestVersion,
+                asset = ReleaseAsset(
+                    name = state.apkName,
+                    downloadUrl = state.apkDownloadUrl
+                )
+            )
+        )
+    }
+
+    @VisibleForTesting
+    internal fun resolveApkDownloadUrl(
+        downloadSource: ApkDownloadSource,
+        version: String,
+        asset: ReleaseAsset
+    ): String {
+        if (asset.name.isBlank()) {
+            return asset.downloadUrl
+        }
+        val normalizedVersion = normalizeVersion(version)
+        if (normalizedVersion.isBlank()) {
+            return asset.downloadUrl
+        }
+        val releaseTag = "v${encodePathSegment(normalizedVersion)}"
+        val fileName = encodePathSegment(asset.name)
+        val prefix = when (downloadSource) {
+            ApkDownloadSource.CNB -> CNB_RELEASE_DOWNLOAD_PREFIX
+            ApkDownloadSource.GITHUB -> GITHUB_RELEASE_DOWNLOAD_PREFIX
+        }
+        return "$prefix/$releaseTag/$fileName"
+    }
+
+    private fun parseReleaseCandidates(array: JSONArray?): List<ReleaseCandidate> {
+        if (array == null) return emptyList()
+        val candidates = mutableListOf<ReleaseCandidate>()
+        for (index in 0 until array.length()) {
+            val raw = array.optJSONObject(index) ?: continue
+            if (raw.optBoolean("draft")) continue
+            val version = normalizeVersion(raw.optString("tag_name"))
+            val track = classifyReleaseTrack(version, prerelease = raw.optBoolean("prerelease"))
+            if (track == ReleaseTrack.UNSUPPORTED || version.isBlank()) continue
+            candidates += ReleaseCandidate(
+                version = version,
+                track = track,
+                publishedAt = parseGithubTimeToMillis(raw.optString("published_at")),
+                releaseUrl = raw.optString("html_url"),
+                releaseNotes = raw.optString("body"),
+                assets = parseAssets(raw.optJSONArray("assets"))
+            )
+        }
+        return candidates
     }
 
     private fun parseAssets(array: JSONArray?): List<ReleaseAsset> {
@@ -315,9 +519,63 @@ object AppUpdateManager {
         return assets
     }
 
+    private fun normalizeEdition(raw: String?): String {
+        return when (raw?.trim()?.lowercase(Locale.ROOT)) {
+            EDITION_STANDARD -> EDITION_STANDARD
+            EDITION_OMNIINFER -> EDITION_OMNIINFER
+            else -> if (BuildConfig.LOCAL_MODEL_FEATURE_ENABLED) EDITION_OMNIINFER else EDITION_STANDARD
+        }
+    }
+
+    private fun isEditionApkAsset(name: String, edition: String): Boolean {
+        return name.lowercase(Locale.ROOT).endsWith("-$edition.apk")
+    }
+
+    private fun isKnownEditionApkAsset(name: String): Boolean {
+        val normalized = name.lowercase(Locale.ROOT)
+        return normalized.endsWith("-$EDITION_STANDARD.apk") ||
+            normalized.endsWith("-$EDITION_OMNIINFER.apk")
+    }
+
     private fun parseGithubTimeToMillis(raw: String?): Long {
         if (raw.isNullOrBlank()) return 0L
         return runCatching { Instant.parse(raw).toEpochMilli() }.getOrDefault(0L)
+    }
+
+    private fun encodePathSegment(raw: String): String {
+        return URLEncoder.encode(raw, StandardCharsets.UTF_8.toString())
+            .replace("+", "%20")
+    }
+
+    private fun emptyState(currentVersion: String, checkedAt: Long = 0L): AppUpdateState {
+        return AppUpdateState(
+            currentVersion = currentVersion,
+            latestVersion = currentVersion,
+            hasUpdate = false,
+            checkedAt = checkedAt,
+            publishedAt = 0L,
+            releaseUrl = "",
+            releaseNotes = "",
+            apkName = "",
+            apkDownloadUrl = ""
+        )
+    }
+
+    private fun parseNumericVersionParts(raw: String): List<Int>? {
+        if (raw.isBlank()) return null
+        val parts = raw.split('.')
+        if (parts.any { part -> part.isBlank() || part.any { !it.isDigit() } }) {
+            return null
+        }
+        return parts.map { it.toInt() }
+    }
+
+    private fun shouldIncludeTrack(track: ReleaseTrack, includeBeta: Boolean): Boolean {
+        return when (track) {
+            ReleaseTrack.STABLE -> true
+            ReleaseTrack.BETA -> includeBeta
+            ReleaseTrack.UNSUPPORTED -> false
+        }
     }
 }
 

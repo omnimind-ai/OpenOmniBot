@@ -34,6 +34,12 @@ class ThemeModeSettingCard extends ConsumerWidget {
           keyPrefix: 'theme-mode-option',
           options: [
             OmniSegmentedOption<AppThemeMode>(
+              value: AppThemeMode.system,
+              label: context.l10n.themeModeSystem,
+              icon: Icons.brightness_auto_rounded,
+              id: 'system',
+            ),
+            OmniSegmentedOption<AppThemeMode>(
               value: AppThemeMode.light,
               label: context.l10n.themeModeLight,
               icon: Icons.light_mode_rounded,
@@ -44,12 +50,6 @@ class ThemeModeSettingCard extends ConsumerWidget {
               label: context.l10n.themeModeDark,
               icon: Icons.dark_mode_rounded,
               id: 'dark',
-            ),
-            OmniSegmentedOption<AppThemeMode>(
-              value: AppThemeMode.system,
-              label: context.l10n.themeModeSystem,
-              icon: Icons.brightness_auto_rounded,
-              id: 'system',
             ),
           ],
           onChanged: (nextMode) {

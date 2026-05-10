@@ -15,6 +15,21 @@ class PublicStorageAccessTest {
         assertTrue(PublicStorageAccess.isPublicStorageInput("/sdcard/Download/demo.txt"))
         assertTrue(PublicStorageAccess.isPublicStorageInput(" omnibot://public/DCIM/Camera "))
         assertTrue(PublicStorageAccess.isPublicStorageUri("omnibot://public/Music/demo.mp3"))
+        assertTrue(
+            PublicStorageAccess.isPublicStorageUri(
+                "omnibot:///storage/emulated/0/Pictures/demo.jpg"
+            )
+        )
+        assertTrue(
+            PublicStorageAccess.isPublicStorageUri(
+                "omnibot://storage/emulated/0/Pictures/demo.jpg"
+            )
+        )
+        assertTrue(
+            PublicStorageAccess.isPublicStorageUri(
+                "omnibot:///sdcard/Download/demo.txt"
+            )
+        )
         assertFalse(PublicStorageAccess.isPublicStoragePath("/workspace/demo"))
         assertFalse(PublicStorageAccess.isPublicStorageUri("omnibot://workspace/demo.txt"))
     }

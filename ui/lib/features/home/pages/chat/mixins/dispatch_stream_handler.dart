@@ -72,6 +72,7 @@ mixin DispatchStreamHandler<T extends StatefulWidget> on State<T> {
       'thinkingContent': deepThinkingContent,
       'stage': currentThinkingStage,
       'taskID': taskID,
+      'cardId': thinkingCardId,
       'startTime': startTime,
       'endTime': null,
     };
@@ -113,6 +114,7 @@ mixin DispatchStreamHandler<T extends StatefulWidget> on State<T> {
         cardData['isLoading'] = isDeepThinking;
         cardData['stage'] = newStage;
         cardData['taskID'] = taskID;
+        cardData['cardId'] = thinkingCardId;
         cardData['startTime'] = startTime;
         cardData['endTime'] = endTime;
 

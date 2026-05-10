@@ -34,15 +34,6 @@ class TagChip extends StatelessWidget {
             ? palette.segmentThumb
             : backgroundColor ?? palette.surfacePrimary,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: palette.shadowColor.withValues(
-              alpha: context.isDarkTheme ? 0.30 : 0.08,
-            ),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

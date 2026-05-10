@@ -51,6 +51,13 @@ object Settings {
         get() = Preference.getInt(key = "input_mode", default = InputMode.DEFAULT)
         set(value) = Preference.setInt(key = "input_mode", value)
 
+    var alpine_package_mirror
+        get() = Preference.getInt(
+            key = "alpine_package_mirror",
+            default = AlpinePackageMirror.TSINGHUA
+        )
+        set(value) = Preference.setInt(key = "alpine_package_mirror", value)
+
     var custom_background_name
         get() = Preference.getString(key = "custom_bg_name", default = "No Image Selected")
         set(value) = Preference.setString(key = "custom_bg_name",value)
@@ -109,6 +116,11 @@ object Settings {
 
 
 
+}
+
+object AlpinePackageMirror {
+    const val OFFICIAL = 0
+    const val TSINGHUA = 1
 }
 
 object Preference {

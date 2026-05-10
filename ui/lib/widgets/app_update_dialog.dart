@@ -11,11 +11,14 @@ Future<void> showAppUpdateDialog(
   AppUpdateStatus status,
 ) async {
   final hasDirectInstall = status.canInstall;
+  final isEnglish = Localizations.localeOf(context).languageCode == 'en';
   final confirmed = await AppDialog.confirm(
     context,
-    title: '发现新版本',
-    cancelText: '稍后',
-    confirmText: hasDirectInstall ? '立即更新' : '前往 Release',
+    title: isEnglish ? 'New version available' : '发现新版本',
+    cancelText: isEnglish ? 'Later' : '稍后',
+    confirmText: hasDirectInstall
+        ? (isEnglish ? 'Update now' : '立即更新')
+        : (isEnglish ? 'Go to Release' : '前往 Release'),
     confirmButtonColor: AppColors.buttonPrimary,
     content: _AppUpdateDialogContent(status: status),
     barrierDismissible: true,
@@ -27,7 +30,12 @@ Future<void> showAppUpdateDialog(
 
   if (!hasDirectInstall) {
     if (status.releaseUrl.isEmpty) {
-      showToast('缺少可用的 Release 地址', type: ToastType.error);
+      showToast(
+        isEnglish
+            ? 'No available Release URL'
+            : '缺少可用的 Release 地址',
+        type: ToastType.error,
+      );
       return;
     }
     final launched = await launchUrlString(
@@ -35,7 +43,10 @@ Future<void> showAppUpdateDialog(
       mode: LaunchMode.externalApplication,
     );
     if (!launched) {
-      showToast('打开 Release 页面失败', type: ToastType.error);
+      showToast(
+        isEnglish ? 'Failed to open Release page' : '打开 Release 页面失败',
+        type: ToastType.error,
+      );
     }
     return;
   }
@@ -43,14 +54,21 @@ Future<void> showAppUpdateDialog(
   try {
     final notificationGranted = await ensureNotificationPermission();
     if (!notificationGranted) {
-      showToast('未授予通知权限，下载仍会继续，但不会显示系统下载进度', type: ToastType.warning);
+      showToast(
+        isEnglish
+            ? 'Notification permission is not granted. Download will continue, but system download progress will not be shown.'
+            : '未授予通知权限，下载仍会继续，但不会显示系统下载进度',
+        type: ToastType.warning,
+      );
     }
     final result = await AppUpdateService.installLatestApk();
     final toastType = result.success ? ToastType.success : ToastType.warning;
-    final message = result.message.isEmpty ? '更新安装失败' : result.message;
+    final message = result.message.isEmpty
+        ? (isEnglish ? 'Update installation failed' : '更新安装失败')
+        : result.message;
     showToast(message, type: toastType);
   } catch (_) {
-    showToast('拉起更新失败', type: ToastType.error);
+    showToast(isEnglish ? 'Failed to start update' : '拉起更新失败', type: ToastType.error);
   }
 }
 
@@ -68,22 +86,36 @@ class _AppUpdateDialogContent extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _InfoRow(label: '当前版本', value: status.currentVersionLabel),
+        _InfoRow(
+          label: Localizations.localeOf(context).languageCode == 'en'
+              ? 'Current version'
+              : '当前版本',
+          value: status.currentVersionLabel,
+        ),
         const SizedBox(height: 8),
-        _InfoRow(label: '最新版本', value: status.latestVersionLabel),
+        _InfoRow(
+          label: Localizations.localeOf(context).languageCode == 'en'
+              ? 'Latest version'
+              : '最新版本',
+          value: status.latestVersionLabel,
+        ),
         if (publishedAt != null) ...[
           const SizedBox(height: 8),
           _InfoRow(
-            label: '发布时间',
+            label: Localizations.localeOf(context).languageCode == 'en'
+                ? 'Published at'
+                : '发布时间',
             value:
                 '${publishedAt.year.toString().padLeft(4, '0')}-${publishedAt.month.toString().padLeft(2, '0')}-${publishedAt.day.toString().padLeft(2, '0')}',
           ),
         ],
         if (status.releaseNotes.isNotEmpty) ...[
           const SizedBox(height: 12),
-          const Text(
-            '更新说明',
-            style: TextStyle(
+          Text(
+            Localizations.localeOf(context).languageCode == 'en'
+                ? 'Release notes'
+                : '更新说明',
+            style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: AppColors.text,

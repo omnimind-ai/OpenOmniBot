@@ -1,3 +1,4 @@
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/models/scheduled_task.dart';
 import 'package:ui/services/scheduled_task_scheduler_service.dart';
 import 'package:ui/services/scheduled_task_storage_service.dart';
@@ -47,7 +48,9 @@ class AgentScheduleBridgeService {
       normalizedTask,
     );
     if (!saved) {
-      throw StateError('定时任务保存失败');
+      throw StateError(LegacyTextLocalizer.isEnglish
+          ? 'Failed to save scheduled task'
+          : '定时任务保存失败');
     }
     if (normalizedTask.isEnabled) {
       ScheduledTaskSchedulerService.scheduleTask(normalizedTask);
@@ -57,7 +60,9 @@ class AgentScheduleBridgeService {
     return {
       'success': true,
       'taskId': normalizedTask.id,
-      'summary': '已创建定时任务“${normalizedTask.title}”',
+      'summary': LegacyTextLocalizer.isEnglish
+          ? 'Created scheduled task “${normalizedTask.title}”'
+          : '已创建定时任务”${normalizedTask.title}”',
       'task': _toSummaryMap(normalizedTask),
     };
   }
@@ -80,7 +85,9 @@ class AgentScheduleBridgeService {
       taskId,
     );
     if (existing == null) {
-      throw StateError('未找到对应的定时任务');
+      throw StateError(LegacyTextLocalizer.isEnglish
+          ? 'Scheduled task not found'
+          : '未找到对应的定时任务');
     }
 
     var nextType = existing.type;
@@ -148,7 +155,9 @@ class AgentScheduleBridgeService {
       updated,
     );
     if (!saved) {
-      throw StateError('定时任务更新失败');
+      throw StateError(LegacyTextLocalizer.isEnglish
+          ? 'Failed to update scheduled task'
+          : '定时任务更新失败');
     }
     if (updated.isEnabled) {
       ScheduledTaskSchedulerService.scheduleTask(updated);
@@ -158,7 +167,9 @@ class AgentScheduleBridgeService {
     return {
       'success': true,
       'taskId': updated.id,
-      'summary': '已更新定时任务“${updated.title}”',
+      'summary': LegacyTextLocalizer.isEnglish
+          ? 'Updated scheduled task “${updated.title}”'
+          : '已更新定时任务”${updated.title}”',
       'task': _toSummaryMap(updated),
     };
   }
@@ -171,7 +182,9 @@ class AgentScheduleBridgeService {
       taskId,
     );
     if (existing == null) {
-      throw StateError('未找到对应的定时任务');
+      throw StateError(LegacyTextLocalizer.isEnglish
+          ? 'Scheduled task not found'
+          : '未找到对应的定时任务');
     }
 
     ScheduledTaskSchedulerService.cancelTask(taskId);
@@ -179,12 +192,16 @@ class AgentScheduleBridgeService {
       taskId,
     );
     if (!deleted) {
-      throw StateError('定时任务删除失败');
+      throw StateError(LegacyTextLocalizer.isEnglish
+          ? 'Failed to delete scheduled task'
+          : '定时任务删除失败');
     }
     return {
       'success': true,
       'taskId': taskId,
-      'summary': '已删除定时任务“${existing.title}”',
+      'summary': LegacyTextLocalizer.isEnglish
+          ? 'Deleted scheduled task “${existing.title}”'
+          : '已删除定时任务”${existing.title}”',
       'task': _toSummaryMap(existing),
     };
   }

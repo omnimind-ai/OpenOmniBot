@@ -4,11 +4,6 @@
   </picture>
 </p>
 
-<p align="center">
-  <a href="README.md"><b>English</b></a> |
-  <a href="README.zh-CN.md"><b>简体中文</b></a>
-</p>
-
 <h3 align="center">
 Your On-Device AI Assistant
 </h3>
@@ -33,6 +28,10 @@ Your On-Device AI Assistant
 <a href="https://github.com/omnimind-ai/OpenOmniBot/releases"><b>Release</b></a>
 |
 <a href="https://github.com/omnimind-ai/OpenOmniBot/issues"><b>Issues</b></a>
+|
+<a href="README.md"><b>English</b></a> 
+|
+<a href="README.zh-CN.md"><b>简体中文</b></a>
 |
 </p>
 
@@ -72,7 +71,7 @@ Then open the scenario model settings:
 Note: `Memory embedding` requires an embedding model. For the best overall experience, the other scenarios should use multimodal or vision-capable models whenever possible.
 
 <p align="center">
-  <img src="docs/tutorial/five.jpg" alt="Alpine environment" width="260" />
+  <img src="docs/tutorial/five.png" alt="Alpine environment" width="260" />
 </p>
 
 The app usually initializes the Alpine environment automatically on startup, and you can also manage that environment from the same settings area.
@@ -140,6 +139,7 @@ Scheduled tasks can execute work such as VLM tasks and subagent flows. Alarms ar
 git clone https://github.com/omnimind-ai/OpenOmniBot.git
 cd OpenOmniBot
 
+# Required only when building the full omniinfer edition.
 git submodule update --init third_party/omniinfer
 git -C third_party/omniinfer submodule update --init framework/mnn
 git -C third_party/omniinfer submodule update --init framework/llama.cpp
@@ -159,10 +159,19 @@ flutter pub get
 
 ```bash
 cd ..
-./gradlew :app:installDevelopDebug
+
+# Slim standard edition, without local inference
+./gradlew :app:installDevelopStandardDebug -Ptarget=lib/main_standard.dart
+
+# Full omniinfer edition, with local inference
+./gradlew :app:installDevelopOmniinferDebug -Ptarget=lib/main_omniinfer.dart
 ```
 
 <h2 id="architecture">Architecture Overview</h2>
+
+<p align="center">
+  <img src="docs/pic/architect.svg" alt="Architecture" width="100%" />
+</p>
 
 ```text
 OpenOmniBot/
@@ -189,8 +198,9 @@ Special thanks to these open-source projects:
 <table align="center">
   <tr>
     <td align="center">
-      <img src="docs/pic/wechat.png" alt="WeChat Group" width="220"/><br/>
-      <b>WeChat Group</b>
+      <img src="docs/pic/wechat.jpg" alt="WeChat Group" width="220"/><br/>
+      <b>WeChat Group</b><br/>
+      <a href="https://discord.gg/WnBvBXgykD">Join our Discord community</a>
     </td>
   </tr>
 </table>

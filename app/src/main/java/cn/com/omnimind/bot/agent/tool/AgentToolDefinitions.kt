@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.agent
 
+import cn.com.omnimind.baselib.shizuku.ShizukuBackend
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.i18n.PromptLocale
 import kotlinx.serialization.json.JsonElement
@@ -20,13 +21,6 @@ object AgentToolDefinitions {
     
     private fun currentLocale(): PromptLocale = AppLocaleManager.currentPromptLocale()
 
-    private fun toolTitleRule(locale: PromptLocale): String = when (locale) {
-        PromptLocale.ZH_CN ->
-            "调用时必须提供 tool_title，作为展示给用户的简洁标题，建议 4-12 个字并使用与用户相同的语言。"
-        PromptLocale.EN_US ->
-            "Every tool call must include `tool_title`, a short user-visible title for the chat UI. Keep it concise, roughly 4-12 words, and use the same language as the user."
-    }
-
     private fun toolTitlePropertySchema(locale: PromptLocale): JsonObject = buildJsonObject {
         put("type", "string")
         put(
@@ -38,20 +32,6 @@ object AgentToolDefinitions {
                     "A concise title describing what this tool call is doing. It is shown to the user, should stay short, and should use the same language as the user."
             }
         )
-    }
-
-    private fun ensureToolTitleDescription(
-        description: String,
-        locale: PromptLocale
-    ): String {
-        val trimmed = description.trim()
-        if (trimmed.contains(TOOL_TITLE_FIELD)) {
-            return trimmed
-        }
-        if (trimmed.isEmpty()) {
-            return toolTitleRule(locale)
-        }
-        return "$trimmed ${toolTitleRule(locale)}"
     }
 
     fun decorateParameterSchema(
@@ -129,13 +109,7 @@ object AgentToolDefinitions {
                 buildJsonObject {
                     function.forEach { (key, value) ->
                         when (key) {
-                            "description" -> put(
-                                "description",
-                                ensureToolTitleDescription(
-                                    value.jsonPrimitive.contentOrNull.orEmpty(),
-                                    locale
-                                )
-                            )
+                            "description" -> put("description", value)
 
                             "parameters" -> put(
                                 "parameters",
@@ -145,9 +119,8 @@ object AgentToolDefinitions {
                             else -> put(key, value)
                         }
                     }
-                    if (function["description"] == null) {
-                        put("description", toolTitleRule(locale))
-                    }
+                    // no fallback description needed; tool_title is already
+                    // a required parameter with its own schema description.
                     if (function["parameters"] == null) {
                         put("parameters", decorateParameterSchema(parameters, locale))
                     }
@@ -300,8 +273,8 @@ object AgentToolDefinitions {
             "Stop an existing terminal session and clean up the corresponding tmux session. Call this after the stateful terminal task is complete.",
         "结束后等待工具结果，再回复用户。" to
             "Wait for the tool result after stopping the session before replying to the user.",
-        "控制一个最多 3 个标签页的离屏浏览器。不要用它打开 App deep link、omnibot:// 非 browser 资源或应用内路由。浏览器只支持访问 http(s) 页面，以及 omnibot://browser/... 资源文件。使用 navigate 打开页面，screenshot 查看当前视口截图（传 read_image=true 可让模型直接看到截图内容），click/type/hover 与元素交互，get_text/get_readable 抽取内容，scroll 导航长页面，scroll_and_collect 在一次调用中滚动并收集无限列表内容，find_elements 发现可交互元素，get_page_info 获取页面元信息，get_backbone 获取 DOM 骨架，execute_js 执行脚本，fetch 复用当前页面 session 下载资源并返回 omnibot://browser/... 产物，new_tab/close_tab/list_tabs 管理标签页，go_back/go_forward 浏览器前进后退，press_key 模拟键盘按键，wait_for_selector 等待元素出现，get_cookies 返回 cookie 摘要与可复用的 offload env 脚本路径，set_user_agent 切换 desktop_safari 或 mobile_safari。tool_title 必须是 5-10 个字的简洁摘要，并使用与用户相同的语言。" to
-            "Control an off-screen browser with up to 3 tabs. Do not use it for app deep links, non-browser `omnibot://` resources, or in-app routes. The browser supports http(s) pages and `omnibot://browser/...` resources. Use navigate to open pages, screenshot to capture the current viewport (set read_image=true if the model should inspect the screenshot directly), click/type/hover for interaction, get_text/get_readable for extraction, scroll for long-page navigation, scroll_and_collect to collect infinite-list content in one call, find_elements to discover interactable elements, get_page_info for metadata, get_backbone for a DOM skeleton, execute_js for scripting, fetch to download resources with the current page session and return `omnibot://browser/...` artifacts, new_tab/close_tab/list_tabs for tab management, go_back/go_forward for navigation history, press_key to simulate keys, wait_for_selector to wait for elements, get_cookies for cookie summaries plus a reusable offload env script path, and set_user_agent to switch between desktop_safari and mobile_safari. `tool_title` must be a concise 5-10 word summary in the same language as the user.",
+        "控制一个最多 3 个标签页的离屏浏览器。不要用它打开 App deep link、omnibot:// 非 browser 资源或应用内路由。浏览器只支持访问 http(s) 页面，以及 omnibot://browser/... 资源文件。使用 navigate 打开页面，screenshot 查看当前视口截图（传 read_image=true 可让模型直接看到截图内容），click/type/hover 与元素交互，get_text/get_readable 抽取内容，scroll 导航长页面，scroll_and_collect 在一次调用中滚动并收集无限列表内容，find_elements 发现可交互元素，get_page_info 获取页面元信息，get_backbone 获取 DOM 骨架，execute_js 执行脚本，fetch 复用当前页面 session 下载资源并返回 omnibot://browser/... 产物，new_tab/close_tab/list_tabs 管理标签页，go_back/go_forward 浏览器前进后退，press_key 模拟键盘按键，wait_for_selector 等待元素出现，get_cookies 返回 cookie 摘要与可复用的 offload env 脚本路径，set_user_agent 兼容 desktop_safari/mobile_safari 入参但实际切换 Android Chrome 风格桌面/移动 UA。结果可能包含 riskChallengeDetected、riskChallengeKind、recommendedNextAction、throttleDelayMs；若 riskChallengeDetected=true，应停止自动交互/刷新并请用户手动接管。tool_title 必须是 5-10 个字的简洁摘要，并使用与用户相同的语言。" to
+            "Control an off-screen browser with up to 3 tabs. Do not use it for app deep links, non-browser `omnibot://` resources, or in-app routes. The browser supports http(s) pages and `omnibot://browser/...` resources. Use navigate to open pages, screenshot to capture the current viewport (set read_image=true if the model should inspect the screenshot directly), click/type/hover for interaction, get_text/get_readable for extraction, scroll for long-page navigation, scroll_and_collect to collect infinite-list content in one call, find_elements to discover interactable elements, get_page_info for metadata, get_backbone for a DOM skeleton, execute_js for scripting, fetch to download resources with the current page session and return `omnibot://browser/...` artifacts, new_tab/close_tab/list_tabs for tab management, go_back/go_forward for navigation history, press_key to simulate keys, wait_for_selector to wait for elements, get_cookies for cookie summaries plus a reusable offload env script path, and set_user_agent to accept desktop_safari/mobile_safari for compatibility while actually switching Android Chrome-style desktop/mobile UAs. Results may include riskChallengeDetected, riskChallengeKind, recommendedNextAction, and throttleDelayMs; when riskChallengeDetected=true, stop automated interaction/reload attempts and ask the user to take over manually. `tool_title` must be a concise 5-10 word summary in the same language as the user.",
         "本次工具调用要做什么的简洁摘要，5-10 个字，展示给用户。" to
             "A concise summary of what this tool call is doing. Keep it to about 5-10 words and show it to the user.",
         "浏览器动作。" to "Browser action.",
@@ -326,8 +299,8 @@ object AgentToolDefinitions {
             "Number of scrolls for scroll_and_collect. Default 10, maximum 20.",
         "get_backbone 的最大深度，默认 5。" to
             "Maximum depth for get_backbone. Default 5.",
-        "要切换到的 user agent profile。" to
-            "User agent profile to switch to.",
+        "要切换到的 UA profile；枚举名保持兼容，实际使用 Android Chrome 风格桌面/移动 UA。" to
+            "UA profile to switch to. Enum names remain compatible; the actual user agents are Android Chrome-style desktop/mobile UAs.",
         "get_cookies 的 cookie 名过滤关键词。可传空格分隔字符串，兼容数组字符串输入。fuzzy=true 时要求所有关键词都包含在 cookie 名中；fuzzy=false 时要求精确命中任一 cookie 名。" to
             "Keyword filter for cookie names in get_cookies. Accepts a space-separated string and also tolerates array-like string input. When fuzzy=true, every keyword must appear in the cookie name; when fuzzy=false, an exact match of any cookie name is required.",
         "get_cookies 的关键词匹配模式，默认 true。" to
@@ -518,7 +491,13 @@ object AgentToolDefinitions {
             "Wait for the tool result after dispatching, then summarize it for the user.",
         "需要并行执行的子任务列表。" to "List of subtasks to execute in parallel.",
         "并发度，默认 2，范围 1-6。" to "Concurrency level. Default 2, range 1-6.",
-        "结果聚合要求，可选。" to "Optional instructions for result aggregation."
+        "结果聚合要求，可选。" to "Optional instructions for result aggregation.",
+        "创建新的定时任务。执行后等待工具结果，再决定是否回复用户。若 `targetKind=subagent`，`subagentPrompt` 必须写成任务触发时要立即执行的动作，不要重复填写“每天几点提醒我/定时去做”这类调度描述。" to
+            "Create a new scheduled task. Wait for the tool result before replying. When `targetKind=subagent`, `subagentPrompt` must describe the concrete action to execute at trigger time instead of repeating scheduling phrasing such as daily at a given time or remind me to do it.",
+        "修改已有定时任务的时间、标题、每日重复或启停状态。若 `targetKind=subagent`，更新后的 `subagentPrompt` 仍应描述触发时真正执行的动作，而不是再次描述调度本身。" to
+            "Update an existing scheduled task's time, title, daily repeat, or enabled state. When `targetKind=subagent`, the updated `subagentPrompt` should still describe the real action to execute at trigger time rather than restating the schedule itself.",
+        "subagent 被触发时要立即执行的任务说明。不要把“每天/几点/定时/提醒/闹钟/创建任务”等调度话术写进去，而要写成到点后此刻真正要完成的动作。" to
+            "The task instructions that the subagent should execute immediately when triggered. Do not include scheduling phrases such as daily, at a specific time, scheduled, remind me, alarm, or create a task. Describe the real action that should be carried out at execution time."
     )
 
     val contextAppsQueryTool: JsonObject = buildJsonObject {
@@ -649,6 +628,298 @@ object AgentToolDefinitions {
         }
     }
 
+    fun androidPrivilegedActionTool(
+        visibleActions: List<String>,
+        backend: ShizukuBackend,
+        locale: PromptLocale = currentLocale()
+    ): JsonObject {
+        val text: (String, String) -> String = { zh, en ->
+            if (locale == PromptLocale.ZH_CN) zh else en
+        }
+        val backendLabel = when (backend) {
+            ShizukuBackend.ROOT -> text("root/Sui", "root/Sui")
+            ShizukuBackend.ADB -> text("adb shell", "adb shell")
+            ShizukuBackend.NONE -> text("未授权", "not granted")
+        }
+        val actionList = visibleActions.joinToString(", ")
+
+        return decorateToolDefinition(buildJsonObject {
+            put("type", "function")
+            putJsonObject("function") {
+                put("name", "android_privileged_action")
+                put("displayName", text("安卓高级动作", "Android Privileged Action"))
+                put("toolType", "privileged")
+                put(
+                    "description",
+                    text(
+                        "通过 Shizuku 执行安卓高权限动作。这条能力链路独立于 `terminal_execute`：既保留受控 typed action，也支持 `action=shell.exec` 的一次性任意 shell。若确实需要保留 cwd、环境变量或 shell 状态，请改用 `android_privileged_session_*`。当前后端：$backendLabel。当前可见 action：$actionList。`shell.exec` 与高风险动作都必须在 `arguments.confirmed` 中显式确认。",
+                        "Run Android privileged actions through Shizuku. This path stays separate from `terminal_execute`: it keeps the typed allowlisted actions and also supports one-shot arbitrary shell via `action=shell.exec`. When you truly need persistent cwd, environment, or shell state, switch to `android_privileged_session_*`. Current backend: $backendLabel. Currently visible actions: $actionList. `shell.exec` and high-risk actions both require explicit confirmation in `arguments.confirmed`."
+                    )
+                )
+                put(
+                    "postToolRule",
+                    text(
+                        "调用后先等待工具结果；如果返回需要确认，不要自行假设用户同意。",
+                        "Wait for the tool result before deciding the next step. If it asks for confirmation, do not assume user consent."
+                    )
+                )
+                putJsonObject("parameters") {
+                    put("type", "object")
+                    putJsonObject("properties") {
+                        putJsonObject("action") {
+                            put("type", "string")
+                            put(
+                                "description",
+                                text(
+                                    "要执行的受控高级动作标识。",
+                                    "The controlled privileged action to run."
+                                )
+                            )
+                            putJsonArray("enum") {
+                                visibleActions.forEach { add(it) }
+                            }
+                        }
+                        putJsonObject("arguments") {
+                            put("type", "object")
+                            put(
+                                "description",
+                                text(
+                                    "动作参数对象。typed action 只传该 action 需要的字段；当 `action=shell.exec` 时，在这里传入 `command`、可选 `timeoutSeconds`、`workingDirectory`、`environment`，以及已获得用户明确同意后才传 `confirmed=true`。",
+                                    "Arguments object for the selected action. For typed actions, only include the fields that action needs. When `action=shell.exec`, provide `command`, optional `timeoutSeconds`, `workingDirectory`, `environment`, and only pass `confirmed=true` after explicit user consent."
+                                )
+                            )
+                        }
+                    }
+                    putJsonArray("required") {
+                        add("action")
+                        add("arguments")
+                    }
+                }
+            }
+        }, locale)
+    }
+
+    fun androidPrivilegedSessionStartTool(
+        backend: ShizukuBackend,
+        locale: PromptLocale = currentLocale()
+    ): JsonObject {
+        val text: (String, String) -> String = { zh, en ->
+            if (locale == PromptLocale.ZH_CN) zh else en
+        }
+        val backendLabel = when (backend) {
+            ShizukuBackend.ROOT -> text("root/Sui", "root/Sui")
+            ShizukuBackend.ADB -> text("adb shell", "adb shell")
+            ShizukuBackend.NONE -> text("未授权", "not granted")
+        }
+        return decorateToolDefinition(buildJsonObject {
+            put("type", "function")
+            putJsonObject("function") {
+                put("name", "android_privileged_session_start")
+                put("displayName", text("启动高权限会话", "Start Privileged Session"))
+                put("toolType", "privileged")
+                put(
+                    "description",
+                    text(
+                        "启动一个可复用的 Shizuku 高权限 shell 会话，仅用于确实需要跨多轮保留 cwd、环境变量或 shell 状态的任务。当前后端：$backendLabel。此操作需要用户明确确认。",
+                        "Start a reusable Shizuku privileged shell session. Use it only when a task truly needs persistent cwd, environment variables, or shell state across turns. Current backend: $backendLabel. This operation requires explicit user confirmation."
+                    )
+                )
+                put(
+                    "postToolRule",
+                    text(
+                        "启动后先等待工具结果；如果返回需要确认，不要自行假设用户同意。",
+                        "Wait for the tool result after starting. If it asks for confirmation, do not assume user consent."
+                    )
+                )
+                putJsonObject("parameters") {
+                    put("type", "object")
+                    putJsonObject("properties") {
+                        putJsonObject("sessionName") {
+                            put("type", "string")
+                            put("description", text("可选，会话名称。未传时自动生成。", "Optional session name. Generated automatically when omitted."))
+                        }
+                        putJsonObject("workingDirectory") {
+                            put("type", "string")
+                            put("description", text("可选，会话初始工作目录。建议使用 Android 设备上的绝对路径。", "Optional initial working directory. Prefer an absolute path on the Android device filesystem."))
+                        }
+                        putJsonObject("environment") {
+                            put("type", "object")
+                            put("description", text("可选，启动时要注入的环境变量映射。", "Optional environment variables to inject when the session starts."))
+                            putJsonObject("additionalProperties") {
+                                put("type", "string")
+                            }
+                        }
+                        putJsonObject("confirmed") {
+                            put("type", "boolean")
+                            put("description", text("只有在用户已明确同意时才传 true。", "Set to true only after the user has explicitly confirmed."))
+                        }
+                    }
+                }
+            }
+        }, locale)
+    }
+
+    fun androidPrivilegedSessionExecTool(
+        backend: ShizukuBackend,
+        locale: PromptLocale = currentLocale()
+    ): JsonObject {
+        val text: (String, String) -> String = { zh, en ->
+            if (locale == PromptLocale.ZH_CN) zh else en
+        }
+        val backendLabel = when (backend) {
+            ShizukuBackend.ROOT -> text("root/Sui", "root/Sui")
+            ShizukuBackend.ADB -> text("adb shell", "adb shell")
+            ShizukuBackend.NONE -> text("未授权", "not granted")
+        }
+        return decorateToolDefinition(buildJsonObject {
+            put("type", "function")
+            putJsonObject("function") {
+                put("name", "android_privileged_session_exec")
+                put("displayName", text("执行高权限命令", "Run Privileged Command"))
+                put("toolType", "privileged")
+                put(
+                    "description",
+                    text(
+                        "向已有的 Shizuku 高权限 shell 会话发送一条命令，并等待该命令完成。当前后端：$backendLabel。每次执行都需要用户明确确认。",
+                        "Send a command to an existing Shizuku privileged shell session and wait for that command to finish. Current backend: $backendLabel. Every execution requires explicit user confirmation."
+                    )
+                )
+                put(
+                    "postToolRule",
+                    text(
+                        "执行后先等待工具结果，再决定是否继续读取输出、再次执行或结束会话。",
+                        "Wait for the tool result after execution before deciding whether to read output, run another command, or stop the session."
+                    )
+                )
+                putJsonObject("parameters") {
+                    put("type", "object")
+                    putJsonObject("properties") {
+                        putJsonObject("sessionId") {
+                            put("type", "string")
+                            put("description", text("`android_privileged_session_start` 返回的 sessionId。", "The sessionId returned by `android_privileged_session_start`."))
+                        }
+                        putJsonObject("command") {
+                            put("type", "string")
+                            put("description", text("要执行的 shell 命令。", "The shell command to execute."))
+                        }
+                        putJsonObject("timeoutSeconds") {
+                            put("type", "integer")
+                            put("description", text("等待该命令完成的超时时间，默认 120 秒，范围 5-600。", "Timeout in seconds while waiting for the command to finish. Default 120, range 5-600."))
+                        }
+                        putJsonObject("confirmed") {
+                            put("type", "boolean")
+                            put("description", text("只有在用户已明确同意时才传 true。", "Set to true only after the user has explicitly confirmed."))
+                        }
+                    }
+                    putJsonArray("required") {
+                        add("sessionId")
+                        add("command")
+                    }
+                }
+            }
+        }, locale)
+    }
+
+    fun androidPrivilegedSessionReadTool(
+        backend: ShizukuBackend,
+        locale: PromptLocale = currentLocale()
+    ): JsonObject {
+        val text: (String, String) -> String = { zh, en ->
+            if (locale == PromptLocale.ZH_CN) zh else en
+        }
+        val backendLabel = when (backend) {
+            ShizukuBackend.ROOT -> text("root/Sui", "root/Sui")
+            ShizukuBackend.ADB -> text("adb shell", "adb shell")
+            ShizukuBackend.NONE -> text("未授权", "not granted")
+        }
+        return decorateToolDefinition(buildJsonObject {
+            put("type", "function")
+            putJsonObject("function") {
+                put("name", "android_privileged_session_read")
+                put("displayName", text("读取高权限输出", "Read Privileged Output"))
+                put("toolType", "privileged")
+                put(
+                    "description",
+                    text(
+                        "读取 Shizuku 高权限 shell 会话最近的 transcript 尾部。当前后端：$backendLabel。该操作不会再次请求确认。",
+                        "Read the latest transcript tail from a Shizuku privileged shell session. Current backend: $backendLabel. This operation does not require another confirmation."
+                    )
+                )
+                put(
+                    "postToolRule",
+                    text(
+                        "读取结果后再决定是否继续发送命令或结束会话。",
+                        "After reading the result, decide whether to send another command or stop the session."
+                    )
+                )
+                putJsonObject("parameters") {
+                    put("type", "object")
+                    putJsonObject("properties") {
+                        putJsonObject("sessionId") {
+                            put("type", "string")
+                            put("description", text("`android_privileged_session_start` 返回的 sessionId。", "The sessionId returned by `android_privileged_session_start`."))
+                        }
+                        putJsonObject("maxChars") {
+                            put("type", "integer")
+                            put("description", text("最多返回多少字符，默认 4000，范围 256-64000。", "Maximum number of characters to return. Default 4000, range 256-64000."))
+                        }
+                    }
+                    putJsonArray("required") {
+                        add("sessionId")
+                    }
+                }
+            }
+        }, locale)
+    }
+
+    fun androidPrivilegedSessionStopTool(
+        backend: ShizukuBackend,
+        locale: PromptLocale = currentLocale()
+    ): JsonObject {
+        val text: (String, String) -> String = { zh, en ->
+            if (locale == PromptLocale.ZH_CN) zh else en
+        }
+        val backendLabel = when (backend) {
+            ShizukuBackend.ROOT -> text("root/Sui", "root/Sui")
+            ShizukuBackend.ADB -> text("adb shell", "adb shell")
+            ShizukuBackend.NONE -> text("未授权", "not granted")
+        }
+        return decorateToolDefinition(buildJsonObject {
+            put("type", "function")
+            putJsonObject("function") {
+                put("name", "android_privileged_session_stop")
+                put("displayName", text("结束高权限会话", "Stop Privileged Session"))
+                put("toolType", "privileged")
+                put(
+                    "description",
+                    text(
+                        "结束已有的 Shizuku 高权限 shell 会话并清理状态。当前后端：$backendLabel。该操作不会再次请求确认。",
+                        "Stop an existing Shizuku privileged shell session and clean up its state. Current backend: $backendLabel. This operation does not require another confirmation."
+                    )
+                )
+                put(
+                    "postToolRule",
+                    text(
+                        "结束后先等待工具结果，再决定是否回复用户。",
+                        "Wait for the tool result after stopping the session before replying to the user."
+                    )
+                )
+                putJsonObject("parameters") {
+                    put("type", "object")
+                    putJsonObject("properties") {
+                        putJsonObject("sessionId") {
+                            put("type", "string")
+                            put("description", text("`android_privileged_session_start` 返回的 sessionId。", "The sessionId returned by `android_privileged_session_start`."))
+                        }
+                    }
+                    putJsonArray("required") {
+                        add("sessionId")
+                    }
+                }
+            }
+        }, locale)
+    }
+
     val terminalSessionStartTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -767,7 +1038,7 @@ object AgentToolDefinitions {
             put("toolType", "browser")
             put(
                 "description",
-                "控制一个最多 3 个标签页的离屏浏览器。不要用它打开 App deep link、omnibot:// 非 browser 资源或应用内路由。浏览器只支持访问 http(s) 页面，以及 omnibot://browser/... 资源文件。使用 navigate 打开页面，screenshot 查看当前视口截图（传 read_image=true 可让模型直接看到截图内容），click/type/hover 与元素交互，get_text/get_readable 抽取内容，scroll 导航长页面，scroll_and_collect 在一次调用中滚动并收集无限列表内容，find_elements 发现可交互元素，get_page_info 获取页面元信息，get_backbone 获取 DOM 骨架，execute_js 执行脚本，fetch 复用当前页面 session 下载资源并返回 omnibot://browser/... 产物，new_tab/close_tab/list_tabs 管理标签页，go_back/go_forward 浏览器前进后退，press_key 模拟键盘按键，wait_for_selector 等待元素出现，get_cookies 返回 cookie 摘要与可复用的 offload env 脚本路径，set_user_agent 切换 desktop_safari 或 mobile_safari。tool_title 必须是 5-10 个字的简洁摘要，并使用与用户相同的语言。"
+                "控制一个最多 3 个标签页的离屏浏览器。不要用它打开 App deep link、omnibot:// 非 browser 资源或应用内路由。浏览器只支持访问 http(s) 页面，以及 omnibot://browser/... 资源文件。使用 navigate 打开页面，screenshot 查看当前视口截图（传 read_image=true 可让模型直接看到截图内容），click/type/hover 与元素交互，get_text/get_readable 抽取内容，scroll 导航长页面，scroll_and_collect 在一次调用中滚动并收集无限列表内容，find_elements 发现可交互元素，get_page_info 获取页面元信息，get_backbone 获取 DOM 骨架，execute_js 执行脚本，fetch 复用当前页面 session 下载资源并返回 omnibot://browser/... 产物，new_tab/close_tab/list_tabs 管理标签页，go_back/go_forward 浏览器前进后退，press_key 模拟键盘按键，wait_for_selector 等待元素出现，get_cookies 返回 cookie 摘要与可复用的 offload env 脚本路径，set_user_agent 兼容 desktop_safari/mobile_safari 入参但实际切换 Android Chrome 风格桌面/移动 UA。结果可能包含 riskChallengeDetected、riskChallengeKind、recommendedNextAction、throttleDelayMs；若 riskChallengeDetected=true，应停止自动交互/刷新并请用户手动接管。tool_title 必须是 5-10 个字的简洁摘要，并使用与用户相同的语言。"
             )
             putJsonObject("parameters") {
                 put("type", "object")
@@ -859,13 +1130,14 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("user_agent") {
                         put("type", "string")
-                        put("description", "要切换到的 user agent profile。")
+                        put("description", "要切换到的 UA profile；枚举名保持兼容，实际使用 Android Chrome 风格桌面/移动 UA。")
                         putJsonArray("enum") {
                             add("desktop_safari")
                             add("mobile_safari")
                         }
                     }
                     putJsonObject("keywords") {
+                        put("type", "string")
                         put(
                             "description",
                             "get_cookies 的 cookie 名过滤关键词。可传空格分隔字符串，兼容数组字符串输入。fuzzy=true 时要求所有关键词都包含在 cookie 名中；fuzzy=false 时要求精确命中任一 cookie 名。"
@@ -902,7 +1174,7 @@ object AgentToolDefinitions {
             put("name", "file_read")
             put("displayName", "读取文件")
             put("toolType", "workspace")
-            put("description", "读取 workspace 或 Omnibot 白名单目录中的文件内容。")
+            put("description", "读取 workspace 或 Omnibot 白名单目录中的文件内容。自动支持图片/截图，图片会返回元数据与可视预览。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1178,7 +1450,7 @@ object AgentToolDefinitions {
             put("name", "schedule_task_create")
             put("displayName", "创建定时任务")
             put("toolType", "schedule")
-            put("description", "创建新的定时任务。执行后等待工具结果，再决定是否回复用户。")
+            put("description", "创建新的定时任务。执行后等待工具结果，再决定是否回复用户。若 `targetKind=subagent`，`subagentPrompt` 必须写成任务触发时要立即执行的动作，不要重复填写“每天几点提醒我/定时去做”这类调度描述。")
             put("postToolRule", "创建完成后不要在同一轮继续调用其他工具；请等待工具结果，并通过 response 输出最终答复。")
             putJsonObject("parameters") {
                 put("type", "object")
@@ -1194,7 +1466,13 @@ object AgentToolDefinitions {
                     putJsonObject("goal") { put("type", "string") }
                     putJsonObject("packageName") { put("type", "string") }
                     putJsonObject("subagentConversationId") { put("type", "string") }
-                    putJsonObject("subagentPrompt") { put("type", "string") }
+                    putJsonObject("subagentPrompt") {
+                        put("type", "string")
+                        put(
+                            "description",
+                            "subagent 被触发时要立即执行的任务说明。不要把“每天/几点/定时/提醒/闹钟/创建任务”等调度话术写进去，而要写成到点后此刻真正要完成的动作。"
+                        )
+                    }
                     putJsonObject("notificationEnabled") { put("type", "boolean") }
                     putJsonObject("scheduleType") {
                         put("type", "string")
@@ -1239,7 +1517,7 @@ object AgentToolDefinitions {
             put("name", "schedule_task_update")
             put("displayName", "修改定时任务")
             put("toolType", "schedule")
-            put("description", "修改已有定时任务的时间、标题、每日重复或启停状态。")
+            put("description", "修改已有定时任务的时间、标题、每日重复或启停状态。若 `targetKind=subagent`，更新后的 `subagentPrompt` 仍应描述触发时真正执行的动作，而不是再次描述调度本身。")
             put("postToolRule", "修改完成后不要同轮回复，等待工具结果。")
             putJsonObject("parameters") {
                 put("type", "object")
@@ -1258,7 +1536,13 @@ object AgentToolDefinitions {
                     putJsonObject("repeatDaily") { put("type", "boolean") }
                     putJsonObject("enabled") { put("type", "boolean") }
                     putJsonObject("subagentConversationId") { put("type", "string") }
-                    putJsonObject("subagentPrompt") { put("type", "string") }
+                    putJsonObject("subagentPrompt") {
+                        put("type", "string")
+                        put(
+                            "description",
+                            "subagent 被触发时要立即执行的任务说明。不要把“每天/几点/定时/提醒/闹钟/创建任务”等调度话术写进去，而要写成到点后此刻真正要完成的动作。"
+                        )
+                    }
                     putJsonObject("notificationEnabled") { put("type", "boolean") }
                 }
                 putJsonArray("required") {

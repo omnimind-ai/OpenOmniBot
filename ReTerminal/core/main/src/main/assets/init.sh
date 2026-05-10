@@ -8,6 +8,28 @@ if [ ! -s /etc/resolv.conf ]; then
     echo "nameserver 8.8.8.8" > /etc/resolv.conf
 fi
 
+configure_apk_repositories() {
+    if [ -z "$OMNIBOT_ALPINE_APK_REPOSITORY_BASE" ]; then
+        return 0
+    fi
+
+    branch="$OMNIBOT_ALPINE_APK_BRANCH"
+    if [ -z "$branch" ] && [ -r /etc/alpine-release ]; then
+        branch="v$(cut -d. -f1,2 /etc/alpine-release)"
+    fi
+    if [ -z "$branch" ]; then
+        branch="v3.21"
+    fi
+
+    mkdir -p /etc/apk
+    printf '%s/%s/main\n%s/%s/community\n' \
+        "$OMNIBOT_ALPINE_APK_REPOSITORY_BASE" "$branch" \
+        "$OMNIBOT_ALPINE_APK_REPOSITORY_BASE" "$branch" \
+        > /etc/apk/repositories
+}
+
+configure_apk_repositories || true
+
 if [ "$HEADLESS_MODE" = "1" ]; then
     export PS1=""
     export PS2=""

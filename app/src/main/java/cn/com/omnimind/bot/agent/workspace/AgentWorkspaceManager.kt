@@ -8,6 +8,7 @@ import cn.com.omnimind.baselib.i18n.PromptLocale
 import cn.com.omnimind.bot.workspace.PublicStorageAccess
 import java.io.File
 import java.nio.charset.Charset
+import java.nio.file.Files
 import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -193,6 +194,8 @@ class AgentWorkspaceManager(
         private const val DIR_MODELS = "models"
         private const val DIR_MODELS_LLAMA = "OmniInfer-llama"
         private const val DIR_MODELS_MNN = "OmniInfer-mnn"
+        private const val DIR_MODELS_QNN = "OmniInfer-qnn"
+        private const val DIR_MODELS_LITERT = "OmniInfer-litert"
 
         fun rootDirectory(context: Context): File {
             return File(context.applicationInfo.dataDir, ROOT_DIR_NAME)
@@ -212,6 +215,14 @@ class AgentWorkspaceManager(
 
         fun modelsMnnDirectory(context: Context): File {
             return File(modelsDirectory(context), DIR_MODELS_MNN)
+        }
+
+        fun modelsQnnDirectory(context: Context): File {
+            return File(modelsDirectory(context), DIR_MODELS_QNN)
+        }
+
+        fun modelsLiteRtDirectory(context: Context): File {
+            return File(modelsDirectory(context), DIR_MODELS_LITERT)
         }
 
         fun androidRootPath(context: Context): String {
@@ -238,8 +249,7 @@ class AgentWorkspaceManager(
         }
 
         fun isPublicUri(uriText: String): Boolean {
-            val trimmed = uriText.trim()
-            return trimmed == PUBLIC_URI_PREFIX || trimmed.startsWith("$PUBLIC_URI_PREFIX/")
+            return storagePathForPublicUri(uriText) != null
         }
 
         fun publicUriForStoragePath(path: String): String? {
@@ -260,19 +270,44 @@ class AgentWorkspaceManager(
         }
 
         fun storagePathForPublicUri(uriText: String): String? {
-            if (!isPublicUri(uriText)) {
+            val trimmed = uriText.trim()
+            if (trimmed == PUBLIC_URI_PREFIX || trimmed.startsWith("$PUBLIC_URI_PREFIX/")) {
+                val segments = trimmed
+                    .removePrefix(PUBLIC_URI_PREFIX)
+                    .trimStart('/')
+                    .split('/')
+                    .filter { it.isNotBlank() && it != ".." }
+                return if (segments.isEmpty()) {
+                    PUBLIC_STORAGE_ROOT_PATH
+                } else {
+                    "$PUBLIC_STORAGE_ROOT_PATH/${segments.joinToString("/")}"
+                }
+            }
+            if (!trimmed.startsWith("$URI_SCHEME://")) {
                 return null
             }
-            val segments = uriText
-                .trim()
-                .removePrefix(PUBLIC_URI_PREFIX)
-                .trimStart('/')
-                .split('/')
-                .filter { it.isNotBlank() && it != ".." }
-            return if (segments.isEmpty()) {
-                PUBLIC_STORAGE_ROOT_PATH
+            val absolutePath = absoluteOmnibotPath(trimmed) ?: return null
+            return if (PublicStorageAccess.isPublicStoragePath(absolutePath)) {
+                absolutePath
             } else {
-                "$PUBLIC_STORAGE_ROOT_PATH/${segments.joinToString("/")}"
+                null
+            }
+        }
+
+        private fun normalizeAbsoluteOmnibotPath(path: String): String {
+            val trimmed = path.trim()
+            if (trimmed.isEmpty()) return ""
+            return if (trimmed.startsWith('/')) trimmed else "/$trimmed"
+        }
+
+        private fun absoluteOmnibotPath(uriText: String): String? {
+            val remainder = uriText.trim().removePrefix("$URI_SCHEME://")
+            return when {
+                remainder.startsWith('/') -> normalizeAbsoluteOmnibotPath(remainder)
+                remainder == "storage" || remainder.startsWith("storage/") -> "/$remainder"
+                remainder == "sdcard" || remainder.startsWith("sdcard/") -> "/$remainder"
+                remainder == "workspace" || remainder.startsWith("workspace/") -> "/$remainder"
+                else -> null
             }
         }
     }
@@ -295,9 +330,17 @@ class AgentWorkspaceManager(
     private val modelsDir = File(internalDir, DIR_MODELS)
     private val modelsLlamaDir = File(modelsDir, DIR_MODELS_LLAMA)
     private val modelsMnnDir = File(modelsDir, DIR_MODELS_MNN)
+    private val modelsQnnDir = File(modelsDir, DIR_MODELS_QNN)
+    private val modelsLiteRtDir = File(modelsDir, DIR_MODELS_LITERT)
     private val migrationMarker = File(internalDir, WORKSPACE_MIGRATION_MARKER)
     private val legacyRootDir = File(LEGACY_EXTERNAL_ROOT_PATH)
     private val publicStorageRootDir = File(PUBLIC_STORAGE_ROOT_PATH)
+
+    private data class WorkspaceMountLink(
+        val alias: String,
+        val linkFile: File,
+        val sourceDir: File
+    )
 
     fun ensureRuntimeDirectories() {
         migrateLegacyWorkspaceIfNeeded()
@@ -315,7 +358,9 @@ class AgentWorkspaceManager(
             memoryIndexDir,
             modelsDir,
             modelsLlamaDir,
-            modelsMnnDir
+            modelsMnnDir,
+            modelsQnnDir,
+            modelsLiteRtDir
         ).forEach { directory ->
             if (!directory.exists()) {
                 directory.mkdirs()
@@ -552,7 +597,7 @@ class AgentWorkspaceManager(
         val allowed = if (allowPublicStorage && isWithinPublicStorage(resolved)) {
             true
         } else if (allowRootDirectories) {
-            isWithinRoot(resolved)
+            isWithinWorkspaceRoots(resolved)
         } else {
             isWithinWritableRoots(resolved, workspace)
         }
@@ -562,6 +607,13 @@ class AgentWorkspaceManager(
 
     fun shellPathForAndroid(file: File): String? {
         val canonical = file.canonicalFile
+        workspaceMountForFile(canonical)?.let { (mount, relative) ->
+            return if (relative.isBlank()) {
+                "$SHELL_ROOT_PATH/${mount.alias}"
+            } else {
+                "$SHELL_ROOT_PATH/${mount.alias}/$relative"
+            }
+        }
         if (isWithinPublicStorage(canonical)) {
             return canonical.absolutePath
         }
@@ -609,12 +661,15 @@ class AgentWorkspaceManager(
     }
 
     private fun resolveUri(uriText: String): File {
+        storagePathForPublicUri(uriText)?.let { publicPath ->
+            return File(publicPath)
+        }
+        absoluteWorkspacePathForOmnibotUri(uriText)?.let { workspacePath ->
+            return File(workspacePath)
+        }
         val uri = Uri.parse(uriText)
         require(uri.scheme == URI_SCHEME) { "Unsupported uri scheme: ${uri.scheme}" }
         val authority = uri.authority.orEmpty()
-        if (authority == DIR_PUBLIC) {
-            return File(storagePathForPublicUri(uriText) ?: PUBLIC_STORAGE_ROOT_PATH)
-        }
         val base = when (authority) {
             DIR_ATTACHMENTS -> attachmentsDir
             DIR_WORKSPACE -> rootDir
@@ -640,6 +695,7 @@ class AgentWorkspaceManager(
     ): Boolean {
         val workspaceRoot = File(workspace.androidRootPath).canonicalFile
         return isWithin(workspaceRoot, file) ||
+            isWithinMountedWorkspace(file) ||
             isWithin(attachmentsDir.canonicalFile, file) ||
             isWithin(sharedDir.canonicalFile, file) ||
             isWithin(offloadsDir.canonicalFile, file) ||
@@ -649,11 +705,15 @@ class AgentWorkspaceManager(
     }
 
     private fun isWithinArtifactRoots(file: File): Boolean {
-        return isWithinRoot(file) || isWithinPublicStorage(file)
+        return isWithinRoot(file) || isWithinMountedWorkspace(file) || isWithinPublicStorage(file)
     }
 
     private fun isWithinRoot(file: File): Boolean {
         return isWithin(rootDir.canonicalFile, file)
+    }
+
+    private fun isWithinWorkspaceRoots(file: File): Boolean {
+        return isWithinRoot(file) || isWithinMountedWorkspace(file)
     }
 
     private fun isWithinPublicStorage(file: File): Boolean {
@@ -792,6 +852,17 @@ class AgentWorkspaceManager(
 
     fun uriForFile(file: File): String? {
         val canonical = file.canonicalFile
+        workspaceMountForFile(canonical)?.let { (mount, relative) ->
+            return if (relative.isBlank()) {
+                buildRootUri(DIR_WORKSPACE, mount.alias)
+            } else {
+                buildRootUri(
+                    DIR_WORKSPACE,
+                    mount.alias,
+                    *relative.split('/').filter { it.isNotBlank() }.toTypedArray()
+                )
+            }
+        }
         if (isWithinPublicStorage(canonical)) {
             return publicUriForStoragePath(canonical.absolutePath)
         }
@@ -806,5 +877,62 @@ class AgentWorkspaceManager(
             isWithin(internalDir.canonicalFile, canonical) -> null
             else -> buildUriForBase(DIR_WORKSPACE, rootDir, canonical)
         }
+    }
+
+    private fun workspaceMountLinks(): List<WorkspaceMountLink> {
+        ensureRuntimeDirectories()
+        return rootDir.listFiles()
+            ?.mapNotNull { child ->
+                if (!Files.isSymbolicLink(child.toPath())) {
+                    return@mapNotNull null
+                }
+                val targetPath = runCatching {
+                    Files.readSymbolicLink(child.toPath())
+                }.getOrNull() ?: return@mapNotNull null
+                val resolvedTarget = if (targetPath.isAbsolute) {
+                    targetPath
+                } else {
+                    child.parentFile?.toPath()?.resolve(targetPath) ?: targetPath
+                }
+                val sourceDir = runCatching {
+                    resolvedTarget.toFile().canonicalFile
+                }.getOrElse {
+                    resolvedTarget.toFile().absoluteFile
+                }
+                WorkspaceMountLink(
+                    alias = child.name,
+                    linkFile = child,
+                    sourceDir = sourceDir
+                )
+            }
+            ?.sortedByDescending { it.sourceDir.absolutePath.length }
+            ?: emptyList()
+    }
+
+    private fun workspaceMountForFile(file: File): Pair<WorkspaceMountLink, String>? {
+        val canonical = file.canonicalFile
+        return workspaceMountLinks().firstNotNullOfOrNull { mount ->
+            if (isWithin(mount.sourceDir, canonical)) {
+                mount to relativePathFrom(mount.sourceDir, canonical)
+            } else {
+                null
+            }
+        }
+    }
+
+    private fun isWithinMountedWorkspace(file: File): Boolean {
+        return workspaceMountForFile(file) != null
+    }
+
+    private fun absoluteWorkspacePathForOmnibotUri(uriText: String): String? {
+        val trimmed = uriText.trim()
+        if (!trimmed.startsWith("$URI_SCHEME://")) {
+            return null
+        }
+        val absoluteShellPath = absoluteOmnibotPath(trimmed) ?: return null
+        if (!(absoluteShellPath == SHELL_ROOT_PATH || absoluteShellPath.startsWith("$SHELL_ROOT_PATH/"))) {
+            return null
+        }
+        return androidPathForShell(absoluteShellPath)?.absolutePath
     }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:flutter_switch/flutter_switch.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/cache_service.dart';
 import 'package:ui/theme/app_colors.dart';
@@ -120,7 +121,7 @@ class _CompanionSettingPageState extends State<CompanionSettingPage> {
       backgroundColor: context.isDarkTheme
           ? palette.pageBackground
           : const Color(0xFFF6F8FA),
-      appBar: const CommonAppBar(title: '应用权限授权', primary: true),
+      appBar: CommonAppBar(title: context.l10n.authorizePageTitle, primary: true),
       body: SafeArea(
         top: false,
         child: SingleChildScrollView(
@@ -128,7 +129,7 @@ class _CompanionSettingPageState extends State<CompanionSettingPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SettingsSectionTitle(label: '权限说明'),
+              SettingsSectionTitle(label: context.l10n.companionPermissionNote),
               Center(
                 child: Column(
                   children: [
@@ -139,7 +140,7 @@ class _CompanionSettingPageState extends State<CompanionSettingPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      '陪伴权限管理',
+                      context.l10n.companionPermissionManagement,
                       style: TextStyle(
                         color: context.isDarkTheme
                             ? palette.textPrimary
@@ -154,7 +155,7 @@ class _CompanionSettingPageState extends State<CompanionSettingPage> {
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 235),
                       child: Text(
-                        '关闭对应的授权后，小万仍会显示，但不会展示任务执行内容',
+                        context.l10n.companionPermissionDesc,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: context.isDarkTheme
@@ -170,7 +171,7 @@ class _CompanionSettingPageState extends State<CompanionSettingPage> {
                 ),
               ),
               const SizedBox(height: 18),
-              const SettingsSectionTitle(label: '授权应用'),
+              SettingsSectionTitle(label: context.l10n.companionAuthorizedApps),
               if (_isLoading)
                 const SizedBox(
                   height: 140,

@@ -111,9 +111,11 @@ class _AppSelectionBottomSheetState extends State<AppSelectionBottomSheet> {
           ),
           const SizedBox(height: 13),
           // 标题
-          const Text(
-            '想要在哪个应用中体验小万？',
-            style: TextStyle(
+          Text(
+            Localizations.localeOf(context).languageCode == 'en'
+                ? 'Which app would you like to try Omnibot in?'
+                : '想要在哪个应用中体验小万？',
+            style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w500,
               color: AppColors.text,
@@ -147,9 +149,11 @@ class _AppSelectionBottomSheetState extends State<AppSelectionBottomSheet> {
                 borderRadius: BorderRadius.circular(8),
               ),
               alignment: Alignment.center,
-              child: const Text(
-                '开始体验',
-                style: TextStyle(
+              child: Text(
+                Localizations.localeOf(context).languageCode == 'en'
+                    ? 'Start'
+                    : '开始体验',
+                style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: Colors.white,

@@ -1,0 +1,41 @@
+name: Sync to CNB
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CNB_SYNC_TOKEN: ${{ secrets.CNB_TOKEN != '' && secrets.CNB_TOKEN || secrets.GIT_PASSWORD }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Sync repository to CNB
+        run: |
+          if [[ -z "${CNB_SYNC_TOKEN}" ]]; then
+            echo "CNB sync token is empty. Configure repository or organization secret CNB_TOKEN, or provide GIT_PASSWORD as a fallback." >&2
+            exit 1
+          fi
+          CNB_BASIC_AUTH="$(printf 'cnb:%s' "${CNB_SYNC_TOKEN}" | base64)"
+          REMOTE_URL="https://cnb.cool/o.a/OpenOmniBot"
+          if [[ "${GITHUB_REF_TYPE}" == "branch" ]]; then
+            git -c http.extraheader="Authorization: Basic ${CNB_BASIC_AUTH}" \
+              push --force "${REMOTE_URL}" "HEAD:refs/heads/${GITHUB_REF_NAME}"
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            git -c http.extraheader="Authorization: Basic ${CNB_BASIC_AUTH}" \
+              push --force "${REMOTE_URL}" "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          else
+            echo "Unsupported ref type: ${GITHUB_REF_TYPE}" >&2
+            exit 1
+          fi

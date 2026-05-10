@@ -139,7 +139,15 @@ class _WelcomePageState extends State<WelcomePage> {
                       GradientButton(
                         width: 166,
                         height: 44,
-                        text: _isLastPage ? '开始体验' : '下一步',
+                        text: _isLastPage
+                            ? (Localizations.localeOf(context).languageCode ==
+                                    'en'
+                                ? 'Start'
+                                : '开始体验')
+                            : (Localizations.localeOf(context).languageCode ==
+                                    'en'
+                                ? 'Next'
+                                : '下一步'),
                         onTap: () {
                           if (_isLastPage) {
                             _handleStartExperience();

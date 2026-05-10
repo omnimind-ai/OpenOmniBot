@@ -1,0 +1,99 @@
+{
+  "version": "1",
+  "format": "pte",
+  "source": "ModelScope",
+  "baseUrl": "https://modelscope.cn/models/BiReRa/omniinfer-01001/resolve/master",
+  "tokenizerUrl": "https://modelscope.cn/models/BiReRa/omniinfer-01001/resolve/master/SM8650_qwen3-0_6b/tokenizer.json",
+  "models": [
+    {
+      "modelId": "SM8650_qwen3-0_6b",
+      "modelName": "Qwen3-0.6B",
+      "soc": "SM8650",
+      "socLabel": "8 Gen 3",
+      "ptePath": "SM8650_qwen3-0_6b/hybrid_llama_qnn.pte",
+      "fileSize": 713031680,
+      "sizeGb": 0.68,
+      "decoderModelVersion": "qwen3"
+    },
+    {
+      "modelId": "SM8650_qwen3-1_7b",
+      "modelName": "Qwen3-1.7B",
+      "soc": "SM8650",
+      "socLabel": "8 Gen 3",
+      "ptePath": "SM8650_qwen3-1_7b/hybrid_llama_qnn.pte",
+      "fileSize": 1825361920,
+      "sizeGb": 1.7,
+      "decoderModelVersion": "qwen3"
+    },
+    {
+      "modelId": "SM8650_qwen3-4b",
+      "modelName": "Qwen3-4B",
+      "soc": "SM8650",
+      "socLabel": "8 Gen 3",
+      "ptePath": "SM8650_qwen3-4b/hybrid_llama_qnn.pte",
+      "fileSize": 3328599040,
+      "sizeGb": 3.1,
+      "decoderModelVersion": "qwen3"
+    },
+    {
+      "modelId": "SM8750_qwen3-0_6b",
+      "modelName": "Qwen3-0.6B",
+      "soc": "SM8750",
+      "socLabel": "8 Elite",
+      "ptePath": "SM8750_qwen3-0_6b/hybrid_llama_qnn.pte",
+      "fileSize": 711983104,
+      "sizeGb": 0.68,
+      "decoderModelVersion": "qwen3"
+    },
+    {
+      "modelId": "SM8750_qwen3-1_7b",
+      "modelName": "Qwen3-1.7B",
+      "soc": "SM8750",
+      "socLabel": "8 Elite",
+      "ptePath": "SM8750_qwen3-1_7b/hybrid_llama_qnn.pte",
+      "fileSize": 1825361920,
+      "sizeGb": 1.7,
+      "decoderModelVersion": "qwen3"
+    },
+    {
+      "modelId": "SM8750_qwen3-4b",
+      "modelName": "Qwen3-4B",
+      "soc": "SM8750",
+      "socLabel": "8 Elite",
+      "ptePath": "SM8750_qwen3-4b/hybrid_llama_qnn.pte",
+      "fileSize": 3328599040,
+      "sizeGb": 3.1,
+      "decoderModelVersion": "qwen3"
+    },
+    {
+      "modelId": "SM8850_qwen3-0_6b",
+      "modelName": "Qwen3-0.6B",
+      "soc": "SM8850",
+      "socLabel": "8 Elite Gen 5",
+      "ptePath": "SM8850_qwen3-0_6b/hybrid_llama_qnn.pte",
+      "fileSize": 715128832,
+      "sizeGb": 0.68,
+      "decoderModelVersion": "qwen3"
+    },
+    {
+      "modelId": "SM8850_qwen3-1_7b",
+      "modelName": "Qwen3-1.7B",
+      "soc": "SM8850",
+      "socLabel": "8 Elite Gen 5",
+      "ptePath": "SM8850_qwen3-1_7b/hybrid_llama_qnn.pte",
+      "fileSize": 1825361920,
+      "sizeGb": 1.7,
+      "decoderModelVersion": "qwen3"
+    },
+    {
+      "modelId": "SM8850_qwen3-4b",
+      "modelName": "Qwen3-4B",
+      "soc": "SM8850",
+      "socLabel": "8 Elite Gen 5",
+      "ptePath": "SM8850_qwen3-4b/hybrid_llama_qnn.pte",
+      "fileSize": 3328599040,
+      "sizeGb": 3.1,
+      "decoderModelVersion": "qwen3"
+    }
+  ]
+}

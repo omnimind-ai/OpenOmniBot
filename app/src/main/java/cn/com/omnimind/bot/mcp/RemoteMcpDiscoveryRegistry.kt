@@ -66,8 +66,10 @@ object RemoteMcpDiscoveryRegistry {
     fun invalidate(serverId: String? = null) {
         if (serverId == null) {
             cache.clear()
+            RemoteMcpClient.invalidateSession()
             return
         }
         cache.remove(serverId)
+        RemoteMcpClient.invalidateSession(serverId)
     }
 }

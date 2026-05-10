@@ -1,21 +1,33 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/services/office_preview_service.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
 import 'package:ui/services/pdf_preview_service.dart';
+import 'package:ui/widgets/chat_drawer_gesture_guard.dart';
 import 'package:ui/widgets/image_preview_overlay.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:video_player/video_player.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+
+typedef OmnibotResourceOpenCallback =
+    Future<void> Function(
+      BuildContext context,
+      OmnibotResourceMetadata metadata,
+    );
 
 class OmnibotInlineResourceEmbed extends StatelessWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
   final double? maxWidth;
   final double? preferredHeight;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const OmnibotInlineResourceEmbed({
     super.key,
@@ -23,6 +35,7 @@ class OmnibotInlineResourceEmbed extends StatelessWidget {
     this.plainStyle = false,
     this.maxWidth,
     this.preferredHeight,
+    this.onOpen,
   });
 
   @override
@@ -35,31 +48,39 @@ class OmnibotInlineResourceEmbed extends StatelessWidget {
         'image' => _OmnibotInlineImageCard(
           metadata: metadata,
           plainStyle: plainStyle,
+          onOpen: onOpen,
         ),
         'audio' => _OmnibotInlineAudioPlayer(
           metadata: metadata,
           plainStyle: plainStyle,
+          onOpen: onOpen,
         ),
         'video' => _OmnibotInlineVideoPlayer(
           metadata: metadata,
           plainStyle: plainStyle,
+          onOpen: onOpen,
         ),
         'pdf' => _OmnibotInlinePdfCard(
           metadata: metadata,
           plainStyle: plainStyle,
           preferredHeight: preferredHeight,
+          onOpen: onOpen,
         ),
         'html' => _OmnibotInlineHtmlCard(
           metadata: metadata,
           plainStyle: plainStyle,
+          preferredHeight: preferredHeight,
+          onOpen: onOpen,
         ),
         'office' => _OmnibotInlineOfficePreviewCard(
           metadata: metadata,
           plainStyle: plainStyle,
+          onOpen: onOpen,
         ),
         _ => OmnibotResourceLinkCard(
           metadata: metadata,
           plainStyle: plainStyle,
+          onOpen: onOpen,
         ),
       },
     );
@@ -69,11 +90,13 @@ class OmnibotInlineResourceEmbed extends StatelessWidget {
 class OmnibotResourceLinkCard extends StatelessWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const OmnibotResourceLinkCard({
     super.key,
     required this.metadata,
     this.plainStyle = false,
+    this.onOpen,
   });
 
   @override
@@ -90,7 +113,7 @@ class OmnibotResourceLinkCard extends StatelessWidget {
       _ => Icons.insert_drive_file_outlined,
     };
     return InkWell(
-      onTap: () => _openMetadata(metadata),
+      onTap: () => _openMetadata(context, metadata, onOpen: onOpen),
       borderRadius: BorderRadius.circular(14),
       child: Ink(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -168,10 +191,12 @@ class OmnibotResourceLinkCard extends StatelessWidget {
 class _OmnibotInlineImageCard extends StatelessWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotInlineImageCard({
     required this.metadata,
     this.plainStyle = false,
+    this.onOpen,
   });
 
   @override
@@ -186,7 +211,7 @@ class _OmnibotInlineImageCard extends StatelessWidget {
             heroTag: heroTag,
           );
         } else {
-          _openMetadata(metadata);
+          _openMetadata(context, metadata, onOpen: onOpen);
         }
       },
       borderRadius: BorderRadius.circular(16),
@@ -209,16 +234,22 @@ class _OmnibotInlineImageCard extends StatelessWidget {
                     errorBuilder: (_, __, ___) => _MissingResourceCard(
                       metadata: metadata,
                       icon: Icons.broken_image_outlined,
-                      subtitle: '图片加载失败',
+                      subtitle: LegacyTextLocalizer.isEnglish
+                          ? 'Failed to load image'
+                          : '图片加载失败',
                       plainStyle: plainStyle,
+                      onOpen: onOpen,
                     ),
                   ),
                 )
               : _MissingResourceCard(
                   metadata: metadata,
                   icon: Icons.image_not_supported_outlined,
-                  subtitle: '图片不存在或暂不可读',
+                  subtitle: LegacyTextLocalizer.isEnglish
+                      ? 'Image does not exist or is not readable'
+                      : '图片不存在或暂不可读',
                   plainStyle: plainStyle,
+                  onOpen: onOpen,
                 ),
         ),
       ),
@@ -229,10 +260,12 @@ class _OmnibotInlineImageCard extends StatelessWidget {
 class _OmnibotInlineAudioPlayer extends StatefulWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotInlineAudioPlayer({
     required this.metadata,
     this.plainStyle = false,
+    this.onOpen,
   });
 
   @override
@@ -293,8 +326,15 @@ class _OmnibotInlineAudioPlayerState extends State<_OmnibotInlineAudioPlayer> {
       return _MissingResourceCard(
         metadata: widget.metadata,
         icon: Icons.audio_file_outlined,
-        subtitle: _error == null ? '音频不存在或暂不可读' : '音频加载失败',
+        subtitle: _error == null
+            ? (LegacyTextLocalizer.isEnglish
+                  ? 'Audio does not exist or is not readable'
+                  : '音频不存在或暂不可读')
+            : (LegacyTextLocalizer.isEnglish
+                  ? 'Failed to load audio'
+                  : '音频加载失败'),
         plainStyle: widget.plainStyle,
+        onOpen: widget.onOpen,
       );
     }
     return StreamBuilder<PlayerState>(
@@ -345,7 +385,9 @@ class _OmnibotInlineAudioPlayerState extends State<_OmnibotInlineAudioPlayer> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      _duration == null ? '音频资源' : _formatDuration(_duration!),
+                      _duration == null
+                          ? (LegacyTextLocalizer.isEnglish ? 'Audio' : '音频资源')
+                          : _formatDuration(_duration!),
                       style: const TextStyle(
                         fontSize: 11,
                         color: Color(0xFF64748B),
@@ -355,8 +397,14 @@ class _OmnibotInlineAudioPlayerState extends State<_OmnibotInlineAudioPlayer> {
                 ),
               ),
               IconButton(
-                tooltip: '打开预览',
-                onPressed: () => _openMetadata(widget.metadata),
+                tooltip: LegacyTextLocalizer.isEnglish
+                    ? 'Open preview'
+                    : '打开预览',
+                onPressed: () => _openMetadata(
+                  context,
+                  widget.metadata,
+                  onOpen: widget.onOpen,
+                ),
                 icon: const Icon(Icons.open_in_new_rounded),
               ),
             ],
@@ -370,10 +418,12 @@ class _OmnibotInlineAudioPlayerState extends State<_OmnibotInlineAudioPlayer> {
 class _OmnibotInlineVideoPlayer extends StatefulWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotInlineVideoPlayer({
     required this.metadata,
     this.plainStyle = false,
+    this.onOpen,
   });
 
   @override
@@ -389,6 +439,18 @@ class _OmnibotInlineVideoPlayerState extends State<_OmnibotInlineVideoPlayer> {
   void initState() {
     super.initState();
     _initialize();
+  }
+
+  @override
+  void didUpdateWidget(covariant _OmnibotInlineVideoPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.metadata.path != widget.metadata.path) {
+      final previousController = _controller;
+      _controller = null;
+      _error = null;
+      previousController?.dispose();
+      _initialize();
+    }
   }
 
   Future<void> _initialize() async {
@@ -414,29 +476,28 @@ class _OmnibotInlineVideoPlayerState extends State<_OmnibotInlineVideoPlayer> {
     }
   }
 
+  Future<void> _openFullscreen() async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _OmnibotFullscreenVideoPage(
+          controller: controller,
+          title: widget.metadata.title,
+        ),
+      ),
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   @override
   void dispose() {
     _controller?.dispose();
     super.dispose();
-  }
-
-  Future<void> _togglePlayback() async {
-    final controller = _controller;
-    if (controller == null) return;
-    if (controller.value.isPlaying) {
-      await controller.pause();
-      if (mounted) {
-        setState(() {});
-      }
-      return;
-    }
-    if (controller.value.position >= controller.value.duration) {
-      await controller.seekTo(Duration.zero);
-    }
-    await controller.play();
-    if (mounted) {
-      setState(() {});
-    }
   }
 
   @override
@@ -445,8 +506,15 @@ class _OmnibotInlineVideoPlayerState extends State<_OmnibotInlineVideoPlayer> {
       return _MissingResourceCard(
         metadata: widget.metadata,
         icon: Icons.video_file_outlined,
-        subtitle: _error == null ? '视频不存在或暂不可读' : '视频加载失败',
+        subtitle: _error == null
+            ? (LegacyTextLocalizer.isEnglish
+                  ? 'Video does not exist or is not readable'
+                  : '视频不存在或暂不可读')
+            : (LegacyTextLocalizer.isEnglish
+                  ? 'Failed to load video'
+                  : '视频加载失败'),
         plainStyle: widget.plainStyle,
+        onOpen: widget.onOpen,
       );
     }
     final controller = _controller;
@@ -487,30 +555,390 @@ class _OmnibotInlineVideoPlayerState extends State<_OmnibotInlineVideoPlayer> {
           aspectRatio: controller.value.aspectRatio == 0
               ? 16 / 9
               : controller.value.aspectRatio,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              VideoPlayer(controller),
-              DecoratedBox(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0x00000000), Color(0x55000000)],
+          child: _OmnibotVideoSurface(
+            controller: controller,
+            borderRadius: BorderRadius.circular(16),
+            fullscreenButtonIcon: Icons.fullscreen_rounded,
+            onFullscreenPressed: _openFullscreen,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OmnibotVideoSurface extends StatefulWidget {
+  final VideoPlayerController controller;
+  final BorderRadius borderRadius;
+  final IconData fullscreenButtonIcon;
+  final VoidCallback? onFullscreenPressed;
+  final bool showDismissButton;
+  final VoidCallback? onDismissPressed;
+
+  const _OmnibotVideoSurface({
+    required this.controller,
+    required this.borderRadius,
+    required this.fullscreenButtonIcon,
+    this.onFullscreenPressed,
+    this.showDismissButton = false,
+    this.onDismissPressed,
+  });
+
+  @override
+  State<_OmnibotVideoSurface> createState() => _OmnibotVideoSurfaceState();
+}
+
+class _OmnibotVideoSurfaceState extends State<_OmnibotVideoSurface> {
+  static const Duration _controlsAutoHideDelay = Duration(seconds: 2);
+  static const Duration _controlsFadeDuration = Duration(milliseconds: 180);
+
+  Timer? _controlsHideTimer;
+  bool _controlsVisible = true;
+  bool _wasPlaying = false;
+  double? _scrubPositionMs;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_handleControllerChanged);
+    _wasPlaying = widget.controller.value.isPlaying;
+    if (_wasPlaying) {
+      _restartControlsHideTimer();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _OmnibotVideoSurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_handleControllerChanged);
+      widget.controller.addListener(_handleControllerChanged);
+      _cancelControlsHideTimer();
+      _controlsVisible = true;
+      _scrubPositionMs = null;
+      _wasPlaying = widget.controller.value.isPlaying;
+      if (_wasPlaying) {
+        _restartControlsHideTimer();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleControllerChanged);
+    _cancelControlsHideTimer();
+    super.dispose();
+  }
+
+  void _handleControllerChanged() {
+    final value = widget.controller.value;
+    final isPlaying = value.isPlaying;
+    final hasCompleted = _hasCompleted(value);
+    if (hasCompleted) {
+      _cancelControlsHideTimer();
+      if (!_controlsVisible && mounted) {
+        setState(() => _controlsVisible = true);
+      }
+    } else if (!_wasPlaying && isPlaying) {
+      _restartControlsHideTimer();
+    } else if (_wasPlaying && !isPlaying) {
+      _cancelControlsHideTimer();
+      if (!_controlsVisible && mounted) {
+        setState(() => _controlsVisible = true);
+      }
+    }
+    _wasPlaying = isPlaying;
+  }
+
+  void _restartControlsHideTimer() {
+    _cancelControlsHideTimer();
+    _controlsHideTimer = Timer(_controlsAutoHideDelay, () {
+      if (!mounted || !widget.controller.value.isPlaying) {
+        return;
+      }
+      setState(() => _controlsVisible = false);
+    });
+  }
+
+  void _cancelControlsHideTimer() {
+    _controlsHideTimer?.cancel();
+    _controlsHideTimer = null;
+  }
+
+  bool _hasCompleted(VideoPlayerValue value) {
+    final duration = value.duration;
+    if (!value.isInitialized || duration <= Duration.zero) {
+      return false;
+    }
+    return value.position >= duration;
+  }
+
+  Future<void> _togglePlayback() async {
+    final controller = widget.controller;
+    final value = controller.value;
+    if (value.isPlaying) {
+      await controller.pause();
+      _cancelControlsHideTimer();
+    } else {
+      if (_hasCompleted(value)) {
+        await controller.seekTo(Duration.zero);
+      }
+      await controller.play();
+      _restartControlsHideTimer();
+    }
+    if (!mounted) return;
+    setState(() => _controlsVisible = true);
+  }
+
+  void _handleSurfaceTap() {
+    final isPlaying = widget.controller.value.isPlaying;
+    if (!isPlaying) {
+      if (!_controlsVisible) {
+        setState(() => _controlsVisible = true);
+      }
+      return;
+    }
+    setState(() => _controlsVisible = !_controlsVisible);
+    if (_controlsVisible) {
+      _restartControlsHideTimer();
+    } else {
+      _cancelControlsHideTimer();
+    }
+  }
+
+  void _handleScrubStart(double value) {
+    _cancelControlsHideTimer();
+    setState(() {
+      _controlsVisible = true;
+      _scrubPositionMs = value;
+    });
+  }
+
+  void _handleScrubUpdate(double value) {
+    setState(() {
+      _controlsVisible = true;
+      _scrubPositionMs = value;
+    });
+  }
+
+  Future<void> _handleScrubEnd(double value) async {
+    await widget.controller.seekTo(Duration(milliseconds: value.round()));
+    if (!mounted) return;
+    setState(() => _scrubPositionMs = null);
+    if (widget.controller.value.isPlaying) {
+      _restartControlsHideTimer();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final value = widget.controller.value;
+    final showControls = _controlsVisible || !value.isPlaying;
+    final durationMs = math.max(value.duration.inMilliseconds.toDouble(), 1.0);
+    final effectivePositionMs =
+        _scrubPositionMs ??
+        value.position.inMilliseconds.toDouble().clamp(0.0, durationMs);
+    final currentPosition = Duration(milliseconds: effectivePositionMs.round());
+    final centerIcon = _hasCompleted(value)
+        ? Icons.replay_rounded
+        : (value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded);
+
+    return ClipRRect(
+      borderRadius: widget.borderRadius,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _handleSurfaceTap,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ColoredBox(
+              color: Colors.black,
+              child: FittedBox(
+                fit: BoxFit.contain,
+                child: SizedBox(
+                  width: value.size.width <= 0 ? 1 : value.size.width,
+                  height: value.size.height <= 0 ? 1 : value.size.height,
+                  child: VideoPlayer(widget.controller),
+                ),
+              ),
+            ),
+            IgnorePointer(
+              ignoring: !showControls,
+              child: AnimatedOpacity(
+                opacity: showControls ? 1 : 0,
+                duration: _controlsFadeDuration,
+                child: DecoratedBox(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0x5A000000),
+                        Color(0x12000000),
+                        Color(0x7A000000),
+                      ],
+                      stops: [0.0, 0.45, 1.0],
+                    ),
+                  ),
+                  child: Stack(
+                    children: [
+                      if (widget.showDismissButton &&
+                          widget.onDismissPressed != null)
+                        Positioned(
+                          top: 12,
+                          left: 12,
+                          child: SafeArea(
+                            bottom: false,
+                            child: _VideoControlCircleButton(
+                              icon: Icons.arrow_back_rounded,
+                              onPressed: widget.onDismissPressed!,
+                            ),
+                          ),
+                        ),
+                      Center(
+                        child: _VideoControlCircleButton(
+                          icon: centerIcon,
+                          size: 56,
+                          iconSize: 30,
+                          onPressed: _togglePlayback,
+                        ),
+                      ),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: SafeArea(
+                          top: false,
+                          minimum: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                          child: Row(
+                            children: [
+                              Text(
+                                _formatDuration(currentPosition),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Expanded(
+                                child: SliderTheme(
+                                  data: SliderTheme.of(context).copyWith(
+                                    trackHeight: 2.5,
+                                    thumbShape: const RoundSliderThumbShape(
+                                      enabledThumbRadius: 5,
+                                    ),
+                                    overlayShape: const RoundSliderOverlayShape(
+                                      overlayRadius: 10,
+                                    ),
+                                    activeTrackColor: Colors.white,
+                                    inactiveTrackColor: const Color(0x55FFFFFF),
+                                    thumbColor: Colors.white,
+                                    overlayColor: const Color(0x33FFFFFF),
+                                  ),
+                                  child: Slider(
+                                    min: 0,
+                                    max: durationMs,
+                                    value: effectivePositionMs.clamp(
+                                      0.0,
+                                      durationMs,
+                                    ),
+                                    onChangeStart: _handleScrubStart,
+                                    onChanged: _handleScrubUpdate,
+                                    onChangeEnd: _handleScrubEnd,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                _formatDuration(value.duration),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              IconButton(
+                                onPressed: widget.onFullscreenPressed,
+                                icon: Icon(
+                                  widget.fullscreenButtonIcon,
+                                  color: Colors.white,
+                                ),
+                                iconSize: 22,
+                                splashRadius: 18,
+                                tooltip: LegacyTextLocalizer.isEnglish
+                                    ? 'Fullscreen'
+                                    : '全屏',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                child: const SizedBox.expand(),
               ),
-              IconButton.filled(
-                onPressed: _togglePlayback,
-                iconSize: 28,
-                icon: Icon(
-                  controller.value.isPlaying
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded,
-                ),
-              ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VideoControlCircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onPressed;
+  final double size;
+  final double iconSize;
+
+  const _VideoControlCircleButton({
+    required this.icon,
+    required this.onPressed,
+    this.size = 48,
+    this.iconSize = 26,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0x66000000),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onPressed,
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: Icon(icon, color: Colors.white, size: iconSize),
+        ),
+      ),
+    );
+  }
+}
+
+class _OmnibotFullscreenVideoPage extends StatelessWidget {
+  final VideoPlayerController controller;
+  final String? title;
+
+  const _OmnibotFullscreenVideoPage({required this.controller, this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    final aspectRatio = controller.value.aspectRatio == 0
+        ? 16 / 9
+        : controller.value.aspectRatio;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: AspectRatio(
+          aspectRatio: aspectRatio,
+          child: _OmnibotVideoSurface(
+            controller: controller,
+            borderRadius: BorderRadius.zero,
+            fullscreenButtonIcon: Icons.fullscreen_exit_rounded,
+            onFullscreenPressed: () => Navigator.of(context).pop(),
+            showDismissButton: true,
+            onDismissPressed: () => Navigator.of(context).pop(),
           ),
         ),
       ),
@@ -522,11 +950,13 @@ class _OmnibotInlinePdfCard extends StatelessWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
   final double? preferredHeight;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotInlinePdfCard({
     required this.metadata,
     this.plainStyle = false,
     this.preferredHeight,
+    this.onOpen,
   });
 
   @override
@@ -535,14 +965,18 @@ class _OmnibotInlinePdfCard extends StatelessWidget {
       return _MissingResourceCard(
         metadata: metadata,
         icon: Icons.picture_as_pdf_outlined,
-        subtitle: 'PDF 不存在或暂不可读',
+        subtitle: LegacyTextLocalizer.isEnglish
+            ? 'PDF does not exist or is not readable'
+            : 'PDF 不存在或暂不可读',
         plainStyle: plainStyle,
+        onOpen: onOpen,
       );
     }
     return _OmnibotPdfScrollablePreview(
       metadata: metadata,
       plainStyle: plainStyle,
       preferredHeight: preferredHeight,
+      onOpen: onOpen,
     );
   }
 }
@@ -551,11 +985,13 @@ class _OmnibotPdfScrollablePreview extends StatefulWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
   final double? preferredHeight;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotPdfScrollablePreview({
     required this.metadata,
     this.plainStyle = false,
     this.preferredHeight,
+    this.onOpen,
   });
 
   @override
@@ -665,8 +1101,11 @@ class _OmnibotPdfScrollablePreviewState
                   return _MissingResourceCard(
                     metadata: widget.metadata,
                     icon: Icons.picture_as_pdf_outlined,
-                    subtitle: 'PDF 预览失败',
+                    subtitle: LegacyTextLocalizer.isEnglish
+                        ? 'PDF preview failed'
+                        : 'PDF 预览失败',
                     plainStyle: widget.plainStyle,
+                    onOpen: widget.onOpen,
                   );
                 }
                 final info = snapshot.data!;
@@ -780,7 +1219,9 @@ class _PdfPagePlaceholder extends StatelessWidget {
           const CircularProgressIndicator(),
           const SizedBox(height: 10),
           Text(
-            '第 ${pageIndex + 1} 页加载中',
+            LegacyTextLocalizer.isEnglish
+                ? 'Page ${pageIndex + 1} loading'
+                : '第 ${pageIndex + 1} 页加载中',
             style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
           ),
         ],
@@ -805,7 +1246,9 @@ class _PdfPageError extends StatelessWidget {
           const Icon(Icons.error_outline_rounded, color: Color(0xFFB45309)),
           const SizedBox(height: 8),
           Text(
-            '第 ${pageIndex + 1} 页渲染失败',
+            LegacyTextLocalizer.isEnglish
+                ? 'Page ${pageIndex + 1} render failed'
+                : '第 ${pageIndex + 1} 页渲染失败',
             style: const TextStyle(fontSize: 12, color: Color(0xFF92400E)),
           ),
         ],
@@ -817,10 +1260,14 @@ class _PdfPageError extends StatelessWidget {
 class _OmnibotInlineHtmlCard extends StatefulWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
+  final double? preferredHeight;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotInlineHtmlCard({
     required this.metadata,
     this.plainStyle = false,
+    this.preferredHeight,
+    this.onOpen,
   });
 
   @override
@@ -828,75 +1275,165 @@ class _OmnibotInlineHtmlCard extends StatefulWidget {
 }
 
 class _OmnibotInlineHtmlCardState extends State<_OmnibotInlineHtmlCard> {
-  late Future<_HtmlPreviewData> _previewFuture;
+  static final Set<Factory<OneSequenceGestureRecognizer>>
+  _webViewGestureRecognizers = <Factory<OneSequenceGestureRecognizer>>{
+    Factory<EagerGestureRecognizer>(() => EagerGestureRecognizer()),
+  };
+
+  late final WebViewController _controller;
+  bool _isLoading = true;
+  String? _errorMessage;
+  double? _measuredHeight;
 
   @override
   void initState() {
     super.initState();
-    _previewFuture = _loadPreview();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.white)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (_) {
+            if (!mounted) return;
+            setState(() {
+              _isLoading = true;
+              _errorMessage = null;
+            });
+          },
+          onPageFinished: (_) async {
+            await _updateMeasuredHeight();
+            if (!mounted) return;
+            setState(() {
+              _isLoading = false;
+              _errorMessage = null;
+            });
+          },
+          onWebResourceError: (error) {
+            if (error.isForMainFrame == false) {
+              return;
+            }
+            if (!mounted) return;
+            setState(() {
+              _isLoading = false;
+              _errorMessage = error.description;
+            });
+          },
+        ),
+      )
+      ..enableZoom(true);
+    _loadHtmlFile();
   }
 
   @override
   void didUpdateWidget(covariant _OmnibotInlineHtmlCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.metadata.path != widget.metadata.path) {
-      _previewFuture = _loadPreview();
+      _measuredHeight = null;
+      _loadHtmlFile();
     }
   }
 
-  Future<_HtmlPreviewData> _loadPreview() async {
-    if (!widget.metadata.exists) {
-      return const _HtmlPreviewData(title: '', snippet: '', lineCount: 0);
-    }
+  Future<void> _loadHtmlFile() async {
+    if (!widget.metadata.exists) return;
     try {
-      final raw = await File(widget.metadata.path).readAsString();
-      final titleMatch = RegExp(
-        r'<title[^>]*>(.*?)</title>',
-        caseSensitive: false,
-        dotAll: true,
-      ).firstMatch(raw);
-      final extractedTitle = _normalizeHtmlText(titleMatch?.group(1) ?? '');
-      final bodyText = _normalizeHtmlText(
-        raw
-            .replaceAll(
-              RegExp(
-                r'<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>',
-                caseSensitive: false,
-                dotAll: true,
-              ),
-              ' ',
-            )
-            .replaceAll(
-              RegExp(
-                r'<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>',
-                caseSensitive: false,
-                dotAll: true,
-              ),
-              ' ',
-            )
-            .replaceAll(RegExp(r'<[^>]+>'), ' '),
-      );
-      final snippet = bodyText.length <= 180
-          ? bodyText
-          : '${bodyText.substring(0, 180).trimRight()}...';
-      final lineCount = '\n'.allMatches(raw).length + 1;
-      return _HtmlPreviewData(
-        title: extractedTitle,
-        snippet: snippet,
-        lineCount: lineCount,
-      );
-    } catch (_) {
-      return const _HtmlPreviewData(title: '', snippet: '', lineCount: 0);
+      if (mounted) {
+        setState(() {
+          _isLoading = true;
+          _errorMessage = null;
+        });
+      }
+      final platformController = _controller.platform;
+      if (platformController is AndroidWebViewController) {
+        await Future.wait(<Future<void>>[
+          platformController.setAllowFileAccess(true),
+          platformController.setAllowContentAccess(true),
+        ]);
+      }
+      await _controller.loadFile(widget.metadata.path);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = '$error';
+      });
     }
   }
 
-  void _openInWebView() {
-    GoRouterManager.push(
-      '/webview/webview_page',
-      extra: <String, dynamic>{
-        'url': Uri.file(widget.metadata.path).toString(),
-        'title': widget.metadata.title,
-      },
+  Future<void> _updateMeasuredHeight() async {
+    if (widget.preferredHeight != null) return;
+    try {
+      final result = await _controller.runJavaScriptReturningResult('''
+        Math.max(
+          document.documentElement ? document.documentElement.scrollHeight : 0,
+          document.body ? document.body.scrollHeight : 0
+        );
+        ''');
+      final height = _parseJavaScriptNumber(result);
+      if (!mounted || height == null) return;
+      setState(() {
+        _measuredHeight = height;
+      });
+    } catch (_) {}
+  }
+
+  double _resolvedHeight() {
+    final preferredHeight = widget.preferredHeight;
+    if (preferredHeight != null) {
+      return preferredHeight.clamp(240.0, 1200.0);
+    }
+    final measuredHeight = _measuredHeight;
+    if (measuredHeight != null) {
+      return measuredHeight.clamp(220.0, 420.0);
+    }
+    return 320.0;
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              color: Color(0xFF94A3B8),
+              size: 28,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              LegacyTextLocalizer.isEnglish
+                  ? 'HTML preview failed'
+                  : 'HTML 预览失败',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF334155),
+              ),
+            ),
+            if (_errorMessage != null && _errorMessage!.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11,
+                  height: 1.4,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _loadHtmlFile,
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text(LegacyTextLocalizer.isEnglish ? 'Reload' : '重新加载'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -906,153 +1443,65 @@ class _OmnibotInlineHtmlCardState extends State<_OmnibotInlineHtmlCard> {
       return _MissingResourceCard(
         metadata: widget.metadata,
         icon: Icons.language_outlined,
-        subtitle: 'HTML 文件不存在或暂不可读',
+        subtitle: LegacyTextLocalizer.isEnglish
+            ? 'HTML file does not exist or is not readable'
+            : 'HTML 文件不存在或暂不可读',
         plainStyle: widget.plainStyle,
+        onOpen: widget.onOpen,
       );
     }
 
-    return FutureBuilder<_HtmlPreviewData>(
-      future: _previewFuture,
-      builder: (context, snapshot) {
-        final preview = snapshot.data;
-        final subtitle = <String>[
-          'HTML 页面',
-          if (preview != null && preview.lineCount > 0)
-            '${preview.lineCount} 行',
-          _fileSizeLabel(widget.metadata.path),
-        ].where((item) => item.isNotEmpty).join(' · ');
-
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: widget.plainStyle ? Colors.transparent : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: widget.plainStyle
-                ? null
-                : Border.all(color: const Color(0xFFD8E4F8)),
-            boxShadow: widget.plainStyle
-                ? null
-                : const [
-                    BoxShadow(
-                      color: Color(0x12243258),
-                      blurRadius: 10,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEAF3FF),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.language_outlined,
-                      size: 22,
-                      color: Color(0xFF1F4ED8),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          widget.metadata.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF0F172A),
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          subtitle,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FBFF),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE1EAF8)),
+    return Container(
+      decoration: BoxDecoration(
+        color: widget.plainStyle ? Colors.transparent : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: widget.plainStyle
+            ? null
+            : Border.all(color: const Color(0xFFD8E4F8)),
+        boxShadow: widget.plainStyle
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x12243258),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
                 ),
-                child: snapshot.connectionState != ConnectionState.done
-                    ? const SizedBox(
-                        height: 68,
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (preview != null && preview.title.isNotEmpty) ...[
-                            Text(
-                              preview.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF0F172A),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                          ],
-                          Text(
-                            preview == null || preview.snippet.isEmpty
-                                ? '已识别为 HTML 页面，可在 WebView 中查看完整内容。'
-                                : preview.snippet,
-                            maxLines: 4,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              height: 1.45,
-                              color: Color(0xFF334155),
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  FilledButton.tonalIcon(
-                    onPressed: _openInWebView,
-                    icon: const Icon(Icons.open_in_browser_outlined),
-                    label: const Text('WebView'),
+              ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: SizedBox(
+          height: _resolvedHeight(),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (_errorMessage == null)
+                ColoredBox(
+                  color: Colors.white,
+                  child: ChatDrawerGestureGuard(
+                    child: WebViewWidget(
+                      key: ValueKey(widget.metadata.path),
+                      controller: _controller,
+                      gestureRecognizers: _webViewGestureRecognizers,
+                    ),
                   ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: () => _openMetadata(widget.metadata),
-                    icon: const Icon(Icons.visibility_outlined),
-                    label: const Text('查看文件'),
+                )
+              else
+                DecoratedBox(
+                  decoration: const BoxDecoration(color: Colors.white),
+                  child: _buildErrorState(),
+                ),
+              if (_isLoading)
+                const Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(color: Color(0x12FFFFFF)),
+                    child: Center(child: CircularProgressIndicator()),
                   ),
-                ],
-              ),
+                ),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -1060,10 +1509,12 @@ class _OmnibotInlineHtmlCardState extends State<_OmnibotInlineHtmlCard> {
 class _OmnibotInlineOfficePreviewCard extends StatefulWidget {
   final OmnibotResourceMetadata metadata;
   final bool plainStyle;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _OmnibotInlineOfficePreviewCard({
     required this.metadata,
     this.plainStyle = false,
+    this.onOpen,
   });
 
   @override
@@ -1103,8 +1554,11 @@ class _OmnibotInlineOfficePreviewCardState
       return _MissingResourceCard(
         metadata: widget.metadata,
         icon: _officeIconForKind(widget.metadata.previewKind),
-        subtitle: '文件不存在或暂不可读',
+        subtitle: LegacyTextLocalizer.isEnglish
+            ? 'File does not exist or is not readable'
+            : '文件不存在或暂不可读',
         plainStyle: widget.plainStyle,
+        onOpen: widget.onOpen,
       );
     }
 
@@ -1173,8 +1627,14 @@ class _OmnibotInlineOfficePreviewCardState
                   ),
                 ),
                 IconButton(
-                  tooltip: '打开预览',
-                  onPressed: () => _openMetadata(widget.metadata),
+                  tooltip: LegacyTextLocalizer.isEnglish
+                      ? 'Open preview'
+                      : '打开预览',
+                  onPressed: () => _openMetadata(
+                    context,
+                    widget.metadata,
+                    onOpen: widget.onOpen,
+                  ),
                   icon: const Icon(Icons.open_in_new_rounded),
                 ),
               ],
@@ -1197,8 +1657,16 @@ class _OmnibotInlineOfficePreviewCardState
                   }
                   if (snapshot.hasError || !snapshot.hasData) {
                     return _OfficePreviewErrorView(
-                      message: snapshot.error?.toString() ?? 'Office 预览失败',
-                      onOpen: () => _openMetadata(widget.metadata),
+                      message:
+                          snapshot.error?.toString() ??
+                          (LegacyTextLocalizer.isEnglish
+                              ? 'Office preview failed'
+                              : 'Office 预览失败'),
+                      onOpen: () => _openMetadata(
+                        context,
+                        widget.metadata,
+                        onOpen: widget.onOpen,
+                      ),
                     );
                   }
                   return _OfficePreviewBody(data: snapshot.data!);
@@ -1241,7 +1709,9 @@ class _OfficePreviewBody extends StatelessWidget {
           if (data.truncated) ...[
             const SizedBox(height: 12),
             Text(
-              '内容较多，当前仅展示前面一部分。',
+              LegacyTextLocalizer.isEnglish
+                  ? 'Content is too long. Only showing the first part.'
+                  : '内容较多，当前仅展示前面一部分。',
               style: TextStyle(
                 fontSize: 11,
                 color: Colors.blueGrey.withValues(alpha: 0.78),
@@ -1319,9 +1789,11 @@ class _OfficePreviewSectionView extends StatelessWidget {
           ],
           if (section.hasTable) ...[
             const SizedBox(height: 10),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: _OfficePreviewTable(rows: section.tableRows),
+            ChatDrawerGestureGuard(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: _OfficePreviewTable(rows: section.tableRows),
+              ),
             ),
           ],
         ],
@@ -1415,7 +1887,7 @@ class _OfficePreviewErrorView extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: onOpen,
               icon: const Icon(Icons.open_in_new_rounded),
-              label: const Text('打开文件'),
+              label: Text(LegacyTextLocalizer.isEnglish ? 'Open file' : '打开文件'),
             ),
           ],
         ),
@@ -1429,18 +1901,20 @@ class _MissingResourceCard extends StatelessWidget {
   final IconData icon;
   final String subtitle;
   final bool plainStyle;
+  final OmnibotResourceOpenCallback? onOpen;
 
   const _MissingResourceCard({
     required this.metadata,
     required this.icon,
     required this.subtitle,
     this.plainStyle = false,
+    this.onOpen,
   });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () => _openMetadata(metadata),
+      onTap: () => _openMetadata(context, metadata, onOpen: onOpen),
       borderRadius: BorderRadius.circular(14),
       child: Ink(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1493,7 +1967,15 @@ class _MissingResourceCard extends StatelessWidget {
   }
 }
 
-Future<void> _openMetadata(OmnibotResourceMetadata metadata) async {
+Future<void> _openMetadata(
+  BuildContext context,
+  OmnibotResourceMetadata metadata, {
+  OmnibotResourceOpenCallback? onOpen,
+}) async {
+  if (onOpen != null) {
+    await onOpen(context, metadata);
+    return;
+  }
   if (metadata.isDirectory) {
     await OmnibotResourceService.openWorkspace(
       absolutePath: metadata.path,
@@ -1510,18 +1992,6 @@ Future<void> _openMetadata(OmnibotResourceMetadata metadata) async {
     mimeType: metadata.mimeType,
     shellPath: metadata.shellPath,
   );
-}
-
-class _HtmlPreviewData {
-  final String title;
-  final String snippet;
-  final int lineCount;
-
-  const _HtmlPreviewData({
-    required this.title,
-    required this.snippet,
-    required this.lineCount,
-  });
 }
 
 String _formatDuration(Duration duration) {
@@ -1545,17 +2015,15 @@ String _fileSizeLabel(String path) {
   }
 }
 
-String _normalizeHtmlText(String raw) {
-  if (raw.isEmpty) return '';
-  return raw
-      .replaceAll('&nbsp;', ' ')
-      .replaceAll('&amp;', '&')
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&quot;', '"')
-      .replaceAll('&#39;', "'")
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
+double? _parseJavaScriptNumber(Object? value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  final raw = value.toString().trim();
+  if (raw.isEmpty) return null;
+  final normalized = raw.startsWith('"') && raw.endsWith('"')
+      ? raw.substring(1, raw.length - 1)
+      : raw;
+  return double.tryParse(normalized);
 }
 
 int _resolvePdfTargetWidthPx(BuildContext context, BoxConstraints constraints) {
@@ -1579,9 +2047,14 @@ IconData _officeIconForKind(String previewKind) {
 
 String _officeKindLabel(String previewKind) {
   return switch (previewKind) {
-    'office_word' => 'Word 文档',
-    'office_sheet' => 'Excel 表格',
-    'office_slide' => 'PowerPoint 演示文稿',
-    _ => 'Office 文件',
+    'office_word' =>
+      LegacyTextLocalizer.isEnglish ? 'Word Document' : 'Word 文档',
+    'office_sheet' =>
+      LegacyTextLocalizer.isEnglish ? 'Excel Spreadsheet' : 'Excel 表格',
+    'office_slide' =>
+      LegacyTextLocalizer.isEnglish
+          ? 'PowerPoint Presentation'
+          : 'PowerPoint 演示文稿',
+    _ => LegacyTextLocalizer.isEnglish ? 'Office File' : 'Office 文件',
   };
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:ui/theme/app_theme_mode.dart';
 
 /// 应用状态服务 - 处理与Android应用状态相关的通信
 class AppStateService {
@@ -59,10 +60,24 @@ class AppStateService {
 
   static Future<bool> applyLanguagePreference() async {
     try {
-      final result = await _channel.invokeMethod<dynamic>('applyLanguagePreference');
+      final result = await _channel.invokeMethod<dynamic>(
+        'applyLanguagePreference',
+      );
       return result == true;
     } catch (e) {
       debugPrint('⚠️ Failed to apply language preference on native side: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> applyThemeMode(AppThemeMode mode) async {
+    try {
+      final result = await _channel.invokeMethod<dynamic>('applyThemeMode', {
+        'mode': mode.storageValue,
+      });
+      return result == true;
+    } catch (e) {
+      debugPrint('⚠️ Failed to apply theme mode on native side: $e');
       return false;
     }
   }

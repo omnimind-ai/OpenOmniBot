@@ -42,10 +42,11 @@ class _TypewriterTextState extends State<TypewriterText> {
       if (_displayedText.length < widget.text.length) {
         if (mounted) {
           setState(() {
-            _displayedText = widget.text.substring(
-              0,
-              _displayedText.length + 1,
+            final nextLength = _nextSafePrefixLength(
+              widget.text,
+              _displayedText.length,
             );
+            _displayedText = widget.text.substring(0, nextLength);
             widget.onCharacterTyped?.call();
           });
         }
@@ -90,5 +91,22 @@ class _TypewriterTextState extends State<TypewriterText> {
       baseStyle: widget.style,
       selectable: true,
     );
+  }
+
+  int _nextSafePrefixLength(String text, int currentLength) {
+    var nextLength = (currentLength + 1).clamp(0, text.length);
+    if (nextLength <= 0 || nextLength >= text.length) {
+      return nextLength;
+    }
+    final previousUnit = text.codeUnitAt(nextLength - 1);
+    final currentUnit = text.codeUnitAt(nextLength);
+    final isPreviousHighSurrogate =
+        previousUnit >= 0xD800 && previousUnit <= 0xDBFF;
+    final isCurrentLowSurrogate =
+        currentUnit >= 0xDC00 && currentUnit <= 0xDFFF;
+    if (isPreviousHighSurrogate && isCurrentLowSurrogate) {
+      nextLength += 1;
+    }
+    return nextLength.clamp(0, text.length);
   }
 }

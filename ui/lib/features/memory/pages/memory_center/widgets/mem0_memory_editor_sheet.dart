@@ -46,7 +46,7 @@ class _Mem0MemoryEditorSheetState extends State<Mem0MemoryEditorSheet> {
     super.initState();
     _memoryController = TextEditingController(text: widget.initialMemory ?? '');
     _categoryController = TextEditingController(
-      text: widget.initialCategories.join('，'),
+      text: widget.initialCategories.join(', '),
     );
     _memoryController.addListener(_refresh);
     _categoryController.addListener(_refresh);
@@ -72,7 +72,7 @@ class _Mem0MemoryEditorSheetState extends State<Mem0MemoryEditorSheet> {
 
   List<String> _parseCategories() {
     return _categoryController.text
-        .split(RegExp(r'[,\n，、;；]'))
+        .split(RegExp(r'[,;\n]'))
         .map((item) => item.trim())
         .where((item) => item.isNotEmpty)
         .toSet()
@@ -142,7 +142,8 @@ class _Mem0MemoryEditorSheetState extends State<Mem0MemoryEditorSheet> {
                       minLines: 3,
                       textInputAction: TextInputAction.newline,
                       decoration: InputDecoration(
-                        hintText: '输入要保存的长期记忆，例如：我偏好无糖美式咖啡',
+                        hintText:
+                            'Enter the long-term memory to save, for example: I prefer unsweetened Americano coffee',
                         hintStyle: const TextStyle(
                           color: AppColors.text50,
                           fontSize: AppTextStyles.fontSizeMain,
@@ -190,12 +191,13 @@ class _Mem0MemoryEditorSheetState extends State<Mem0MemoryEditorSheet> {
                       controller: _categoryController,
                       maxLines: 2,
                       decoration: InputDecoration(
-                        labelText: '标签（可选）',
+                        labelText: 'Tags (Optional)',
                         labelStyle: const TextStyle(
                           color: AppColors.text70,
                           fontSize: AppTextStyles.fontSizeSmall,
                         ),
-                        hintText: '用逗号分隔，例如：偏好，音乐',
+                        hintText:
+                            'Separate with commas, for example: preference, music',
                         hintStyle: const TextStyle(
                           color: AppColors.text50,
                           fontSize: AppTextStyles.fontSizeSmall,

@@ -94,7 +94,8 @@ class OmniAgentExecutor(
             val discoveredServers = RemoteMcpDiscoveryRegistry.discoverEnabledServers()
             val toolRegistry = AgentToolRegistry(
                 context = context,
-                discoveredServers = discoveredServers
+                discoveredServers = discoveredServers,
+                conversationMode = conversationMode
             )
             val initialMessages = buildInitialMessages(
                 promptSeed = historyRepository.buildPromptSeed(
@@ -253,7 +254,9 @@ class OmniAgentExecutor(
     private data class PromptAttachment(
         val isImage: Boolean,
         val url: String?,
-        val dataUrl: String?
+        val dataUrl: String?,
+        val path: String?,
+        val mimeType: String?
     )
 
     private fun normalizeAttachments(attachments: List<Map<String, Any?>>): List<PromptAttachment> {
@@ -264,7 +267,9 @@ class OmniAgentExecutor(
             PromptAttachment(
                 isImage = isImage,
                 url = item["url"]?.toString(),
-                dataUrl = item["dataUrl"]?.toString()
+                dataUrl = item["dataUrl"]?.toString(),
+                path = item["path"]?.toString(),
+                mimeType = mimeType
             )
         }
     }
@@ -276,6 +281,19 @@ class OmniAgentExecutor(
         val remoteUrl = attachment.url.orEmpty().trim()
         if (remoteUrl.startsWith("https://") || remoteUrl.startsWith("http://") || remoteUrl.startsWith("data:")) {
             return remoteUrl
+        }
+        val path = attachment.path.orEmpty().trim()
+        if (path.isNotEmpty()) {
+            val resolved = AgentImageAttachmentSupport.resolveImageAttachmentUrl(
+                mapOf(
+                    "path" to path,
+                    "mimeType" to attachment.mimeType,
+                    "isImage" to attachment.isImage
+                )
+            )
+            if (resolved.isNotBlank()) {
+                return resolved
+            }
         }
         return ""
     }

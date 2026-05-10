@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -44,6 +45,7 @@ class HomeDrawer extends ConsumerStatefulWidget {
 class HomeDrawerState extends ConsumerState<HomeDrawer> {
   static const double _conversationActionIconSize = 18;
   static const Duration _searchDebounceDuration = Duration(milliseconds: 220);
+  static const Duration _sectionToggleDuration = Duration(milliseconds: 260);
   static const BorderRadius _drawerTrailingActionRadius = BorderRadius.only(
     topRight: Radius.circular(4),
     bottomRight: Radius.circular(4),
@@ -53,7 +55,10 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
   final FocusNode _searchFocusNode = FocusNode();
   final Map<String, _ConversationSearchIndex> _conversationSearchCache =
       <String, _ConversationSearchIndex>{};
+  final Map<String, bool> _expandedConversationSections = <String, bool>{};
   final Set<String> _busyConversationKeys = <String>{};
+  final TextEditingController _titleEditingController = TextEditingController();
+  final FocusNode _titleEditingFocusNode = FocusNode();
   List<ConversationModel> _allConversations = <ConversationModel>[];
   List<_ConversationSearchResult> _searchResults =
       <_ConversationSearchResult>[];
@@ -61,6 +66,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
   bool _isSearching = false;
   int _searchGeneration = 0;
   Timer? _searchDebounceTimer;
+  String? _editingThreadKey;
   StreamSubscription<Map<String, dynamic>>?
   _conversationListChangedSubscription;
 
@@ -69,67 +75,127 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
 
     if (hour >= 2 && hour < 6) {
       final greetings = [
-        {'title': '凌晨啦', 'subtitle': '还没休息吗？'},
-        {'title': '天还没亮', 'subtitle': '早起的你辛苦啦～'},
-        {'title': '深夜的时光很静', 'subtitle': '但也要记得给身体留些休息呀～'},
+        {
+          'title': context.l10n.homeDrawerDawnGreeting,
+          'subtitle': context.l10n.homeDrawerDawnSub,
+        },
+        {
+          'title': context.l10n.homeDrawerDawnGreeting2,
+          'subtitle': context.l10n.homeDrawerDawnSub2,
+        },
+        {
+          'title': context.l10n.homeDrawerDawnGreeting3,
+          'subtitle': context.l10n.homeDrawerDawnSub3,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 6 && hour < 8) {
       final greetings = [
-        {'title': '早安！', 'subtitle': '开启元气一天'},
-        {'title': '早呀！', 'subtitle': '新的一天开始啦'},
+        {
+          'title': context.l10n.homeDrawerMorningGreeting,
+          'subtitle': context.l10n.homeDrawerMorningSub,
+        },
+        {
+          'title': context.l10n.homeDrawerMorningGreeting2,
+          'subtitle': context.l10n.homeDrawerMorningSub2,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 8 && hour < 12) {
       final greetings = [
-        {'title': '上午好！', 'subtitle': '再忙也别忘了活动下肩膀'},
-        {'title': '上午的效率超棒！', 'subtitle': '继续加油'},
+        {
+          'title': context.l10n.homeDrawerForenoonGreeting,
+          'subtitle': context.l10n.homeDrawerForenoonSub,
+        },
+        {
+          'title': context.l10n.homeDrawerForenoonGreeting2,
+          'subtitle': context.l10n.homeDrawerForenoonSub2,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 12 && hour < 14) {
       final greetings = [
-        {'title': '午饭时间到！', 'subtitle': '好好吃饭，别凑合'},
-        {'title': '午安～', 'subtitle': '吃完记得歇会儿'},
-        {'title': '午餐不知道吃什么？', 'subtitle': '让小万帮你推荐吧！'},
+        {
+          'title': context.l10n.homeDrawerLunchGreeting,
+          'subtitle': context.l10n.homeDrawerLunchSub,
+        },
+        {
+          'title': context.l10n.homeDrawerLunchGreeting2,
+          'subtitle': context.l10n.homeDrawerLunchSub2,
+        },
+        {
+          'title': context.l10n.homeDrawerLunchGreeting3,
+          'subtitle': context.l10n.homeDrawerLunchSub3,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 14 && hour < 18) {
       final greetings = [
-        {'title': '喝杯茶提提神', 'subtitle': '剩下的任务也能轻松搞定～'},
-        {'title': '工作间隙看看窗外', 'subtitle': '让眼睛歇一歇～'},
+        {
+          'title': context.l10n.homeDrawerAfternoonGreeting,
+          'subtitle': context.l10n.homeDrawerAfternoonSub,
+        },
+        {
+          'title': context.l10n.homeDrawerAfternoonGreeting2,
+          'subtitle': context.l10n.homeDrawerAfternoonSub2,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 18 && hour < 20) {
       final greetings = [
-        {'title': '回家路上慢点', 'subtitle': '今晚好好放松～'},
-        {'title': '傍晚了', 'subtitle': '吹来的晚风很舒服呀！～'},
-        {'title': '忙了一天', 'subtitle': '吃顿好的犒劳自己～'},
+        {
+          'title': context.l10n.homeDrawerEveningGreeting,
+          'subtitle': context.l10n.homeDrawerEveningSub,
+        },
+        {
+          'title': context.l10n.homeDrawerEveningGreeting2,
+          'subtitle': context.l10n.homeDrawerEveningSub2,
+        },
+        {
+          'title': context.l10n.homeDrawerEveningGreeting3,
+          'subtitle': context.l10n.homeDrawerEveningSub3,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     if (hour >= 20 && hour < 22) {
       final greetings = [
-        {'title': '晚上好！', 'subtitle': '享受属于自己的时光吧～'},
-        {'title': '夜色渐浓', 'subtitle': '准备下早点休息啦～'},
-        {'title': '该休息了', 'subtitle': '让小万帮你定个闹钟吧！'},
+        {
+          'title': context.l10n.homeDrawerNightGreeting,
+          'subtitle': context.l10n.homeDrawerNightSub,
+        },
+        {
+          'title': context.l10n.homeDrawerNightGreeting2,
+          'subtitle': context.l10n.homeDrawerNightSub2,
+        },
+        {
+          'title': context.l10n.homeDrawerNightGreeting3,
+          'subtitle': context.l10n.homeDrawerNightSub3,
+        },
       ];
       return greetings[DateTime.now().minute % greetings.length];
     }
 
     final greetings = [
-      {'title': '放下手机早点睡', 'subtitle': '明天才能元气满满～'},
-      {'title': '深夜了', 'subtitle': '好好和今天说晚安～'},
+      {
+        'title': context.l10n.homeDrawerLateNightGreeting,
+        'subtitle': context.l10n.homeDrawerLateNightSub,
+      },
+      {
+        'title': context.l10n.homeDrawerLateNightGreeting2,
+        'subtitle': context.l10n.homeDrawerLateNightSub2,
+      },
     ];
     return greetings[DateTime.now().minute % greetings.length];
   }
@@ -139,6 +205,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     super.initState();
     _searchController.addListener(_handleSearchQueryChanged);
     _searchFocusNode.addListener(_handleSearchFocusChanged);
+    _titleEditingFocusNode.addListener(_handleTitleEditingFocusChanged);
     _conversationListChangedSubscription = AssistsMessageService
         .conversationListChangedStream
         .listen((_) {
@@ -157,6 +224,10 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     _searchFocusNode
       ..removeListener(_handleSearchFocusChanged)
       ..dispose();
+    _titleEditingFocusNode
+      ..removeListener(_handleTitleEditingFocusChanged)
+      ..dispose();
+    _titleEditingController.dispose();
     super.dispose();
   }
 
@@ -182,7 +253,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
   }
 
   Future<void> _loadConversations() async {
-    debugPrint('[HomeDrawer] 开始加载聊天记录...');
+    debugPrint('[HomeDrawer] Loading conversations...');
     setState(() {
       isLoadingConversations = true;
     });
@@ -191,7 +262,9 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       final loadedConversations = await ConversationService.getAllConversations(
         includeArchived: true,
       );
-      debugPrint('[HomeDrawer] 加载到 ${loadedConversations.length} 条聊天记录');
+      debugPrint(
+        '[HomeDrawer] Loaded ${loadedConversations.length} conversations',
+      );
       if (!mounted) return;
       final visibleThreadKeys = loadedConversations
           .map((conversation) => conversation.threadKey)
@@ -207,7 +280,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
         _scheduleConversationSearch(immediate: true);
       }
     } catch (e) {
-      debugPrint('[HomeDrawer] 加载聊天记录出错: $e');
+      debugPrint('[HomeDrawer] Failed to load conversations: $e');
       if (!mounted) return;
       setState(() {
         isLoadingConversations = false;
@@ -251,7 +324,22 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       return;
     }
     _maybeCloseDrawer();
-    GoRouterManager.pushReplacement('/home/chat', extra: target);
+    GoRouterManager.push(
+      '/home/chat',
+      extra: target,
+      queryParams: _threadTargetQueryParams(target),
+    );
+  }
+
+  Map<String, dynamic> _threadTargetQueryParams(
+    ConversationThreadTarget target,
+  ) {
+    return <String, dynamic>{
+      'conversationId': target.conversationId?.toString() ?? 'new',
+      'mode': target.mode.storageValue,
+      'requestKey':
+          target.requestKey ?? DateTime.now().microsecondsSinceEpoch.toString(),
+    };
   }
 
   void _navigateTo(String route) {
@@ -437,6 +525,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     final messages = await ConversationHistoryService.getConversationMessages(
       conversation.id,
       mode: conversation.mode,
+      expectedMessageCount: conversation.messageCount,
     );
 
     for (final message in messages) {
@@ -656,7 +745,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            greeting['title'] ?? '你好！',
+            greeting['title'] ?? context.l10n.homeDrawerGreeting,
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w400,
@@ -665,7 +754,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
             ),
           ),
           Text(
-            greeting['subtitle'] ?? '欢迎使用小万',
+            greeting['subtitle'] ?? context.l10n.homeDrawerWelcome,
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w400,
@@ -698,13 +787,13 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
               const SizedBox(width: 10),
               _buildSectionActionButton(
                 iconPath: 'assets/home/archive_icon.svg',
-                tooltip: '归档对话',
+                tooltip: context.l10n.homeDrawerArchive,
                 onTap: () => _navigateTo('/home/archived_conversations'),
               ),
               const SizedBox(width: 10),
               _buildSectionActionButton(
                 iconPath: 'assets/home/chat_add_icon.svg',
-                tooltip: '新对话',
+                tooltip: context.l10n.homeDrawerNewChat,
                 onTap: _openNewConversation,
                 isPrimary: true,
               ),
@@ -760,7 +849,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              '暂无聊天记录',
+              context.l10n.chatHistoryEmpty,
               style: TextStyle(fontSize: 14, color: _drawerSecondaryTextColor),
             ),
             const SizedBox(height: 12),
@@ -776,7 +865,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  '开始对话',
+                  context.l10n.chatHistoryStartConversation,
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -808,7 +897,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
           ),
           const SizedBox(height: 14),
           Text(
-            '正在搜索对话内容…',
+            context.l10n.homeDrawerSearching,
             style: TextStyle(
               fontSize: 14,
               color: _drawerSecondaryTextColor,
@@ -846,7 +935,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
             ),
             const SizedBox(height: 14),
             Text(
-              '没有找到相关对话',
+              context.l10n.homeDrawerNoResults,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
@@ -856,7 +945,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
             ),
             const SizedBox(height: 6),
             Text(
-              '试试更短的关键词，或换一种说法',
+              context.l10n.homeDrawerSearchHint2,
               style: TextStyle(
                 fontSize: 12,
                 color: _drawerSecondaryTextColor,
@@ -879,7 +968,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
                   border: Border.all(color: palette.borderSubtle),
                 ),
                 child: Text(
-                  '清空搜索',
+                  context.l10n.homeDrawerClearSearch,
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -911,7 +1000,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
             ),
             const SizedBox(width: 6),
             Text(
-              '搜索结果',
+              context.l10n.homeDrawerSearchResults,
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -922,7 +1011,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
             ),
             const Spacer(),
             Text(
-              '${results.length} 条',
+              '${results.length} ${context.l10n.homeDrawerResultCount}',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
@@ -956,16 +1045,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       if (sectionIndex > 0) {
         children.add(const SizedBox(height: 14));
       }
-      children.add(_buildConversationSectionHeader(section.label));
-      children.add(const SizedBox(height: 4));
-      for (int itemIndex = 0; itemIndex < section.results.length; itemIndex++) {
-        children.add(
-          _buildSwipeConversationItem(
-            section.results[itemIndex],
-            showDivider: itemIndex != section.results.length - 1,
-          ),
-        );
-      }
+      children.add(_buildConversationDateSection(section));
     }
     return children;
   }
@@ -991,32 +1071,127 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     return sections;
   }
 
-  Widget _buildConversationSectionHeader(String label) {
+  bool _isConversationSectionExpanded(String label) =>
+      _expandedConversationSections[label] ?? true;
+
+  void _toggleConversationSection(String label) {
+    setState(() {
+      _expandedConversationSections[label] = !_isConversationSectionExpanded(
+        label,
+      );
+    });
+  }
+
+  Widget _buildConversationDateSection(_ConversationSection section) {
+    final expanded = _isConversationSectionExpanded(section.label);
+    final items = Column(
+      children: [
+        const SizedBox(height: 4),
+        for (int itemIndex = 0; itemIndex < section.results.length; itemIndex++)
+          _buildSwipeConversationItem(
+            section.results[itemIndex],
+            showDivider: itemIndex != section.results.length - 1,
+          ),
+      ],
+    );
+
+    return Column(
+      children: [
+        _buildConversationSectionHeader(
+          section.label,
+          expanded: expanded,
+          itemCount: section.results.length,
+          onTap: () => _toggleConversationSection(section.label),
+        ),
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: expanded ? 1 : 0, end: expanded ? 1 : 0),
+          duration: _sectionToggleDuration,
+          curve: Curves.easeInOutCubicEmphasized,
+          builder: (context, value, child) {
+            return ClipRect(
+              child: Align(
+                alignment: Alignment.topCenter,
+                heightFactor: value,
+                child: Opacity(
+                  opacity: value.clamp(0.0, 1.0).toDouble(),
+                  child: IgnorePointer(ignoring: value < 0.99, child: child),
+                ),
+              ),
+            );
+          },
+          child: items,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildConversationSectionHeader(
+    String label, {
+    required bool expanded,
+    required int itemCount,
+    required VoidCallback onTap,
+  }) {
     final palette = context.omniPalette;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
-      child: Row(
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.6,
-              color: palette.textTertiary,
-              fontFamily: 'PingFang SC',
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          splashColor: palette.accentPrimary.withValues(alpha: 0.06),
+          highlightColor: Colors.transparent,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 28),
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.fromLTRB(4, 5, 4, 5),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.6,
+                    color: palette.textTertiary,
+                    fontFamily: 'PingFang SC',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '$itemCount',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: palette.textTertiary.withValues(alpha: 0.82),
+                    fontFamily: 'PingFang SC',
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: palette.borderSubtle.withValues(
+                      alpha: context.isDarkTheme ? 0.56 : 0.8,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                AnimatedRotation(
+                  turns: expanded ? 0 : -0.25,
+                  duration: _sectionToggleDuration,
+                  curve: Curves.easeInOutCubicEmphasized,
+                  child: Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: palette.textTertiary,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Container(
-              height: 1,
-              color: palette.borderSubtle.withValues(
-                alpha: context.isDarkTheme ? 0.56 : 0.8,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1130,6 +1305,68 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     );
   }
 
+  void _startEditingTitle(ConversationModel conversation) {
+    if (_busyConversationKeys.contains(conversation.threadKey)) {
+      return;
+    }
+    final title = _resolveConversationTitle(conversation);
+    _titleEditingController.text = title;
+    _titleEditingController.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: title.length,
+    );
+    setState(() {
+      _editingThreadKey = conversation.threadKey;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _titleEditingFocusNode.requestFocus();
+    });
+  }
+
+  void _handleTitleEditingFocusChanged() {
+    if (!_titleEditingFocusNode.hasFocus && _editingThreadKey != null) {
+      _commitTitleEdit();
+    }
+  }
+
+  Future<void> _commitTitleEdit() async {
+    final threadKey = _editingThreadKey;
+    if (threadKey == null) return;
+
+    final newTitle = _titleEditingController.text.trim();
+    final conversation = _allConversations
+        .cast<ConversationModel?>()
+        .firstWhere((c) => c!.threadKey == threadKey, orElse: () => null);
+
+    setState(() {
+      _editingThreadKey = null;
+    });
+
+    if (conversation == null) return;
+
+    final oldTitle = _resolveConversationTitle(conversation);
+    if (newTitle.isEmpty || newTitle == oldTitle) return;
+
+    final updated = conversation.copyWith(title: newTitle);
+    setState(() {
+      _replaceConversationInState(updated);
+    });
+
+    final success = await ConversationService.updateConversationTitle(
+      conversationId: conversation.id,
+      newTitle: newTitle,
+      mode: conversation.mode,
+    );
+
+    if (!mounted) return;
+    if (!success) {
+      setState(() {
+        _replaceConversationInState(conversation);
+      });
+      showToast(context.trLegacy('重命名失败'), type: ToastType.error);
+    }
+  }
+
   void _openConversationFromDrawer(ConversationModel conversation) {
     if (_busyConversationKeys.contains(conversation.threadKey)) {
       return;
@@ -1185,7 +1422,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     });
 
     showToast(
-      deleted ? '已删除' : '删除失败',
+      deleted ? context.trLegacy('已删除') : context.trLegacy('删除失败'),
       type: deleted ? ToastType.success : ToastType.error,
     );
   }
@@ -1227,7 +1464,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     });
 
     showToast(
-      archived ? '已归档' : '归档失败',
+      archived ? context.trLegacy('已归档') : context.trLegacy('归档失败'),
       type: archived ? ToastType.success : ToastType.error,
     );
   }
@@ -1269,7 +1506,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     });
 
     showToast(
-      restored ? '已取消归档' : '取消归档失败',
+      restored ? context.trLegacy('已取消归档') : context.trLegacy('取消归档失败'),
       type: restored ? ToastType.success : ToastType.error,
     );
   }
@@ -1329,7 +1566,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       return title;
     }
     final summary = (conversation.summary ?? '').trim();
-    return summary.isNotEmpty ? summary : '未命名对话';
+    return summary.isNotEmpty ? summary : context.trLegacy('未命名对话');
   }
 
   Widget _buildSwipeConversationItem(
@@ -1340,6 +1577,8 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     final isBusy = _busyConversationKeys.contains(conversation.threadKey);
     final title = _resolveConversationTitle(conversation);
     final showArchivedBadge = _isSearchActive && conversation.isArchived;
+
+    final isEditing = _editingThreadKey == conversation.threadKey;
 
     return ConversationSlidable(
       itemKey: conversation.threadKey,
@@ -1355,7 +1594,12 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
           Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: () => _openConversationFromDrawer(conversation),
+              onTap: isEditing
+                  ? null
+                  : () => _openConversationFromDrawer(conversation),
+              onLongPress: isEditing
+                  ? null
+                  : () => _startEditingTitle(conversation),
               borderRadius: BorderRadius.circular(14),
               splashColor: context.omniPalette.accentPrimary.withValues(
                 alpha: 0.08,
@@ -1370,18 +1614,47 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: _drawerTextColor,
-                              height: 1.35,
-                              fontFamily: 'PingFang SC',
-                            ),
-                          ),
+                          child: isEditing
+                              ? TextField(
+                                  controller: _titleEditingController,
+                                  focusNode: _titleEditingFocusNode,
+                                  maxLines: 1,
+                                  cursorColor: _drawerTextColor.withValues(
+                                    alpha: 0.6,
+                                  ),
+                                  cursorWidth: 1.5,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: _drawerTextColor,
+                                    height: 1.35,
+                                    fontFamily: 'PingFang SC',
+                                  ),
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    border: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    disabledBorder: InputBorder.none,
+                                    errorBorder: InputBorder.none,
+                                    focusedErrorBorder: InputBorder.none,
+                                  ),
+                                  onTapOutside: (_) => _commitTitleEdit(),
+                                  onSubmitted: (_) => _commitTitleEdit(),
+                                )
+                              : Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: _drawerTextColor,
+                                    height: 1.35,
+                                    fontFamily: 'PingFang SC',
+                                  ),
+                                ),
                         ),
                         if (showArchivedBadge) ...[
                           const SizedBox(width: 10),
@@ -1432,7 +1705,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
           Icon(Icons.archive_outlined, size: 11, color: palette.textSecondary),
           const SizedBox(width: 4),
           Text(
-            '已归档',
+            context.trLegacy('已归档'),
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w600,

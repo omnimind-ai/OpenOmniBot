@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/theme/app_colors.dart';
   
 
@@ -46,7 +47,7 @@ import 'package:ui/theme/app_colors.dart';
               ),
             ),
             Text(
-              '删除',
+              LegacyTextLocalizer.isEnglish ? 'Delete' : '删除',
               style: TextStyle(
                 color: AppColors.alertRed,
                 fontSize: 12,

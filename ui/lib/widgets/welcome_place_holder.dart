@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 
 class WelcomePlaceHolder extends StatefulWidget {
   final ValueChanged<String>? onSuggestionTap;
@@ -24,11 +25,19 @@ class _WelcomePlaceHolderState extends State<WelcomePlaceHolder> {
   final List<String> _rendered = [];
   bool _hasInserted = false;
 
-  List<String> get _allSuggestions => widget.suggestions ?? const [
+  static const _defaultSuggestions = [
+        '📷 Take a photo with camera',
+        '📅 Create a meeting reminder for tomorrow morning',
+        '🛫 Search for flights from Beijing to Shanghai',
+      ];
+
+  static const _defaultSuggestionsZh = [
         '📷 打开相机并拍一张照片',
         '📅 创建明天上午的会议提醒',
         '🛫 查询北京飞上海的机票',
       ];
+
+  List<String> get _allSuggestions => widget.suggestions ?? (LegacyTextLocalizer.isEnglish ? _defaultSuggestions : _defaultSuggestionsZh);
 
   @override
   void initState() {
@@ -116,7 +125,7 @@ class _WelcomePlaceHolderState extends State<WelcomePlaceHolder> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24.0),
             child: Text(
-              '🎉Hi，我是小万，我会做很多事，让我展示给你下！',
+              LegacyTextLocalizer.localize('🎉Hi，我是小万，我会做很多事，让我展示给你下！'),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 16,
@@ -166,7 +175,7 @@ class _WelcomePlaceHolderState extends State<WelcomePlaceHolder> {
                       ),
                       SizedBox(width: 8),
                       Text(
-                        "换一换",
+                        LegacyTextLocalizer.localize("换一换"),
                         style: const TextStyle(
                           color: darkGrey,
                           fontSize: 14,

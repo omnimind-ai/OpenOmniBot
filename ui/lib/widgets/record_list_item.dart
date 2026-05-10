@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:ui/features/memory/pages/memory_center/widgets/tag_chip.dart';
 import 'package:ui/features/memory/pages/memory_center/widgets/tag_section.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/theme/app_colors.dart';
 
 class RecordListItem extends StatelessWidget {
@@ -102,7 +103,7 @@ class RecordListItem extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    '优先推荐',
+                    LegacyTextLocalizer.isEnglish ? 'Recommend' : '优先推荐',
                     style: TextStyle(
                       fontSize: 12,
                       color: recordModel.isRecommended

@@ -168,6 +168,30 @@ String extractChatTaskThinking(
   );
 }
 
+double? extractChatTaskPrefillTokensPerSecond(String? input) {
+  return _extractChatTaskNumericMetric(
+    input,
+    const <List<String>>[
+      <String>['usage', 'prefill_tokens_per_second'],
+      <String>['usage', 'performance', 'prefill_tokens_per_second'],
+      <String>['prefill_tokens_per_second'],
+      <String>['performance', 'prefill_tokens_per_second'],
+    ],
+  );
+}
+
+double? extractChatTaskDecodeTokensPerSecond(String? input) {
+  return _extractChatTaskNumericMetric(
+    input,
+    const <List<String>>[
+      <String>['usage', 'decode_tokens_per_second'],
+      <String>['usage', 'performance', 'decode_tokens_per_second'],
+      <String>['decode_tokens_per_second'],
+      <String>['performance', 'decode_tokens_per_second'],
+    ],
+  );
+}
+
 String _extractChatTaskTextPayload(dynamic raw, {String fallbackRawText = ''}) {
   if (raw == null) {
     return '';
@@ -251,6 +275,51 @@ String _extractChatTaskTextPayload(dynamic raw, {String fallbackRawText = ''}) {
   }
 
   return fallbackRawText;
+}
+
+double? _extractChatTaskNumericMetric(
+  String? input,
+  List<List<String>> candidatePaths,
+) {
+  final rawInput = input ?? '';
+  final normalized = rawInput.trim();
+  if (normalized.isEmpty || normalized == '[DONE]') {
+    return null;
+  }
+
+  final decoded = safeJsonDecode(normalized, fallback: null);
+  return _extractChatTaskNumericMetricPayload(decoded, candidatePaths);
+}
+
+double? _extractChatTaskNumericMetricPayload(
+  dynamic raw,
+  List<List<String>> candidatePaths,
+) {
+  if (raw == null) {
+    return null;
+  }
+  if (raw is List) {
+    for (final item in raw) {
+      final value = _extractChatTaskNumericMetricPayload(item, candidatePaths);
+      if (value != null) {
+        return value;
+      }
+    }
+    return null;
+  }
+  if (raw is! Map) {
+    return null;
+  }
+
+  final payload = raw.map((key, value) => MapEntry(key.toString(), value));
+  for (final path in candidatePaths) {
+    final candidate = deepGet(payload, path.join('.'));
+    final value = _asNullableDouble(candidate);
+    if (value != null) {
+      return value;
+    }
+  }
+  return null;
 }
 
 String _extractChatTaskThinkingPayload(
@@ -411,6 +480,16 @@ String _extractReasoningPayload(dynamic raw) {
         payload['reasoning'] ??
         payload['thinking'],
   );
+}
+
+double? _asNullableDouble(dynamic raw) {
+  if (raw == null) {
+    return null;
+  }
+  if (raw is num) {
+    return raw.toDouble();
+  }
+  return double.tryParse(raw.toString());
 }
 
 /// 如果你明确期望是数组（List），给一个 List 兜底

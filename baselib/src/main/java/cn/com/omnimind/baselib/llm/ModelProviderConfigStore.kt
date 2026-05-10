@@ -14,6 +14,8 @@ object ModelProviderConfigStore {
     internal const val KEY_PROVIDER_API_KEY = "model_provider_openai_api_key"
     private const val KEY_PROVIDER_PROFILES = "model_provider_profiles_v1"
     private const val KEY_EDITING_PROFILE_ID = "model_provider_editing_profile_id"
+    private const val KEY_DEEPSEEK_OFFICIAL_PROFILE_SEEDED =
+        "model_provider_deepseek_official_profile_seeded_v1"
 
     internal const val LEGACY_MODEL_OVERRIDE_KEY = "vlm_operation_model_override"
     internal const val LEGACY_API_BASE_OVERRIDE_KEY = "vlm_operation_api_base_override"
@@ -37,7 +39,7 @@ object ModelProviderConfigStore {
     fun listProfiles(): List<ModelProviderProfile> {
         ModelProviderMigration.ensureMigrated()
         val mmkv = MMKV.defaultMMKV() ?: return withBuiltin(defaultProfiles())
-        val current = readProfiles(mmkv)
+        val current = ensureOfficialDeepSeekProfileSeeded(mmkv, readProfiles(mmkv))
         if (current.isNotEmpty()) {
             ensureEditingProfile(mmkv, withBuiltin(current))
             return withBuiltin(current)
@@ -104,7 +106,7 @@ object ModelProviderConfigStore {
                         ),
                         baseUrl = normalizeBaseUrl(profile.baseUrl).orEmpty(),
                         apiKey = profile.apiKey.trim(),
-                        protocolType = profile.protocolType.trim().ifEmpty { "openai_compatible" }
+                        protocolType = normalizeProtocolType(profile.protocolType)
                     )
                 )
             }
@@ -137,7 +139,7 @@ object ModelProviderConfigStore {
     ): ModelProviderProfile {
         ModelProviderMigration.ensureMigrated()
         require(!MnnLocalProviderStateStore.isBuiltinProfileId(id)) { "builtin provider is read only" }
-        val normalizedProtocolType = protocolType.trim().ifEmpty { "openai_compatible" }
+        val normalizedProtocolType = normalizeProtocolType(protocolType)
         val mmkv = MMKV.defaultMMKV() ?: return ModelProviderProfile(
             id = id?.trim().orEmpty().ifEmpty { DEFAULT_PROFILE_ID },
             name = name.trim().ifEmpty { DEFAULT_PROFILE_NAME },
@@ -369,11 +371,48 @@ object ModelProviderConfigStore {
             ModelProviderProfile(
                 id = DEFAULT_PROFILE_ID,
                 name = DEFAULT_PROFILE_NAME
-            )
+            ),
+            DeepSeekProvider.officialProfile()
         )
     }
 
+    private fun normalizeProtocolType(value: String?): String {
+        return DeepSeekProvider.normalizeProtocolType(value)
+    }
+
+    private fun ensureOfficialDeepSeekProfileSeeded(
+        mmkv: MMKV,
+        profiles: List<ModelProviderProfile>
+    ): List<ModelProviderProfile> {
+        if (profiles.isEmpty()) {
+            return profiles
+        }
+        if (mmkv.decodeBool(KEY_DEEPSEEK_OFFICIAL_PROFILE_SEEDED, false)) {
+            return profiles
+        }
+        if (
+            profiles.any {
+                it.id == DeepSeekProvider.OFFICIAL_PROFILE_ID ||
+                    DeepSeekProvider.isOfficialBaseUrl(it.baseUrl)
+            }
+        ) {
+            mmkv.encode(KEY_DEEPSEEK_OFFICIAL_PROFILE_SEEDED, true)
+            return profiles
+        }
+        val next = buildList {
+            profiles.forEach(::add)
+            add(DeepSeekProvider.officialProfile())
+        }
+        writeProfiles(mmkv, next)
+        mmkv.encode(KEY_DEEPSEEK_OFFICIAL_PROFILE_SEEDED, true)
+        return next
+    }
+
     private fun withBuiltin(profiles: List<ModelProviderProfile>): List<ModelProviderProfile> {
+        if (!MnnLocalProviderStateStore.isEnabled()) {
+            return profiles.filterNot { MnnLocalProviderStateStore.isBuiltinProfileId(it.id) }
+                .ifEmpty { defaultProfiles() }
+        }
         val builtIn = MnnLocalProviderStateStore.getProfile()
         return buildList {
             add(builtIn)
@@ -413,7 +452,7 @@ object ModelProviderConfigStore {
                     name = profile.name.trim().ifEmpty { DEFAULT_PROFILE_NAME },
                     baseUrl = normalizeBaseUrl(profile.baseUrl).orEmpty(),
                     apiKey = profile.apiKey.trim(),
-                    protocolType = profile.protocolType.trim().ifEmpty { "openai_compatible" }
+                    protocolType = normalizeProtocolType(profile.protocolType)
                 )
             }
         } catch (t: Throwable) {
@@ -434,7 +473,7 @@ object ModelProviderConfigStore {
                 name = profile.name.trim().ifEmpty { "Provider ${index + 1}" },
                 baseUrl = normalizeBaseUrl(profile.baseUrl).orEmpty(),
                 apiKey = profile.apiKey.trim(),
-                protocolType = profile.protocolType.trim().ifEmpty { "openai_compatible" }
+                protocolType = normalizeProtocolType(profile.protocolType)
             )
         }
         mmkv.encode(KEY_PROVIDER_PROFILES, gson.toJson(normalized))
@@ -464,19 +503,22 @@ object ModelProviderConfigStore {
 
                 val legacyUserId = OssIdentity.currentUserIdOrNull()
                 val providerConfig = resolveEffectiveLegacyConfig(mmkv, legacyUserId)
-                val initialProfile = if (
+                val initialProfiles = if (
                     providerConfig.baseUrl.isNotBlank() || providerConfig.apiKey.isNotBlank()
                 ) {
-                    ModelProviderProfile(
-                        id = LEGACY_DEFAULT_PROFILE_ID,
-                        name = DEFAULT_PROFILE_NAME,
-                        baseUrl = providerConfig.baseUrl,
-                        apiKey = providerConfig.apiKey
+                    listOf(
+                        ModelProviderProfile(
+                            id = LEGACY_DEFAULT_PROFILE_ID,
+                            name = DEFAULT_PROFILE_NAME,
+                            baseUrl = providerConfig.baseUrl,
+                            apiKey = providerConfig.apiKey
+                        )
                     )
                 } else {
-                    defaultProfiles().first()
+                    defaultProfiles()
                 }
-                writeProfiles(mmkv, listOf(initialProfile))
+                val initialProfile = initialProfiles.first()
+                writeProfiles(mmkv, initialProfiles)
                 mmkv.encode(KEY_EDITING_PROFILE_ID, initialProfile.id)
                 syncLegacyFlatConfig(mmkv, initialProfile)
 

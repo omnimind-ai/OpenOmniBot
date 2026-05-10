@@ -139,7 +139,10 @@ class _TerminalEnvironmentEditorPopupEntryState
   final TextEditingController _keyController = TextEditingController();
   final TextEditingController _valueController = TextEditingController();
   late List<ChatTerminalEnvironmentVariable> _variables;
+  String? _editingOriginalKey;
   String? _errorText;
+
+  bool get _isEditing => _editingOriginalKey != null;
 
   @override
   void initState() {
@@ -156,18 +159,42 @@ class _TerminalEnvironmentEditorPopupEntryState
     super.dispose();
   }
 
-  void _handleAdd() {
-    final key = _keyController.text.trim();
-    final value = _valueController.text;
+  void _resetInputState() {
+    _editingOriginalKey = null;
+    _errorText = null;
+    _keyController.clear();
+    _valueController.clear();
+  }
+
+  String? _validateKey(String key, {String? editingOriginalKey}) {
     if (key.isEmpty) {
-      setState(() {
-        _errorText = '变量名不能为空';
-      });
-      return;
+      return '变量名不能为空';
     }
     if (!ChatTerminalEnvironmentService.isValidKey(key)) {
+      return '变量名仅支持字母、数字和下划线，且不能以数字开头';
+    }
+    if (editingOriginalKey != null &&
+        ChatTerminalEnvironmentService.containsKey(
+          _variables,
+          key,
+          exceptKey: editingOriginalKey,
+        )) {
+      return '变量名已存在';
+    }
+    return null;
+  }
+
+  void _handleAdd() {
+    if (_isEditing) {
+      _handleSaveEdit();
+      return;
+    }
+    final key = _keyController.text.trim();
+    final value = _valueController.text;
+    final errorText = _validateKey(key);
+    if (errorText != null) {
       setState(() {
-        _errorText = '变量名仅支持字母、数字和下划线，且不能以数字开头';
+        _errorText = errorText;
       });
       return;
     }
@@ -177,9 +204,49 @@ class _TerminalEnvironmentEditorPopupEntryState
     ]);
     setState(() {
       _variables = next;
+      _resetInputState();
+    });
+    unawaited(widget.onChanged(next));
+  }
+
+  void _handleEdit(ChatTerminalEnvironmentVariable item) {
+    setState(() {
+      _editingOriginalKey = item.normalizedKey;
       _errorText = null;
-      _keyController.clear();
-      _valueController.clear();
+      _keyController.text = item.normalizedKey;
+      _valueController.text = item.value;
+    });
+  }
+
+  void _handleCancelEdit() {
+    setState(_resetInputState);
+  }
+
+  void _handleSaveEdit() {
+    final originalKey = _editingOriginalKey;
+    if (originalKey == null) {
+      _handleAdd();
+      return;
+    }
+
+    final key = _keyController.text.trim();
+    final value = _valueController.text;
+    final errorText = _validateKey(key, editingOriginalKey: originalKey);
+    if (errorText != null) {
+      setState(() {
+        _errorText = errorText;
+      });
+      return;
+    }
+
+    final next = ChatTerminalEnvironmentService.replaceVariable(
+      _variables,
+      originalKey: originalKey,
+      replacement: ChatTerminalEnvironmentVariable(key: key, value: value),
+    );
+    setState(() {
+      _variables = next;
+      _resetInputState();
     });
     unawaited(widget.onChanged(next));
   }
@@ -190,14 +257,91 @@ class _TerminalEnvironmentEditorPopupEntryState
         .toList(growable: false);
     setState(() {
       _variables = next;
-      _errorText = null;
+      if (_editingOriginalKey == item.normalizedKey) {
+        _resetInputState();
+      } else {
+        _errorText = null;
+      }
     });
     unawaited(widget.onChanged(next));
+  }
+
+  InputDecoration _buildTextFieldDecoration({
+    required String hintText,
+    required bool isDark,
+  }) {
+    final palette = context.omniPalette;
+    return InputDecoration(
+      isDense: true,
+      hintText: hintText,
+      hintStyle: TextStyle(
+        fontSize: 13,
+        color: isDark ? palette.textTertiary : const Color(0xFF9AA4B6),
+        fontWeight: FontWeight.w500,
+      ),
+      filled: true,
+      fillColor: isDark ? palette.surfaceSecondary : Colors.white,
+      border: const OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: const BorderRadius.all(Radius.circular(12)),
+        borderSide: BorderSide(
+          color: isDark ? palette.borderSubtle : const Color(0xFFE2EAF4),
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: const BorderRadius.all(Radius.circular(12)),
+        borderSide: BorderSide(
+          color: isDark ? palette.accentPrimary : const Color(0xFF2C7FEB),
+          width: 1.2,
+        ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    );
+  }
+
+  Widget _buildErrorText(bool isDark) {
+    return Text(
+      _errorText!,
+      style: TextStyle(
+        fontSize: 12,
+        color: isDark ? const Color(0xFFE69C8F) : const Color(0xFFD93025),
+        fontWeight: FontWeight.w500,
+      ),
+    );
+  }
+
+  Widget _buildIconAction({
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(
+            icon,
+            size: 18,
+            color: isDark ? palette.textTertiary : const Color(0xFF8FA1BC),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildVariableRow(ChatTerminalEnvironmentVariable item) {
     final palette = context.omniPalette;
     final isDark = context.isDarkTheme;
+    if (_editingOriginalKey == item.normalizedKey) {
+      return _buildEditingVariableRow();
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 2, 10, 2),
       child: Container(
@@ -244,21 +388,115 @@ class _TerminalEnvironmentEditorPopupEntryState
               ),
             ),
             const SizedBox(width: 8),
-            InkWell(
+            _buildIconAction(
+              tooltip: '编辑',
+              icon: Icons.edit_outlined,
+              onTap: () {
+                _handleEdit(item);
+              },
+            ),
+            const SizedBox(width: 2),
+            _buildIconAction(
+              tooltip: '删除',
+              icon: Icons.delete_outline_rounded,
               onTap: () {
                 _handleDelete(item);
               },
-              borderRadius: BorderRadius.circular(999),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(
-                  Icons.delete_outline_rounded,
-                  size: 18,
-                  color: isDark
-                      ? palette.textTertiary
-                      : const Color(0xFF8FA1BC),
-                ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEditingVariableRow() {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 2, 10, 2),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isDark ? palette.surfaceSecondary : const Color(0xFFF8FAFD),
+          borderRadius: BorderRadius.circular(12),
+          border: isDark ? Border.all(color: palette.borderSubtle) : null,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: _keyController,
+                    autofocus: true,
+                    scrollPadding: EdgeInsets.zero,
+                    textInputAction: TextInputAction.next,
+                    cursorColor: isDark ? palette.accentPrimary : null,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark
+                          ? palette.textPrimary
+                          : const Color(0xFF1F2937),
+                      fontWeight: FontWeight.w500,
+                    ),
+                    decoration: _buildTextFieldDecoration(
+                      hintText: '变量名，例如 OPENAI_API_KEY',
+                      isDark: isDark,
+                    ),
+                    onSubmitted: (_) {
+                      _handleSaveEdit();
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _valueController,
+                    autofocus: false,
+                    scrollPadding: EdgeInsets.zero,
+                    textInputAction: TextInputAction.done,
+                    cursorColor: isDark ? palette.accentPrimary : null,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark
+                          ? palette.textPrimary
+                          : const Color(0xFF1F2937),
+                      fontWeight: FontWeight.w500,
+                    ),
+                    decoration: _buildTextFieldDecoration(
+                      hintText: '变量值，允许为空',
+                      isDark: isDark,
+                    ),
+                    onSubmitted: (_) {
+                      _handleSaveEdit();
+                    },
+                  ),
+                  if (_errorText != null) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: _buildErrorText(isDark),
+                    ),
+                  ],
+                ],
               ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildIconAction(
+                  tooltip: '保存',
+                  icon: Icons.check_rounded,
+                  onTap: _handleSaveEdit,
+                ),
+                const SizedBox(height: 6),
+                _buildIconAction(
+                  tooltip: '取消',
+                  icon: Icons.close_rounded,
+                  onTap: _handleCancelEdit,
+                ),
+              ],
             ),
           ],
         ),
@@ -287,40 +525,9 @@ class _TerminalEnvironmentEditorPopupEntryState
               color: isDark ? palette.textPrimary : const Color(0xFF1F2937),
               fontWeight: FontWeight.w500,
             ),
-            decoration: InputDecoration(
-              isDense: true,
+            decoration: _buildTextFieldDecoration(
               hintText: '变量名，例如 OPENAI_API_KEY',
-              hintStyle: TextStyle(
-                fontSize: 13,
-                color: isDark ? palette.textTertiary : const Color(0xFF9AA4B6),
-                fontWeight: FontWeight.w500,
-              ),
-              filled: true,
-              fillColor: isDark ? palette.surfaceSecondary : Colors.white,
-              border: const OutlineInputBorder(
-                borderRadius: BorderRadius.all(Radius.circular(12)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: const BorderRadius.all(Radius.circular(12)),
-                borderSide: BorderSide(
-                  color: isDark
-                      ? palette.borderSubtle
-                      : const Color(0xFFE2EAF4),
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: const BorderRadius.all(Radius.circular(12)),
-                borderSide: BorderSide(
-                  color: isDark
-                      ? palette.accentPrimary
-                      : const Color(0xFF2C7FEB),
-                  width: 1.2,
-                ),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
+              isDark: isDark,
             ),
             onSubmitted: (_) {
               _handleAdd();
@@ -338,40 +545,9 @@ class _TerminalEnvironmentEditorPopupEntryState
               color: isDark ? palette.textPrimary : const Color(0xFF1F2937),
               fontWeight: FontWeight.w500,
             ),
-            decoration: InputDecoration(
-              isDense: true,
+            decoration: _buildTextFieldDecoration(
               hintText: '变量值，允许为空',
-              hintStyle: TextStyle(
-                fontSize: 13,
-                color: isDark ? palette.textTertiary : const Color(0xFF9AA4B6),
-                fontWeight: FontWeight.w500,
-              ),
-              filled: true,
-              fillColor: isDark ? palette.surfaceSecondary : Colors.white,
-              border: const OutlineInputBorder(
-                borderRadius: BorderRadius.all(Radius.circular(12)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: const BorderRadius.all(Radius.circular(12)),
-                borderSide: BorderSide(
-                  color: isDark
-                      ? palette.borderSubtle
-                      : const Color(0xFFE2EAF4),
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: const BorderRadius.all(Radius.circular(12)),
-                borderSide: BorderSide(
-                  color: isDark
-                      ? palette.accentPrimary
-                      : const Color(0xFF2C7FEB),
-                  width: 1.2,
-                ),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
+              isDark: isDark,
             ),
             onSubmitted: (_) {
               _handleAdd();
@@ -379,16 +555,7 @@ class _TerminalEnvironmentEditorPopupEntryState
           ),
           if (_errorText != null) ...[
             const SizedBox(height: 8),
-            Text(
-              _errorText!,
-              style: TextStyle(
-                fontSize: 12,
-                color: isDark
-                    ? const Color(0xFFE69C8F)
-                    : const Color(0xFFD93025),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            _buildErrorText(isDark),
           ],
           const SizedBox(height: 10),
           Align(
@@ -496,11 +663,15 @@ class _TerminalEnvironmentEditorPopupEntryState
                   ),
                 ),
               ),
-            Divider(
-              height: 1,
-              color: isDark ? palette.borderSubtle : const Color(0xFFE5EDF8),
-            ),
-            _buildAddForm(),
+            if (!_isEditing) ...[
+              Divider(
+                height: 1,
+                color: isDark
+                    ? palette.borderSubtle
+                    : const Color(0xFFE5EDF8),
+              ),
+              _buildAddForm(),
+            ],
           ],
         ),
       ),

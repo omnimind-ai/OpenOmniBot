@@ -26,12 +26,6 @@ jobs:
           fetch-depth: 0
           submodules: false
 
-      - name: Initialize required OmniInfer submodules
-        run: |
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git submodule update --init third_party/omniinfer
-          git -C third_party/omniinfer submodule update --init framework/mnn framework/llama.cpp
-
       - name: Secret scan (gitleaks)
         if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         uses: gitleaks/gitleaks-action@v2
@@ -93,13 +87,18 @@ jobs:
         working-directory: ui
         run: flutter pub get --enforce-lockfile
 
+      - name: Flutter test
+        working-directory: ui
+        run: flutter test test/features/local_model/local_model_feature_test.dart test/core/router/go_router_config_test.dart
+
       - name: Flutter analyze
         working-directory: ui
         run: flutter analyze --no-fatal-warnings --no-fatal-infos
 
-      - name: Gradle verify develop debug
+      - name: Gradle verify develop standard debug
         run: >-
           ./gradlew --no-daemon --parallel --build-cache
-          :app:testDevelopDebugUnitTest
-          :app:assembleDevelopDebug
-          :app:lintDevelopDebug
+          :app:testDevelopStandardDebugUnitTest
+          :app:assembleDevelopStandardDebug
+          :app:lintDevelopStandardDebug
+          -Ptarget=lib/main_standard.dart

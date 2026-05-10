@@ -35,7 +35,10 @@ class ButtonsGroupTwo extends StatelessWidget {
               ),
             ),
             child: Text(
-              leftButton?.text ?? '取消',
+              leftButton?.text ??
+                  (Localizations.localeOf(context).languageCode == 'en'
+                      ? 'Cancel'
+                      : '取消'),
               style: const TextStyle(
                 fontSize: 16,
                 color: Colors.black87,
@@ -49,7 +52,11 @@ class ButtonsGroupTwo extends StatelessWidget {
               ? AnimatedBuilder(
                   animation: countdownAnimation!,
                   builder: (context, child) {
-                    final label = rightButton?.text ?? '确认';
+                    final label =
+                        rightButton?.text ??
+                        (Localizations.localeOf(context).languageCode == 'en'
+                            ? 'Confirm'
+                            : '确认');
                     final text = isExecuting
                         ? '$label${countdownAnimation!.value}s'
                         : label;
@@ -90,7 +97,10 @@ class ButtonsGroupTwo extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    rightButton?.text ?? '确认',
+                    rightButton?.text ??
+                        (Localizations.localeOf(context).languageCode == 'en'
+                            ? 'Confirm'
+                            : '确认'),
                     style: const TextStyle(
                       fontSize: 16,
                       color: Colors.white,

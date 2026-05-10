@@ -141,11 +141,11 @@ object AppLocaleManager {
         }
     }
 
-    private fun normalize(locale: Locale): PromptLocale {
-        return if (locale.language.lowercase() == "en") {
-            PromptLocale.EN_US
-        } else {
+    private fun normalize(locale: Locale): PromptLocale {                 
+        return if (locale.language.lowercase() == "zh") {  
             PromptLocale.ZH_CN
-        }
+        } else {
+            PromptLocale.EN_US
+        }                                                                 
     }
 }

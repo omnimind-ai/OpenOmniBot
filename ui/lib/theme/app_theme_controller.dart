@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:ui/services/app_state_service.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/app_theme_mode.dart';
 
@@ -16,5 +17,6 @@ class AppThemeController extends StateNotifier<AppThemeMode> {
     }
     state = mode;
     await StorageService.setThemeMode(mode);
+    await AppStateService.applyThemeMode(mode);
   }
 }

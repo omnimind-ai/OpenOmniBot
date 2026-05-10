@@ -91,6 +91,29 @@ object PublicStorageAccess {
 
     fun isPublicStorageUri(uriText: String): Boolean {
         val trimmed = uriText.trim()
-        return trimmed == PUBLIC_URI_PREFIX || trimmed.startsWith("$PUBLIC_URI_PREFIX/")
+        if (trimmed == PUBLIC_URI_PREFIX || trimmed.startsWith("$PUBLIC_URI_PREFIX/")) {
+            return true
+        }
+        if (!trimmed.startsWith("omnibot://")) {
+            return false
+        }
+        val absolutePath = absoluteOmnibotPublicPath(trimmed) ?: return false
+        return isPublicStoragePath(absolutePath)
+    }
+
+    private fun normalizeOmnibotAbsolutePath(path: String): String {
+        val trimmed = path.trim()
+        if (trimmed.isEmpty()) return ""
+        return if (trimmed.startsWith('/')) trimmed else "/$trimmed"
+    }
+
+    private fun absoluteOmnibotPublicPath(uriText: String): String? {
+        val remainder = uriText.trim().removePrefix("omnibot://")
+        return when {
+            remainder.startsWith('/') -> normalizeOmnibotAbsolutePath(remainder)
+            remainder == "storage" || remainder.startsWith("storage/") -> "/$remainder"
+            remainder == "sdcard" || remainder.startsWith("sdcard/") -> "/$remainder"
+            else -> null
+        }
     }
 }

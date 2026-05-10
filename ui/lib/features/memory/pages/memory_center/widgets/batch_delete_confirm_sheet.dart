@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:ui/theme/app_colors.dart';
 
 /// 批量删除确认弹窗
@@ -39,7 +40,7 @@ class BatchDeleteConfirmSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '要删除$count条$unit吗？',
+                context.l10n.memoryDeleteConfirmTitle,
                 style: TextStyle(
                   color: AppColors.text,
                   fontSize: 16,
@@ -49,7 +50,7 @@ class BatchDeleteConfirmSheet extends StatelessWidget {
               ),
               SizedBox(height: 12),
               Text(
-                '删除后该内容将不可找回',
+                context.l10n.memoryDeleteWarning,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: AppColors.text70,
@@ -78,7 +79,7 @@ class BatchDeleteConfirmSheet extends StatelessWidget {
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          '取消',
+                          context.trLegacy('取消'),
                           style: TextStyle(
                             color: AppColors.buttonPrimary,
                             fontSize: 12,
@@ -105,7 +106,7 @@ class BatchDeleteConfirmSheet extends StatelessWidget {
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          '删除',
+                          context.l10n.skillDelete,
                           style: TextStyle(
                             color: AppColors.alertRed,
                             fontSize: 12,

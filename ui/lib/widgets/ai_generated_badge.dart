@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/theme/app_colors.dart';
 
 /// AI 生成内容标识组件
 /// 用于显示 "内容由AI生成" 的提示标识，包含图标和文案
 class AiGeneratedBadge extends StatelessWidget {
   /// 自定义文案，默认为 "内容由Ai生成"
-  final String text;
+  final String? text;
   
   /// 图标大小，默认 10
   final double iconSize;
@@ -19,7 +20,7 @@ class AiGeneratedBadge extends StatelessWidget {
 
   const AiGeneratedBadge({
     super.key,
-    this.text = '内容由Ai生成',
+    this.text,
     this.iconSize = 10,
     this.fontSize = 12,
     this.color,
@@ -43,7 +44,7 @@ class AiGeneratedBadge extends StatelessWidget {
         ),
         const SizedBox(width: 4),
         Text(
-          text,
+          text ?? (LegacyTextLocalizer.isEnglish ? 'AI generated content' : '内容由Ai生成'),
           style: TextStyle(
             color: effectiveColor,
             fontSize: fontSize,

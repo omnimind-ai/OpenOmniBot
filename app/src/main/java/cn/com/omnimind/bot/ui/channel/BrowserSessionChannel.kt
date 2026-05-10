@@ -4,6 +4,10 @@ import cn.com.omnimind.bot.agent.LiveAgentBrowserSessionManager
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class BrowserSessionChannel {
     companion object {
@@ -11,6 +15,7 @@ class BrowserSessionChannel {
     }
 
     private var methodChannel: MethodChannel? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     fun setChannel(flutterEngine: FlutterEngine) {
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -21,12 +26,29 @@ class BrowserSessionChannel {
         call: MethodCall,
         result: MethodChannel.Result
     ) {
-        when (call.method) {
-            "getLiveBrowserSessionSnapshot" -> {
-                result.success(LiveAgentBrowserSessionManager.currentSnapshot())
+        val arguments = (call.arguments as? Map<*, *>)
+            ?.entries
+            ?.associate { (key, value) -> key.toString() to value }
+            .orEmpty()
+        scope.launch {
+            runCatching {
+                LiveAgentBrowserSessionManager.handleCurrentCall(
+                    method = call.method,
+                    arguments = arguments
+                )
+            }.onSuccess {
+                result.success(it)
+            }.onFailure { error ->
+                if (error is NoSuchMethodError) {
+                    result.notImplemented()
+                } else {
+                    result.error(
+                        "BROWSER_SESSION_CALL_FAILED",
+                        error.message ?: "browser_session_call_failed",
+                        null
+                    )
+                }
             }
-
-            else -> result.notImplemented()
         }
     }
 

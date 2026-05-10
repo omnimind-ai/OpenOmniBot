@@ -1,0 +1,805 @@
+name: Codex Bot
+
+on:
+  issues:
+    types: [opened, reopened, labeled]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      target_type:
+        description: Issue or pull request to process.
+        required: true
+        default: issue
+        type: choice
+        options:
+          - issue
+          - pull_request
+      target_number:
+        description: Issue or pull request number.
+        required: true
+        type: string
+      task:
+        description: Natural-language Codex task.
+        required: true
+        default: Triage this item and decide whether code changes are needed.
+        type: string
+      mode:
+        description: Execution mode for this manual run.
+        required: true
+        default: auto
+        type: choice
+        options:
+          - auto
+          - read-only
+          - write
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-bot-${{ github.event_name }}-${{ github.event.issue.number || github.event.pull_request.number || inputs.target_number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: Decide Codex scope
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      skip: ${{ steps.decide.outputs.skip }}
+      skip_reason: ${{ steps.decide.outputs.skip_reason }}
+      target_kind: ${{ steps.decide.outputs.target_kind }}
+      target_number: ${{ steps.decide.outputs.target_number }}
+      target_url: ${{ steps.decide.outputs.target_url }}
+      target_title: ${{ steps.decide.outputs.target_title }}
+      task: ${{ steps.decide.outputs.task }}
+      sandbox: ${{ steps.decide.outputs.sandbox }}
+      write_allowed: ${{ steps.decide.outputs.write_allowed }}
+      publish_mode: ${{ steps.decide.outputs.publish_mode }}
+      checkout_ref: ${{ steps.decide.outputs.checkout_ref }}
+      publish_ref: ${{ steps.decide.outputs.publish_ref }}
+      base_ref: ${{ steps.decide.outputs.base_ref }}
+      head_ref: ${{ steps.decide.outputs.head_ref }}
+      head_repo: ${{ steps.decide.outputs.head_repo }}
+      default_branch: ${{ steps.decide.outputs.default_branch }}
+      branch_name: ${{ steps.decide.outputs.branch_name }}
+      actor_permission: ${{ steps.decide.outputs.actor_permission }}
+    steps:
+      - name: Decide whether Codex should run
+        id: decide
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const payload = context.payload;
+            const eventName = context.eventName;
+            const actor = context.actor;
+            const repoFullName = `${owner}/${repo}`;
+            const defaultBranch = payload.repository?.default_branch || 'main';
+            const writePermissions = new Set(['admin', 'maintain', 'write']);
+            const trustedBotActors = new Set(['github-actions[bot]']);
+
+            async function actorPermission(username) {
+              try {
+                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner,
+                  repo,
+                  username,
+                });
+                return data.permission || 'none';
+              } catch (error) {
+                if (error.status === 404) {
+                  return 'none';
+                }
+                throw error;
+              }
+            }
+
+            function setOutputs(values) {
+              for (const [key, value] of Object.entries(values)) {
+                core.setOutput(key, value == null ? '' : String(value));
+              }
+            }
+
+            function issueLabels(issue) {
+              return (issue?.labels || [])
+                .map((label) => (typeof label === 'string' ? label : label.name))
+                .filter(Boolean);
+            }
+
+            function stripCodexMention(body) {
+              return (body || '')
+                .replace(/(^|\s)@codex\b[:,]?\s*/gi, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            }
+
+            function mentionsCodex(body) {
+              return /(^|\s)@codex\b/i.test(body || '');
+            }
+
+            function isReadOnlyIntent(task) {
+              return /\b(review|explain|summari[sz]e|diagnose|triage|comment|read[- ]?only)\b|分析|解释|说明|审查|总结|诊断|只读/i.test(task || '');
+            }
+
+            function isWriteIntent(task) {
+              const value = task || '';
+              return /\b(fix|repair|implement|add|update|write|test|refactor|patch|commit)\b|修复|修改|实现|添加|更新|测试|重构|补丁/i.test(value)
+                || /\b(?:make|apply)\s+changes?\b/i.test(value)
+                || /\bchange\s+(?:it|this|that|the|a|an|[a-z0-9_./-]+)/i.test(value);
+            }
+
+            function slugify(input) {
+              const slug = (input || 'task')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .slice(0, 40);
+              return slug || 'task';
+            }
+
+            async function loadPull(number) {
+              const { data } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: Number(number),
+              });
+              return data;
+            }
+
+            async function loadIssue(number) {
+              const { data } = await github.rest.issues.get({
+                owner,
+                repo,
+                issue_number: Number(number),
+              });
+              return data;
+            }
+
+            function defaultOutputs(overrides = {}) {
+              return {
+                skip: 'true',
+                skip_reason: '',
+                target_kind: '',
+                target_number: '',
+                target_url: '',
+                target_title: '',
+                task: '',
+                sandbox: 'read-only',
+                write_allowed: 'false',
+                publish_mode: 'comment_only',
+                checkout_ref: defaultBranch,
+                publish_ref: defaultBranch,
+                base_ref: defaultBranch,
+                head_ref: '',
+                head_repo: '',
+                default_branch: defaultBranch,
+                branch_name: '',
+                actor_permission: 'none',
+                ...overrides,
+              };
+            }
+
+            if (trustedBotActors.has(actor)) {
+              setOutputs(defaultOutputs({ skip_reason: 'trusted-bot-loop-prevention' }));
+              return;
+            }
+
+            const permission = await actorPermission(actor);
+            const actorCanWrite = writePermissions.has(permission);
+            let targetKind = '';
+            let targetNumber = '';
+            let targetUrl = '';
+            let targetTitle = '';
+            let task = '';
+            let baseRef = defaultBranch;
+            let headRef = '';
+            let headRepo = '';
+            let isPr = false;
+            let isForkPr = false;
+            let approvedByLabel = false;
+            let eventShouldRun = false;
+            let forceReadOnly = false;
+            let forceWrite = false;
+
+            if (eventName === 'issues') {
+              const issue = payload.issue;
+              const labels = issueLabels(issue);
+              approvedByLabel = labels.includes('codex-run');
+              targetKind = 'issue';
+              targetNumber = issue.number;
+              targetUrl = issue.html_url;
+              targetTitle = issue.title || `Issue #${issue.number}`;
+
+              if (payload.action === 'labeled') {
+                eventShouldRun = payload.label?.name === 'codex-run' && actorCanWrite;
+                task = 'Maintainer approved Codex processing via the codex-run label. Triage this issue, decide whether code changes are needed, and either implement a focused fix or write a concise maintainer-facing comment.';
+              } else if (payload.action === 'opened' || payload.action === 'reopened') {
+                eventShouldRun = actorCanWrite || !approvedByLabel;
+                forceReadOnly = !actorCanWrite && !approvedByLabel;
+                task = actorCanWrite
+                  ? 'Triage this newly opened issue. Decide whether code changes are needed; if yes, implement a focused fix. If the report is missing key details or does not require code changes, produce a concise comment instead.'
+                  : 'Read-only triage for an issue opened by an external user. Analyze the report and repository context, then leave a concise comment with likely cause, missing details, or suggested maintainer next steps. Do not edit files.';
+              }
+            } else if (eventName === 'issue_comment') {
+              const issue = payload.issue;
+              if (!mentionsCodex(payload.comment?.body)) {
+                setOutputs(defaultOutputs({ skip_reason: 'comment-without-codex-mention' }));
+                return;
+              }
+              if (!actorCanWrite) {
+                setOutputs(defaultOutputs({
+                  skip_reason: 'comment-author-lacks-write-permission',
+                  target_kind: issue?.pull_request ? 'pr' : 'issue',
+                  target_number: issue?.number || '',
+                  target_url: payload.comment?.html_url || issue?.html_url || '',
+                  target_title: issue?.title || '',
+                  actor_permission: permission,
+                }));
+                return;
+              }
+
+              task = stripCodexMention(payload.comment.body) || 'Triage this item and decide the appropriate Codex action.';
+              targetNumber = issue.number;
+              targetTitle = issue.title || `#${issue.number}`;
+              targetUrl = payload.comment.html_url || issue.html_url;
+              eventShouldRun = true;
+
+              if (issue.pull_request) {
+                const pr = await loadPull(issue.number);
+                isPr = true;
+                targetKind = 'pr';
+                baseRef = pr.base.ref;
+                headRef = pr.head.ref;
+                headRepo = pr.head.repo?.full_name || '';
+                isForkPr = headRepo !== repoFullName;
+              } else {
+                targetKind = 'issue';
+              }
+            } else if (eventName === 'pull_request_review_comment') {
+              if (!mentionsCodex(payload.comment?.body)) {
+                setOutputs(defaultOutputs({ skip_reason: 'review-comment-without-codex-mention' }));
+                return;
+              }
+              if (!actorCanWrite) {
+                setOutputs(defaultOutputs({
+                  skip_reason: 'review-comment-author-lacks-write-permission',
+                  target_kind: 'pr',
+                  target_number: payload.pull_request?.number || '',
+                  target_url: payload.comment?.html_url || payload.pull_request?.html_url || '',
+                  target_title: payload.pull_request?.title || '',
+                  actor_permission: permission,
+                }));
+                return;
+              }
+
+              const pr = payload.pull_request;
+              isPr = true;
+              targetKind = 'pr';
+              targetNumber = pr.number;
+              targetUrl = payload.comment.html_url || pr.html_url;
+              targetTitle = pr.title || `PR #${pr.number}`;
+              task = stripCodexMention(payload.comment.body) || 'Address this pull request review comment.';
+              baseRef = pr.base.ref;
+              headRef = pr.head.ref;
+              headRepo = pr.head.repo?.full_name || '';
+              isForkPr = headRepo !== repoFullName;
+              eventShouldRun = true;
+            } else if (eventName === 'workflow_dispatch') {
+              if (!actorCanWrite) {
+                setOutputs(defaultOutputs({
+                  skip_reason: 'manual-run-author-lacks-write-permission',
+                  actor_permission: permission,
+                }));
+                return;
+              }
+
+              targetNumber = payload.inputs?.target_number;
+              const targetType = payload.inputs?.target_type;
+              task = payload.inputs?.task || 'Triage this item and decide whether code changes are needed.';
+              forceReadOnly = payload.inputs?.mode === 'read-only';
+              forceWrite = payload.inputs?.mode === 'write';
+
+              if (targetType === 'pull_request') {
+                const pr = await loadPull(targetNumber);
+                isPr = true;
+                targetKind = 'pr';
+                targetUrl = pr.html_url;
+                targetTitle = pr.title || `PR #${pr.number}`;
+                baseRef = pr.base.ref;
+                headRef = pr.head.ref;
+                headRepo = pr.head.repo?.full_name || '';
+                isForkPr = headRepo !== repoFullName;
+              } else {
+                const issue = await loadIssue(targetNumber);
+                targetKind = 'issue';
+                targetUrl = issue.html_url;
+                targetTitle = issue.title || `Issue #${issue.number}`;
+              }
+              eventShouldRun = true;
+            }
+
+            if (!eventShouldRun) {
+              setOutputs(defaultOutputs({
+                skip_reason: 'event-not-approved-for-codex',
+                target_kind: targetKind,
+                target_number: targetNumber,
+                target_url: targetUrl,
+                target_title: targetTitle,
+                actor_permission: permission,
+              }));
+              return;
+            }
+
+            const taskLooksReadOnly = isReadOnlyIntent(task) && !isWriteIntent(task);
+            let sandbox = 'workspace-write';
+            if (forceReadOnly || taskLooksReadOnly) {
+              sandbox = 'read-only';
+            }
+            if (forceWrite) {
+              sandbox = 'workspace-write';
+            }
+
+            const writeAllowed = actorCanWrite && sandbox === 'workspace-write';
+            const publishMode = writeAllowed
+              ? (isPr ? (isForkPr ? 'pr_branch' : 'pr_head') : 'issue_branch')
+              : 'comment_only';
+            const branchSlug = slugify(`${targetTitle} ${task}`);
+            const branchPrefix = isPr ? 'pr' : 'issue';
+            const branchName = `codex/${branchPrefix}-${targetNumber}-${branchSlug}`;
+            const checkoutRef = isPr
+              ? (publishMode === 'comment_only' ? `refs/pull/${targetNumber}/merge` : `refs/pull/${targetNumber}/head`)
+              : baseRef;
+            const publishRef = publishMode === 'pr_head'
+              ? headRef
+              : (publishMode === 'pr_branch' ? `refs/pull/${targetNumber}/head` : baseRef);
+
+            setOutputs(defaultOutputs({
+              skip: 'false',
+              skip_reason: '',
+              target_kind: targetKind,
+              target_number: targetNumber,
+              target_url: targetUrl,
+              target_title: targetTitle,
+              task,
+              sandbox,
+              write_allowed: writeAllowed ? 'true' : 'false',
+              publish_mode: publishMode,
+              checkout_ref: checkoutRef,
+              publish_ref: publishRef,
+              base_ref: baseRef,
+              head_ref: headRef,
+              head_repo: headRepo,
+              default_branch: defaultBranch,
+              branch_name: branchName,
+              actor_permission: permission,
+            }));
+
+  codex:
+    name: Run Codex
+    needs: guard
+    if: needs.guard.outputs.skip != 'true'
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+    permissions:
+      contents: read
+    outputs:
+      result_status: ${{ steps.prepare.outputs.result_status }}
+      has_patch: ${{ steps.prepare.outputs.has_patch }}
+    steps:
+      - name: Checkout trusted Codex config
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ github.workflow_sha || github.sha }}
+          path: .trusted-codex-config
+          persist-credentials: false
+          sparse-checkout: |
+            .github/codex
+
+      - name: Copy trusted Codex config
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/codex-config"
+          mkdir -p "$RUNNER_TEMP/codex-config"
+          cp -R ".trusted-codex-config/.github/codex/." "$RUNNER_TEMP/codex-config/"
+          rm -rf ".trusted-codex-config"
+          chmod -R go-w "$RUNNER_TEMP/codex-config"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.guard.outputs.checkout_ref }}
+          persist-credentials: false
+          submodules: false
+
+      - name: Pre-fetch pull request refs
+        if: needs.guard.outputs.target_kind == 'pr'
+        shell: bash
+        env:
+          PR_BASE_REF: ${{ needs.guard.outputs.base_ref }}
+          PR_NUMBER: ${{ needs.guard.outputs.target_number }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            "$PR_BASE_REF" \
+            "+refs/pull/$PR_NUMBER/head:refs/remotes/origin/pr/$PR_NUMBER/head"
+
+      - name: Build Codex prompt
+        shell: bash
+        env:
+          CODEX_TARGET_KIND: ${{ needs.guard.outputs.target_kind }}
+          CODEX_TARGET_NUMBER: ${{ needs.guard.outputs.target_number }}
+          CODEX_TARGET_URL: ${{ needs.guard.outputs.target_url }}
+          CODEX_TARGET_TITLE: ${{ needs.guard.outputs.target_title }}
+          CODEX_TASK: ${{ needs.guard.outputs.task }}
+          CODEX_SANDBOX: ${{ needs.guard.outputs.sandbox }}
+          CODEX_WRITE_ALLOWED: ${{ needs.guard.outputs.write_allowed }}
+          CODEX_PUBLISH_MODE: ${{ needs.guard.outputs.publish_mode }}
+          CODEX_BASE_REF: ${{ needs.guard.outputs.base_ref }}
+          CODEX_HEAD_REF: ${{ needs.guard.outputs.head_ref }}
+          CODEX_HEAD_REPO: ${{ needs.guard.outputs.head_repo }}
+          CODEX_BRANCH_NAME: ${{ needs.guard.outputs.branch_name }}
+          CODEX_ACTOR_PERMISSION: ${{ needs.guard.outputs.actor_permission }}
+          CODEX_CLI_SANDBOX: ${{ vars.CODEX_CLI_SANDBOX || 'danger-full-access' }}
+          CODEX_CONFIG_DIR: ${{ runner.temp }}/codex-config
+        run: node "$RUNNER_TEMP/codex-config/scripts/build-prompt.js"
+
+      - name: Prepare workspace for unprivileged Codex user
+        shell: bash
+        env:
+          CODEX_RUNNER_USER: ${{ vars.CODEX_RUNNER_USER || 'cicd' }}
+        run: |
+          set -euo pipefail
+          if ! id "$CODEX_RUNNER_USER" >/dev/null 2>&1; then
+            {
+              echo "The Codex runner user '$CODEX_RUNNER_USER' does not exist on this self-hosted runner."
+              echo "Create it once on the runner host, or set the CODEX_RUNNER_USER repository variable to an existing unprivileged account."
+              echo "Example:"
+              echo "  sudo useradd --system --create-home --shell /usr/sbin/nologin cicd-codex"
+              echo "  sudo mkdir -p /home/cicd-codex/.codex"
+              echo "  sudo chown -R cicd-codex:cicd-codex /home/cicd-codex"
+              echo "  Then set CODEX_RUNNER_USER=cicd-codex."
+            } >&2
+            exit 1
+          fi
+          if [[ "$(id -un)" != "$CODEX_RUNNER_USER" ]]; then
+            {
+              echo "This workflow is running as '$(id -un)', but CODEX_RUNNER_USER is '$CODEX_RUNNER_USER'."
+              echo "To avoid password prompts and sudo requirements, run the GitHub Actions runner service as '$CODEX_RUNNER_USER' or set CODEX_RUNNER_USER to the current runner account."
+            } >&2
+            exit 1
+          fi
+          git config core.fileMode false
+          chmod -R a+rwX "$GITHUB_WORKSPACE"
+
+      - name: Run Codex
+        id: run_codex
+        shell: bash
+        env:
+          CODEX_RUNNER_USER: ${{ vars.CODEX_RUNNER_USER || 'cicd' }}
+          CODEX_MODEL: ${{ vars.CODEX_MODEL }}
+          CODEX_REASONING_EFFORT: ${{ vars.CODEX_REASONING_EFFORT }}
+          CODEX_SANDBOX: ${{ needs.guard.outputs.sandbox }}
+          CODEX_CLI_SANDBOX: ${{ vars.CODEX_CLI_SANDBOX || 'danger-full-access' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          if ! CODEX_BIN="$(command -v codex)"; then
+            echo "codex CLI was not found on PATH for the runner user. Install Codex on the self-hosted runner or add it to PATH." >&2
+            exit 1
+          fi
+          "$CODEX_BIN" --version
+          echo "Logical Codex mode: $CODEX_SANDBOX"
+          echo "Codex CLI sandbox: $CODEX_CLI_SANDBOX"
+
+          args=(
+            exec
+            --cd "$GITHUB_WORKSPACE"
+            --sandbox "$CODEX_CLI_SANDBOX"
+            --output-schema "$GITHUB_WORKSPACE/.codex/result.schema.json"
+            --output-last-message "$GITHUB_WORKSPACE/.codex/final.json"
+          )
+
+          if [[ -n "${CODEX_MODEL:-}" ]]; then
+            args+=(--model "$CODEX_MODEL")
+          fi
+
+          if [[ -n "${CODEX_REASONING_EFFORT:-}" ]]; then
+            args+=(-c "model_reasoning_effort=\"${CODEX_REASONING_EFFORT}\"")
+          fi
+
+          args+=(-)
+
+          set +e
+          "$CODEX_BIN" "${args[@]}" < "$GITHUB_WORKSPACE/.codex/prompt.md"
+          codex_status=$?
+          set -e
+
+          echo "$codex_status" > "$GITHUB_WORKSPACE/.codex/codex-exit-code"
+          if (( codex_status != 0 )); then
+            workspace_changes="$(git status --porcelain --untracked-files=all -- . ':(exclude).codex' || true)"
+            if [[ -s "$GITHUB_WORKSPACE/.codex/final.json" || -n "$workspace_changes" ]]; then
+              echo "codex exec exited with code $codex_status, but produced result artifacts or repository changes; continuing to publish handling."
+            else
+              echo "codex exec exited with code $codex_status and did not produce a result artifact or repository changes." >&2
+              exit "$codex_status"
+            fi
+          fi
+
+      - name: Prepare Codex artifacts
+        id: prepare
+        if: always()
+        shell: bash
+        run: node "$RUNNER_TEMP/codex-config/scripts/prepare-artifacts.js"
+
+      - name: Upload Codex artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .codex/out
+          if-no-files-found: error
+
+  publish:
+    name: Publish Codex result
+    needs:
+      - guard
+      - codex
+    if: needs.guard.outputs.skip != 'true' && needs.codex.result == 'success'
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout publish target
+        if: needs.codex.outputs.result_status == 'code_change' && needs.codex.outputs.has_patch == 'true' && needs.guard.outputs.write_allowed == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.guard.outputs.publish_ref }}
+          submodules: false
+
+      - name: Download Codex artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: codex-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: codex-artifact
+
+      - name: Apply patch and push branch
+        id: publish_patch
+        if: needs.codex.outputs.result_status == 'code_change' && needs.codex.outputs.has_patch == 'true' && needs.guard.outputs.write_allowed == 'true'
+        shell: bash
+        env:
+          PUBLISH_MODE: ${{ needs.guard.outputs.publish_mode }}
+          BRANCH_NAME: ${{ needs.guard.outputs.branch_name }}
+          BASE_REF: ${{ needs.guard.outputs.base_ref }}
+          HEAD_REF: ${{ needs.guard.outputs.head_ref }}
+          DEFAULT_BRANCH: ${{ needs.guard.outputs.default_branch }}
+          TARGET_KIND: ${{ needs.guard.outputs.target_kind }}
+          TARGET_NUMBER: ${{ needs.guard.outputs.target_number }}
+        run: |
+          set -euo pipefail
+          git config user.name "OpenAI Codex Bot"
+          git config user.email "codex-bot@users.noreply.github.com"
+          git config core.fileMode false
+          git config core.hooksPath /dev/null
+
+          if [[ "$PUBLISH_MODE" == "issue_branch" || "$PUBLISH_MODE" == "pr_branch" ]]; then
+            git check-ref-format --branch "$BRANCH_NAME"
+            if git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null 2>&1; then
+              git fetch --no-tags origin "$BRANCH_NAME"
+              git checkout -B "$BRANCH_NAME" "origin/$BRANCH_NAME"
+            else
+              git checkout -B "$BRANCH_NAME"
+            fi
+          elif [[ "$PUBLISH_MODE" == "pr_head" ]]; then
+            git check-ref-format --branch "$HEAD_REF"
+            if [[ "$HEAD_REF" == "$BASE_REF" || "$HEAD_REF" == "$DEFAULT_BRANCH" || "$HEAD_REF" == "main" || "$HEAD_REF" == "master" ]]; then
+              {
+                echo "pushed=false"
+                echo "blocked=true"
+                printf 'blocked_files<<EOF\n'
+                printf 'Protected PR head branch: %s\n' "$HEAD_REF"
+                printf 'EOF\n'
+              } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git checkout -B "$HEAD_REF"
+          else
+            echo "Unsupported publish mode: $PUBLISH_MODE" >&2
+            exit 1
+          fi
+
+          git apply --index --whitespace=nowarn codex-artifact/codex.patch
+
+          mapfile -t changed_files < <(git diff --cached --name-only)
+          if (( ${#changed_files[@]} == 0 )); then
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          blocked_files=()
+          for file in "${changed_files[@]}"; do
+            case "$file" in
+              .github/*|AGENTS.md|*.jks|*.keystore|.env|.env.*)
+                blocked_files+=("$file")
+                ;;
+            esac
+          done
+
+          if (( ${#blocked_files[@]} > 0 )); then
+            {
+              echo "pushed=false"
+              echo "blocked=true"
+              printf 'blocked_files<<EOF\n'
+              printf '%s\n' "${blocked_files[@]}"
+              printf 'EOF\n'
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          commit_summary="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('codex-artifact/result.json','utf8')); process.stdout.write((r.summary || 'Codex update').replace(/\s+/g,' ').slice(0,72));")"
+          git commit -m "Codex bot: ${commit_summary}" -m "Triggered by ${TARGET_KIND} #${TARGET_NUMBER}."
+
+          if [[ "$PUBLISH_MODE" == "issue_branch" || "$PUBLISH_MODE" == "pr_branch" ]]; then
+            git push origin "HEAD:$BRANCH_NAME"
+            published_branch="$BRANCH_NAME"
+          else
+            git push origin "HEAD:$HEAD_REF"
+            published_branch="$HEAD_REF"
+          fi
+
+          {
+            echo "pushed=true"
+            echo "blocked=false"
+            echo "branch=$published_branch"
+            echo "commit_sha=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Comment and open PR
+        uses: actions/github-script@v7
+        env:
+          TARGET_KIND: ${{ needs.guard.outputs.target_kind }}
+          TARGET_NUMBER: ${{ needs.guard.outputs.target_number }}
+          TARGET_TITLE: ${{ needs.guard.outputs.target_title }}
+          TARGET_URL: ${{ needs.guard.outputs.target_url }}
+          RESULT_STATUS: ${{ needs.codex.outputs.result_status }}
+          HAS_PATCH: ${{ needs.codex.outputs.has_patch }}
+          WRITE_ALLOWED: ${{ needs.guard.outputs.write_allowed }}
+          PUBLISH_MODE: ${{ needs.guard.outputs.publish_mode }}
+          BRANCH_NAME: ${{ needs.guard.outputs.branch_name }}
+          BASE_REF: ${{ needs.guard.outputs.base_ref }}
+          PUSHED: ${{ steps.publish_patch.outputs.pushed }}
+          BLOCKED: ${{ steps.publish_patch.outputs.blocked }}
+          BLOCKED_FILES: ${{ steps.publish_patch.outputs.blocked_files }}
+          COMMIT_SHA: ${{ steps.publish_patch.outputs.commit_sha }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issueNumber = Number(process.env.TARGET_NUMBER);
+            const artifactDir = path.resolve('codex-artifact');
+            const result = JSON.parse(fs.readFileSync(path.join(artifactDir, 'result.json'), 'utf8'));
+            const fallbackComment = {
+              comment_only: 'Codex inspected this item and left no additional action.',
+              needs_info: 'Codex needs more information before it can proceed.',
+              code_change: 'Codex prepared code changes.',
+              no_op: 'Codex inspected this item and found no action needed.',
+            };
+
+            function clean(value) {
+              return String(value || '').trim();
+            }
+
+            function baseComment() {
+              return clean(result.comment) || fallbackComment[result.status] || fallbackComment.comment_only;
+            }
+
+            let body = baseComment();
+            let prUrl = '';
+
+            if (process.env.BLOCKED === 'true') {
+              const blockedFiles = clean(process.env.BLOCKED_FILES);
+              body = [
+                body,
+                '',
+                'Codex prepared code changes, but publishing was blocked because protected repository configuration files were modified:',
+                '```text',
+                blockedFiles || '(unknown protected file)',
+                '```',
+              ].join('\n');
+            } else if (process.env.PUSHED === 'true' && (process.env.PUBLISH_MODE === 'issue_branch' || process.env.PUBLISH_MODE === 'pr_branch')) {
+              const branch = process.env.BRANCH_NAME;
+              const baseRef = process.env.BASE_REF || 'main';
+              const prTitle = clean(result.pr_title) || `Codex: ${process.env.TARGET_TITLE || `Issue #${issueNumber}`}`;
+              const targetKind = clean(process.env.TARGET_KIND);
+              const referenceLine = targetKind === 'pr'
+                ? `Follow-up to #${issueNumber}`
+                : `Refs #${issueNumber}`;
+              const prBody = [
+                clean(result.pr_body) || body,
+                '',
+                referenceLine,
+                '',
+                `Triggered by Codex bot run ${context.runId}.`,
+              ].join('\n');
+
+              const { data: existingPrs } = await github.rest.pulls.list({
+                owner,
+                repo,
+                state: 'open',
+                head: `${owner}:${branch}`,
+                base: baseRef,
+              });
+
+              let pr = existingPrs[0];
+              if (!pr) {
+                const created = await github.rest.pulls.create({
+                  owner,
+                  repo,
+                  title: prTitle,
+                  head: branch,
+                  base: baseRef,
+                  body: prBody,
+                  draft: true,
+                });
+                pr = created.data;
+              }
+              prUrl = pr.html_url;
+              body = [
+                body,
+                '',
+                `${process.env.PUBLISH_MODE === 'pr_branch' ? 'Draft follow-up PR' : 'Draft PR'}: ${prUrl}`,
+              ].join('\n');
+            } else if (process.env.PUSHED === 'true' && process.env.PUBLISH_MODE === 'pr_head') {
+              const sha = clean(process.env.COMMIT_SHA);
+              body = [
+                body,
+                '',
+                `Pushed Codex changes to this PR branch${sha ? ` at ${sha.slice(0, 12)}` : ''}.`,
+              ].join('\n');
+            } else if (process.env.RESULT_STATUS === 'code_change' && process.env.HAS_PATCH === 'true' && process.env.WRITE_ALLOWED !== 'true') {
+              body = [
+                body,
+                '',
+                'Codex identified code changes, but this trigger is read-only. A maintainer can rerun with an explicit write request such as `@codex fix ...`, or add `codex-run` to an issue.',
+              ].join('\n');
+            } else if (process.env.RESULT_STATUS === 'code_change' && process.env.HAS_PATCH !== 'true') {
+              body = [
+                body,
+                '',
+                'Codex reported that code changes were needed, but no repository diff was produced.',
+              ].join('\n');
+            }
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              body,
+            });

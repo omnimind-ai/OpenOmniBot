@@ -13,9 +13,11 @@ import androidx.room.RoomDatabase
         Message::class,
         CacheSuggestion::class,
         Conversation::class,
-        AgentConversationEntry::class
+        AgentConversationEntry::class,
+        TokenUsageRecord::class,
+        CodexThreadBinding::class
     ],
-    version = 10,
+    version = 13,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -28,6 +30,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun cacheSuggestionDao(): CacheSuggestionDao
     abstract fun conversationDao(): ConversationDao
     abstract fun agentConversationEntryDao(): AgentConversationEntryDao
+    abstract fun tokenUsageRecordDao(): TokenUsageRecordDao
+    abstract fun codexThreadBindingDao(): CodexThreadBindingDao
 
     companion object {
         const val DATABASE_NAME = "omnibot_cache_database"

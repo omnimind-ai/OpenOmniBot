@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/app_text_styles.dart';
 import 'package:ui/utils/popup_menu_anchor_position.dart';
@@ -10,14 +11,17 @@ Future<RecordMenuAction?> showRecordContextMenu({
   required BuildContext context,
   required Offset position,
   double maxWidth = 144,
-  String editLabel = '编辑',
-  String deleteLabel = '删除记录',
+  String? editLabel,
+  String? deleteLabel,
   String editIconAsset = 'assets/common/edit.svg',
   String deleteIconAsset = 'assets/common/close.svg',
   Color deleteColor = AppColors.alertRed,
   bool showEdit = true,
   bool showDelete = true,
 }) {
+  final isEnglish = Localizations.localeOf(context).languageCode == 'en';
+  final resolvedEditLabel = editLabel ?? (isEnglish ? 'Edit' : '编辑');
+  final resolvedDeleteLabel = deleteLabel ?? (isEnglish ? 'Delete record' : '删除记录');
   final List<PopupMenuEntry<RecordMenuAction>> items = [];
 
   if (showEdit) {
@@ -40,7 +44,7 @@ Future<RecordMenuAction?> showRecordContextMenu({
               ),
               const SizedBox(width: 20),
               Text(
-                editLabel,
+                resolvedEditLabel,
                 style: const TextStyle(
                   color: Colors.black,
                   fontSize: AppTextStyles.fontSizeMain,
@@ -78,7 +82,7 @@ Future<RecordMenuAction?> showRecordContextMenu({
               ),
               const SizedBox(width: 20),
               Text(
-                deleteLabel,
+                resolvedDeleteLabel,
                 style: const TextStyle(
                   color: AppColors.alertRed,
                   fontSize: AppTextStyles.fontSizeMain,

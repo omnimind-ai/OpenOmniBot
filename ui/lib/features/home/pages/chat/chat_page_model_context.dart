@@ -30,6 +30,7 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
       });
       _scheduleNormalSurfaceModelReveal();
       await _syncInvalidNormalConversationOverrideIfNeeded();
+      await _syncActiveNormalConversationPromptTokenThreshold();
     } catch (e) {
       debugPrint('加载聊天模型上下文失败: $e');
     }
@@ -129,6 +130,10 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
       );
     });
     await _syncInvalidNormalConversationOverrideIfNeeded();
+    await _syncActiveNormalConversationPromptTokenThreshold(
+      selection: nextSelection,
+      conversationId: conversationId,
+    );
   }
 
   @override
@@ -158,6 +163,12 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
       );
     }
     if (!mounted) return;
+    final nextSelection = value == null
+        ? _activeConversationModelOverrideSelection
+        : _ChatModelOverrideSelection(
+            providerProfileId: value.providerProfileId,
+            modelId: value.modelId,
+          );
     setState(() {
       if (value != null) {
         _conversationModelOverride = value;
@@ -170,14 +181,13 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
         profiles: _modelProviderProfiles,
         source: _modelOptionsByProfileId,
         sceneCatalog: _sceneCatalog,
-        overrideSelection: value == null
-            ? _activeConversationModelOverrideSelection
-            : _ChatModelOverrideSelection(
-                providerProfileId: value.providerProfileId,
-                modelId: value.modelId,
-              ),
+        overrideSelection: nextSelection,
       );
     });
+    await _syncActiveNormalConversationPromptTokenThreshold(
+      selection: nextSelection,
+      conversationId: conversationId,
+    );
   }
 
   @override
@@ -257,9 +267,16 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
         );
       });
     }
+    await _syncActiveNormalConversationPromptTokenThreshold(
+      selection: selection,
+      conversationId: normalConversationId,
+    );
 
     final switchedLabel = displayAsMentionChip ? '@$modelId' : modelId;
-    showToast('已切换到 $switchedLabel', type: ToastType.success);
+    showToast(
+      LegacyTextLocalizer.localize('已切换到 $switchedLabel'),
+      type: ToastType.success,
+    );
   }
 
   @override
@@ -287,7 +304,12 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
         _pendingConversationReasoningEffort = null;
       });
     }
-    showToast('已设置思考强度为 $normalizedEffort', type: ToastType.success);
+    showToast(
+      LegacyTextLocalizer.localize(
+        normalizedEffort == 'no' ? '已关闭思考' : '已设置思考强度为 $normalizedEffort',
+      ),
+      type: ToastType.success,
+    );
   }
 
   @override
@@ -315,7 +337,11 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
         overrideSelection: null,
       );
     });
-    showToast('已恢复场景默认模型', type: ToastType.success);
+    showToast(
+      LegacyTextLocalizer.localize('已恢复场景默认模型'),
+      type: ToastType.success,
+    );
+    await _syncActiveNormalConversationPromptTokenThreshold();
   }
 
   @override
@@ -488,6 +514,21 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
         currentSelection.modelId == modelId) {
       return;
     }
+    final isOmniInferLocalModel = localModelFeature.isBuiltinLocalProvider(
+      providerProfileId,
+    );
+    if (isOmniInferLocalModel &&
+        activeConversationModeValue != ConversationMode.chatOnly) {
+      _dispatchSceneModelSelectionSerial++;
+      showToast(
+        LegacyTextLocalizer.localize(
+          '本地模型仅支持纯聊天模式，请开启新的纯聊天对话后再使用本地模型',
+        ),
+        type: ToastType.warning,
+      );
+      return;
+    }
+    final selectionSerial = ++_dispatchSceneModelSelectionSerial;
     try {
       await SceneModelConfigService.saveSceneModelBinding(
         sceneId: sceneId,
@@ -495,12 +536,78 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
         modelId: modelId,
       );
       await _loadNormalChatModelContext();
-      if (!mounted) return;
-      showToast('Agent 模型已切换到 $modelId', type: ToastType.success);
+      if (!mounted ||
+          selectionSerial != _dispatchSceneModelSelectionSerial) {
+        return;
+      }
+      if (!isOmniInferLocalModel) {
+        showToast(
+          LegacyTextLocalizer.localize('Agent 模型已切换到 $modelId'),
+          type: ToastType.success,
+        );
+        return;
+      }
+
+      final loadingToast = AppToast.loading(
+        LegacyTextLocalizer.localize('模型加载中...'),
+      );
+      try {
+        await _waitForLocalModelLoadingStatusFrame();
+        if (!mounted ||
+            selectionSerial != _dispatchSceneModelSelectionSerial) {
+          return;
+        }
+        final result = await localModelFeature.preloadModelIfNeeded(
+          providerProfileId: providerProfileId,
+          modelId: modelId,
+        );
+        if (!mounted ||
+            selectionSerial != _dispatchSceneModelSelectionSerial ||
+            result == null) {
+          return;
+        }
+        if (result['cancelled'] == true) return;
+        if (result['success'] == true) {
+          showToast(
+            LegacyTextLocalizer.localize('模型加载完成'),
+            type: ToastType.success,
+          );
+        } else {
+          final error = (result['error'] ?? '').toString().trim();
+          showToast(
+            LegacyTextLocalizer.localize(
+              error.isEmpty ? '模型加载失败' : '模型加载失败：$error',
+            ),
+            type: ToastType.error,
+          );
+        }
+      } catch (e) {
+        if (!mounted ||
+            selectionSerial != _dispatchSceneModelSelectionSerial) {
+          return;
+        }
+        showToast(
+          LegacyTextLocalizer.localize('模型加载失败：$e'),
+          type: ToastType.error,
+        );
+      } finally {
+        loadingToast.dismiss();
+      }
     } catch (e) {
-      if (!mounted) return;
-      showToast('更新 Agent 模型失败：$e', type: ToastType.error);
+      if (!mounted ||
+          selectionSerial != _dispatchSceneModelSelectionSerial) {
+        return;
+      }
+      showToast(
+        LegacyTextLocalizer.localize('更新 Agent 模型失败：$e'),
+        type: ToastType.error,
+      );
     }
+  }
+
+  Future<void> _waitForLocalModelLoadingStatusFrame() async {
+    await SchedulerBinding.instance.endOfFrame;
+    await Future<void>.delayed(Duration.zero);
   }
 
   @override
@@ -519,6 +626,150 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
           ),
         );
       },
+    );
+  }
+
+  _ChatModelOverrideSelection? _effectiveNormalModelSelection(
+    _ChatModelOverrideSelection? explicitSelection,
+  ) {
+    if (explicitSelection != null) {
+      return explicitSelection;
+    }
+    if (_showConversationModelMentionChip) {
+      final override = _activeConversationModelOverrideSelection;
+      if (override != null) {
+        return override;
+      }
+    }
+    return _activeDispatchSceneSelection;
+  }
+
+  ProviderModelOption? _findProviderModelOption(
+    _ChatModelOverrideSelection selection,
+  ) {
+    final models =
+        _modelOptionsByProfileId[selection.providerProfileId] ??
+        const <ProviderModelOption>[];
+    for (final model in models) {
+      if (model.id == selection.modelId) {
+        return model;
+      }
+    }
+    return null;
+  }
+
+  ModelProviderProfileSummary? _findProviderProfile(String profileId) {
+    for (final profile in _modelProviderProfiles) {
+      if (profile.id == profileId) {
+        return profile;
+      }
+    }
+    return null;
+  }
+
+  Future<ProviderModelOption?> _resolveProviderModelOption(
+    _ChatModelOverrideSelection selection,
+  ) async {
+    final existing = _findProviderModelOption(selection);
+    if ((existing?.contextLimit ?? 0) > 0) {
+      return existing;
+    }
+    final profile = _findProviderProfile(selection.providerProfileId);
+    if (profile == null) {
+      return existing;
+    }
+    final seed =
+        existing ??
+        ProviderModelOption(
+          id: selection.modelId,
+          displayName: selection.modelId,
+          ownedBy: 'selection',
+        );
+    final enriched = await ModelProviderConfigService.enrichModelsForProfile(
+      profileId: profile.id,
+      providerName: profile.name,
+      apiBase: profile.baseUrl,
+      models: [seed],
+    );
+    if (enriched.isEmpty) {
+      return existing;
+    }
+    final resolved = enriched.first;
+    if (!mounted || (resolved.contextLimit ?? 0) <= 0) {
+      return resolved;
+    }
+    setState(() {
+      final next = <String, List<ProviderModelOption>>{
+        for (final entry in _modelOptionsByProfileId.entries)
+          entry.key: List<ProviderModelOption>.from(entry.value),
+      };
+      final bucket = next.putIfAbsent(
+        selection.providerProfileId,
+        () => <ProviderModelOption>[],
+      );
+      final index = bucket.indexWhere((item) => item.id == selection.modelId);
+      if (index >= 0) {
+        bucket[index] = resolved;
+      } else {
+        bucket.insert(0, resolved);
+      }
+      _modelOptionsByProfileId = next;
+    });
+    return resolved;
+  }
+
+  Future<void> _syncActiveNormalConversationPromptTokenThreshold({
+    _ChatModelOverrideSelection? selection,
+    int? conversationId,
+  }) async {
+    final targetConversationId =
+        conversationId ?? _currentConversationIdByMode[ChatPageMode.normal];
+    if (targetConversationId == null || targetConversationId <= 0) {
+      return;
+    }
+    final effectiveSelection = _effectiveNormalModelSelection(selection);
+    if (effectiveSelection == null) {
+      return;
+    }
+    final model = await _resolveProviderModelOption(effectiveSelection);
+    final contextLimit = model?.contextLimit;
+    if (contextLimit == null || contextLimit <= 0) {
+      return;
+    }
+    final currentConversation =
+        _runtimeForMode(ChatPageMode.normal)?.conversation ??
+        _currentConversationByMode[ChatPageMode.normal];
+    if (currentConversation?.promptTokenThreshold == contextLimit) {
+      return;
+    }
+    final updated =
+        await ConversationService.updateConversationPromptTokenThreshold(
+          conversationId: targetConversationId,
+          promptTokenThreshold: contextLimit,
+        );
+    if (!updated || !mounted) {
+      return;
+    }
+    final baseConversation = currentConversation;
+    if (baseConversation == null) {
+      return;
+    }
+    final nextConversation = baseConversation.copyWith(
+      promptTokenThreshold: contextLimit,
+    );
+    setState(() {
+      if (_currentConversationByMode[ChatPageMode.normal]?.id ==
+          targetConversationId) {
+        _currentConversationByMode[ChatPageMode.normal] = nextConversation;
+      }
+      final runtime = _runtimeForMode(ChatPageMode.normal);
+      if (runtime?.conversation?.id == targetConversationId) {
+        runtime!.conversation = nextConversation;
+      }
+    });
+    _syncRuntimeSnapshotForMode(
+      ChatPageMode.normal,
+      conversation: nextConversation,
     );
   }
 }
@@ -777,7 +1028,7 @@ class _ChatModelMentionPanelState extends State<_ChatModelMentionPanel> {
                   Padding(
                     padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
                     child: Text(
-                      '没有匹配的模型',
+                      LegacyTextLocalizer.localize('没有匹配的模型'),
                       style: TextStyle(
                         fontSize: 12,
                         color: context.isDarkTheme
@@ -837,8 +1088,21 @@ class _ConversationModelSelectorPopupEntry
 
 class _ConversationModelSelectorPopupEntryState
     extends State<_ConversationModelSelectorPopupEntry> {
+  static const Map<String, String> _kBackendDisplayNames = {
+    'llama.cpp': 'llama.cpp',
+    'omniinfer-mnn': 'MNN',
+    'llm': 'NPU',
+    'manual': '手动添加',
+  };
+  static const List<String> _kBackendOrder = [
+    'llama.cpp',
+    'omniinfer-mnn',
+    'manual',
+  ];
+
   final TextEditingController _searchController = TextEditingController();
   late final Set<String> _expandedProfileIds;
+  late final Set<String> _expandedBackendKeys;
 
   bool get _hasSearchQuery => _searchController.text.trim().isNotEmpty;
 
@@ -851,6 +1115,23 @@ class _ConversationModelSelectorPopupEntryState
     };
     if (_expandedProfileIds.isEmpty && widget.profiles.isNotEmpty) {
       _expandedProfileIds.add(widget.profiles.first.id);
+    }
+    _expandedBackendKeys = <String>{};
+    if (widget.currentSelection != null) {
+      final pid = widget.currentSelection!.providerProfileId;
+      if (localModelFeature.isBuiltinLocalProvider(pid)) {
+        final models =
+            widget.providerModelsByProfileId[pid] ??
+            const <ProviderModelOption>[];
+        for (final m in models) {
+          if (m.id == widget.currentSelection!.modelId &&
+              m.ownedBy != null &&
+              m.ownedBy!.isNotEmpty) {
+            _expandedBackendKeys.add('$pid::${m.ownedBy}');
+            break;
+          }
+        }
+      }
     }
     _searchController.addListener(() {
       setState(() {});
@@ -895,6 +1176,37 @@ class _ConversationModelSelectorPopupEntryState
     return _expandedProfileIds.contains(profileId);
   }
 
+  bool _needsBackendGrouping(String profileId) {
+    return localModelFeature.isBuiltinLocalProvider(profileId);
+  }
+
+  Map<String, List<ProviderModelOption>> _groupByBackend(String profileId) {
+    final models = _filteredModels(profileId);
+    final groups = <String, List<ProviderModelOption>>{};
+    for (final model in models) {
+      final key = (model.ownedBy != null && model.ownedBy!.isNotEmpty)
+          ? model.ownedBy!
+          : 'other';
+      groups.putIfAbsent(key, () => []).add(model);
+    }
+    return groups;
+  }
+
+  List<String> _sortedBackendKeys(Iterable<String> keys) {
+    final list = keys.toList();
+    list.sort((a, b) {
+      final ia = _kBackendOrder.indexOf(a);
+      final ib = _kBackendOrder.indexOf(b);
+      return (ia < 0 ? 999 : ia).compareTo(ib < 0 ? 999 : ib);
+    });
+    return list;
+  }
+
+  bool _isBackendExpanded(String profileId, String backend) {
+    if (_hasSearchQuery) return true;
+    return _expandedBackendKeys.contains('$profileId::$backend');
+  }
+
   Widget _buildSearchRow() {
     final palette = context.omniPalette;
     final isDark = context.isDarkTheme;
@@ -928,7 +1240,9 @@ class _ConversationModelSelectorPopupEntryState
                 ),
                 decoration: InputDecoration(
                   isDense: true,
-                  hintText: '搜索模型 ID',
+                  filled: false,
+                  fillColor: Colors.transparent,
+                  hintText: LegacyTextLocalizer.localize('搜索模型 ID'),
                   hintStyle: TextStyle(
                     fontSize: 13,
                     color: isDark
@@ -1113,6 +1427,108 @@ class _ConversationModelSelectorPopupEntryState
     );
   }
 
+  Widget _buildBackendSubHeader(
+    String profileId,
+    String backend,
+    int modelCount,
+  ) {
+    final expanded = _isBackendExpanded(profileId, backend);
+    final displayName = _kBackendDisplayNames[backend] ?? backend;
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 1, 10, 1),
+      child: InkWell(
+        onTap: _hasSearchQuery
+            ? null
+            : () {
+                final key = '$profileId::$backend';
+                setState(() {
+                  if (_expandedBackendKeys.contains(key)) {
+                    _expandedBackendKeys.remove(key);
+                  } else {
+                    _expandedBackendKeys.add(key);
+                  }
+                });
+              },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(8)),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark
+                        ? palette.textTertiary
+                        : const Color(0xFF94A3B8),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Text(
+                '$modelCount',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: isDark
+                      ? palette.textTertiary
+                      : const Color(0xFFB0BAC9),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                _hasSearchQuery
+                    ? Icons.unfold_more_rounded
+                    : expanded
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
+                size: 14,
+                color: isDark ? palette.textTertiary : const Color(0xFFB0BAC9),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBackendGroupedModels(ModelProviderProfileSummary profile) {
+    final groups = _groupByBackend(profile.id);
+    if (groups.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+        child: Text(
+          LegacyTextLocalizer.localize('该 Provider 暂无可选模型'),
+          style: TextStyle(
+            fontSize: 12,
+            color: context.isDarkTheme
+                ? context.omniPalette.textTertiary
+                : const Color(0xFF94A3B8),
+          ),
+        ),
+      );
+    }
+    final sortedKeys = _sortedBackendKeys(groups.keys);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final backend in sortedKeys) ...[
+          _buildBackendSubHeader(profile.id, backend, groups[backend]!.length),
+          if (_isBackendExpanded(profile.id, backend))
+            ...groups[backend]!.map(
+              (model) => _buildModelRow(profile: profile, model: model),
+            ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
@@ -1137,7 +1553,7 @@ class _ConversationModelSelectorPopupEntryState
               Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  '请先在模型提供商页配置 Provider',
+                  LegacyTextLocalizer.localize('请先在模型提供商页配置 Provider'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 12,
@@ -1152,7 +1568,7 @@ class _ConversationModelSelectorPopupEntryState
               Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  '没有匹配的模型',
+                  LegacyTextLocalizer.localize('没有匹配的模型'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 12,
@@ -1178,11 +1594,15 @@ class _ConversationModelSelectorPopupEntryState
                         children: [
                           _buildProfileHeader(profile),
                           if (expanded)
-                            if (models.isEmpty)
+                            if (_needsBackendGrouping(profile.id))
+                              _buildBackendGroupedModels(profile)
+                            else if (models.isEmpty)
                               Padding(
                                 padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
                                 child: Text(
-                                  '该 Provider 暂无可选模型',
+                                  LegacyTextLocalizer.localize(
+                                    '该 Provider 暂无可选模型',
+                                  ),
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: context.isDarkTheme

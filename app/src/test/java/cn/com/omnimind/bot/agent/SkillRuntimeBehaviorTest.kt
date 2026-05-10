@@ -52,6 +52,21 @@ class SkillRuntimeBehaviorTest {
     }
 
     @Test
+    fun resolveMatchesFindSkillsFromChineseTriggerPhrase() {
+        val matches = SkillTriggerMatcher.resolveMatches(
+            userMessage = "帮我找个 skill 来处理 changelog",
+            entries = listOf(
+                entry(
+                    id = "find-install-skills",
+                    description = "Find and install relevant Omnibot skills. Use when the user asks \"找个 skill\", \"有没有这个功能的 skill\", \"find a skill for X\", \"is there a skill for X\", or wants to extend the agent with an installable workflow."
+                )
+            )
+        )
+
+        assertTrue(matches.any { it.entry.id == "find-install-skills" })
+    }
+
+    @Test
     fun buildOmitsDisabledAndUninstalledSkillsFromPromptIndex() {
         val prompt = AgentSystemPrompt.build(
             workspace = AgentWorkspaceDescriptor(

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:flutter_switch/flutter_switch.dart';
 import 'package:ui/core/router/go_router_manager.dart';
+import 'package:ui/features/local_model/local_model_feature.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/hide_from_recents_service.dart';
@@ -108,7 +109,7 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() {
         hideFromRecentsEnabled = !value;
       });
-      showToast('设置后台隐藏失败', type: ToastType.error);
+      showToast(context.l10n.settingsHideRecentsFailed, type: ToastType.error);
     }
   }
 
@@ -137,10 +138,14 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() {
         _autoBackToChatAfterTaskEnabled = value;
       });
-      showToast(value ? '任务完成后将自动返回聊天' : '任务完成后将停留在当前页面');
+      showToast(
+        value
+            ? context.l10n.settingsAutoBackEnabledToast
+            : context.l10n.settingsAutoBackDisabledToast,
+      );
     } catch (e) {
       if (!mounted) return;
-      showToast('设置失败', type: ToastType.error);
+      showToast(context.l10n.settingsSaveFailed, type: ToastType.error);
     }
   }
 
@@ -198,20 +203,26 @@ class _SettingsPageState extends State<SettingsPage> {
       if (enable) {
         final endpoint = info?.endpoint ?? '';
         if (endpoint.isNotEmpty) {
-          showToast('MCP 已开启：$endpoint', type: ToastType.success);
+          showToast(
+            context.l10n.settingsMcpEnabledToast(endpoint),
+            type: ToastType.success,
+          );
         }
       } else {
-        showToast('MCP 已关闭');
+        showToast(context.l10n.settingsMcpDisabledToast);
       }
     } on PlatformException catch (e) {
       if (!mounted) return;
-      showToast(e.message ?? 'MCP 开关失败', type: ToastType.error);
+      showToast(
+        e.message ?? context.l10n.settingsMcpToggleFailed,
+        type: ToastType.error,
+      );
       setState(() {
         _mcpEnabled = !enable;
       });
     } catch (e) {
       if (!mounted) return;
-      showToast('MCP 开关失败', type: ToastType.error);
+      showToast(context.l10n.settingsMcpToggleFailed, type: ToastType.error);
       setState(() {
         _mcpEnabled = !enable;
       });
@@ -258,7 +269,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: info.endpoint));
                       Navigator.of(context).pop();
-                      showToast('已复制访问地址');
+                      showToast(context.l10n.settingsCopiedAddress);
                     },
                     child: Text(context.l10n.settingsCopyAddress),
                   ),
@@ -266,7 +277,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: info.token));
                       Navigator.of(context).pop();
-                      showToast('已复制 Token');
+                      showToast(context.l10n.settingsCopiedToken);
                     },
                     child: Text(context.l10n.settingsCopyToken),
                   ),
@@ -279,9 +290,12 @@ class _SettingsPageState extends State<SettingsPage> {
                         setState(() {
                           _mcpInfo = refreshed ?? _mcpInfo;
                         });
-                        showToast('已刷新 Token');
+                        showToast(context.l10n.settingsTokenRefreshed);
                       } catch (_) {
-                        showToast('刷新 Token 失败', type: ToastType.error);
+                        showToast(
+                          context.l10n.settingsTokenRefreshFailed,
+                          type: ToastType.error,
+                        );
                       }
                     },
                     child: Text(context.l10n.settingsRefreshToken),
@@ -355,15 +369,15 @@ class _SettingsPageState extends State<SettingsPage> {
               GoRouterManager.push('/home/scene_model_setting');
             },
           ),
-          _SettingItem(
-            icon: Icons.memory_outlined,
-            iconSvg: 'assets/home/local_model_cpu_icon.svg',
-            title: context.l10n.settingsLocalModelsTitle,
-            subtitle: context.l10n.settingsLocalModelsSubtitle,
-            onTap: () {
-              GoRouterManager.push('/home/local_models?tab=service');
-            },
-          ),
+          if (localModelFeature.enabled)
+            _SettingItem(
+              icon: Icons.memory_outlined,
+              title: context.l10n.settingsLocalModelsTitle,
+              subtitle: context.l10n.settingsLocalModelsSubtitle,
+              onTap: () {
+                GoRouterManager.push('/home/local_models?tab=service');
+              },
+            ),
           _SettingItem(
             icon: Icons.cloud_sync_outlined,
             iconSvg: 'assets/home/mem0_cloud_setting_icon.svg',
@@ -477,6 +491,15 @@ class _SettingsPageState extends State<SettingsPage> {
         label: context.l10n.settingsSectionPermissionInfo,
         items: [
           _SettingItem(
+            icon: Icons.admin_panel_settings_outlined,
+            iconSvg: 'assets/home/app_permission_authorize_icon.svg',
+            title: context.l10n.authorizePageTitle,
+            subtitle: context.trLegacy('查看并配置无障碍、悬浮窗、Shizuku 等权限'),
+            onTap: () {
+              GoRouterManager.push('/home/authorize_setting');
+            },
+          ),
+          _SettingItem(
             icon: Icons.security,
             iconSvg: 'assets/home/companion_permission_setting_icon.svg',
             title: context.l10n.settingsCompanionPermissionTitle,
@@ -488,9 +511,17 @@ class _SettingsPageState extends State<SettingsPage> {
                   GoRouterManager.push('/home/companion_setting');
                 }
               } catch (e) {
-                debugPrint('请求读取应用列表权限失败: $e');
-                showToast('请求应用列表权限失败');
+                debugPrint('Failed to request installed apps permission: $e');
+                showToast(context.l10n.settingsInstalledAppsPermissionFailed);
               }
+            },
+          ),
+          _SettingItem(
+            icon: Icons.storage_outlined,
+            title: context.l10n.storageUsageTitle,
+            subtitle: context.l10n.storageUsageSubtitle,
+            onTap: () {
+              GoRouterManager.push('/home/storage_usage');
             },
           ),
           _SettingItem(

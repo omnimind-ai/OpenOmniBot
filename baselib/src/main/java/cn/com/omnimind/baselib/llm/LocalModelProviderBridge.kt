@@ -17,6 +17,9 @@ object LocalModelProviderBridge {
     }
 
     fun isBuiltinLocalProvider(profileId: String?, apiBase: String?): Boolean {
+        if (!MnnLocalProviderStateStore.isEnabled()) {
+            return false
+        }
         if (MnnLocalProviderStateStore.isBuiltinProfileId(profileId)) {
             return true
         }

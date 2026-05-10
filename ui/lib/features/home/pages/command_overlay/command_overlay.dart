@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/image_prewarm_cache_service.dart';
 import 'package:ui/services/screen_dialog_service.dart';
@@ -121,7 +122,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
 
   Future<void> _setOpenClawEnabled(bool enabled) async {
     if (enabled && _openClawBaseUrl.trim().isEmpty) {
-      AppToast.show('请先使用 /openclaw 配置 OpenClaw');
+      AppToast.show(LegacyTextLocalizer.localize('请先使用 /openclaw 配置 OpenClaw'));
       _showOpenClawCommandPanel(expand: true);
       return;
     }

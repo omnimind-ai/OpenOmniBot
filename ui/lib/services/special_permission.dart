@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/host_platform_bridge.dart';
 import 'package:ui/utils/ui.dart';
 
@@ -506,9 +507,7 @@ Map<String, bool> _embeddedTerminalSetupStatusFromInstalledPackages(
   final inventory = _embeddedTerminalSetupInventoryFromInstalledPackages(
     packages,
   );
-  return {
-    for (final entry in inventory.entries) entry.key: entry.value.ready,
-  };
+  return {for (final entry in inventory.entries) entry.key: entry.value.ready};
 }
 
 Map<String, EmbeddedTerminalSetupInventoryItem>
@@ -547,6 +546,278 @@ _embeddedTerminalSetupInventoryFromInstalledPackages(List<String> packages) {
   };
 }
 
+class ShizukuStatusSnapshot {
+  const ShizukuStatusSnapshot({
+    required this.status,
+    required this.backend,
+    required this.installed,
+    required this.running,
+    required this.permissionGranted,
+    required this.binderReady,
+    required this.serviceBound,
+    required this.availableActions,
+    required this.message,
+    this.uid,
+    this.version,
+  });
+
+  final String status;
+  final String backend;
+  final bool installed;
+  final bool running;
+  final bool permissionGranted;
+  final bool binderReady;
+  final bool serviceBound;
+  final List<String> availableActions;
+  final String message;
+  final int? uid;
+  final int? version;
+
+  bool get isGranted => status == 'GRANTED_ADB' || status == 'GRANTED_ROOT';
+  bool get isRootBackend => backend == 'ROOT';
+
+  factory ShizukuStatusSnapshot.fromMap(Map<dynamic, dynamic>? map) {
+    final rawActions = map?['availableActions'];
+    return ShizukuStatusSnapshot(
+      status: (map?['status'] as String? ?? 'NOT_INSTALLED').trim(),
+      backend: (map?['backend'] as String? ?? 'NONE').trim(),
+      installed: map?['installed'] == true,
+      running: map?['running'] == true,
+      permissionGranted: map?['permissionGranted'] == true,
+      binderReady: map?['binderReady'] == true,
+      serviceBound: map?['serviceBound'] == true,
+      availableActions: rawActions is List
+          ? rawActions.map((item) => item.toString()).toList(growable: false)
+          : const <String>[],
+      message: (map?['message'] as String? ?? '').trim(),
+      uid: (map?['uid'] as num?)?.toInt(),
+      version: (map?['version'] as num?)?.toInt(),
+    );
+  }
+
+  factory ShizukuStatusSnapshot.fallback() {
+    return const ShizukuStatusSnapshot(
+      status: 'NOT_INSTALLED',
+      backend: 'NONE',
+      installed: false,
+      running: false,
+      permissionGranted: false,
+      binderReady: false,
+      serviceBound: false,
+      availableActions: <String>[],
+      message: '',
+    );
+  }
+
+  String get localizedStatusLabel {
+    switch (status) {
+      case 'GRANTED_ROOT':
+        return LegacyTextLocalizer.isEnglish ? 'Granted (root)' : '已授权（root）';
+      case 'GRANTED_ADB':
+        return LegacyTextLocalizer.isEnglish ? 'Granted (adb)' : '已授权（adb）';
+      case 'PERMISSION_DENIED':
+        return LegacyTextLocalizer.isEnglish
+            ? 'Running, permission not granted'
+            : '已启动，尚未授权';
+      case 'NOT_RUNNING':
+        return LegacyTextLocalizer.isEnglish
+            ? 'Installed, not running'
+            : '已安装，未启动';
+      case 'BINDER_DEAD':
+        return LegacyTextLocalizer.isEnglish
+            ? 'Binder lost, restart required'
+            : '连接已断开，需要重新启动';
+      default:
+        return LegacyTextLocalizer.isEnglish ? 'Not installed' : '未安装';
+    }
+  }
+
+  String get localizedGuide {
+    switch (status) {
+      case 'GRANTED_ROOT':
+        return LegacyTextLocalizer.isEnglish
+            ? 'Shizuku is ready through root/Sui. Agent privileged tools are enabled, including arbitrary shell and persistent shell sessions. Every raw shell and privileged session command still requires confirmation.'
+            : 'Shizuku 已通过 root/Sui 就绪。Agent 高权限工具已启用，支持任意 shell 和持久高权限会话；每次 raw shell 与高权限会话命令仍需用户确认。';
+      case 'GRANTED_ADB':
+        return LegacyTextLocalizer.isEnglish
+            ? 'Shizuku is ready through adb shell. Agent privileged tools are enabled, including arbitrary shell and persistent shell sessions. Commands still follow adb-shell capability limits, and every raw shell and privileged session command requires confirmation.'
+            : 'Shizuku 已通过 adb shell 就绪。Agent 高权限工具已启用，支持任意 shell 和持久高权限会话，但能力仍受 adb shell 后端限制；每次 raw shell 与高权限会话命令都需要用户确认。';
+      case 'PERMISSION_DENIED':
+        return LegacyTextLocalizer.isEnglish
+            ? 'Open Shizuku and grant Omnibot permission.'
+            : '请打开 Shizuku 并授予 Omnibot 权限。';
+      case 'NOT_RUNNING':
+        return LegacyTextLocalizer.isEnglish
+            ? 'Open Shizuku and start it. On Android 11+, non-root devices usually start it from Wireless debugging. You need to restart Shizuku after each reboot.'
+            : '请打开 Shizuku 并启动它。Android 11+ 非 root 设备通常需要从无线调试启动，并且每次重启后都需要重新启动 Shizuku。';
+      case 'BINDER_DEAD':
+        return LegacyTextLocalizer.isEnglish
+            ? 'Shizuku was restarted or disconnected. Open it again to reconnect.'
+            : 'Shizuku 已重启或断开，请重新打开并启动。';
+      default:
+        return LegacyTextLocalizer.isEnglish
+            ? 'Install Shizuku first, then start it and grant Omnibot permission.'
+            : '请先安装 Shizuku，然后启动它并授予 Omnibot 权限。';
+    }
+  }
+}
+
+class ShizukuHealthCheckSnapshot {
+  const ShizukuHealthCheckSnapshot({
+    required this.status,
+    required this.probeSuccess,
+    required this.probeMessage,
+    required this.rawShellProbeSuccess,
+    required this.rawShellProbeMessage,
+    required this.sessionProbeSuccess,
+    required this.sessionProbeMessage,
+  });
+
+  final ShizukuStatusSnapshot status;
+  final bool probeSuccess;
+  final String probeMessage;
+  final bool rawShellProbeSuccess;
+  final String rawShellProbeMessage;
+  final bool sessionProbeSuccess;
+  final String sessionProbeMessage;
+
+  factory ShizukuHealthCheckSnapshot.fromMap(Map<dynamic, dynamic>? map) {
+    final probe = map?['probe'];
+    final probeMap = probe is Map ? Map<dynamic, dynamic>.from(probe) : null;
+    final rawShellProbe = map?['rawShellProbe'];
+    final rawShellProbeMap = rawShellProbe is Map
+        ? Map<dynamic, dynamic>.from(rawShellProbe)
+        : null;
+    final sessionProbe = map?['sessionProbe'];
+    final sessionProbeMap = sessionProbe is Map
+        ? Map<dynamic, dynamic>.from(sessionProbe)
+        : null;
+    final sessionStart = _asNestedMap(sessionProbeMap?['start']);
+    final sessionExec = _asNestedMap(sessionProbeMap?['exec']);
+    final sessionRead = _asNestedMap(sessionProbeMap?['read']);
+    final sessionStop = _asNestedMap(sessionProbeMap?['stop']);
+    final sessionStages = [
+      if (sessionStart != null) sessionStart,
+      if (sessionExec != null) sessionExec,
+      if (sessionRead != null) sessionRead,
+      if (sessionStop != null) sessionStop,
+    ];
+    return ShizukuHealthCheckSnapshot(
+      status: ShizukuStatusSnapshot.fromMap(map),
+      probeSuccess: probeMap?['success'] == true,
+      probeMessage: (probeMap?['message'] as String? ?? '').trim(),
+      rawShellProbeSuccess: rawShellProbeMap?['success'] == true,
+      rawShellProbeMessage: (rawShellProbeMap?['message'] as String? ?? '')
+          .trim(),
+      sessionProbeSuccess:
+          sessionStages.isNotEmpty &&
+          sessionStages.every((stage) => stage['success'] == true),
+      sessionProbeMessage:
+          ((sessionExec ?? sessionStart)?['message'] as String? ??
+                  (sessionStop?['message'] as String? ?? ''))
+              .trim(),
+    );
+  }
+}
+
+Map<dynamic, dynamic>? _asNestedMap(dynamic raw) {
+  return raw is Map ? Map<dynamic, dynamic>.from(raw) : null;
+}
+
+Future<bool> isShizukuInstalled() async {
+  try {
+    return await spePermission.invokeMethod<bool>('isShizukuInstalled') ??
+        false;
+  } catch (e) {
+    debugPrint('检查 Shizuku 安装状态失败: $e');
+    return false;
+  }
+}
+
+Future<bool> isShizukuRunning() async {
+  try {
+    return await spePermission.invokeMethod<bool>('isShizukuRunning') ?? false;
+  } catch (e) {
+    debugPrint('检查 Shizuku 运行状态失败: $e');
+    return false;
+  }
+}
+
+Future<void> openShizukuDownloadOrApp() async {
+  await spePermission.invokeMethod<void>('openShizukuDownloadOrApp');
+}
+
+Future<ShizukuStatusSnapshot> getShizukuStatus() async {
+  try {
+    final result = await spePermission.invokeMethod<Map<dynamic, dynamic>>(
+      'getShizukuStatus',
+    );
+    return ShizukuStatusSnapshot.fromMap(result);
+  } catch (e) {
+    debugPrint('读取 Shizuku 状态失败: $e');
+    return ShizukuStatusSnapshot.fallback();
+  }
+}
+
+Future<bool> requestShizukuPermission() async {
+  try {
+    final result = await spePermission.invokeMethod<Map<dynamic, dynamic>>(
+      'requestShizukuPermission',
+    );
+    return ShizukuStatusSnapshot.fromMap(result).isGranted;
+  } catch (e) {
+    debugPrint('请求 Shizuku 权限失败: $e');
+    return false;
+  }
+}
+
+Future<ShizukuHealthCheckSnapshot> runShizukuHealthCheck() async {
+  try {
+    final result = await spePermission.invokeMethod<Map<dynamic, dynamic>>(
+      'runShizukuHealthCheck',
+    );
+    return ShizukuHealthCheckSnapshot.fromMap(result);
+  } catch (e) {
+    debugPrint('执行 Shizuku 健康检查失败: $e');
+    return ShizukuHealthCheckSnapshot(
+      status: ShizukuStatusSnapshot.fallback(),
+      probeSuccess: false,
+      probeMessage: '',
+      rawShellProbeSuccess: false,
+      rawShellProbeMessage: '',
+      sessionProbeSuccess: false,
+      sessionProbeMessage: '',
+    );
+  }
+}
+
+Future<bool> ensureShizukuPermission(BuildContext context) async {
+  final status = await getShizukuStatus();
+  if (status.isGranted) {
+    return true;
+  }
+  if (!context.mounted) {
+    return false;
+  }
+  final confirmed = await AppDialog.confirm(
+    context,
+    title: LegacyTextLocalizer.isEnglish ? 'Shizuku Permission' : 'Shizuku 权限',
+    content: status.localizedGuide,
+    cancelText: LegacyTextLocalizer.isEnglish ? 'Cancel' : '取消',
+    confirmText: LegacyTextLocalizer.isEnglish
+        ? (status.installed ? 'Open Shizuku' : 'Install Shizuku')
+        : (status.installed ? '打开 Shizuku' : '安装 Shizuku'),
+  );
+  if (confirmed != true) {
+    return false;
+  }
+  await openShizukuDownloadOrApp();
+  if (!status.installed || !status.running) {
+    return false;
+  }
+  return requestShizukuPermission();
+}
+
 /// 检查无障碍权限，如果没有权限则弹出授权对话框
 /// 返回 true 表示有权限，false 表示没有权限
 Future<bool> checkAccessibilityPermission(BuildContext context) async {
@@ -565,10 +836,12 @@ Future<bool> checkAccessibilityPermission(BuildContext context) async {
     // 没有权限，弹出对话框
     final result = await AppDialog.confirm(
       context,
-      title: '无障碍权限',
-      content: '每次开启App需重新授权无障碍的权限，这也是为了你的安全～',
-      cancelText: '取消',
-      confirmText: '去授权',
+      title: LegacyTextLocalizer.isEnglish ? 'Accessibility' : '无障碍权限',
+      content: LegacyTextLocalizer.isEnglish
+          ? 'Accessibility permission needs to be re-granted each time the app starts for your security.'
+          : '每次开启App需重新授权无障碍的权限，这也是为了你的安全～',
+      cancelText: LegacyTextLocalizer.isEnglish ? 'Cancel' : '取消',
+      confirmText: LegacyTextLocalizer.isEnglish ? 'Authorize' : '去授权',
     );
 
     if (!context.mounted) {
@@ -759,4 +1032,14 @@ Future<Map<String, dynamic>> downloadAndInstallTermuxApk(
     {'downloadUrl': downloadUrl},
   );
   return Map<String, dynamic>.from(result ?? const {});
+}
+
+Future<bool> isBackgroundRunAllowed() async {
+  try {
+    return await spePermission.invokeMethod<bool>('isBackgroundRunAllowed') ??
+        false;
+  } catch (e) {
+    debugPrint('检查后台运行权限失败: $e');
+    return false;
+  }
 }

@@ -32,6 +32,11 @@ class ConversationModeBadge extends StatelessWidget {
               const Color(0xFF6E9F73),
               0.18,
             )!,
+            ConversationMode.codex => Color.lerp(
+              palette.surfaceSecondary,
+              const Color(0xFF7D8A92),
+              0.22,
+            )!,
             ConversationMode.normal => Color.lerp(
               palette.surfaceSecondary,
               palette.accentPrimary,
@@ -42,6 +47,7 @@ class ConversationModeBadge extends StatelessWidget {
             ConversationMode.openclaw => const Color(0xFFFBE7D3),
             ConversationMode.chatOnly => const Color(0xFFE7EEFF),
             ConversationMode.subagent => const Color(0xFFE8F6EF),
+            ConversationMode.codex => const Color(0xFFE7ECEF),
             ConversationMode.normal => const Color(0xFFE6EEF9),
           };
     final textColor = context.isDarkTheme
@@ -49,6 +55,7 @@ class ConversationModeBadge extends StatelessWidget {
             ConversationMode.openclaw => const Color(0xFFE7D0B0),
             ConversationMode.chatOnly => const Color(0xFFD6E0FF),
             ConversationMode.subagent => const Color(0xFFD5E6D6),
+            ConversationMode.codex => const Color(0xFFD9E0E4),
             ConversationMode.normal => Color.lerp(
               palette.textPrimary,
               palette.accentPrimary,
@@ -59,6 +66,7 @@ class ConversationModeBadge extends StatelessWidget {
             ConversationMode.openclaw => const Color(0xFF9A540D),
             ConversationMode.chatOnly => const Color(0xFF3158B7),
             ConversationMode.subagent => const Color(0xFF167A49),
+            ConversationMode.codex => const Color(0xFF46535B),
             ConversationMode.normal => const Color(0xFF2552A6),
           };
     return Container(

@@ -12,6 +12,7 @@ import '../models/conversation_thread_target.dart';
 import '../services/assists_core_service.dart';
 import '../services/conversation_service.dart';
 import 'package:ui/core/router/go_router_manager.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 
 class SidebarDrawer extends StatefulWidget {
   const SidebarDrawer({super.key});
@@ -22,7 +23,7 @@ class SidebarDrawer extends StatefulWidget {
 
 class _SidebarDrawerState extends State<SidebarDrawer> {
   int avatarIndex = 0;
-  String nickname = "用户名xxxxx";
+  String nickname = LegacyTextLocalizer.isEnglish ? "Usernamexxxxx" : "用户名xxxxx";
   final List<String> presetAvatars = [
     'assets/avatar/default_avatar1.png',
     'assets/avatar/default_avatar2.png',
@@ -59,7 +60,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       avatarIndex = prefs.getInt('avatarIndex') ?? 0;
-      nickname = prefs.getString('nickname') ?? "用户名xxxxx";
+      nickname = prefs.getString('nickname') ?? (LegacyTextLocalizer.isEnglish ? "Usernamexxxxx" : "用户名xxxxx");
     });
   }
 
@@ -78,6 +79,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
 
   @override
   Widget build(BuildContext context) {
+    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
     return Drawer(
       child: Container(
         color: Colors.grey[100], // 浅灰色背景
@@ -87,13 +89,13 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
             _buildUserHeader(),
 
             // 新建任务按钮
-            _buildNewTaskButton(),
+            _buildNewTaskButton(isEnglish: isEnglish),
 
             // 功能菜单
-            _buildMenuItems(),
+            _buildMenuItems(isEnglish: isEnglish),
 
             // 历史记录区域
-            Expanded(child: _buildHistorySection()),
+            Expanded(child: _buildHistorySection(isEnglish: isEnglish)),
 
             // 底部设置按钮
             _buildBottomSettings(),
@@ -151,7 +153,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
   }
 
   // 新建任务按钮
-  Widget _buildNewTaskButton() {
+  Widget _buildNewTaskButton({required bool isEnglish}) {
     return Container(
       margin: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Container(
@@ -174,7 +176,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
             Icon(Icons.edit_outlined, color: Colors.grey[600], size: 20),
             SizedBox(width: 8),
             Text(
-              "新建任务",
+              isEnglish ? "New task" : "新建任务",
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey[700],
@@ -188,7 +190,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
   }
 
   // 功能菜单项
-  Widget _buildMenuItems() {
+  Widget _buildMenuItems({required bool isEnglish}) {
     return Container(
       margin: EdgeInsets.symmetric(horizontal: 20, vertical: 5),
       child: Container(
@@ -207,7 +209,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
           children: [
             _buildMenuItem(
               icon: Icons.task_alt_outlined,
-              title: "任务中心",
+              title: isEnglish ? "Task center" : "任务中心",
               onTap: () {
                 Navigator.push(
                   context,
@@ -225,7 +227,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
             ),
             _buildMenuItem(
               icon: Icons.memory_outlined,
-              title: "记忆中心",
+              title: isEnglish ? "Memory center" : "记忆中心",
               onTap: () {
                 Navigator.push(
                   context,
@@ -264,7 +266,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
   }
 
   // 历史记录区域
-  Widget _buildHistorySection() {
+  Widget _buildHistorySection({required bool isEnglish}) {
     return Container(
       margin: EdgeInsets.only(top: 20),
       child: Column(
@@ -273,7 +275,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 20),
             child: Text(
-              "历史记录",
+              isEnglish ? "History" : "历史记录",
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey[600],
@@ -294,7 +296,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
                 : conversations.isEmpty
                 ? Center(
                     child: Text(
-                      "暂无历史对话",
+                      isEnglish ? "No conversations yet" : "暂无历史对话",
                       style: TextStyle(fontSize: 14, color: Colors.grey[500]),
                     ),
                   )
@@ -303,7 +305,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
                     itemCount: conversations.length,
                     itemBuilder: (context, index) {
                       final conversation = conversations[index];
-                      return _buildHistoryItem(conversation);
+                      return _buildHistoryItem(conversation, isEnglish: isEnglish);
                     },
                   ),
           ),
@@ -313,7 +315,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
   }
 
   // 历史记录单项
-  Widget _buildHistoryItem(ConversationModel conversation) {
+  Widget _buildHistoryItem(ConversationModel conversation, {required bool isEnglish}) {
     return GestureDetector(
       onTap: () {
         // 点击对话，跳转到全屏聊天页面
@@ -342,7 +344,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
                 children: [
                   Icon(Icons.edit, size: 18, color: Colors.grey[600]),
                   SizedBox(width: 8),
-                  Text('重命名'),
+                  Text(isEnglish ? 'Rename' : '重命名'),
                 ],
               ),
             ),
@@ -352,7 +354,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
                 children: [
                   Icon(Icons.delete, size: 18, color: Colors.grey[600]),
                   SizedBox(width: 8),
-                  Text('删除'),
+                  Text(isEnglish ? 'Delete' : '删除'),
                 ],
               ),
             ),
@@ -434,21 +436,22 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
+        final isEnglish = Localizations.localeOf(context).languageCode == 'en';
         return AlertDialog(
-          title: Text("删除对话"),
-          content: Text("确定要删除这个对话吗？"),
+          title: Text(isEnglish ? "Delete conversation" : "删除对话"),
+          content: Text(isEnglish ? "Are you sure you want to delete this conversation?" : "确定要删除这个对话吗？"),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.pop(context, false);
               },
-              child: Text("取消"),
+              child: Text(isEnglish ? "Cancel" : "取消"),
             ),
             TextButton(
               onPressed: () {
                 Navigator.pop(context, true);
               },
-              child: Text("确定"),
+              child: Text(isEnglish ? "Delete" : "确定"),
             ),
           ],
         );
@@ -537,18 +540,18 @@ class _RenameConversationDialogState extends State<_RenameConversationDialog> {
         _close();
       },
       child: AlertDialog(
-        title: const Text("重命名对话"),
+        title: Text(LegacyTextLocalizer.isEnglish ? "Rename conversation" : "重命名对话"),
         content: TextField(
           controller: _controller,
           focusNode: _focusNode,
-          decoration: const InputDecoration(hintText: "输入新的名称"),
+          decoration: InputDecoration(hintText: LegacyTextLocalizer.isEnglish ? "Enter new name" : "输入新的名称"),
           onSubmitted: (_) => _close(_controller.text.trim()),
         ),
         actions: [
-          TextButton(onPressed: () => _close(), child: const Text("取消")),
+          TextButton(onPressed: () => _close(), child: Text(LegacyTextLocalizer.isEnglish ? "Cancel" : "取消")),
           TextButton(
             onPressed: () => _close(_controller.text.trim()),
-            child: const Text("确定"),
+            child: Text(LegacyTextLocalizer.isEnglish ? "OK" : "确定"),
           ),
         ],
       ),

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:ui/services/assists_core_service.dart';
+import 'package:ui/services/models_dev_catalog_service.dart';
 import 'package:ui/services/storage_service.dart';
 
 class ModelProviderConfig {
@@ -145,11 +146,41 @@ class ProviderModelOption {
   final String id;
   final String displayName;
   final String? ownedBy;
+  final int? contextLimit;
+  final int? inputLimit;
+  final int? outputLimit;
+  final List<String> inputModalities;
+  final List<String> outputModalities;
+  final String? modelsDevProviderId;
+  final String? modelsDevProviderName;
+  final String? providerLogoUrl;
+  final String? family;
+  final String? group;
+  final bool? attachment;
+  final bool? reasoning;
+  final bool? toolCall;
+  final bool? structuredOutput;
+  final bool? temperature;
 
   const ProviderModelOption({
     required this.id,
     required this.displayName,
     this.ownedBy,
+    this.contextLimit,
+    this.inputLimit,
+    this.outputLimit,
+    this.inputModalities = const [],
+    this.outputModalities = const [],
+    this.modelsDevProviderId,
+    this.modelsDevProviderName,
+    this.providerLogoUrl,
+    this.family,
+    this.group,
+    this.attachment,
+    this.reasoning,
+    this.toolCall,
+    this.structuredOutput,
+    this.temperature,
   });
 
   factory ProviderModelOption.fromMap(Map<dynamic, dynamic>? map) {
@@ -157,7 +188,125 @@ class ProviderModelOption {
       id: (map?['id'] ?? '').toString(),
       displayName: (map?['displayName'] ?? map?['id'] ?? '').toString(),
       ownedBy: map?['ownedBy']?.toString(),
+      contextLimit: _readInt(map?['contextLimit']),
+      inputLimit: _readInt(map?['inputLimit']),
+      outputLimit: _readInt(map?['outputLimit']),
+      inputModalities: _readStringList(map?['inputModalities']),
+      outputModalities: _readStringList(map?['outputModalities']),
+      modelsDevProviderId: _readNonEmptyString(map?['modelsDevProviderId']),
+      modelsDevProviderName: _readNonEmptyString(map?['modelsDevProviderName']),
+      providerLogoUrl: _readNonEmptyString(map?['providerLogoUrl']),
+      family: _readNonEmptyString(map?['family']),
+      group: _readNonEmptyString(map?['group']),
+      attachment: _readBool(map?['attachment']),
+      reasoning: _readBool(map?['reasoning']),
+      toolCall: _readBool(map?['toolCall']),
+      structuredOutput: _readBool(map?['structuredOutput']),
+      temperature: _readBool(map?['temperature']),
     );
+  }
+
+  ProviderModelOption copyWith({
+    String? id,
+    String? displayName,
+    String? ownedBy,
+    int? contextLimit,
+    int? inputLimit,
+    int? outputLimit,
+    List<String>? inputModalities,
+    List<String>? outputModalities,
+    String? modelsDevProviderId,
+    String? modelsDevProviderName,
+    String? providerLogoUrl,
+    String? family,
+    String? group,
+    bool? attachment,
+    bool? reasoning,
+    bool? toolCall,
+    bool? structuredOutput,
+    bool? temperature,
+  }) {
+    return ProviderModelOption(
+      id: id ?? this.id,
+      displayName: displayName ?? this.displayName,
+      ownedBy: ownedBy ?? this.ownedBy,
+      contextLimit: contextLimit ?? this.contextLimit,
+      inputLimit: inputLimit ?? this.inputLimit,
+      outputLimit: outputLimit ?? this.outputLimit,
+      inputModalities: inputModalities ?? this.inputModalities,
+      outputModalities: outputModalities ?? this.outputModalities,
+      modelsDevProviderId: modelsDevProviderId ?? this.modelsDevProviderId,
+      modelsDevProviderName:
+          modelsDevProviderName ?? this.modelsDevProviderName,
+      providerLogoUrl: providerLogoUrl ?? this.providerLogoUrl,
+      family: family ?? this.family,
+      group: group ?? this.group,
+      attachment: attachment ?? this.attachment,
+      reasoning: reasoning ?? this.reasoning,
+      toolCall: toolCall ?? this.toolCall,
+      structuredOutput: structuredOutput ?? this.structuredOutput,
+      temperature: temperature ?? this.temperature,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'displayName': displayName,
+      'ownedBy': ownedBy,
+      'contextLimit': contextLimit,
+      'inputLimit': inputLimit,
+      'outputLimit': outputLimit,
+      'inputModalities': inputModalities,
+      'outputModalities': outputModalities,
+      'modelsDevProviderId': modelsDevProviderId,
+      'modelsDevProviderName': modelsDevProviderName,
+      'providerLogoUrl': providerLogoUrl,
+      'family': family,
+      'group': group,
+      'attachment': attachment,
+      'reasoning': reasoning,
+      'toolCall': toolCall,
+      'structuredOutput': structuredOutput,
+      'temperature': temperature,
+    };
+  }
+
+  static int? _readInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
+  }
+
+  static String? _readNonEmptyString(Object? value) {
+    final normalized = value?.toString().trim() ?? '';
+    return normalized.isEmpty ? null : normalized;
+  }
+
+  static List<String> _readStringList(Object? value) {
+    if (value is List) {
+      return value
+          .map((item) => item.toString().trim().toLowerCase())
+          .where((item) => item.isNotEmpty)
+          .toSet()
+          .toList();
+    }
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return const [];
+    return raw
+        .split(',')
+        .map((item) => item.trim().toLowerCase())
+        .where((item) => item.isNotEmpty)
+        .toSet()
+        .toList();
+  }
+
+  static bool? _readBool(Object? value) {
+    if (value is bool) return value;
+    final normalized = value?.toString().trim().toLowerCase() ?? '';
+    if (normalized == 'true') return true;
+    if (normalized == 'false') return false;
+    return null;
   }
 }
 
@@ -293,10 +442,110 @@ class ModelProviderConfigService {
     return ModelProviderConfig.fromMap(result);
   }
 
+  static Future<String?> resolveProviderLogoUrl({
+    String providerId = '',
+    String providerName = '',
+    String apiBase = '',
+  }) async {
+    final provider = await ModelsDevCatalogService.resolveProvider(
+      providerId: providerId,
+      providerName: providerName,
+      apiBase: apiBase,
+    );
+    return provider?.logoUrl;
+  }
+
+  static Future<List<ProviderModelOption>> enrichModelsForProfile({
+    required String profileId,
+    required String providerName,
+    required String apiBase,
+    required List<ProviderModelOption> models,
+  }) async {
+    if (models.isEmpty) {
+      return const [];
+    }
+    var catalog = const ModelsDevCatalog(providers: {});
+    ModelsDevProviderEntry? provider;
+    try {
+      catalog = await ModelsDevCatalogService.loadCatalog();
+      provider = ModelsDevCatalogService.matchProvider(
+        catalog: catalog,
+        providerId: profileId,
+        providerName: providerName,
+        apiBase: apiBase,
+      );
+    } catch (_) {
+      catalog = const ModelsDevCatalog(providers: {});
+      provider = null;
+    }
+    final providerGroupId =
+        provider?.id ??
+        (providerName.trim().isNotEmpty ? providerName.trim() : profileId);
+    return models
+        .map(
+          (item) => _enrichModelOption(
+            item: item,
+            catalog: catalog,
+            provider: provider,
+            providerGroupId: providerGroupId,
+          ),
+        )
+        .toList();
+  }
+
+  static ProviderModelOption _enrichModelOption({
+    required ProviderModelOption item,
+    required ModelsDevCatalog catalog,
+    required ModelsDevProviderEntry? provider,
+    required String providerGroupId,
+  }) {
+    final modelMatch = catalog.isEmpty
+        ? null
+        : ModelsDevCatalogService.matchModelMetadata(
+            catalog: catalog,
+            provider: provider,
+            modelId: item.id,
+          );
+    final metadata = modelMatch?.metadata;
+    final metadataProvider = modelMatch?.provider ?? provider;
+    final metadataDisplayName = metadata?.name.trim() ?? '';
+    final shouldUseMetadataName =
+        item.displayName.trim().isEmpty || item.displayName.trim() == item.id;
+    final metadataProviderGroupId = metadataProvider?.id ?? providerGroupId;
+    return item.copyWith(
+      displayName: shouldUseMetadataName && metadataDisplayName.isNotEmpty
+          ? metadataDisplayName
+          : item.displayName,
+      contextLimit: metadata?.contextLimit,
+      inputLimit: metadata?.inputLimit,
+      outputLimit: metadata?.outputLimit,
+      inputModalities: metadata?.inputModalities.isNotEmpty == true
+          ? metadata!.inputModalities
+          : item.inputModalities,
+      outputModalities: metadata?.outputModalities.isNotEmpty == true
+          ? metadata!.outputModalities
+          : item.outputModalities,
+      modelsDevProviderId: metadataProvider?.id,
+      modelsDevProviderName: metadataProvider?.name,
+      providerLogoUrl: metadataProvider?.logoUrl,
+      family: metadata?.family,
+      attachment: metadata?.attachment,
+      reasoning: metadata?.reasoning,
+      toolCall: metadata?.toolCall,
+      structuredOutput: metadata?.structuredOutput,
+      temperature: metadata?.temperature,
+      group: ModelsDevCatalogService.groupModelId(
+        item.id,
+        providerId: metadataProviderGroupId,
+      ),
+    );
+  }
+
   static Future<List<ProviderModelOption>> fetchModels({
     String apiBase = '',
     String apiKey = '',
     String? profileId,
+    String providerName = '',
   }) async {
     final result = await AssistsMessageService.assistCore
         .invokeMethod<List<dynamic>>('fetchProviderModels', {
@@ -311,24 +560,35 @@ class ModelProviderConfigService {
         .toList();
 
     final targetProfileId = await _resolveProfileId(profileId);
+    var cacheBase = normalizeApiBase(apiBase) ?? '';
+    if (cacheBase.isEmpty) {
+      final config = await getConfig();
+      cacheBase = config.baseUrl;
+    }
+    var resolvedProviderName = providerName.trim();
+    if (resolvedProviderName.isEmpty && targetProfileId != null) {
+      final profile = await _findProfileById(targetProfileId);
+      resolvedProviderName = profile?.name ?? '';
+    }
+    final enrichedModels = await enrichModelsForProfile(
+      profileId: targetProfileId ?? '',
+      providerName: resolvedProviderName,
+      apiBase: cacheBase,
+      models: models,
+    );
     if (targetProfileId != null) {
       try {
-        var cacheBase = normalizeApiBase(apiBase) ?? '';
-        if (cacheBase.isEmpty) {
-          final config = await getConfig();
-          cacheBase = config.baseUrl;
-        }
         await _saveCachedFetchedModels(
           profileId: targetProfileId,
           apiBase: cacheBase,
-          models: models,
+          models: enrichedModels,
         );
       } catch (_) {
         // ignore cache write failures
       }
     }
 
-    return models;
+    return enrichedModels;
   }
 
   static Future<List<ProviderModelOption>> getCachedFetchedModels({
@@ -395,15 +655,7 @@ class ModelProviderConfigService {
     final normalizedBase = normalizeApiBase(apiBase) ?? '';
     current[normalizedProfileId] = {
       'apiBase': normalizedBase,
-      'models': models
-          .map(
-            (item) => {
-              'id': item.id,
-              'displayName': item.displayName,
-              'ownedBy': item.ownedBy,
-            },
-          )
-          .toList(),
+      'models': models.map((item) => item.toMap()).toList(),
     };
     await StorageService.setString(
       _kCachedFetchedModelsKey,
@@ -435,9 +687,11 @@ class ModelProviderConfigService {
   }
 
   static Future<List<ProviderModelOption>> getStoredModelOptionsForProfile(
-    String profileId,
-  ) async {
+    String profileId, {
+    ModelProviderProfileSummary? profile,
+  }) async {
     final normalizedProfileId = _canonicalProfileId(profileId);
+    final resolvedProfile = profile ?? await _findProfileById(profileId);
     final manualModelIds = await getManualModelIds(
       profileId: normalizedProfileId,
     );
@@ -455,9 +709,15 @@ class ModelProviderConfigService {
         profileId: normalizedProfileId,
       );
     }
-    return mergeModelOptions(
+    final merged = mergeModelOptions(
       remoteModels: remoteModels,
       manualModelIds: manualModelIds,
+    );
+    return enrichModelsForProfile(
+      profileId: normalizedProfileId,
+      providerName: resolvedProfile?.name ?? '',
+      apiBase: resolvedProfile?.baseUrl ?? '',
+      models: merged,
     );
   }
 
@@ -465,7 +725,10 @@ class ModelProviderConfigService {
     final payload = await listProfiles();
     final groups = <ProviderModelGroup>[];
     for (final profile in payload.profiles) {
-      final models = await getStoredModelOptionsForProfile(profile.id);
+      final models = await getStoredModelOptionsForProfile(
+        profile.id,
+        profile: profile,
+      );
       groups.add(ProviderModelGroup(profile: profile, models: models));
     }
     return groups;
@@ -498,6 +761,16 @@ class ModelProviderConfigService {
     return merged;
   }
 
+  static String defaultModelGroupName(
+    String modelId, {
+    String providerId = '',
+  }) {
+    return ModelsDevCatalogService.groupModelId(
+      modelId,
+      providerId: providerId,
+    );
+  }
+
   static Future<String?> _resolveProfileId(String? profileId) async {
     if (profileId != null && profileId.trim().isNotEmpty) {
       return _canonicalProfileId(profileId);
@@ -505,6 +778,26 @@ class ModelProviderConfigService {
     final config = await getConfig();
     final normalized = _canonicalProfileId(config.id);
     return normalized.isEmpty ? null : normalized;
+  }
+
+  static Future<ModelProviderProfileSummary?> _findProfileById(
+    String profileId,
+  ) async {
+    final normalized = _canonicalProfileId(profileId);
+    if (normalized.isEmpty) {
+      return null;
+    }
+    try {
+      final payload = await listProfiles();
+      for (final profile in payload.profiles) {
+        if (_canonicalProfileId(profile.id) == normalized) {
+          return profile;
+        }
+      }
+    } catch (_) {
+      // Ignore lookup failures; metadata enrichment can still use base URL.
+    }
+    return null;
   }
 
   static Map<String, dynamic> _readJsonMap(String key) {

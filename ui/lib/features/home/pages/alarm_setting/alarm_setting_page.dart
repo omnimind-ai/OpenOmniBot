@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/device_service.dart';
 import 'package:ui/services/special_permission.dart';
@@ -64,7 +65,7 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
   Future<void> _pickLocalMp3() async {
     final granted = await _ensureAudioReadPermission();
     if (!granted) {
-      showToast('读取音频权限未授予', type: ToastType.warning);
+      showToast(context.l10n.alarmAudioPermissionDenied, type: ToastType.warning);
       return;
     }
 
@@ -79,7 +80,7 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
     }
     final path = result.files.first.path;
     if (path == null || path.isEmpty) {
-      showToast('文件路径无效，请重新选择', type: ToastType.warning);
+      showToast(context.l10n.alarmInvalidFilePath, type: ToastType.warning);
       return;
     }
 
@@ -92,14 +93,14 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
 
   bool _validateBeforeSave() {
     if (_source == _sourceLocalMp3 && _localPath.trim().isEmpty) {
-      showToast('请先选择本地 mp3 文件', type: ToastType.warning);
+      showToast(context.l10n.alarmSelectLocalFirst, type: ToastType.warning);
       return false;
     }
 
     if (_source == _sourceRemoteMp3) {
       final url = _remoteUrlController.text.trim();
       if (!(url.startsWith('http://') || url.startsWith('https://'))) {
-        showToast('请输入 http(s) 开头的 mp3 直链', type: ToastType.warning);
+        showToast(context.l10n.alarmEnterHttpsUrl, type: ToastType.warning);
         return false;
       }
     }
@@ -129,11 +130,11 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
     });
 
     if (payload['success'] == true) {
-      showToast('闹钟设置已保存', type: ToastType.success);
+      showToast(context.l10n.alarmSaved, type: ToastType.success);
       return;
     }
 
-    final error = (payload['message'] ?? payload['summary'] ?? '保存失败')
+    final error = (payload['message'] ?? payload['summary'] ?? context.trLegacy('保存失败'))
         .toString();
     showToast(error, type: ToastType.error);
   }
@@ -145,7 +146,7 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
       backgroundColor: context.isDarkTheme
           ? palette.pageBackground
           : AppColors.background,
-      appBar: const CommonAppBar(title: '闹钟设置', primary: true),
+      appBar: CommonAppBar(title: context.l10n.settingsAlarmTitle, primary: true),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
@@ -155,16 +156,16 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SettingsSectionTitle(label: '铃声来源'),
+                    SettingsSectionTitle(label: context.l10n.alarmRingtoneSource),
                     _buildSourceCard(),
                     if (_source == _sourceLocalMp3) ...[
                       const SizedBox(height: 18),
-                      const SettingsSectionTitle(label: '本地文件'),
+                      SettingsSectionTitle(label: context.l10n.alarmLocalFile),
                       _buildLocalFileCard(),
                     ],
                     if (_source == _sourceRemoteMp3) ...[
                       const SizedBox(height: 18),
-                      const SettingsSectionTitle(label: '远程地址'),
+                      SettingsSectionTitle(label: context.trLegacy('远程地址')),
                       _buildRemoteUrlCard(),
                     ],
                     const Spacer(),
@@ -181,7 +182,7 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
                               : Colors.white,
                           minimumSize: const Size.fromHeight(48),
                         ),
-                        child: Text(_saving ? '保存中...' : '保存'),
+                        child: Text(_saving ? context.trLegacy('保存中...') : context.trLegacy('保存')),
                       ),
                     ),
                   ],
@@ -196,20 +197,20 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
       children: [
         _buildSourceTile(
           value: _sourceDefault,
-          title: '系统默认铃声',
-          subtitle: '无需额外配置，兼容性最好',
+          title: context.l10n.alarmSystemDefault,
+          subtitle: context.l10n.alarmSystemDefaultDesc,
         ),
         const Divider(height: 1),
         _buildSourceTile(
           value: _sourceLocalMp3,
-          title: '本地 mp3',
-          subtitle: '选择手机内 mp3 作为闹钟铃声',
+          title: context.l10n.alarmLocalMp3,
+          subtitle: context.l10n.alarmLocalMp3Desc,
         ),
         const Divider(height: 1),
         _buildSourceTile(
           value: _sourceRemoteMp3,
-          title: 'mp3 直链',
-          subtitle: '使用 http(s) 直链播放在线 mp3',
+          title: context.l10n.alarmMp3Url,
+          subtitle: context.l10n.alarmMp3UrlDesc,
         ),
       ],
     );
@@ -297,7 +298,7 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
 
   Widget _buildLocalFileCard() {
     final palette = context.omniPalette;
-    final displayPath = _localPath.isEmpty ? '未选择文件' : _localPath;
+    final displayPath = _localPath.isEmpty ? context.trLegacy('未选择文件') : _localPath;
 
     return SizedBox(
       width: double.infinity,
@@ -305,7 +306,7 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '本地文件',
+            context.l10n.alarmLocalFile,
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w500,
@@ -337,7 +338,7 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
                     : AppColors.primaryBlue,
               ),
             ),
-            child: const Text('选择 mp3 文件'),
+            child: Text(context.l10n.alarmSelectMp3),
           ),
         ],
       ),
@@ -352,7 +353,7 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'mp3 直链',
+            context.l10n.alarmMp3Url,
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w500,

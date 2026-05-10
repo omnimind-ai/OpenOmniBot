@@ -13,12 +13,14 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.baselib.llm.decodeChatCompletionUsage
 import java.util.SortedMap
 import java.util.TreeMap
 
 class AgentLlmStreamAccumulator(
     private val json: Json,
-    private val preferInlineThinkTags: Boolean = false
+    private val preferInlineThinkTags: Boolean = false,
+    private val includeReasoningInAssistantMessage: Boolean = false
 ) {
     companion object {
         private const val TAG = "AgentLlmStreamAccumulator"
@@ -190,9 +192,11 @@ class AgentLlmStreamAccumulator(
         return runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull()
     }
 
-    fun currentReasoning(): String = sanitizeUtf16ForInterop(reasoningBuffer.toString())
+    fun currentReasoning(): String = AgentTextSanitizer.sanitizeUtf16(reasoningBuffer.toString())
 
-    fun currentContent(): String = sanitizeUtf16ForInterop(contentBuffer.toString())
+    fun currentReasoningLength(): Int = reasoningBuffer.length
+
+    fun currentContent(): String = AgentTextSanitizer.sanitizeUtf16(contentBuffer.toString())
 
     fun buildTurn(): ChatCompletionTurn {
         if (!seenChunk) {
@@ -214,8 +218,8 @@ class AgentLlmStreamAccumulator(
             )
         }
 
-        val content = sanitizeUtf16ForInterop(contentBuffer.toString())
-        val reasoning = sanitizeUtf16ForInterop(reasoningBuffer.toString())
+        val content = AgentTextSanitizer.sanitizeUtf16(contentBuffer.toString())
+        val reasoning = AgentTextSanitizer.sanitizeUtf16(reasoningBuffer.toString())
         if (finishReasonIndicatesToolCall(finishReason) && toolCalls.isEmpty()) {
             throw IllegalStateException(
                 "finish_reason indicates tool call but no tool_calls parsed; finish_reason=${finishReason.orEmpty()}, last_chunk=$lastChunkPreview"
@@ -231,7 +235,10 @@ class AgentLlmStreamAccumulator(
             message = ChatCompletionMessage(
                 role = "assistant",
                 content = content.ifBlank { null }?.let(::JsonPrimitive),
-                toolCalls = toolCalls.ifEmpty { null }
+                toolCalls = toolCalls.ifEmpty { null },
+                reasoningContent = reasoning.takeIf {
+                    includeReasoningInAssistantMessage && it.isNotBlank()
+                }
             ),
             reasoning = reasoning,
             finishReason = finishReason,
@@ -391,18 +398,7 @@ class AgentLlmStreamAccumulator(
     }
 
     private fun decodeUsage(element: JsonElement?): ChatCompletionUsage? {
-        val obj = element as? JsonObject ?: return null
-        return ChatCompletionUsage(
-            promptTokens = obj["prompt_tokens"]?.jsonPrimitive?.intOrNull,
-            completionTokens = obj["completion_tokens"]?.jsonPrimitive?.intOrNull,
-            totalTokens = obj["total_tokens"]?.jsonPrimitive?.intOrNull,
-            prefillTokensPerSecond =
-                obj["prefill_tokens_per_second"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull(),
-            decodeTokensPerSecond =
-                obj["decode_tokens_per_second"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull(),
-            promptTokensDetails = obj["prompt_tokens_details"],
-            completionTokensDetails = obj["completion_tokens_details"]
-        )
+        return decodeChatCompletionUsage(element)
     }
 
     private fun usageWithDecodedTiming(): ChatCompletionUsage? {
@@ -602,63 +598,4 @@ class AgentLlmStreamAccumulator(
             normalized == "tool_use"
     }
 
-    private fun sanitizeUtf16ForInterop(text: String): String {
-        if (text.isEmpty()) {
-            return text
-        }
-
-        var index = 0
-        var needsSanitization = false
-        while (index < text.length) {
-            val current = text[index]
-            when {
-                Character.isHighSurrogate(current) -> {
-                    if (index + 1 < text.length && Character.isLowSurrogate(text[index + 1])) {
-                        index += 2
-                    } else {
-                        needsSanitization = true
-                        index = text.length
-                    }
-                }
-
-                Character.isLowSurrogate(current) -> {
-                    needsSanitization = true
-                    index = text.length
-                }
-
-                else -> index += 1
-            }
-        }
-
-        if (!needsSanitization) {
-            return text
-        }
-
-        val sanitized = StringBuilder(text.length)
-        index = 0
-        while (index < text.length) {
-            val current = text[index]
-            when {
-                Character.isHighSurrogate(current) -> {
-                    if (index + 1 < text.length && Character.isLowSurrogate(text[index + 1])) {
-                        sanitized.append(current)
-                        sanitized.append(text[index + 1])
-                        index += 2
-                    } else {
-                        index += 1
-                    }
-                }
-
-                Character.isLowSurrogate(current) -> {
-                    index += 1
-                }
-
-                else -> {
-                    sanitized.append(current)
-                    index += 1
-                }
-            }
-        }
-        return sanitized.toString()
-    }
 }

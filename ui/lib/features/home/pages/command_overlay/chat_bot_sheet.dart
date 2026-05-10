@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/models/agent_stream_event.dart';
+import 'package:ui/models/chat_link_preview.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/services/ai_chat_service.dart';
@@ -7,13 +10,21 @@ import 'widgets/message_bubble.dart';
 import 'widgets/chat_input_area.dart';
 import 'package:ui/utils/data_parser.dart';
 import 'package:ui/services/assists_core_service.dart';
+import 'package:ui/services/agent_stream_meta.dart';
 import 'package:ui/features/home/pages/command_overlay/services/chat_service.dart';
 import 'package:ui/features/home/pages/command_overlay/constants/messages.dart';
 import 'package:ui/features/home/pages/command_overlay/utils/deep_thinking_parser.dart';
+import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
+import 'package:ui/features/home/pages/chat/utils/stream_text_merge.dart';
+import 'package:ui/features/home/pages/chat/utils/agent_thinking_card_locator.dart';
+import 'package:ui/features/home/pages/chat/utils/deep_thinking_persistence.dart';
+import 'package:ui/features/home/pages/chat/widgets/agent_run_group_message.dart';
 import 'package:ui/services/storage_service.dart';
+import 'package:ui/services/voice_playback_coordinator.dart';
 import 'package:ui/services/screen_dialog_service.dart';
 import 'package:ui/services/conversation_service.dart';
 import 'package:ui/services/conversation_history_service.dart';
+import 'package:ui/services/link_preview_service.dart';
 import 'package:ui/widgets/ai_generated_badge.dart';
 import 'package:ui/constants/openclaw/openclaw_keys.dart';
 import 'package:ui/utils/ui.dart';
@@ -74,6 +85,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   String? _vlmInfoQuestion;
 
   final Map<String, String> _currentAiMessages = {};
+  final Set<String> _expandedAgentRunTaskIds = <String>{};
+  bool _autoStickMessageListToLatest = true;
+  bool _messageStickToLatestScheduled = false;
+  bool _messageListScrollWasUserDriven = false;
+  static const double _messageLatestEdgeTolerance = 48.0;
 
   // 流式思考内容相关状态
   String _deepThinkingContent = '';
@@ -149,10 +165,20 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       ConversationHistoryService.upsertConversationUiCard(
         conversationId,
         entryId: message.id,
-        cardData: Map<String, dynamic>.from(cardData!),
+        cardData: buildPersistentDeepThinkingCardData(
+          Map<String, dynamic>.from(cardData!),
+        ),
         createdAtMillis: message.createAt.millisecondsSinceEpoch,
       ),
     );
+  }
+
+  void _persistThinkingCardForTask(String taskID, {String? cardId}) {
+    final thinkingCardId = cardId ?? '$taskID-thinking';
+    final index = _messages.indexWhere((msg) => msg.id == thinkingCardId);
+    if (index != -1) {
+      _persistDeepThinkingCardIfNeeded(_messages[index]);
+    }
   }
 
   @override
@@ -179,12 +205,14 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     String? thinkingContent,
     bool? isLoading,
     int? stage,
+    Map<String, dynamic>? streamMeta,
   }) => _createThinkingCard(
     taskID,
     cardId: cardId,
     thinkingContent: thinkingContent,
     isLoading: isLoading,
     stage: stage,
+    streamMeta: streamMeta,
   );
 
   @override
@@ -194,6 +222,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     String? thinkingContent,
     bool? isLoading,
     int? stage,
+    Map<String, dynamic>? streamMeta,
     bool lockCompleted = true,
   }) => _updateThinkingCard(
     taskID,
@@ -201,6 +230,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     thinkingContent: thinkingContent,
     isLoading: isLoading,
     stage: stage,
+    streamMeta: streamMeta,
     lockCompleted: lockCompleted,
   );
 
@@ -216,6 +246,13 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
   @override
   Future<void> persistAgentConversation() => _saveConversationToDb();
+
+  @override
+  void onAgentTextMessageUpdated(String messageId, {bool isFinal = true}) {
+    if (isFinal) {
+      _syncMessageLinkPreviews(messageId);
+    }
+  }
 
   @override
   void initState() {
@@ -302,82 +339,9 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     // 页面关闭回调
     ScreenDialogService.setOnBeforeCloseChatBotDialog(_onDialogClose);
 
-    // Agent 回调（使用 AgentStreamHandler mixin）
-    AssistsMessageService.setOnAgentThinkingStartCallback((_) {
-      if (!mounted) return;
-      handleAgentThinkingStart();
-    });
-
-    AssistsMessageService.setOnAgentThinkingUpdateCallback((_, thinking) {
-      if (!mounted) return;
-      handleAgentThinkingUpdate(thinking);
-    });
-
-    AssistsMessageService.setOnAgentToolCallStartCallback((event) {
-      if (!mounted) return;
-      handleAgentToolCallStart(event);
-    });
-
-    AssistsMessageService.setOnAgentToolCallProgressCallback((event) {
-      if (!mounted) return;
-      handleAgentToolCallProgress(event);
-    });
-
-    AssistsMessageService.setOnAgentToolCallCompleteCallback((event) {
-      if (!mounted) return;
-      handleAgentToolCallComplete(event);
-    });
-
-    AssistsMessageService.setOnAgentChatMessageCallback((
-      _,
-      message, {
-      bool isFinal = true,
-      double? prefillTokensPerSecond,
-      double? decodeTokensPerSecond,
-    }) {
-      if (!mounted) return;
-      handleAgentChatMessage(
-        message,
-        isFinal: isFinal,
-        prefillTokensPerSecond: prefillTokensPerSecond,
-        decodeTokensPerSecond: decodeTokensPerSecond,
-      );
-    });
-
-    AssistsMessageService.setOnAgentClarifyCallback((
-      _,
-      question,
-      missingFields,
-    ) {
-      if (!mounted) return;
-      handleAgentClarifyRequired(question, missingFields);
-    });
-
-    AssistsMessageService.setOnAgentCompleteCallback((
-      _,
-      success,
-      outputKind,
-      hasUserVisibleOutput,
-      _latestPromptTokens,
-      _promptTokenThreshold,
-    ) {
-      if (!mounted) return;
-      handleAgentComplete(
-        success,
-        outputKind: outputKind,
-        hasUserVisibleOutput: hasUserVisibleOutput,
-      );
-    });
-
-    AssistsMessageService.setOnAgentErrorCallback((_, error) {
-      if (!mounted) return;
-      handleAgentError(error);
-    });
-
-    AssistsMessageService.setOnAgentPermissionRequiredCallback((_, missing) {
-      if (!mounted) return;
-      handleAgentPermissionRequired(missing);
-    });
+    AssistsMessageService.setOnAgentStreamEventCallback(
+      _handleIncomingAgentStreamEvent,
+    );
   }
 
   Future<void> _loadOpenClawConfig() async {
@@ -426,7 +390,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
   Future<void> _setOpenClawEnabled(bool enabled) async {
     if (enabled && _openClawBaseUrl.trim().isEmpty) {
-      AppToast.show('请先使用 /openclaw 配置 OpenClaw');
+      AppToast.show(
+        LegacyTextLocalizer.isEnglish
+            ? 'Please configure OpenClaw first using /openclaw'
+            : '请先使用 /openclaw 配置 OpenClaw',
+      );
       _showOpenClawCommandPanel(expand: true);
       return;
     }
@@ -539,20 +507,32 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     if (!trimmed.startsWith('/')) return false;
 
     if (!trimmed.startsWith('/openclaw')) {
-      _showSnackBar('未知指令，请使用 /openclaw');
+      _showSnackBar(
+        LegacyTextLocalizer.isEnglish
+            ? 'Unknown command, please use /openclaw'
+            : '未知指令，请使用 /openclaw',
+      );
       return true;
     }
 
     final parts = trimmed.split(RegExp(r'\\s+'));
     if (parts.length < 2) {
-      _showSnackBar('格式: /openclaw <baseurl> --token <token> <userid>');
+      _showSnackBar(
+        LegacyTextLocalizer.isEnglish
+            ? 'Format: /openclaw <baseurl> --token <token> <userid>'
+            : '格式: /openclaw <baseurl> --token <token> <userid>',
+      );
       return true;
     }
 
     final baseUrl = parts[1];
     final tokenIndex = parts.indexOf('--token');
     if (tokenIndex == -1) {
-      _showSnackBar('请在命令中显式包含 --token');
+      _showSnackBar(
+        LegacyTextLocalizer.isEnglish
+            ? 'Please include --token explicitly in the command'
+            : '请在命令中显式包含 --token',
+      );
       return true;
     }
     String token = '';
@@ -568,7 +548,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     }
 
     if (baseUrl.trim().isEmpty) {
-      _showSnackBar('OpenClaw baseurl 不能为空');
+      _showSnackBar(
+        LegacyTextLocalizer.isEnglish
+            ? 'OpenClaw baseurl cannot be empty'
+            : 'OpenClaw baseurl 不能为空',
+      );
       return true;
     }
 
@@ -581,7 +565,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     _messageController.clear();
     _inputFocusNode.unfocus();
     _hideSlashCommandPanel();
-    _showSnackBar('OpenClaw 已配置并启用');
+    _showSnackBar(
+      LegacyTextLocalizer.isEnglish
+          ? 'OpenClaw configured and enabled'
+          : 'OpenClaw 已配置并启用',
+    );
     return true;
   }
 
@@ -609,7 +597,9 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       if (message.user == 1) {
         final text = message.content?['text'] as String? ?? '';
         if (text.isNotEmpty) {
-          buffer.write('用户: $text\n');
+          buffer.write(
+            LegacyTextLocalizer.isEnglish ? 'User: $text\n' : '用户: $text\n',
+          );
         }
       }
       // else if (message.user == 2) {
@@ -636,9 +626,13 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
       final firstUserMessage = _messages.firstWhere(
         (m) => m.user == 1,
-        orElse: () => ChatMessageModel.userMessage("新对话"),
+        orElse: () => ChatMessageModel.userMessage(
+          LegacyTextLocalizer.isEnglish ? "New conversation" : "新对话",
+        ),
       );
-      final userText = firstUserMessage.text ?? '新对话';
+      final userText =
+          firstUserMessage.text ??
+          (LegacyTextLocalizer.isEnglish ? 'New conversation' : '新对话');
       final title = userText.length > 20
           ? '${userText.substring(0, 20)}...'
           : userText;
@@ -716,7 +710,9 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
           await ConversationHistoryService.upsertConversationUiCard(
             _currentConversationId!,
             entryId: message.id,
-            cardData: Map<String, dynamic>.from(cardData),
+            cardData: buildPersistentDeepThinkingCardData(
+              Map<String, dynamic>.from(cardData),
+            ),
             createdAtMillis: message.createAt.millisecondsSinceEpoch,
           );
         }
@@ -824,7 +820,12 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
           id: textMessageId,
           type: 1, // 文本类型
           user: 2, // AI消息
-          content: {'text': '这是您即将执行的预约任务', 'id': textMessageId},
+          content: {
+            'text': LegacyTextLocalizer.isEnglish
+                ? 'This is your scheduled task about to be executed'
+                : '这是您即将执行的预约任务',
+            'id': textMessageId,
+          },
         ),
       );
       _messages.insert(
@@ -867,6 +868,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     _saveConversationToDb(generateSummary: true, markComplete: true);
   }
 
+  void _handleIncomingAgentStreamEvent(AgentStreamEvent event) {
+    if (!mounted) return;
+    handleAgentStreamEvent(event);
+  }
+
   @override
   void dispose() {
     _messageController.removeListener(_handleSlashCommandInput);
@@ -886,17 +892,9 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     // 清理任务完成回调
     AssistsMessageService.removeOnVLMTaskFinishCallBack(_onTaskFinish);
     AssistsMessageService.removeOnCommonTaskFinishCallBack(_onCommonTaskFinish);
-    // 清理 Agent 回调
-    AssistsMessageService.setOnAgentThinkingStartCallback(null);
-    AssistsMessageService.setOnAgentThinkingUpdateCallback(null);
-    AssistsMessageService.setOnAgentToolCallStartCallback(null);
-    AssistsMessageService.setOnAgentToolCallProgressCallback(null);
-    AssistsMessageService.setOnAgentToolCallCompleteCallback(null);
-    AssistsMessageService.setOnAgentChatMessageCallback(null);
-    AssistsMessageService.setOnAgentClarifyCallback(null);
-    AssistsMessageService.setOnAgentCompleteCallback(null);
-    AssistsMessageService.setOnAgentErrorCallback(null);
-    AssistsMessageService.setOnAgentPermissionRequiredCallback(null);
+    AssistsMessageService.removeOnAgentStreamEventCallback(
+      _handleIncomingAgentStreamEvent,
+    );
     super.dispose();
   }
 
@@ -945,9 +943,16 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     final isErrorMessage = type == 'error';
     final isRateLimited = type == 'rate_limited';
     final isSummaryStart = type == 'summary_start';
+    final prefillTokensPerSecond = extractChatTaskPrefillTokensPerSecond(
+      content,
+    );
+    final decodeTokensPerSecond = extractChatTaskDecodeTokensPerSecond(content);
+    final hasPerformanceMetrics =
+        prefillTokensPerSecond != null || decodeTokensPerSecond != null;
     final String messageText;
     final bool isError;
     final bool isSummarizing;
+    bool shouldUpdateAiMessage = true;
 
     // 首次收到消息时移除loading（检查是否是新的taskId）
     final isFirstChunk = !_currentAiMessages.containsKey(taskId);
@@ -973,25 +978,49 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       isSummarizing = true;
       _currentAiMessages[taskId] = '';
     } else {
-      final text = safeDecodeMap(content)['text'] ?? '';
-      _currentAiMessages[taskId] = (_currentAiMessages[taskId] ?? '') + text;
+      final text = extractChatTaskText(content, fallbackToRawText: false);
+      if (text.isNotEmpty) {
+        _currentAiMessages[taskId] = mergeLegacyStreamingText(
+          _currentAiMessages[taskId] ?? '',
+          text,
+        );
+      }
       messageText = _currentAiMessages[taskId] ?? '';
       isError = false;
       isSummarizing = false;
+      shouldUpdateAiMessage =
+          messageText.isNotEmpty ||
+          (hasPerformanceMetrics &&
+              _messages.any((message) => message.id == taskId));
     }
 
-    _updateOrAddAiMessage(
-      taskId,
-      messageText,
-      isError,
-      isSummarizing: isSummarizing,
-    );
+    if (shouldUpdateAiMessage) {
+      _updateOrAddAiMessage(
+        taskId,
+        messageText,
+        isError,
+        isSummarizing: isSummarizing,
+        prefillTokensPerSecond: prefillTokensPerSecond,
+        decodeTokensPerSecond: decodeTokensPerSecond,
+      );
+      if (!isError && !isSummarizing && messageText.trim().isNotEmpty) {
+        unawaited(
+          VoicePlaybackCoordinator.instance.onAssistantMessageUpdated(
+            messageId: taskId,
+            text: messageText,
+            isFinal: false,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _onSubmitVlmInfo() async {
     if (_isSubmittingVlmReply || _vlmInfoQuestion == null) return;
     final reply = _vlmAnswerController.text.trim().isEmpty
-        ? '已完成操作，继续执行'
+        ? (Localizations.localeOf(context).languageCode == 'en'
+              ? 'Completed action, continue execution'
+              : '已完成操作，继续执行')
         : _vlmAnswerController.text.trim();
     setState(() {
       _isSubmittingVlmReply = true;
@@ -1016,23 +1045,132 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     });
   }
 
+  double _messageLatestOffset(ScrollMetrics metrics) {
+    return switch (metrics.axisDirection) {
+      AxisDirection.down || AxisDirection.right => metrics.maxScrollExtent,
+      AxisDirection.up || AxisDirection.left => metrics.minScrollExtent,
+    };
+  }
+
+  double _messageDistanceToLatest(ScrollMetrics metrics) {
+    return (metrics.pixels - _messageLatestOffset(metrics)).abs();
+  }
+
+  bool _isMessageListNearLatest([ScrollMetrics? metrics]) {
+    final resolvedMetrics = metrics;
+    if (resolvedMetrics != null) {
+      return _messageDistanceToLatest(resolvedMetrics) <=
+          _messageLatestEdgeTolerance;
+    }
+    if (!_messageScrollController.hasClients) {
+      return true;
+    }
+    return _messageDistanceToLatest(_messageScrollController.position) <=
+        _messageLatestEdgeTolerance;
+  }
+
+  void _scheduleMessageStickToLatest() {
+    if (!_autoStickMessageListToLatest || _messageStickToLatestScheduled) {
+      return;
+    }
+    _messageStickToLatestScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _messageStickToLatestScheduled = false;
+      if (!mounted || !_messageScrollController.hasClients) {
+        return;
+      }
+      if (!_autoStickMessageListToLatest) {
+        return;
+      }
+      final position = _messageScrollController.position;
+      final target = _messageLatestOffset(position);
+      if ((target - position.pixels).abs() < 0.5) {
+        return;
+      }
+      _messageScrollController.jumpTo(target);
+    });
+  }
+
+  void _handleStreamingTextLayoutChanged() {
+    if (_autoStickMessageListToLatest || _isMessageListNearLatest()) {
+      _autoStickMessageListToLatest = true;
+      _scheduleMessageStickToLatest();
+    }
+  }
+
+  void _toggleAgentRunGroup(String taskId) {
+    final normalizedTaskId = taskId.trim();
+    if (normalizedTaskId.isEmpty) {
+      return;
+    }
+    setState(() {
+      if (_expandedAgentRunTaskIds.contains(normalizedTaskId)) {
+        _expandedAgentRunTaskIds.remove(normalizedTaskId);
+      } else {
+        _expandedAgentRunTaskIds.add(normalizedTaskId);
+      }
+    });
+    if (_autoStickMessageListToLatest) {
+      _scheduleMessageStickToLatest();
+    }
+  }
+
+  void _handleParentScrollHandoff() {
+    _autoStickMessageListToLatest = false;
+    _messageListScrollWasUserDriven = false;
+  }
+
+  void _handleMessageScrollNotification(ScrollNotification notification) {
+    if (notification.depth != 0 || notification.metrics.axis != Axis.vertical) {
+      return;
+    }
+    final isUserDrivenUpdate =
+        (notification is ScrollUpdateNotification &&
+            notification.dragDetails != null) ||
+        (notification is OverscrollNotification &&
+            notification.dragDetails != null);
+    if (isUserDrivenUpdate) {
+      _messageListScrollWasUserDriven = true;
+      _autoStickMessageListToLatest = _isMessageListNearLatest(
+        notification.metrics,
+      );
+      return;
+    }
+    if (notification is ScrollEndNotification) {
+      if (_messageListScrollWasUserDriven &&
+          _isMessageListNearLatest(notification.metrics)) {
+        _autoStickMessageListToLatest = true;
+      }
+      _messageListScrollWasUserDriven = false;
+    }
+  }
+
   void _updateOrAddAiMessage(
     String taskId,
     String text,
     bool isError, {
     bool isSummarizing = false,
+    double? prefillTokensPerSecond,
+    double? decodeTokensPerSecond,
   }) {
     final index = _messages.indexWhere((msg) => msg.id == taskId);
 
     setState(() {
       if (index == -1) {
+        final content = <String, dynamic>{'text': text, 'id': taskId};
+        if (prefillTokensPerSecond != null) {
+          content['prefillTokensPerSecond'] = prefillTokensPerSecond;
+        }
+        if (decodeTokensPerSecond != null) {
+          content['decodeTokensPerSecond'] = decodeTokensPerSecond;
+        }
         _messages.insert(
           0,
           ChatMessageModel(
             id: taskId,
             type: 1,
             user: 2,
-            content: {'text': text, 'id': taskId},
+            content: content,
             isLoading: false,
             isError: isError,
             isSummarizing: isSummarizing,
@@ -1041,7 +1179,14 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       } else {
         final existing = _messages[index];
         final content = Map<String, dynamic>.from(existing.content ?? {});
-        content['text'] = text;
+        final existingText = content['text'] as String? ?? '';
+        content['text'] = text.isNotEmpty ? text : existingText;
+        if (prefillTokensPerSecond != null) {
+          content['prefillTokensPerSecond'] = prefillTokensPerSecond;
+        }
+        if (decodeTokensPerSecond != null) {
+          content['decodeTokensPerSecond'] = decodeTokensPerSecond;
+        }
         _messages[index] = existing.copyWith(
           content: content,
           isLoading: false,
@@ -1050,6 +1195,155 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
         );
       }
     });
+  }
+
+  // 悬浮聊天页也复用同一套 linkPreviews 字段，保证两种聊天入口表现一致。
+  void _syncMessageLinkPreviews(String taskId) {
+    final index = _messages.indexWhere((msg) => msg.id == taskId);
+    if (index == -1) {
+      return;
+    }
+
+    final message = _messages[index];
+    if (message.type != 1 ||
+        (message.user != 1 && message.user != 2) ||
+        message.isLoading ||
+        message.isError ||
+        message.isSummarizing) {
+      return;
+    }
+
+    final content = Map<String, dynamic>.from(message.content ?? const {});
+    final nextPreviews = LinkPreviewService.instance.reconcilePreviewMaps(
+      text: message.text ?? '',
+      existing: content['linkPreviews'],
+    );
+    final currentPreviews = content['linkPreviews'];
+    var didUpdate = false;
+    if (!_previewMapListsEqual(currentPreviews, nextPreviews)) {
+      if (nextPreviews.isEmpty) {
+        content.remove('linkPreviews');
+      } else {
+        content['linkPreviews'] = nextPreviews;
+      }
+      _messages[index] = message.copyWith(content: content);
+      didUpdate = true;
+    }
+    if (didUpdate &&
+        nextPreviews.any(
+          (item) =>
+              ChatLinkPreview.fromJson(item).status !=
+              ChatLinkPreview.statusLoading,
+        )) {
+      final conversationId = _currentConversationId;
+      if (conversationId != null) {
+        unawaited(
+          ConversationHistoryService.saveConversationMessages(
+            conversationId,
+            List<ChatMessageModel>.from(_messages),
+          ),
+        );
+      }
+    }
+
+    // 先渲染占位卡片，网络请求成功后再替换为 ready/failed 数据。
+    for (final previewMap in nextPreviews) {
+      final preview = ChatLinkPreview.fromJson(previewMap);
+      if (preview.status != ChatLinkPreview.statusLoading ||
+          preview.url.isEmpty) {
+        continue;
+      }
+      unawaited(_resolveMessageLinkPreview(taskId, preview.url));
+    }
+  }
+
+  Future<void> _resolveMessageLinkPreview(String taskId, String url) async {
+    final resolved = await LinkPreviewService.instance.loadPreview(url);
+    if (!mounted) {
+      return;
+    }
+
+    // 只更新当前消息里的同一个 loading URL，避免异步结果串到别的消息。
+    var didUpdate = false;
+    setState(() {
+      final index = _messages.indexWhere((msg) => msg.id == taskId);
+      if (index == -1) {
+        return;
+      }
+
+      final message = _messages[index];
+      final content = Map<String, dynamic>.from(message.content ?? const {});
+      final rawPreviews = content['linkPreviews'];
+      if (rawPreviews is! List) {
+        return;
+      }
+
+      final updatedPreviews = rawPreviews
+          .whereType<Map>()
+          .map(
+            (item) => Map<String, dynamic>.from(item.cast<String, dynamic>()),
+          )
+          .map((previewMap) {
+            final preview = ChatLinkPreview.fromJson(previewMap);
+            if (preview.url != url ||
+                preview.status != ChatLinkPreview.statusLoading) {
+              return previewMap;
+            }
+            didUpdate = true;
+            return resolved.toJson();
+          })
+          .toList();
+      if (!didUpdate) {
+        return;
+      }
+
+      content['linkPreviews'] = updatedPreviews;
+      _messages[index] = message.copyWith(content: content);
+    });
+
+    if (!didUpdate) {
+      return;
+    }
+
+    final conversationId = _currentConversationId;
+    if (conversationId != null) {
+      await ConversationHistoryService.saveConversationMessages(
+        conversationId,
+        List<ChatMessageModel>.from(_messages),
+      );
+    }
+  }
+
+  bool _previewMapListsEqual(dynamic left, List<Map<String, dynamic>> right) {
+    if (left is! List) {
+      return right.isEmpty;
+    }
+    final normalizedLeft = left
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item.cast<String, dynamic>()))
+        .toList();
+    if (normalizedLeft.length != right.length) {
+      return false;
+    }
+    for (var index = 0; index < normalizedLeft.length; index += 1) {
+      if (!_previewMapEquals(normalizedLeft[index], right[index])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _previewMapEquals(
+    Map<String, dynamic> left,
+    Map<String, dynamic> right,
+  ) {
+    return left['url'] == right['url'] &&
+        left['domain'] == right['domain'] &&
+        left['siteName'] == right['siteName'] &&
+        left['title'] == right['title'] &&
+        left['description'] == right['description'] &&
+        left['imageUrl'] == right['imageUrl'] &&
+        left['status'] == right['status'];
   }
 
   void _handleAiMessageEnd(String taskId) async {
@@ -1065,7 +1359,16 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       setState(() {
         final existing = _messages[index];
         _messages[index] = existing.copyWith(content: existing.content);
+        _syncMessageLinkPreviews(taskId);
       });
+    }
+    if (!isErrorMessage && messageText.trim().isNotEmpty) {
+      unawaited(
+        VoicePlaybackCoordinator.instance.onAssistantMessageCompleted(
+          messageId: taskId,
+          text: messageText,
+        ),
+      );
     }
     _currentAiMessages.remove(taskId);
     await _saveConversationToDb();
@@ -1102,6 +1405,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     String? thinkingContent,
     bool? isLoading,
     int? stage,
+    Map<String, dynamic>? streamMeta,
   }) {
     // 移除loading消息
     final loadingIndex = _messages.indexWhere((msg) => msg.id == taskID);
@@ -1117,6 +1421,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       'thinkingContent': thinkingContent ?? '',
       'stage': stage ?? _currentThinkingStage,
       'taskID': taskID, // 添加taskID用于创建稳定的key
+      'cardId': thinkingCardId,
       'startTime': startTime, // 添加开始时间
       'endTime': null, // 结束时间初始为null
     };
@@ -1130,6 +1435,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
           user: 3,
           content: {'cardData': cardData, 'id': thinkingCardId},
           createAt: DateTime.fromMillisecondsSinceEpoch(startTime),
+          streamMeta: ensureAgentStreamMessageMeta(
+            streamMeta,
+            entryId: thinkingCardId,
+          ),
         ),
       );
     });
@@ -1142,6 +1451,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     String? thinkingContent,
     bool? isLoading,
     int? stage,
+    Map<String, dynamic>? streamMeta,
     bool lockCompleted = true,
   }) {
     final thinkingCardId = cardId ?? '$taskID-thinking';
@@ -1171,13 +1481,19 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
         cardData['isLoading'] = isLoading ?? _isDeepThinking;
         cardData['stage'] = newStage;
         cardData['taskID'] = taskID; // 显式保留 taskID，确保 Widget key 不会变化
+        cardData['cardId'] = thinkingCardId;
         cardData['startTime'] = startTime; // 保留开始时间
         cardData['endTime'] = endTime; // 更新结束时间
 
         content['cardData'] = cardData;
-        _messages[index] = existing.copyWith(content: content);
+        _messages[index] = existing.copyWith(
+          content: content,
+          streamMeta: ensureAgentStreamMessageMeta(
+            streamMeta ?? existing.streamMeta,
+            entryId: thinkingCardId,
+          ),
+        );
       });
-      _persistDeepThinkingCardIfNeeded(_messages[index]);
     }
   }
 
@@ -1190,6 +1506,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     _updateThinkingCard(taskID);
 
     // 调用post-process接口
+    _persistThinkingCardForTask(taskID);
     await _callDispatchPostProcess(taskID, fullContent);
   }
 
@@ -1207,6 +1524,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     _updateThinkingCard(taskID);
 
     // 如果是429限流错误，直接显示限流提示，不再走后续流程
+    _persistThinkingCardForTask(taskID);
     if (isRateLimited) {
       _handleRateLimitError(taskID);
       _resetDispatchState();
@@ -1233,6 +1551,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
   /// 处理dispatch错误
   void _handleDispatchError(String taskID, String error) {
+    _persistThinkingCardForTask(taskID);
     setState(() {
       _isAiResponding = false;
       // 移除 loading 消息（如果还存在）
@@ -1243,7 +1562,12 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
           id: taskID,
           type: 1,
           user: 2,
-          content: {'text': '小万忙不过来了，等会儿再试试吧', 'id': taskID},
+          content: {
+            'text': LegacyTextLocalizer.isEnglish
+                ? 'Omnibot is busy right now. Please try again in a moment.'
+                : '小万忙不过来了，等会儿再试试吧',
+            'id': taskID,
+          },
           isError: true,
         ),
       );
@@ -1257,6 +1581,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     _currentThinkingStage = 4;
     _isDeepThinking = false;
     _updateThinkingCard(taskID);
+    _persistThinkingCardForTask(taskID);
     setState(() {
       _isAiResponding = false;
       _messages.removeWhere((msg) => msg.id == taskID && msg.isLoading);
@@ -1267,7 +1592,9 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
           type: 1,
           user: 2,
           content: {
-            'text': '统一 Agent 已启用，旧聊天分发链路已移除，请检查模型配置后重试。',
+            'text': LegacyTextLocalizer.isEnglish
+                ? 'Unified Agent is enabled. The legacy chat dispatch has been removed. Please check your model config and try again.'
+                : '统一 Agent 已启用，旧聊天分发链路已移除，请检查模型配置后重试。',
             'id': '$taskID-disabled',
           },
           isError: true,
@@ -1275,17 +1602,6 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       );
     });
     _resetDispatchState();
-  }
-
-  /// 移除thinking卡片
-  void _removeThinkingCard(String taskID) {
-    setState(() {
-      _messages.removeWhere(
-        (msg) =>
-            msg.id == '$taskID-thinking' ||
-            msg.id.startsWith('$taskID-thinking-'),
-      );
-    });
   }
 
   /// 重置dispatch状态
@@ -1368,7 +1684,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     if (!handled &&
         mounted &&
         _currentDispatchTaskId == messageIds.aiMessageId) {
-      handleAgentError('统一 Agent 启动失败，请检查模型提供商与场景模型配置。');
+      handleAgentError(
+        LegacyTextLocalizer.isEnglish
+            ? 'Failed to start unified Agent. Please check model provider and scene model config.'
+            : '统一 Agent 启动失败，请检查模型提供商与场景模型配置。',
+      );
     }
   }
 
@@ -1390,6 +1710,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       _messageController.clear();
       _isAiResponding = true;
     });
+    _syncMessageLinkPreviews(userMessageId);
 
     return (userMessageId: userMessageId, aiMessageId: aiMessageId);
   }
@@ -1498,7 +1819,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
   void _sendChatMessage(String aiMessageId) {
     if (!_openClawEnabled) {
-      handleAgentError('统一 Agent 已启用，旧聊天链路已移除，请检查配置后重试。');
+      handleAgentError(
+        LegacyTextLocalizer.isEnglish
+            ? 'Unified Agent is enabled. The legacy chat path has been removed. Please check config and try again.'
+            : '统一 Agent 已启用，旧聊天链路已移除，请检查配置后重试。',
+      );
       return;
     }
     final history = _buildOpenClawHistory();
@@ -1527,7 +1852,12 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
             id: errorId,
             type: 1,
             user: 2,
-            content: {'text': '抱歉，发送消息失败：$error', 'id': errorId},
+            content: {
+              'text': LegacyTextLocalizer.isEnglish
+                  ? 'Sorry, failed to send message: $error'
+                  : '抱歉，发送消息失败：$error',
+              'id': errorId,
+            },
           ),
         );
       });
@@ -1539,12 +1869,16 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     try {
       // 检查是否有任何正在进行的活动
       if (_currentDispatchTaskId != null ||
+          _currentAiMessages.isNotEmpty ||
           _isCheckingExecutableTask ||
           _isExecutingTask) {
         interruptActiveToolCard();
-        AssistsMessageService.cancelRunningTask(taskId: _currentDispatchTaskId);
-        if (_currentDispatchTaskId != null) {
-          _removeThinkingCard(_currentDispatchTaskId!);
+        final taskId =
+            _currentDispatchTaskId ??
+            (_currentAiMessages.isEmpty ? null : _currentAiMessages.keys.first);
+        AssistsMessageService.cancelRunningTask(taskId: taskId);
+        if (taskId != null) {
+          _updateThinkingCardToCancelled(taskId);
         }
         _resetDispatchState();
       } else {
@@ -1571,9 +1905,6 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   void _onCancelTaskFromCard(String taskId) {
     try {
       interruptActiveToolCard();
-      if (_isDeepThinking) {
-        AssistsMessageService.cancelRunningTask(taskId: taskId);
-      }
       AssistsMessageService.cancelRunningTask(taskId: taskId);
       _updateThinkingCardToCancelled(taskId);
       _resetDispatchState();
@@ -1589,22 +1920,18 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   }
 
   void _updateThinkingCardToCancelled(String taskID) {
-    final thinkingCards = _messages
-        .where(
-          (msg) =>
-              msg.id == '$taskID-thinking' ||
-              msg.id.startsWith('$taskID-thinking-'),
-        )
-        .toList();
-    if (thinkingCards.isEmpty) return;
-
-    final thinkingCard = thinkingCards.first;
+    final thinkingCard = resolveAgentThinkingCardForTask(
+      _messages,
+      taskId: taskID,
+    );
+    if (thinkingCard == null) return;
     final thinkingCardId = thinkingCard.id;
     final index = _messages.indexWhere((msg) => msg.id == thinkingCardId);
     if (index == -1) return;
 
     final cardData = Map<String, dynamic>.from(thinkingCard.cardData ?? {});
     cardData['stage'] = 5;
+    cardData['isLoading'] = false;
     if (cardData['endTime'] == null) {
       cardData['endTime'] = DateTime.now().millisecondsSinceEpoch;
     }
@@ -1716,7 +2043,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                     // 消息列表 - 使用 NotificationListener 阻止滚动事件影响 sheet
                     Expanded(
                       child: NotificationListener<ScrollNotification>(
-                        onNotification: (_) => true, // 阻止滚动事件冒泡到 sheet
+                        onNotification: (notification) {
+                          _handleMessageScrollNotification(notification);
+                          return true; // 阻止滚动事件冒泡到 sheet
+                        },
                         child: _buildMessageList(),
                       ),
                     ),
@@ -1788,16 +2118,28 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
           padding: EdgeInsets.only(bottom: emptyStateBottomInset),
-          child: const Center(
+          child: Center(
             child: Text(
-              '有什么可以帮助你的？',
-              style: TextStyle(color: Color(0xFF999999), fontSize: 14),
+              Localizations.localeOf(context).languageCode == 'en'
+                  ? 'How can I help you?'
+                  : '有什么可以帮助你的？',
+              style: const TextStyle(color: Color(0xFF999999), fontSize: 14),
             ),
           ),
         ),
       );
     }
 
+    if (_autoStickMessageListToLatest) {
+      _scheduleMessageStickToLatest();
+    }
+    final timelineEntries = buildAgentRunTimelineEntries(
+      _messages,
+      activeTaskIds: {
+        ..._currentAiMessages.keys,
+        ...activeAgentStreamTaskIds(),
+      },
+    );
     return Align(
       alignment: Alignment.topCenter,
       child: ListView.builder(
@@ -1808,26 +2150,49 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
         // 这在悬浮窗模式下尤为重要，可以防止向下拖动时整个页面跟着移动
         physics: const ClampingScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-        itemCount: _messages.length,
+        itemCount: timelineEntries.length,
         itemBuilder: (context, index) {
-          final message = _messages[index];
+          final entry = timelineEntries[index];
           final isLastMessage = index == 0; // 最后一条消息（最新的）
-          final isOldestMessage = index == _messages.length - 1; // 最旧的一条消息
+          final isOldestMessage =
+              index == timelineEntries.length - 1; // 最旧的一条消息
           // 只有当消息数量大于1时，最后一条消息才添加底部padding
-          final needBottomPadding = isLastMessage && _messages.length > 1;
+          final needBottomPadding = isLastMessage && timelineEntries.length > 1;
           // 如果最旧的一条消息不是用户发送的，给顶部添加24的padding
-          final needTopPadding = isOldestMessage && message.user != 1;
+          final needTopPadding = isOldestMessage && !entry.isUserMessage;
+          final padding = EdgeInsets.only(
+            top: needTopPadding ? 24.0 : 0.0,
+            bottom: needBottomPadding ? 40.0 : 0.0,
+          );
+          if (entry.message != null) {
+            final message = entry.message!;
+            return Padding(
+              padding: padding,
+              child: MessageBubble(
+                message: message,
+                key: ValueKey(message.dbId ?? message.contentId ?? message.id),
+                onBeforeTaskExecute: _handleBeforeTaskExecute,
+                onCancelTask: _onCancelTaskFromCard,
+                parentScrollController: _messageScrollController,
+                onParentScrollHandoff: _handleParentScrollHandoff,
+                onStreamingTextLayoutChanged: _handleStreamingTextLayoutChanged,
+              ),
+            );
+          }
+
+          final group = entry.group!;
           return Padding(
-            padding: EdgeInsets.only(
-              top: needTopPadding ? 24.0 : 0.0,
-              bottom: needBottomPadding ? 40.0 : 0.0,
-            ),
-            child: MessageBubble(
-              message: message,
-              key: ValueKey(message.dbId ?? message.contentId ?? message.id),
+            padding: padding,
+            child: AgentRunGroupMessage(
+              key: ValueKey('overlay-agent-run-${group.taskId}'),
+              group: group,
+              expanded: _expandedAgentRunTaskIds.contains(group.taskId),
+              onToggleExpanded: () => _toggleAgentRunGroup(group.taskId),
               onBeforeTaskExecute: _handleBeforeTaskExecute,
               onCancelTask: _onCancelTaskFromCard,
               parentScrollController: _messageScrollController,
+              onParentScrollHandoff: _handleParentScrollHandoff,
+              onStreamingTextLayoutChanged: _handleStreamingTextLayoutChanged,
             ),
           );
         },
@@ -1847,9 +2212,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '需要你的确认',
-            style: TextStyle(
+          Text(
+            Localizations.localeOf(context).languageCode == 'en'
+                ? 'Need your confirmation'
+                : '需要你的确认',
+            style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: Color(0xFF1D3E7B),
@@ -1864,11 +2231,16 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
           TextField(
             controller: _vlmAnswerController,
             maxLines: 2,
-            decoration: const InputDecoration(
-              hintText: '可选：补充你的操作说明，默认发送“已完成操作，继续执行”',
+            decoration: InputDecoration(
+              hintText: Localizations.localeOf(context).languageCode == 'en'
+                  ? 'Optional: add details. Default sends: Completed action, continue execution'
+                  : '可选：补充你的操作说明，默认发送“已完成操作，继续执行”',
               isDense: true,
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              border: OutlineInputBorder(),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 10),
@@ -1877,14 +2249,26 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
               Expanded(
                 child: OutlinedButton(
                   onPressed: _isSubmittingVlmReply ? null : _dismissVlmInfo,
-                  child: const Text('稍后再说'),
+                  child: Text(
+                    Localizations.localeOf(context).languageCode == 'en'
+                        ? 'Later'
+                        : '稍后再说',
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: ElevatedButton(
                   onPressed: _isSubmittingVlmReply ? null : _onSubmitVlmInfo,
-                  child: Text(_isSubmittingVlmReply ? '发送中...' : '继续执行'),
+                  child: Text(
+                    _isSubmittingVlmReply
+                        ? (Localizations.localeOf(context).languageCode == 'en'
+                              ? 'Sending...'
+                              : '发送中...')
+                        : (Localizations.localeOf(context).languageCode == 'en'
+                              ? 'Continue'
+                              : '继续执行'),
+                  ),
                 ),
               ),
             ],
@@ -1951,9 +2335,13 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                         const SizedBox(height: 6),
                         TextField(
                           controller: _openClawTokenController,
-                          decoration: const InputDecoration(
-                            labelText: 'Token（可选）',
-                            hintText: '为空表示无需 token',
+                          decoration: InputDecoration(
+                            labelText: LegacyTextLocalizer.isEnglish
+                                ? 'Token (optional)'
+                                : 'Token（可选）',
+                            hintText: LegacyTextLocalizer.isEnglish
+                                ? 'Leave empty if no token required'
+                                : '为空表示无需 token',
                             isDense: true,
                           ),
                         ),
@@ -1973,10 +2361,14 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                       },
                       borderRadius: BorderRadius.circular(10),
                       child: Row(
-                        children: const [
-                          Icon(Icons.link, size: 16, color: Color(0xFF2563EB)),
-                          SizedBox(width: 8),
-                          Expanded(
+                        children: [
+                          const Icon(
+                            Icons.link,
+                            size: 16,
+                            color: Color(0xFF2563EB),
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
                             child: Text(
                               'OpenClaw',
                               style: TextStyle(
@@ -1987,8 +2379,8 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                             ),
                           ),
                           Text(
-                            '配置',
-                            style: TextStyle(
+                            LegacyTextLocalizer.isEnglish ? 'Config' : '配置',
+                            style: const TextStyle(
                               fontSize: 12,
                               color: Color(0xFF6B7280),
                             ),
@@ -2020,15 +2412,16 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   }
 
   String _getRecordingText() {
+    final en = LegacyTextLocalizer.isEnglish;
     switch (_recordingState) {
       case RecordingState.starting:
-        return "正在启动录音...";
+        return en ? "Starting recording..." : "正在启动录音...";
       case RecordingState.recording:
-        return "语音输入中...";
+        return en ? "Listening..." : "语音输入中...";
       case RecordingState.stopping:
-        return "正在识别中...";
+        return en ? "Recognizing..." : "正在识别中...";
       case RecordingState.waitingServerStop:
-        return "正在识别中...";
+        return en ? "Recognizing..." : "正在识别中...";
       case RecordingState.idle:
         return "";
     }

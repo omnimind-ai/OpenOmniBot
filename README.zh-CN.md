@@ -140,8 +140,10 @@ OpenOmniBot 是一个基于 Android 原生 Kotlin 与 Flutter 构建的端侧 AI
 git clone https://github.com/omnimind-ai/OpenOmniBot.git
 cd OpenOmniBot
 
+# 仅在构建完整 omniinfer 本地推理版本时需要。
 git submodule update --init third_party/omniinfer
 git -C third_party/omniinfer submodule update --init framework/mnn
+git -C third_party/omniinfer submodule update --init framework/llama.cpp
 
 cd ui
 flutter pub get
@@ -158,11 +160,18 @@ flutter pub get
 
 ```bash
 cd ..
-./gradlew :app:installDevelopDebug
+
+# standard 精简版，不包含本地推理
+./gradlew :app:installDevelopStandardDebug -Ptarget=lib/main_standard.dart
+
+# omniinfer 完整版，包含本地推理
+./gradlew :app:installDevelopOmniinferDebug -Ptarget=lib/main_omniinfer.dart
 ```
 
 <h2 id="architecture">架构概览</h2>
-
+<p align="center">
+  <img src="docs/pic/architect.svg" alt="Architecture" width="100%" />
+</p>
 ```text
 OpenOmniBot/
 ├── app/                        # Android 主宿主模块：入口、Agent 编排、系统能力、MCP、前台服务
@@ -188,8 +197,9 @@ OpenOmniBot/
 <table align="center">
   <tr>
     <td align="center">
-      <img src="docs/pic/wechat.png" alt="WeChat Group" width="220"/><br/>
-      <b>WeChat Group</b>
+      <img src="docs/pic/wechat.jpg" alt="WeChat Group" width="220"/><br/>
+      <b>WeChat Group</b><br/>
+      <a href="https://discord.gg/WnBvBXgykD">加入 Discord 社区</a>
     </td>
   </tr>
 </table>

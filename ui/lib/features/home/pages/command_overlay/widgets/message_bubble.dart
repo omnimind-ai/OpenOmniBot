@@ -1,18 +1,33 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:ui/features/home/pages/omnibot_workspace/omnibot_artifact_preview_page.dart';
+import 'package:ui/l10n/l10n.dart';
+import 'package:ui/models/chat_link_preview.dart';
+import 'package:ui/services/omnibot_resource_service.dart';
+import 'package:ui/widgets/image_preview_overlay.dart';
 import '../../../../../models/chat_message_model.dart';
 import '../../../../../services/app_background_service.dart';
+import '../../../../../services/voice_playback_channel_service.dart';
+import '../../../../../services/voice_playback_coordinator.dart';
 import '../../../../../theme/theme_context.dart';
 import '../../../../../widgets/streaming_text.dart';
 import 'thinking_dots_indicator.dart';
 import 'cards/card_widget_factory.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:ui/widgets/image_preview_overlay.dart';
 
 export 'package:ui/widgets/streaming_text.dart'
     show kThinkingText, kSummarizingText, kSummaryCompleteText;
+
+const String _kSpeechIconSvg = '''
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M8.8 20v-4.1l1.9.2a2.3 2.3 0 0 0 2.164-2.1V8.3A5.37 5.37 0 0 0 2 8.25c0 2.8.656 3.054 1 4.55a5.77 5.77 0 0 1 .029 2.758L2 20"/>
+  <path d="M19.8 17.8a7.5 7.5 0 0 0 .003-10.603"/>
+  <path d="M17 15a3.5 3.5 0 0 0-.025-4.975"/>
+</svg>
+''';
 
 /// 消息气泡组件
 ///
@@ -32,11 +47,23 @@ class MessageBubble extends StatelessWidget {
   /// 是否允许深度思考卡片折叠
   final bool enableThinkingCollapse;
 
+  /// 思考卡片完成后是否自动折叠
+  final bool thinkingAutoCollapseOnComplete;
+
+  /// 强制覆盖深度思考卡片的头像显示
+  final bool? showThinkingAvatarOverride;
+
   /// 外层消息列表滚动控制器，用于卡片内嵌滚动与父列表联动
   final ScrollController? parentScrollController;
+  final VoidCallback? onParentScrollHandoff;
   final OnRequestAuthorize? onRequestAuthorize;
   final void Function(ChatMessageModel message, LongPressStartDetails details)?
   onUserMessageLongPressStart;
+  final bool isUserMessageEditing;
+  final TextEditingController? userMessageEditController;
+  final VoidCallback? onCancelUserEdit;
+  final VoidCallback? onSaveUserEdit;
+  final VoidCallback? onStreamingTextLayoutChanged;
   final AppBackgroundVisualProfile visualProfile;
   final AppBackgroundConfig appearanceConfig;
 
@@ -46,9 +73,17 @@ class MessageBubble extends StatelessWidget {
     this.onBeforeTaskExecute,
     this.onCancelTask,
     this.enableThinkingCollapse = false,
+    this.thinkingAutoCollapseOnComplete = true,
+    this.showThinkingAvatarOverride,
     this.parentScrollController,
+    this.onParentScrollHandoff,
     this.onRequestAuthorize,
     this.onUserMessageLongPressStart,
+    this.isUserMessageEditing = false,
+    this.userMessageEditController,
+    this.onCancelUserEdit,
+    this.onSaveUserEdit,
+    this.onStreamingTextLayoutChanged,
     this.visualProfile = AppBackgroundVisualProfile.defaultProfile,
     this.appearanceConfig = AppBackgroundConfig.defaults,
   });
@@ -127,6 +162,7 @@ class MessageBubble extends StatelessWidget {
   Widget _buildTextMessage(BuildContext context, bool isUserMessage) {
     final text = message.text ?? '';
     final attachments = _extractAttachments();
+    final linkPreviews = message.linkPreviews;
 
     if (isUserMessage) {
       // 用户消息：整块气泡长按触发快捷操作。
@@ -139,10 +175,12 @@ class MessageBubble extends StatelessWidget {
           final maxBubbleWidth = availableWidth * 0.78;
           return GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onLongPressStart: onUserMessageLongPressStart == null
+            onLongPressStart:
+                isUserMessageEditing || onUserMessageLongPressStart == null
                 ? null
                 : (details) => onUserMessageLongPressStart!(message, details),
             child: Container(
+              key: ValueKey('user-message-bubble-${message.id}'),
               constraints: BoxConstraints(maxWidth: maxBubbleWidth),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               decoration: ShapeDecoration(
@@ -154,10 +192,28 @@ class MessageBubble extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (text.isNotEmpty) _buildUserText(text),
-                  if (attachments.isNotEmpty) ...[
-                    if (text.isNotEmpty) const SizedBox(height: 8),
-                    _buildUserAttachmentList(context, attachments),
+                  if (isUserMessageEditing && userMessageEditController != null)
+                    _buildUserEditComposer(
+                      context,
+                      userMessageEditController!,
+                      attachments,
+                    )
+                  else ...[
+                    if (text.isNotEmpty) _buildUserText(text),
+                    if (attachments.isNotEmpty) ...[
+                      if (text.isNotEmpty) const SizedBox(height: 8),
+                      _buildUserAttachmentList(context, attachments),
+                    ],
+                  ],
+                  if (!isUserMessageEditing && linkPreviews.isNotEmpty) ...[
+                    if (text.isNotEmpty || attachments.isNotEmpty)
+                      const SizedBox(height: 8),
+                    _buildLinkPreviewList(
+                      context,
+                      linkPreviews,
+                      compactStyle: true,
+                      isUserMessage: true,
+                    ),
                   ],
                 ],
               ),
@@ -167,17 +223,30 @@ class MessageBubble extends StatelessWidget {
       );
     }
 
-    if (attachments.isEmpty) {
+    if (attachments.isEmpty && linkPreviews.isEmpty) {
       // AI消息：简单文本样式，无背景
       return _buildAiTextWithSpeed(context, text);
     }
 
+    // AI 消息按“正文 -> 附件 -> 链接预览”顺序分块展示。
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (text.isNotEmpty) _buildAiTextWithSpeed(context, text),
-        if (text.isNotEmpty) const SizedBox(height: 8),
-        _buildUserAttachmentList(context, attachments),
+        if (attachments.isNotEmpty) ...[
+          if (text.isNotEmpty) const SizedBox(height: 8),
+          _buildUserAttachmentList(context, attachments),
+        ],
+        if (linkPreviews.isNotEmpty) ...[
+          if (text.isNotEmpty || attachments.isNotEmpty)
+            const SizedBox(height: 8),
+          _buildLinkPreviewList(
+            context,
+            linkPreviews,
+            compactStyle: true,
+            isUserMessage: false,
+          ),
+        ],
       ],
     );
   }
@@ -381,6 +450,350 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
+  // 链接预览独立成块，便于保持引用式层级和轻量点击反馈。
+  Widget _buildLinkPreviewList(
+    BuildContext context,
+    List<ChatLinkPreview> previews, {
+    required bool compactStyle,
+    required bool isUserMessage,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: previews.asMap().entries.map((entry) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: entry.key == previews.length - 1 ? 0 : 8,
+          ),
+          child: _buildLinkPreviewCard(
+            context,
+            entry.value,
+            entry.key,
+            compactStyle: compactStyle,
+            isUserMessage: isUserMessage,
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildLinkPreviewCard(
+    BuildContext context,
+    ChatLinkPreview preview,
+    int index, {
+    required bool compactStyle,
+    required bool isUserMessage,
+  }) {
+    if (compactStyle) {
+      return _buildCompactLinkPreview(
+        context,
+        preview,
+        index,
+        isUserMessage: isUserMessage,
+      );
+    }
+    final isEnglish =
+        Localizations.maybeLocaleOf(context)?.languageCode == 'en';
+    final title = preview.title.trim();
+    final description = preview.description.trim();
+    final siteName = preview.displaySiteName.trim();
+    final hasImage =
+        preview.imageUrl.startsWith('http://') ||
+        preview.imageUrl.startsWith('https://');
+    final statusLabel = switch (preview.status) {
+      ChatLinkPreview.statusLoading => isEnglish ? 'Loading preview' : '加载预览中',
+      ChatLinkPreview.statusFailed =>
+        isEnglish ? 'Preview unavailable' : '预览暂不可用',
+      _ => '',
+    };
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey('link-preview-card-$index'),
+        onTap: () {
+          if (preview.url.isEmpty) {
+            return;
+          }
+          _handleChatLinkTap(context, preview.url);
+        },
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 360),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: visualProfile.attachmentSurfaceColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: visualProfile.attachmentBorderColor,
+              width: 1,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (siteName.isNotEmpty)
+                      Text(
+                        siteName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: visualProfile.secondaryTextColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    if (title.isNotEmpty) ...[
+                      if (siteName.isNotEmpty) const SizedBox(height: 4),
+                      Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: visualProfile.primaryTextColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                    if (description.isNotEmpty) ...[
+                      if (title.isNotEmpty || siteName.isNotEmpty)
+                        const SizedBox(height: 4),
+                      Text(
+                        description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: visualProfile.secondaryTextColor,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                    if (statusLabel.isNotEmpty &&
+                        preview.status != ChatLinkPreview.statusReady) ...[
+                      if (title.isNotEmpty ||
+                          description.isNotEmpty ||
+                          siteName.isNotEmpty)
+                        const SizedBox(height: 4),
+                      Text(
+                        statusLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: visualProfile.secondaryTextColor,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (hasImage) ...[
+                const SizedBox(width: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.network(
+                    preview.imageUrl,
+                    width: 72,
+                    height: 72,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        _buildLinkPreviewImageFallback(),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactLinkPreview(
+    BuildContext context,
+    ChatLinkPreview preview,
+    int index, {
+    required bool isUserMessage,
+  }) {
+    final isEnglish =
+        Localizations.maybeLocaleOf(context)?.languageCode == 'en';
+    final title = preview.title.trim();
+    final description = preview.description.trim();
+    final siteName = preview.displaySiteName.trim();
+    final hasImage =
+        preview.imageUrl.startsWith('http://') ||
+        preview.imageUrl.startsWith('https://');
+    final primaryColor = isUserMessage
+        ? visualProfile.primaryTextColor
+        : _resolvedAiPrimaryTextColor(context);
+    final secondaryBaseColor = isUserMessage
+        ? visualProfile.primaryTextColor
+        : _resolvedAiSecondaryTextColor(context);
+    final lineColor = secondaryBaseColor.withValues(alpha: 0.42);
+    final metaColor = secondaryBaseColor.withValues(alpha: 0.82);
+    final secondaryColor = secondaryBaseColor.withValues(alpha: 0.94);
+    final statusLabel = switch (preview.status) {
+      ChatLinkPreview.statusLoading => isEnglish ? 'Loading preview' : '加载预览中',
+      ChatLinkPreview.statusFailed =>
+        isEnglish ? 'Preview unavailable' : '预览暂不可用',
+      _ => '',
+    };
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey('link-preview-card-$index'),
+        onTap: () {
+          if (preview.url.isEmpty) {
+            return;
+          }
+          _handleChatLinkTap(context, preview.url);
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          key: ValueKey('link-preview-quote-$index'),
+          constraints: BoxConstraints(maxWidth: isUserMessage ? 320 : 360),
+          padding: const EdgeInsets.only(left: 10, top: 2, right: 2, bottom: 2),
+          decoration: BoxDecoration(
+            border: Border(left: BorderSide(color: lineColor, width: 3)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (siteName.isNotEmpty)
+                        Text(
+                          siteName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: metaColor,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            height: 1.2,
+                          ),
+                        ),
+                      if (title.isNotEmpty) ...[
+                        if (siteName.isNotEmpty) const SizedBox(height: 2),
+                        Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: primaryColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            height: 1.22,
+                          ),
+                        ),
+                      ],
+                      if (description.isNotEmpty) ...[
+                        if (title.isNotEmpty || siteName.isNotEmpty)
+                          const SizedBox(height: 2),
+                        Text(
+                          description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: secondaryColor,
+                            fontSize: 10.5,
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
+                      if (statusLabel.isNotEmpty &&
+                          preview.status != ChatLinkPreview.statusReady) ...[
+                        if (title.isNotEmpty ||
+                            description.isNotEmpty ||
+                            siteName.isNotEmpty)
+                          const SizedBox(height: 2),
+                        Text(
+                          statusLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: metaColor,
+                            fontSize: 10,
+                            height: 1.2,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              if (hasImage) ...[
+                const SizedBox(width: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.network(
+                    preview.imageUrl,
+                    width: 40,
+                    height: 40,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        _buildCompactLinkPreviewImageFallback(),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactLinkPreviewImageFallback() {
+    return Container(
+      width: 40,
+      height: 40,
+      alignment: Alignment.center,
+      color: visualProfile.primaryTextColor.withValues(alpha: 0.08),
+      child: Icon(
+        Icons.link_outlined,
+        size: 14,
+        color: visualProfile.primaryTextColor.withValues(alpha: 0.72),
+      ),
+    );
+  }
+
+  Future<void> _handleChatLinkTap(BuildContext context, String url) async {
+    if (url.startsWith('omnibot://')) {
+      await OmnibotResourceService.ensureWorkspacePathsLoaded();
+      if (!context.mounted) return;
+      final metadata = OmnibotResourceService.resolveUri(url);
+      if (metadata != null) {
+        await showOmnibotArtifactPreviewSheet(context, metadata);
+        return;
+      }
+    }
+    await OmnibotResourceService.handleLinkTap(url);
+  }
+
+  Widget _buildLinkPreviewImageFallback() {
+    return Container(
+      width: 72,
+      height: 72,
+      color: visualProfile.attachmentSurfaceColor,
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.link_outlined,
+        size: 18,
+        color: visualProfile.attachmentIconColor,
+      ),
+    );
+  }
+
   bool _isImageAttachment(Map<String, dynamic> item) {
     final explicit = item['isImage'];
     if (explicit is bool && explicit) return true;
@@ -464,6 +877,79 @@ class MessageBubble extends StatelessWidget {
     return '${(size / (1024 * 1024)).toStringAsFixed(1)}MB';
   }
 
+  Widget _buildUserEditComposer(
+    BuildContext context,
+    TextEditingController controller,
+    List<Map<String, dynamic>> attachments,
+  ) {
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final hasText = value.text.trim().isNotEmpty;
+        final canSave = hasText || attachments.isNotEmpty;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              minLines: 1,
+              maxLines: 6,
+              autofocus: true,
+              style: TextStyle(
+                color: visualProfile.primaryTextColor,
+                fontSize: _chatTextSize,
+                fontFamily: 'PingFang SC',
+                fontWeight: FontWeight.w400,
+                height: 1.43,
+                letterSpacing: 0.33,
+              ),
+              decoration: InputDecoration(
+                filled: false,
+                fillColor: Colors.transparent,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
+                hintText: context.trLegacy('编辑你的消息'),
+                hintStyle: TextStyle(
+                  color: visualProfile.primaryTextColor.withValues(alpha: 0.6),
+                  fontSize: _chatTextSize,
+                ),
+              ),
+            ),
+            if (attachments.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _buildUserAttachmentList(context, attachments),
+            ],
+            const SizedBox(height: 8),
+            OverflowBar(
+              alignment: MainAxisAlignment.end,
+              spacing: 8,
+              overflowAlignment: OverflowBarAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: onCancelUserEdit,
+                  child: Text(context.trLegacy('取消'), softWrap: false),
+                ),
+                FilledButton(
+                  onPressed: canSave ? onSaveUserEdit : null,
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: Text(context.trLegacy('保存并发送'), softWrap: false),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   /// 构建用户文本（不使用流式效果）
   Widget _buildUserText(String text) {
     return Text(
@@ -481,9 +967,10 @@ class MessageBubble extends StatelessWidget {
   }
 
   /// 构建AI文本（使用StreamingText组件）
-  Widget _buildAiText(BuildContext context, String text) {
+  Widget _buildAiText(BuildContext context, String text, {Widget? trailing}) {
     final aiPrimaryTextColor = _resolvedAiPrimaryTextColor(context);
     final aiSecondaryTextColor = _resolvedAiSecondaryTextColor(context);
+    final enableMarkdown = _shouldRenderMarkdown();
     // 如果是 loading 状态，显示浮动三个点动画（左对齐，与回复文本位置一致）
     if (message.isLoading) {
       return Align(
@@ -509,9 +996,13 @@ class MessageBubble extends StatelessWidget {
           _buildSummaryCompleteHeader(),
           const SizedBox(height: 8),
           StreamingText(
-            enableMarkdown: true,
+            enableMarkdown: enableMarkdown,
+            markdownRenderedLength: _markdownRenderedLength(),
             fullText: text,
             selectable: true,
+            onDisplayedTextChanged: onStreamingTextLayoutChanged,
+            onResourceOpen: showOmnibotArtifactPreviewSheet,
+            trailing: trailing,
             style: TextStyle(
               fontSize: _chatTextSize,
               color: aiPrimaryTextColor,
@@ -523,9 +1014,13 @@ class MessageBubble extends StatelessWidget {
     }
 
     return StreamingText(
-      enableMarkdown: true,
+      enableMarkdown: enableMarkdown,
+      markdownRenderedLength: _markdownRenderedLength(),
       fullText: text,
       selectable: true,
+      onDisplayedTextChanged: onStreamingTextLayoutChanged,
+      onResourceOpen: showOmnibotArtifactPreviewSheet,
+      trailing: trailing,
       style: TextStyle(
         fontSize: _chatTextSize,
         color: aiPrimaryTextColor,
@@ -534,26 +1029,105 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
+  bool _shouldRenderMarkdown() {
+    final raw = message.content?['renderMarkdown'];
+    return raw is bool ? raw : true;
+  }
+
+  int? _markdownRenderedLength() {
+    final raw = message.content?['markdownRenderedLength'];
+    return raw is int ? raw : null;
+  }
+
   /// AI text with optional inference speed label
   Widget _buildAiTextWithSpeed(BuildContext context, String text) {
-    final aiText = _buildAiText(context, text);
     final speed = _decodeTokensPerSecond;
-    if (speed == null) return aiText;
+    final showVoiceButton = VoicePlaybackCoordinator.instance
+        .shouldShowVoiceButton(
+          user: message.user,
+          type: message.type,
+          text: text,
+        );
+    final aiText = _buildAiText(
+      context,
+      text,
+      trailing: showVoiceButton ? _buildVoiceAction(context, text) : null,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         aiText,
-        const SizedBox(height: 4),
-        Text(
-          '${speed.toStringAsFixed(1)} tok/s',
-          style: TextStyle(
-            fontSize: 11,
-            color: visualProfile.secondaryTextColor.withValues(alpha: 0.6),
-            fontWeight: FontWeight.w400,
+        if (speed != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            '${speed.toStringAsFixed(1)} tok/s',
+            style: TextStyle(
+              fontSize: 11,
+              color: visualProfile.secondaryTextColor.withValues(alpha: 0.6),
+              fontWeight: FontWeight.w400,
+            ),
           ),
-        ),
+        ],
       ],
+    );
+  }
+
+  Widget _buildVoiceAction(BuildContext context, String text) {
+    unawaited(VoicePlaybackCoordinator.instance.ensureInitialized());
+    return AnimatedBuilder(
+      animation: VoicePlaybackCoordinator.instance,
+      builder: (context, _) {
+        final playbackState = VoicePlaybackCoordinator.instance.stateFor(
+          message.id,
+        );
+        final iconColor = _resolvedAiSecondaryTextColor(context);
+        final status = playbackState.status;
+        final Widget icon = switch (status) {
+          VoicePlaybackStatus.synthesizing => SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: iconColor),
+          ),
+          VoicePlaybackStatus.playing => Icon(
+            Icons.pause_rounded,
+            size: 20,
+            color: iconColor,
+          ),
+          VoicePlaybackStatus.paused => Icon(
+            Icons.play_arrow_rounded,
+            size: 20,
+            color: iconColor,
+          ),
+          _ => SvgPicture.string(
+            _kSpeechIconSvg,
+            width: 18,
+            height: 18,
+            colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
+          ),
+        };
+        final Future<void> Function() action = switch (status) {
+          VoicePlaybackStatus.synthesizing =>
+            () => VoicePlaybackCoordinator.instance.stopPlayback(message.id),
+          _ => () => VoicePlaybackCoordinator.instance.togglePlayback(
+            messageId: message.id,
+            text: text,
+          ),
+        };
+        return IconButton(
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 22, height: 22),
+          splashRadius: 12,
+          tooltip: playbackState.error.isNotEmpty
+              ? playbackState.error
+              : (status == VoicePlaybackStatus.playing ? '暂停语音' : '播放语音'),
+          onPressed: () {
+            unawaited(action());
+          },
+          icon: icon,
+        );
+      },
     );
   }
 
@@ -561,6 +1135,7 @@ class MessageBubble extends StatelessWidget {
     final raw = message.content?['decodeTokensPerSecond'];
     if (raw is double) return raw;
     if (raw is num) return raw.toDouble();
+    if (raw is String) return double.tryParse(raw);
     return null;
   }
 
@@ -626,7 +1201,8 @@ class MessageBubble extends StatelessWidget {
 
   /// 构建卡片消息
   Widget _buildCardMessage(BuildContext context) {
-    final cardData = message.cardData ?? {};
+    final cardData = Map<String, dynamic>.from(message.cardData ?? {});
+    cardData.putIfAbsent('cardId', () => message.contentId ?? message.id);
 
     // 卡片消息撑满聊天框宽度，减去头像和间距的宽度
     return SizedBox(
@@ -637,7 +1213,11 @@ class MessageBubble extends StatelessWidget {
         onRequestAuthorize: onRequestAuthorize,
         onCancelTask: onCancelTask,
         enableThinkingCollapse: enableThinkingCollapse,
+        thinkingAutoCollapseOnComplete: thinkingAutoCollapseOnComplete,
+        showThinkingAvatarOverride: showThinkingAvatarOverride,
         parentScrollController: parentScrollController,
+        onParentScrollHandoff: onParentScrollHandoff,
+        onStreamingTextLayoutChanged: onStreamingTextLayoutChanged,
         appearanceConfig: appearanceConfig,
         visualProfile: visualProfile,
       ),

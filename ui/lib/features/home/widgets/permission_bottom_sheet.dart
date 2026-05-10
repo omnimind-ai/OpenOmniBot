@@ -121,7 +121,9 @@ class _PermissionBottomSheetState extends State<PermissionBottomSheet>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '请检查下列权限',
+                Localizations.localeOf(context).languageCode == 'en'
+                    ? 'Please check the permissions below'
+                    : '请检查下列权限',
                 style: TextStyle(
                   color: isDark ? null : AppColors.text,
                   fontSize: 20,
@@ -192,7 +194,10 @@ class _PermissionBottomSheetState extends State<PermissionBottomSheet>
                       ),
                       child: Center(
                         child: Text(
-                          widget.buttonText,
+                          Localizations.localeOf(context).languageCode == 'en' &&
+                                  widget.buttonText == '开启陪伴'
+                              ? 'Enable Companion'
+                              : widget.buttonText,
                           style: TextStyle(
                             color: isDark ? palette.textPrimary : Colors.white,
                             fontSize: 16,

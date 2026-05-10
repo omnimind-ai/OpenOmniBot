@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/legacy_text_localizer.dart';
 
 class NormalChoicesGroup extends StatefulWidget {
   final List<ChoiceOption> options;
@@ -140,10 +141,10 @@ class NormalChoicesGroupExample extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return NormalChoicesGroup(
-      options: const [
+      options: [
         ChoiceOption(
-          label: '支付宝',
-          icon: Icon(
+          label: LegacyTextLocalizer.isEnglish ? 'Alipay' : '支付宝',
+          icon: const Icon(
             Icons.account_balance_wallet,
             color: Colors.white,
             size: 14,
@@ -152,8 +153,8 @@ class NormalChoicesGroupExample extends StatelessWidget {
           value: 'alipay',
         ),
         ChoiceOption(
-          label: '微信',
-          icon: Icon(
+          label: LegacyTextLocalizer.isEnglish ? 'WeChat' : '微信',
+          icon: const Icon(
             Icons.chat,
             color: Colors.white,
             size: 14,

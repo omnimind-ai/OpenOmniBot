@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_switch/flutter_switch.dart';
 import 'package:ui/core/router/go_router_manager.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/app_update_service.dart';
+import 'package:ui/services/device_service.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/app_text_styles.dart';
 import 'package:ui/theme/theme_context.dart';
-import 'package:ui/services/device_service.dart';
-import 'package:ui/widgets/common_app_bar.dart';
-import 'package:ui/widgets/app_update_dialog.dart';
-import 'package:ui/widgets/gradient_button.dart';
 import 'package:ui/utils/ui.dart';
+import 'package:ui/widgets/app_update_dialog.dart';
+import 'package:ui/widgets/common_app_bar.dart';
+import 'package:ui/widgets/gradient_button.dart';
+import 'package:ui/widgets/settings_section_title.dart';
 
 class AboutPage extends StatefulWidget {
   const AboutPage({super.key});
@@ -18,14 +21,27 @@ class AboutPage extends StatefulWidget {
 }
 
 class _AboutPageState extends State<AboutPage> {
+  static const String _zhUserGuideUrl =
+      'https://omnimind-ai.github.io/OmniBot-Docs';
+  static const String _enUserGuideUrl =
+      'https://omnimind-ai.github.io/OmniBot-Docs/en/';
+
   String _version = '';
   AppUpdateStatus? _updateStatus;
+  bool _betaOptIn = false;
+  AppUpdateDownloadSource _downloadSource = AppUpdateDownloadSource.cnb;
   bool _isCheckingUpdate = false;
+  bool _isUpdatingBetaOptIn = false;
+  bool _isUpdatingDownloadSource = false;
 
   @override
   void initState() {
     super.initState();
     AppUpdateService.statusNotifier.addListener(_handleUpdateStatusChanged);
+    AppUpdateService.betaOptInNotifier.addListener(_handleBetaOptInChanged);
+    AppUpdateService.downloadSourceNotifier.addListener(
+      _handleDownloadSourceChanged,
+    );
     _loadVersion();
     _loadUpdateStatus();
   }
@@ -33,6 +49,10 @@ class _AboutPageState extends State<AboutPage> {
   @override
   void dispose() {
     AppUpdateService.statusNotifier.removeListener(_handleUpdateStatusChanged);
+    AppUpdateService.betaOptInNotifier.removeListener(_handleBetaOptInChanged);
+    AppUpdateService.downloadSourceNotifier.removeListener(
+      _handleDownloadSourceChanged,
+    );
     super.dispose();
   }
 
@@ -63,7 +83,16 @@ class _AboutPageState extends State<AboutPage> {
     await AppUpdateService.initialize();
     if (!mounted) return;
     setState(() {
+      _betaOptIn = AppUpdateService.betaOptInNotifier.value;
       _updateStatus = AppUpdateService.statusNotifier.value;
+      _downloadSource = AppUpdateService.downloadSourceNotifier.value;
+    });
+  }
+
+  void _handleBetaOptInChanged() {
+    if (!mounted) return;
+    setState(() {
+      _betaOptIn = AppUpdateService.betaOptInNotifier.value;
     });
   }
 
@@ -72,6 +101,41 @@ class _AboutPageState extends State<AboutPage> {
     setState(() {
       _updateStatus = AppUpdateService.statusNotifier.value;
     });
+  }
+
+  void _handleDownloadSourceChanged() {
+    if (!mounted) return;
+    setState(() {
+      _downloadSource = AppUpdateService.downloadSourceNotifier.value;
+    });
+  }
+
+  Future<void> _handleToggleBetaOptIn(bool enabled) async {
+    if (_isUpdatingBetaOptIn) return;
+    setState(() {
+      _isUpdatingBetaOptIn = true;
+    });
+
+    try {
+      final updated = await AppUpdateService.setBetaOptIn(enabled);
+      if (!mounted) return;
+      setState(() {
+        _betaOptIn = updated;
+        _updateStatus = AppUpdateService.statusNotifier.value;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      showToast(
+        context.l10n.aboutBetaProgramToggleFailed,
+        type: ToastType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUpdatingBetaOptIn = false;
+        });
+      }
+    }
   }
 
   Future<void> _handleCheckUpdate() async {
@@ -84,17 +148,17 @@ class _AboutPageState extends State<AboutPage> {
       final status = await AppUpdateService.checkNow();
       if (!mounted) return;
       if (status == null) {
-        showToast('检查更新失败', type: ToastType.error);
+        showToast(context.trLegacy('检查更新失败'), type: ToastType.error);
         return;
       }
       if (status.hasUpdate) {
         await showAppUpdateDialog(context, status);
         return;
       }
-      showToast('已是最新版', type: ToastType.success);
+      showToast(context.trLegacy('已是最新版'), type: ToastType.success);
     } catch (_) {
       if (!mounted) return;
-      showToast('检查更新失败', type: ToastType.error);
+      showToast(context.trLegacy('检查更新失败'), type: ToastType.error);
     } finally {
       if (mounted) {
         setState(() {
@@ -113,18 +177,464 @@ class _AboutPageState extends State<AboutPage> {
     await _handleCheckUpdate();
   }
 
-  String _buildUpdateHint() {
+  Future<void> _handleSelectDownloadSource(
+    AppUpdateDownloadSource? source,
+  ) async {
+    if (source == null ||
+        _isUpdatingDownloadSource ||
+        source == _downloadSource) {
+      return;
+    }
+    setState(() {
+      _isUpdatingDownloadSource = true;
+    });
+
+    try {
+      final updatedSource = await AppUpdateService.setDownloadSource(source);
+      if (!mounted) return;
+      setState(() {
+        _downloadSource = updatedSource;
+        _updateStatus = AppUpdateService.statusNotifier.value;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      showToast(context.l10n.aboutApkSourceSwitchFailed, type: ToastType.error);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUpdatingDownloadSource = false;
+        });
+      }
+    }
+  }
+
+  String? _buildUpdateHint() {
     final status = _updateStatus;
-    if (status == null) {
-      return '检查 GitHub Release 获取最新版本';
+    if (status?.hasUpdate != true) return null;
+    return '${context.trLegacy('发现新版本')} ${status!.latestVersionLabel}';
+  }
+
+  void _openUserGuide() {
+    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
+    GoRouterManager.push(
+      '/webview/webview_page',
+      extra: <String, dynamic>{
+        'url': isEnglish ? _enUserGuideUrl : _zhUserGuideUrl,
+        'title': context.trLegacy('使用手册'),
+        'appBarBackClosesPage': true,
+      },
+    );
+  }
+
+  String _downloadSourceLabel(AppUpdateDownloadSource source) {
+    switch (source) {
+      case AppUpdateDownloadSource.cnb:
+        return context.l10n.aboutApkSourceOptionCnb;
+      case AppUpdateDownloadSource.github:
+        return context.l10n.aboutApkSourceOptionGithub;
     }
-    if (status.hasUpdate) {
-      return '发现新版本 ${status.latestVersionLabel}';
+  }
+
+  String _downloadSourceDescription(AppUpdateDownloadSource source) {
+    switch (source) {
+      case AppUpdateDownloadSource.cnb:
+        return context.l10n.aboutApkSourceOptionCnbDescription;
+      case AppUpdateDownloadSource.github:
+        return context.l10n.aboutApkSourceOptionGithubDescription;
     }
-    if (status.checkedAt > 0) {
-      return '已是最新版';
-    }
-    return '检查 GitHub Release 获取最新版本';
+  }
+
+  Widget _buildHero(bool compact) {
+    final palette = context.omniPalette;
+    return Column(
+      children: [
+        SizedBox(
+          width: compact ? 112 : 144,
+          height: compact ? 80 : 102,
+          child: Image.asset(
+            'assets/my/about_icon.png',
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              return const Icon(
+                Icons.image_rounded,
+                size: 72,
+                color: AppColors.primaryBlue,
+              );
+            },
+          ),
+        ),
+        SizedBox(height: compact ? 8 : 14),
+        Text(
+          context.l10n.brandName,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: AppTextStyles.fontFamily,
+            fontSize: compact ? 26 : 32,
+            fontWeight: FontWeight.w700,
+            letterSpacing: compact ? 0.2 : 0.4,
+            color: context.isDarkTheme ? palette.textPrimary : AppColors.text,
+          ),
+        ),
+        SizedBox(height: compact ? 8 : 14),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: compact ? 300 : 320),
+          child: Text(
+            context.l10n.aboutDescription,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: AppTextStyles.fontFamily,
+              fontSize: compact ? 10.5 : 12,
+              fontWeight: FontWeight.w400,
+              height: compact ? 1.35 : 1.5,
+              letterSpacing: compact ? 0.16 : 0.22,
+              color: context.isDarkTheme
+                  ? palette.textSecondary
+                  : AppColors.text70,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUpdateSection(
+    bool compact,
+    List<Color> updateButtonGradient,
+    Color updateButtonTextColor,
+  ) {
+    final palette = context.omniPalette;
+    final updateHint = _buildUpdateHint();
+
+    return Column(
+      children: [
+        Text(
+          _version,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: AppTextStyles.fontFamily,
+            fontSize: compact ? 11 : 12,
+            fontWeight: FontWeight.w400,
+            letterSpacing: 0.33,
+            height: 1.5,
+            color: context.isDarkTheme
+                ? palette.textSecondary
+                : AppColors.text70,
+          ),
+        ),
+        SizedBox(height: updateHint == null ? 12 : 10),
+        if (updateHint != null) ...[
+          Text(
+            updateHint,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: AppTextStyles.fontFamily,
+              fontSize: compact ? 10.5 : 11,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0.3,
+              height: 1.5,
+              color: context.isDarkTheme
+                  ? palette.textTertiary
+                  : AppColors.text50,
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        GradientButton(
+          text: _isCheckingUpdate
+              ? context.trLegacy('检查中...')
+              : (_updateStatus?.hasUpdate == true
+                    ? context.trLegacy('查看新版本')
+                    : context.trLegacy('检查更新')),
+          width: 180,
+          height: compact ? 40 : 44,
+          gradientColors: updateButtonGradient,
+          textStyle: TextStyle(
+            color: updateButtonTextColor,
+            fontSize: compact ? 15 : 16,
+            fontFamily: AppTextStyles.fontFamily,
+            fontWeight: FontWeight.w500,
+            height: 1.5,
+            letterSpacing: 0.5,
+          ),
+          enabled: !_isCheckingUpdate,
+          onTap: _handlePrimaryAction,
+        ),
+        const SizedBox(height: 12),
+        _buildAboutActionButton(
+          icon: Icons.receipt_long_outlined,
+          label: context.trLegacy('请求日志'),
+          compact: compact,
+          onPressed: () {
+            GoRouterManager.push('/my/about/request-logs');
+          },
+        ),
+        SizedBox(height: compact ? 6 : 8),
+        _buildAboutActionButton(
+          icon: Icons.bug_report_outlined,
+          label: context.trLegacy('运行日志'),
+          compact: compact,
+          onPressed: () {
+            GoRouterManager.push('/my/about/runtime-logs');
+          },
+        ),
+        SizedBox(height: compact ? 6 : 8),
+        _buildAboutActionButton(
+          icon: Icons.menu_book_outlined,
+          label: context.trLegacy('使用手册'),
+          compact: compact,
+          onPressed: _openUserGuide,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAboutActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    required bool compact,
+  }) {
+    final palette = context.omniPalette;
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        minimumSize: Size(180, compact ? 40 : 44),
+        foregroundColor: context.isDarkTheme
+            ? palette.textPrimary
+            : AppColors.text,
+        side: BorderSide(
+          color: context.isDarkTheme
+              ? const Color(0xFF2B3444)
+              : const Color(0xFFD6E0EE),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: const TextStyle(
+          fontFamily: AppTextStyles.fontFamily,
+          fontSize: 14.5,
+          fontWeight: FontWeight.w500,
+          height: 1.4,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFlatSettingRow({
+    required String title,
+    required String subtitle,
+    required Widget trailing,
+    VoidCallback? onTap,
+    bool isLast = false,
+    bool compact = false,
+  }) {
+    final palette = context.omniPalette;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        splashColor: palette.accentPrimary.withValues(alpha: 0.08),
+        highlightColor: Colors.transparent,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            4,
+            compact ? 12 : 14,
+            2,
+            compact ? (isLast ? 12 : 11) : (isLast ? 14 : 13),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontFamily: AppTextStyles.fontFamily,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: context.isDarkTheme
+                            ? palette.textPrimary
+                            : AppColors.text,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontFamily: AppTextStyles.fontFamily,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w400,
+                        height: 1.55,
+                        color: context.isDarkTheme
+                            ? palette.textSecondary
+                            : AppColors.text70,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              trailing,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFlatSectionDivider() {
+    final palette = context.omniPalette;
+    return Padding(
+      padding: const EdgeInsets.only(left: 12),
+      child: Divider(
+        height: 1,
+        thickness: 1,
+        color: palette.borderSubtle.withValues(
+          alpha: context.isDarkTheme ? 0.5 : 0.78,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDownloadSourceTrailing() {
+    final palette = context.omniPalette;
+    return DropdownButtonHideUnderline(
+      child: DropdownButton<AppUpdateDownloadSource>(
+        key: const ValueKey('about-download-source-dropdown'),
+        value: _downloadSource,
+        isDense: true,
+        itemHeight: null,
+        menuMaxHeight: 260,
+        dropdownColor: context.isDarkTheme
+            ? palette.surfacePrimary
+            : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        icon: Icon(
+          Icons.keyboard_arrow_down_rounded,
+          size: 18,
+          color: context.isDarkTheme ? palette.textTertiary : AppColors.text50,
+        ),
+        style: TextStyle(
+          color: context.isDarkTheme ? palette.textPrimary : AppColors.text,
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+          fontFamily: AppTextStyles.fontFamily,
+        ),
+        selectedItemBuilder: (context) {
+          return AppUpdateDownloadSource.values.map((source) {
+            return Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                _downloadSourceLabel(source),
+                style: TextStyle(
+                  color: context.isDarkTheme
+                      ? palette.textPrimary
+                      : AppColors.text,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  fontFamily: AppTextStyles.fontFamily,
+                ),
+              ),
+            );
+          }).toList();
+        },
+        items: AppUpdateDownloadSource.values.map((source) {
+          return DropdownMenuItem<AppUpdateDownloadSource>(
+            value: source,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _downloadSourceLabel(source),
+                    style: TextStyle(
+                      color: context.isDarkTheme
+                          ? palette.textPrimary
+                          : AppColors.text,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      fontFamily: AppTextStyles.fontFamily,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _downloadSourceDescription(source),
+                    style: TextStyle(
+                      color: context.isDarkTheme
+                          ? palette.textSecondary
+                          : AppColors.text70,
+                      fontWeight: FontWeight.w400,
+                      fontSize: 11,
+                      height: 1.35,
+                      fontFamily: AppTextStyles.fontFamily,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+        onChanged: _isUpdatingDownloadSource
+            ? null
+            : _handleSelectDownloadSource,
+      ),
+    );
+  }
+
+  Widget _buildPreferenceSection(bool compact) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SettingsSectionTitle(
+          label: context.l10n.aboutPreferencesSectionTitle,
+          bottomPadding: compact ? 6 : 8,
+        ),
+        AnimatedOpacity(
+          duration: const Duration(milliseconds: 180),
+          opacity: _isUpdatingBetaOptIn ? 0.72 : 1,
+          child: _buildFlatSettingRow(
+            title: context.l10n.aboutBetaProgramTitle,
+            subtitle: context.l10n.aboutBetaProgramDescription,
+            compact: compact,
+            onTap: _isUpdatingBetaOptIn
+                ? null
+                : () => _handleToggleBetaOptIn(!_betaOptIn),
+            trailing: IgnorePointer(
+              child: FlutterSwitch(
+                width: 44.8,
+                height: 25.0,
+                toggleSize: 15.3,
+                padding: 4.8,
+                activeColor: context.omniPalette.accentPrimary,
+                inactiveColor: context.omniPalette.borderStrong,
+                value: _betaOptIn,
+                borderRadius: 28.75,
+                onToggle: (_) {},
+              ),
+            ),
+          ),
+        ),
+        _buildFlatSectionDivider(),
+        AnimatedOpacity(
+          duration: const Duration(milliseconds: 180),
+          opacity: _isUpdatingDownloadSource ? 0.72 : 1,
+          child: _buildFlatSettingRow(
+            title: context.l10n.aboutApkSourceTitle,
+            subtitle: context.l10n.aboutApkSourceDescription,
+            compact: compact,
+            trailing: _buildDownloadSourceTrailing(),
+            isLast: true,
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -149,152 +659,50 @@ class _AboutPageState extends State<AboutPage> {
               ? Colors.white
               : const Color(0xFF171916))
         : Colors.white;
+
     return Scaffold(
-      backgroundColor: context.isDarkTheme
-          ? palette.pageBackground
-          : Colors.white,
-      appBar: const CommonAppBar(title: '关于小万', primary: true),
+      backgroundColor: palette.pageBackground,
+      appBar: CommonAppBar(
+        title: context.l10n.settingsAboutTitle,
+        primary: true,
+      ),
       body: SafeArea(
         top: false,
-        child: SizedBox(
-          width: double.infinity,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const SizedBox(height: 80),
-              // Logo
-              SizedBox(
-                width: 167,
-                height: 120,
-                child: Center(
-                  child: Image.asset(
-                    'assets/my/about_icon.png',
-                    width: 167,
-                    height: 120,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Icon(
-                        Icons.image,
-                        size: 96,
-                        color: AppColors.primaryBlue,
-                      );
-                    },
-                  ),
-                ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxHeight < 760;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                compact ? 8 : 18,
+                24,
+                compact ? 12 : 22,
               ),
-
-              const SizedBox(height: 24),
-
-              // 描述文字
-              Text(
-                '小万，是一款以智能对话为核心的手机AI助\n手，通过语义理解与持续学习能力，协助用户\n完成信息处理、决策辅助和日常管理。',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: AppTextStyles.fontFamily,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w400,
-                  color: context.isDarkTheme
-                      ? palette.textSecondary
-                      : AppColors.text70,
-                  letterSpacing: 0.39,
-                  height: 1.5,
-                ),
-              ),
-
-              const Spacer(),
-
-              // 版本号
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _version,
-                    textAlign: TextAlign.center,
-                    style:
-                        const TextStyle(
-                          fontFamily: AppTextStyles.fontFamily,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w400,
-                          letterSpacing: 0.33,
-                          height: 1.5,
-                        ).copyWith(
-                          color: context.isDarkTheme
-                              ? palette.textSecondary
-                              : AppColors.text70,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(height: compact ? 4 : 12),
+                        _buildHero(compact),
+                        SizedBox(height: compact ? 16 : 20),
+                        _buildUpdateSection(
+                          compact,
+                          updateButtonGradient,
+                          updateButtonTextColor,
                         ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 10),
-              Text(
-                _buildUpdateHint(),
-                textAlign: TextAlign.center,
-                style:
-                    const TextStyle(
-                      fontFamily: AppTextStyles.fontFamily,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 0.3,
-                      height: 1.5,
-                    ).copyWith(
-                      color: context.isDarkTheme
-                          ? palette.textTertiary
-                          : AppColors.text50,
+                        SizedBox(height: compact ? 18 : 24),
+                        _buildPreferenceSection(compact),
+                        SizedBox(height: compact ? 8 : 16),
+                      ],
                     ),
-              ),
-              const SizedBox(height: 16),
-              GradientButton(
-                text: _isCheckingUpdate
-                    ? '检查中...'
-                    : (_updateStatus?.hasUpdate == true ? '查看新版本' : '检查更新'),
-                width: 180,
-                height: 44,
-                gradientColors: updateButtonGradient,
-                textStyle: TextStyle(
-                  color: updateButtonTextColor,
-                  fontSize: 16,
-                  fontFamily: AppTextStyles.fontFamily,
-                  fontWeight: FontWeight.w500,
-                  height: 1.5,
-                  letterSpacing: 0.5,
-                ),
-                enabled: !_isCheckingUpdate,
-                onTap: () {
-                  _handlePrimaryAction();
-                },
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () {
-                  GoRouterManager.push('/my/about/request-logs');
-                },
-                icon: const Icon(Icons.receipt_long_outlined, size: 18),
-                label: const Text('请求日志'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(180, 44),
-                  foregroundColor: context.isDarkTheme
-                      ? palette.textPrimary
-                      : AppColors.text,
-                  side: BorderSide(
-                    color: context.isDarkTheme
-                        ? const Color(0xFF2B3444)
-                        : const Color(0xFFD6E0EE),
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  textStyle: const TextStyle(
-                    fontFamily: AppTextStyles.fontFamily,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    height: 1.4,
                   ),
                 ),
               ),
-              const SizedBox(height: 154),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );

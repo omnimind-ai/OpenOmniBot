@@ -1,3 +1,5 @@
+import 'package:ui/l10n/legacy_text_localizer.dart';
+
 enum FavoriteRecordType {
   imageRecognition,  // 识图
   unknown,           // 未知类型
@@ -16,9 +18,9 @@ extension FavoriteRecordTypeX on FavoriteRecordType {
   String get label {
     switch (this) {
       case FavoriteRecordType.imageRecognition:
-        return '识图';
+        return LegacyTextLocalizer.localize('识图');
       case FavoriteRecordType.unknown:
-        return '未知类型';
+        return LegacyTextLocalizer.localize('未知类型');
     }
   }
 

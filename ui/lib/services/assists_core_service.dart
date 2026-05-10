@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/services/agent_schedule_bridge_service.dart';
 import 'package:ui/services/app_state_service.dart';
 
@@ -36,20 +37,6 @@ typedef DispatchStreamErrorCallBack =
     );
 
 // Agent相关回调
-typedef AgentThinkingStartCallback = void Function(String taskId);
-typedef AgentThinkingUpdateCallback =
-    void Function(String taskId, String thinking);
-typedef AgentToolCallStartCallback = void Function(AgentToolEventData event);
-typedef AgentToolCallProgressCallback = void Function(AgentToolEventData event);
-typedef AgentToolCallCompleteCallback = void Function(AgentToolEventData event);
-typedef AgentChatMessageCallback =
-    void Function(
-      String taskId,
-      String message, {
-      bool isFinal,
-      double? prefillTokensPerSecond,
-      double? decodeTokensPerSecond,
-    });
 typedef AgentPromptTokenUsageCallback =
     void Function(
       String taskId,
@@ -63,20 +50,7 @@ typedef AgentContextCompactionStateCallback =
       int? latestPromptTokens,
       int? promptTokenThreshold,
     );
-typedef AgentClarifyCallback =
-    void Function(String taskId, String question, List<String> missingFields);
-typedef AgentCompleteCallback =
-    void Function(
-      String taskId,
-      bool success,
-      String outputKind,
-      bool hasUserVisibleOutput,
-      int? latestPromptTokens,
-      int? promptTokenThreshold,
-    );
-typedef AgentErrorCallback = void Function(String taskId, String error);
-typedef AgentPermissionRequiredCallback =
-    void Function(String taskId, List<String> missing);
+typedef AgentStreamEventCallback = void Function(AgentStreamEvent event);
 typedef ScheduledTaskCancelledCallBack = void Function(String taskId);
 typedef ScheduledTaskExecuteNowCallBack = void Function(String taskId);
 
@@ -233,19 +207,9 @@ class AssistsMessageService {
   static DispatchStreamErrorCallBack? _onDispatchStreamErrorCallBack;
 
   // Agent回调
-  static AgentThinkingStartCallback? _onAgentThinkingStartCallback;
-  static AgentThinkingUpdateCallback? _onAgentThinkingUpdateCallback;
-  static AgentToolCallStartCallback? _onAgentToolCallStartCallback;
-  static AgentToolCallProgressCallback? _onAgentToolCallProgressCallback;
-  static AgentToolCallCompleteCallback? _onAgentToolCallCompleteCallback;
-  static AgentChatMessageCallback? _onAgentChatMessageCallback;
   static AgentPromptTokenUsageCallback? _onAgentPromptTokenUsageCallback;
   static AgentContextCompactionStateCallback?
   _onAgentContextCompactionStateCallback;
-  static AgentClarifyCallback? _onAgentClarifyCallback;
-  static AgentCompleteCallback? _onAgentCompleteCallback;
-  static AgentErrorCallback? _onAgentErrorCallback;
-  static AgentPermissionRequiredCallback? _onAgentPermissionRequiredCallback;
 
   static ScheduledTaskCancelledCallBack? _onScheduledTaskCancelledCallBack;
   static ScheduledTaskExecuteNowCallBack? _onScheduledTaskExecuteNowCallBack;
@@ -266,6 +230,7 @@ class AssistsMessageService {
   static final List<ChatTaskMessageCallBack> _onChatTaskMessageCallBacks = [];
   static final List<ChatTaskMessageEndCallBack> _onChatTaskMessageEndCallBacks =
       [];
+  static final List<AgentStreamEventCallback> _onAgentStreamEventCallbacks = [];
   static final List<VLMTaskFinishEndCallBack> _onVLMTaskFinishCallBacks = [];
   static final List<CommonTaskFinishEndCallBack> _onCommonTaskFinishCallBacks =
       [];
@@ -415,59 +380,6 @@ class AssistsMessageService {
             data['isRateLimited'] == true,
           );
           break;
-        case 'onAgentThinkingStart':
-          _onAgentThinkingStartCallback?.call(
-            ((call.arguments as Map?)?['taskId'] ?? '').toString(),
-          );
-          break;
-        case 'onAgentThinkingUpdate':
-          final Map<String, dynamic> data = Map<String, dynamic>.from(
-            call.arguments,
-          );
-          _onAgentThinkingUpdateCallback?.call(
-            (data['taskId'] ?? '').toString(),
-            data['thinking'] ?? '',
-          );
-          break;
-        case 'onAgentToolCallStart':
-          _onAgentToolCallStartCallback?.call(
-            AgentToolEventData.fromMap(call.arguments as Map?),
-          );
-          break;
-        case 'onAgentToolCallProgress':
-          _onAgentToolCallProgressCallback?.call(
-            AgentToolEventData.fromMap(call.arguments as Map?),
-          );
-          break;
-        case 'onAgentToolCallComplete':
-          _onAgentToolCallCompleteCallback?.call(
-            AgentToolEventData.fromMap(call.arguments as Map?),
-          );
-          break;
-        case 'onAgentChatMessage':
-          final Map<String, dynamic> data = Map<String, dynamic>.from(
-            call.arguments,
-          );
-          final dynamic isFinalRaw = data['isFinal'];
-          final bool isFinal = isFinalRaw == null
-              ? true
-              : (isFinalRaw is bool
-                    ? isFinalRaw
-                    : isFinalRaw.toString().toLowerCase() == 'true');
-          final double? prefillTokensPerSecond = _asNullableDouble(
-            data['prefillTokensPerSecond'],
-          );
-          final double? decodeTokensPerSecond = _asNullableDouble(
-            data['decodeTokensPerSecond'],
-          );
-          _onAgentChatMessageCallback?.call(
-            (data['taskId'] ?? '').toString(),
-            (data['message'] ?? '').toString(),
-            isFinal: isFinal,
-            prefillTokensPerSecond: prefillTokensPerSecond,
-            decodeTokensPerSecond: decodeTokensPerSecond,
-          );
-          break;
         case 'onAgentPromptTokenUsageChanged':
           final Map<String, dynamic> data = Map<String, dynamic>.from(
             call.arguments,
@@ -493,56 +405,11 @@ class AssistsMessageService {
             _asNullableInt(data['promptTokenThreshold']),
           );
           break;
-        case 'onAgentClarifyRequired':
-          final Map<String, dynamic> data = Map<String, dynamic>.from(
-            call.arguments,
-          );
-          final List<String> missingFields =
-              (data['missingFields'] as List<dynamic>?)
-                  ?.map((e) => e.toString())
-                  .toList() ??
-              [];
-          _onAgentClarifyCallback?.call(
-            (data['taskId'] ?? '').toString(),
-            data['question'] ?? '',
-            missingFields,
-          );
-          break;
-        case 'onAgentComplete':
-          final Map<String, dynamic> data = Map<String, dynamic>.from(
-            call.arguments,
-          );
-          _onAgentCompleteCallback?.call(
-            (data['taskId'] ?? '').toString(),
-            data['success'] == true,
-            (data['outputKind'] ?? 'none').toString(),
-            data['hasUserVisibleOutput'] == true,
-            _asNullableInt(data['latestPromptTokens']),
-            _asNullableInt(data['promptTokenThreshold']),
-          );
-          break;
-        case 'onAgentError':
-          final Map<String, dynamic> data = Map<String, dynamic>.from(
-            call.arguments,
-          );
-          _onAgentErrorCallback?.call(
-            (data['taskId'] ?? '').toString(),
-            data['error'] ?? '',
-          );
-          break;
-        case 'onAgentPermissionRequired':
-          final Map<String, dynamic> data = Map<String, dynamic>.from(
-            call.arguments,
-          );
-          final List<String> missing =
-              (data['missing'] as List<dynamic>?)
-                  ?.map((e) => e.toString())
-                  .toList() ??
-              [];
-          _onAgentPermissionRequiredCallback?.call(
-            (data['taskId'] ?? '').toString(),
-            missing,
-          );
+        case 'onAgentStreamEvent':
+          final event = AgentStreamEvent.fromMap(call.arguments as Map?);
+          for (final callback in _onAgentStreamEventCallbacks) {
+            callback(event);
+          }
           break;
         case 'onScheduledTaskCancelled':
           final Map<String, dynamic> data = Map<String, dynamic>.from(
@@ -688,42 +555,6 @@ class AssistsMessageService {
     _onScheduledTaskExecuteNowCallBack = callback;
   }
 
-  static void setOnAgentThinkingStartCallback(
-    AgentThinkingStartCallback? callback,
-  ) {
-    _onAgentThinkingStartCallback = callback;
-  }
-
-  static void setOnAgentThinkingUpdateCallback(
-    AgentThinkingUpdateCallback? callback,
-  ) {
-    _onAgentThinkingUpdateCallback = callback;
-  }
-
-  static void setOnAgentToolCallStartCallback(
-    AgentToolCallStartCallback? callback,
-  ) {
-    _onAgentToolCallStartCallback = callback;
-  }
-
-  static void setOnAgentToolCallProgressCallback(
-    AgentToolCallProgressCallback? callback,
-  ) {
-    _onAgentToolCallProgressCallback = callback;
-  }
-
-  static void setOnAgentToolCallCompleteCallback(
-    AgentToolCallCompleteCallback? callback,
-  ) {
-    _onAgentToolCallCompleteCallback = callback;
-  }
-
-  static void setOnAgentChatMessageCallback(
-    AgentChatMessageCallback? callback,
-  ) {
-    _onAgentChatMessageCallback = callback;
-  }
-
   static void setOnAgentPromptTokenUsageCallback(
     AgentPromptTokenUsageCallback? callback,
   ) {
@@ -736,14 +567,6 @@ class AssistsMessageService {
     _onAgentContextCompactionStateCallback = callback;
   }
 
-  static void setOnAgentClarifyCallback(AgentClarifyCallback? callback) {
-    _onAgentClarifyCallback = callback;
-  }
-
-  static void setOnAgentCompleteCallback(AgentCompleteCallback? callback) {
-    _onAgentCompleteCallback = callback;
-  }
-
   static int? _asNullableInt(dynamic raw) {
     if (raw is int) return raw;
     if (raw is num) return raw.toInt();
@@ -751,21 +574,18 @@ class AssistsMessageService {
     return null;
   }
 
-  static double? _asNullableDouble(dynamic raw) {
-    if (raw is double) return raw;
-    if (raw is num) return raw.toDouble();
-    if (raw is String) return double.tryParse(raw.trim());
-    return null;
-  }
-
-  static void setOnAgentErrorCallback(AgentErrorCallback? callback) {
-    _onAgentErrorCallback = callback;
-  }
-
-  static void setOnAgentPermissionRequiredCallback(
-    AgentPermissionRequiredCallback? callback,
+  static void setOnAgentStreamEventCallback(
+    AgentStreamEventCallback? callback,
   ) {
-    _onAgentPermissionRequiredCallback = callback;
+    if (callback != null && !_onAgentStreamEventCallbacks.contains(callback)) {
+      _onAgentStreamEventCallbacks.add(callback);
+    }
+  }
+
+  static void removeOnAgentStreamEventCallback(
+    AgentStreamEventCallback? callback,
+  ) {
+    _onAgentStreamEventCallbacks.remove(callback);
   }
 
   // 发送按钮点击事件到Android端

@@ -9,12 +9,14 @@ class HomeDrawerSearchField extends StatelessWidget {
     required this.focusNode,
     required this.isSearching,
     required this.textColor,
+    this.hintText,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool isSearching;
   final Color textColor;
+  final String? hintText;
 
   bool get _hasQuery => controller.text.trim().isNotEmpty;
 
@@ -79,7 +81,7 @@ class HomeDrawerSearchField extends StatelessWidget {
         ),
         cursorColor: palette.accentPrimary,
         decoration: InputDecoration(
-          hintText: context.l10n.homeDrawerSearchHint,
+          hintText: hintText ?? context.l10n.homeDrawerSearchHint,
           hintStyle: TextStyle(
             fontSize: 13,
             color: palette.textTertiary,

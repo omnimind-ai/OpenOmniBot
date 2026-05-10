@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ui/models/chat_message_model.dart';
@@ -73,7 +76,7 @@ class ConversationHistoryService {
           clearRequestKey: true,
         );
       } catch (e) {
-        print('解析当前线程目标失败: $e');
+        debugPrint('解析当前线程目标失败: $e');
       }
     }
     final conversationId = await getCurrentConversationId(mode: mode);
@@ -141,7 +144,7 @@ class ConversationHistoryService {
     try {
       return ConversationThreadTarget.fromEncodedJson(raw);
     } catch (e) {
-      print('解析上次可见线程失败: $e');
+      debugPrint('解析上次可见线程失败: $e');
       return null;
     }
   }
@@ -174,7 +177,7 @@ class ConversationHistoryService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.reload();
     } catch (e) {
-      print('刷新本地缓存失败: $e');
+      debugPrint('刷新本地缓存失败: $e');
     }
   }
 
@@ -187,6 +190,17 @@ class ConversationHistoryService {
 
   static String _legacyConversationMessagesKey(int conversationId) {
     return '$_conversationMessagesKey$conversationId';
+  }
+
+  static List<String> _legacyConversationMessageKeys(
+    int conversationId, {
+    required ConversationMode mode,
+  }) {
+    final keys = <String>[conversationMessagesKey(conversationId, mode: mode)];
+    if (mode == ConversationMode.normal) {
+      keys.add(_legacyConversationMessagesKey(conversationId));
+    }
+    return keys;
   }
 
   static ConversationMessageStorageKey? tryParseConversationMessagesKey(
@@ -228,16 +242,41 @@ class ConversationHistoryService {
     ConversationMode mode = ConversationMode.normal,
   }) async {
     final jsonList = messages.map((m) => m.toJson()).toList();
+    final stored = await _replaceNativeConversationMessages(
+      conversationId,
+      jsonList,
+      mode: mode,
+    );
+    if (stored) {
+      await _clearLegacyConversationMessages(conversationId, mode: mode);
+      return;
+    }
+
+    await _writeLegacyConversationMessages(
+      conversationId,
+      jsonList,
+      mode: mode,
+    );
+  }
+
+  static Future<bool> _replaceNativeConversationMessages(
+    int conversationId,
+    List<Map<String, dynamic>> jsonList, {
+    required ConversationMode mode,
+  }) async {
     try {
       await _assistCore.invokeMethod('replaceConversationMessages', {
         'conversationId': conversationId,
         'mode': mode.storageValue,
         'messages': jsonList,
       });
+      return true;
     } on PlatformException catch (e) {
-      print('保存对话历史失败: ${e.message}');
+      debugPrint('保存对话历史失败: ${e.message}');
+      return false;
     } catch (e) {
-      print('保存对话历史异常: $e');
+      debugPrint('保存对话历史异常: $e');
+      return false;
     }
   }
 
@@ -245,28 +284,308 @@ class ConversationHistoryService {
   static Future<List<ChatMessageModel>> getConversationMessages(
     int conversationId, {
     ConversationMode mode = ConversationMode.normal,
+    int? expectedMessageCount,
   }) async {
     try {
       final result = await _assistCore.invokeMethod<List<dynamic>>(
         'getConversationMessages',
         {'conversationId': conversationId, 'mode': mode.storageValue},
       );
-      if (result == null) return [];
-      return result
-          .whereType<Map>()
-          .map(
-            (json) => ChatMessageModel.fromJson(
-              Map<String, dynamic>.from(json.cast<String, dynamic>()),
-            ),
-          )
-          .where(_shouldRetainRestoredMessage)
-          .toList();
+      final nativeMessages = _decodeMessageList(result);
+      return _resolveNativeAndLegacyMessages(
+        conversationId,
+        mode: mode,
+        nativeMessages: nativeMessages,
+        expectedMessageCount: expectedMessageCount,
+      );
     } on PlatformException catch (e) {
-      print('获取对话历史失败: ${e.message}');
-      return [];
+      debugPrint('获取对话历史失败: ${e.message}');
     } catch (e) {
-      print('解析对话历史失败: $e');
-      return [];
+      debugPrint('解析对话历史失败: $e');
+    }
+
+    return _restoreLegacyConversationMessages(
+      conversationId,
+      mode: mode,
+      expectedMessageCount: expectedMessageCount,
+    );
+  }
+
+  /// 分页获取对话消息列表
+  static Future<({List<ChatMessageModel> messages, bool hasMore})>
+  getConversationMessagesPaged(
+    int conversationId, {
+    ConversationMode mode = ConversationMode.normal,
+    int limit = 20,
+    int offset = 0,
+    int? expectedMessageCount,
+  }) async {
+    try {
+      final result = await _assistCore
+          .invokeMethod<Map<dynamic, dynamic>>('getConversationMessagesPaged', {
+            'conversationId': conversationId,
+            'mode': mode.storageValue,
+            'limit': limit,
+            'offset': offset,
+          });
+      if (result == null) {
+        return _legacyPagedConversationMessages(
+          conversationId,
+          mode: mode,
+          limit: limit,
+          offset: offset,
+          expectedMessageCount: expectedMessageCount,
+        );
+      }
+      final messagesList = result['messages'] as List<dynamic>? ?? [];
+      final hasMore = result['hasMore'] as bool? ?? false;
+      final messages = _decodeMessageList(messagesList);
+      if (!hasMore && offset == 0) {
+        final recoveredMessages = await _resolveNativeAndLegacyMessages(
+          conversationId,
+          mode: mode,
+          nativeMessages: messages,
+          expectedMessageCount: expectedMessageCount,
+        );
+        final pageSize = limit <= 0 ? recoveredMessages.length : limit;
+        return (
+          messages: recoveredMessages.take(pageSize).toList(),
+          hasMore: recoveredMessages.length > pageSize,
+        );
+      }
+      return (messages: messages, hasMore: hasMore);
+    } on PlatformException catch (e) {
+      debugPrint('分页获取对话历史失败: ${e.message}');
+    } catch (e) {
+      debugPrint('分页解析对话历史失败: $e');
+    }
+
+    return _legacyPagedConversationMessages(
+      conversationId,
+      mode: mode,
+      limit: limit,
+      offset: offset,
+      expectedMessageCount: expectedMessageCount,
+    );
+  }
+
+  static Future<({List<ChatMessageModel> messages, bool hasMore})>
+  _legacyPagedConversationMessages(
+    int conversationId, {
+    required ConversationMode mode,
+    required int limit,
+    required int offset,
+    int? expectedMessageCount,
+  }) async {
+    if (offset != 0) {
+      return (messages: <ChatMessageModel>[], hasMore: false);
+    }
+    final legacyMessages = await _restoreLegacyConversationMessages(
+      conversationId,
+      mode: mode,
+      expectedMessageCount: expectedMessageCount,
+    );
+    final pageSize = limit <= 0 ? legacyMessages.length : limit;
+    return (
+      messages: legacyMessages.take(pageSize).toList(),
+      hasMore: legacyMessages.length > pageSize,
+    );
+  }
+
+  static List<ChatMessageModel> _decodeMessageList(dynamic raw) {
+    if (raw is! List) return <ChatMessageModel>[];
+    return raw
+        .whereType<Map>()
+        .map(
+          (json) => ChatMessageModel.fromJson(
+            Map<String, dynamic>.from(json.cast<String, dynamic>()),
+          ),
+        )
+        .where(_shouldRetainRestoredMessage)
+        .toList();
+  }
+
+  static Future<List<ChatMessageModel>> _restoreLegacyConversationMessages(
+    int conversationId, {
+    required ConversationMode mode,
+    int? expectedMessageCount,
+  }) async {
+    return _resolveNativeAndLegacyMessages(
+      conversationId,
+      mode: mode,
+      nativeMessages: const <ChatMessageModel>[],
+      expectedMessageCount: expectedMessageCount,
+    );
+  }
+
+  static Future<List<ChatMessageModel>> _resolveNativeAndLegacyMessages(
+    int conversationId, {
+    required ConversationMode mode,
+    required List<ChatMessageModel> nativeMessages,
+    int? expectedMessageCount,
+  }) async {
+    final legacyMessages = await _readLegacyConversationMessages(
+      conversationId,
+      mode: mode,
+    );
+    if (legacyMessages.isEmpty) {
+      return nativeMessages;
+    }
+    if (expectedMessageCount != null &&
+        expectedMessageCount <= nativeMessages.length) {
+      await _clearLegacyConversationMessages(conversationId, mode: mode);
+      return nativeMessages;
+    }
+
+    final recoveredMessages = nativeMessages.isEmpty
+        ? legacyMessages
+        : _mergeMessageSnapshots(
+            nativeMessages: nativeMessages,
+            legacyMessages: legacyMessages,
+          );
+    if (recoveredMessages.length <= nativeMessages.length) {
+      await _clearLegacyConversationMessages(conversationId, mode: mode);
+      return nativeMessages;
+    }
+
+    final jsonList = recoveredMessages
+        .map((message) => message.toJson())
+        .toList();
+    final migrated = await _replaceNativeConversationMessages(
+      conversationId,
+      jsonList,
+      mode: mode,
+    );
+    if (migrated) {
+      await _clearLegacyConversationMessages(conversationId, mode: mode);
+    }
+    return recoveredMessages;
+  }
+
+  static List<ChatMessageModel> _mergeMessageSnapshots({
+    required List<ChatMessageModel> nativeMessages,
+    required List<ChatMessageModel> legacyMessages,
+  }) {
+    final seen = <String>{};
+    final indexedMessages = <({ChatMessageModel message, int order})>[];
+
+    void appendIfNew(ChatMessageModel message, int order) {
+      final key = _messageIdentityKey(message);
+      if (!seen.add(key)) {
+        return;
+      }
+      indexedMessages.add((message: message, order: order));
+    }
+
+    for (var index = 0; index < nativeMessages.length; index += 1) {
+      appendIfNew(nativeMessages[index], index);
+    }
+    for (var index = 0; index < legacyMessages.length; index += 1) {
+      appendIfNew(legacyMessages[index], nativeMessages.length + index);
+    }
+
+    indexedMessages.sort((left, right) {
+      final byCreatedAt = right.message.createAt.compareTo(
+        left.message.createAt,
+      );
+      if (byCreatedAt != 0) return byCreatedAt;
+      return left.order.compareTo(right.order);
+    });
+    return indexedMessages.map((item) => item.message).toList();
+  }
+
+  static String _messageIdentityKey(ChatMessageModel message) {
+    final id = message.id.trim();
+    if (id.isNotEmpty) {
+      return 'id:$id';
+    }
+    final contentId = message.contentId?.trim() ?? '';
+    if (contentId.isNotEmpty) {
+      return 'content:$contentId';
+    }
+    final dbId = message.dbId;
+    if (dbId != null) {
+      return 'db:$dbId';
+    }
+    return [
+      'fallback',
+      message.type,
+      message.user,
+      message.createAt.millisecondsSinceEpoch,
+      jsonEncode(message.content ?? const <String, dynamic>{}),
+    ].join(':');
+  }
+
+  static Future<List<ChatMessageModel>> _readLegacyConversationMessages(
+    int conversationId, {
+    required ConversationMode mode,
+  }) async {
+    final prefs = await _optionalSharedPreferences(operation: '读取旧版对话历史');
+    if (prefs == null) {
+      return <ChatMessageModel>[];
+    }
+    for (final key in _legacyConversationMessageKeys(
+      conversationId,
+      mode: mode,
+    )) {
+      final raw = prefs.getString(key);
+      if (raw == null || raw.trim().isEmpty) {
+        continue;
+      }
+      try {
+        final decoded = jsonDecode(raw);
+        final messages = _decodeMessageList(decoded);
+        if (messages.isNotEmpty) {
+          return messages;
+        }
+      } catch (e) {
+        debugPrint('解析旧版对话历史失败 key=$key: $e');
+      }
+    }
+    return <ChatMessageModel>[];
+  }
+
+  static Future<void> _writeLegacyConversationMessages(
+    int conversationId,
+    List<Map<String, dynamic>> jsonList, {
+    required ConversationMode mode,
+  }) async {
+    final prefs = await _optionalSharedPreferences(operation: '写入旧版对话历史兜底');
+    if (prefs == null) {
+      return;
+    }
+    await prefs.setString(
+      conversationMessagesKey(conversationId, mode: mode),
+      jsonEncode(jsonList),
+    );
+  }
+
+  static Future<void> _clearLegacyConversationMessages(
+    int conversationId, {
+    required ConversationMode mode,
+  }) async {
+    final prefs = await _optionalSharedPreferences(operation: '清理旧版对话历史');
+    if (prefs == null) {
+      return;
+    }
+    for (final key in _legacyConversationMessageKeys(
+      conversationId,
+      mode: mode,
+    )) {
+      await prefs.remove(key);
+    }
+  }
+
+  static Future<SharedPreferences?> _optionalSharedPreferences({
+    required String operation,
+  }) async {
+    try {
+      return await SharedPreferences.getInstance();
+    } on MissingPluginException {
+      return null;
+    } catch (e) {
+      debugPrint('$operation 跳过：$e');
+      return null;
     }
   }
 
@@ -303,9 +622,9 @@ class ConversationHistoryService {
         'createdAt': createdAtMillis,
       });
     } on PlatformException catch (e) {
-      print('保存 UI 卡片失败: ${e.message}');
+      debugPrint('保存 UI 卡片失败: ${e.message}');
     } catch (e) {
-      print('保存 UI 卡片异常: $e');
+      debugPrint('保存 UI 卡片异常: $e');
     }
   }
 
@@ -320,10 +639,11 @@ class ConversationHistoryService {
         'mode': mode.storageValue,
       });
     } on PlatformException catch (e) {
-      print('清理对话历史失败: ${e.message}');
+      debugPrint('清理对话历史失败: ${e.message}');
     } catch (e) {
-      print('清理对话历史异常: $e');
+      debugPrint('清理对话历史异常: $e');
     }
+    await _clearLegacyConversationMessages(conversationId, mode: mode);
   }
 }
 

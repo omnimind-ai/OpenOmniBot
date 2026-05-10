@@ -34,7 +34,14 @@ data class ChatCompletionRequest(
     @SerialName("reasoning_effort")
     val reasoningEffort: String? = null,
     @SerialName("enable_thinking")
-    val enableThinking: Boolean? = null
+    val enableThinking: Boolean? = null,
+    val thinking: ChatCompletionThinking? = null,
+    val audio: ChatCompletionAudioRequest? = null
+)
+
+@Serializable
+data class ChatCompletionThinking(
+    val type: String
 )
 
 @Serializable
@@ -47,8 +54,11 @@ data class ChatCompletionStreamOptions(
 data class ChatCompletionMessage(
     val role: String,
     val content: JsonElement? = null,
+    val audio: ChatCompletionAudioResponse? = null,
     @SerialName("tool_calls")
     val toolCalls: List<AssistantToolCall>? = null,
+    @SerialName("reasoning_content")
+    val reasoningContent: String? = null,
     @SerialName("tool_call_id")
     val toolCallId: String? = null,
     val name: String? = null
@@ -103,6 +113,7 @@ data class ChatCompletionChoice(
 data class ChatCompletionAssistantMessage(
     val role: String = "assistant",
     val content: JsonElement? = null,
+    val audio: ChatCompletionAudioResponse? = null,
     @SerialName("tool_calls")
     val toolCalls: List<AssistantToolCall>? = null,
     @SerialName("function_call")
@@ -135,6 +146,7 @@ data class ChatCompletionStreamChoice(
 data class ChatCompletionDelta(
     val role: String? = null,
     val content: String? = null,
+    val audio: ChatCompletionAudioResponse? = null,
     @SerialName("tool_calls")
     val toolCalls: List<ChatCompletionToolCallDelta>? = null,
     @SerialName("function_call")
@@ -187,6 +199,46 @@ data class ChatCompletionTurn(
     val reasoning: String = "",
     val finishReason: String? = null,
     val usage: ChatCompletionUsage? = null
+)
+
+fun decodeChatCompletionUsage(element: JsonElement?): ChatCompletionUsage? {
+    val obj = element as? JsonObject ?: return null
+    val performance = obj["performance"] as? JsonObject
+    return ChatCompletionUsage(
+        promptTokens = obj["prompt_tokens"]?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
+        completionTokens = obj["completion_tokens"]?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
+        totalTokens = obj["total_tokens"]?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
+        prefillTokensPerSecond =
+            obj["prefill_tokens_per_second"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
+                ?: performance?.get("prefill_tokens_per_second")
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.toDoubleOrNull(),
+        decodeTokensPerSecond =
+            obj["decode_tokens_per_second"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
+                ?: performance?.get("decode_tokens_per_second")
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.toDoubleOrNull(),
+        promptTokensDetails = obj["prompt_tokens_details"],
+        completionTokensDetails = obj["completion_tokens_details"]
+    )
+}
+
+@Serializable
+data class ChatCompletionAudioRequest(
+    val voice: String,
+    val format: String
+)
+
+@Serializable
+data class ChatCompletionAudioResponse(
+    val data: String? = null,
+    val id: String? = null,
+    @SerialName("expires_at")
+    val expiresAt: Long? = null,
+    val transcript: String? = null,
+    val format: String? = null
 )
 
 fun ChatCompletionMessage.contentText(): String {

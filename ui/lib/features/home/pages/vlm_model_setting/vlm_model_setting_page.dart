@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:ui/services/assists_core_service.dart';
@@ -34,6 +36,25 @@ const String _kPackageSvg = '''
 </svg>
 ''';
 
+const String _kInputImageSvg = '''
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image-icon lucide-image"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+''';
+
+const String _kInputTextSvg = '''
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-file-text-icon lucide-file-text"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+''';
+
+const String _kInputPdfSvg = '''
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-file-icon lucide-file"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/></svg>
+''';
+
+const String _kReasoningSvg = '''
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.524 5.77 4 4 0 0 0 1.07 6.046A3.5 3.5 0 0 0 12 18.5"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.524 5.77 4 4 0 0 1-1.07 6.046A3.5 3.5 0 0 1 12 18.5"/><path d="M12 5v13.5"/><path d="M8 14h.01"/><path d="M16 14h.01"/><path d="M9 9h.01"/><path d="M15 9h.01"/></svg>
+''';
+
+const String _kGroupToggleClosedIconAsset =
+    'assets/home/chat/mode_menu_closed.svg';
+const String _kGroupToggleOpenIconAsset = 'assets/home/chat/mode_menu_open.svg';
 const double _kProviderSwitchPopupMaxHeight = 320;
 
 enum _ProviderModelSource { manual, remote }
@@ -46,19 +67,18 @@ class _ProtocolTypeOption {
 }
 
 const List<_ProtocolTypeOption> _kProtocolTypeOptions = <_ProtocolTypeOption>[
+  _ProtocolTypeOption(value: 'deepseek', label: 'DeepSeek'),
   _ProtocolTypeOption(value: 'openai_compatible', label: 'OpenAI'),
   _ProtocolTypeOption(value: 'anthropic', label: 'Anthropic'),
 ];
 
 class _ProviderModelItem {
-  const _ProviderModelItem({required this.id, required this.source});
+  const _ProviderModelItem({required this.model, required this.source});
 
-  final String id;
+  final ProviderModelOption model;
   final _ProviderModelSource source;
 
-  String get sourceLabel {
-    return source == _ProviderModelSource.manual ? '手动' : '自动';
-  }
+  String get id => model.id;
 }
 
 class VlmModelSettingPage extends StatefulWidget {
@@ -77,6 +97,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
   final FocusNode _apiKeyFocusNode = FocusNode();
 
   static const Duration _autoSaveDebounce = Duration(milliseconds: 600);
+  static const Duration _modelGroupToggleDuration = Duration(milliseconds: 240);
   static const double _modelDeleteExtentRatio = 0.24;
   static const double _modelDeleteIconSize = 18;
   static const BorderRadius _modelDeleteActionRadius = BorderRadius.only(
@@ -98,9 +119,11 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
 
   List<ModelProviderProfileSummary> _profiles = const [];
   String _editingProfileId = '';
+  List<ProviderModelOption> _manualModels = const [];
   List<ProviderModelOption> _remoteModels = const [];
   List<String> _manualModelIds = const [];
   Set<String> _deletingModelIds = <String>{};
+  final Map<String, bool> _expandedModelGroups = <String, bool>{};
 
   ModelProviderProfileSummary? get _currentProfile {
     for (final profile in _profiles) {
@@ -121,9 +144,6 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
       _isDarkTheme ? context.omniPalette.pageBackground : AppColors.background;
   Color get _cardColor =>
       _isDarkTheme ? context.omniPalette.surfacePrimary : Colors.white;
-  Color get _surfaceColor => _isDarkTheme
-      ? context.omniPalette.surfaceSecondary
-      : const Color(0xFFF8FAFC);
   Color get _primaryTextColor =>
       _isDarkTheme ? context.omniPalette.textPrimary : AppColors.text;
   Color get _secondaryTextColor =>
@@ -148,18 +168,26 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
   List<_ProviderModelItem> get _modelItems {
     final items = <_ProviderModelItem>[];
     final seen = <String>{};
+    final manualModels = _manualModels.isNotEmpty || _manualModelIds.isEmpty
+        ? _manualModels
+        : _manualModelIds
+              .map(
+                (id) => ProviderModelOption(
+                  id: id,
+                  displayName: id,
+                  ownedBy: 'manual',
+                ),
+              )
+              .toList();
 
-    for (final modelId in _manualModelIds) {
-      final normalized = modelId.trim();
+    for (final model in manualModels) {
+      final normalized = model.id.trim();
       if (!ModelProviderConfigService.isValidModelName(normalized)) {
         continue;
       }
       if (seen.add(normalized)) {
         items.add(
-          _ProviderModelItem(
-            id: normalized,
-            source: _ProviderModelSource.manual,
-          ),
+          _ProviderModelItem(model: model, source: _ProviderModelSource.manual),
         );
       }
     }
@@ -171,15 +199,78 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
       }
       if (seen.add(normalized)) {
         items.add(
-          _ProviderModelItem(
-            id: normalized,
-            source: _ProviderModelSource.remote,
-          ),
+          _ProviderModelItem(model: model, source: _ProviderModelSource.remote),
         );
       }
     }
 
     return items;
+  }
+
+  List<MapEntry<String, List<_ProviderModelItem>>> get _modelGroups {
+    final groups = <String, List<_ProviderModelItem>>{};
+    final current = _currentProfile;
+    final providerGroupId = current?.id.trim().isNotEmpty == true
+        ? current!.id.trim()
+        : current?.name.trim() ?? '';
+    for (final item in _modelItems) {
+      final group =
+          (item.model.group?.trim().isNotEmpty == true
+                  ? item.model.group!.trim()
+                  : ModelProviderConfigService.defaultModelGroupName(
+                      item.id,
+                      providerId: providerGroupId,
+                    ))
+              .trim();
+      final groupName = group.isEmpty ? 'other' : group;
+      groups.putIfAbsent(groupName, () => <_ProviderModelItem>[]).add(item);
+    }
+    return groups.entries.toList();
+  }
+
+  String _modelGroupExpansionKey(String groupName) {
+    final profileKey = _editingProfileId.trim().isEmpty
+        ? 'default'
+        : _editingProfileId.trim();
+    return '$profileKey::$groupName';
+  }
+
+  bool _isModelGroupExpanded(String groupName) {
+    return _expandedModelGroups[_modelGroupExpansionKey(groupName)] ?? true;
+  }
+
+  void _toggleModelGroup(String groupName) {
+    setState(() {
+      final key = _modelGroupExpansionKey(groupName);
+      _expandedModelGroups[key] = !_isModelGroupExpanded(groupName);
+    });
+  }
+
+  bool _hasAnyExpandedModelGroup(
+    List<MapEntry<String, List<_ProviderModelItem>>> groups,
+  ) {
+    return groups.any((group) => _isModelGroupExpanded(group.key));
+  }
+
+  bool _areAllModelGroupsCollapsed(
+    List<MapEntry<String, List<_ProviderModelItem>>> groups,
+  ) {
+    return groups.isNotEmpty &&
+        groups.every((group) => !_isModelGroupExpanded(group.key));
+  }
+
+  void _toggleAllModelGroups(
+    List<MapEntry<String, List<_ProviderModelItem>>> groups,
+  ) {
+    if (groups.isEmpty) {
+      return;
+    }
+    final shouldExpand = _areAllModelGroupsCollapsed(groups);
+    setState(() {
+      for (final group in groups) {
+        _expandedModelGroups[_modelGroupExpansionKey(group.key)] = shouldExpand;
+      }
+    });
   }
 
   @override
@@ -359,10 +450,11 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
         (profile) => profile.id == payload.editingProfileId,
         orElse: () => payload.profiles.first,
       );
+      final manualModelIds = await ModelProviderConfigService.getManualModelIds(
+        profileId: editingProfile.id,
+      );
       final storedModels = await Future.wait<dynamic>([
-        ModelProviderConfigService.getManualModelIds(
-          profileId: editingProfile.id,
-        ),
+        _loadManualModelsForProfile(editingProfile, manualModelIds),
         _loadRemoteModelsForProfile(editingProfile),
       ]);
       if (!mounted) return;
@@ -370,13 +462,14 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
       _applyProfile(
         profiles: payload.profiles,
         editingProfileId: editingProfile.id,
-        manualModelIds: storedModels[0] as List<String>,
+        manualModelIds: manualModelIds,
+        manualModels: storedModels[0] as List<ProviderModelOption>,
         remoteModels: storedModels[1] as List<ProviderModelOption>,
         syncControllers: true,
       );
     } catch (_) {
       if (!mounted) return;
-      showToast('加载模型提供商配置失败', type: ToastType.error);
+      showToast(context.l10n.modelProviderLoadFailed, type: ToastType.error);
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -388,6 +481,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
     required List<ModelProviderProfileSummary> profiles,
     required String editingProfileId,
     required List<String> manualModelIds,
+    required List<ProviderModelOption> manualModels,
     required List<ProviderModelOption> remoteModels,
     required bool syncControllers,
   }) {
@@ -404,6 +498,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
       _profiles = profiles;
       _editingProfileId = current.id;
       _manualModelIds = manualModelIds;
+      _manualModels = manualModels;
       _remoteModels = remoteModels;
       _selectedProtocolType = current.protocolType;
     });
@@ -430,16 +525,47 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
       try {
         return await ModelProviderConfigService.fetchModels(
           profileId: profile.id,
+          providerName: profile.name,
         );
       } catch (_) {
-        return ModelProviderConfigService.getCachedFetchedModels(
+        final cached = await ModelProviderConfigService.getCachedFetchedModels(
           profileId: profile.id,
         );
+        return _enrichModelsForProfile(profile, cached);
       }
     }
-    return ModelProviderConfigService.getCachedFetchedModels(
+    final cached = await ModelProviderConfigService.getCachedFetchedModels(
       profileId: profile.id,
       apiBase: profile.baseUrl,
+    );
+    return _enrichModelsForProfile(profile, cached);
+  }
+
+  Future<List<ProviderModelOption>> _loadManualModelsForProfile(
+    ModelProviderProfileSummary profile,
+    List<String> manualModelIds,
+  ) {
+    final manualModels = manualModelIds
+        .map(
+          (modelId) => ProviderModelOption(
+            id: modelId,
+            displayName: modelId,
+            ownedBy: 'manual',
+          ),
+        )
+        .toList();
+    return _enrichModelsForProfile(profile, manualModels);
+  }
+
+  Future<List<ProviderModelOption>> _enrichModelsForProfile(
+    ModelProviderProfileSummary profile,
+    List<ProviderModelOption> models,
+  ) {
+    return ModelProviderConfigService.enrichModelsForProfile(
+      profileId: profile.id,
+      providerName: profile.name,
+      apiBase: profile.baseUrl,
+      models: models,
     );
   }
 
@@ -471,69 +597,30 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
       final selected = await ModelProviderConfigService.setEditingProfile(
         profileId,
       );
+      final manualModelIds = await ModelProviderConfigService.getManualModelIds(
+        profileId: selected.id,
+      );
       final storedModels = await Future.wait<dynamic>([
-        ModelProviderConfigService.getManualModelIds(profileId: selected.id),
+        _loadManualModelsForProfile(selected, manualModelIds),
         _loadRemoteModelsForProfile(selected),
       ]);
       if (!mounted) return;
       _applyProfile(
         profiles: _profiles,
         editingProfileId: selected.id,
-        manualModelIds: storedModels[0] as List<String>,
+        manualModelIds: manualModelIds,
+        manualModels: storedModels[0] as List<ProviderModelOption>,
         remoteModels: storedModels[1] as List<ProviderModelOption>,
         syncControllers: true,
       );
     } catch (e) {
       if (!mounted) return;
-      showToast('切换提供商失败：$e', type: ToastType.error);
+      showToast(
+        context.l10n.modelProviderSwitchFailed(e.toString()),
+        type: ToastType.error,
+      );
     } finally {
       _isSwitchingProfile = false;
-    }
-  }
-
-  Future<void> _fetchModels({bool silentError = false}) async {
-    final current = _currentProfile;
-    if (current == null || _isFetchingModels) return;
-    final baseUrl = _baseUrlController.text.trim();
-    final apiKey = _apiKeyController.text.trim();
-
-    if (baseUrl.isEmpty) {
-      if (!silentError) {
-        showToast('请先填写 Base URL', type: ToastType.warning);
-      }
-      return;
-    }
-    if (!ModelProviderConfigService.isValidApiBase(baseUrl)) {
-      if (!silentError) {
-        showToast('Base URL 格式不正确，请输入 http(s) 地址', type: ToastType.error);
-      }
-      return;
-    }
-
-    setState(() => _isFetchingModels = true);
-    try {
-      final models = await ModelProviderConfigService.fetchModels(
-        apiBase: baseUrl,
-        apiKey: apiKey,
-        profileId: current.id,
-      );
-      if (!mounted) return;
-      setState(() {
-        _remoteModels = models;
-      });
-      if (!silentError) {
-        showToast(
-          models.isEmpty ? '未获取到可用模型' : '已获取 ${models.length} 个模型',
-          type: models.isEmpty ? ToastType.warning : ToastType.success,
-        );
-      }
-    } catch (e) {
-      if (!mounted || silentError) return;
-      showToast('获取模型列表失败：$e', type: ToastType.error);
-    } finally {
-      if (mounted) {
-        setState(() => _isFetchingModels = false);
-      }
     }
   }
 
@@ -551,10 +638,10 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
     }
     final name = (await AppDialog.input(
       context,
-      title: '新增 Provider',
-      hintText: '例如：DeepSeek',
-      confirmText: '新增',
-      cancelText: '取消',
+      title: context.l10n.modelAddProviderTitle,
+      hintText: context.l10n.modelProviderNameHint,
+      confirmText: context.l10n.modelAddButton,
+      cancelText: context.trLegacy('取消'),
     ))?.trim();
     if (name == null || name.isEmpty) {
       return;
@@ -571,6 +658,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
         profiles: nextProfiles,
         editingProfileId: saved.id,
         manualModelIds: const [],
+        manualModels: const [],
         remoteModels: const [],
         syncControllers: true,
       );
@@ -578,7 +666,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
         if (!mounted) {
           return;
         }
-        showToast('已新增 Provider', type: ToastType.success);
+        showToast(context.l10n.modelProviderAdded, type: ToastType.success);
       });
     } catch (e) {
       if (!mounted) return;
@@ -586,8 +674,70 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
         if (!mounted) {
           return;
         }
-        showToast('新增 Provider 失败：$e', type: ToastType.error);
+        showToast(
+          context.l10n.modelProviderAddFailed(e),
+          type: ToastType.error,
+        );
       });
+    }
+  }
+
+  Future<void> _fetchModelsLocalized({bool silentError = false}) async {
+    final current = _currentProfile;
+    if (current == null || _isFetchingModels) return;
+    final baseUrl = _baseUrlController.text.trim();
+    final apiKey = _apiKeyController.text.trim();
+
+    if (baseUrl.isEmpty) {
+      if (!silentError) {
+        showToast(
+          context.l10n.modelProviderBaseUrlRequired,
+          type: ToastType.warning,
+        );
+      }
+      return;
+    }
+    if (!ModelProviderConfigService.isValidApiBase(baseUrl)) {
+      if (!silentError) {
+        showToast(
+          context.l10n.modelProviderInvalidBaseUrl,
+          type: ToastType.error,
+        );
+      }
+      return;
+    }
+
+    setState(() => _isFetchingModels = true);
+    try {
+      final models = await ModelProviderConfigService.fetchModels(
+        apiBase: baseUrl,
+        apiKey: apiKey,
+        profileId: current.id,
+        providerName: current.name,
+      );
+      if (!mounted) return;
+      setState(() {
+        _remoteModels = models;
+      });
+      if (!silentError) {
+        final message = models.isEmpty
+            ? context.l10n.localModelsNoAvailableModels
+            : context.l10n.modelProviderFetchedModels(models.length);
+        showToast(
+          message,
+          type: models.isEmpty ? ToastType.warning : ToastType.success,
+        );
+      }
+    } catch (e) {
+      if (!mounted || silentError) return;
+      showToast(
+        context.l10n.modelProviderFetchFailed(e.toString()),
+        type: ToastType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isFetchingModels = false);
+      }
     }
   }
 
@@ -600,16 +750,16 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('删除 Provider'),
-          content: Text('确定删除“${current.name}”吗？场景绑定会保留，但需要重新选择可用 Provider。'),
+          title: Text(context.l10n.modelDeleteProviderTitle),
+          content: Text(context.l10n.modelDeleteProviderMsg(current.name)),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('取消'),
+              child: Text(context.trLegacy('取消')),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('删除'),
+              child: Text(context.l10n.skillDelete),
             ),
           ],
         );
@@ -627,22 +777,29 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
         (profile) => profile.id == payload.editingProfileId,
         orElse: () => payload.profiles.first,
       );
+      final manualModelIds = await ModelProviderConfigService.getManualModelIds(
+        profileId: fallback.id,
+      );
       final storedModels = await Future.wait<dynamic>([
-        ModelProviderConfigService.getManualModelIds(profileId: fallback.id),
+        _loadManualModelsForProfile(fallback, manualModelIds),
         _loadRemoteModelsForProfile(fallback),
       ]);
       if (!mounted) return;
       _applyProfile(
         profiles: payload.profiles,
         editingProfileId: fallback.id,
-        manualModelIds: storedModels[0] as List<String>,
+        manualModelIds: manualModelIds,
+        manualModels: storedModels[0] as List<ProviderModelOption>,
         remoteModels: storedModels[1] as List<ProviderModelOption>,
         syncControllers: true,
       );
-      showToast('已删除 Provider', type: ToastType.success);
+      showToast(context.l10n.modelProviderDeleted, type: ToastType.success);
     } catch (e) {
       if (!mounted) return;
-      showToast('删除 Provider 失败：$e', type: ToastType.error);
+      showToast(
+        context.l10n.modelProviderDeleteFailed(e),
+        type: ToastType.error,
+      );
     }
   }
 
@@ -663,27 +820,34 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
     }
     final normalized = modelId.trim();
     if (!ModelProviderConfigService.isValidModelName(normalized)) {
-      showToast('模型 ID 不能为空且不能以 scene. 开头', type: ToastType.error);
+      showToast(context.l10n.modelIdEmpty, type: ToastType.error);
       return;
     }
 
     final existsInManual = _manualModelIds.any((item) => item == normalized);
     final existsInRemote = _remoteModels.any((item) => item.id == normalized);
     if (existsInManual || existsInRemote) {
-      showToast('模型已存在', type: ToastType.warning);
+      showToast(context.l10n.modelAlreadyExists, type: ToastType.warning);
       return;
     }
 
     final nextManual = [..._manualModelIds, normalized];
+    final nextManualModels = await _loadManualModelsForProfile(
+      current,
+      nextManual,
+    );
+    if (!mounted) return;
     setState(() {
       _manualModelIds = nextManual;
+      _manualModels = nextManualModels;
     });
 
     await ModelProviderConfigService.saveManualModelIds(
       profileId: current.id,
       ids: nextManual,
     );
-    showToast('已添加模型', type: ToastType.success);
+    if (!mounted) return;
+    showToast(context.l10n.modelAdded, type: ToastType.success);
   }
 
   Future<void> _deleteModel(_ProviderModelItem item) async {
@@ -693,11 +857,13 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
     }
 
     final prevManual = List<String>.from(_manualModelIds);
+    final prevManualModels = List<ProviderModelOption>.from(_manualModels);
     final prevRemote = List<ProviderModelOption>.from(_remoteModels);
 
     setState(() {
       _deletingModelIds = {..._deletingModelIds, item.id};
       _manualModelIds = _manualModelIds.where((id) => id != item.id).toList();
+      _manualModels = _manualModels.where((m) => m.id != item.id).toList();
       _remoteModels = _remoteModels.where((m) => m.id != item.id).toList();
     });
 
@@ -715,14 +881,15 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
       ]);
 
       if (!mounted) return;
-      showToast('已删除模型', type: ToastType.success);
+      showToast(context.l10n.modelDeleted, type: ToastType.success);
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _manualModelIds = prevManual;
+        _manualModels = prevManualModels;
         _remoteModels = prevRemote;
       });
-      showToast('删除模型失败', type: ToastType.error);
+      showToast(context.l10n.modelDeleteFailed, type: ToastType.error);
     } finally {
       if (mounted) {
         setState(() {
@@ -928,113 +1095,543 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
     );
   }
 
-  Widget _buildSwipeModelItem(_ProviderModelItem item) {
-    final isDeleting = _deletingModelIds.contains(item.id);
+  String _formatTokenLimit(int? value) {
+    if (value == null || value <= 0) {
+      return '--';
+    }
+    if (value >= 1000000) {
+      final formatted = value % 1000000 == 0
+          ? '${value ~/ 1000000}'
+          : (value / 1000000).toStringAsFixed(1);
+      return '${formatted}M';
+    }
+    if (value >= 1000) {
+      final formatted = value % 1000 == 0
+          ? '${value ~/ 1000}'
+          : (value / 1000).toStringAsFixed(1);
+      return '${formatted}K';
+    }
+    return value.toString();
+  }
 
+  Widget _buildCompactIconChip({
+    required String key,
+    required String svg,
+    required String tooltip,
+    String? label,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        key: Key(key),
+        height: 22,
+        constraints: const BoxConstraints(minWidth: 22),
+        padding: label == null
+            ? EdgeInsets.zero
+            : const EdgeInsets.symmetric(horizontal: 6),
+        decoration: BoxDecoration(
+          color: _cardColor,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: _isDarkTheme
+                ? context.omniPalette.borderSubtle
+                : const Color(0x14000000),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SvgPicture.string(
+              svg,
+              width: 14,
+              height: 14,
+              colorFilter: ColorFilter.mode(
+                _secondaryTextColor,
+                BlendMode.srcIn,
+              ),
+            ),
+            if (label != null) ...[
+              const SizedBox(width: 4),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: _tertiaryTextColor,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'PingFang SC',
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModalityIcon({required String svg, required String tooltip}) {
+    return _buildCompactIconChip(
+      key: 'provider-model-modality-${tooltip.toLowerCase().split(' ').first}',
+      svg: svg,
+      tooltip: tooltip,
+    );
+  }
+
+  Widget _buildContextLimitChip(String modelId, String label) {
+    return Tooltip(
+      message: 'Context limit $label',
+      child: Container(
+        key: Key('provider-model-context-$modelId'),
+        height: 22,
+        padding: const EdgeInsets.symmetric(horizontal: 7),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: _cardColor,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: _isDarkTheme
+                ? context.omniPalette.borderSubtle
+                : const Color(0x14000000),
+          ),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 11,
+            color: _tertiaryTextColor,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'PingFang SC',
+            letterSpacing: 0,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModalityTextChip(String modality) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: IgnorePointer(
-        ignoring: isDeleting,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 180),
-          opacity: isDeleting ? 0.72 : 1,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final initialActionWidth =
-                  constraints.maxWidth * _modelDeleteExtentRatio;
-              final deleteIconRightPadding =
-                  ((initialActionWidth - _modelDeleteIconSize) / 2)
-                      .clamp(0.0, double.infinity)
-                      .toDouble();
+      height: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: _isDarkTheme
+              ? context.omniPalette.borderSubtle
+              : const Color(0x14000000),
+        ),
+      ),
+      child: Text(
+        modality.toUpperCase(),
+        style: TextStyle(
+          color: _secondaryTextColor,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
 
-              return Slidable(
-                key: ValueKey<String>('provider-model-${item.id}'),
-                groupTag: 'provider-model-items',
-                closeOnScroll: true,
-                endActionPane: ActionPane(
-                  motion: const BehindMotion(),
-                  extentRatio: _modelDeleteExtentRatio,
-                  dismissible: DismissiblePane(
-                    dismissThreshold: 0.4,
-                    closeOnCancel: true,
-                    motion: const InversedDrawerMotion(),
-                    onDismissed: () => _deleteModel(item),
+  List<Widget> _buildModelMetadataWidgets(ProviderModelOption model) {
+    final widgets = <Widget>[];
+    final contextLimit = _formatTokenLimit(model.contextLimit);
+    widgets.add(_buildContextLimitChip(model.id, contextLimit));
+    if (model.reasoning == true) {
+      widgets.add(
+        _buildCompactIconChip(
+          key: 'provider-model-reasoning-${model.id}',
+          svg: _kReasoningSvg,
+          tooltip: 'Reasoning',
+        ),
+      );
+    }
+    widgets.addAll(_buildInputModalityWidgets(model));
+    return widgets;
+  }
+
+  List<Widget> _buildInputModalityWidgets(ProviderModelOption model) {
+    final modalities = model.inputModalities
+        .map((item) => item.trim().toLowerCase())
+        .where((item) => item.isNotEmpty)
+        .toSet();
+    if (modalities.isEmpty) {
+      return const [];
+    }
+    final widgets = <Widget>[];
+    if (modalities.contains('text')) {
+      widgets.add(
+        _buildModalityIcon(svg: _kInputTextSvg, tooltip: 'Text input'),
+      );
+    }
+    if (modalities.contains('image')) {
+      widgets.add(
+        _buildModalityIcon(svg: _kInputImageSvg, tooltip: 'Image input'),
+      );
+    }
+    if (modalities.contains('pdf')) {
+      widgets.add(_buildModalityIcon(svg: _kInputPdfSvg, tooltip: 'PDF input'));
+    }
+    for (final modality in modalities) {
+      if (modality == 'text' || modality == 'image' || modality == 'pdf') {
+        continue;
+      }
+      widgets.add(_buildModalityTextChip(modality));
+    }
+    return widgets;
+  }
+
+  Widget _buildModelGroupSection(
+    MapEntry<String, List<_ProviderModelItem>> group, {
+    required bool isLast,
+  }) {
+    final expanded = _isModelGroupExpanded(group.key);
+    final items = Column(
+      children: [
+        const SizedBox(height: 2),
+        for (var itemIndex = 0; itemIndex < group.value.length; itemIndex++)
+          _buildSwipeModelItem(group.value[itemIndex]),
+      ],
+    );
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildModelGroupHeader(
+            group.key,
+            group.value.length,
+            expanded: expanded,
+            onTap: () => _toggleModelGroup(group.key),
+          ),
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(
+              begin: expanded ? 1 : 0,
+              end: expanded ? 1 : 0,
+            ),
+            duration: _modelGroupToggleDuration,
+            curve: Curves.easeInOutCubicEmphasized,
+            builder: (context, value, child) {
+              return ClipRect(
+                child: Align(
+                  key: Key('provider-model-group-body-${group.key}'),
+                  alignment: Alignment.topCenter,
+                  heightFactor: value,
+                  child: Opacity(
+                    opacity: value.clamp(0.0, 1.0).toDouble(),
+                    child: IgnorePointer(ignoring: value < 0.99, child: child),
                   ),
+                ),
+              );
+            },
+            child: items,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModelGroupHeader(
+    String groupName,
+    int count, {
+    required bool expanded,
+    required VoidCallback onTap,
+  }) {
+    final palette = context.omniPalette;
+    final labelStyle = TextStyle(
+      color: _tertiaryTextColor,
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      fontFamily: 'PingFang SC',
+      letterSpacing: 0.4,
+    );
+    final countStyle = TextStyle(
+      color: _tertiaryTextColor,
+      fontSize: 11,
+      fontWeight: FontWeight.w500,
+      fontFamily: 'PingFang SC',
+    );
+    const labelToCountGap = 8.0;
+    const countToLineGap = 10.0;
+    const lineToIconGap = 6.0;
+    const iconSlotWidth = 20.0;
+    const minLineWidth = 48.0;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: Key('provider-model-group-$groupName'),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          splashColor: palette.accentPrimary.withValues(alpha: 0.06),
+          highlightColor: Colors.transparent,
+          child: Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(minHeight: 28),
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.fromLTRB(4, 5, 2, 5),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final countWidth = _measureSingleLineTextWidth(
+                  '$count',
+                  countStyle,
+                );
+                final fixedTrailingWidth =
+                    labelToCountGap +
+                    countWidth +
+                    countToLineGap +
+                    lineToIconGap +
+                    iconSlotWidth;
+                final labelAndLineWidth = math.max(
+                  0.0,
+                  constraints.maxWidth - fixedTrailingWidth,
+                );
+                final reservedLineWidth = math.min(
+                  minLineWidth,
+                  labelAndLineWidth * 0.32,
+                );
+                final groupNameMaxWidth = math.max(
+                  0.0,
+                  labelAndLineWidth - reservedLineWidth,
+                );
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    CustomSlidableAction(
-                      onPressed: (_) => _deleteModel(item),
-                      backgroundColor: AppColors.alertRed,
-                      borderRadius: _modelDeleteActionRadius,
-                      padding: EdgeInsets.zero,
-                      alignment: Alignment.centerRight,
-                      child: Padding(
-                        padding: EdgeInsets.only(right: deleteIconRightPadding),
-                        child: SvgPicture.asset(
-                          'assets/memory/memory_delete.svg',
-                          width: _modelDeleteIconSize,
-                          height: _modelDeleteIconSize,
-                          colorFilter: const ColorFilter.mode(
-                            Colors.white,
-                            BlendMode.srcIn,
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: groupNameMaxWidth),
+                      child: Text(
+                        key: Key('provider-model-group-label-$groupName'),
+                        groupName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: labelStyle,
+                      ),
+                    ),
+                    const SizedBox(width: labelToCountGap),
+                    Text(
+                      key: Key('provider-model-group-count-$groupName'),
+                      '$count',
+                      style: countStyle,
+                    ),
+                    const SizedBox(width: countToLineGap),
+                    Expanded(
+                      child: Container(
+                        key: Key('provider-model-group-line-$groupName'),
+                        height: 1,
+                        color: _isDarkTheme
+                            ? palette.borderSubtle.withValues(alpha: 0.56)
+                            : const Color(0x16000000),
+                      ),
+                    ),
+                    const SizedBox(width: lineToIconGap),
+                    SizedBox(
+                      key: Key('provider-model-group-icon-$groupName'),
+                      width: iconSlotWidth,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: AnimatedRotation(
+                          turns: expanded ? 0 : -0.25,
+                          duration: _modelGroupToggleDuration,
+                          curve: Curves.easeInOutCubicEmphasized,
+                          child: Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 18,
+                            color: _tertiaryTextColor,
                           ),
                         ),
                       ),
                     ),
                   ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  double _measureSingleLineTextWidth(String text, TextStyle style) {
+    final textPainter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: Directionality.of(context),
+      maxLines: 1,
+    )..layout();
+    return textPainter.width;
+  }
+
+  Widget _buildModelGroupToggleButton(
+    List<MapEntry<String, List<_ProviderModelItem>>> groups,
+  ) {
+    final palette = context.omniPalette;
+    final enabled = groups.isNotEmpty;
+    final isOpen = enabled && _hasAnyExpandedModelGroup(groups);
+    final iconColor = !enabled
+        ? palette.textTertiary
+        : isOpen
+        ? palette.accentPrimary
+        : palette.textSecondary;
+    final tooltip = !enabled
+        ? context.trLegacy('暂无模型分组')
+        : _areAllModelGroupsCollapsed(groups)
+        ? context.trLegacy('展开全部分组')
+        : context.trLegacy('折叠全部分组');
+
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        key: const ValueKey('provider-model-group-toggle-button'),
+        onTap: enabled ? () => _toggleAllModelGroups(groups) : null,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 180),
+          opacity: enabled ? 1 : 0.36,
+          child: SizedBox(
+            width: 48,
+            height: 44,
+            child: Center(
+              child: SvgPicture.asset(
+                isOpen
+                    ? _kGroupToggleOpenIconAsset
+                    : _kGroupToggleClosedIconAsset,
+                width: 20,
+                height: 20,
+                colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSwipeModelItem(_ProviderModelItem item) {
+    final isDeleting = _deletingModelIds.contains(item.id);
+    final metadataWidgets = _buildModelMetadataWidgets(item.model);
+
+    return IgnorePointer(
+      ignoring: isDeleting,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 180),
+        opacity: isDeleting ? 0.72 : 1,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final initialActionWidth =
+                constraints.maxWidth * _modelDeleteExtentRatio;
+            final deleteIconRightPadding =
+                ((initialActionWidth - _modelDeleteIconSize) / 2)
+                    .clamp(0.0, double.infinity)
+                    .toDouble();
+            final metadataMaxWidth = (constraints.maxWidth * 0.46)
+                .clamp(116.0, 190.0)
+                .toDouble();
+
+            return Slidable(
+              key: ValueKey<String>('provider-model-${item.id}'),
+              groupTag: 'provider-model-items',
+              closeOnScroll: true,
+              endActionPane: ActionPane(
+                motion: const BehindMotion(),
+                extentRatio: _modelDeleteExtentRatio,
+                dismissible: DismissiblePane(
+                  dismissThreshold: 0.4,
+                  closeOnCancel: true,
+                  motion: const InversedDrawerMotion(),
+                  onDismissed: () => _deleteModel(item),
                 ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: _surfaceColor,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _isDarkTheme
-                          ? context.omniPalette.borderSubtle
-                          : const Color(0x14000000),
-                    ),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(12),
-                    child: InkWell(
-                      onTap: () {},
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 13,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                item.id,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                  color: _primaryTextColor,
-                                  fontFamily: 'PingFang SC',
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              item.sourceLabel,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: _tertiaryTextColor,
-                              ),
-                            ),
-                          ],
+                children: [
+                  CustomSlidableAction(
+                    onPressed: (_) => _deleteModel(item),
+                    backgroundColor: AppColors.alertRed,
+                    borderRadius: _modelDeleteActionRadius,
+                    padding: EdgeInsets.zero,
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: EdgeInsets.only(right: deleteIconRightPadding),
+                      child: SvgPicture.asset(
+                        'assets/memory/memory_delete.svg',
+                        width: _modelDeleteIconSize,
+                        height: _modelDeleteIconSize,
+                        colorFilter: const ColorFilter.mode(
+                          Colors.white,
+                          BlendMode.srcIn,
                         ),
                       ),
                     ),
                   ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {},
+                  borderRadius: BorderRadius.circular(10),
+                  splashColor: context.omniPalette.accentPrimary.withValues(
+                    alpha: 0.06,
+                  ),
+                  highlightColor: Colors.transparent,
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              item.id,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: _primaryTextColor,
+                                fontFamily: 'PingFang SC',
+                                height: 1.2,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            width: metadataMaxWidth,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              physics: const BouncingScrollPhysics(),
+                              reverse: true,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (
+                                    var index = 0;
+                                    index < metadataWidgets.length;
+                                    index++
+                                  ) ...[
+                                    if (index > 0) const SizedBox(width: 6),
+                                    metadataWidgets[index],
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -1100,6 +1697,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
     final current = _currentProfile;
     final name = current?.name.trim();
     final displayName = (name == null || name.isEmpty) ? 'Provider' : name;
+    final textMaxWidth = maxWidth ?? double.infinity;
     return Builder(
       builder: (anchorContext) {
         return InkWell(
@@ -1116,9 +1714,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: maxWidth ?? double.infinity,
-                  ),
+                  constraints: BoxConstraints(maxWidth: textMaxWidth),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -1143,8 +1739,8 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
                             current.statusText.isNotEmpty
                                 ? current.statusText
                                 : (current.ready
-                                      ? '内置 Provider'
-                                      : '内置 Provider 未就绪'),
+                                      ? context.l10n.modelBuiltinProvider
+                                      : '${context.l10n.modelBuiltinProvider} not ready'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -1239,10 +1835,14 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
   @override
   Widget build(BuildContext context) {
     final modelItems = _modelItems;
+    final modelGroups = _modelGroups;
 
     return Scaffold(
       backgroundColor: _pageBackground,
-      appBar: CommonAppBar(title: '模型提供商', primary: true),
+      appBar: CommonAppBar(
+        title: context.l10n.settingsModelProviderTitle,
+        primary: true,
+      ),
       body: SafeArea(
         top: false,
         child: _isLoading
@@ -1250,9 +1850,9 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
             : ListView(
                 padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
                 children: [
-                  const SettingsSectionTitle(
-                    label: 'Provider 配置',
-                    subtitle: '新增、切换并维护模型服务提供商的名称、地址与密钥。',
+                  SettingsSectionTitle(
+                    label: context.l10n.modelProviderConfigTitle,
+                    subtitle: context.l10n.modelProviderConfigDesc,
                   ),
                   _buildCard(
                     child: Column(
@@ -1317,8 +1917,8 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
                           focusNode: _nameFocusNode,
                           enabled: !(_currentProfile?.readOnly ?? false),
                           decoration: _buildInputDecoration(
-                            label: 'Provider 名称',
-                            hint: '例如：DeepSeek',
+                            label: context.l10n.modelProviderName,
+                            hint: context.l10n.modelProviderNameHint,
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -1328,7 +1928,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
                           enabled: !(_currentProfile?.readOnly ?? false),
                           decoration: _buildInputDecoration(
                             label: 'Base URL',
-                            hint: '末尾加 # 可禁用自动补全请求路径',
+                            hint: context.l10n.modelProviderBaseUrlHint,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -1357,7 +1957,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
                           obscureText: _obscureApiKey,
                           decoration: _buildInputDecoration(
                             label: 'API Key',
-                            hint: '例如：sk-xxxx',
+                            hint: 'e.g., sk-xxxx',
                             suffixIcon: IconButton(
                               splashRadius: 18,
                               onPressed: () {
@@ -1377,7 +1977,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '未填写 API Key 时，会以无鉴权方式请求 Provider。',
+                          context.l10n.modelProviderApiKeyHint,
                           style: TextStyle(
                             color: _tertiaryTextColor,
                             fontSize: 12,
@@ -1388,9 +1988,9 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  const SettingsSectionTitle(
-                    label: '模型列表',
-                    subtitle: '支持手动补充模型，也可从当前 Provider 拉取远端模型清单。',
+                  SettingsSectionTitle(
+                    label: context.l10n.modelListTitle,
+                    subtitle: context.l10n.modelListDesc,
                   ),
                   _buildCard(
                     child: Column(
@@ -1400,7 +2000,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
                           children: [
                             Expanded(
                               child: Text(
-                                '共 ${modelItems.length} 个模型',
+                                context.l10n.modelListCount(modelItems.length),
                                 style: TextStyle(
                                   color: _secondaryTextColor,
                                   fontSize: 12,
@@ -1420,25 +2020,17 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
                               svg: _kArrowBigDownSvg,
                               onPressed: _isFetchingModels
                                   ? null
-                                  : _fetchModels,
+                                  : _fetchModelsLocalized,
                               highlighted: true,
                               loading: _isFetchingModels,
                             ),
+                            const SizedBox(width: 4),
+                            _buildModelGroupToggleButton(modelGroups),
                           ],
                         ),
                         const SizedBox(height: 12),
-                        Container(
+                        SizedBox(
                           height: 280,
-                          clipBehavior: Clip.antiAlias,
-                          decoration: BoxDecoration(
-                            color: _surfaceColor,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: _isDarkTheme
-                                  ? context.omniPalette.borderSubtle
-                                  : const Color(0x1A000000),
-                            ),
-                          ),
                           child: modelItems.isEmpty
                               ? Padding(
                                   padding: const EdgeInsets.all(10),
@@ -1457,7 +2049,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
                                         ),
                                         const SizedBox(height: 10),
                                         Text(
-                                          '请添加模型！',
+                                          context.l10n.modelAddPrompt,
                                           style: TextStyle(
                                             color: _secondaryTextColor,
                                             fontSize: 14,
@@ -1470,11 +2062,18 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
                                   ),
                                 )
                               : ListView.builder(
-                                  padding: const EdgeInsets.all(10),
-                                  itemCount: modelItems.length,
+                                  padding: const EdgeInsets.fromLTRB(
+                                    2,
+                                    2,
+                                    2,
+                                    8,
+                                  ),
+                                  itemCount: modelGroups.length,
                                   itemBuilder: (context, index) {
-                                    return _buildSwipeModelItem(
-                                      modelItems[index],
+                                    final group = modelGroups[index];
+                                    return _buildModelGroupSection(
+                                      group,
+                                      isLast: index == modelGroups.length - 1,
                                     );
                                   },
                                 ),
@@ -1587,7 +2186,7 @@ class _ProviderSwitchPopupEntryState extends State<_ProviderSwitchPopupEntry> {
             ? Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  '暂无 Provider',
+                  'No providers',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 12,
@@ -1755,18 +2354,21 @@ class _AddModelIdDialogState extends State<_AddModelIdDialog> {
         _close();
       },
       child: AlertDialog(
-        title: const Text('添加模型 ID'),
+        title: Text(context.l10n.modelIdHint),
         content: TextField(
           controller: _controller,
           focusNode: _focusNode,
-          decoration: const InputDecoration(hintText: '输入模型 ID'),
+          decoration: InputDecoration(hintText: context.l10n.modelIdHint),
           onSubmitted: (_) => _close(_controller.text.trim()),
         ),
         actions: [
-          TextButton(onPressed: () => _close(), child: const Text('取消')),
+          TextButton(
+            onPressed: () => _close(),
+            child: Text(context.trLegacy('取消')),
+          ),
           TextButton(
             onPressed: () => _close(_controller.text.trim()),
-            child: const Text('添加'),
+            child: Text(context.l10n.modelAddButton),
           ),
         ],
       ),

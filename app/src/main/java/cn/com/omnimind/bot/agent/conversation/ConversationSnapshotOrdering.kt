@@ -11,6 +11,7 @@ internal object ConversationSnapshotOrdering {
         val payload: Map<String, Any?>,
         val createdAt: Long,
         val taskAnchor: Long,
+        val streamSeq: Long?,
         val phaseRank: Int,
         val sequenceRank: Int,
         val originalIndex: Int
@@ -24,6 +25,7 @@ internal object ConversationSnapshotOrdering {
                 payload = message,
                 createdAt = createdAt,
                 taskAnchor = resolveTaskAnchorMillis(message) ?: createdAt,
+                streamSeq = resolveStreamSeq(message),
                 phaseRank = resolvePhaseRank(message),
                 sequenceRank = resolveSequenceRank(message),
                 originalIndex = index
@@ -31,6 +33,7 @@ internal object ConversationSnapshotOrdering {
         }.sortedWith(
             compareBy<PreparedMessage> { it.taskAnchor }
                 .thenBy { resolveTurnRank(it.payload) }
+                .thenBy { it.streamSeq ?: Long.MAX_VALUE }
                 .thenBy { it.createdAt }
                 .thenBy { it.phaseRank }
                 .thenBy { it.sequenceRank }
@@ -104,6 +107,18 @@ internal object ConversationSnapshotOrdering {
         }
     }
 
+    private fun resolveStreamSeq(message: Map<String, Any?>): Long? {
+        val streamMeta = streamMeta(message) ?: return null
+        return parseCreatedAtMillis(streamMeta["seq"])
+    }
+
+    private fun streamMeta(message: Map<String, Any?>): Map<String, Any?>? {
+        val raw = message["streamMeta"] as? Map<*, *> ?: return null
+        return raw.entries.associate { (key, value) ->
+            key.toString() to value
+        }
+    }
+
     private fun resolvePhaseRank(message: Map<String, Any?>): Int {
         val type = (message["type"] as? Number)?.toInt()
         val user = (message["user"] as? Number)?.toInt()
@@ -111,10 +126,9 @@ internal object ConversationSnapshotOrdering {
         return when {
             type == 1 && user == 1 -> 0
             type == 2 && cardType == "deep_thinking" -> 1
-            type == 2 && cardType == "agent_tool_summary" -> 2
-            type == 1 && user == 2 -> 3
-            type == 2 -> 4
-            else -> 5
+            type == 1 && user == 2 -> 2
+            type == 2 -> 3
+            else -> 4
         }
     }
 

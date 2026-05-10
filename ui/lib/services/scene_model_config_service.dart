@@ -43,13 +43,13 @@ class SceneCatalogItem {
       description: (map?['description'] ?? '').toString(),
       defaultModel: (map?['defaultModel'] ?? '').toString(),
       effectiveModel: (map?['effectiveModel'] ?? '').toString(),
-      effectiveProviderProfileId:
-          (map?['effectiveProviderProfileId'] ?? '').toString(),
-      effectiveProviderProfileName:
-          (map?['effectiveProviderProfileName'] ?? '').toString(),
+      effectiveProviderProfileId: (map?['effectiveProviderProfileId'] ?? '')
+          .toString(),
+      effectiveProviderProfileName: (map?['effectiveProviderProfileName'] ?? '')
+          .toString(),
       boundProviderProfileId: (map?['boundProviderProfileId'] ?? '').toString(),
-      boundProviderProfileName:
-          (map?['boundProviderProfileName'] ?? '').toString(),
+      boundProviderProfileName: (map?['boundProviderProfileName'] ?? '')
+          .toString(),
       transport: (map?['transport'] ?? '').toString(),
       configSource: (map?['configSource'] ?? '').toString(),
       overrideApplied: map?['overrideApplied'] == true,
@@ -93,6 +93,55 @@ class SceneModelBindingEntry {
       modelId: (map?['modelId'] ?? '').toString(),
     );
   }
+}
+
+class SceneVoiceConfig {
+  final bool autoPlay;
+  final String voiceId;
+  final String stylePreset;
+  final String customStyle;
+
+  const SceneVoiceConfig({
+    this.autoPlay = false,
+    this.voiceId = 'default_zh',
+    this.stylePreset = '默认',
+    this.customStyle = '',
+  });
+
+  factory SceneVoiceConfig.fromMap(Map<dynamic, dynamic>? map) {
+    return SceneVoiceConfig(
+      autoPlay: map?['autoPlay'] == true,
+      voiceId: (map?['voiceId'] ?? 'default_zh').toString(),
+      stylePreset: (map?['stylePreset'] ?? '默认').toString(),
+      customStyle: (map?['customStyle'] ?? '').toString(),
+    );
+  }
+
+  SceneVoiceConfig copyWith({
+    bool? autoPlay,
+    String? voiceId,
+    String? stylePreset,
+    String? customStyle,
+  }) {
+    return SceneVoiceConfig(
+      autoPlay: autoPlay ?? this.autoPlay,
+      voiceId: voiceId ?? this.voiceId,
+      stylePreset: stylePreset ?? this.stylePreset,
+      customStyle: customStyle ?? this.customStyle,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is SceneVoiceConfig &&
+        other.autoPlay == autoPlay &&
+        other.voiceId == voiceId &&
+        other.stylePreset == stylePreset &&
+        other.customStyle == customStyle;
+  }
+
+  @override
+  int get hashCode => Object.hash(autoPlay, voiceId, stylePreset, customStyle);
 }
 
 class SceneModelConfigService {
@@ -206,6 +255,29 @@ class SceneModelConfigService {
         .map((item) => SceneModelOverrideEntry.fromMap(item as Map?))
         .where((item) => item.sceneId.isNotEmpty && item.model.isNotEmpty)
         .toList();
+  }
+
+  static Future<SceneVoiceConfig> getSceneVoiceConfig() async {
+    try {
+      final result = await AssistsMessageService.assistCore
+          .invokeMethod<Map<dynamic, dynamic>>('getSceneVoiceConfig');
+      return SceneVoiceConfig.fromMap(result);
+    } on PlatformException {
+      return const SceneVoiceConfig();
+    }
+  }
+
+  static Future<SceneVoiceConfig> saveSceneVoiceConfig(
+    SceneVoiceConfig config,
+  ) async {
+    final result = await AssistsMessageService.assistCore
+        .invokeMethod<Map<dynamic, dynamic>>('saveSceneVoiceConfig', {
+          'autoPlay': config.autoPlay,
+          'voiceId': config.voiceId,
+          'stylePreset': config.stylePreset,
+          'customStyle': config.customStyle,
+        });
+    return SceneVoiceConfig.fromMap(result);
   }
 
   static bool isValidModelName(String value) {

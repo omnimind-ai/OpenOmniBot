@@ -8,7 +8,7 @@ import 'package:ui/features/my/pages/my/widgets/profile_section.dart';
 import 'package:ui/features/my/pages/my/widgets/setting_section.dart';
 import 'package:ui/features/my/pages/my/widgets/setting_tile.dart';
 import 'package:ui/theme/app_colors.dart';
-import 'package:ui/features/task/pages/execution_history/task_execution_history_record_page.dart';
+import 'package:ui/features/task/pages/execution_history/trajectory_page.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/utils/cache_util.dart';
 
@@ -227,7 +227,7 @@ class MyPageState extends State<MyPage> with WidgetsBindingObserver {
                             context,
                             MaterialPageRoute(
                               builder: (context) =>
-                                  TaskExecutionHistoryRecordPage(),
+                                  TrajectoryPage(),
                             ),
                           ).then((_) {
                             _loadMemorySummary();

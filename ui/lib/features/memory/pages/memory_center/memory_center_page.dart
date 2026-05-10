@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:simple_gradient_text/simple_gradient_text.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:ui/core/mixins/page_lifecycle_mixin.dart';
 import 'package:ui/features/memory/models/mem0_memory_item.dart';
 import 'package:ui/features/memory/pages/memory_center/widgets/batch_delete_confirm_sheet.dart';
@@ -303,7 +305,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       _safeSetState(() {
         _mem0Snapshot = Mem0MemorySnapshot(
           configured: true,
-          errorMessage: '长期记忆加载失败: $e',
+          errorMessage: 'Long-term memory load failed: $e',
         );
       });
     } finally {
@@ -314,6 +316,14 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
   }
 
   Future<void> _loadMemorySuggestion() async {
+    await StorageService.remove(kMemorySuggestionKey);
+    await StorageService.remove(kMemorySuggestionTopThreeIdsKey);
+    _safeSetState(() {
+      _memorySuggestion = null;
+      _isSuggestionLoading = false;
+      _lastTopThreeIds = <String>[];
+    });
+    return;
     // 先加载持久化的建议
     String? savedSuggestion;
     try {
@@ -348,7 +358,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       unawaited(_generateMemorySuggestion(suggestionContext.records));
     } else {
       _safeSetState(() {
-        _memorySuggestion = savedSuggestion;
+        _memorySuggestion = _sanitizeMemorySuggestion(savedSuggestion);
         _isSuggestionLoading = false;
         print('记忆建议未变化，使用持久化数据: $_memorySuggestion');
       });
@@ -366,7 +376,9 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
         'sortTs': sortTs,
         'title': _normalizeSuggestionText(card.title),
         'description': _normalizeSuggestionText(card.description ?? ''),
-        'appName': _normalizeSuggestionText(card.appName ?? '短期记忆'),
+        'appName': _normalizeSuggestionText(
+          card.appName ?? context.l10n.memoryShortTermTitle,
+        ),
       });
     }
 
@@ -378,7 +390,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
         'sortTs': item.displayTime?.millisecondsSinceEpoch ?? 0,
         'title': _clipSuggestionText(memory, maxLength: 24),
         'description': memory,
-        'appName': '长期记忆',
+        'appName': context.l10n.memoryLongTermTitle,
       });
     }
 
@@ -410,6 +422,107 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
   String _normalizeSuggestionText(String text) {
     return text.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
+
+  String? _sanitizeMemorySuggestion(String? rawText) {
+    if (rawText == null) {
+      return null;
+    }
+
+    final normalized = rawText
+        .replaceAll('\r\n', '\n')
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .replaceAll(RegExp(r'\s*\n\s*'), '\n')
+        .trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+
+    final sanitizedLines = normalized
+        .split('\n')
+        .map(_trimDanglingSuggestionSuffixAscii)
+        .where((line) => line.isNotEmpty)
+        .toList();
+    if (sanitizedLines.isEmpty) {
+      return null;
+    }
+
+    final sanitized = sanitizedLines.join('\n').trim();
+    if (_looksBrokenMemorySuggestionAscii(sanitized)) {
+      return null;
+    }
+    return sanitized;
+  }
+
+  String _trimDanglingSuggestionSuffixAscii(String text) {
+    var result = text.trim();
+    final trailingPatterns = <RegExp>[
+      RegExp(r',\s*(?:a|an|the|and|or|but|to)$', caseSensitive: false),
+      RegExp(r"[-\u2013\u2014]\s*[A-Za-z'\u2019]{1,6}$"),
+      RegExp(r"\b(?:you['\u2019]?v?)$", caseSensitive: false),
+      RegExp(r'[,:;]\s*$'),
+    ];
+
+    var changed = true;
+    while (changed && result.isNotEmpty) {
+      changed = false;
+      for (final pattern in trailingPatterns) {
+        final next = result.replaceFirst(pattern, '').trimRight();
+        if (next != result) {
+          result = next;
+          changed = true;
+        }
+      }
+    }
+    return result.trim();
+  }
+
+  bool _looksBrokenMemorySuggestionAscii(String text) {
+    return RegExp(
+          r"(?:\b(?:a|an|the|and|or|but|to)|\byou['\u2019]?v?)$",
+          caseSensitive: false,
+        ).hasMatch(text) ||
+        RegExp(r'[-\u2013\u2014,:;]$').hasMatch(text);
+  }
+
+  /*
+  String _trimDanglingSuggestionSuffix(String text) {
+    var result = text.trim();
+    final trailingPatterns = <RegExp>[
+      RegExp(r'[,，]\s*(?:a|an|the|and|or|but|to)$', caseSensitive: false),
+      RegExp(r'[-–—]\s*[A-Za-z\'’]{1,6}$'),
+      RegExp(r'\b(?:you[\'’]?v?)$', caseSensitive: false),
+      RegExp(r'[,:;，、]\s*$'),
+    ];
+
+    var changed = true;
+    while (changed && result.isNotEmpty) {
+      changed = false;
+      for (final pattern in trailingPatterns) {
+        final next = result.replaceFirst(pattern, '').trimRight();
+        if (next != result) {
+          result = next;
+          changed = true;
+        }
+      }
+    }
+    return result.trim();
+  }
+
+  bool _looksBrokenMemorySuggestion(String text) {
+    return RegExp(
+          r'(?:\b(?:a|an|the|and|or|but|to)|\byou[\'’]?v?)$',
+          caseSensitive: false,
+        ).hasMatch(text) ||
+        RegExp(r'[-–—,:;，、]$').hasMatch(text);
+  }
+
+  */
+
+  String _trimDanglingSuggestionSuffix(String text) =>
+      _trimDanglingSuggestionSuffixAscii(text);
+
+  bool _looksBrokenMemorySuggestion(String text) =>
+      _looksBrokenMemorySuggestionAscii(text);
 
   String _clipSuggestionText(String text, {int maxLength = 24}) {
     if (text.length <= maxLength) {
@@ -490,9 +603,14 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       );
 
       if (response != null && response.isNotEmpty && mounted) {
+        final sanitized = _sanitizeMemorySuggestion(response);
         _safeSetState(() {
-          _memorySuggestion = response.trim();
-          StorageService.setString(kMemorySuggestionKey, _memorySuggestion!);
+          _memorySuggestion = sanitized;
+          if (sanitized != null) {
+            StorageService.setString(kMemorySuggestionKey, sanitized);
+          } else {
+            StorageService.remove(kMemorySuggestionKey);
+          }
           _isSuggestionLoading = false;
         });
       } else {
@@ -525,7 +643,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           description: text,
           createdAt: timestamp,
           updatedAt: timestamp,
-          appName: '短期记忆',
+          appName: context.l10n.memoryShortTermTitle,
           appSvgPath: 'assets/memory/memory_context_icon.svg',
           tags: const [],
         );
@@ -533,10 +651,10 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
 
       _safeSetState(() {
         favoritesCards = cards;
-        favoriteTags = const [
+        favoriteTags = [
           AppTag(
             id: 'all',
-            label: '全部',
+            label: context.l10n.trajectoryAll,
             count: 0,
             svgPath: 'assets/common/all_icon.svg',
             iconBgColor: Colors.black,
@@ -590,7 +708,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       tagListWithApp.add(
         AppTag(
           id: 'all',
-          label: '全部',
+          label: LegacyTextLocalizer.localize('全部'),
           count: totalCount,
           svgPath: 'assets/common/all_icon.svg',
           iconBgColor: Colors.black,
@@ -637,8 +755,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
         );
 
         if (systemConfig.id.isNotEmpty) {
-          // 系统应用使用配置的显示
-          label = systemConfig.displayName;
+          label = LegacyTextLocalizer.localize(systemConfig.displayName);
           svgPath = systemConfig.svgIcon;
           iconProvider = null;
         } else {
@@ -675,10 +792,10 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
 
     AppDialog.confirm(
       context,
-      title: '确定删除吗？',
-      content: '删除后该内容将不可找回',
-      cancelText: '取消',
-      confirmText: '删除',
+      title: context.l10n.memoryDeleteConfirmTitle,
+      content: context.l10n.memoryDeleteWarning,
+      cancelText: context.trLegacy('取消'),
+      confirmText: context.trLegacy('删除'),
       confirmButtonColor: AppColors.alertRed,
     ).then((result) async {
       if (result == true) {
@@ -698,7 +815,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
     try {
       bool success = await CacheUtil.deleteFavoriteRecordById(cardId);
       if (!success) {
-        showToast('删除失败', type: ToastType.error);
+        showToast(context.l10n.skillDeleteFailed, type: ToastType.error);
         return false;
       }
 
@@ -707,7 +824,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
         favoritesCards.removeWhere((card) => card.id == cardId);
       });
 
-      showToast('删除成功', type: ToastType.success);
+      showToast(context.l10n.skillDeleted, type: ToastType.success);
 
       // 重新加载标签统计
       await _loadSystemAppTags();
@@ -718,7 +835,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       return true;
     } catch (e) {
       print('Error deleting card: $e');
-      showToast('删除失败', type: ToastType.error);
+      showToast(context.trLegacy('删除失败'), type: ToastType.error);
       return false;
     }
   }
@@ -769,7 +886,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
     }
 
     if (!success) {
-      showToast('修改失败', type: ToastType.error);
+      showToast(context.trLegacy('修改失败'), type: ToastType.error);
     } else {
       // 更新本地状态
       _safeSetState(() {
@@ -778,7 +895,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           favoritesCards[idx] = favoritesCards[idx].copyWith(title: text);
       });
 
-      showToast('修改成功', type: ToastType.success);
+      showToast(context.trLegacy('修改成功'), type: ToastType.success);
     }
     return success;
   }
@@ -858,7 +975,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       await _loadMemorySuggestion();
       // 显示删除结果
       if (successCount > 0) {
-        showToast('已删除', type: ToastType.success);
+        showToast(context.l10n.skillDeleted, type: ToastType.success);
       }
     }
   }
@@ -879,7 +996,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       backgroundColor: palette.pageBackground,
       appBar: _isSelectionMode
           ? _buildSelectionAppBar(filteredCards)
-          : const CommonAppBar(title: '记忆中心', primary: true),
+          : CommonAppBar(title: context.l10n.memoryCenterTitle, primary: true),
       body: Stack(
         children: [
           // 主内容区域
@@ -1008,9 +1125,9 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
   Widget _buildMemorySuggestion() {
     final palette = context.omniPalette;
     // 默认文案
-    final defaultText = '你好呀，\n小万会在这里收集你的记忆！';
+    final defaultText = context.l10n.memoryGreeting;
     // 使用 LLM 生成的建议或默认文案
-    final suggestionText = _memorySuggestion ?? defaultText;
+    final suggestionText = defaultText;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1076,7 +1193,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
         filteredCards.isNotEmpty;
     return CommonAppBar(
       primary: true,
-      title: '已选择${_selectedCardIds.length}项',
+      title: context.l10n.memorySelectedCount(_selectedCardIds.length),
       titleStyle: TextStyle(
         fontSize: 17,
         fontWeight: FontWeight.w600,
@@ -1087,7 +1204,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       leading: TextButton(
         onPressed: _exitSelectionMode,
         child: Text(
-          '取消',
+          context.trLegacy('取消'),
           style: TextStyle(
             color: palette.accentPrimary,
             fontSize: 14,
@@ -1101,7 +1218,9 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           child: TextButton(
             onPressed: () => _toggleSelectAll(filteredCards),
             child: Text(
-              isAllSelected ? '全不选' : '全选',
+              isAllSelected
+                  ? context.l10n.memoryDeselectAll
+                  : context.trLegacy('全选'),
               style: TextStyle(
                 color: palette.accentPrimary,
                 fontSize: 14,
@@ -1195,8 +1314,14 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
             ),
             Row(
               children: [
-                _buildMemoryTabButton(label: '短期记忆', tabIndex: _localMemoryTab),
-                _buildMemoryTabButton(label: '长期记忆', tabIndex: _cloudMemoryTab),
+                _buildMemoryTabButton(
+                  label: LegacyTextLocalizer.localize('短期记忆'),
+                  tabIndex: _localMemoryTab,
+                ),
+                _buildMemoryTabButton(
+                  label: LegacyTextLocalizer.localize('长期记忆'),
+                  tabIndex: _cloudMemoryTab,
+                ),
               ],
             ),
           ],
@@ -1253,7 +1378,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
               child: Row(
                 children: [
                   Text(
-                    '短期记忆',
+                    LegacyTextLocalizer.localize('短期记忆'),
                     style: TextStyle(
                       color: context.omniPalette.textPrimary,
                       fontSize: AppTextStyles.fontSizeMain,
@@ -1332,31 +1457,37 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           imageFilter: _isSelectionMode
               ? ImageFilter.blur(sigmaX: 10, sigmaY: 10)
               : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              _buildMemorySuggestion(),
-              const SizedBox(height: 12),
-              _buildMemoryTabSwitcher(),
-              const SizedBox(height: 12),
-            ],
+          child: Container(
+            width: double.infinity,
+            color: context.omniPalette.pageBackground,
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+                _buildMemorySuggestion(),
+                const SizedBox(height: 12),
+                _buildMemoryTabSwitcher(),
+                const SizedBox(height: 12),
+              ],
+            ),
           ),
         ),
         Expanded(
-          child: PageView(
-            controller: _memoryPageController,
-            physics: _isSelectionMode
-                ? const NeverScrollableScrollPhysics()
-                : const BouncingScrollPhysics(),
-            onPageChanged: (index) {
-              _safeSetState(() {
-                _currentMemoryTab = index;
-              });
-            },
-            children: [
-              _buildLocalMemoryPage(filteredCards, hasLocalMemories),
-              _buildCloudMemoryPage(hasMem0Section),
-            ],
+          child: ClipRect(
+            child: PageView(
+              controller: _memoryPageController,
+              physics: _isSelectionMode
+                  ? const NeverScrollableScrollPhysics()
+                  : const BouncingScrollPhysics(),
+              onPageChanged: (index) {
+                _safeSetState(() {
+                  _currentMemoryTab = index;
+                });
+              },
+              children: [
+                _buildLocalMemoryPage(filteredCards, hasLocalMemories),
+                _buildCloudMemoryPage(hasMem0Section),
+              ],
+            ),
           ),
         ),
       ],
@@ -1386,7 +1517,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '长期记忆还未初始化',
+            context.l10n.memoryNoLongTerm,
             style: TextStyle(
               color: palette.textPrimary,
               fontSize: AppTextStyles.fontSizeMain,
@@ -1395,7 +1526,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           ),
           SizedBox(height: 6),
           Text(
-            '记忆能力启用后，你的跨会话长期记忆会在这里持续沉淀。',
+            context.l10n.memoryNoLongTermDesc,
             style: TextStyle(
               color: palette.textSecondary,
               fontSize: AppTextStyles.fontSizeSmall,
@@ -1430,7 +1561,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '还没有短期记忆',
+            context.l10n.memoryNoShortTerm,
             style: TextStyle(
               color: palette.textPrimary,
               fontSize: AppTextStyles.fontSizeMain,
@@ -1439,7 +1570,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           ),
           SizedBox(height: 6),
           Text(
-            '会话中的过程性信息会沉淀到短期记忆，并在后续整理后转入长期记忆。',
+            context.l10n.memoryNoShortTermDesc,
             style: TextStyle(
               color: palette.textSecondary,
               fontSize: AppTextStyles.fontSizeSmall,
@@ -1475,7 +1606,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '当前筛选下还没有短期记忆',
+            context.l10n.memoryFilteredNoShortTerm,
             style: TextStyle(
               color: palette.textPrimary,
               fontSize: AppTextStyles.fontSizeMain,
@@ -1484,7 +1615,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           ),
           SizedBox(height: 6),
           Text(
-            '稍后再来看看，新的短期记忆会逐步出现。',
+            context.l10n.memoryFilteredNoShortTermDesc,
             style: TextStyle(
               color: palette.textSecondary,
               fontSize: AppTextStyles.fontSizeSmall,
@@ -1534,7 +1665,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '长期记忆',
+                        LegacyTextLocalizer.localize('长期记忆'),
                         style: TextStyle(
                           color: palette.accentPrimary,
                           fontSize: AppTextStyles.fontSizeSmall,
@@ -1578,7 +1709,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
                               ),
                             ),
                             icon: const Icon(Icons.edit_outlined, size: 16),
-                            label: const Text('编辑记忆'),
+                            label: Text(context.l10n.memoryEditTitle),
                           ),
                           TextButton.icon(
                             onPressed: _isMem0Mutating
@@ -1598,7 +1729,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
                               ),
                             ),
                             icon: const Icon(Icons.delete_outline, size: 16),
-                            label: const Text('删除'),
+                            label: Text(context.trLegacy('删除')),
                           ),
                         ],
                       ),
@@ -1613,20 +1744,23 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
                         ),
                       if (item.categories.isNotEmpty)
                         const SizedBox(height: 18),
-                      _buildMem0DetailRow('记忆 ID', item.id),
+                      _buildMem0DetailRow(context.l10n.memoryIdLabel, item.id),
                       if ((item.userId ?? '').isNotEmpty)
-                        _buildMem0DetailRow('用户', item.userId!),
+                        _buildMem0DetailRow(
+                          context.l10n.skillUser,
+                          item.userId!,
+                        ),
                       if ((item.agentId ?? '').isNotEmpty)
                         _buildMem0DetailRow('Agent', item.agentId!),
                       if (item.score != null)
                         _buildMem0DetailRow(
-                          '匹配度',
+                          context.l10n.memoryMatchScore,
                           '${(item.score! * 100).round()}%',
                         ),
                       if (metadataEntries.isNotEmpty) ...[
                         const SizedBox(height: 18),
                         Text(
-                          '附加信息',
+                          context.l10n.memoryAdditionalInfo,
                           style: TextStyle(
                             color: palette.textPrimary,
                             fontSize: AppTextStyles.fontSizeMain,
@@ -1683,8 +1817,12 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       backgroundColor: Colors.transparent,
       builder: (context) {
         return Mem0MemoryEditorSheet(
-          title: initialItem == null ? '新增长期记忆' : '编辑长期记忆',
-          submitLabel: initialItem == null ? '保存到长期记忆' : '保存修改',
+          title: initialItem == null
+              ? context.l10n.memoryAddLongTerm
+              : context.l10n.memoryEditLongTerm,
+          submitLabel: initialItem == null
+              ? context.l10n.memorySaveToLongTerm
+              : context.l10n.memorySaveChanges,
           initialMemory: initialItem?.memory,
           initialCategories: initialItem?.categories ?? const [],
         );
@@ -1707,7 +1845,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           categories: result.categories,
         );
       },
-      successMessage: '长期记忆已新增',
+      successMessage: context.l10n.memoryLongTermAdded,
     );
   }
 
@@ -1727,7 +1865,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           categories: result.categories,
         );
       },
-      successMessage: '长期记忆已更新',
+      successMessage: context.l10n.memorySaveChanges,
     );
   }
 
@@ -1737,9 +1875,10 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
     }
     final confirmed = await AppDialog.confirm(
       context,
-      title: '删除这条长期记忆？',
-      content: '删除后将无法恢复：\n${_clipMem0Memory(item.memory)}',
-      confirmText: '删除',
+      title: context.l10n.memoryDeleteLongTermConfirm,
+      content:
+          '${context.l10n.memoryDeleteWarning}:\n${_clipMem0Memory(item.memory)}',
+      confirmText: context.trLegacy('删除'),
       confirmButtonColor: AppColors.alertRed,
     );
     if (confirmed != true) {
@@ -1749,7 +1888,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       action: () async {
         await Mem0MemoryService.deleteMemory(memoryId: item.id);
       },
-      successMessage: '长期记忆已删除',
+      successMessage: context.l10n.memoryLongTermDeleted,
     );
   }
 
@@ -1766,7 +1905,9 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       showToast(successMessage, type: ToastType.success);
     } catch (e) {
       showToast(
-        '长期记忆操作失败：${e.toString().replaceFirst('Exception: ', '')}',
+        context.l10n.memoryLongTermFailed(
+          e.toString().replaceFirst('Exception: ', ''),
+        ),
         type: ToastType.error,
       );
     } finally {
@@ -1777,11 +1918,11 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
   }
 
   void _editShortMemoryUnsupported(String cardTitle, int cardId) {
-    showToast('短期记忆暂不支持编辑', type: ToastType.warning);
+    showToast(context.l10n.memoryEditDisabled, type: ToastType.warning);
   }
 
   Future<bool> _deleteShortMemoryUnsupported(int cardId) async {
-    showToast('短期记忆暂不支持删除', type: ToastType.warning);
+    showToast(context.l10n.memoryDeleteDisabled, type: ToastType.warning);
     return false;
   }
 
@@ -1842,7 +1983,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           ),
           const SizedBox(height: 12),
           Text(
-            '暂无记忆',
+            context.l10n.memoryNoMemories,
             style: TextStyle(
               fontSize: AppTextStyles.fontSizeH3,
               fontWeight: AppTextStyles.fontWeightMedium,
@@ -1853,7 +1994,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           ),
           const SizedBox(height: 4),
           Text(
-            '快去探索，添加喜欢的内容吧',
+            context.l10n.memoryNoMemoriesDesc,
             style: TextStyle(
               fontSize: AppTextStyles.fontSizeMain,
               fontWeight: AppTextStyles.fontWeightRegular,

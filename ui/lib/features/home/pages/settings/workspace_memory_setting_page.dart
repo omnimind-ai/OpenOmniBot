@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ui/core/router/go_router_manager.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/workspace_memory_service.dart';
 import 'package:ui/theme/app_colors.dart';
@@ -92,7 +93,7 @@ class _WorkspaceMemorySettingPageState
         _rollupEnabled = rollup.enabled;
       });
     } catch (e) {
-      showToast('加载 workspace 记忆配置失败', type: ToastType.error);
+      showToast(context.l10n.workspaceMemoryLoadFailed, type: ToastType.error);
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -146,9 +147,9 @@ class _WorkspaceMemorySettingPageState
       final saved = await WorkspaceMemoryService.saveSoul(_soulController.text);
       if (!mounted) return;
       _soulController.text = saved;
-      showToast('SOUL.md 已保存', type: ToastType.success);
+      showToast(context.l10n.workspaceSoulSaved, type: ToastType.success);
     } catch (e) {
-      showToast('SOUL.md 保存失败', type: ToastType.error);
+      showToast(context.l10n.workspaceSoulSaveFailed, type: ToastType.error);
     } finally {
       if (mounted) {
         setState(() => _savingSoul = false);
@@ -164,9 +165,9 @@ class _WorkspaceMemorySettingPageState
       );
       if (!mounted) return;
       _chatController.text = saved;
-      showToast('CHAT.md 已保存', type: ToastType.success);
+      showToast(context.l10n.workspaceChatSaved, type: ToastType.success);
     } catch (e) {
-      showToast('CHAT.md 保存失败', type: ToastType.error);
+      showToast(context.l10n.workspaceChatSaveFailed, type: ToastType.error);
     } finally {
       if (mounted) {
         setState(() => _savingChat = false);
@@ -182,9 +183,9 @@ class _WorkspaceMemorySettingPageState
       );
       if (!mounted) return;
       _memoryController.text = saved;
-      showToast('MEMORY.md 已保存', type: ToastType.success);
+      showToast(context.l10n.workspaceMemorySaved, type: ToastType.success);
     } catch (e) {
-      showToast('MEMORY.md 保存失败', type: ToastType.error);
+      showToast(context.l10n.workspaceMemorySaveFailed, type: ToastType.error);
     } finally {
       if (mounted) {
         setState(() => _savingMemory = false);
@@ -203,7 +204,7 @@ class _WorkspaceMemorySettingPageState
     } catch (e) {
       if (!mounted) return;
       setState(() => _embeddingEnabled = !enabled);
-      showToast('记忆嵌入开关更新失败', type: ToastType.error);
+      showToast(context.l10n.workspaceEmbeddingToggleFailed, type: ToastType.error);
     }
   }
 
@@ -216,7 +217,7 @@ class _WorkspaceMemorySettingPageState
     } catch (e) {
       if (!mounted) return;
       setState(() => _rollupEnabled = !enabled);
-      showToast('夜间整理开关更新失败', type: ToastType.error);
+      showToast(context.l10n.workspaceRollupToggleFailed, type: ToastType.error);
     }
   }
 
@@ -224,21 +225,21 @@ class _WorkspaceMemorySettingPageState
     try {
       final result = await WorkspaceMemoryService.runRollupNow();
       if (!mounted) return;
-      showToast((result?['summary'] ?? '整理完成').toString());
+      showToast((result?['summary'] ?? context.l10n.workspaceRollupDone).toString());
       await _loadAll();
     } on PlatformException catch (e) {
       final message = e.message?.trim();
       final errorText = (message == null || message.isEmpty)
-          ? '立即整理失败'
-          : '立即整理失败：$message';
+          ? context.l10n.workspaceRollupFailed
+          : '${context.l10n.workspaceRollupFailed}：$message';
       showToast(errorText, type: ToastType.error);
     } catch (e) {
-      showToast('立即整理失败：$e', type: ToastType.error);
+      showToast('${context.l10n.workspaceRollupFailed}：$e', type: ToastType.error);
     }
   }
 
   String _formatTime(int? millis) {
-    if (millis == null || millis <= 0) return '暂无';
+    if (millis == null || millis <= 0) return context.l10n.workspaceNone;
     final date = DateTime.fromMillisecondsSinceEpoch(millis);
     return '${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} '
         '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
@@ -251,60 +252,60 @@ class _WorkspaceMemorySettingPageState
       backgroundColor: context.isDarkTheme
           ? palette.pageBackground
           : AppColors.background,
-      appBar: const CommonAppBar(title: 'Workspace 记忆', primary: true),
+      appBar: CommonAppBar(title: context.l10n.workspaceMemoryTitle, primary: true),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
               children: [
-                const SettingsSectionTitle(label: '记忆能力'),
+                SettingsSectionTitle(label: context.l10n.workspaceMemoryCapability),
                 _buildSwitchCard(
-                  title: '记忆嵌入检索',
+                  title: context.l10n.workspaceEmbeddingRetrieval,
                   subtitle: _embeddingConfig?.configured == true
-                      ? '已配置，可使用向量检索'
-                      : '未配置，将自动降级为词法检索',
+                      ? context.l10n.workspaceEmbeddingReady
+                      : context.l10n.workspaceEmbeddingNotReady,
                   value: _embeddingEnabled,
                   onChanged: _toggleEmbedding,
                   footer: TextButton(
                     onPressed: () {
                       GoRouterManager.push('/home/scene_model_setting');
                     },
-                    child: const Text('去场景模型配置记忆嵌入模型'),
+                    child: Text(context.l10n.workspaceGoToConfig),
                   ),
                 ),
                 const Divider(height: 24),
                 _buildSwitchCard(
-                  title: '夜间记忆整理（22:00）',
+                  title: context.l10n.workspaceNightlyRollup,
                   subtitle:
-                      '最近运行：${_formatTime(_rollupStatus?.lastRunAtMillis)}\n下次运行：${_formatTime(_rollupStatus?.nextRunAtMillis)}',
+                      '${context.l10n.workspaceLastRun(_formatTime(_rollupStatus?.lastRunAtMillis))}\n${context.l10n.workspaceNextRun(_formatTime(_rollupStatus?.nextRunAtMillis))}',
                   value: _rollupEnabled,
                   onChanged: _toggleRollup,
                   footer: Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton(
                       onPressed: _runRollupNow,
-                      child: const Text('立即整理一次'),
+                      child: Text(context.l10n.workspaceRollupNow),
                     ),
                   ),
                 ),
                 const SizedBox(height: 18),
-                const SettingsSectionTitle(label: '文档内容'),
+                SettingsSectionTitle(label: context.l10n.workspaceDocContent),
                 _buildEditorCard(
-                  title: 'SOUL.md（Agent 灵魂）',
+                  title: context.l10n.workspaceSoulMd,
                   controller: _soulController,
                   saving: _savingSoul,
                   onSave: _saveSoul,
                 ),
                 const Divider(height: 24),
                 _buildEditorCard(
-                  title: 'CHAT.md（纯聊天系统提示词）',
+                  title: context.l10n.workspaceChatMd,
                   controller: _chatController,
                   saving: _savingChat,
                   onSave: _saveChatPrompt,
                 ),
                 const Divider(height: 24),
                 _buildEditorCard(
-                  title: 'MEMORY.md（长期记忆）',
+                  title: context.l10n.workspaceMemoryMd,
                   controller: _memoryController,
                   saving: _savingMemory,
                   onSave: _saveMemory,
@@ -402,7 +403,7 @@ class _WorkspaceMemorySettingPageState
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('保存'),
+                  : Text(context.trLegacy('保存')),
             ),
           ),
         ],

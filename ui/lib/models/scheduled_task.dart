@@ -1,3 +1,5 @@
+import 'package:ui/l10n/legacy_text_localizer.dart';
+
 /// 定时任务类型
 enum ScheduledTaskType {
   /// 固定时间（如每天8:00）
@@ -250,22 +252,23 @@ class ScheduledTask {
 
   /// 获取下次执行时间的显示文本
   String getNextExecutionTimeText() {
-    if (nextExecutionTime == null) return '未设置';
+    final en = LegacyTextLocalizer.isEnglish;
+    if (nextExecutionTime == null) return en ? 'Not set' : '未设置';
 
     final nextTime = DateTime.fromMillisecondsSinceEpoch(nextExecutionTime!);
     final now = DateTime.now();
     final diff = nextTime.difference(now);
 
-    if (diff.isNegative) return '已过期';
+    if (diff.isNegative) return en ? 'Expired' : '已过期';
 
     if (diff.inDays > 0) {
-      return '${diff.inDays}天后';
+      return en ? '${diff.inDays}d later' : '${diff.inDays}天后';
     } else if (diff.inHours > 0) {
-      return '${diff.inHours}小时后';
+      return en ? '${diff.inHours}h later' : '${diff.inHours}小时后';
     } else if (diff.inMinutes > 0) {
-      return '${diff.inMinutes}分钟后';
+      return en ? '${diff.inMinutes}m later' : '${diff.inMinutes}分钟后';
     } else {
-      return '即将执行';
+      return en ? 'Starting soon' : '即将执行';
     }
   }
 

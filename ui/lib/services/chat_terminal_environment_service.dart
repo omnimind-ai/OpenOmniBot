@@ -75,6 +75,53 @@ class ChatTerminalEnvironmentService {
         .toList(growable: false);
   }
 
+  static bool containsKey(
+    Iterable<ChatTerminalEnvironmentVariable> variables,
+    String key, {
+    String? exceptKey,
+  }) {
+    final normalizedKey = key.trim();
+    if (normalizedKey.isEmpty) {
+      return false;
+    }
+    final normalizedExceptKey = exceptKey?.trim();
+    return normalizeVariables(variables).any(
+      (item) =>
+          item.normalizedKey == normalizedKey &&
+          item.normalizedKey != normalizedExceptKey,
+    );
+  }
+
+  static List<ChatTerminalEnvironmentVariable> replaceVariable(
+    Iterable<ChatTerminalEnvironmentVariable> variables, {
+    required String originalKey,
+    required ChatTerminalEnvironmentVariable replacement,
+  }) {
+    final normalized = normalizeVariables(variables);
+    final replacementKey = replacement.normalizedKey;
+    if (replacementKey.isEmpty || !isValidKey(replacementKey)) {
+      return normalized;
+    }
+
+    final originalIndex = normalized.indexWhere(
+      (item) => item.normalizedKey == originalKey.trim(),
+    );
+    final replacementItem = ChatTerminalEnvironmentVariable(
+      key: replacementKey,
+      value: replacement.value,
+    );
+    if (originalIndex == -1) {
+      return normalizeVariables([...normalized, replacementItem]);
+    }
+
+    final next = List<ChatTerminalEnvironmentVariable>.from(normalized)
+      ..removeAt(originalIndex);
+    next.removeWhere((item) => item.normalizedKey == replacementKey);
+    final insertionIndex = originalIndex.clamp(0, next.length).toInt();
+    next.insert(insertionIndex, replacementItem);
+    return next;
+  }
+
   static Map<String, String> buildEnvironmentMap(
     Iterable<ChatTerminalEnvironmentVariable> variables,
   ) {

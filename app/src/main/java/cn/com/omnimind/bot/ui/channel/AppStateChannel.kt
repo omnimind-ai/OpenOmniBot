@@ -5,6 +5,7 @@ import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.activity.MainActivity
+import cn.com.omnimind.bot.activity.StartupThemeResolver
 import cn.com.omnimind.bot.share.SharedOpenDraftStore
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -92,6 +93,20 @@ class AppStateChannel {
                 }.onFailure {
                     OmniLog.w(TAG, "Failed to refresh workspace defaults after language change: ${it.message}")
                 }
+                result.success(true)
+            }
+            "applyThemeMode" -> {
+                val appContext = context?.applicationContext
+                val mode = call.argument<String>("mode")
+                if (appContext == null) {
+                    result.error("INVALID_CONTEXT", "Context is null", null)
+                    return
+                }
+                if (mode == null) {
+                    result.error("INVALID_ARGUMENT", "mode is required", null)
+                    return
+                }
+                StartupThemeResolver.applyApplicationNightMode(appContext, mode)
                 result.success(true)
             }
             else -> {
