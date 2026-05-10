@@ -201,6 +201,130 @@ NOTES:
         )
     )
 
+    val agentRunTool = mapOf(
+        "name" to "agent_run",
+        "description" to """Submit a prompt into the normal in-app ${brandName()} Agent runtime.
+
+Use this when you need OOB itself to create or modify Workbench Projects, call internal Agent tools, or run a toolvox-style validation without relying on visual typing into the Flutter Home input.
+
+This is not a Workbench debug shortcut:
+- It starts the same Agent task path used by WebChat/Home.
+- The Agent must call Workbench tools such as workbench_project_create and workbench_api_call by itself.
+- Workbench control APIs are still not exposed as MCP tools or Project business APIs.
+
+BEHAVIOR:
+- Returns once the Agent run is accepted.
+- Use WebChat events, task logs, or Project runtime files to verify completion.
+- Do not claim Project creation succeeded until workspace/projects/<project-id>/project.json exists on the device.
+""".trimIndent(),
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "userMessage" to mapOf(
+                    "type" to "string",
+                    "description" to "The user prompt to submit to the normal OOB Agent runtime."
+                ),
+                "conversationId" to mapOf(
+                    "type" to "integer",
+                    "description" to "Optional existing OOB conversation id. If omitted, a new conversation is created."
+                ),
+                "conversationMode" to mapOf(
+                    "type" to "string",
+                    "description" to "Optional conversation mode. Defaults to normal."
+                ),
+                "title" to mapOf(
+                    "type" to "string",
+                    "description" to "Optional title when creating a new conversation."
+                ),
+                "taskId" to mapOf(
+                    "type" to "string",
+                    "description" to "Optional stable task id for correlation. If omitted, OOB generates one."
+                ),
+                "attachments" to mapOf(
+                    "type" to "array",
+                    "description" to "Optional image/file attachments in the same shape accepted by WebChat."
+                ),
+                "modelOverride" to mapOf(
+                    "type" to "object",
+                    "description" to "Optional providerProfileId/modelId override in the same shape accepted by WebChat."
+                )
+            ),
+            "required" to listOf("userMessage")
+        )
+    )
+
+    val oobProjectCreateTool = mapOf(
+        "name" to "oob_project_create",
+        "description" to """Create or reuse an OOB Workbench Project.
+
+This is the MCP control entry for Project creation. It writes the normal Workbench runtime files under /workspace/projects/<project-id>/ and registers Project business APIs. It does not add Workbench control APIs to the Project Toolbox.
+""".trimIndent(),
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "projectId" to mapOf("type" to "string", "description" to "Stable Project id. Example: oob-workbench-v01-quick-note"),
+                "templateId" to mapOf("type" to "string", "description" to "todo_log_demo | schema_app | quick_capture_inbox"),
+                "name" to mapOf("type" to "string", "description" to "Human-readable Project name."),
+                "prompt" to mapOf("type" to "string", "description" to "Original creation prompt preserved in Project files."),
+                "entityName" to mapOf("type" to "string", "description" to "Schema entity name for schema_app Projects."),
+                "apis" to mapOf("type" to "array", "description" to "Optional explicit business API contracts.")
+            )
+        )
+    )
+
+    val oobProjectActivateTool = mapOf(
+        "name" to "oob_project_activate",
+        "description" to "Activate one OOB Project so its business APIs are mounted as the current MCP Toolbox.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "projectId" to mapOf("type" to "string", "description" to "Project id to activate.")
+            ),
+            "required" to listOf("projectId")
+        )
+    )
+
+    val oobProjectOpenTool = mapOf(
+        "name" to "oob_project_open",
+        "description" to "Open a Project's native OOB Flutter Display route on the device.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "projectId" to mapOf("type" to "string", "description" to "Project id to open.")
+            ),
+            "required" to listOf("projectId")
+        )
+    )
+
+    val oobProjectProgressGetTool = mapOf(
+        "name" to "oob_project_progress_get",
+        "description" to "Read recent Project creation/import progress rows from the Workbench progress log.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "projectId" to mapOf("type" to "string", "description" to "Optional Project id. Defaults to active/latest context when supported."),
+                "limit" to mapOf("type" to "integer", "description" to "Maximum rows to return. Defaults to 50.")
+            )
+        )
+    )
+
+    val fixedTools
+        get() = listOf(
+            vlmTaskTool,
+            taskStatusTool,
+            taskReplyTool,
+            taskWaitUnlockTool,
+            fileTransferTool,
+            agentRunTool,
+            oobProjectCreateTool,
+            oobProjectActivateTool,
+            oobProjectOpenTool,
+            oobProjectProgressGetTool
+        )
+
+    val fixedToolNames: Set<String>
+        get() = fixedTools.mapNotNull { it["name"]?.toString() }.toSet()
+
     val allTools
-        get() = listOf(vlmTaskTool, taskStatusTool, taskReplyTool, taskWaitUnlockTool, fileTransferTool)
+        get() = fixedTools
 }

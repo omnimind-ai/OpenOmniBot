@@ -15,12 +15,24 @@ This note tracks the native Workbench boundary used by OOB Project editing.
   `workbench_project_activate`, `workbench_project_active_get`, and
   `workbench_project_deactivate`.
 - Project business APIs remain in the Project API Registry and are called through `workbench_api_call`.
+- External MCP clients should treat the active Project as a Toolbox. `tools/list`
+  returns fixed OOB MCP tools plus active Project dynamic tools in
+  `<toolbox_id>.<api_slug>` form, such as `quick_note.capture_ingest`.
+  Dynamic tools dispatch to the same Project API executor with
+  `caller=mcp_toolbox`; external clients no longer need to know the internal
+  `workbench_api_call(projectId, apiId)` shape.
 - Project creation/import progress remains a Workbench control API: `workbench_project_progress_get`.
 - OSS/GitHub source ingest remains a Workbench control API: `workbench_project_ingest_oss`. URL-only ingest records `requiresFetch=true`; local downloaded source paths are copied and analyzed.
 - Generated frontend contracts live in `frontend/page_spec.json`.
-- Backend API contracts live in `backend/api_spec.json`.
+- Backend Tool Contracts live in `backend/api_spec.json` and include MCP
+  `toolName`, `apiVersion`, schemas, capabilities, side effects, data/log files,
+  and examples.
 - Source ingest contracts live in `source/manifest.json`.
 - UI clicks and AI calls share the same native executor path and append to `logs/api_calls.jsonl`.
+- MCP read-only context is exposed through `resources/list` and
+  `resources/read` for Project manifest, active Project, Toolbox, progress, API
+  logs, and source manifest. MCP prompt templates are exposed through
+  `prompts/list` and `prompts/get`.
 - Authenticated backend E2E can call `POST /mcp/workbench/call` with the local MCP/Dashboard bearer token. This debug transport calls the same native `WorkbenchProjectStore` methods but is not part of MCP tool discovery and never enters Project API Registry. `workbench_project_open` on this route switches to the Android main thread before navigating the native OOB UI through `TaskCompletionNavigator`, so the test can prove the actual Flutter Display is visible.
 - The same authenticated debug route has local-only model-provider setup helpers: `debug_model_provider_configure` and `debug_model_provider_get`. They are for device E2E setup, write the normal provider/profile stores, sync Agent AI config, and return only `apiKeyConfigured` rather than the raw key.
 
@@ -62,6 +74,13 @@ Do not mark the VLM/toolvox Project-creation path complete until a real in-app
 runner or reliable text-entry path submits the prompt and the resulting
 `workspace/projects/<project-id>/project.json` exists.
 
+The approved MCP runner for the real in-app Agent path is `agent_run`. It creates
+or reuses an OOB conversation, calls the same `AgentRunService.startConversationRun`
+path used by WebChat/Home, and returns the accepted `taskId` plus
+`conversationId`. It does not expose Workbench control APIs; the Agent must still
+call internal Workbench tools itself, and success still requires runtime-file
+verification under `workspace/projects/<project-id>/`.
+
 ## Startup Boundary
 
 Flutter first frame must not block on non-critical scheduler/workspace path work.
@@ -75,8 +94,12 @@ reachable during backend E2E on a fresh debug install.
 OOB Workbench is now the runtime container for backend assets as well as UI:
 
 - Project creation writes `logs/project_progress.jsonl` and exposes the latest row as `lastProgress` in the Project payload.
-- `backend/api_spec.json` records executor metadata, control API names, persistence paths, and source refs so a Project API can later move from native-backed execution to Bridge/Alpine without changing `workbench_api_call`.
+- `project.json` and `backend/api_spec.json` record the derived Toolbox manifest
+  so the active Project can be mounted through MCP dynamic tools.
+- `backend/api_spec.json` records executor metadata, control API names, persistence paths, source refs, Tool Contract fields, and examples so a Project API can later move from native-backed execution to Bridge/Alpine without changing internal `workbench_api_call` or external MCP Toolbox tool names.
 - `workbench_project_ingest_oss` imports local source snapshots under `source/repos/<source-id>/`, skips dependency/build directories, detects package files such as `package.json`, `pyproject.toml`, `pubspec.yaml`, and Gradle files, and stores entrypoint hints in `source/manifest.json`.
 - GitHub URL-only ingest is deliberately metadata-only. It is not a network fetch; after terminal/tool fetch downloads the repo, call the same API with `sourcePath`.
 - Workbench control APIs still do not appear in `workbench_api_list`; only Project business APIs are exposed to the generated frontend.
+- Workbench control APIs still do not appear in active Project Toolbox dynamic tools; only Project business APIs are mounted.
 - `/mcp/workbench/call` is the deterministic Dashboard-token test transport for Project backend runtime operations when VLM/model-provider setup is not the test subject.
+- `/mcp/call_tool` with `name=agent_run` is the deterministic MCP runner for the normal Agent/tool path when Flutter Home text entry is not the test subject; `/mcp/call_tool` with an active dynamic Toolbox tool name is the external MCP business API path.

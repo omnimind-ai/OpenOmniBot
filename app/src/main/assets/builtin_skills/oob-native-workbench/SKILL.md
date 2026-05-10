@@ -9,13 +9,15 @@ Use this skill when a task asks to build or modify an OOB-native project workben
 
 The goal is to create vibe projects that feel like part of OOB. Do not default to standalone HTML files, random WebViews, project-list dashboards, or isolated generated apps unless the user explicitly asks for export.
 
-## Project vs MCP Tools
+## Project, Toolbox, And MCP Tools
 
-An OOB Workbench Project is not an MCP tool list. Treat it as a Skill-driven workflow plus app-like tool bundle that OOB owns end to end:
+An OOB Workbench Project is a persistent app-like instance that OOB owns end to end. Its active business APIs are mounted externally as a Toolbox through MCP:
 
-- MCP tools expose external callable capabilities to the agent. They usually do not define an OOB-native frontend, project state model, preview route, or editing surface.
-- A Workbench Project owns business APIs, persistent data, generated frontend pages, workspace files, and the OOB-native Flutter Display route that users interact with.
-- Project business APIs may feel like web-style tools, but they are registered in the Project API Registry and are called through `workbench_api_call`, not discovered as MCP tools.
+- MCP Tools are the standard external callable surface. OOB exposes fixed tools such as `vlm_task`, `agent_run`, and `oob_project_*`, plus active Project dynamic tools.
+- Toolbox is the product name for the active Project's mounted business tool collection.
+- Dynamic Project tools use `<toolbox_id>.<api_slug>`, for example `quick_note.capture_ingest`.
+- A Workbench Project owns business APIs, persistent data, generated frontend pages, workspace files, logs, and the OOB-native Flutter Display route that users interact with.
+- Internally, Project business APIs are still registered in the Project API Registry and executed through `workbench_api_call`. Externally, MCP dynamic tools dispatch into the same executor with `caller=mcp_toolbox`.
 - UI clicks and AI tool calls must hit the same Project API executor so the generated frontend and the agent share one backend and one data flow.
 - The core job is to turn vibe coding output into something runnable, visible, persistent, and editable inside OOB: the skill defines the generation process, the Project links frontend/backend/data, Workspace stores editable files, and Flutter Display renders the generated frontend.
 
@@ -43,6 +45,7 @@ Workbench creation has two separate interfaces:
 ```text
 OOB Workbench Control API -> creates/opens/reads projects
 Project API Registry      -> stores only project business APIs
+MCP Toolbox               -> mounts active Project business APIs as dynamic MCP tools
 ```
 
 Control APIs are built into OOB and must not appear in the Project API panel:
@@ -119,13 +122,13 @@ Persist generated project assets under the shared workspace:
   logs/project_progress.jsonl
 ```
 
-`registry.json` stores projects. `api_registry.json` stores business APIs only. `api_calls.jsonl` records both AI calls and UI clicks.
+`registry.json` stores projects. `api_registry.json` stores business APIs only. `api_calls.jsonl` records AI calls, UI clicks, and MCP Toolbox calls.
 
 The project directory separates editable source specs from runtime state:
 
 - `README.md` explains what the project is, how it is displayed, and where its APIs/data live.
 - `frontend/page_spec.json` is the generated frontend contract. It describes the OOB Flutter Display route, renderer, visible controls, state bindings, and which Project API each control calls. It is not standalone HTML.
-- `backend/api_spec.json` is the backend contract. It declares business API ids, schemas, executor kind, runtime metadata, source refs, persistence files, frontend binding, and AI usage. Todo uses the native todo executor; schema projects use the generic native collection executor; `workspace_python_script` is the stable script boundary for Project APIs that will later run through Bridge/Alpine while keeping the same `workbench_api_call` path.
+- `backend/api_spec.json` is the backend Tool Contract. It declares business API ids, MCP `toolName`, `apiVersion`, schemas, executor kind, capabilities, side effects, data/log files, examples, runtime metadata, source refs, persistence files, frontend binding, and AI usage. Todo uses the native todo executor; schema projects use the generic native collection executor; `workspace_python_script` is the stable script boundary for Project APIs that will later run through Bridge/Alpine while keeping the same internal `workbench_api_call` path and external Toolbox tool name.
 - `data/` and `logs/` are runtime state shared by AI and UI.
 - `android/` stores APK files or Android project source snapshots imported through the Workbench control plane. This is how OOB can "eat" an existing Android app/project into a vibe Project without turning the import itself into a business API.
 - `source/` stores OSS/GitHub source snapshots imported through the Workbench control plane. URL-only imports are marked `requiresFetch=true` until terminal/tool fetch places a local repo path for analysis.
@@ -155,7 +158,7 @@ Routing rules:
 2. Project creation is a deliberate action. Only call `workbench_project_create` when the user explicitly says to create/new/build a Project or workbench. A plain capture command such as `记一下：...`, `总结这个链接`, or `归档这条` must never create a Project by itself.
 3. Listing, reading, opening, exporting, and deleting go through `workbench_project_list/get/open/export/delete`.
 4. `delete project <explicit projectId>` may call `workbench_project_delete` directly. If the user only says `delete project`, call `workbench_project_list` first; with multiple Projects ask the user to specify, and with only one active/available Project ask for confirmation before deleting.
-5. Business operations go through `workbench_project_active_get` when context is unclear, then `workbench_api_list(projectId)` followed by `workbench_api_call(projectId, apiId, inputs)`. Do not edit `data/*.json` by hand. If there is no active Project, ask the user to explicitly create or select one first.
+5. In-app Agent business operations go through `workbench_project_active_get` when context is unclear, then `workbench_api_list(projectId)` followed by `workbench_api_call(projectId, apiId, inputs)`. External MCP clients should use active Toolbox dynamic tools such as `quick_note.capture_ingest`. Do not edit `data/*.json` by hand. If there is no active Project, ask the user to explicitly create or select one first.
 6. Frontend/backend edits prefer the active Project from the injected prompt context. If the user names a `projectId`, use that explicit Project.
 7. Hot updates from Home input, floating Xiaowan, drawing annotations, or VLM screen input go through `workbench_project_hot_update`.
 
@@ -208,7 +211,7 @@ The decomposition should be visible in the Project files (`README.md`, `frontend
 
 ## Extending Backend Tools
 
-When the user asks to add backend capability to a Workbench Project, treat it as adding a Project API, not as adding an MCP tool. The prompt or implementation plan must specify:
+When the user asks to add backend capability to a Workbench Project, treat it as adding a Project business API. The MCP dynamic tool is derived from that API after the Project is active; do not hand-register a separate one-off MCP tool for a Project business action. The prompt or implementation plan must specify:
 
 ```text
 apiId: stable business id, for example note.create
@@ -219,17 +222,18 @@ executorKind: native_template | workspace_script | provider_http | future custom
 persistence: project files the API reads/writes
 frontendBinding: which Flutter Display control calls this API
 aiUsage: when the AI layer should call this API
+toolbox: derived MCP tool name in <toolbox_id>.<api_slug> form
 ```
 
 Required workflow:
 
 1. Read the current project with `workbench_project_get` or open it through `/workbench/projects`.
 2. Decide whether the API belongs to an existing template or requires a new template/executor kind.
-3. Register the business API through the Workbench project creation/update path. Do not append to `api_registry.json` by hand.
+3. Register the business API through the Workbench project creation/update path. Do not append to `api_registry.json` by hand and do not add a parallel fixed MCP tool for the same action.
 4. Implement execution behind the native Workbench executor or an approved workspace/provider executor boundary.
 5. Bind the generated frontend control to `workbench_api_call(projectId, apiId, inputs)`.
 6. Keep AI calls and UI clicks on the same API path and the same persistent data files.
-7. Add a focused mock or native test that calls the API and verifies persisted state and `api_calls.jsonl`.
+7. Add a focused mock or native test that calls the API or its dynamic MCP Toolbox name and verifies persisted state and `api_calls.jsonl`.
 
 Current v1 boundary: `todo_log_demo` remains a regression demo. `schema_app` supports generic create/archive collection projects through `native_schema_collection`. `quick_capture_inbox` is the first daily-use validation template and registers `capture.ingest`, `capture.archive`, `capture.promote_to_todo`, and `capture.summarize` with `executorKind=workspace_python_script`.
 
@@ -257,9 +261,9 @@ For this pass, `workspace_python_script` is a stable Project API contract with a
 
 ## Toolvox / VLM Validation Boundary
 
-The local MCP surface exposes `vlm_task`, `task_status`, `task_reply`, `task_wait_unlock`, and `file_transfer`. Workbench control APIs are internal Agent tools; they are not directly exposed as MCP tools and must not be added to Project API Registry.
+The local MCP surface exposes `vlm_task`, `agent_run`, `task_status`, `task_reply`, `task_wait_unlock`, and `file_transfer`. Workbench control APIs are internal Agent tools; they are not directly exposed as MCP tools and must not be added to Project API Registry.
 
-For toolvox-style validation, `vlm_task` should drive OOB Home or the approved in-app runner. The in-app Agent then calls:
+For toolvox-style validation, use `vlm_task` when the test is visual device operation through OOB Home. Use `agent_run` when the test is the normal OOB Agent/tool path and Flutter Home text entry is not the thing being tested. The in-app Agent then calls:
 
 ```text
 workbench_project_create
@@ -306,6 +310,13 @@ the prompt is actually submitted. On `emulator-5554`, Flutter input exposed no
 focused editable accessibility node, and app-process `input text/keyevent` was
 denied `INJECT_EVENTS`; record this as a text-entry blocker, not a successful
 toolvox Project creation.
+
+`agent_run` submits the prompt into the same `AgentRunService.startConversationRun`
+path used by WebChat/Home. It creates or reuses an OOB conversation and returns
+an accepted `taskId` plus `conversationId`. It is not allowed to call
+`WorkbenchProjectStore` directly; the Agent must invoke Workbench tools through
+its normal tool registry. Only mark the run successful when the requested
+Project files exist under `workspace/projects/<project-id>/`.
 
 ## Distribution Export
 

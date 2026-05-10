@@ -20,8 +20,8 @@ Last Updated: 2026-05-10
 
 ## Current Workbench Backend Focus
 
-- Backend workbench: Project creation, API registry, executor metadata, source ingest, progress logs.
-- Runtime container: Project payload, `project.json`, `backend/api_spec.json`, `source/manifest.json`, data files, logs, export package.
+- Backend workbench: Project creation, API registry, Toolbox over MCP, executor metadata, source ingest, progress logs.
+- Runtime container: Project payload, `project.json`, `backend/api_spec.json`, derived Toolbox manifest, `source/manifest.json`, data files, logs, export package.
 - Out of scope for this pass: frontend polish, page_spec v2 widgets, real BridgeServer socket, raw Python execution, APK install/launch, OSS network fetch inside native code.
 
 ## Iteration Logs
@@ -38,4 +38,5 @@ Last Updated: 2026-05-10
 - Verified app-data files exist under both Project directories, including `project.json`, `backend/api_spec.json`, `data/items.json`, `logs/project_progress.jsonl`, and `logs/api_calls.jsonl`.
 - Final 5554 native UI smoke for `oob-workbench-vlm-quick-note` showed `3 active / 1 archived`, `OOB native UI`, `4 APIs`, and a receipt item tagged `Summary`.
 - `debug_model_provider_configure` can configure the normal OOB model-provider stores for local E2E and masks keys as `apiKeyConfigured`.
-- Do not claim `vlm_task`/toolvox direct Project creation success until the VLM path itself submits the prompt and writes Project files on `emulator-5554`; the deterministic `/mcp/workbench/call` route is a local authenticated backend E2E transport, not MCP tool discovery.
+- External MCP entry now uses fixed OOB Tools plus active Project Toolbox dynamic tools. Use MCP Resources for read-only Project/toolbox/progress/log context and MCP Prompts for reusable Project workflow instructions.
+- Do not claim `vlm_task`/toolvox direct Project creation success until the VLM path itself submits the prompt and writes Project files on `emulator-5554`; the deterministic `/mcp/workbench/call` route is a local authenticated backend E2E transport, not MCP dynamic Toolbox discovery.

@@ -36,9 +36,9 @@ Each Project lives under:
   android/apps/<asset-id>/
 ```
 
-`project.json` is the runtime summary. It includes Project identity, displays, schema, business APIs, Android assets, source assets, progress summary, and state counters.
+`project.json` is the runtime summary. It includes Project identity, displays, schema, business APIs, Toolbox manifest, Android assets, source assets, progress summary, last error, and state counters.
 
-`backend/api_spec.json` is the backend contract. It includes API ids, schemas, executor kind, runtime metadata, control API names, persistence paths, source refs, and frontend binding.
+`backend/api_spec.json` is the backend Tool Contract. It includes API ids, MCP `toolName`, `apiVersion`, schemas, executor kind, capabilities, side effects, data/log files, runtime metadata, control API names, persistence paths, source refs, examples, and frontend binding.
 
 `source/manifest.json` records OSS/GitHub source assets. It is intentionally separate from `backend/api_spec.json` so source ingestion can happen before API binding.
 
@@ -204,19 +204,92 @@ The replacement must preserve:
 - `logs/api_calls.jsonl`;
 - `logs/script_runs.jsonl`.
 
-## Toolvox / VLM Task Boundary
+## MCP Toolbox Surface
 
-As of this pass, the external MCP tool surface in OOB exposes:
+OOB now uses MCP's standard server features for the external backend surface:
+
+- MCP Tools: executable actions.
+- MCP Resources: read-only Project/Toolbox/progress/log context.
+- MCP Prompts: reusable Project workflow templates.
+
+Product naming stays:
+
+- Project: persistent OOB app instance.
+- Toolbox: the active Project's mounted business tool collection.
+- Display: OOB-native Flutter visual surface.
+
+Fixed OOB MCP tools:
 
 ```text
 vlm_task
+agent_run
 task_status
 task_reply
 task_wait_unlock
 file_transfer
+oob_project_create
+oob_project_activate
+oob_project_open
+oob_project_progress_get
 ```
 
-It does not expose Workbench control APIs as MCP tools. Therefore a toolvox-style validation that starts outside the app should use `vlm_task` to drive the OOB UI/Agent, and the in-app Agent then calls `workbench_project_create`, `workbench_project_activate`, `workbench_api_call`, and related Workbench tools.
+When no Project is active, `tools/list` returns only the fixed OOB MCP tools.
+When a Project is active, `tools/list` also returns that Project's dynamic
+Toolbox tools:
+
+```text
+<toolbox_id>.<api_slug>
+quick_note.capture_ingest
+customer_tracker.customer_create
+```
+
+External MCP clients should call those dynamic tools instead of knowing
+`workbench_api_call(projectId, apiId)`. Internally, dynamic tool execution still
+dispatches through `WorkbenchProjectStore.callApi(..., caller="mcp_toolbox")`,
+so UI clicks, Agent calls, and MCP Toolbox calls share the same Project API
+executor and `logs/api_calls.jsonl`.
+
+Workbench control APIs such as `workbench_project_create` and
+`workbench_api_call` remain available to the in-app OOB Agent and Dashboard
+debug route. They do not enter the Project business Toolbox, and they are not
+written to Project API Registry.
+
+MCP Resources:
+
+```text
+oob://projects
+oob://projects/active
+oob://projects/{projectId}
+oob://projects/{projectId}/toolbox
+oob://projects/{projectId}/progress
+oob://projects/{projectId}/logs/api_calls
+oob://projects/{projectId}/source/manifest
+```
+
+Resources are read-only and return JSON text. API logs and progress resources
+return recent tail rows by default, without exposing arbitrary filesystem paths.
+
+MCP Prompts:
+
+```text
+create_quick_capture_project
+create_schema_project
+inspect_active_toolbox
+fix_project_last_error
+```
+
+Prompts produce standard user instructions only; execution still goes through
+`agent_run`, fixed OOB MCP tools, or active Project Toolbox tools.
+
+## Toolvox / VLM Task Boundary
+
+A toolvox-style validation that starts outside the app should use either:
+
+1. `vlm_task` when the test objective is visual device operation through the current screen.
+2. `agent_run` when the test objective is the real OOB Agent/tool path and Flutter Home text entry is not the target under test.
+3. Active Project Toolbox dynamic tools when the test objective is Project business API execution through MCP.
+
+`agent_run` submits a prompt into the same in-app Agent task path used by WebChat/Home. The Agent still has to call `workbench_project_create`, `workbench_project_activate`, `workbench_api_call`, and related internal Workbench tools itself. This is not a Workbench control API shortcut and must not be added to Project API Registry.
 
 For deterministic backend E2E, OOB also exposes an authenticated Dashboard/debug transport:
 
@@ -298,6 +371,12 @@ What blocked:
   `INJECT_EVENTS`; it cannot be used as a reliable in-app text-entry fallback on
   this emulator.
 
+Follow-up: `agent_run` has been added as the approved MCP runner for toolvox-style
+backend validation when the test should exercise the normal OOB Agent runtime
+without depending on visual typing into Flutter Home. A run is still only
+successful after the Agent-created Project files exist under
+`workspace/projects/<project-id>/`.
+
 Do not claim a VLM/toolvox Project creation as successful unless the prompt is
 actually submitted through OOB and the resulting Project files exist under
 `workspace/projects/<project-id>/`.
@@ -315,6 +394,7 @@ env JAVA_HOME=/Applications/Android\ Studio.app/Contents/jbr/Contents/Home \
   ANDROID_HOME=/Users/wuzewen/Library/Android/sdk \
   ./gradlew :app:testDevelopStandardDebugUnitTest \
   --tests '*Workbench*' \
+  --tests '*McpToolDefinitions*' \
   -Ptarget=lib/main_standard.dart
 ```
 
@@ -335,8 +415,12 @@ Functional verification after backend gate:
 3. Query `workbench_project_progress_get` and confirm each Project ended with `project_create_completed`.
 4. Ingest one local sample repo with `workbench_project_ingest_oss(sourcePath=...)`.
 5. Confirm `workbench_api_list(projectId)` still excludes Workbench control APIs.
-6. When model provider setup blocks the VLM path, use `POST /mcp/workbench/call` with the local Dashboard token to run the same backend calls and verify actual files on `emulator-5554`.
-7. Device-side checks, if needed, use `emulator-5554` only.
+6. Call MCP `tools/list` before activation and confirm only fixed OOB tools are returned.
+7. Activate the Project and call MCP `tools/list` again; confirm dynamic tools such as `quick_note.capture_ingest`.
+8. Call the dynamic tool and confirm `logs/api_calls.jsonl` records `caller=mcp_toolbox`.
+9. Read `oob://projects/{projectId}/toolbox`, `progress`, and `logs/api_calls` through MCP Resources.
+10. When model provider setup blocks the VLM path, use `POST /mcp/workbench/call` with the local Dashboard token to run backend setup calls and verify actual files on `emulator-5554`.
+11. Device-side checks, if needed, use `emulator-5554` only.
 
 ## Verification Status On 2026-05-10
 
@@ -347,11 +431,20 @@ env JAVA_HOME=/Applications/Android\ Studio.app/Contents/jbr/Contents/Home \
   ANDROID_HOME=/Users/wuzewen/Library/Android/sdk \
   ./gradlew :app:testDevelopStandardDebugUnitTest \
   --tests '*Workbench*' \
-  --tests '*AgentToolDefinitions*' \
+  --tests '*McpToolDefinitions*' \
   -Ptarget=lib/main_standard.dart
 ```
 
 Result: `BUILD SUCCESSFUL`.
+
+This covers:
+
+- active Project Toolbox manifest derivation;
+- dynamic MCP tool naming such as `quick_note.capture_ingest`;
+- `caller=mcp_toolbox` API call logging;
+- MCP resource payloads for toolbox/progress/api logs;
+- minimal required-field schema validation and `lastError`;
+- fixed MCP tools including `agent_run` and `oob_project_*`.
 
 Device smoke on `emulator-5554`:
 

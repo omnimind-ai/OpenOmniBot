@@ -7,6 +7,9 @@ import cn.com.omnimind.bot.vlm.VlmToolCoordinator
 import cn.com.omnimind.bot.vlm.VlmToolOutcome
 import cn.com.omnimind.bot.vlm.VlmToolOutcomeStatus
 import cn.com.omnimind.bot.util.AssistsUtil
+import cn.com.omnimind.bot.webchat.AgentRunRequestNormalizer
+import cn.com.omnimind.bot.webchat.AgentRunService
+import cn.com.omnimind.bot.webchat.ConversationDomainService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -238,6 +241,85 @@ object McpToolExecutors {
             else -> {
                 return@withContext McpResponseBuilder.buildErrorText("Unknown action: $action")
             }
+        }
+    }
+
+    /**
+     * Starts a normal in-app Agent run through the same service used by WebChat/Home.
+     *
+     * @param context Android application context used to access conversation storage and the Agent manager.
+     * @param args MCP JSON arguments. `userMessage` is the natural-language request; `conversationId`
+     * optionally reuses an existing conversation, while omitted or invalid ids create a fresh one.
+     * @return MCP-compatible response with the accepted task id and conversation id. Completion must be
+     * verified through Agent/WebChat events or the runtime files produced by the requested tools.
+     */
+    suspend fun executeAgentRun(
+        context: Context,
+        args: Map<String, Any?>?
+    ): Map<String, Any?> = withContext(Dispatchers.IO) {
+        val requestArgs = args ?: emptyMap()
+        val normalizedPayload = AgentRunRequestNormalizer.normalize(requestArgs)
+        if (normalizedPayload.userMessage.isBlank() && normalizedPayload.attachments.isEmpty()) {
+            return@withContext McpResponseBuilder.buildErrorText("Missing userMessage")
+        }
+
+        val appContext = context.applicationContext
+        val conversationService = ConversationDomainService(appContext)
+        val requestedMode = requestArgs["conversationMode"]?.toString()?.trim()?.ifEmpty { null }
+            ?: "normal"
+        val requestedConversationId = when (val raw = requestArgs["conversationId"]) {
+            is Number -> raw.toLong()
+            is String -> raw.trim().toLongOrNull()
+            else -> null
+        }?.takeIf { it > 0L }
+
+        val conversation = if (requestedConversationId != null) {
+            conversationService.getConversationPayload(requestedConversationId)
+                ?: return@withContext McpResponseBuilder.buildErrorText(
+                    "Conversation not found: $requestedConversationId"
+                )
+        } else {
+            conversationService.createConversation(
+                title = requestArgs["title"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: "MCP Agent Run",
+                mode = requestedMode
+            )
+        }
+        val conversationId = (conversation["id"] as? Number)?.toLong()
+            ?: conversation["id"]?.toString()?.toLongOrNull()
+            ?: return@withContext McpResponseBuilder.buildErrorText("Conversation id is invalid")
+
+        val runRequest = linkedMapOf<String, Any?>()
+        runRequest.putAll(requestArgs)
+        runRequest["conversationMode"] = requestedMode
+        runRequest["userMessage"] = normalizedPayload.userMessage
+        runRequest["attachments"] = normalizedPayload.attachments
+
+        return@withContext runCatching {
+            val accepted = AgentRunService(appContext).startConversationRun(
+                conversationId = conversationId,
+                request = runRequest
+            )
+            val taskId = accepted["taskId"]?.toString().orEmpty()
+            val status = accepted["status"]?.toString().orEmpty().ifEmpty { "accepted" }
+            val text = buildString {
+                appendLine("Agent run accepted.")
+                appendLine("")
+                appendLine("Task ID: $taskId")
+                appendLine("Conversation ID: $conversationId")
+                appendLine("Status: $status")
+                appendLine("")
+                appendLine("This uses the normal in-app OOB Agent runtime. Verify completion through WebChat events or Project runtime files.")
+            }
+            linkedMapOf<String, Any?>(
+                "content" to listOf(mapOf("type" to "text", "text" to text)),
+                "taskId" to taskId,
+                "status" to status,
+                "conversationId" to conversationId,
+                "conversation" to conversation
+            )
+        }.getOrElse { error ->
+            McpResponseBuilder.buildErrorText("Agent run failed: ${error.message}")
         }
     }
     

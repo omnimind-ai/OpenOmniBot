@@ -64,20 +64,8 @@ data class WorkbenchApiRecord(
     val outputSchema: Map<String, Any?>,
     val executorKind: String
 ) {
-    fun toPayload(executionCount: Int = 0): Map<String, Any?> = linkedMapOf(
-        "apiId" to apiId,
-        "projectId" to projectId,
-        "toolId" to toolId,
-        "displayName" to displayName,
-        "description" to description,
-        "inputSchema" to inputSchema,
-        "outputSchema" to outputSchema,
-        "executorKind" to executorKind,
-        "kind" to executorKind,
-        "inputKeys" to inputSchema.keys.toList(),
-        "outputKeys" to outputSchema.keys.toList(),
-        "executionCount" to executionCount
-    )
+    fun toPayload(executionCount: Int = 0): Map<String, Any?> =
+        WorkbenchToolboxBuilder.apiContract(this, executionCount)
 }
 
 data class WorkbenchTodoRecord(
@@ -569,6 +557,171 @@ class WorkbenchProjectStore(
     }
 
     /**
+     * Builds the active Project Toolbox manifest for MCP resources and tool discovery.
+     *
+     * @return Toolbox manifest for the active Project, or null when no Project is active.
+     */
+    @Synchronized
+    fun activeToolbox(): Map<String, Any?>? {
+        val activeProjectId = readActiveProjectId() ?: return null
+        val record = readProjectRegistry().firstOrNull { it.projectId == activeProjectId }
+            ?: run {
+                activeProjectFile.delete()
+                return null
+            }
+        val apis = projectApis(record.projectId)
+        return WorkbenchToolboxBuilder.toolboxPayload(record, apis, apiExecutionCounts(record.projectId))
+    }
+
+    /**
+     * Lists dynamic MCP tools mounted from the active Project's Toolbox.
+     *
+     * @return MCP `tools/list` descriptors for active Project business APIs only.
+     */
+    @Synchronized
+    fun activeMcpTools(): List<Map<String, Any?>> {
+        val activeProjectId = readActiveProjectId() ?: return emptyList()
+        val record = readProjectRegistry().firstOrNull { it.projectId == activeProjectId }
+            ?: run {
+                activeProjectFile.delete()
+                return emptyList()
+            }
+        val apis = projectApis(record.projectId)
+        return WorkbenchToolboxBuilder.mcpTools(record, apis, apiExecutionCounts(record.projectId))
+    }
+
+    /**
+     * Calls a Project business API by its dynamic MCP Toolbox tool name.
+     *
+     * @param toolName MCP dynamic tool name such as `quick_note.capture_ingest`.
+     * @param inputs MCP tool arguments that will be forwarded to the Project API executor.
+     * @param caller Caller label written to `logs/api_calls.jsonl`; external MCP uses `mcp_toolbox`.
+     * @return Project API result with the resolved Project/API identifiers.
+     */
+    @Synchronized
+    fun callMcpTool(
+        toolName: String,
+        inputs: Map<String, Any?>,
+        caller: String = "mcp_toolbox"
+    ): Map<String, Any?> {
+        val activeProjectId = readActiveProjectId()
+            ?: return linkedMapOf(
+                "success" to false,
+                "toolName" to toolName,
+                "errorCode" to "TOOL_NOT_FOUND",
+                "errorMessage" to "No active OOB Project Toolbox is mounted."
+            )
+        val record = readProjectRegistry().firstOrNull { it.projectId == activeProjectId }
+            ?: run {
+                activeProjectFile.delete()
+                return linkedMapOf(
+                    "success" to false,
+                    "toolName" to toolName,
+                    "errorCode" to "TOOL_NOT_FOUND",
+                    "errorMessage" to "Active OOB Project is no longer registered."
+                )
+            }
+        val api = projectApis(record.projectId).firstOrNull { candidate ->
+            WorkbenchToolboxBuilder.matchesTool(record.projectId, candidate, toolName)
+        } ?: return linkedMapOf(
+            "success" to false,
+            "toolName" to toolName,
+            "projectId" to record.projectId,
+            "errorCode" to "TOOL_NOT_FOUND",
+            "errorMessage" to "Project Toolbox tool not found: $toolName"
+        )
+        return callApi(
+            projectId = record.projectId,
+            apiId = api.apiId,
+            inputs = inputs,
+            caller = caller
+        ) + linkedMapOf(
+            "toolName" to WorkbenchToolboxBuilder.toolName(record.projectId, api.apiId),
+            "projectId" to record.projectId,
+            "apiId" to api.apiId
+        )
+    }
+
+    /**
+     * Lists read-only MCP Resources exposed by the Workbench backend.
+     *
+     * @return MCP `resources/list` descriptors. No arbitrary filesystem paths are exposed.
+     */
+    @Synchronized
+    fun listMcpResources(): List<Map<String, Any?>> {
+        val resources = mutableListOf<Map<String, Any?>>(
+            mcpResource("oob://projects", "OOB Projects", "Registered Workbench Project summaries."),
+            mcpResource("oob://projects/active", "Active OOB Project", "Current active Project and Toolbox.")
+        )
+        readProjectRegistry().forEach { record ->
+            val prefix = "oob://projects/${record.projectId}"
+            resources += mcpResource(prefix, record.name, "Project manifest for ${record.projectId}.")
+            resources += mcpResource("$prefix/toolbox", "${record.name} Toolbox", "Project business tools mounted as MCP Tools.")
+            resources += mcpResource("$prefix/progress", "${record.name} Progress", "Recent Project progress events.")
+            resources += mcpResource("$prefix/logs/api_calls", "${record.name} API Calls", "Recent Project API call log rows.")
+            resources += mcpResource("$prefix/source/manifest", "${record.name} Source Manifest", "Imported source asset summary.")
+        }
+        return resources
+    }
+
+    /**
+     * Reads a supported MCP Resource URI as JSON text.
+     *
+     * @param uri Resource URI from `listMcpResources`.
+     * @param limit Maximum log/progress rows to return for tail-style resources.
+     * @return MCP `resources/read` payload with one JSON content item.
+     */
+    @Synchronized
+    fun readMcpResource(uri: String, limit: Int = 50): Map<String, Any?> {
+        val normalized = uri.trim().trimEnd('/')
+        val boundedLimit = limit.coerceIn(1, 200)
+        val payload: Any? = when {
+            normalized == "oob://projects" -> linkedMapOf("projects" to listProjects())
+            normalized == "oob://projects/active" -> getActiveProject()
+            normalized.startsWith("oob://projects/") -> {
+                val suffix = normalized.removePrefix("oob://projects/")
+                val parts = suffix.split("/")
+                val projectId = parts.firstOrNull()?.takeIf { it.isNotBlank() }
+                    ?: throw IllegalArgumentException("Missing projectId in resource URI: $uri")
+                when (parts.drop(1).joinToString("/")) {
+                    "" -> getProject(projectId)
+                    "toolbox" -> {
+                        val record = findProject(projectId)
+                        WorkbenchToolboxBuilder.toolboxPayload(
+                            record,
+                            projectApis(record.projectId),
+                            apiExecutionCounts(record.projectId)
+                        )
+                    }
+                    "progress" -> getProjectProgress(projectId, boundedLimit)
+                    "logs/api_calls" -> linkedMapOf(
+                        "projectId" to projectId,
+                        "log" to "logs/api_calls.jsonl",
+                        "limit" to boundedLimit,
+                        "events" to readApiCallLog(projectId, boundedLimit)
+                    )
+                    "source/manifest" -> linkedMapOf(
+                        "projectId" to projectId,
+                        "manifest" to "source/manifest.json",
+                        "assets" to readOssSources(projectId).map { it.toPayload() }
+                    )
+                    else -> throw IllegalArgumentException("Unsupported MCP resource URI: $uri")
+                }
+            }
+            else -> throw IllegalArgumentException("Unsupported MCP resource URI: $uri")
+        }
+        return linkedMapOf(
+            "contents" to listOf(
+                linkedMapOf(
+                    "uri" to normalized,
+                    "mimeType" to "application/json",
+                    "text" to gson.toJson(payload)
+                )
+            )
+        )
+    }
+
+    /**
      * Calls a registered Project API through the native executor.
      *
      * @param projectId Project owning the API.
@@ -584,21 +737,58 @@ class WorkbenchProjectStore(
         inputs: Map<String, Any?>,
         caller: String
     ): Map<String, Any?> {
-        val api = findApi(projectId, apiId)
-        val result = when (api.toolId) {
-            WORKBENCH_TODO_ADD_TOOL_ID -> addTodo(projectId, inputs)
-            WORKBENCH_TODO_FINISH_TOOL_ID -> finishTodo(projectId, inputs)
-            else -> if (api.executorKind == WORKBENCH_SCHEMA_EXECUTOR_KIND) {
-                callSchemaCollectionApi(projectId, api, inputs)
-            } else if (api.executorKind == WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND) {
-                callQuickCaptureApi(projectId, api, inputs)
-            } else {
-                apiError(api, "UNKNOWN_API", "Unknown workbench API: ${api.toolId}")
+        val record = findProject(projectId)
+        val api = projectApis(record.projectId).firstOrNull { candidate ->
+            candidate.apiId == apiId.trim() || candidate.toolId == apiId.trim()
+        }
+        val startedAt = System.currentTimeMillis()
+        if (api == null) {
+            val missingApi = WorkbenchApiRecord(
+                apiId = apiId.trim().ifBlank { "unknown" },
+                projectId = record.projectId,
+                toolId = apiId.trim().ifBlank { "unknown" },
+                displayName = apiId.trim().ifBlank { "Unknown API" },
+                description = "Unregistered Project API.",
+                inputSchema = emptyMap(),
+                outputSchema = emptyMap(),
+                executorKind = "unknown"
+            )
+            val result = apiError(
+                missingApi,
+                "TOOL_NOT_FOUND",
+                "Workbench Project API not found: $apiId"
+            )
+            appendApiCall(record.projectId, missingApi, inputs, caller, result, startedAt)
+            writeProjectJson(record, projectApis(record.projectId))
+            return result + ("project" to getProject(record.projectId))
+        }
+        val validationError = validateApiInputs(api, inputs)
+        val result = if (validationError != null) {
+            apiError(api, "INVALID_INPUT", validationError)
+        } else {
+            runCatching {
+                when (api.toolId) {
+                    WORKBENCH_TODO_ADD_TOOL_ID -> addTodo(record.projectId, inputs)
+                    WORKBENCH_TODO_FINISH_TOOL_ID -> finishTodo(record.projectId, inputs)
+                    else -> if (api.executorKind == WORKBENCH_SCHEMA_EXECUTOR_KIND) {
+                        callSchemaCollectionApi(record.projectId, api, inputs)
+                    } else if (api.executorKind == WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND) {
+                        callQuickCaptureApi(record.projectId, api, inputs)
+                    } else {
+                        apiError(api, "UNKNOWN_API", "Unknown workbench API: ${api.toolId}")
+                    }
+                }
+            }.getOrElse { error ->
+                apiError(
+                    api,
+                    "EXECUTOR_ERROR",
+                    error.message ?: "Project API executor failed."
+                )
             }
         }
-        appendApiCall(projectId, api, inputs, caller, result)
-        writeProjectJson(findProject(projectId), projectApis(projectId))
-        return result + ("project" to getProject(projectId))
+        appendApiCall(record.projectId, api, inputs, caller, result, startedAt)
+        writeProjectJson(record, projectApis(record.projectId))
+        return result + ("project" to getProject(record.projectId))
     }
 
     /**
@@ -1177,6 +1367,7 @@ class WorkbenchProjectStore(
         val androidAssets = readAndroidAssets(record.projectId)
         val sourceAssets = readOssSources(record.projectId)
         val displays = workbenchDisplays(record)
+        val toolbox = WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts)
         return linkedMapOf(
             "projectId" to record.projectId,
             "name" to record.name,
@@ -1189,6 +1380,7 @@ class WorkbenchProjectStore(
             "apiIds" to record.apiIds,
             "tools" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
+            "toolbox" to toolbox,
             "androidAssets" to androidAssets.map { it.toPayload() },
             "sourceAssets" to sourceAssets.map { it.toPayload() },
             "flows" to emptyList<Map<String, Any?>>(),
@@ -1196,6 +1388,7 @@ class WorkbenchProjectStore(
             "items" to schemaItems.map { it.toPayload() },
             "captureItems" to quickCaptureItems.map { it.toPayload() },
             "lastProgress" to lastProjectProgress(record.projectId),
+            "lastError" to lastApiError(record.projectId),
             "progressLogPath" to "${record.spacePath}/logs/project_progress.jsonl",
             "createdAt" to record.createdAt,
             "updatedAt" to record.updatedAt
@@ -1207,6 +1400,7 @@ class WorkbenchProjectStore(
         activatedAt: String? = null
     ): Map<String, Any?> {
         val counts = apiExecutionCounts(record.projectId)
+        val apis = projectApis(record.projectId)
         return linkedMapOf(
             "projectId" to record.projectId,
             "name" to record.name,
@@ -1214,9 +1408,11 @@ class WorkbenchProjectStore(
             "spacePath" to record.spacePath,
             "skillId" to "oob-native-workbench",
             "displays" to workbenchDisplays(record),
-            "apis" to projectApis(record.projectId).map { it.toPayload(counts[it.apiId] ?: 0) },
+            "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
+            "toolbox" to WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts),
             "sourceAssets" to readOssSources(record.projectId).map { it.toPayload() },
             "lastProgress" to lastProjectProgress(record.projectId),
+            "lastError" to lastApiError(record.projectId),
             "activatedAt" to (activatedAt ?: readActiveProjectActivatedAt())
         )
     }
@@ -1247,6 +1443,7 @@ class WorkbenchProjectStore(
         val prompt = sourcePrompt?.trim()?.takeIf { it.isNotEmpty() }
             ?: readProjectSourcePrompt(record.projectId)
         val displays = workbenchDisplays(record)
+        val toolbox = WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts)
         val payload = linkedMapOf<String, Any?>(
             "project" to record.toPayload(),
             "generation" to linkedMapOf(
@@ -1268,6 +1465,7 @@ class WorkbenchProjectStore(
             "displays" to displays,
             "schema" to workbenchPageSpec(record),
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
+            "toolbox" to toolbox,
             "android" to linkedMapOf(
                 "manifest" to "android/manifest.json",
                 "assets" to androidAssets.map { it.toPayload() }
@@ -1280,6 +1478,7 @@ class WorkbenchProjectStore(
                 "log" to "logs/project_progress.jsonl",
                 "last" to lastProjectProgress(record.projectId)
             ),
+            "lastError" to lastApiError(record.projectId),
             "state" to linkedMapOf(
                 "todoCount" to todos.size,
                 "openTodoCount" to todos.count { it.status != "finished" },
@@ -1463,12 +1662,19 @@ class WorkbenchProjectStore(
             pageSpec.writeText(gson.toJson(defaultPageSpec(record, apis, sourcePrompt, config)))
         }
         val apiSpec = File(backendDir, "api_spec.json")
-        if (!apiSpec.exists()) {
+        val apiSpecText = if (apiSpec.exists()) apiSpec.readText() else ""
+        val needsToolContractUpgrade = !apiSpec.exists() ||
+            !apiSpecText.contains("\"toolbox\"") ||
+            !apiSpecText.contains("\"toolName\"") ||
+            !apiSpecText.contains("\"apiVersion\"")
+        if (needsToolContractUpgrade) {
+            val counts = apiExecutionCounts(record.projectId)
+            val persistedPrompt = sourcePrompt ?: readProjectSourcePrompt(record.projectId)
             apiSpec.writeText(
                 gson.toJson(
                     linkedMapOf<String, Any?>(
                         "executorBoundary" to "oob_native_workbench",
-                        "sourcePrompt" to sourcePrompt,
+                        "sourcePrompt" to persistedPrompt,
                         "templateId" to record.templateId,
                         "runtime" to linkedMapOf(
                             "workspace" to record.spacePath,
@@ -1484,15 +1690,10 @@ class WorkbenchProjectStore(
                             "workbench_project_hot_update",
                             "workbench_project_export"
                         ),
+                        "toolbox" to WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts),
                         "promptDecomposition" to promptDecomposition(record, apis),
                         "apis" to apis.map { api ->
-                            linkedMapOf(
-                                "apiId" to api.apiId,
-                                "displayName" to api.displayName,
-                                "description" to api.description,
-                                "inputSchema" to api.inputSchema,
-                                "outputSchema" to api.outputSchema,
-                                "executorKind" to api.executorKind,
+                            api.toPayload(counts[api.apiId] ?: 0) + linkedMapOf(
                                 "runtime" to linkedMapOf(
                                     "executorBoundary" to "oob_native_workbench",
                                     "executorKind" to api.executorKind,
@@ -1508,19 +1709,6 @@ class WorkbenchProjectStore(
                                         null
                                     }
                                 ),
-                                "capabilities" to when (api.executorKind) {
-                                    WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND -> listOf(
-                                        "persistent_project_data",
-                                        "script_audit_log",
-                                        "future_bridge_tools",
-                                        "future_alpine_execution"
-                                    )
-                                    WORKBENCH_SCHEMA_EXECUTOR_KIND -> listOf(
-                                        "persistent_project_data",
-                                        "native_collection_crud"
-                                    )
-                                    else -> listOf("persistent_project_data", "native_template")
-                                },
                                 "sourceRefs" to listOf(
                                     linkedMapOf(
                                         "kind" to "page_spec",
@@ -2099,24 +2287,70 @@ class WorkbenchProjectStore(
         "errorMessage" to errorMessage
     )
 
+    /**
+     * Performs minimal Tool Contract input validation before the executor runs.
+     *
+     * @param api Business API whose `inputSchema` declares required keys. String schema values
+     * ending in `?` are optional; map schemas may set `required=false` or `nullable=true`.
+     * @param inputs Caller-supplied input payload.
+     * @return A human-readable validation error, or null when the payload is acceptable.
+     */
+    private fun validateApiInputs(api: WorkbenchApiRecord, inputs: Map<String, Any?>): String? {
+        val missing = api.inputSchema.mapNotNull { (key, spec) ->
+            if (!isRequiredInput(spec)) return@mapNotNull null
+            val value = inputs[key]
+            val isMissing = !inputs.containsKey(key) || value == null
+            if (isMissing) key else null
+        }
+        return if (missing.isEmpty()) {
+            null
+        } else {
+            "Missing required input field(s): ${missing.joinToString(", ")}"
+        }
+    }
+
+    /**
+     * Determines whether one Tool Contract schema field is required.
+     *
+     * @param spec Simple schema value from `inputSchema`, usually `string` or `string?`.
+     * @return True when callers must provide a nonblank value before execution.
+     */
+    private fun isRequiredInput(spec: Any?): Boolean {
+        if (spec is Map<*, *>) {
+            val required = spec["required"]
+            if (required is Boolean) return required
+            if (required != null) return required.toString().equals("true", ignoreCase = true)
+            val nullable = spec["nullable"]
+            if (nullable is Boolean) return !nullable
+            if (nullable != null) return !nullable.toString().equals("true", ignoreCase = true)
+        }
+        return !spec?.toString().orEmpty().trim().endsWith("?")
+    }
+
     private fun appendApiCall(
         projectId: String,
         api: WorkbenchApiRecord,
         inputs: Map<String, Any?>,
         caller: String,
-        result: Map<String, Any?>
+        result: Map<String, Any?>,
+        startedAtMillis: Long = System.currentTimeMillis()
     ) {
         val file = File(projectDir(projectId), "logs/api_calls.jsonl")
         file.parentFile?.mkdirs()
+        val finishedAt = System.currentTimeMillis()
         val row = linkedMapOf<String, Any?>(
             "timestamp" to nowIso(),
             "projectId" to projectId,
             "apiId" to api.apiId,
             "toolId" to api.toolId,
+            "toolName" to WorkbenchToolboxBuilder.toolName(projectId, api.apiId),
             "caller" to caller.ifBlank { "unknown" },
             "inputs" to inputs,
             "success" to (result["success"] == true),
-            "errorCode" to result["errorCode"]
+            "outputs" to result["outputs"],
+            "errorCode" to result["errorCode"],
+            "errorMessage" to result["errorMessage"],
+            "durationMs" to (finishedAt - startedAtMillis).coerceAtLeast(0)
         )
         file.appendText(logGson.toJson(row) + "\n")
     }
@@ -3254,6 +3488,61 @@ class WorkbenchProjectStore(
         val file = ossManifestFile(projectId)
         file.parentFile?.mkdirs()
         file.writeText(gson.toJson(sources.sortedBy { it.importedAt }))
+    }
+
+    /**
+     * Builds one read-only MCP Resource descriptor.
+     *
+     * @param uri Stable resource URI. The URI is an OOB logical id, not a filesystem path.
+     * @param name Human-readable resource name.
+     * @param description Short description for MCP clients.
+     * @return MCP `resources/list` descriptor.
+     */
+    private fun mcpResource(uri: String, name: String, description: String): Map<String, Any?> {
+        return linkedMapOf(
+            "uri" to uri,
+            "name" to name,
+            "description" to description,
+            "mimeType" to "application/json"
+        )
+    }
+
+    /**
+     * Reads recent API call rows from the append-only API call log.
+     *
+     * @param projectId Project whose `logs/api_calls.jsonl` should be tailed.
+     * @param limit Maximum number of newest rows to return.
+     * @return JSON-safe log rows ordered oldest to newest within the returned window.
+     */
+    private fun readApiCallLog(projectId: String, limit: Int): List<Map<String, Any?>> {
+        val file = File(projectDir(projectId), "logs/api_calls.jsonl")
+        if (!file.exists()) return emptyList()
+        return file.readLines()
+            .takeLast(limit)
+            .mapNotNull { line ->
+                runCatching {
+                    gson.fromJson<Map<String, Any?>>(line, mapType)
+                }.getOrNull()
+            }
+    }
+
+    /**
+     * Reads the most recent failed API call for Project summaries.
+     *
+     * @param projectId Project whose API call log should be inspected.
+     * @return Latest structured error row, or null when no failed call is present.
+     */
+    private fun lastApiError(projectId: String): Map<String, Any?>? {
+        val file = File(projectDir(projectId), "logs/api_calls.jsonl")
+        if (!file.exists()) return null
+        return file.readLines()
+            .asReversed()
+            .mapNotNull { line ->
+                runCatching {
+                    gson.fromJson<Map<String, Any?>>(line, mapType)
+                }.getOrNull()
+            }
+            .firstOrNull { row -> row["success"] != true }
     }
 
     /**

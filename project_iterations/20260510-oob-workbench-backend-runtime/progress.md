@@ -101,3 +101,92 @@ runner setup.
   - `workspace/projects/oob-workbench-vlm-quick-note/logs/project_progress.jsonl`
   - `workspace/projects/oob-workbench-vlm-quick-note/logs/api_calls.jsonl`
 - Screenshot proof: `/tmp/oob_quick_note_final_clean_5554.png`.
+
+## MCP agent_run Runner
+
+- Added `agent_run` to MCP tool discovery and dispatch.
+- Implementation uses the normal OOB Agent runtime path:
+  - creates or reuses a conversation through `ConversationDomainService`;
+  - starts the Agent through `AgentRunService.startConversationRun`;
+  - returns accepted `taskId` and `conversationId`;
+  - does not call `WorkbenchProjectStore` directly.
+- Updated Workbench docs and skills to mark `agent_run` as the approved toolvox-style runner when the test should not depend on Flutter Home visual text entry.
+- Built the APK with:
+
+```bash
+env JAVA_HOME=/Applications/Android\ Studio.app/Contents/jbr/Contents/Home \
+  ANDROID_HOME=/Users/wuzewen/Library/Android/sdk \
+  ./gradlew :app:assembleDevelopStandardDebug -Ptarget=lib/main_standard.dart
+```
+
+Result: `BUILD SUCCESSFUL`.
+
+- Installed the APK to `emulator-5554` only.
+- Verified `/mcp/health` on forwarded port `18899` returns `{"status":"ok"}`.
+- Blocked on authenticated MCP functional call: the previously used Dashboard/MCP bearer token now returns `401`. Per security policy, did not reverse the token from app-local MMKV/signing material.
+- Next action after user provides current Dashboard/MCP bearer token: call `/mcp/call_tool` with `name=agent_run`, prompt OOB to create a quick-capture Project, then verify `workspace/projects/<project-id>/project.json` and visible native OOB display.
+
+## MCP Toolbox v0.1
+
+- Implemented OOB Toolbox over MCP backend surface without touching frontend 0.5.0 work.
+- Added `WorkbenchToolboxBuilder.kt`:
+  - derives `toolboxId` from Project id, e.g. `oob-workbench-v01-quick-note` -> `quick_note`;
+  - derives dynamic MCP tool names, e.g. `quick_note.capture_ingest`;
+  - generates Tool Contract fields (`toolName`, `apiVersion`, `capabilities`, `sideEffects`, `dataFiles`, `logFiles`, `examples`);
+  - builds active Project Toolbox manifests and MCP tool descriptors.
+- Updated `WorkbenchRuntime.kt`:
+  - `project.json` and `backend/api_spec.json` include derived `toolbox`;
+  - Project API payloads include v0.1 Tool Contract fields;
+  - active Project manifests expose Toolbox;
+  - `callApi` returns structured `TOOL_NOT_FOUND`, writes failed calls to `logs/api_calls.jsonl`, records `durationMs`, `outputs`, `errorMessage`, and updates `lastError`;
+  - added required-field schema validation for missing/null required inputs while preserving executor-level blank-value validation;
+  - added `activeMcpTools`, `activeToolbox`, `callMcpTool`, `listMcpResources`, and `readMcpResource`.
+- Updated MCP route layer:
+  - `initialize` advertises tools/resources/prompts;
+  - `tools/list` returns fixed OOB MCP tools plus active Project dynamic tools;
+  - `tools/call` dispatches fixed tools first and active Project dynamic tools second;
+  - added MCP `resources/list`, `resources/read`, `prompts/list`, `prompts/get`;
+  - added fixed OOB MCP controls `oob_project_create`, `oob_project_activate`, `oob_project_open`, `oob_project_progress_get`;
+  - kept old `workbench_project_*` and `workbench_api_call` as internal Agent/debug route names, not dynamic Toolbox tools.
+- Added built-in MCP prompts:
+  - `create_quick_capture_project`
+  - `create_schema_project`
+  - `inspect_active_toolbox`
+  - `fix_project_last_error`
+- Updated docs and skills:
+  - `docs/reference/OOB_INTEGRATION.md`
+  - `docs/reference/OOB_WORKBENCH_BACKEND_RUNTIME.md`
+  - `docs/agent_context/INDEX.md`
+  - `docs/agent_context/ROOT_FILE_INVENTORY.md`
+  - `docs/agent_context/skills/oob-workbench-backend/SKILL.md`
+  - `app/src/main/assets/builtin_skills/oob-native-workbench/SKILL.md`
+- Added tests:
+  - active Project Toolbox dynamic tool derivation;
+  - `mcp_toolbox` caller log path;
+  - MCP resources for toolbox/progress/api logs;
+  - schema missing-input structured error and `lastError`;
+  - fixed MCP tools include `agent_run` and `oob_project_*`, but not internal `workbench_*` names.
+- Focused test command:
+
+```bash
+env JAVA_HOME=/Applications/Android\ Studio.app/Contents/jbr/Contents/Home \
+  ANDROID_HOME=/Users/wuzewen/Library/Android/sdk \
+  ./gradlew :app:testDevelopStandardDebugUnitTest \
+  --tests '*Workbench*' \
+  --tests '*McpToolDefinitions*' \
+  -Ptarget=lib/main_standard.dart
+```
+
+Result: `BUILD SUCCESSFUL`.
+
+- Full debug APK build command:
+
+```bash
+env JAVA_HOME=/Applications/Android\ Studio.app/Contents/jbr/Contents/Home \
+  ANDROID_HOME=/Users/wuzewen/Library/Android/sdk \
+  ./gradlew :app:assembleDevelopStandardDebug -Ptarget=lib/main_standard.dart
+```
+
+Result: `BUILD SUCCESSFUL`.
+
+- Device functional status: blocked in this pass because `adb devices` returned no attached devices, so `emulator-5554` was not available. `emulator -list-avds` was also not on PATH in this shell. No 5556 device was used.

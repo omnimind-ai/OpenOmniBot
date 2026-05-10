@@ -11,6 +11,12 @@ This inventory gives the next agent the shortest reliable map for the OOB Workbe
 
 - `app/src/main/java/cn/com/omnimind/bot/workbench/WorkbenchRuntime.kt`
   - Owns Project registry, Project API registry, Project payloads, runtime files, API execution, hot updates, Android ingest, OSS ingest, progress logs, and export packages.
+- `app/src/main/java/cn/com/omnimind/bot/workbench/WorkbenchToolboxBuilder.kt`
+  - Derives Project Toolbox manifests, MCP dynamic tool descriptors, and Tool Contract fields from Project API records.
+- `app/src/main/java/cn/com/omnimind/bot/mcp/McpRoutes.kt`
+  - MCP JSON-RPC and REST endpoints, including fixed tools, active Project dynamic tools, resources, prompts, and Dashboard/debug Workbench transport.
+- `app/src/main/java/cn/com/omnimind/bot/mcp/McpPromptDefinitions.kt`
+  - Built-in MCP prompt templates for Project creation, active Toolbox inspection, and last-error repair.
 - `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/WorkbenchToolHandler.kt`
   - Maps Agent tool calls to `WorkbenchProjectStore` methods.
 - `app/src/main/java/cn/com/omnimind/bot/agent/tool/AgentToolDefinitions.kt`
@@ -39,6 +45,8 @@ This inventory gives the next agent the shortest reliable map for the OOB Workbe
 
 - `app/src/test/java/cn/com/omnimind/bot/workbench/WorkbenchProjectStoreTest.kt`
   - Main Workbench backend/runtime tests.
+- `app/src/test/java/cn/com/omnimind/bot/mcp/McpToolDefinitionsTest.kt`
+  - Fixed MCP tool surface smoke test for `agent_run` and `oob_project_*` controls.
 - `app/src/test/java/cn/com/omnimind/bot/agent/AgentToolDefinitionsMusicTest.kt`
   - Existing Agent tool definition smoke that now also checks Workbench control tool exposure.
 

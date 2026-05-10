@@ -337,6 +337,124 @@ class WorkbenchProjectStoreTest {
     }
 
     @Test
+    fun activeProjectBuildsMcpToolboxDynamicTools() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        val projectId = "oob-workbench-v01-quick-note"
+        store.createProject(
+            mapOf(
+                "templateId" to WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID,
+                "projectId" to projectId,
+                "name" to "随手记 Toolbox"
+            )
+        )
+
+        store.activateProject(projectId)
+        val toolbox = store.activeToolbox()!!
+        val mcpTools = store.activeMcpTools()
+        val toolNames = mcpTools.map { it["name"].toString() }.sorted()
+        val projectJson = root.resolve("projects/$projectId/project.json").readText()
+        val backendSpec = root.resolve("projects/$projectId/backend/api_spec.json").readText()
+
+        assertEquals("quick_note", toolbox["toolboxId"])
+        assertTrue(toolNames.contains("quick_note.capture_ingest"))
+        assertTrue(toolNames.contains("quick_note.capture_archive"))
+        assertFalse(toolNames.contains("workbench_project_create"))
+        assertTrue(projectJson.contains("\"toolbox\""))
+        assertTrue(projectJson.contains("quick_note.capture_ingest"))
+        assertTrue(backendSpec.contains("\"toolName\""))
+        assertTrue(backendSpec.contains("\"apiVersion\""))
+        assertTrue(backendSpec.contains("\"toolbox\""))
+    }
+
+    @Test
+    fun mcpDynamicToolCallDispatchesProjectApiAndLogsCaller() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        val projectId = "oob-workbench-v01-quick-note"
+        store.createProject(
+            mapOf(
+                "templateId" to WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID,
+                "projectId" to projectId
+            )
+        )
+        store.activateProject(projectId)
+
+        val result = store.callMcpTool(
+            toolName = "quick_note.capture_ingest",
+            inputs = mapOf("text" to "记一下：明天 3 点开会"),
+            caller = "mcp_toolbox"
+        )
+
+        assertTrue(result["success"] == true)
+        assertEquals(WORKBENCH_CAPTURE_INGEST_TOOL_ID, result["apiId"])
+        val apiLog = root.resolve("projects/$projectId/logs/api_calls.jsonl").readText()
+        assertTrue(apiLog.contains("\"caller\":\"mcp_toolbox\""))
+        assertTrue(apiLog.contains("\"toolName\":\"quick_note.capture_ingest\""))
+        assertTrue(apiLog.contains("\"durationMs\""))
+    }
+
+    @Test
+    fun apiCallSchemaValidationWritesStructuredErrorAndLastError() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        val projectId = "schema-validation"
+        store.createProject(
+            mapOf(
+                "templateId" to WORKBENCH_SCHEMA_TEMPLATE_ID,
+                "projectId" to projectId,
+                "entityName" to "Note"
+            )
+        )
+
+        val result = store.callApi(
+            projectId = projectId,
+            apiId = "note.create",
+            inputs = emptyMap(),
+            caller = "mcp_toolbox"
+        )
+
+        assertFalse(result["success"] == true)
+        assertEquals("INVALID_INPUT", result["errorCode"])
+        val apiLog = root.resolve("projects/$projectId/logs/api_calls.jsonl").readText()
+        assertTrue(apiLog.contains("\"success\":false"))
+        assertTrue(apiLog.contains("\"errorCode\":\"INVALID_INPUT\""))
+        assertTrue(apiLog.contains("Missing required input field"))
+        val project = store.getProject(projectId)
+        val lastError = project["lastError"] as Map<*, *>
+        assertEquals("INVALID_INPUT", lastError["errorCode"])
+    }
+
+    @Test
+    fun mcpResourcesExposeProjectToolboxProgressAndLogs() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        val projectId = "oob-workbench-v01-quick-note"
+        store.createProject(
+            mapOf(
+                "templateId" to WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID,
+                "projectId" to projectId
+            )
+        )
+        store.activateProject(projectId)
+        store.callMcpTool(
+            toolName = "quick_note.capture_ingest",
+            inputs = mapOf("text" to "MCP resource log item"),
+            caller = "mcp_toolbox"
+        )
+
+        val resources = store.listMcpResources().map { it["uri"].toString() }
+        val toolbox = store.readMcpResource("oob://projects/$projectId/toolbox")
+        val logs = store.readMcpResource("oob://projects/$projectId/logs/api_calls")
+        val progress = store.readMcpResource("oob://projects/$projectId/progress")
+
+        assertTrue(resources.contains("oob://projects/$projectId/toolbox"))
+        assertTrue(toolbox.toString().contains("quick_note.capture_ingest"))
+        assertTrue(logs.toString().contains("mcp_toolbox"))
+        assertTrue(progress.toString().contains("project_create_completed"))
+    }
+
+    @Test
     fun promptGeneratedSchemaProjectRunsE2eThroughOobWorkbench() {
         val root = Files.createTempDirectory("workbench-store-test").toFile()
         val store = WorkbenchProjectStore(root)

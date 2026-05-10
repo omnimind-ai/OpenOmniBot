@@ -57,10 +57,10 @@ object McpRoutes {
 
             // 工具发现
             get("/mcp/list_tools") {
-                call.respond(mapOf("tools" to McpToolDefinitions.allTools))
+                call.respond(mapOf("tools" to listMcpTools(context)))
             }
             post("/mcp/list_tools") {
-                call.respond(mapOf("tools" to McpToolDefinitions.allTools))
+                call.respond(mapOf("tools" to listMcpTools(context)))
             }
 
             // REST 风格工具调用
@@ -132,7 +132,11 @@ object McpRoutes {
                 "id" to id,
                 "result" to mapOf(
                     "protocolVersion" to "2024-11-05",
-                    "capabilities" to mapOf("tools" to mapOf<String, Any>()),
+                    "capabilities" to mapOf(
+                        "tools" to mapOf<String, Any>(),
+                        "resources" to mapOf<String, Any>(),
+                        "prompts" to mapOf<String, Any>()
+                    ),
                     "serverInfo" to mapOf("name" to "小万Mcp", "version" to "1.0")
                 )
             )
@@ -140,7 +144,7 @@ object McpRoutes {
             "tools/list" -> mapOf(
                 "jsonrpc" to "2.0",
                 "id" to id,
-                "result" to mapOf("tools" to McpToolDefinitions.allTools)
+                "result" to mapOf("tools" to listMcpTools(context))
             )
             "tools/call" -> {
                 val params = request["params"] as? Map<String, Any?>
@@ -148,6 +152,59 @@ object McpRoutes {
                 val args = params?.get("arguments") as? Map<String, Any?>
                 val execResult = executeTool(context, serverScope, name, args)
                 mapOf("jsonrpc" to "2.0", "id" to id, "result" to execResult)
+            }
+            "resources/list" -> mapOf(
+                "jsonrpc" to "2.0",
+                "id" to id,
+                "result" to mapOf("resources" to WorkbenchProjectStore(context).listMcpResources())
+            )
+            "resources/read" -> {
+                val params = request["params"] as? Map<String, Any?>
+                val uri = params?.get("uri")?.toString()?.trim().orEmpty()
+                val limit = params?.get("limit")?.toString()?.toIntOrNull() ?: 50
+                runCatching {
+                    WorkbenchProjectStore(context).readMcpResource(uri, limit)
+                }.fold(
+                    onSuccess = { result ->
+                        mapOf("jsonrpc" to "2.0", "id" to id, "result" to result)
+                    },
+                    onFailure = { error ->
+                        mapOf(
+                            "jsonrpc" to "2.0",
+                            "id" to id,
+                            "error" to mapOf(
+                                "code" to -32602,
+                                "message" to (error.message ?: "Invalid resource request")
+                            )
+                        )
+                    }
+                )
+            }
+            "prompts/list" -> mapOf(
+                "jsonrpc" to "2.0",
+                "id" to id,
+                "result" to mapOf("prompts" to McpPromptDefinitions.prompts)
+            )
+            "prompts/get" -> {
+                val params = request["params"] as? Map<String, Any?>
+                val name = params?.get("name")?.toString()?.trim().orEmpty()
+                runCatching {
+                    McpPromptDefinitions.getPrompt(name)
+                }.fold(
+                    onSuccess = { result ->
+                        mapOf("jsonrpc" to "2.0", "id" to id, "result" to result)
+                    },
+                    onFailure = { error ->
+                        mapOf(
+                            "jsonrpc" to "2.0",
+                            "id" to id,
+                            "error" to mapOf(
+                                "code" to -32602,
+                                "message" to (error.message ?: "Invalid prompt request")
+                            )
+                        )
+                    }
+                )
             }
             else -> {
                 if (method?.startsWith("$/") == true || method?.startsWith("notifications/") == true) null
@@ -174,14 +231,105 @@ object McpRoutes {
         name: String?,
         args: Map<String, Any?>?
     ): Map<String, Any?> {
-        return when (name) {
+        return runCatching {
+            when (name) {
             "vlm_task" -> McpToolExecutors.executeVlmTask(context, args, serverScope)
             "task_status" -> McpToolExecutors.executeTaskStatus(args)
             "task_reply" -> McpToolExecutors.executeTaskReply(args)
             "task_wait_unlock" -> McpToolExecutors.executeTaskWaitUnlock(context, args, serverScope)
             "file_transfer" -> McpToolExecutors.executeFileTransfer(args)
-            else -> McpResponseBuilder.buildErrorText("Unknown tool: $name")
+            "agent_run" -> McpToolExecutors.executeAgentRun(context, args)
+            "oob_project_create" -> mcpProjectCreate(context, args)
+            "oob_project_activate" -> mcpProjectActivate(context, args)
+            "oob_project_open" -> mcpProjectOpen(context, args)
+            "oob_project_progress_get" -> mcpProjectProgressGet(context, args)
+            else -> {
+                if (name.isNullOrBlank()) {
+                    McpResponseBuilder.buildErrorText("Missing tool name")
+                } else {
+                    val result = WorkbenchProjectStore(context).callMcpTool(
+                        toolName = name,
+                        inputs = args ?: emptyMap(),
+                        caller = "mcp_toolbox"
+                    )
+                    mcpProjectToolResult(name, result)
+                }
+            }
+            }
+        }.getOrElse { error ->
+            McpResponseBuilder.buildErrorText(error.message ?: "Tool execution failed")
         }
+    }
+
+    /**
+     * Lists fixed OOB MCP tools plus active Project Toolbox dynamic tools.
+     *
+     * @param context Android context used to load the active Project registry.
+     * @return MCP tool descriptors.
+     */
+    private fun listMcpTools(context: Context): List<Map<String, Any?>> {
+        val dynamicTools = runCatching { WorkbenchProjectStore(context).activeMcpTools() }
+            .getOrElse { emptyList() }
+        return McpToolDefinitions.fixedTools + dynamicTools
+    }
+
+    private fun mcpProjectCreate(context: Context, args: Map<String, Any?>?): Map<String, Any?> {
+        return mcpProjectToolResult(
+            "oob_project_create",
+            WorkbenchProjectStore(context).createProject(args ?: emptyMap())
+        )
+    }
+
+    private fun mcpProjectActivate(context: Context, args: Map<String, Any?>?): Map<String, Any?> {
+        val projectId = stringArg(args ?: emptyMap(), "projectId")
+        return mcpProjectToolResult(
+            "oob_project_activate",
+            WorkbenchProjectStore(context).activateProject(projectId)
+        )
+    }
+
+    private suspend fun mcpProjectOpen(
+        context: Context,
+        args: Map<String, Any?>?
+    ): Map<String, Any?> {
+        val projectId = stringArg(args ?: emptyMap(), "projectId")
+        val store = WorkbenchProjectStore(context)
+        val route = store.routeForProject(projectId)
+        withContext(Dispatchers.Main) {
+            TaskCompletionNavigator.navigateToMainRoute(context, route, needClear = false)
+        }
+        return mcpProjectToolResult(
+            "oob_project_open",
+            linkedMapOf(
+                "success" to true,
+                "projectId" to projectId,
+                "route" to route
+            )
+        )
+    }
+
+    private fun mcpProjectProgressGet(context: Context, args: Map<String, Any?>?): Map<String, Any?> {
+        val requestArgs = args ?: emptyMap()
+        return mcpProjectToolResult(
+            "oob_project_progress_get",
+            WorkbenchProjectStore(context).getProjectProgress(
+                projectId = requestArgs["projectId"]?.toString(),
+                limit = requestArgs["limit"]?.toString()?.toIntOrNull() ?: 50
+            )
+        )
+    }
+
+    private fun mcpProjectToolResult(toolName: String, result: Map<String, Any?>): Map<String, Any?> {
+        val success = result["success"] != false
+        val text = if (success) {
+            "OOB MCP tool `$toolName` completed."
+        } else {
+            "OOB MCP tool `$toolName` failed: ${result["errorMessage"] ?: result["errorCode"] ?: "unknown error"}"
+        }
+        return result + linkedMapOf(
+            "content" to listOf(mapOf("type" to "text", "text" to text)),
+            "isError" to if (success) null else true
+        )
     }
 
     /**
