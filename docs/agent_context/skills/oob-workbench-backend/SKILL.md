@@ -27,9 +27,10 @@ Read in this order:
 5. `app/src/main/java/cn/com/omnimind/bot/workbench/WorkbenchRuntime.kt`
 6. `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/WorkbenchToolHandler.kt`
 7. `app/src/main/java/cn/com/omnimind/bot/agent/tool/AgentToolDefinitions.kt`
-8. `app/src/main/java/cn/com/omnimind/bot/manager/AssistsCoreManager.kt`
-9. `app/src/main/java/cn/com/omnimind/bot/ui/channel/AssistsCoreChannel.kt`
-10. `app/src/test/java/cn/com/omnimind/bot/workbench/WorkbenchProjectStoreTest.kt`
+8. `app/src/main/java/cn/com/omnimind/bot/mcp/McpRoutes.kt`
+9. `app/src/main/java/cn/com/omnimind/bot/manager/AssistsCoreManager.kt`
+10. `app/src/main/java/cn/com/omnimind/bot/ui/channel/AssistsCoreChannel.kt`
+11. `app/src/test/java/cn/com/omnimind/bot/workbench/WorkbenchProjectStoreTest.kt`
 
 ## Core Model
 
@@ -175,6 +176,38 @@ For a real toolvox-style run:
 6. Verify the resulting Project files through `adb -s emulator-5554 shell run-as cn.com.omnimind.bot.debug ...`.
 
 If the device is not configured with a model provider, record the run as blocked. Do not claim `vlm_task` created Projects unless `workspace/projects/<project-id>/project.json` exists.
+
+For deterministic backend E2E without depending on model-provider setup, use the authenticated Dashboard/debug transport:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer <Dashboard token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"workbench_project_create","arguments":{"projectId":"oob-workbench-customer-tracker","templateId":"schema_app","entityName":"Customer"}}' \
+  http://127.0.0.1:<forwarded-port>/mcp/workbench/call
+```
+
+This route is only a local authenticated test/control transport. It is not returned by MCP `tools/list`, does not expose Workbench controls as Project business APIs, and must not be used to bypass runtime file verification.
+
+When the task asks for visible native proof, include `workbench_project_open`
+after create/activate/API calls. The debug route's open call navigates the real
+OOB UI through `TaskCompletionNavigator`, so a successful run should leave the
+target device showing the Project's Flutter Display.
+
+Known successful 5554 proof from 2026-05-10:
+
+```text
+Project: oob-workbench-quick-capture
+Template: quick_capture_inbox
+Visible route: /workbench/quick_capture?projectId=oob-workbench-quick-capture
+Visible title: 随手记 Inbox · NOTE
+Runtime proof:
+  workspace/projects/oob-workbench-quick-capture/project.json
+  workspace/projects/oob-workbench-quick-capture/backend/api_spec.json
+  workspace/projects/oob-workbench-quick-capture/data/items.json
+  workspace/projects/oob-workbench-quick-capture/logs/project_progress.jsonl
+  workspace/projects/oob-workbench-quick-capture/logs/api_calls.jsonl
+```
 
 ## Handoff Checklist
 

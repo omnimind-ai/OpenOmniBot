@@ -34,5 +34,6 @@ Last Updated: 2026-05-10
 
 - Backend unit/tool-definition gate passed on 2026-05-10.
 - Device smoke used `emulator-5554` only.
-- UI/VLM Project creation was attempted but did not create `workspace/projects` because the test device had no configured model provider and this source tree has no direct `toolvox` Workbench runner.
-- Do not claim toolvox/VLM multi-Project success until actual Project files exist under the app workspace on `emulator-5554`.
+- Deterministic Dashboard-token backend E2E completed on `emulator-5554`: `quick_capture_inbox` Project `oob-workbench-quick-capture` was created, activated, seeded through `capture.ingest`, opened via `workbench_project_open`, and shown as the OOB-native `随手记 Inbox · NOTE` Flutter Display.
+- Verified app-data files exist under `workspace/projects/oob-workbench-quick-capture/`, including `project.json`, `backend/api_spec.json`, `data/items.json`, `logs/project_progress.jsonl`, and `logs/api_calls.jsonl`.
+- Do not claim `vlm_task`/toolvox direct Project creation success until the VLM path itself writes Project files on `emulator-5554`; the deterministic `/mcp/workbench/call` route is a local authenticated backend E2E transport, not MCP tool discovery.

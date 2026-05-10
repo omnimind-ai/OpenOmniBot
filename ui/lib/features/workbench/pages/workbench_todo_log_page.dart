@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
 import 'package:ui/features/workbench/services/workbench_todo_log_service.dart';
+import 'package:ui/features/workbench/widgets/workbench_annotation_context.dart';
+import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
@@ -16,12 +20,14 @@ class WorkbenchTodoLogPage extends StatefulWidget {
     String? displayId,
     String? returnTo,
     bool debugMode = false,
+    bool annotationMode = false,
     bool embedded = false,
   }) : _service = service,
        _projectId = projectId,
        _displayId = displayId,
        _returnTo = returnTo,
        _debugMode = debugMode,
+       _annotationMode = annotationMode,
        _embedded = embedded;
 
   final WorkbenchTodoLogService? _service;
@@ -29,6 +35,7 @@ class WorkbenchTodoLogPage extends StatefulWidget {
   final String? _displayId;
   final String? _returnTo;
   final bool _debugMode;
+  final bool _annotationMode;
   final bool _embedded;
 
   @override
@@ -39,6 +46,7 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
   late final WorkbenchTodoLogService _service;
   late final bool _ownsService = widget._service == null;
   final TextEditingController _todoController = TextEditingController();
+  String? _lastReportedFrontendKey;
 
   @override
   void initState() {
@@ -88,6 +96,35 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
     showToast(context.l10n.workbenchTodoFinishedToast, type: ToastType.success);
   }
 
+  Future<bool> _applyAnnotationUpdate(
+    WorkbenchProject project,
+    WorkbenchAnnotationPayload payload,
+    String prompt,
+  ) async {
+    final result = await _service.applyHotUpdate(
+      prompt,
+      frontendContext: buildWorkbenchAnnotationFrontendContext(
+        project: project,
+        display: _selectedDisplay(project),
+        payload: payload,
+        prompt: prompt,
+      ),
+    );
+    if (!mounted) return false;
+    if (!result.success) {
+      showToast(
+        context.l10n.workbenchAnnotationHotUpdateFailed,
+        type: ToastType.error,
+      );
+      return false;
+    }
+    showToast(
+      context.l10n.workbenchAnnotationHotUpdateSuccess,
+      type: ToastType.success,
+    );
+    return true;
+  }
+
   void _handleBackNavigation() {
     final returnTo = widget._returnTo?.trim();
     if (returnTo != null && returnTo.isNotEmpty) {
@@ -101,6 +138,26 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
     context.go(GoRouterManager.homeRoute);
   }
 
+  void _reportVisibleDisplay(WorkbenchProject project) {
+    final display = _selectedDisplay(project);
+    final route = workbenchRouteForDisplay(project, display);
+    final key = '${project.projectId}:${display.id}:$route:${widget._embedded}';
+    if (_lastReportedFrontendKey == key) return;
+    _lastReportedFrontendKey = key;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(
+        NativeWorkbenchProjectBackend().setActiveFrontendContext(
+          buildWorkbenchVisibleFrontendContext(
+            project: project,
+            display: display,
+            source: 'workbench_todo_log_page',
+            extraVisibleState: {'embedded': widget._embedded},
+          ),
+        ),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
@@ -108,7 +165,9 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
       animation: _service,
       builder: (context, _) {
         final project = _service.project;
-        return ListView(
+        _reportVisibleDisplay(project);
+        final annotationActive = widget._debugMode || widget._annotationMode;
+        final content = ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
             if (_service.loading) ...[
@@ -123,6 +182,14 @@ class _WorkbenchTodoLogPageState extends State<WorkbenchTodoLogPage> {
             const SizedBox(height: 12),
             _buildTodoCard(project),
           ],
+        );
+        if (!annotationActive) {
+          return content;
+        }
+        return WorkbenchAnnotationOverlay(
+          onSubmit: (payload, prompt) =>
+              _applyAnnotationUpdate(project, payload, prompt),
+          child: content,
         );
       },
     );

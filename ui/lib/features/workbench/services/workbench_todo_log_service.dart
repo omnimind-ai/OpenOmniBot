@@ -4,6 +4,8 @@ import 'package:ui/features/workbench/models/workbench_models.dart';
 
 const String workbenchTodoDefaultProjectId = 'oob-workbench-todo-log';
 const String workbenchTodoTemplateId = 'todo_log_demo';
+const String workbenchQuickCaptureProjectId = 'oob-workbench-quick-capture';
+const String workbenchQuickCaptureTemplateId = 'quick_capture_inbox';
 
 abstract class WorkbenchProjectBackend {
   Future<WorkbenchProject> createProject({
@@ -144,6 +146,32 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
     return project is Map<dynamic, dynamic>
         ? WorkbenchProject.fromMap(project)
         : null;
+  }
+
+  Future<void> setActiveFrontendContext(
+    Map<String, Object?> frontendContext,
+  ) async {
+    try {
+      await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'workbenchFrontendContextSet',
+        {'context': frontendContext},
+      );
+    } on PlatformException catch (error) {
+      debugPrint('保存 Workbench 前端上下文失败: ${error.message}');
+    }
+  }
+
+  Future<Map<String, dynamic>?> getActiveFrontendContext() async {
+    try {
+      final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'workbenchFrontendContextGet',
+      );
+      if (result == null || result.isEmpty) return null;
+      return result.map((key, value) => MapEntry(key.toString(), value));
+    } on PlatformException catch (error) {
+      debugPrint('读取 Workbench 前端上下文失败: ${error.message}');
+      return null;
+    }
   }
 
   @override

@@ -1155,6 +1155,25 @@
   "workbenchTodoAdded": "Todo 已添加",
   "workbenchTodoFinishedToast": "Todo 已归档",
   "workbenchTodoInputRequired": "请先输入 todo",
+  "workbenchQuickCaptureTitle": "随手记 Inbox",
+  "workbenchQuickCaptureSubtitle": "把文字、链接、分享内容或截图丢进来。Project API 会整理成 Todo、摘要、链接卡片或稍后读。",
+  "workbenchQuickCaptureInputHint": "粘贴一句话、链接或分享文本",
+  "workbenchQuickCaptureAction": "收进来",
+  "workbenchQuickCaptureCaptured": "已收进随手记",
+  "workbenchQuickCaptureInputRequired": "请先输入文字或链接",
+  "workbenchQuickCaptureEmpty": "暂无随手记",
+  "workbenchQuickCaptureFilterAll": "Inbox",
+  "workbenchQuickCaptureTypeTodo": "Todo",
+  "workbenchQuickCaptureTypeSummary": "摘要",
+  "workbenchQuickCaptureTypeLink": "链接",
+  "workbenchQuickCaptureTypeLater": "稍后读",
+  "workbenchQuickCaptureArchived": "已归档",
+  "workbenchQuickCaptureArchive": "归档",
+  "workbenchQuickCapturePromoteToTodo": "转成 Todo",
+  "workbenchQuickCaptureSummarize": "重新摘要",
+  "workbenchQuickCaptureArchivedToast": "随手记已归档",
+  "workbenchQuickCapturePromotedToast": "已转成 Todo",
+  "workbenchQuickCaptureSummarizedToast": "摘要已刷新",
   "workbenchSchemaDefaultEntity": "条目",
   "workbenchSchemaCreateTitle": "新增 {entity}",
   "@workbenchSchemaCreateTitle": {
@@ -1348,7 +1367,7 @@
   "workbenchAnnotationPromptHint": "补充修改说明，例如：把这里改成主按钮",
   "workbenchAnnotationNoStrokes": "先在页面上画出要修改的区域",
   "workbenchAnnotationNoShape": "未标注",
-  "workbenchAnnotationShapeCount": "已识别 {count} 个形状",
+  "workbenchAnnotationShapeCount": "已标注 {count} 笔",
   "@workbenchAnnotationShapeCount": {
     "placeholders": {
       "count": {
@@ -1432,6 +1451,17 @@
         "type": "int"
       },
       "finishedCount": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchQuickCaptureCount": "{activeCount} 条活跃 / {archivedCount} 条归档",
+  "@workbenchQuickCaptureCount": {
+    "placeholders": {
+      "activeCount": {
+        "type": "int"
+      },
+      "archivedCount": {
         "type": "int"
       }
     }

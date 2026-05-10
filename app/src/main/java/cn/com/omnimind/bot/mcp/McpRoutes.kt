@@ -2,6 +2,8 @@ package cn.com.omnimind.bot.mcp
 
 import android.content.Context
 import cn.com.omnimind.bot.util.AssistsUtil
+import cn.com.omnimind.bot.util.TaskCompletionNavigator
+import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.auth.authenticate
@@ -61,6 +63,19 @@ object McpRoutes {
                     serverScope,
                     params["name"] as? String,
                     params["arguments"] as? Map<String, Any?>
+                )
+                call.respond(result)
+            }
+
+            // Authenticated local Dashboard/debug transport for Workbench control-plane E2E.
+            post("/mcp/workbench/call") {
+                val body = call.receive<Map<String, Any?>>()
+                val result = executeWorkbenchDebugCall(
+                    context = context,
+                    name = body["name"]?.toString(),
+                    args = mapArg(body["arguments"])
+                        ?: mapArg(body["args"])
+                        ?: emptyMap()
                 )
                 call.respond(result)
             }
@@ -159,6 +174,115 @@ object McpRoutes {
             "file_transfer" -> McpToolExecutors.executeFileTransfer(args)
             else -> McpResponseBuilder.buildErrorText("Unknown tool: $name")
         }
+    }
+
+    /**
+     * Executes Workbench control-plane calls through the authenticated MCP/Dashboard debug route.
+     *
+     * @param context Android application context used to resolve the shared OOB workspace.
+     * @param name Workbench control/API tool name, for example `workbench_project_create` or
+     * `workbench_api_call`. The route is intentionally not part of MCP tool discovery.
+     * @param args JSON request arguments. `workbench_api_call` expects nested `inputs`.
+     * @return JSON-safe transport payload. The outer `success` is route execution status; the
+     * nested `result` is the native Workbench runtime payload.
+     */
+    private fun executeWorkbenchDebugCall(
+        context: Context,
+        name: String?,
+        args: Map<String, Any?>
+    ): Map<String, Any?> {
+        val store = WorkbenchProjectStore(context)
+        return runCatching {
+            val result: Any? = when (name) {
+                "workbench_project_create" -> store.createProject(args)
+                "workbench_project_list" -> store.listProjects()
+                "workbench_project_get" -> store.getProject(stringArg(args, "projectId"))
+                "workbench_project_open" -> {
+                    val projectId = stringArg(args, "projectId")
+                    val route = store.routeForProject(projectId)
+                    TaskCompletionNavigator.navigateToMainRoute(context, route, needClear = false)
+                    linkedMapOf(
+                        "success" to true,
+                        "projectId" to projectId,
+                        "route" to route
+                    )
+                }
+                "workbench_project_activate" -> store.activateProject(stringArg(args, "projectId"))
+                "workbench_project_active_get" -> store.getActiveProject()
+                "workbench_project_deactivate" -> store.deactivateProject()
+                "workbench_project_delete" -> store.deleteProject(stringArg(args, "projectId"))
+                "workbench_project_export" -> store.exportProject(stringArg(args, "projectId"))
+                "workbench_project_hot_update" -> store.hotUpdateProject(
+                    projectId = stringArg(args, "projectId"),
+                    prompt = stringArg(args, "prompt"),
+                    caller = "mcp_dashboard",
+                    frontendContext = mapArg(args["frontendContext"]) ?: emptyMap()
+                )
+                "workbench_project_ingest_android" -> store.ingestAndroidAsset(
+                    projectId = stringArg(args, "projectId"),
+                    sourcePath = stringArg(args, "sourcePath"),
+                    sourceKind = args["sourceKind"]?.toString(),
+                    displayName = args["displayName"]?.toString(),
+                    caller = "mcp_dashboard"
+                )
+                "workbench_project_ingest_oss" -> store.ingestOssSource(
+                    projectId = stringArg(args, "projectId"),
+                    sourceUrl = args["sourceUrl"]?.toString(),
+                    sourcePath = args["sourcePath"]?.toString(),
+                    sourceKind = args["sourceKind"]?.toString(),
+                    ref = args["ref"]?.toString(),
+                    displayName = args["displayName"]?.toString(),
+                    caller = "mcp_dashboard"
+                )
+                "workbench_project_progress_get" -> store.getProjectProgress(
+                    projectId = args["projectId"]?.toString(),
+                    limit = args["limit"]?.toString()?.toIntOrNull() ?: 50
+                )
+                "workbench_api_list" -> store.listApis(args["projectId"]?.toString())
+                "workbench_api_call" -> store.callApi(
+                    projectId = stringArg(args, "projectId"),
+                    apiId = stringArg(args, "apiId"),
+                    inputs = mapArg(args["inputs"]) ?: emptyMap(),
+                    caller = "mcp_dashboard"
+                )
+                else -> throw IllegalArgumentException("Unknown Workbench debug call: $name")
+            }
+            linkedMapOf(
+                "success" to true,
+                "name" to name,
+                "result" to result
+            )
+        }.getOrElse { error ->
+            linkedMapOf(
+                "success" to false,
+                "name" to name,
+                "error" to (error.message ?: "Workbench debug call failed")
+            )
+        }
+    }
+
+    /**
+     * Reads one string argument from a dynamic request body.
+     *
+     * @param args JSON-style argument map received by the debug route.
+     * @param key Required key whose value must be nonblank.
+     * @return Trimmed argument value.
+     */
+    private fun stringArg(args: Map<String, Any?>, key: String): String {
+        val value = args[key]?.toString()?.trim().orEmpty()
+        require(value.isNotEmpty()) { "Missing required argument: $key" }
+        return value
+    }
+
+    /**
+     * Converts a dynamic JSON object into a string-keyed map.
+     *
+     * @param value Value decoded by Ktor/Gson from request JSON.
+     * @return String-keyed map, or null when the value is not an object.
+     */
+    private fun mapArg(value: Any?): Map<String, Any?>? {
+        val raw = value as? Map<*, *> ?: return null
+        return raw.entries.associate { entry -> entry.key.toString() to entry.value }
     }
 
     // ==================== 传统端点处理（保持兼容） ====================

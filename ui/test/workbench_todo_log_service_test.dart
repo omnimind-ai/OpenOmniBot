@@ -358,6 +358,61 @@ void main() {
     },
   );
 
+  test(
+    'quick capture project ingests links and archives through project APIs',
+    () async {
+      final backend = _TestWorkbenchProjectBackend();
+      final created = await backend.createProject(
+        projectId: workbenchQuickCaptureProjectId,
+        templateId: workbenchQuickCaptureTemplateId,
+        name: '随手记 Inbox',
+      );
+      final service = WorkbenchTodoLogService(
+        backend: backend,
+        projectId: workbenchQuickCaptureProjectId,
+        initialProject: created,
+        autoCreateTodoIfMissing: false,
+      );
+
+      await service.initialize();
+      final ingest = await service
+          .runTool(WorkbenchQuickCaptureToolIds.ingest, {
+            'text': 'https://xhslink.com/demo 装修案例',
+            'url': 'https://xhslink.com/demo',
+            'sourceApp': '小红书',
+          });
+      final item = service.project.activeCaptureItems.first;
+      final archive = await service.runTool(
+        WorkbenchQuickCaptureToolIds.archive,
+        {'item_id': item.id},
+      );
+
+      expect(service.project.templateId, workbenchQuickCaptureTemplateId);
+      expect(service.project.primaryDisplay.shortName, 'NOTE');
+      expect(ingest.success, isTrue);
+      expect(item.type, 'link');
+      expect(item.url, 'https://xhslink.com/demo');
+      expect(archive.success, isTrue);
+      expect(service.project.archivedCaptureItems.single.id, item.id);
+      expect(
+        service.project.tools
+            .firstWhere(
+              (tool) => tool.id == WorkbenchQuickCaptureToolIds.ingest,
+            )
+            .executionCount,
+        1,
+      );
+      expect(
+        service.project.tools
+            .firstWhere(
+              (tool) => tool.id == WorkbenchQuickCaptureToolIds.archive,
+            )
+            .executionCount,
+        1,
+      );
+    },
+  );
+
   test('native create forwards generic schema project config', () async {
     const channel = MethodChannel('cn.com.omnimind.bot/AssistCoreEvent');
     final calls = <MethodCall>[];
@@ -721,6 +776,76 @@ class _TestWorkbenchProjectBackend implements WorkbenchProjectBackend {
     List<Map<String, Object?>>? apis,
   }) async {
     _hasProject = true;
+    if (templateId == workbenchQuickCaptureTemplateId) {
+      final now = DateTime.now();
+      final captures = (initialItems ?? const [])
+          .map(
+            (item) => WorkbenchQuickCaptureItem(
+              id: 'capture-initial-${_todoSequence++}',
+              type: 'todo',
+              title: item is Map
+                  ? (item['title'] ?? item['text'] ?? 'Capture').toString()
+                  : item.toString(),
+              summary: item.toString(),
+              status: 'active',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          )
+          .toList(growable: false);
+      _project = WorkbenchProject(
+        projectId: projectId,
+        name: name?.trim().isNotEmpty == true ? name!.trim() : '随手记 Inbox',
+        templateId: templateId,
+        route: '/workbench/quick_capture?projectId=$projectId',
+        spacePath: '/workspace/projects/$projectId',
+        pageIds: const ['quick-capture-page'],
+        displays: [
+          WorkbenchDisplaySpec.quickCapture(
+            projectId: projectId,
+            route: '/workbench/quick_capture?projectId=$projectId',
+          ),
+        ],
+        tools: const [
+          WorkbenchToolSpec(
+            id: WorkbenchQuickCaptureToolIds.ingest,
+            kind: 'workspace_python_script',
+            inputKeys: [
+              'text',
+              'url',
+              'sourceApp',
+              'shareText',
+              'screenshotPath',
+            ],
+            outputKeys: ['item', 'items'],
+          ),
+          WorkbenchToolSpec(
+            id: WorkbenchQuickCaptureToolIds.archive,
+            kind: 'workspace_python_script',
+            inputKeys: ['item_id'],
+            outputKeys: ['item'],
+          ),
+          WorkbenchToolSpec(
+            id: WorkbenchQuickCaptureToolIds.promoteToTodo,
+            kind: 'workspace_python_script',
+            inputKeys: ['item_id', 'todo_title'],
+            outputKeys: ['item'],
+          ),
+          WorkbenchToolSpec(
+            id: WorkbenchQuickCaptureToolIds.summarize,
+            kind: 'workspace_python_script',
+            inputKeys: ['item_id'],
+            outputKeys: ['item'],
+          ),
+        ],
+        flows: const [],
+        androidAssets: const [],
+        todos: const [],
+        items: const [],
+        captureItems: captures,
+      );
+      return _project;
+    }
     if (templateId == 'schema_app') {
       final entity = entityName?.trim().isNotEmpty == true
           ? entityName!.trim()
@@ -775,6 +900,7 @@ class _TestWorkbenchProjectBackend implements WorkbenchProjectBackend {
         androidAssets: const [],
         todos: const [],
         items: items,
+        captureItems: const [],
         schema: {
           'entityName': entity,
           if (description != null) 'description': description,
@@ -840,6 +966,129 @@ class _TestWorkbenchProjectBackend implements WorkbenchProjectBackend {
       _project = _project.copyWith(tools: _toolsWithExecutionCounts());
     }
     switch (apiId) {
+      case WorkbenchQuickCaptureToolIds.ingest:
+        final text =
+            (inputs['text'] ?? inputs['shareText'] ?? inputs['url'] ?? '')
+                .toString()
+                .trim();
+        if (text.isEmpty) {
+          return WorkbenchToolRunResult(
+            toolId: apiId,
+            success: false,
+            outputs: const {},
+            project: _project,
+            errorCode: 'EMPTY_CAPTURE_INPUT',
+          );
+        }
+        final url = (inputs['url'] ?? '').toString().trim();
+        final item = WorkbenchQuickCaptureItem(
+          id: 'capture-${_todoSequence++}',
+          type: url.isNotEmpty ? 'link' : 'todo',
+          title: text,
+          summary: url.isNotEmpty ? 'Link saved' : text,
+          status: 'active',
+          url: url.isEmpty ? null : url,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+        _project = _project.copyWith(
+          captureItems: [item, ..._project.captureItems],
+        );
+        return WorkbenchToolRunResult(
+          toolId: apiId,
+          success: true,
+          outputs: {'item': item},
+          project: _project,
+        );
+      case WorkbenchQuickCaptureToolIds.archive:
+        final itemId = (inputs['item_id'] ?? inputs['itemId'] ?? '')
+            .toString()
+            .trim();
+        final index = _project.captureItems.indexWhere(
+          (item) => item.id == itemId,
+        );
+        if (index < 0) {
+          return WorkbenchToolRunResult(
+            toolId: apiId,
+            success: false,
+            outputs: const {},
+            project: _project,
+            errorCode: 'CAPTURE_ITEM_NOT_FOUND',
+          );
+        }
+        final current = _project.captureItems[index];
+        final archived = WorkbenchQuickCaptureItem(
+          id: current.id,
+          type: current.type,
+          title: current.title,
+          summary: current.summary,
+          status: 'archived',
+          createdAt: current.createdAt,
+          updatedAt: DateTime.now(),
+          url: current.url,
+          sourceApp: current.sourceApp,
+          rawText: current.rawText,
+          shareText: current.shareText,
+          screenshotPath: current.screenshotPath,
+          dueHint: current.dueHint,
+          priority: current.priority,
+          archivedAt: DateTime.now(),
+        );
+        final captures = [..._project.captureItems];
+        captures[index] = archived;
+        _project = _project.copyWith(captureItems: captures);
+        return WorkbenchToolRunResult(
+          toolId: apiId,
+          success: true,
+          outputs: {'item': archived},
+          project: _project,
+        );
+      case WorkbenchQuickCaptureToolIds.promoteToTodo:
+      case WorkbenchQuickCaptureToolIds.summarize:
+        final itemId = (inputs['item_id'] ?? inputs['itemId'] ?? '')
+            .toString()
+            .trim();
+        final index = _project.captureItems.indexWhere(
+          (item) => item.id == itemId,
+        );
+        if (index < 0) {
+          return WorkbenchToolRunResult(
+            toolId: apiId,
+            success: false,
+            outputs: const {},
+            project: _project,
+            errorCode: 'CAPTURE_ITEM_NOT_FOUND',
+          );
+        }
+        final current = _project.captureItems[index];
+        final updated = WorkbenchQuickCaptureItem(
+          id: current.id,
+          type: apiId == WorkbenchQuickCaptureToolIds.promoteToTodo
+              ? 'todo'
+              : 'summary',
+          title: current.title,
+          summary: current.summary,
+          status: current.status,
+          createdAt: current.createdAt,
+          updatedAt: DateTime.now(),
+          url: current.url,
+          sourceApp: current.sourceApp,
+          rawText: current.rawText,
+          shareText: current.shareText,
+          screenshotPath: current.screenshotPath,
+          dueHint: current.dueHint,
+          priority: current.priority,
+          archivedAt: current.archivedAt,
+        );
+        final captures = [..._project.captureItems];
+        captures[index] = updated;
+        _project = _project.copyWith(captureItems: captures);
+        return WorkbenchToolRunResult(
+          toolId: apiId,
+          success: true,
+          outputs: {'item': updated},
+          project: _project,
+        );
       case WorkbenchTodoToolIds.addTodo:
         final title = (inputs['title'] ?? '').toString().trim();
         if (title.isEmpty) {

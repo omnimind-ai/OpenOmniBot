@@ -3010,6 +3010,64 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchTodoInputRequired => '请先输入 todo';
 
   @override
+  String get workbenchQuickCaptureTitle => '随手记 Inbox';
+
+  @override
+  String get workbenchQuickCaptureSubtitle =>
+      '把文字、链接、分享内容或截图丢进来。Project API 会整理成 Todo、摘要、链接卡片或稍后读。';
+
+  @override
+  String get workbenchQuickCaptureInputHint => '粘贴一句话、链接或分享文本';
+
+  @override
+  String get workbenchQuickCaptureAction => '收进来';
+
+  @override
+  String get workbenchQuickCaptureCaptured => '已收进随手记';
+
+  @override
+  String get workbenchQuickCaptureInputRequired => '请先输入文字或链接';
+
+  @override
+  String get workbenchQuickCaptureEmpty => '暂无随手记';
+
+  @override
+  String get workbenchQuickCaptureFilterAll => 'Inbox';
+
+  @override
+  String get workbenchQuickCaptureTypeTodo => 'Todo';
+
+  @override
+  String get workbenchQuickCaptureTypeSummary => '摘要';
+
+  @override
+  String get workbenchQuickCaptureTypeLink => '链接';
+
+  @override
+  String get workbenchQuickCaptureTypeLater => '稍后读';
+
+  @override
+  String get workbenchQuickCaptureArchived => '已归档';
+
+  @override
+  String get workbenchQuickCaptureArchive => '归档';
+
+  @override
+  String get workbenchQuickCapturePromoteToTodo => '转成 Todo';
+
+  @override
+  String get workbenchQuickCaptureSummarize => '重新摘要';
+
+  @override
+  String get workbenchQuickCaptureArchivedToast => '随手记已归档';
+
+  @override
+  String get workbenchQuickCapturePromotedToast => '已转成 Todo';
+
+  @override
+  String get workbenchQuickCaptureSummarizedToast => '摘要已刷新';
+
+  @override
   String get workbenchSchemaDefaultEntity => '条目';
 
   @override
@@ -3322,6 +3380,50 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchDebugComingSoon => '待接入';
 
   @override
+  String get workbenchAnnotationTitle => '标注画布';
+
+  @override
+  String get workbenchAnnotationDrawMode => '画笔';
+
+  @override
+  String get workbenchAnnotationBrowseMode => '浏览页面';
+
+  @override
+  String get workbenchAnnotationUndo => '撤销';
+
+  @override
+  String get workbenchAnnotationClear => '清空';
+
+  @override
+  String get workbenchAnnotationApply => '应用标注';
+
+  @override
+  String get workbenchAnnotationApplying => '应用中';
+
+  @override
+  String get workbenchAnnotationPromptHint => '补充修改说明，例如：把这里改成主按钮';
+
+  @override
+  String get workbenchAnnotationNoStrokes => '先在页面上画出要修改的区域';
+
+  @override
+  String get workbenchAnnotationNoShape => '未标注';
+
+  @override
+  String workbenchAnnotationShapeCount(int count) {
+    return '已标注 $count 笔';
+  }
+
+  @override
+  String get workbenchAnnotationDefaultPrompt => '根据画布标注调整当前 Project 前端。';
+
+  @override
+  String get workbenchAnnotationHotUpdateSuccess => '已把标注应用到 Project';
+
+  @override
+  String get workbenchAnnotationHotUpdateFailed => '标注热更新失败';
+
+  @override
   String get workbenchExportProjectPackage => '导出分发包';
 
   @override
@@ -3411,6 +3513,11 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String workbenchTodoCount(int openCount, int finishedCount) {
     return '$openCount 条待完成 / $finishedCount 条已完成';
+  }
+
+  @override
+  String workbenchQuickCaptureCount(int activeCount, int archivedCount) {
+    return '$activeCount 条活跃 / $archivedCount 条归档';
   }
 
   @override

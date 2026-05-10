@@ -110,6 +110,74 @@ class WorkbenchSchemaItem {
   }
 }
 
+class WorkbenchQuickCaptureItem {
+  const WorkbenchQuickCaptureItem({
+    required this.id,
+    required this.type,
+    required this.title,
+    required this.summary,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+    this.url,
+    this.sourceApp,
+    this.rawText,
+    this.shareText,
+    this.screenshotPath,
+    this.dueHint,
+    this.priority,
+    this.archivedAt,
+  });
+
+  final String id;
+  final String type;
+  final String title;
+  final String summary;
+  final String status;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String? url;
+  final String? sourceApp;
+  final String? rawText;
+  final String? shareText;
+  final String? screenshotPath;
+  final String? dueHint;
+  final String? priority;
+  final DateTime? archivedAt;
+
+  bool get isArchived => status == 'archived';
+  bool get isTodo => type == 'todo';
+  bool get isSummary => type == 'summary';
+  bool get isLink => type == 'link';
+  bool get isLater => type == 'later';
+
+  factory WorkbenchQuickCaptureItem.fromMap(Map<dynamic, dynamic> map) {
+    return WorkbenchQuickCaptureItem(
+      id: (map['id'] ?? '').toString(),
+      type: (map['type'] ?? 'todo').toString(),
+      title: (map['title'] ?? '').toString(),
+      summary: (map['summary'] ?? '').toString(),
+      status: (map['status'] ?? 'active').toString(),
+      createdAt:
+          DateTime.tryParse((map['createdAt'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      updatedAt:
+          DateTime.tryParse((map['updatedAt'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      url: map['url']?.toString(),
+      sourceApp: map['sourceApp']?.toString(),
+      rawText: map['rawText']?.toString(),
+      shareText: map['shareText']?.toString(),
+      screenshotPath: map['screenshotPath']?.toString(),
+      dueHint: map['dueHint']?.toString(),
+      priority: map['priority']?.toString(),
+      archivedAt: map['archivedAt'] == null
+          ? null
+          : DateTime.tryParse(map['archivedAt'].toString()),
+    );
+  }
+}
+
 class WorkbenchToolSpec {
   const WorkbenchToolSpec({
     required this.id,
@@ -318,6 +386,24 @@ class WorkbenchDisplaySpec {
       isDefault: true,
     );
   }
+
+  static WorkbenchDisplaySpec quickCapture({
+    required String projectId,
+    required String route,
+  }) {
+    final resolvedRoute = route.trim().isEmpty
+        ? '/workbench/quick_capture?projectId=$projectId'
+        : route.trim();
+    return WorkbenchDisplaySpec(
+      id: 'quick-capture-display',
+      title: '随手记 Inbox',
+      shortName: 'NOTE',
+      route: resolvedRoute,
+      description: 'Quick capture inbox bound to Project APIs.',
+      kind: 'oob_quick_capture_inbox',
+      isDefault: true,
+    );
+  }
 }
 
 class WorkbenchProject {
@@ -334,6 +420,7 @@ class WorkbenchProject {
     required this.androidAssets,
     required this.todos,
     required this.items,
+    required this.captureItems,
     this.schema = const {},
   });
 
@@ -349,6 +436,7 @@ class WorkbenchProject {
   final List<WorkbenchAndroidAsset> androidAssets;
   final List<WorkbenchTodoItem> todos;
   final List<WorkbenchSchemaItem> items;
+  final List<WorkbenchQuickCaptureItem> captureItems;
   final Map<String, Object?> schema;
 
   List<WorkbenchTodoItem> get openTodos =>
@@ -362,6 +450,12 @@ class WorkbenchProject {
 
   List<WorkbenchSchemaItem> get archivedItems =>
       items.where((item) => item.isArchived).toList(growable: false);
+
+  List<WorkbenchQuickCaptureItem> get activeCaptureItems =>
+      captureItems.where((item) => !item.isArchived).toList(growable: false);
+
+  List<WorkbenchQuickCaptureItem> get archivedCaptureItems =>
+      captureItems.where((item) => item.isArchived).toList(growable: false);
 
   WorkbenchDisplaySpec get primaryDisplay {
     for (final display in displays) {
@@ -385,6 +479,7 @@ class WorkbenchProject {
     final androidAssets = map['androidAssets'];
     final todos = map['todos'];
     final items = map['items'];
+    final captureItems = map['captureItems'];
     final schema = map['schema'];
     final parsedDisplays = displays is List
         ? displays
@@ -403,7 +498,17 @@ class WorkbenchProject {
           ? pageIds.map((item) => item.toString()).toList(growable: false)
           : const [],
       displays: parsedDisplays.isEmpty
-          ? [WorkbenchDisplaySpec.todoLog(projectId: projectId, route: route)]
+          ? [
+              (map['templateId'] ?? '').toString() == 'quick_capture_inbox'
+                  ? WorkbenchDisplaySpec.quickCapture(
+                      projectId: projectId,
+                      route: route,
+                    )
+                  : WorkbenchDisplaySpec.todoLog(
+                      projectId: projectId,
+                      route: route,
+                    ),
+            ]
           : parsedDisplays,
       tools: tools is List
           ? tools
@@ -435,6 +540,12 @@ class WorkbenchProject {
                 .map(WorkbenchSchemaItem.fromMap)
                 .toList(growable: false)
           : const [],
+      captureItems: captureItems is List
+          ? captureItems
+                .whereType<Map<dynamic, dynamic>>()
+                .map(WorkbenchQuickCaptureItem.fromMap)
+                .toList(growable: false)
+          : const [],
       schema: schema is Map ? Map<String, Object?>.from(schema) : const {},
     );
   }
@@ -452,6 +563,7 @@ class WorkbenchProject {
     List<WorkbenchAndroidAsset>? androidAssets,
     List<WorkbenchTodoItem>? todos,
     List<WorkbenchSchemaItem>? items,
+    List<WorkbenchQuickCaptureItem>? captureItems,
     Map<String, Object?>? schema,
   }) {
     return WorkbenchProject(
@@ -467,6 +579,7 @@ class WorkbenchProject {
       androidAssets: androidAssets ?? this.androidAssets,
       todos: todos ?? this.todos,
       items: items ?? this.items,
+      captureItems: captureItems ?? this.captureItems,
       schema: schema ?? this.schema,
     );
   }
@@ -634,6 +747,15 @@ class WorkbenchTodoToolIds {
   static const finishTodo = 'todo.finish';
 }
 
+class WorkbenchQuickCaptureToolIds {
+  const WorkbenchQuickCaptureToolIds._();
+
+  static const ingest = 'capture.ingest';
+  static const archive = 'capture.archive';
+  static const promoteToTodo = 'capture.promote_to_todo';
+  static const summarize = 'capture.summarize';
+}
+
 class WorkbenchTodoProjectFactory {
   const WorkbenchTodoProjectFactory._();
 
@@ -690,6 +812,71 @@ class WorkbenchTodoProjectFactory {
       androidAssets: const [],
       todos: const [],
       items: const [],
+      captureItems: const [],
+    );
+  }
+}
+
+class WorkbenchQuickCaptureProjectFactory {
+  const WorkbenchQuickCaptureProjectFactory._();
+
+  static WorkbenchProject create() {
+    return WorkbenchProject(
+      projectId: 'oob-workbench-quick-capture',
+      name: '随手记 Inbox',
+      templateId: 'quick_capture_inbox',
+      route: '/workbench/quick_capture?projectId=oob-workbench-quick-capture',
+      spacePath: '/workspace/projects/oob-workbench-quick-capture',
+      pageIds: const ['quick-capture-page'],
+      displays: const [
+        WorkbenchDisplaySpec(
+          id: 'quick-capture-display',
+          title: '随手记 Inbox',
+          shortName: 'NOTE',
+          route:
+              '/workbench/quick_capture?projectId=oob-workbench-quick-capture',
+          description: 'Quick capture inbox bound to Project APIs.',
+          kind: 'oob_quick_capture_inbox',
+          isDefault: true,
+        ),
+      ],
+      tools: const [
+        WorkbenchToolSpec(
+          id: WorkbenchQuickCaptureToolIds.ingest,
+          kind: 'workspace_python_script',
+          inputKeys: [
+            'text',
+            'url',
+            'sourceApp',
+            'shareText',
+            'screenshotPath',
+          ],
+          outputKeys: ['item', 'items'],
+        ),
+        WorkbenchToolSpec(
+          id: WorkbenchQuickCaptureToolIds.archive,
+          kind: 'workspace_python_script',
+          inputKeys: ['item_id'],
+          outputKeys: ['item'],
+        ),
+        WorkbenchToolSpec(
+          id: WorkbenchQuickCaptureToolIds.promoteToTodo,
+          kind: 'workspace_python_script',
+          inputKeys: ['item_id', 'todo_title'],
+          outputKeys: ['item'],
+        ),
+        WorkbenchToolSpec(
+          id: WorkbenchQuickCaptureToolIds.summarize,
+          kind: 'workspace_python_script',
+          inputKeys: ['item_id'],
+          outputKeys: ['item'],
+        ),
+      ],
+      flows: const [],
+      androidAssets: const [],
+      todos: const [],
+      items: const [],
+      captureItems: const [],
     );
   }
 }

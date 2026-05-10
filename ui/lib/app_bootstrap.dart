@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -44,10 +46,8 @@ Future<void> bootstrapMain(List<String> args) async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   final container = ProviderContainer();
-  await StorageService.init();
-  await AppBackgroundService.load();
-  await ScheduledTaskSchedulerService.initialize();
-  await OmnibotResourceService.ensureWorkspacePathsLoaded();
+  await StorageService.init().timeout(const Duration(seconds: 3));
+  await AppBackgroundService.load().timeout(const Duration(seconds: 3));
   SystemChrome.setSystemUIOverlayStyle(
     AppTheme.overlayStyleForBrightness(
       _resolveStartupBrightness(StorageService.getThemeMode()),
@@ -61,6 +61,8 @@ Future<void> bootstrapMain(List<String> args) async {
     ),
   );
   WidgetsBinding.instance.allowFirstFrame();
+  unawaited(ScheduledTaskSchedulerService.initialize());
+  unawaited(OmnibotResourceService.ensureWorkspacePathsLoaded());
 }
 
 @pragma('vm:entry-point')
@@ -81,10 +83,8 @@ Future<void> bootstrapSubEngine(List<String> args) async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   final container = ProviderContainer();
-  await StorageService.init();
-  await AppBackgroundService.load();
-  await ScheduledTaskSchedulerService.initialize();
-  await OmnibotResourceService.ensureWorkspacePathsLoaded();
+  await StorageService.init().timeout(const Duration(seconds: 3));
+  await AppBackgroundService.load().timeout(const Duration(seconds: 3));
   SystemChrome.setSystemUIOverlayStyle(
     AppTheme.overlayStyleForBrightness(
       _resolveStartupBrightness(StorageService.getThemeMode()),
@@ -97,6 +97,8 @@ Future<void> bootstrapSubEngine(List<String> args) async {
       child: MyApp(args: args),
     ),
   );
+  unawaited(ScheduledTaskSchedulerService.initialize());
+  unawaited(OmnibotResourceService.ensureWorkspacePathsLoaded());
 }
 
 Brightness _resolveStartupBrightness(AppThemeMode mode) {

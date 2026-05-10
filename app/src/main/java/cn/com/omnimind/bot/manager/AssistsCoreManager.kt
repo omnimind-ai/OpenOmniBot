@@ -7,6 +7,11 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -118,6 +123,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import java.io.File
+import java.io.FileOutputStream
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -408,6 +415,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
         @Volatile
         private var sharedInstance: AssistsCoreManager? = null
+
+        @Volatile
+        private var latestWorkbenchFrontendContext: Map<String, Any?>? = null
 
         private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -837,6 +847,172 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         OmniLog.e(TAG, "setChannel")
         this.channel = _channel
         FlutterChatSyncBridge.bindCurrentChannel(_channel)
+    }
+
+    fun captureWorkbenchAnnotationAttachment(call: MethodCall, result: MethodChannel.Result) {
+        val canvasWidth = call.argument<Number>("canvasWidth")?.toFloat() ?: 0f
+        val canvasHeight = call.argument<Number>("canvasHeight")?.toFloat() ?: 0f
+        val drawingPaths = call.argument<List<Map<String, Any?>>>("drawingPaths")
+            ?.map(::sanitizeInteropMap)
+            ?: emptyList()
+        val source = call.argument<String>("source")?.trim().orEmpty()
+            .ifEmpty { "xiaowan_floating_annotation_canvas" }
+
+        workJob.launch {
+            var bitmapToRecycle: Bitmap? = null
+            try {
+                val capture = AccessibilityController.captureScreenshotImage(
+                    isBitmap = true,
+                    isBase64 = false,
+                    isFile = false,
+                    isFilterOverlay = true,
+                    compressQuality = null
+                )
+                val capturedBitmap = capture.imageBitmap
+                if (!capture.isSuccess || capturedBitmap == null) {
+                    withContext(Dispatchers.Main) {
+                        result.error("SCREENSHOT_FAILED", "current screen screenshot is empty", null)
+                    }
+                    return@launch
+                }
+
+                val bitmap = if (capturedBitmap.isMutable &&
+                    capturedBitmap.config != Bitmap.Config.HARDWARE
+                ) {
+                    capturedBitmap
+                } else {
+                    capturedBitmap.copy(Bitmap.Config.ARGB_8888, true).also {
+                        if (!capturedBitmap.isRecycled) capturedBitmap.recycle()
+                    }
+                }
+                bitmapToRecycle = bitmap
+                drawWorkbenchAnnotationPaths(
+                    bitmap = bitmap,
+                    drawingPaths = drawingPaths,
+                    canvasWidth = canvasWidth,
+                    canvasHeight = canvasHeight
+                )
+
+                val workspaceManager = AgentWorkspaceManager(context)
+                val target = File(
+                    workspaceManager.attachmentsDirectory(),
+                    "xiaowan_annotation_${System.currentTimeMillis()}.jpg"
+                )
+                target.parentFile?.mkdirs()
+                FileOutputStream(target).use { stream ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 94, stream)
+                }
+                val payload = linkedMapOf<String, Any?>(
+                    "id" to "xiaowan_annotation_${target.nameWithoutExtension}",
+                    "name" to "xiaowan_annotation.jpg",
+                    "fileName" to target.name,
+                    "path" to target.absolutePath,
+                    "androidPath" to target.absolutePath,
+                    "uri" to workspaceManager.uriForFile(target),
+                    "shellPath" to workspaceManager.shellPathForAndroid(target),
+                    "mimeType" to "image/jpeg",
+                    "isImage" to true,
+                    "size" to target.length(),
+                    "width" to bitmap.width,
+                    "height" to bitmap.height,
+                    "source" to source,
+                    "annotationKind" to "current_screen_with_red_strokes",
+                    "canvasWidth" to canvasWidth,
+                    "canvasHeight" to canvasHeight,
+                    "isFilterOverlay" to capture.isFilterOverlay
+                ).filterValues { it != null }
+                withContext(Dispatchers.Main) {
+                    result.success(payload)
+                }
+            } catch (e: PermissionException) {
+                withContext(Dispatchers.Main) {
+                    result.error("PERMISSION_DENIED", e.message, null)
+                }
+            } catch (e: Exception) {
+                OmniLog.e(TAG, "captureWorkbenchAnnotationAttachment failed: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    result.error("SCREENSHOT_FAILED", e.message, null)
+                }
+            } finally {
+                bitmapToRecycle?.let { bitmap ->
+                    if (!bitmap.isRecycled) bitmap.recycle()
+                }
+            }
+        }
+    }
+
+    fun workbenchFrontendContextSet(call: MethodCall, result: MethodChannel.Result) {
+        val raw = call.argument<Map<String, Any?>>("context") ?: emptyMap()
+        val contextPayload = sanitizeInteropMap(raw).toMutableMap().apply {
+            put("nativeUpdatedAtMillis", System.currentTimeMillis())
+        }
+        latestWorkbenchFrontendContext = contextPayload
+        result.success(
+            mapOf(
+                "success" to true,
+                "context" to contextPayload
+            )
+        )
+    }
+
+    fun workbenchFrontendContextGet(call: MethodCall, result: MethodChannel.Result) {
+        result.success(latestWorkbenchFrontendContext ?: emptyMap<String, Any?>())
+    }
+
+    private fun drawWorkbenchAnnotationPaths(
+        bitmap: Bitmap,
+        drawingPaths: List<Map<String, Any?>>,
+        canvasWidth: Float,
+        canvasHeight: Float
+    ) {
+        if (canvasWidth <= 0f || canvasHeight <= 0f || drawingPaths.isEmpty()) {
+            return
+        }
+        val scaleX = bitmap.width / canvasWidth
+        val scaleY = bitmap.height / canvasHeight
+        val strokeScale = (scaleX + scaleY) / 2f
+        val canvas = Canvas(bitmap)
+        drawingPaths.forEach { stroke ->
+            val points = stroke["points"] as? List<*> ?: return@forEach
+            if (points.size < 2) return@forEach
+            val first = points.first() as? Map<*, *> ?: return@forEach
+            val startX = numberAsFloat(first["x"]) ?: return@forEach
+            val startY = numberAsFloat(first["y"]) ?: return@forEach
+            val path = Path().apply {
+                moveTo(startX * scaleX, startY * scaleY)
+            }
+            points.drop(1).forEach { rawPoint ->
+                val point = rawPoint as? Map<*, *> ?: return@forEach
+                val x = numberAsFloat(point["x"]) ?: return@forEach
+                val y = numberAsFloat(point["y"]) ?: return@forEach
+                path.lineTo(x * scaleX, y * scaleY)
+            }
+            val strokeWidth = numberAsFloat(stroke["strokeWidth"]) ?: 4f
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = parseAnnotationColor(stroke["color"])
+                style = Paint.Style.STROKE
+                this.strokeWidth = (strokeWidth * strokeScale).coerceAtLeast(4f)
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+            }
+            canvas.drawPath(path, paint)
+        }
+    }
+
+    private fun numberAsFloat(value: Any?): Float? {
+        return when (value) {
+            is Number -> value.toFloat()
+            is String -> value.trim().toFloatOrNull()
+            else -> null
+        }
+    }
+
+    private fun parseAnnotationColor(value: Any?): Int {
+        val raw = value?.toString()?.trim().orEmpty()
+        if (raw.isNotEmpty()) {
+            runCatching { return Color.parseColor(raw) }
+        }
+        return Color.rgb(225, 61, 86)
     }
 
     private fun currentChannelOrNull(): MethodChannel? {

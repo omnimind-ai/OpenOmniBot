@@ -271,6 +271,21 @@ workbench_project_progress_get
 
 Only call a Project creation run successful after `workspace/projects/<project-id>/project.json` and `logs/project_progress.jsonl` exist on the target device. If the device has no model provider configured, record the run as blocked instead of hand-writing files.
 
+For deterministic backend/runtime proof when model-provider setup is not the
+test subject, use the authenticated Dashboard debug route
+`POST /mcp/workbench/call` with the local MCP/Dashboard bearer token. This route
+is not returned by MCP tool discovery and must never be added to the Project API
+Registry. It calls the same `WorkbenchProjectStore` methods; `workbench_project_open`
+also navigates OOB native UI through `TaskCompletionNavigator`, so the device
+should visibly show the generated Flutter Display after a successful open.
+
+Known successful native proof on `emulator-5554`: create
+`projectId=oob-workbench-quick-capture` with `templateId=quick_capture_inbox`,
+activate it, seed one item through `workbench_api_call(capture.ingest)`, then
+open it. The screen should show `随手记 Inbox · NOTE`, `3 active / 0 archived`,
+`OOB native UI`, and `4 APIs`, with runtime files under
+`workspace/projects/oob-workbench-quick-capture/`.
+
 ## Distribution Export
 
 Use `workbench_project_export` to package a Project. Do not manually zip the workspace from the AI layer.

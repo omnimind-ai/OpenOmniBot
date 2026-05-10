@@ -49,6 +49,9 @@ class AssistsCoreChannel {
                 "createAgentTask" -> {
                     assistsCoreManager!!.createAgentTask( call, result)
                 }
+                "captureWorkbenchAnnotationAttachment" -> {
+                    assistsCoreManager!!.captureWorkbenchAnnotationAttachment(call, result)
+                }
                 "agentSkillList" -> {
                     assistsCoreManager!!.agentSkillList(call, result)
                 }
@@ -296,6 +299,12 @@ class AssistsCoreChannel {
                 }
                 "workbenchProjectActiveGet" -> {
                     assistsCoreManager!!.workbenchProjectActiveGet(call, result)
+                }
+                "workbenchFrontendContextSet" -> {
+                    assistsCoreManager!!.workbenchFrontendContextSet(call, result)
+                }
+                "workbenchFrontendContextGet" -> {
+                    assistsCoreManager!!.workbenchFrontendContextGet(call, result)
                 }
                 "workbenchProjectDeactivate" -> {
                     assistsCoreManager!!.workbenchProjectDeactivate(call, result)

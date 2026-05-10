@@ -33,6 +33,27 @@ Device smoke used `emulator-5554` only:
 - Home UI was reachable.
 - `workspace/projects` was absent before and after the attempted prompt.
 
+Deterministic backend/runtime E2E later completed on `emulator-5554` only:
+
+- Built and installed `developStandardDebug`.
+- Enabled OOB Local Service and called authenticated `POST /mcp/workbench/call`.
+- Created `oob-workbench-quick-capture` from `quick_capture_inbox`.
+- Activated it.
+- Seeded data through `workbench_api_call(capture.ingest)`.
+- Opened it with `workbench_project_open`, which navigated to the native Flutter Display.
+- Verified visible page `随手记 Inbox · NOTE` with `3 active / 0 archived`, `OOB native UI`, and `4 APIs`.
+- Verified runtime files:
+
+```text
+workspace/projects/oob-workbench-quick-capture/project.json
+workspace/projects/oob-workbench-quick-capture/backend/api_spec.json
+workspace/projects/oob-workbench-quick-capture/data/items.json
+workspace/projects/oob-workbench-quick-capture/logs/project_progress.jsonl
+workspace/projects/oob-workbench-quick-capture/logs/api_calls.jsonl
+```
+
+Screenshot proof: `/tmp/oob_quick_capture_project_5554_recheck.png`.
+
 ## Not Completed
 
 - Real `vlm_task` / toolvox multi-Project creation did not complete in this run.

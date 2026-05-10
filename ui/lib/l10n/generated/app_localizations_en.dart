@@ -3152,6 +3152,65 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchTodoInputRequired => 'Enter a todo first';
 
   @override
+  String get workbenchQuickCaptureTitle => 'Quick Capture Inbox';
+
+  @override
+  String get workbenchQuickCaptureSubtitle =>
+      'Drop text, links, share snippets, or screenshots here. The Project API turns them into todos, summaries, link cards, or later-read items.';
+
+  @override
+  String get workbenchQuickCaptureInputHint =>
+      'Paste a note, link, or share text';
+
+  @override
+  String get workbenchQuickCaptureAction => 'Capture';
+
+  @override
+  String get workbenchQuickCaptureCaptured => 'Captured';
+
+  @override
+  String get workbenchQuickCaptureInputRequired => 'Enter text or a link first';
+
+  @override
+  String get workbenchQuickCaptureEmpty => 'No captures yet';
+
+  @override
+  String get workbenchQuickCaptureFilterAll => 'Inbox';
+
+  @override
+  String get workbenchQuickCaptureTypeTodo => 'Todo';
+
+  @override
+  String get workbenchQuickCaptureTypeSummary => 'Summary';
+
+  @override
+  String get workbenchQuickCaptureTypeLink => 'Link';
+
+  @override
+  String get workbenchQuickCaptureTypeLater => 'Later';
+
+  @override
+  String get workbenchQuickCaptureArchived => 'Archived';
+
+  @override
+  String get workbenchQuickCaptureArchive => 'Archive';
+
+  @override
+  String get workbenchQuickCapturePromoteToTodo => 'Turn into todo';
+
+  @override
+  String get workbenchQuickCaptureSummarize => 'Summarize';
+
+  @override
+  String get workbenchQuickCaptureArchivedToast => 'Capture archived';
+
+  @override
+  String get workbenchQuickCapturePromotedToast => 'Moved to todo';
+
+  @override
+  String get workbenchQuickCaptureSummarizedToast => 'Summary refreshed';
+
+  @override
   String get workbenchSchemaDefaultEntity => 'Item';
 
   @override
@@ -3472,6 +3531,54 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchDebugComingSoon => 'Pending';
 
   @override
+  String get workbenchAnnotationTitle => 'Annotation canvas';
+
+  @override
+  String get workbenchAnnotationDrawMode => 'Draw';
+
+  @override
+  String get workbenchAnnotationBrowseMode => 'Browse page';
+
+  @override
+  String get workbenchAnnotationUndo => 'Undo';
+
+  @override
+  String get workbenchAnnotationClear => 'Clear';
+
+  @override
+  String get workbenchAnnotationApply => 'Apply annotation';
+
+  @override
+  String get workbenchAnnotationApplying => 'Applying';
+
+  @override
+  String get workbenchAnnotationPromptHint =>
+      'Add edit notes, for example: turn this into the primary button';
+
+  @override
+  String get workbenchAnnotationNoStrokes => 'Draw the area to edit first';
+
+  @override
+  String get workbenchAnnotationNoShape => 'No marks';
+
+  @override
+  String workbenchAnnotationShapeCount(int count) {
+    return '$count strokes marked';
+  }
+
+  @override
+  String get workbenchAnnotationDefaultPrompt =>
+      'Adjust the current Project frontend according to the canvas annotation.';
+
+  @override
+  String get workbenchAnnotationHotUpdateSuccess =>
+      'Applied the annotation to the Project';
+
+  @override
+  String get workbenchAnnotationHotUpdateFailed =>
+      'Annotation hot update failed';
+
+  @override
   String get workbenchExportProjectPackage => 'Export package';
 
   @override
@@ -3565,6 +3672,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String workbenchTodoCount(int openCount, int finishedCount) {
     return '$openCount open / $finishedCount finished';
+  }
+
+  @override
+  String workbenchQuickCaptureCount(int activeCount, int archivedCount) {
+    return '$activeCount active / $archivedCount archived';
   }
 
   @override

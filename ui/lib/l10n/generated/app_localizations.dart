@@ -5720,6 +5720,120 @@ abstract class AppLocalizations {
   /// **'请先输入 todo'**
   String get workbenchTodoInputRequired;
 
+  /// No description provided for @workbenchQuickCaptureTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'随手记 Inbox'**
+  String get workbenchQuickCaptureTitle;
+
+  /// No description provided for @workbenchQuickCaptureSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'把文字、链接、分享内容或截图丢进来。Project API 会整理成 Todo、摘要、链接卡片或稍后读。'**
+  String get workbenchQuickCaptureSubtitle;
+
+  /// No description provided for @workbenchQuickCaptureInputHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'粘贴一句话、链接或分享文本'**
+  String get workbenchQuickCaptureInputHint;
+
+  /// No description provided for @workbenchQuickCaptureAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'收进来'**
+  String get workbenchQuickCaptureAction;
+
+  /// No description provided for @workbenchQuickCaptureCaptured.
+  ///
+  /// In zh, this message translates to:
+  /// **'已收进随手记'**
+  String get workbenchQuickCaptureCaptured;
+
+  /// No description provided for @workbenchQuickCaptureInputRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先输入文字或链接'**
+  String get workbenchQuickCaptureInputRequired;
+
+  /// No description provided for @workbenchQuickCaptureEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无随手记'**
+  String get workbenchQuickCaptureEmpty;
+
+  /// No description provided for @workbenchQuickCaptureFilterAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'Inbox'**
+  String get workbenchQuickCaptureFilterAll;
+
+  /// No description provided for @workbenchQuickCaptureTypeTodo.
+  ///
+  /// In zh, this message translates to:
+  /// **'Todo'**
+  String get workbenchQuickCaptureTypeTodo;
+
+  /// No description provided for @workbenchQuickCaptureTypeSummary.
+  ///
+  /// In zh, this message translates to:
+  /// **'摘要'**
+  String get workbenchQuickCaptureTypeSummary;
+
+  /// No description provided for @workbenchQuickCaptureTypeLink.
+  ///
+  /// In zh, this message translates to:
+  /// **'链接'**
+  String get workbenchQuickCaptureTypeLink;
+
+  /// No description provided for @workbenchQuickCaptureTypeLater.
+  ///
+  /// In zh, this message translates to:
+  /// **'稍后读'**
+  String get workbenchQuickCaptureTypeLater;
+
+  /// No description provided for @workbenchQuickCaptureArchived.
+  ///
+  /// In zh, this message translates to:
+  /// **'已归档'**
+  String get workbenchQuickCaptureArchived;
+
+  /// No description provided for @workbenchQuickCaptureArchive.
+  ///
+  /// In zh, this message translates to:
+  /// **'归档'**
+  String get workbenchQuickCaptureArchive;
+
+  /// No description provided for @workbenchQuickCapturePromoteToTodo.
+  ///
+  /// In zh, this message translates to:
+  /// **'转成 Todo'**
+  String get workbenchQuickCapturePromoteToTodo;
+
+  /// No description provided for @workbenchQuickCaptureSummarize.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新摘要'**
+  String get workbenchQuickCaptureSummarize;
+
+  /// No description provided for @workbenchQuickCaptureArchivedToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'随手记已归档'**
+  String get workbenchQuickCaptureArchivedToast;
+
+  /// No description provided for @workbenchQuickCapturePromotedToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'已转成 Todo'**
+  String get workbenchQuickCapturePromotedToast;
+
+  /// No description provided for @workbenchQuickCaptureSummarizedToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'摘要已刷新'**
+  String get workbenchQuickCaptureSummarizedToast;
+
   /// No description provided for @workbenchSchemaDefaultEntity.
   ///
   /// In zh, this message translates to:
@@ -6272,6 +6386,90 @@ abstract class AppLocalizations {
   /// **'待接入'**
   String get workbenchDebugComingSoon;
 
+  /// No description provided for @workbenchAnnotationTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'标注画布'**
+  String get workbenchAnnotationTitle;
+
+  /// No description provided for @workbenchAnnotationDrawMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'画笔'**
+  String get workbenchAnnotationDrawMode;
+
+  /// No description provided for @workbenchAnnotationBrowseMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'浏览页面'**
+  String get workbenchAnnotationBrowseMode;
+
+  /// No description provided for @workbenchAnnotationUndo.
+  ///
+  /// In zh, this message translates to:
+  /// **'撤销'**
+  String get workbenchAnnotationUndo;
+
+  /// No description provided for @workbenchAnnotationClear.
+  ///
+  /// In zh, this message translates to:
+  /// **'清空'**
+  String get workbenchAnnotationClear;
+
+  /// No description provided for @workbenchAnnotationApply.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用标注'**
+  String get workbenchAnnotationApply;
+
+  /// No description provided for @workbenchAnnotationApplying.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用中'**
+  String get workbenchAnnotationApplying;
+
+  /// No description provided for @workbenchAnnotationPromptHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'补充修改说明，例如：把这里改成主按钮'**
+  String get workbenchAnnotationPromptHint;
+
+  /// No description provided for @workbenchAnnotationNoStrokes.
+  ///
+  /// In zh, this message translates to:
+  /// **'先在页面上画出要修改的区域'**
+  String get workbenchAnnotationNoStrokes;
+
+  /// No description provided for @workbenchAnnotationNoShape.
+  ///
+  /// In zh, this message translates to:
+  /// **'未标注'**
+  String get workbenchAnnotationNoShape;
+
+  /// No description provided for @workbenchAnnotationShapeCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'已标注 {count} 笔'**
+  String workbenchAnnotationShapeCount(int count);
+
+  /// No description provided for @workbenchAnnotationDefaultPrompt.
+  ///
+  /// In zh, this message translates to:
+  /// **'根据画布标注调整当前 Project 前端。'**
+  String get workbenchAnnotationDefaultPrompt;
+
+  /// No description provided for @workbenchAnnotationHotUpdateSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'已把标注应用到 Project'**
+  String get workbenchAnnotationHotUpdateSuccess;
+
+  /// No description provided for @workbenchAnnotationHotUpdateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'标注热更新失败'**
+  String get workbenchAnnotationHotUpdateFailed;
+
   /// No description provided for @workbenchExportProjectPackage.
   ///
   /// In zh, this message translates to:
@@ -6421,6 +6619,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'{openCount} 条待完成 / {finishedCount} 条已完成'**
   String workbenchTodoCount(int openCount, int finishedCount);
+
+  /// No description provided for @workbenchQuickCaptureCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{activeCount} 条活跃 / {archivedCount} 条归档'**
+  String workbenchQuickCaptureCount(int activeCount, int archivedCount);
 
   /// No description provided for @workbenchSchemaItemCount.
   ///

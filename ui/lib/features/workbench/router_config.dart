@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/workbench/pages/workbench_project_mode_page.dart';
+import 'package:ui/features/workbench/pages/workbench_quick_capture_page.dart';
 import 'package:ui/features/workbench/pages/workbench_schema_project_page.dart';
 import 'package:ui/features/workbench/pages/workbench_todo_log_page.dart';
 
@@ -26,6 +27,25 @@ List<GoRoute> workbenchRoutes = [
         projectId: state.uri.queryParameters['projectId'],
         displayId: state.uri.queryParameters['displayId'],
         returnTo: state.uri.queryParameters['returnTo'],
+        debugMode:
+            state.uri.queryParameters['debug'] == '1' ||
+            state.uri.queryParameters['debug'] == 'true',
+      ),
+    ),
+  ),
+  GoRoute(
+    path: '/workbench/quick_capture',
+    name: 'workbench/quick_capture',
+    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
+      key: state.pageKey,
+      name: 'workbench/quick_capture',
+      child: WorkbenchQuickCapturePage(
+        projectId: state.uri.queryParameters['projectId'],
+        displayId: state.uri.queryParameters['displayId'],
+        returnTo: state.uri.queryParameters['returnTo'],
+        debugMode:
+            state.uri.queryParameters['debug'] == '1' ||
+            state.uri.queryParameters['debug'] == 'true',
       ),
     ),
   ),

@@ -1155,6 +1155,25 @@
   "workbenchTodoAdded": "Todo added",
   "workbenchTodoFinishedToast": "Todo archived",
   "workbenchTodoInputRequired": "Enter a todo first",
+  "workbenchQuickCaptureTitle": "Quick Capture Inbox",
+  "workbenchQuickCaptureSubtitle": "Drop text, links, share snippets, or screenshots here. The Project API turns them into todos, summaries, link cards, or later-read items.",
+  "workbenchQuickCaptureInputHint": "Paste a note, link, or share text",
+  "workbenchQuickCaptureAction": "Capture",
+  "workbenchQuickCaptureCaptured": "Captured",
+  "workbenchQuickCaptureInputRequired": "Enter text or a link first",
+  "workbenchQuickCaptureEmpty": "No captures yet",
+  "workbenchQuickCaptureFilterAll": "Inbox",
+  "workbenchQuickCaptureTypeTodo": "Todo",
+  "workbenchQuickCaptureTypeSummary": "Summary",
+  "workbenchQuickCaptureTypeLink": "Link",
+  "workbenchQuickCaptureTypeLater": "Later",
+  "workbenchQuickCaptureArchived": "Archived",
+  "workbenchQuickCaptureArchive": "Archive",
+  "workbenchQuickCapturePromoteToTodo": "Turn into todo",
+  "workbenchQuickCaptureSummarize": "Summarize",
+  "workbenchQuickCaptureArchivedToast": "Capture archived",
+  "workbenchQuickCapturePromotedToast": "Moved to todo",
+  "workbenchQuickCaptureSummarizedToast": "Summary refreshed",
   "workbenchSchemaDefaultEntity": "Item",
   "workbenchSchemaCreateTitle": "Create {entity}",
   "@workbenchSchemaCreateTitle": {
@@ -1348,7 +1367,7 @@
   "workbenchAnnotationPromptHint": "Add edit notes, for example: turn this into the primary button",
   "workbenchAnnotationNoStrokes": "Draw the area to edit first",
   "workbenchAnnotationNoShape": "No marks",
-  "workbenchAnnotationShapeCount": "{count} shapes detected",
+  "workbenchAnnotationShapeCount": "{count} strokes marked",
   "@workbenchAnnotationShapeCount": {
     "placeholders": {
       "count": {
@@ -1432,6 +1451,17 @@
         "type": "int"
       },
       "finishedCount": {
+        "type": "int"
+      }
+    }
+  },
+  "workbenchQuickCaptureCount": "{activeCount} active / {archivedCount} archived",
+  "@workbenchQuickCaptureCount": {
+    "placeholders": {
+      "activeCount": {
+        "type": "int"
+      },
+      "archivedCount": {
         "type": "int"
       }
     }

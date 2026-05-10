@@ -1165,6 +1165,30 @@ class AssistsMessageService {
     }
   }
 
+  static Future<Map<String, dynamic>?> captureWorkbenchAnnotationAttachment({
+    required double canvasWidth,
+    required double canvasHeight,
+    required List<Map<String, dynamic>> drawingPaths,
+    String source = 'xiaowan_floating_annotation_canvas',
+  }) async {
+    try {
+      final result = await assistCore.invokeMethod<Map<dynamic, dynamic>>(
+        'captureWorkbenchAnnotationAttachment',
+        {
+          'canvasWidth': canvasWidth,
+          'canvasHeight': canvasHeight,
+          'drawingPaths': drawingPaths,
+          'source': source,
+        },
+      );
+      if (result == null) return null;
+      return result.map((key, value) => MapEntry(key.toString(), value));
+    } on PlatformException catch (e) {
+      print('捕获 Workbench 标注截图失败: ${e.message}');
+      return null;
+    }
+  }
+
   static Future<Map<String, dynamic>> compactConversationContext({
     required int conversationId,
     required String conversationMode,

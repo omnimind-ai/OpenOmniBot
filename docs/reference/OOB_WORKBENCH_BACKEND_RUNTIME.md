@@ -216,9 +216,51 @@ task_wait_unlock
 file_transfer
 ```
 
-It does not expose Workbench control APIs directly. Therefore a toolvox-style validation that starts outside the app must use `vlm_task` to drive the OOB UI/Agent, and the in-app Agent must then call `workbench_project_create`, `workbench_project_activate`, `workbench_api_call`, and related Workbench tools.
+It does not expose Workbench control APIs as MCP tools. Therefore a toolvox-style validation that starts outside the app should use `vlm_task` to drive the OOB UI/Agent, and the in-app Agent then calls `workbench_project_create`, `workbench_project_activate`, `workbench_api_call`, and related Workbench tools.
 
-If a future toolvox runner needs direct Workbench calls, add an explicit debug/test transport rather than overloading MCP `vlm_task`. Keep that transport out of Project API Registry.
+For deterministic backend E2E, OOB also exposes an authenticated Dashboard/debug transport:
+
+```text
+POST /mcp/workbench/call
+Authorization: Bearer <Dashboard token>
+body: { "name": "<workbench tool name>", "arguments": { ... } }
+```
+
+This route uses the same MCP/Dashboard bearer token as `/mcp/state`. It calls `WorkbenchProjectStore` directly and is intentionally not listed by `tools/list`, not available as a Project business API, and not written into Project API Registry.
+
+`workbench_project_open` on this route is allowed to navigate the native OOB UI
+through `TaskCompletionNavigator`. That makes the route useful for proving a
+Project is not only written to disk but also visible as an OOB-native Flutter
+Display on the target device.
+
+## Quick Capture Device E2E Result
+
+Status on 2026-05-10: completed on `emulator-5554` only.
+
+Validated flow:
+
+1. Built and installed `developStandardDebug`.
+2. Enabled OOB Local Service and forwarded host port `18899` to device port `8899`.
+3. Called `POST /mcp/workbench/call` with the local Dashboard bearer token.
+4. Created `projectId=oob-workbench-quick-capture`, `templateId=quick_capture_inbox`.
+5. Activated the Project.
+6. Seeded one item through `workbench_api_call(capture.ingest)`.
+7. Opened the Project through `workbench_project_open`.
+8. Verified the device screen shows the OOB-native `随手记 Inbox · NOTE` page with `3 active / 0 archived`, `OOB native UI`, and `4 APIs`.
+
+Device files verified through `adb -s emulator-5554 shell run-as cn.com.omnimind.bot.debug`:
+
+```text
+workspace/projects/oob-workbench-quick-capture/project.json
+workspace/projects/oob-workbench-quick-capture/backend/api_spec.json
+workspace/projects/oob-workbench-quick-capture/data/items.json
+workspace/projects/oob-workbench-quick-capture/logs/project_progress.jsonl
+workspace/projects/oob-workbench-quick-capture/logs/api_calls.jsonl
+```
+
+The progress log ends with `stage=project_create_completed` and
+`status=completed`. `data/items.json` contains the two initial captures plus the
+extra `capture.ingest` row written through Project API execution.
 
 ## Verification Plan
 
@@ -249,7 +291,8 @@ Functional verification after backend gate:
 3. Query `workbench_project_progress_get` and confirm each Project ended with `project_create_completed`.
 4. Ingest one local sample repo with `workbench_project_ingest_oss(sourcePath=...)`.
 5. Confirm `workbench_api_list(projectId)` still excludes Workbench control APIs.
-6. Device-side checks, if needed, use `emulator-5554` only.
+6. When model provider setup blocks the VLM path, use `POST /mcp/workbench/call` with the local Dashboard token to run the same backend calls and verify actual files on `emulator-5554`.
+7. Device-side checks, if needed, use `emulator-5554` only.
 
 ## Verification Status On 2026-05-10
 

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/omnibot_workspace/widgets/omnibot_workspace_browser.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
+import 'package:ui/features/workbench/pages/workbench_quick_capture_page.dart';
 import 'package:ui/features/workbench/pages/workbench_schema_project_page.dart';
 import 'package:ui/features/workbench/pages/workbench_todo_log_page.dart';
 import 'package:ui/features/workbench/services/workbench_todo_log_service.dart';
@@ -693,6 +694,7 @@ class _OmnibotWorkspaceProjectFrontendsState
   late final WorkbenchProjectModeService _service =
       widget._service ?? WorkbenchProjectModeService.native();
   late final bool _ownsService = widget._service == null;
+  bool _annotationEnabled = false;
 
   @override
   void initState() {
@@ -772,6 +774,12 @@ class _OmnibotWorkspaceProjectFrontendsState
     );
   }
 
+  void _toggleAnnotationMode() {
+    setState(() {
+      _annotationEnabled = !_annotationEnabled;
+    });
+  }
+
   WorkbenchProject? _currentProject(List<WorkbenchProject> projects) {
     final activeProjectId = _service.activeProject?.projectId;
     if (activeProjectId != null) {
@@ -807,6 +815,10 @@ class _OmnibotWorkspaceProjectFrontendsState
           onOpenDisplay: project == null || display == null
               ? null
               : () => _openDisplayRoute(project, display),
+          annotationEnabled: _annotationEnabled,
+          onToggleAnnotation: project == null || display == null
+              ? null
+              : _toggleAnnotationMode,
           onShowGuide: _showWorkbenchGuide,
         ),
         Expanded(
@@ -833,6 +845,7 @@ class _OmnibotWorkspaceProjectFrontendsState
                         ),
                         project: project,
                         display: display,
+                        annotationMode: _annotationEnabled,
                       ),
               ),
             ),
@@ -862,6 +875,8 @@ class _WorkspaceProjectMiniBar extends StatelessWidget {
     required this.onOpenProjectManager,
     required this.onRefresh,
     required this.onOpenDisplay,
+    required this.annotationEnabled,
+    required this.onToggleAnnotation,
     required this.onShowGuide,
   });
 
@@ -872,6 +887,8 @@ class _WorkspaceProjectMiniBar extends StatelessWidget {
   final VoidCallback onOpenProjectManager;
   final Future<void> Function() onRefresh;
   final VoidCallback? onOpenDisplay;
+  final bool annotationEnabled;
+  final VoidCallback? onToggleAnnotation;
   final VoidCallback onShowGuide;
 
   @override
@@ -948,6 +965,16 @@ class _WorkspaceProjectMiniBar extends StatelessWidget {
             icon: Icon(Icons.open_in_new_rounded, color: palette.textSecondary),
           ),
           IconButton(
+            tooltip: context.l10n.workbenchAnnotationTitle,
+            onPressed: onToggleAnnotation,
+            icon: Icon(
+              annotationEnabled ? Icons.edit_off_outlined : Icons.draw_outlined,
+              color: annotationEnabled
+                  ? palette.accentPrimary
+                  : palette.textSecondary,
+            ),
+          ),
+          IconButton(
             tooltip: context.l10n.omniflowRefresh,
             onPressed: () => unawaited(onRefresh()),
             icon: Icon(Icons.refresh_rounded, color: palette.textSecondary),
@@ -963,10 +990,12 @@ class _WorkspaceProjectDisplayHost extends StatelessWidget {
     super.key,
     required this.project,
     required this.display,
+    required this.annotationMode,
   });
 
   final WorkbenchProject project;
   final WorkbenchDisplaySpec display;
+  final bool annotationMode;
 
   @override
   Widget build(BuildContext context) {
@@ -980,6 +1009,17 @@ class _WorkspaceProjectDisplayHost extends StatelessWidget {
       return WorkbenchTodoLogPage(
         projectId: project.projectId,
         displayId: display.id,
+        annotationMode: annotationMode,
+        embedded: true,
+      );
+    }
+    final hostsQuickCapture =
+        project.templateId == workbenchQuickCaptureTemplateId ||
+        route.startsWith('/workbench/quick_capture');
+    if (hostsQuickCapture) {
+      return WorkbenchQuickCapturePage(
+        projectId: project.projectId,
+        displayId: display.id,
         embedded: true,
       );
     }
@@ -990,6 +1030,7 @@ class _WorkspaceProjectDisplayHost extends StatelessWidget {
       return WorkbenchSchemaProjectPage(
         projectId: project.projectId,
         displayId: display.id,
+        annotationMode: annotationMode,
         embedded: true,
       );
     }
