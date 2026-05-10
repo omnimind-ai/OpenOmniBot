@@ -24,6 +24,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -39,6 +42,10 @@ open class VLMOperationTask(
     private val Tag = "VLMOperationTask"
     private companion object {
         private const val SUMMARY_GENERATION_TIMEOUT_MS = 20_000L
+        private val SIMPLE_RUN_LOG_JSON = Json {
+            encodeDefaults = true
+            explicitNulls = false
+        }
     }
 
     private lateinit var vlmOperationService: VLMOperationService
@@ -254,6 +261,44 @@ open class VLMOperationTask(
         return "任务完成"
     }
 
+    private fun buildSimpleRunLogJson(report: TaskExecutionReport): String {
+        return runCatching {
+            val startMs = taskStartTime.takeIf { it > 0 } ?: System.currentTimeMillis()
+            val finishedMs = System.currentTimeMillis()
+            val steps = JSONArray()
+            report.executionTrace.forEachIndexed { index, step ->
+                steps.put(
+                    JSONObject().apply {
+                        put("index", index)
+                        put("observation", step.observation)
+                        put("thought", step.thought)
+                        put("summary", step.summary)
+                        put("result", step.result)
+                        put("success", step.result?.startsWith("执行失败") != true)
+                        put("started_at_ms", step.startedAtMs)
+                        put("finished_at_ms", step.finishedAtMs)
+                        put("package_name", step.packageName)
+                        put("action", JSONObject(SIMPLE_RUN_LOG_JSON.encodeToString(step.action)))
+                    }
+                )
+            }
+            JSONObject().apply {
+                put("run_id", id.ifBlank { "vlm-$finishedMs" })
+                put("goal", report.goal)
+                put("success", report.success)
+                put("started_at_ms", startMs)
+                put("finished_at_ms", finishedMs)
+                put("duration_ms", (finishedMs - startMs).coerceAtLeast(0))
+                put("final_package_name", AccessibilityController.getPackageName().orEmpty())
+                put("source", "vlm")
+                put("steps", steps)
+            }.toString()
+        }.getOrElse { error ->
+            OmniLog.w(Tag, "buildSimpleRunLogJson failed: ${error.message}")
+            ""
+        }
+    }
+
     fun start(
         context: Context,
         goal: String,
@@ -352,7 +397,8 @@ open class VLMOperationTask(
                             summaryText = summaryResult.summaryText,
                             needSummary = shouldSummary,
                             feedback = taskExecutionReport.feedback,
-                            summaryUnavailable = summaryResult.summaryUnavailable
+                            summaryUnavailable = summaryResult.summaryUnavailable,
+                            simpleRunLogJson = buildSimpleRunLogJson(taskExecutionReport)
                         )
                     )
                 } else {
@@ -366,7 +412,8 @@ open class VLMOperationTask(
                             errorMessage = errorMessage,
                             needSummary = shouldSummary,
                             feedback = taskExecutionReport.feedback,
-                            summaryUnavailable = summaryResult.summaryUnavailable
+                            summaryUnavailable = summaryResult.summaryUnavailable,
+                            simpleRunLogJson = buildSimpleRunLogJson(taskExecutionReport)
                         )
                     )
                 }

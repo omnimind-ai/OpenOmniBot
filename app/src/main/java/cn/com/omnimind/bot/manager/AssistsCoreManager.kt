@@ -18,6 +18,7 @@ import android.os.Looper
 import cn.com.omnimind.accessibility.api.Constant
 import cn.com.omnimind.assists.AssistsCore
 import cn.com.omnimind.assists.api.bean.TaskParams
+import cn.com.omnimind.assists.api.bean.VlmTaskTerminalResult
 import cn.com.omnimind.assists.api.interfaces.OnMessagePushListener
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.assists.task.scheduled.worker.ScheduledStates
@@ -86,6 +87,11 @@ import cn.com.omnimind.bot.agent.WorkspaceScheduledTaskScheduler
 import cn.com.omnimind.bot.agent.resolveToolExecutionStatus
 import cn.com.omnimind.bot.localmodel.LocalModelFeature
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
+import cn.com.omnimind.bot.omniflow.AndroidOmniFlowSimpleActionRunner
+import cn.com.omnimind.bot.omniflow.OmniFlowSimpleExecutor
+import cn.com.omnimind.bot.omniflow.OmniFlowSimpleIngest
+import cn.com.omnimind.bot.omniflow.OmniFlowSimpleProviderClient
+import cn.com.omnimind.bot.omniflow.OmniFlowSimpleStore
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
 import cn.com.omnimind.bot.webchat.ConversationDomainService
 import cn.com.omnimind.bot.webchat.FlutterChatSyncBridge
@@ -683,6 +689,16 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         mutableMapOf()
     private val conversationDomainService by lazy { ConversationDomainService(context) }
     private val workbenchProjectStore by lazy { WorkbenchProjectStore(context) }
+    private val omniFlowSimpleStore by lazy { OmniFlowSimpleStore(context) }
+    private val omniFlowSimpleIngest by lazy { OmniFlowSimpleIngest(omniFlowSimpleStore) }
+    private val omniFlowSimpleProvider by lazy { OmniFlowSimpleProviderClient() }
+    private val omniFlowSimpleExecutor by lazy {
+        OmniFlowSimpleExecutor(
+            store = omniFlowSimpleStore,
+            provider = omniFlowSimpleProvider,
+            runner = AndroidOmniFlowSimpleActionRunner(context)
+        )
+    }
 
     // 当前活跃的对话ID
     private var currentConversationId: Long? = null
@@ -1985,6 +2001,23 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         handleVlmTaskFinished("assists_core_listener")
     }
 
+    override fun onVlmTaskResult(result: VlmTaskTerminalResult) {
+        val payload = result.simpleRunLogJson?.trim().orEmpty()
+        if (payload.isEmpty()) return
+        workJob.launch {
+            runCatching {
+                val (runLog, function) = omniFlowSimpleIngest.ingestRunLogJson(payload)
+                runCatching { omniFlowSimpleProvider.ingestRunLog(runLog) }
+                OmniLog.d(
+                    TAG,
+                    "OmniFlow simple UTG ingested run=${runLog.runId} function=${function.functionId}"
+                )
+            }.onFailure {
+                OmniLog.w(TAG, "OmniFlow simple UTG ingest failed: ${it.message}")
+            }
+        }
+    }
+
     private fun handleVlmTaskFinished(source: String, taskId: String? = null) {
         mainJob.launch(Dispatchers.Main) {
             OmniLog.d(TAG, "收到 VLM 任务完成回调: source=$source")
@@ -2871,6 +2904,141 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             }
         }
     }
+
+    fun omniflowSimpleStatus(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            try {
+                val status = omniFlowSimpleStore.status().toMutableMap()
+                status["provider_available"] = omniFlowSimpleProvider.isAvailable()
+                withContext(Dispatchers.Main) {
+                    result.success(status)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("OMNIFLOW_SIMPLE_STATUS_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun omniflowSimpleListFunctions(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            try {
+                val functions = omniFlowSimpleStore.listFunctions().map { it.toMap() }
+                withContext(Dispatchers.Main) {
+                    result.success(functions)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("OMNIFLOW_SIMPLE_LIST_FUNCTIONS_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun omniflowSimpleListRunLogs(call: MethodCall, result: MethodChannel.Result) {
+        workJob.launch {
+            try {
+                val runLogs = omniFlowSimpleStore.listRunLogs().map { it.toMap() }
+                withContext(Dispatchers.Main) {
+                    result.success(runLogs)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("OMNIFLOW_SIMPLE_LIST_RUNLOGS_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun omniflowSimpleGetFunction(call: MethodCall, result: MethodChannel.Result) {
+        val functionId = call.argument<String>("functionId")?.trim().orEmpty()
+        workJob.launch {
+            try {
+                val function = omniFlowSimpleStore.getFunction(functionId)?.toMap()
+                withContext(Dispatchers.Main) {
+                    result.success(function)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("OMNIFLOW_SIMPLE_GET_FUNCTION_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun omniflowSimpleGetRunLog(call: MethodCall, result: MethodChannel.Result) {
+        val runId = call.argument<String>("runId")?.trim().orEmpty()
+        workJob.launch {
+            try {
+                val runLog = omniFlowSimpleStore.getRunLog(runId)?.toMap()
+                withContext(Dispatchers.Main) {
+                    result.success(runLog)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("OMNIFLOW_SIMPLE_GET_RUNLOG_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun omniflowSimpleDeleteFunction(call: MethodCall, result: MethodChannel.Result) {
+        val functionId = call.argument<String>("functionId")?.trim().orEmpty()
+        workJob.launch {
+            try {
+                val deleted = omniFlowSimpleStore.deleteFunction(functionId)
+                withContext(Dispatchers.Main) {
+                    result.success(deleted)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("OMNIFLOW_SIMPLE_DELETE_FUNCTION_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun omniflowSimpleExecuteFunction(call: MethodCall, result: MethodChannel.Result) {
+        val functionId = call.argument<String>("functionId")?.trim().orEmpty()
+        val input = call.argument<Map<String, Any?>>("input") ?: emptyMap()
+        workJob.launch {
+            try {
+                val executionResult = omniFlowSimpleExecutor.execute(functionId, input).toMap()
+                withContext(Dispatchers.Main) {
+                    result.success(executionResult)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("OMNIFLOW_SIMPLE_EXECUTE_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun omniflowSimpleIngestRunLog(call: MethodCall, result: MethodChannel.Result) {
+        val payload = call.argument<String>("runLogJson")?.trim().orEmpty()
+        workJob.launch {
+            try {
+                val (runLog, function) = omniFlowSimpleIngest.ingestRunLogJson(payload)
+                runCatching { omniFlowSimpleProvider.ingestRunLog(runLog) }
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        linkedMapOf(
+                            "run_log" to runLog.toMap(),
+                            "function" to function.toMap()
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("OMNIFLOW_SIMPLE_INGEST_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+
 
     fun clearRuntimeLogs(call: MethodCall, result: MethodChannel.Result) {
         workJob.launch {

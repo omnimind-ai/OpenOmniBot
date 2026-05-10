@@ -19,6 +19,7 @@ import 'pages/settings/background_setting_page.dart';
 import 'pages/settings/storage_usage_page.dart';
 import 'pages/omnibot_workspace/omnibot_artifact_preview_page.dart';
 import 'pages/omnibot_workspace/omnibot_workspace_page.dart';
+import 'pages/omniflow/omniflow_simple_dashboard_page.dart';
 import 'pages/webview/webview_page.dart';
 import 'pages/settings/settings_page.dart';
 import 'pages/mcp/remote_mcp_servers_page.dart';
@@ -209,6 +210,16 @@ List<GoRoute> homeRoutes = [
         startInProjectMode: extra['startInProjectMode'] == true,
       );
     },
+  ),
+
+  GoRoute(
+    path: '/home/omniflow_simple_utg',
+    name: 'home/omniflow_simple_utg',
+    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
+      key: state.pageKey,
+      name: 'home/omniflow_simple_utg',
+      child: const OmniFlowSimpleDashboardPage(),
+    ),
   ),
 
   // 授权页

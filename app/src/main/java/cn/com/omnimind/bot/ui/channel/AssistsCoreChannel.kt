@@ -82,6 +82,30 @@ class AssistsCoreChannel {
                 "clearRuntimeLogs" -> {
                     assistsCoreManager!!.clearRuntimeLogs(call, result)
                 }
+                "omniflowSimpleStatus" -> {
+                    assistsCoreManager!!.omniflowSimpleStatus(call, result)
+                }
+                "omniflowSimpleListFunctions" -> {
+                    assistsCoreManager!!.omniflowSimpleListFunctions(call, result)
+                }
+                "omniflowSimpleListRunLogs" -> {
+                    assistsCoreManager!!.omniflowSimpleListRunLogs(call, result)
+                }
+                "omniflowSimpleGetFunction" -> {
+                    assistsCoreManager!!.omniflowSimpleGetFunction(call, result)
+                }
+                "omniflowSimpleGetRunLog" -> {
+                    assistsCoreManager!!.omniflowSimpleGetRunLog(call, result)
+                }
+                "omniflowSimpleDeleteFunction" -> {
+                    assistsCoreManager!!.omniflowSimpleDeleteFunction(call, result)
+                }
+                "omniflowSimpleExecuteFunction" -> {
+                    assistsCoreManager!!.omniflowSimpleExecuteFunction(call, result)
+                }
+                "omniflowSimpleIngestRunLog" -> {
+                    assistsCoreManager!!.omniflowSimpleIngestRunLog(call, result)
+                }
                 "saveModelProviderProfile" -> {
                     assistsCoreManager!!.saveModelProviderProfile(call, result)
                 }

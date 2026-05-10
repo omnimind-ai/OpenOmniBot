@@ -811,6 +811,8 @@ class _OmnibotWorkspaceProjectFrontendsState
           projectName: project == null ? null : _projectDisplayName(project),
           translucent: widget.translucentSurfaces,
           onOpenProjectManager: () => _openProjectManager(project),
+          onOpenOmniFlow: () =>
+              GoRouterManager.push('/home/omniflow_simple_utg'),
           onRefresh: _refreshAndEnsureActive,
           onOpenDisplay: project == null || display == null
               ? null
@@ -873,6 +875,7 @@ class _WorkspaceProjectMiniBar extends StatelessWidget {
     required this.projectName,
     required this.translucent,
     required this.onOpenProjectManager,
+    required this.onOpenOmniFlow,
     required this.onRefresh,
     required this.onOpenDisplay,
     required this.annotationEnabled,
@@ -885,6 +888,7 @@ class _WorkspaceProjectMiniBar extends StatelessWidget {
   final String? projectName;
   final bool translucent;
   final VoidCallback onOpenProjectManager;
+  final VoidCallback onOpenOmniFlow;
   final Future<void> Function() onRefresh;
   final VoidCallback? onOpenDisplay;
   final bool annotationEnabled;
@@ -956,6 +960,14 @@ class _WorkspaceProjectMiniBar extends StatelessWidget {
             onPressed: onShowGuide,
             icon: Icon(
               Icons.info_outline_rounded,
+              color: palette.textSecondary,
+            ),
+          ),
+          IconButton(
+            tooltip: 'OmniFlow Simple UTG',
+            onPressed: onOpenOmniFlow,
+            icon: Icon(
+              Icons.account_tree_outlined,
               color: palette.textSecondary,
             ),
           ),

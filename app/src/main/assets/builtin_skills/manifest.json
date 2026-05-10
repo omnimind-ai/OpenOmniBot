@@ -31,6 +31,16 @@
       "hasEvals": false
     },
     {
+      "id": "oob-omniflow-simple-utg",
+      "name": "oob-omniflow-simple-utg",
+      "description": "Use OOB-local OmniFlow Simple UTG to record VLM GUI run logs, compile simple replayable GUI functions, and execute provider-first with local fallback.",
+      "assetPath": "builtin_skills/oob-omniflow-simple-utg",
+      "hasScripts": false,
+      "hasReferences": false,
+      "hasAssets": false,
+      "hasEvals": false
+    },
+    {
       "id": "find-install-skills",
       "name": "find-install-skills",
       "description": "Find and install relevant Omnibot skills. Use when the user asks \"找个 skill\", \"有没有这个功能的 skill\", \"find a skill for X\", \"is there a skill for X\",\"install a skill for X\", or wants to extend the agent with an installable workflow.",

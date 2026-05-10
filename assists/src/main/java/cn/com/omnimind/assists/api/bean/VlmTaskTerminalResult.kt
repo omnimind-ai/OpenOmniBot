@@ -16,5 +16,6 @@ data class VlmTaskTerminalResult(
     val needSummary: Boolean = false,
     val waitingQuestion: String? = null,
     val feedback: String? = null,
-    val summaryUnavailable: Boolean = false
+    val summaryUnavailable: Boolean = false,
+    val simpleRunLogJson: String? = null
 )
