@@ -34,6 +34,8 @@ Last Updated: 2026-05-10
 
 - Backend unit/tool-definition gate passed on 2026-05-10.
 - Device smoke used `emulator-5554` only.
-- Deterministic Dashboard-token backend E2E completed on `emulator-5554`: `quick_capture_inbox` Project `oob-workbench-quick-capture` was created, activated, seeded through `capture.ingest`, opened via `workbench_project_open`, and shown as the OOB-native `随手记 Inbox · NOTE` Flutter Display.
-- Verified app-data files exist under `workspace/projects/oob-workbench-quick-capture/`, including `project.json`, `backend/api_spec.json`, `data/items.json`, `logs/project_progress.jsonl`, and `logs/api_calls.jsonl`.
-- Do not claim `vlm_task`/toolvox direct Project creation success until the VLM path itself writes Project files on `emulator-5554`; the deterministic `/mcp/workbench/call` route is a local authenticated backend E2E transport, not MCP tool discovery.
+- Deterministic Dashboard-token backend E2E completed on `emulator-5554`: `quick_capture_inbox` Projects `oob-workbench-quick-capture` and `oob-workbench-vlm-quick-note` were created, activated, seeded through `capture.ingest`, opened via `workbench_project_open`, and shown as OOB-native `随手记 Inbox · NOTE` Flutter Displays.
+- Verified app-data files exist under both Project directories, including `project.json`, `backend/api_spec.json`, `data/items.json`, `logs/project_progress.jsonl`, and `logs/api_calls.jsonl`.
+- Final 5554 native UI smoke for `oob-workbench-vlm-quick-note` showed `3 active / 1 archived`, `OOB native UI`, `4 APIs`, and a receipt item tagged `Summary`.
+- `debug_model_provider_configure` can configure the normal OOB model-provider stores for local E2E and masks keys as `apiKeyConfigured`.
+- Do not claim `vlm_task`/toolvox direct Project creation success until the VLM path itself submits the prompt and writes Project files on `emulator-5554`; the deterministic `/mcp/workbench/call` route is a local authenticated backend E2E transport, not MCP tool discovery.

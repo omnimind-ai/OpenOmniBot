@@ -42,6 +42,11 @@ OOB Workbench has three backend/runtime layers:
 
 The key product claim is: OOB puts the backend on the phone. A Project should carry backend abilities, source assets, data, API logs, progress, and executor contracts as persistent runtime state.
 
+For `quick_capture_inbox`, the current frontend-supported buckets are `todo`,
+`summary`, `link`, and `later`. Backend ingest should preserve those explicit
+types, map `read_later`/`read-later` to `later`, and map receipt/invoice/expense
+inputs to `summary` until a dedicated expense bucket exists in the frontend.
+
 ## Design Claims To Preserve
 
 This skill is about the first and third pillars of "端侧 AI 工作台":
@@ -177,6 +182,19 @@ For a real toolvox-style run:
 
 If the device is not configured with a model provider, record the run as blocked. Do not claim `vlm_task` created Projects unless `workspace/projects/<project-id>/project.json` exists.
 
+For local provider setup in device E2E, use the authenticated debug route rather
+than editing config files by hand:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer <Dashboard token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"debug_model_provider_configure","arguments":{"profileId":"dashboard-e2e","name":"Dashboard E2E","baseUrl":"https://dashscope.aliyuncs.com/compatible-mode/v1","apiKey":"<key>","modelId":"qwen-vl-max-latest","sceneIds":["scene.dispatch.model","scene.vlm.operation.primary","scene.compactor.context","scene.compactor.context.chat"]}}' \
+  http://127.0.0.1:<forwarded-port>/mcp/workbench/call
+```
+
+The response must mask the key as `apiKeyConfigured`; never log the raw key.
+
 For deterministic backend E2E without depending on model-provider setup, use the authenticated Dashboard/debug transport:
 
 ```bash
@@ -208,6 +226,30 @@ Runtime proof:
   workspace/projects/oob-workbench-quick-capture/logs/project_progress.jsonl
   workspace/projects/oob-workbench-quick-capture/logs/api_calls.jsonl
 ```
+
+Latest 5554 proof from 2026-05-10:
+
+```text
+Project: oob-workbench-vlm-quick-note
+Template: quick_capture_inbox
+Visible route: /workbench/quick_capture?projectId=oob-workbench-vlm-quick-note
+Visible title: 随手记 Inbox · NOTE
+Visible counters: 3 active / 1 archived, OOB native UI, 4 APIs
+Visible receipt classification: Invoice receipt item is tagged Summary
+Runtime proof:
+  workspace/projects/oob-workbench-vlm-quick-note/project.json
+  workspace/projects/oob-workbench-vlm-quick-note/backend/api_spec.json
+  workspace/projects/oob-workbench-vlm-quick-note/data/items.json
+  workspace/projects/oob-workbench-vlm-quick-note/logs/project_progress.jsonl
+  workspace/projects/oob-workbench-vlm-quick-note/logs/api_calls.jsonl
+```
+
+Known VLM limitation from the same run: after provider binding succeeded,
+`vlm_task` could call the DashScope VLM and click OOB Home, but it could not
+submit the prompt because the Flutter input did not expose a focused editable
+accessibility node, and app-process `input text/keyevent` is denied
+`INJECT_EVENTS`. Record this as a VLM input blocker, not as a Workbench backend
+failure.
 
 ## Handoff Checklist
 

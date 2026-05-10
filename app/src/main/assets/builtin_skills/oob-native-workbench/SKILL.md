@@ -276,8 +276,14 @@ test subject, use the authenticated Dashboard debug route
 `POST /mcp/workbench/call` with the local MCP/Dashboard bearer token. This route
 is not returned by MCP tool discovery and must never be added to the Project API
 Registry. It calls the same `WorkbenchProjectStore` methods; `workbench_project_open`
-also navigates OOB native UI through `TaskCompletionNavigator`, so the device
-should visibly show the generated Flutter Display after a successful open.
+also navigates OOB native UI through `TaskCompletionNavigator` on the Android
+main thread, so the device should visibly show the generated Flutter Display
+after a successful open.
+
+For local VLM/provider E2E setup, the same debug route supports
+`debug_model_provider_configure` and `debug_model_provider_get`. These write the
+normal OOB model provider profile and scene bindings, sync Agent AI config, and
+must mask the key as `apiKeyConfigured` in responses.
 
 Known successful native proof on `emulator-5554`: create
 `projectId=oob-workbench-quick-capture` with `templateId=quick_capture_inbox`,
@@ -285,6 +291,21 @@ activate it, seed one item through `workbench_api_call(capture.ingest)`, then
 open it. The screen should show `随手记 Inbox · NOTE`, `3 active / 0 archived`,
 `OOB native UI`, and `4 APIs`, with runtime files under
 `workspace/projects/oob-workbench-quick-capture/`.
+
+Latest native proof on `emulator-5554`: create
+`projectId=oob-workbench-vlm-quick-note` with `templateId=quick_capture_inbox`,
+activate it, seed two items through `workbench_api_call(capture.ingest)`, then
+open it. After the final native UI smoke, the screen should show
+`随手记 Inbox · NOTE`, `3 active / 1 archived`, `OOB native UI`, and `4 APIs`,
+with a receipt/invoice item classified as `Summary`, and runtime files under
+`workspace/projects/oob-workbench-vlm-quick-note/`.
+
+Known VLM blocker: after model provider binding, `vlm_task` can reach the VLM
+and click OOB Home, but Project creation through Home input is not proven until
+the prompt is actually submitted. On `emulator-5554`, Flutter input exposed no
+focused editable accessibility node, and app-process `input text/keyevent` was
+denied `INJECT_EVENTS`; record this as a text-entry blocker, not a successful
+toolvox Project creation.
 
 ## Distribution Export
 

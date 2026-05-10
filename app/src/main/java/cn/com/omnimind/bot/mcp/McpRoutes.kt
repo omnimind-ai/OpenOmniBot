@@ -1,6 +1,12 @@
 package cn.com.omnimind.bot.mcp
 
 import android.content.Context
+import cn.com.omnimind.baselib.llm.ModelProviderConfigStore
+import cn.com.omnimind.baselib.llm.ModelProviderProfile
+import cn.com.omnimind.baselib.llm.SceneModelBindingEntry
+import cn.com.omnimind.baselib.llm.SceneModelBindingStore
+import cn.com.omnimind.bot.agent.AgentAiCapabilityConfigSync
+import cn.com.omnimind.bot.manager.AssistsCoreManager
 import cn.com.omnimind.bot.util.AssistsUtil
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
@@ -14,6 +20,8 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * MCP 端点路由注册。
@@ -186,7 +194,7 @@ object McpRoutes {
      * @return JSON-safe transport payload. The outer `success` is route execution status; the
      * nested `result` is the native Workbench runtime payload.
      */
-    private fun executeWorkbenchDebugCall(
+    private suspend fun executeWorkbenchDebugCall(
         context: Context,
         name: String?,
         args: Map<String, Any?>
@@ -200,7 +208,9 @@ object McpRoutes {
                 "workbench_project_open" -> {
                     val projectId = stringArg(args, "projectId")
                     val route = store.routeForProject(projectId)
-                    TaskCompletionNavigator.navigateToMainRoute(context, route, needClear = false)
+                    withContext(Dispatchers.Main) {
+                        TaskCompletionNavigator.navigateToMainRoute(context, route, needClear = false)
+                    }
                     linkedMapOf(
                         "success" to true,
                         "projectId" to projectId,
@@ -245,6 +255,11 @@ object McpRoutes {
                     inputs = mapArg(args["inputs"]) ?: emptyMap(),
                     caller = "mcp_dashboard"
                 )
+                "debug_model_provider_configure" -> configureModelProviderForDebug(
+                    context = context,
+                    args = args
+                )
+                "debug_model_provider_get" -> getModelProviderDebugState(context)
                 else -> throw IllegalArgumentException("Unknown Workbench debug call: $name")
             }
             linkedMapOf(
@@ -259,6 +274,108 @@ object McpRoutes {
                 "error" to (error.message ?: "Workbench debug call failed")
             )
         }
+    }
+
+    /**
+     * Configures the active model provider through the authenticated local debug route.
+     *
+     * @param context Android application context used to sync the agent config file.
+     * @param args JSON-style arguments. Required keys are `baseUrl`, `apiKey`, and `modelId`;
+     * optional keys are `profileId`, `name`, `protocolType`, and `sceneIds`.
+     * @return JSON-safe provider and scene binding summary for E2E setup.
+     */
+    private fun configureModelProviderForDebug(
+        context: Context,
+        args: Map<String, Any?>
+    ): Map<String, Any?> {
+        val profileId = args["profileId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "dashboard-e2e"
+        val name = args["name"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "Dashboard E2E"
+        val baseUrl = stringArg(args, "baseUrl")
+        val apiKey = stringArg(args, "apiKey")
+        val modelId = stringArg(args, "modelId")
+        val protocolType = args["protocolType"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "openai_compatible"
+        val sceneIds = listArg(args["sceneIds"]).ifEmpty {
+            listOf(
+                "scene.dispatch.model",
+                "scene.vlm.operation.primary",
+                "scene.compactor.context",
+                "scene.compactor.context.chat"
+            )
+        }
+
+        val profile = ModelProviderConfigStore.saveProfile(
+            id = profileId,
+            name = name,
+            baseUrl = baseUrl,
+            apiKey = apiKey,
+            protocolType = protocolType
+        )
+        sceneIds.forEach { sceneId ->
+            SceneModelBindingStore.saveBinding(
+                sceneId = sceneId,
+                providerProfileId = profile.id,
+                modelId = modelId
+            )
+        }
+        AgentAiCapabilityConfigSync.get(context).syncFileFromStores()
+        AssistsCoreManager.dispatchAgentAiConfigChanged(
+            source = "mcp_dashboard",
+            path = "model_provider_debug_config"
+        )
+
+        return linkedMapOf(
+            "profile" to profileMap(profile),
+            "sceneBindings" to SceneModelBindingStore.getBindingEntries().map(::bindingMap)
+        )
+    }
+
+    /**
+     * Returns current model provider and scene binding state for local E2E debugging.
+     *
+     * @param context Android application context used to ensure the config sync singleton exists.
+     * @return JSON-safe state summary without exposing any route through MCP tool discovery.
+     */
+    private fun getModelProviderDebugState(context: Context): Map<String, Any?> {
+        AgentAiCapabilityConfigSync.get(context).syncFileFromStores()
+        return linkedMapOf(
+            "editingProfileId" to ModelProviderConfigStore.getEditingProfileId(),
+            "profiles" to ModelProviderConfigStore.listProfiles().map(::profileMap),
+            "sceneBindings" to SceneModelBindingStore.getBindingEntries().map(::bindingMap)
+        )
+    }
+
+    /**
+     * Converts a provider profile to a JSON-safe debug response map.
+     *
+     * @param profile Model provider profile from the OOB provider store.
+     * @return Public profile fields required to audit local E2E setup.
+     */
+    private fun profileMap(profile: ModelProviderProfile): Map<String, Any?> {
+        return mapOf(
+            "id" to profile.id,
+            "name" to profile.name,
+            "baseUrl" to profile.baseUrl,
+            "apiKeyConfigured" to profile.apiKey.isNotBlank(),
+            "configured" to profile.isConfigured(),
+            "protocolType" to profile.protocolType
+        )
+    }
+
+    /**
+     * Converts one scene binding to a JSON-safe debug response map.
+     *
+     * @param binding Scene-to-provider/model binding stored in OOB.
+     * @return Scene binding fields needed to verify VLM/Agent model routing.
+     */
+    private fun bindingMap(binding: SceneModelBindingEntry): Map<String, Any?> {
+        return mapOf(
+            "sceneId" to binding.sceneId,
+            "providerProfileId" to binding.providerProfileId,
+            "modelId" to binding.modelId
+        )
     }
 
     /**
@@ -283,6 +400,20 @@ object McpRoutes {
     private fun mapArg(value: Any?): Map<String, Any?>? {
         val raw = value as? Map<*, *> ?: return null
         return raw.entries.associate { entry -> entry.key.toString() to entry.value }
+    }
+
+    /**
+     * Converts a dynamic JSON list or comma-separated value into normalized strings.
+     *
+     * @param value Dynamic value decoded from the debug request body.
+     * @return Nonblank string values in caller-provided order.
+     */
+    private fun listArg(value: Any?): List<String> {
+        return when (value) {
+            is List<*> -> value.mapNotNull { it?.toString()?.trim()?.takeIf(String::isNotEmpty) }
+            is String -> value.split(",").mapNotNull { it.trim().takeIf(String::isNotEmpty) }
+            else -> emptyList()
+        }
     }
 
     // ==================== 传统端点处理（保持兼容） ====================

@@ -2487,8 +2487,13 @@ class WorkbenchProjectStore(
             val title = text?.takeIf { it.isNotEmpty() } ?: return@mapIndexedNotNull null
             val url = map?.get("url")?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 ?: extractFirstUrl(title).takeIf { it.isNotEmpty() }
-            val type = map?.get("type")?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                ?: quickCaptureType(title, url.orEmpty(), "")
+            val requestedType = map?.get("type")?.toString()?.trim()?.lowercase()
+            val type = when (requestedType) {
+                "todo", "summary", "link", "later" -> requestedType
+                "read_later", "read-later" -> "later"
+                "expense", "receipt", "invoice" -> "summary"
+                else -> quickCaptureType(title, url.orEmpty(), "")
+            }
             WorkbenchQuickCaptureRecord(
                 id = "capture-initial-${index + 1}",
                 type = type,
@@ -2820,7 +2825,13 @@ class WorkbenchProjectStore(
         }
         val url = explicitUrl.ifBlank { extractFirstUrl(combined) }
         val sourceApp = inputs["sourceApp"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-        val itemType = quickCaptureType(combined, url, screenshotPath)
+        val requestedType = inputs["type"]?.toString()?.trim()?.lowercase()
+        val itemType = when (requestedType) {
+            "todo", "summary", "link", "later" -> requestedType
+            "read_later", "read-later" -> "later"
+            "expense", "receipt", "invoice" -> "summary"
+            else -> quickCaptureType(combined, url, screenshotPath)
+        }
         val now = nowIso()
         val items = readQuickCaptureItems(projectId).toMutableList()
         val item = WorkbenchQuickCaptureRecord(
@@ -2949,6 +2960,8 @@ class WorkbenchProjectStore(
         val lower = text.lowercase()
         return when {
             screenshotPath.isNotEmpty() -> "summary"
+            listOf("receipt", "invoice", "expense", "账单", "收据", "发票", "消费").any { lower.contains(it) } ->
+                "summary"
             quickCaptureLooksActionable(lower) -> "todo"
             url.isNotEmpty() && listOf("稍后", "later", "read later", "收藏").any { lower.contains(it) } ->
                 "later"

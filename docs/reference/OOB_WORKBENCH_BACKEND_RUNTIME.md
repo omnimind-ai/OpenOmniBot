@@ -81,7 +81,7 @@ The implemented capability surface is:
 
 - Project creation and reuse with append-only progress stages.
 - Generic `schema_app` Projects with business APIs such as `<entity>.create` and `<entity>.archive`.
-- Quick capture Projects with `workspace_python_script` API ids that already write script/SDK artifacts, while execution remains native-backed for reliability.
+- Quick capture Projects with `workspace_python_script` API ids that already write script/SDK artifacts, while execution remains native-backed for reliability. Supported buckets are `todo`, `summary`, `link`, and `later`; receipt/invoice/expense inputs are mapped to `summary` until the frontend adds a dedicated expense bucket.
 - Android asset ingest as Project runtime metadata under `android/`.
 - OSS/GitHub source ingest as Project runtime metadata under `source/`.
 - Runtime summaries in `project.json`, `backend/api_spec.json`, active Project prompt context, and export packages.
@@ -229,9 +229,21 @@ body: { "name": "<workbench tool name>", "arguments": { ... } }
 This route uses the same MCP/Dashboard bearer token as `/mcp/state`. It calls `WorkbenchProjectStore` directly and is intentionally not listed by `tools/list`, not available as a Project business API, and not written into Project API Registry.
 
 `workbench_project_open` on this route is allowed to navigate the native OOB UI
-through `TaskCompletionNavigator`. That makes the route useful for proving a
-Project is not only written to disk but also visible as an OOB-native Flutter
-Display on the target device.
+through `TaskCompletionNavigator`; the route switches to the Android main
+thread before navigation. That makes the route useful for proving a Project is
+not only written to disk but also visible as an OOB-native Flutter Display on
+the target device.
+
+The same route includes local E2E setup helpers:
+
+```text
+debug_model_provider_configure
+debug_model_provider_get
+```
+
+These helpers write OOB's normal model provider profile and scene binding stores,
+sync Agent AI config, and dispatch the Agent AI config change event. They return
+only masked key state (`apiKeyConfigured`) and are not MCP tools.
 
 ## Quick Capture Device E2E Result
 
@@ -247,6 +259,7 @@ Validated flow:
 6. Seeded one item through `workbench_api_call(capture.ingest)`.
 7. Opened the Project through `workbench_project_open`.
 8. Verified the device screen shows the OOB-native `随手记 Inbox · NOTE` page with `3 active / 0 archived`, `OOB native UI`, and `4 APIs`.
+9. Re-ran the same shape with `projectId=oob-workbench-vlm-quick-note`, then added one receipt item through the native Flutter UI and archived a malformed smoke item. The final device screen showed `3 active / 1 archived`, `OOB native UI`, and `4 APIs`; the top receipt card was classified as `Summary`.
 
 Device files verified through `adb -s emulator-5554 shell run-as cn.com.omnimind.bot.debug`:
 
@@ -256,7 +269,38 @@ workspace/projects/oob-workbench-quick-capture/backend/api_spec.json
 workspace/projects/oob-workbench-quick-capture/data/items.json
 workspace/projects/oob-workbench-quick-capture/logs/project_progress.jsonl
 workspace/projects/oob-workbench-quick-capture/logs/api_calls.jsonl
+workspace/projects/oob-workbench-vlm-quick-note/project.json
+workspace/projects/oob-workbench-vlm-quick-note/backend/api_spec.json
+workspace/projects/oob-workbench-vlm-quick-note/data/items.json
+workspace/projects/oob-workbench-vlm-quick-note/logs/project_progress.jsonl
+workspace/projects/oob-workbench-vlm-quick-note/logs/api_calls.jsonl
 ```
+
+## VLM / Toolvox Attempt Result
+
+Status on 2026-05-10: provider configured, full creation path blocked.
+
+What passed:
+
+- `debug_model_provider_configure` bound `scene.vlm.operation.primary`,
+  `scene.dispatch.model`, and compactor scenes to a Dashboard/DashScope
+  OpenAI-compatible profile.
+- `vlm_task` reached the configured model and produced UI actions on
+  `emulator-5554`.
+- VLM could click OOB Home and repeatedly attempted to type the Project creation
+  prompt.
+
+What blocked:
+
+- Flutter Home input did not expose a focused editable accessibility node during
+  the VLM run.
+- App-process `Runtime.exec("input text/keyevent ...")` is denied Android
+  `INJECT_EVENTS`; it cannot be used as a reliable in-app text-entry fallback on
+  this emulator.
+
+Do not claim a VLM/toolvox Project creation as successful unless the prompt is
+actually submitted through OOB and the resulting Project files exist under
+`workspace/projects/<project-id>/`.
 
 The progress log ends with `stage=project_create_completed` and
 `status=completed`. `data/items.json` contains the two initial captures plus the
@@ -311,12 +355,12 @@ Result: `BUILD SUCCESSFUL`.
 
 Device smoke on `emulator-5554`:
 
-- Debug APK was already installed and app process `cn.com.omnimind.bot.debug` was running.
-- Onboarding was skipped into Home.
-- OOB workspace existed at app data `workspace/`.
-- `workspace/projects` did not exist before or after the Home prompt attempt.
-- Home prompt entry was attempted, but the device was not configured with a model provider and no direct toolvox runner exposing Workbench tools exists in this codebase. No Project was created through the UI/VLM path in this run.
+- Debug APK was installed and app process `cn.com.omnimind.bot.debug` was running.
+- Onboarding was skipped into Home and OOB workspace existed at app data `workspace/`.
+- The authenticated debug route configured the normal OOB model-provider stores with a Dashboard/DashScope profile and masked the key as `apiKeyConfigured`.
+- `vlm_task` reached the configured VLM and generated UI actions, but could not submit the Project prompt because the Flutter Home input did not expose a focused editable accessibility node and in-process `input text/keyevent` was denied `INJECT_EVENTS`.
+- Deterministic backend/runtime proof succeeded through `POST /mcp/workbench/call`: `oob-workbench-vlm-quick-note` was created from `quick_capture_inbox`, activated, seeded through `capture.ingest`, opened through `workbench_project_open`, then further exercised through the native Flutter UI.
 
 Remaining functional gap:
 
-- Run a real toolvox/VLM validation only after the device has a working model provider or a dedicated in-app runner that can cause the Agent to call Workbench tools. Use `emulator-5554` only.
+- Run a real toolvox/VLM Project-creation validation only after the Home text-entry path is fixed or a dedicated in-app runner can cause the Agent to call Workbench tools without typing into Flutter. Use `emulator-5554` only and require actual Project files before claiming success.

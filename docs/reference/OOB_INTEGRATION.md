@@ -21,7 +21,8 @@ This note tracks the native Workbench boundary used by OOB Project editing.
 - Backend API contracts live in `backend/api_spec.json`.
 - Source ingest contracts live in `source/manifest.json`.
 - UI clicks and AI calls share the same native executor path and append to `logs/api_calls.jsonl`.
-- Authenticated backend E2E can call `POST /mcp/workbench/call` with the local MCP/Dashboard bearer token. This debug transport calls the same native `WorkbenchProjectStore` methods but is not part of MCP tool discovery and never enters Project API Registry. `workbench_project_open` on this route also navigates the native OOB UI through `TaskCompletionNavigator`, so the test can prove the actual Flutter Display is visible.
+- Authenticated backend E2E can call `POST /mcp/workbench/call` with the local MCP/Dashboard bearer token. This debug transport calls the same native `WorkbenchProjectStore` methods but is not part of MCP tool discovery and never enters Project API Registry. `workbench_project_open` on this route switches to the Android main thread before navigating the native OOB UI through `TaskCompletionNavigator`, so the test can prove the actual Flutter Display is visible.
+- The same authenticated debug route has local-only model-provider setup helpers: `debug_model_provider_configure` and `debug_model_provider_get`. They are for device E2E setup, write the normal provider/profile stores, sync Agent AI config, and return only `apiKeyConfigured` rather than the raw key.
 
 ## Display Boundary
 
@@ -44,10 +45,22 @@ the same Project APIs, data files, and `logs/api_calls.jsonl`.
 The deterministic device proof for the daily-use template is `quick_capture_inbox`:
 Dashboard-token call -> `workbench_project_create` -> `workbench_project_activate`
 -> `workbench_api_call(capture.ingest)` -> `workbench_project_open` -> native
-`/workbench/quick_capture?projectId=oob-workbench-quick-capture` on
+`/workbench/quick_capture?projectId=oob-workbench-vlm-quick-note` on
 `emulator-5554`. The proof must include app-data files under
-`workspace/projects/oob-workbench-quick-capture/` and a live screenshot of
-`随手记 Inbox · NOTE`.
+`workspace/projects/oob-workbench-vlm-quick-note/` and a live screenshot of
+`随手记 Inbox · NOTE`. The 2026-05-10 final smoke showed `3 active / 1 archived`,
+`OOB native UI`, `4 APIs`, and Project API writes through both `mcp_dashboard`
+and the native Flutter UI. Receipt/invoice text now lands in the current
+frontend-supported `summary` bucket instead of being misclassified as `todo`.
+
+The same run also validated the model-provider setup path enough for `vlm_task`
+to reach DashScope (`scene.vlm.operation.primary` bound to `dashboard-e2e`).
+It did not prove full VLM-to-Agent Project creation: VLM could click OOB Home,
+but Flutter text entry exposed no focused editable accessibility node, and
+in-process `input text/keyevent` is denied `INJECT_EVENTS` on this emulator.
+Do not mark the VLM/toolvox Project-creation path complete until a real in-app
+runner or reliable text-entry path submits the prompt and the resulting
+`workspace/projects/<project-id>/project.json` exists.
 
 ## Startup Boundary
 

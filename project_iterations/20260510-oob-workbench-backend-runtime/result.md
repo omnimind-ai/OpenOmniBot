@@ -54,19 +54,44 @@ workspace/projects/oob-workbench-quick-capture/logs/api_calls.jsonl
 
 Screenshot proof: `/tmp/oob_quick_capture_project_5554_recheck.png`.
 
+Second deterministic backend/runtime E2E completed on `emulator-5554` only:
+
+- Configured the device model provider through authenticated `debug_model_provider_configure`.
+- Verified `vlm_task` reached the configured DashScope VLM and could operate OOB Home.
+- Fixed `workbench_project_open` to navigate on the Android main thread.
+- Created `oob-workbench-vlm-quick-note` from `quick_capture_inbox`.
+- Activated it.
+- Seeded two records through `workbench_api_call(capture.ingest)`.
+- Opened it with `workbench_project_open`, which navigated to the native Flutter Display.
+- Fixed quick-capture type handling so receipt/invoice/expense text maps to `summary` instead of defaulting to `todo`.
+- Added `Invoice receipt 256 RMB` through the native Flutter UI and archived one malformed smoke record.
+- Verified visible page `随手记 Inbox · NOTE` with `3 active / 1 archived`, `OOB native UI`, `4 APIs`, and the invoice item tagged `Summary`.
+- Verified runtime files:
+
+```text
+workspace/projects/oob-workbench-vlm-quick-note/project.json
+workspace/projects/oob-workbench-vlm-quick-note/backend/api_spec.json
+workspace/projects/oob-workbench-vlm-quick-note/data/items.json
+workspace/projects/oob-workbench-vlm-quick-note/logs/project_progress.jsonl
+workspace/projects/oob-workbench-vlm-quick-note/logs/api_calls.jsonl
+```
+
+Screenshot proof: `/tmp/oob_quick_note_final_clean_5554.png`.
+
 ## Not Completed
 
 - Real `vlm_task` / toolvox multi-Project creation did not complete in this run.
 
 Reason:
 
-- The app on `emulator-5554` had no configured model provider after onboarding was skipped.
+- The app now has a configured model provider and `vlm_task` reaches DashScope.
 - MCP only exposes `vlm_task/task_status/task_reply/task_wait_unlock/file_transfer`.
 - No direct `toolvox` Workbench runner exists in this source tree.
+- The current `vlm_task` Home path is blocked by Flutter text entry: no focused editable accessibility node is exposed, and in-app `input text/keyevent` is denied `INJECT_EVENTS`.
 
 ## Next Agent Steps
 
-1. Configure a model provider on `emulator-5554`, or provide the internal toolvox runner that can cause the in-app Agent to call Workbench tools.
+1. Fix the OOB Home text-entry path for `vlm_task`, or provide the internal toolvox runner that can cause the in-app Agent to call Workbench tools without typing into Flutter.
 2. Run the multi-Project scenario from `docs/agent_context/skills/oob-workbench-backend/SKILL.md`.
 3. Verify actual files under:
 

@@ -75,3 +75,29 @@ Until one of those exists, do not claim VLM/toolvox Project creation success.
 This resolves the deterministic backend/runtime proof. It does not claim direct
 `vlm_task`/toolvox Project creation, which remains gated on model-provider or
 runner setup.
+
+## 5554 Provider + VLM Attempt + Quick Note E2E
+
+- Installed the latest `developStandardDebug` APK on `emulator-5554`; did not use `emulator-5556`.
+- Added and installed the authenticated `debug_model_provider_configure` / `debug_model_provider_get` route under `POST /mcp/workbench/call`.
+- Configured the 5554 device with the local Dashboard/DashScope OpenAI-compatible provider for:
+  - `scene.dispatch.model`
+  - `scene.vlm.operation.primary`
+  - `scene.compactor.context`
+  - `scene.compactor.context.chat`
+- Verified the route masks the key as `apiKeyConfigured` and does not return the raw key.
+- Ran `vlm_task` from OOB Home. The task reached DashScope and generated UI actions.
+- VLM could click OOB Home but could not submit the Project prompt because Flutter input did not expose a focused editable accessibility node. The in-app fallback `input text/keyevent` path is denied Android `INJECT_EVENTS`, so this is recorded as a VLM input blocker rather than a Workbench backend failure.
+- Fixed `workbench_project_open` in `McpRoutes.kt` to call `TaskCompletionNavigator` on `Dispatchers.Main`; before the fix, the debug route failed with `Can't create handler inside thread ... Looper.prepare()`.
+- Created `projectId=oob-workbench-vlm-quick-note` with `templateId=quick_capture_inbox` through the authenticated Workbench debug route.
+- Activated the Project and called `capture.ingest` twice.
+- Opened the Project on the device and verified the screen shows `随手记 Inbox · NOTE`, `2 active / 0 archived`, `OOB native UI`, and `4 APIs`.
+- Fixed quick-capture backend type handling so supported explicit types are preserved, `read_later` maps to `later`, and receipt/invoice/expense text maps to `summary` instead of defaulting to `todo`.
+- Rebuilt and reinstalled on `emulator-5554`, used the native Flutter UI to add `Invoice receipt 256 RMB`, archived one malformed smoke entry, and verified the final screen shows `3 active / 1 archived` with the invoice item tagged `Summary`.
+- Verified runtime files under app data with `adb -s emulator-5554 shell run-as cn.com.omnimind.bot.debug ...`:
+  - `workspace/projects/oob-workbench-vlm-quick-note/project.json`
+  - `workspace/projects/oob-workbench-vlm-quick-note/backend/api_spec.json`
+  - `workspace/projects/oob-workbench-vlm-quick-note/data/items.json`
+  - `workspace/projects/oob-workbench-vlm-quick-note/logs/project_progress.jsonl`
+  - `workspace/projects/oob-workbench-vlm-quick-note/logs/api_calls.jsonl`
+- Screenshot proof: `/tmp/oob_quick_note_final_clean_5554.png`.
