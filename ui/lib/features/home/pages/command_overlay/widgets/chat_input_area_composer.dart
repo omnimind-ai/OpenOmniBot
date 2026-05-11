@@ -18,17 +18,15 @@ const List<Color> _kDarkComposerFlowGradientColors = <Color>[
   Color(0xFF8C775D),
 ];
 
-mixin _ChatInputAreaComposerMixin
-    on _ChatInputAreaStateBase, _ChatInputAreaRecordingMixin {
+mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final palette = context.omniPalette;
     final composer = switch ((
       widget.useLargeComposerStyle,
       widget.useFrostedGlass,
     )) {
-      (true, _) => SafeArea(child: _buildLargeComposerShell(theme)),
+      (true, _) => SafeArea(child: _buildLargeComposerShell()),
       (false, true) => SafeArea(
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
@@ -48,7 +46,7 @@ mixin _ChatInputAreaComposerMixin
                       )
                     : null,
               ),
-              child: _buildInputContent(theme),
+              child: _buildInputContent(),
             ),
           ),
         ),
@@ -87,7 +85,7 @@ mixin _ChatInputAreaComposerMixin
                     ? Border.all(color: palette.borderSubtle)
                     : null,
               ),
-              child: _buildInputContent(theme),
+              child: _buildInputContent(),
             ),
           ),
         ),
@@ -103,13 +101,13 @@ mixin _ChatInputAreaComposerMixin
   }
 
   /// 构建输入框内容区域（按钮、文本框等）
-  Widget _buildInputContent(ThemeData theme) {
+  Widget _buildInputContent() {
     return ValueListenableBuilder<bool>(
       valueListenable: _hasTextNotifier,
       builder: (context, hasText, _) {
         return ValueListenableBuilder<bool>(
           valueListenable: _isFocusedNotifier,
-          builder: (context, isFocused, _) {
+          builder: (context, _, _) {
             final openClawButton = _buildOpenClawButton();
             final hasPayload = hasText || widget.attachments.isNotEmpty;
             return Row(
@@ -117,9 +115,7 @@ mixin _ChatInputAreaComposerMixin
                 Expanded(child: _buildTextField()),
                 const SizedBox(width: 9),
                 _buildAnimatedButtonRow(
-                  theme: theme,
                   hasText: hasPayload,
-                  isFocused: isFocused,
                   openClawButton: openClawButton,
                 ),
               ],
@@ -130,7 +126,7 @@ mixin _ChatInputAreaComposerMixin
     );
   }
 
-  Widget _buildLargeComposer(ThemeData theme) {
+  Widget _buildLargeComposer() {
     return ValueListenableBuilder<bool>(
       valueListenable: _hasTextNotifier,
       builder: (context, hasText, _) {
@@ -155,7 +151,7 @@ mixin _ChatInputAreaComposerMixin
                 ],
                 _buildTextField(multiline: true),
                 const SizedBox(height: 6),
-                _buildLargeActionRow(theme: theme, hasPayload: hasPayload),
+                _buildLargeActionRow(hasPayload: hasPayload),
               ],
             );
           },
@@ -164,10 +160,7 @@ mixin _ChatInputAreaComposerMixin
     );
   }
 
-  Widget _buildLargeActionRow({
-    required ThemeData theme,
-    required bool hasPayload,
-  }) {
+  Widget _buildLargeActionRow({required bool hasPayload}) {
     final contextUsageRatio = widget.contextUsageRatio;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -201,8 +194,7 @@ mixin _ChatInputAreaComposerMixin
         SizedBox(
           width: 28,
           height: 28,
-          child:
-              _buildMicButtonAnimated(theme: theme) ?? const SizedBox.shrink(),
+          child: _buildTerminalButton(iconSize: 22),
         ),
         const SizedBox(width: 6),
         SizedBox(
@@ -353,8 +345,8 @@ mixin _ChatInputAreaComposerMixin
     );
   }
 
-  Widget _buildLargeComposerShell(ThemeData theme) {
-    final content = RepaintBoundary(child: _buildLargeComposer(theme));
+  Widget _buildLargeComposerShell() {
+    final content = RepaintBoundary(child: _buildLargeComposer());
     final useFrostedGlass = widget.useFrostedGlass;
     final palette = context.omniPalette;
     return MouseRegion(
@@ -384,7 +376,7 @@ mixin _ChatInputAreaComposerMixin
           const borderInset = 1.5;
           final innerRadius = math.max(0.0, shellRadius - borderInset);
           const contentPadding = EdgeInsets.fromLTRB(14, 8, 12, 8);
-          final shouldGlowStrong = focused || hovered || isRecording;
+          final shouldGlowStrong = focused || hovered;
           final innerBorderColor =
               (context.isDarkTheme ? palette.borderStrong : Colors.white)
                   .withValues(alpha: context.isDarkTheme ? 0.42 : 0.1);
@@ -452,7 +444,7 @@ mixin _ChatInputAreaComposerMixin
                         progress: _composerFlowController,
                         interactive: shouldGlowStrong,
                         focused: focused,
-                        forceStrong: isRecording,
+                        forceStrong: false,
                         radius: shellRadius,
                         strokeWidth: 1.5,
                         gradientColors: context.isDarkTheme
@@ -645,9 +637,7 @@ mixin _ChatInputAreaComposerMixin
 
   /// 构建带动画的按钮行
   Widget _buildAnimatedButtonRow({
-    required ThemeData theme,
     required bool hasText,
-    required bool isFocused,
     required Widget? openClawButton,
   }) {
     final contextUsageRatio = widget.contextUsageRatio;
@@ -686,18 +676,13 @@ mixin _ChatInputAreaComposerMixin
         SizedBox(
           width: 24,
           height: 24,
-          child: _buildMicButtonAnimated(theme: theme),
+          child: _buildTerminalButton(iconSize: 20),
         ),
         const SizedBox(width: 2),
         // 发送/添加按钮
-        _buildSendButton(theme: theme, hasText: hasText, isFocused: isFocused),
+        _buildSendButton(hasText: hasText),
       ],
     );
-  }
-
-  /// 构建带动画的麦克风按钮（点击开始/停止录音）
-  Widget? _buildMicButtonAnimated({required ThemeData theme}) {
-    return _buildMicControlButton(iconSize: 18);
   }
 
   bool get _shouldShowCodexPermissionSelector =>
@@ -837,48 +822,31 @@ mixin _ChatInputAreaComposerMixin
     );
   }
 
-  Widget _buildMicControlButton({required double iconSize}) {
-    final recordingActive = isRecording;
-    final bgColor = recordingActive
-        ? const Color(0x1AE53935)
-        : Colors.transparent;
+  Widget _buildTerminalButton({required double iconSize}) {
     return IconButton(
       padding: EdgeInsets.zero,
+      tooltip: Localizations.localeOf(context).languageCode == 'en'
+          ? 'Open terminal'
+          : '打开终端',
       iconSize: iconSize,
-      icon: AnimatedContainer(
-        duration: _buttonAnimationDuration,
-        curve: _buttonAnimationCurve,
+      icon: SizedBox(
         width: 24,
         height: 24,
-        decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
-        child: Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.center,
-          children: [
-            SizedBox(width: iconSize, height: iconSize, child: _micSvg),
-            if (recordingActive)
-              Positioned(
-                right: 2,
-                top: 2,
-                child: Container(
-                  width: 6,
-                  height: 6,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFE53935),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-          ],
+        child: Center(
+          child: SizedBox(
+            width: iconSize,
+            height: iconSize,
+            child: _terminalSvg,
+          ),
         ),
       ),
       onPressed: () {
-        toggleRecording();
+        unawaited(openTerminalFromInput());
       },
     );
   }
 
-  /// 统一的输入框组件（录音模式和输入模式共用）
+  /// 统一的输入框组件
   Widget _buildTextField({bool multiline = false}) {
     final palette = context.omniPalette;
     final keyboardType = multiline
@@ -901,15 +869,10 @@ mixin _ChatInputAreaComposerMixin
     );
     return GestureDetector(
       onTap: () {
-        if (isRecording) {
-          // 录音模式下点击，停止录音并切换到输入模式
-          _onTranscriptTap();
-        } else {
-          widget.focusNode.requestFocus();
-        }
+        widget.focusNode.requestFocus();
       },
       child: AbsorbPointer(
-        absorbing: isRecording || !widget.focusNode.hasFocus,
+        absorbing: !widget.focusNode.hasFocus,
         child: TextField(
           controller: widget.controller,
           focusNode: widget.focusNode,
@@ -936,13 +899,9 @@ mixin _ChatInputAreaComposerMixin
           contextMenuBuilder: (context, editableTextState) =>
               TextInputContextMenu(editableTextState: editableTextState),
           decoration: InputDecoration(
-            hintText: isRecording
-                ? (Localizations.localeOf(context).languageCode == 'en'
-                      ? 'Type or speak directly, I am listening'
-                      : '输入或直接说，我在听')
-                : (Localizations.localeOf(context).languageCode == 'en'
-                      ? 'Type your message'
-                      : '请输入内容'),
+            hintText: Localizations.localeOf(context).languageCode == 'en'
+                ? 'Type your message'
+                : '请输入内容',
             hintStyle: TextStyle(
               fontSize: multiline ? 15.0 : 14.0,
               color: hintColor,
@@ -1006,11 +965,7 @@ mixin _ChatInputAreaComposerMixin
   }
 
   /// 右侧发送/添加按钮
-  Widget _buildSendButton({
-    required ThemeData theme,
-    required bool hasText,
-    required bool isFocused,
-  }) {
+  Widget _buildSendButton({required bool hasText}) {
     Widget icon;
     VoidCallback? onPressed;
     String iconKey;

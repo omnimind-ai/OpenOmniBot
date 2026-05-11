@@ -36,7 +36,6 @@ class _CommandOverlayState extends State<CommandOverlay> {
   bool _isPopupVisible = false;
   Map<String, dynamic>? _scheduleInfo;
   int _countdownSeconds = 0;
-  RecordingState _recordingState = RecordingState.idle; // 录音状态
   double _chatInputAreaHeight = 44;
   bool _openClawEnabled = false;
   String _openClawBaseUrl = '';
@@ -177,9 +176,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
         const SizedBox(width: 8),
         Switch.adaptive(
           value: _openClawEnabled,
-          onChanged: _recordingState != RecordingState.idle
-              ? null
-              : (value) => _setOpenClawEnabled(value),
+          onChanged: (value) => _setOpenClawEnabled(value),
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
         const Spacer(),
@@ -470,12 +467,6 @@ class _CommandOverlayState extends State<CommandOverlay> {
     });
   }
 
-  void _onRecordingStateChanged(RecordingState state) {
-    setState(() {
-      _recordingState = state;
-    });
-  }
-
   void _onInputHeightChanged(double height) {
     if (_chatInputAreaHeight == height) return;
     setState(() {
@@ -622,27 +613,11 @@ class _CommandOverlayState extends State<CommandOverlay> {
                 child: AnimatedOpacity(
                   opacity: showSlashPanel ? 0.0 : 1.0,
                   duration: const Duration(milliseconds: 150),
-                  child: _recordingState != RecordingState.idle
-                      ? SizedBox(
-                          width: double.infinity,
-                          child: Text(
-                            _getRecordingText(),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontFamily: 'PingFang SC',
-                              fontWeight: FontWeight.w400,
-                              height: 1.50,
-                              letterSpacing: 0.333,
-                            ),
-                          ),
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [],
-                        ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [],
+                  ),
                 ),
               ),
             ),
@@ -671,7 +646,6 @@ class _CommandOverlayState extends State<CommandOverlay> {
                       onSendMessage: _sendMessage,
                       onCancelTask: _onCancelTask,
                       onPopupVisibilityChanged: _onPopupVisibilityChanged,
-                      onRecordingStateChanged: _onRecordingStateChanged,
                       onInputHeightChanged: _onInputHeightChanged,
                       openClawEnabled: _openClawEnabled,
                       onToggleOpenClaw: _setOpenClawEnabled,
@@ -793,21 +767,6 @@ class _CommandOverlayState extends State<CommandOverlay> {
       ),
     );
   }
-
-  String _getRecordingText() {
-    switch (_recordingState) {
-      case RecordingState.starting:
-        return "正在启动录音...";
-      case RecordingState.recording:
-        return "语音输入中...";
-      case RecordingState.stopping:
-        return "正在识别中...";
-      case RecordingState.waitingServerStop:
-        return "正在识别中...";
-      case RecordingState.idle:
-        return "";
-    }
-  }
 }
 
 class _OpenClawConfigDraft {
@@ -904,10 +863,7 @@ class _OpenClawConfigDialogState extends State<_OpenClawConfigDialog> {
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => _close(),
-            child: const Text('取消'),
-          ),
+          TextButton(onPressed: () => _close(), child: const Text('取消')),
           ElevatedButton(
             onPressed: () => _close(
               _OpenClawConfigDraft(

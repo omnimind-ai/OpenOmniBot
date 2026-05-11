@@ -118,7 +118,6 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   // 控制输入框显示/隐藏
   bool _isInputAreaVisible = true;
   bool _isExecutingTask = false; // 是否正在执行任务
-  RecordingState _recordingState = RecordingState.idle;
 
   // 对话持久化相关
   int? _currentConversationId;
@@ -1954,12 +1953,6 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     });
   }
 
-  void _onRecordingStateChanged(RecordingState state) {
-    setState(() {
-      _recordingState = state;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
@@ -2052,28 +2045,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                     ),
                     if (_vlmInfoQuestion != null) _buildVlmInfoPrompt(),
                     // 输入框 - 根据 _isInputAreaVisible 控制显示
-                    if (_isInputAreaVisible)
-                      Column(
-                        children: [
-                          if (_recordingState != RecordingState.idle)
-                            SizedBox(
-                              width: double.infinity,
-                              child: Text(
-                                _getRecordingText(),
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Color(0xFF353E53),
-                                  fontSize: 12,
-                                  fontFamily: 'PingFang SC',
-                                  fontWeight: FontWeight.w400,
-                                  height: 1.50,
-                                  letterSpacing: 0.333,
-                                ),
-                              ),
-                            ),
-                          _buildInputArea(),
-                        ],
-                      ),
+                    if (_isInputAreaVisible) _buildInputArea(),
                     SizedBox(height: bottomInset),
                   ],
                 ),
@@ -2404,26 +2376,9 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
         onSendMessage: _sendMessage,
         onCancelTask: _onCancelTask,
         onPopupVisibilityChanged: _onPopupVisibilityChanged,
-        onRecordingStateChanged: _onRecordingStateChanged,
         openClawEnabled: _openClawEnabled,
         onToggleOpenClaw: _setOpenClawEnabled,
       ),
     );
-  }
-
-  String _getRecordingText() {
-    final en = LegacyTextLocalizer.isEnglish;
-    switch (_recordingState) {
-      case RecordingState.starting:
-        return en ? "Starting recording..." : "正在启动录音...";
-      case RecordingState.recording:
-        return en ? "Listening..." : "语音输入中...";
-      case RecordingState.stopping:
-        return en ? "Recognizing..." : "正在识别中...";
-      case RecordingState.waitingServerStop:
-        return en ? "Recognizing..." : "正在识别中...";
-      case RecordingState.idle:
-        return "";
-    }
   }
 }

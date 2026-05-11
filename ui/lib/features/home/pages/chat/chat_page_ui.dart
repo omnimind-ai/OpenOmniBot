@@ -1166,6 +1166,7 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                       onSendMessage: _sendMessage,
                       onCancelTask: _onCancelTask,
                       onPopupVisibilityChanged: _onPopupVisibilityChanged,
+                      onTerminalTap: _handleTerminalToolTap,
                       useLargeComposerStyle: true,
                       useAttachmentPickerForPlus: true,
                       onPickAttachment: _pickAttachments,
