@@ -3,8 +3,10 @@ import 'package:go_router/go_router.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
 import 'package:ui/features/workbench/services/workbench_todo_log_service.dart';
+import 'package:ui/l10n/generated/app_localizations.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
+import 'package:ui/theme/omni_theme_palette.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
@@ -419,6 +421,8 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                       const SizedBox(height: 12),
                     ],
                     if (detailProject == null) ...[
+                      _buildGreetingBadge(),
+                      const SizedBox(height: 12),
                       _buildActiveProjectSummary(),
                       const SizedBox(height: 12),
                       if (_service.projects.isEmpty)
@@ -442,6 +446,48 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildGreetingBadge() {
+    final palette = context.omniPalette;
+    return InkWell(
+      borderRadius: BorderRadius.circular(24),
+      onTap: () => _showPhilosophySheet(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: palette.accentPrimary.withAlpha(18),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: palette.accentPrimary.withAlpha(50)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.auto_awesome_rounded, size: 15, color: palette.accentPrimary),
+            const SizedBox(width: 6),
+            Text(
+              context.l10n.workbenchPhilosophyBadge,
+              style: TextStyle(
+                color: palette.accentPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right_rounded, size: 15, color: palette.accentPrimary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPhilosophySheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _WorkbenchPhilosophySheet(palette: context.omniPalette),
     );
   }
 
@@ -1223,5 +1269,453 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
       return '${paths.rootPath}$suffix';
     }
     return paths.rootPath;
+  }
+}
+
+class _WorkbenchPhilosophySheet extends StatelessWidget {
+  const _WorkbenchPhilosophySheet({required this.palette});
+
+  final OmniThemePalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return DraggableScrollableSheet(
+      initialChildSize: 0.88,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (_, controller) => Container(
+        decoration: BoxDecoration(
+          color: palette.pageBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: palette.borderSubtle,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                controller: controller,
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+                children: [
+                  _buildHeader(context, l10n),
+                  const SizedBox(height: 20),
+                  _buildPillars(context, l10n),
+                  const SizedBox(height: 16),
+                  _buildStrengths(context, l10n),
+                  const SizedBox(height: 16),
+                  _buildHowTo(context, l10n),
+                  const SizedBox(height: 16),
+                  _buildActivateHint(context, l10n),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(l10n.workbenchPhilosophyClose),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.auto_awesome_rounded, color: palette.accentPrimary, size: 22),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                l10n.workbenchPhilosophyTitle,
+                style: TextStyle(
+                  color: palette.textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          l10n.workbenchPhilosophyTagline,
+          style: TextStyle(
+            color: palette.accentPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          l10n.workbenchPhilosophySubtitle,
+          style: TextStyle(
+            color: palette.textSecondary,
+            fontSize: 13,
+            height: 1.55,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPillars(BuildContext context, AppLocalizations l10n) {
+    return _buildSection(
+      context,
+      title: l10n.workbenchPhilosophyPillarsTitle,
+      icon: Icons.layers_rounded,
+      child: Column(
+        children: [
+          _buildPillarRow(
+            context,
+            icon: Icons.hub_rounded,
+            label: l10n.workbenchPhilosophyComposable,
+            desc: l10n.workbenchPhilosophyComposableDesc,
+          ),
+          const SizedBox(height: 10),
+          _buildPillarRow(
+            context,
+            icon: Icons.psychology_rounded,
+            label: l10n.workbenchPhilosophyAIDriven,
+            desc: l10n.workbenchPhilosophyAIDrivenDesc,
+          ),
+          const SizedBox(height: 10),
+          _buildPillarRow(
+            context,
+            icon: Icons.phone_android_rounded,
+            label: l10n.workbenchPhilosophyMobileNative,
+            desc: l10n.workbenchPhilosophyMobileNativeDesc,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPillarRow(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String desc,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: palette.accentPrimary.withAlpha(20),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 18, color: palette.accentPrimary),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: palette.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                desc,
+                style: TextStyle(
+                  color: palette.textSecondary,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStrengths(BuildContext context, AppLocalizations l10n) {
+    final items = [
+      (
+        icon: Icons.memory_rounded,
+        title: l10n.workbenchPhilosophyBackendTitle,
+        desc: l10n.workbenchPhilosophyBackendDesc,
+        badge: 'OOB + Omniflow',
+      ),
+      (
+        icon: Icons.phone_android_rounded,
+        title: l10n.workbenchPhilosophyFrontendTitle,
+        desc: l10n.workbenchPhilosophyFrontendDesc,
+        badge: 'Flutter · HTML',
+      ),
+      (
+        icon: Icons.inventory_2_outlined,
+        title: l10n.workbenchPhilosophyRuntimeTitle,
+        desc: l10n.workbenchPhilosophyRuntimeDesc,
+        badge: 'Project',
+      ),
+    ];
+    return _buildSection(
+      context,
+      title: l10n.workbenchPhilosophyStrengthsTitle,
+      icon: Icons.bolt_rounded,
+      child: Column(
+        children: items.asMap().entries.map((entry) {
+          final item = entry.value;
+          final isLast = entry.key == items.length - 1;
+          return Column(
+            children: [
+              _buildStrengthRow(
+                context,
+                icon: item.icon,
+                title: item.title,
+                desc: item.desc,
+                badge: item.badge,
+              ),
+              if (!isLast) const SizedBox(height: 10),
+            ],
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildStrengthRow(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String desc,
+    required String badge,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: palette.surfacePrimary,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: palette.accentPrimary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: palette.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: palette.surfaceSecondary,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: palette.borderSubtle),
+                      ),
+                      child: Text(
+                        badge,
+                        style: TextStyle(
+                          color: palette.textTertiary,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  desc,
+                  style: TextStyle(
+                    color: palette.textSecondary,
+                    fontSize: 12,
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHowTo(BuildContext context, AppLocalizations l10n) {
+    final steps = [
+      (
+        label: l10n.workbenchPhilosophyStep1Label,
+        desc: l10n.workbenchPhilosophyStep1Desc,
+        icon: Icons.mic_none_rounded,
+      ),
+      (
+        label: l10n.workbenchPhilosophyStep2Label,
+        desc: l10n.workbenchPhilosophyStep2Desc,
+        icon: Icons.visibility_outlined,
+      ),
+      (
+        label: l10n.workbenchPhilosophyStep3Label,
+        desc: l10n.workbenchPhilosophyStep3Desc,
+        icon: Icons.edit_note_rounded,
+      ),
+    ];
+    return _buildSection(
+      context,
+      title: l10n.workbenchPhilosophyHowToTitle,
+      icon: Icons.play_circle_outline_rounded,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: steps.asMap().entries.map((entry) {
+          final step = entry.value;
+          final isLast = entry.key == steps.length - 1;
+          return Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _buildStepCard(context, label: step.label, desc: step.desc, icon: step.icon)),
+                if (!isLast) ...[
+                  const SizedBox(width: 4),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 22),
+                    child: Icon(Icons.arrow_forward_rounded, size: 14, color: palette.textTertiary),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildStepCard(
+    BuildContext context, {
+    required String label,
+    required String desc,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: palette.surfacePrimary,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 20, color: palette.accentPrimary),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: palette.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            desc,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: palette.textSecondary,
+              fontSize: 11,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActivateHint(BuildContext context, AppLocalizations l10n) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: palette.accentPrimary.withAlpha(14),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: palette.accentPrimary.withAlpha(40)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.lightbulb_outline_rounded, size: 16, color: palette.accentPrimary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              l10n.workbenchPhilosophyActivateHint,
+              style: TextStyle(
+                color: palette.textSecondary,
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSection(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    required Widget child,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: palette.surfaceSecondary,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: palette.accentPrimary),
+              const SizedBox(width: 6),
+              Text(
+                title,
+                style: TextStyle(
+                  color: palette.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
   }
 }

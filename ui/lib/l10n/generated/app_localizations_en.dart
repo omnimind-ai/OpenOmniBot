@@ -2926,7 +2926,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchWorkspaceGuideIntro =>
-      'Project mode is not another chat page. It is the native OOB workbench for vibe projects, linking generated frontends, backend APIs, Workspace files, skills, and persistent data into one editable unit.';
+      'Project mode is not another chat page. It is the native OOB workbench for vibe projects, linking generated frontends, Project Tools, Workspace files, skills, and persistent data into one editable unit.';
 
   @override
   String get workbenchWorkspaceGuideFlowTitle => 'Interaction flow';
@@ -2941,7 +2941,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchWorkspaceGuideFlowApi =>
-      'Project API Registry registers business backend APIs';
+      'Project Tools register business capabilities';
 
   @override
   String get workbenchWorkspaceGuideFlowDisplay =>
@@ -2956,7 +2956,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchWorkspaceGuideProjectBody =>
-      'A Project binds the goal, skill, Workspace files, Display list, business APIs, data, and logs. It is not an MCP tool list and it is not a loose generated HTML page.';
+      'A Project binds the goal, skill, Workspace files, Display list, Project Tools, data, and logs. It is not an MCP tool list and it is not a loose generated HTML page.';
 
   @override
   String get workbenchWorkspaceGuideFrontendTitle =>
@@ -2971,7 +2971,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchWorkspaceGuideBackendBody =>
-      'Backend capabilities are registered in the Project API Registry, such as todo.add and todo.finish. The AI layer and frontend buttons call the same workbenchApiCall(projectId, apiId, inputs) path. Project create, export, and delete remain control APIs and do not mix into business APIs.';
+      'Backend capabilities are registered as Project Tools, such as todo.add and todo.finish. The AI layer and frontend buttons call the same workbenchApiCall(projectId, toolId, inputs) path. Project create, export, and delete remain control APIs and do not mix into business tools.';
 
   @override
   String get workbenchWorkspaceGuideDataTitle => 'How data flows';
@@ -2985,31 +2985,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchWorkspaceGuideVibeBody =>
-      'To continue vibe coding, go back to the main Home input and describe the change. The Workbench Skill decides whether to create a new Project, extend backend APIs, adjust Displays, or hot update the current Project.';
+      'To continue vibe coding, go back to the main Home input and describe the change. The Workbench Skill decides whether to create a new Project, extend Project Tools, adjust Displays, or hot update the current Project.';
 
   @override
   String get workbenchWorkspaceGuideExtendTitle => 'Extending backend tools';
 
   @override
   String get workbenchWorkspaceGuideExtendBody =>
-      'When adding a capability, define apiId, input/output schemas, executorKind, persistence files, and the frontend trigger first. Then register the Project API through Workbench interfaces; do not hand-edit registry files.';
+      'When adding a capability, define toolId, input/output schemas, executorKind, persistence files, and the frontend trigger first. Then register the Project Tool through Workbench interfaces; do not hand-edit registry files.';
 
   @override
   String workbenchWorkspaceProjectApiStats(int apiCount, int executionCount) {
-    return '$apiCount APIs · $executionCount executions';
+    return '$apiCount tools · $executionCount executions';
   }
 
   @override
   String get workbenchSubtitle =>
-      'A native OOB project example that registers Project APIs, persists state, and renders inside the Workbench.';
+      'A native OOB project example that registers Project Tools, persists state, and renders inside the Workbench.';
 
   @override
   String get workbenchVibeSubtitle =>
-      'Prompt-built native frontend, project APIs, and workspace files stay connected inside OOB.';
+      'Prompt-built native frontend, Project Tools, and workspace files stay connected inside OOB.';
 
   @override
   String get workbenchGeneratedTodoSubtitle =>
-      'Todo Log (TODO) is one business frontend in this Project. It is separate from the Project control surface and calls the registered APIs directly.';
+      'Todo Log (TODO) is one business frontend in this Project. It is separate from the Project control surface and calls the registered Project Tools directly.';
 
   @override
   String get workbenchMockProjectName => 'Todo Log Mock';
@@ -3045,7 +3045,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchProjectRegistryPath => 'Project registry';
 
   @override
-  String get workbenchApiRegistryPath => 'API registry';
+  String get workbenchApiRegistryPath => 'Tool registry';
 
   @override
   String get workbenchProjectFilePath => 'Project file';
@@ -3054,7 +3054,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchDataFilePath => 'Data file';
 
   @override
-  String get workbenchLogFilePath => 'API log';
+  String get workbenchLogFilePath => 'Tool log';
 
   @override
   String get workbenchBackendTools => 'Backend tools';
@@ -3066,14 +3066,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchTodoLog => 'Todo log';
 
   @override
-  String get workbenchCallApi => 'Call API';
+  String get workbenchCallApi => 'Call tool';
 
   @override
   String get workbenchGeneratedFrontend => 'Generated frontend';
 
   @override
   String get workbenchGeneratedFrontendSubtitle =>
-      'Open the OOB-native preview that a prompt-generated page should target. It uses the same Project APIs and persistent data as the AI layer.';
+      'Open the OOB-native preview that a prompt-generated page should target. It uses the same Project Tools and persistent data as the AI layer.';
 
   @override
   String get workbenchOpenGeneratedFrontend => 'Open generated frontend';
@@ -3082,11 +3082,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchPreviewClose => 'Close preview';
 
   @override
-  String get workbenchToolList => 'Project APIs';
+  String get workbenchToolList => 'Project Tools';
 
   @override
   String get workbenchProjectControlSubtitle =>
-      'Only registered business APIs are shown here. Project create/open stays in the OOB Workbench control surface.';
+      'Only registered business tools are shown here. Project create/open stays in the OOB Workbench control surface.';
 
   @override
   String get workbenchOpenWorkspace => 'Open Workspace';
@@ -3096,7 +3096,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchToolListDefaultTodo =>
-      'Project API clicked the shared backend';
+      'Project Tool clicked the shared backend';
 
   @override
   String workbenchToolExecutionCount(int count) {
@@ -3108,14 +3108,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchToolAddTodoDesc =>
-      'Creates a todo item through the registered native Project API.';
+      'Creates a todo item through the registered native Project Tool.';
 
   @override
   String get workbenchToolFinishTodoTitle => 'Archive todo';
 
   @override
   String get workbenchToolFinishTodoDesc =>
-      'Archives a todo item through the registered native Project API.';
+      'Archives a todo item through the registered native Project Tool.';
 
   @override
   String get workbenchFlowAddTodo => 'Page input -> todo.add -> todo list';
@@ -3256,15 +3256,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchSchemaArchived => 'Archived';
 
   @override
+  String get workbenchSchemaEditAction => 'Edit';
+
+  @override
+  String get workbenchSchemaEditTitle => 'Edit item';
+
+  @override
   String get workbenchSchemaArchiveAction => 'Archive';
 
   @override
   String get workbenchSchemaMissingCreateApi =>
-      'This Project has no create API';
+      'This Project has no create tool';
+
+  @override
+  String get workbenchSchemaMissingUpdateApi => 'This Project has no edit tool';
 
   @override
   String get workbenchSchemaMissingArchiveApi =>
-      'This Project has no archive API';
+      'This Project has no archive tool';
 
   @override
   String workbenchSchemaInputRequired(String entity) {
@@ -3274,6 +3283,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String workbenchSchemaItemCreated(String entity) {
     return '$entity created';
+  }
+
+  @override
+  String workbenchSchemaItemUpdated(String entity) {
+    return '$entity saved';
   }
 
   @override
@@ -3327,6 +3341,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchFlutterDisplay => 'Flutter Display';
 
   @override
+  String get workbenchFlutterEvalTitle => 'Flutter runtime';
+
+  @override
+  String get workbenchFlutterEvalNoSource =>
+      'This Project has no runnable Flutter source yet. Define OobProjectWidget in frontend/flutter/lib/main.dart.';
+
+  @override
+  String get workbenchFlutterEvalCompileFailed =>
+      'Flutter source is not runnable yet. Return to the input box and ask Xiaowan to fix this page.';
+
+  @override
   String get workbenchProjectSwitcher => 'Switch Project';
 
   @override
@@ -3372,10 +3397,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchProjectPlanApi =>
-      'Register business APIs shared by AI and UI';
+      'Register Project Tools shared by AI and UI';
 
   @override
-  String get workbenchProjectPlanData => 'Persist data and API call logs';
+  String get workbenchProjectPlanData => 'Persist data and tool call logs';
 
   @override
   String get workbenchUseMode => 'Use mode';
@@ -3434,7 +3459,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Return to the Home input and say create project or describe the page you want.';
 
   @override
-  String get workbenchProjectModeProjectsTitle => 'Current Project APIs';
+  String get workbenchProjectModeProjectsTitle => 'Current tools';
 
   @override
   String get workbenchProjectApiForProject => 'Tools';
@@ -3463,7 +3488,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String workbenchDeleteProjectMessage(String projectId) {
-    return 'Delete $projectId? This removes its Project registry entry, business API registrations, and Workspace project files.';
+    return 'Delete $projectId? This removes its Project registry entry, business tool registrations, and Workspace project files.';
   }
 
   @override
@@ -3707,7 +3732,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchProjectHelpApis =>
-      'Project APIs are the current Project business toolbox and stay separate from MCP tools.';
+      'Project Tools are the current Project business toolbox and stay separate from MCP tools.';
 
   @override
   String workbenchActiveProjectChip(String projectName) {
@@ -3749,6 +3774,99 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String workbenchApiCount(int count) {
-    return '$count APIs';
+    return '$count tools';
   }
+
+  @override
+  String get workbenchPhilosophyBadge => 'What is Workbench?';
+
+  @override
+  String get workbenchPhilosophyClose => 'Close';
+
+  @override
+  String get workbenchPhilosophyTitle => 'Mobile-Native AI Workbench';
+
+  @override
+  String get workbenchPhilosophyTagline =>
+      'Create your own app in one sentence';
+
+  @override
+  String get workbenchPhilosophySubtitle =>
+      'Your phone is already the most powerful backend. OOB puts all native capabilities into the Workbench, assembles them with natural language, and runs them directly on your device — no cloud, ready the moment it is generated.';
+
+  @override
+  String get workbenchPhilosophyPillarsTitle => 'Three layers';
+
+  @override
+  String get workbenchPhilosophyComposable => 'Composable';
+
+  @override
+  String get workbenchPhilosophyComposableDesc =>
+      'Tools / executors / UI / data / Skills assembled freely';
+
+  @override
+  String get workbenchPhilosophyAIDriven => 'AI-driven';
+
+  @override
+  String get workbenchPhilosophyAIDrivenDesc =>
+      'Describe your need; AI assembles it';
+
+  @override
+  String get workbenchPhilosophyMobileNative => 'Mobile-native';
+
+  @override
+  String get workbenchPhilosophyMobileNativeDesc =>
+      'Generated apps call real phone system capabilities';
+
+  @override
+  String get workbenchPhilosophyStrengthsTitle => 'Three strengths';
+
+  @override
+  String get workbenchPhilosophyBackendTitle => 'Backend';
+
+  @override
+  String get workbenchPhilosophyBackendDesc =>
+      'All OOB native tools (VLM / Alpine / Accessibility / Files / Planning), Omniflow executable memory, on-device inference';
+
+  @override
+  String get workbenchPhilosophyFrontendTitle => 'Frontend';
+
+  @override
+  String get workbenchPhilosophyFrontendDesc =>
+      'Flutter native rendering (default), natural-language hot update, no APK reinstall; HTML path planned';
+
+  @override
+  String get workbenchPhilosophyRuntimeTitle => 'Runtime';
+
+  @override
+  String get workbenchPhilosophyRuntimeDesc =>
+      'Project container links frontend UI, Project APIs, persistent data, and logs into one evolvable on-device app instance, survives sessions, one-tap export';
+
+  @override
+  String get workbenchPhilosophyHowToTitle => 'How to use';
+
+  @override
+  String get workbenchPhilosophyStep1Label => 'Say';
+
+  @override
+  String get workbenchPhilosophyStep1Desc =>
+      'Describe the app you want in the Home input';
+
+  @override
+  String get workbenchPhilosophyStep2Label => 'See';
+
+  @override
+  String get workbenchPhilosophyStep2Desc =>
+      'OOB creates the Project; Flutter UI appears immediately';
+
+  @override
+  String get workbenchPhilosophyStep3Label => 'Edit';
+
+  @override
+  String get workbenchPhilosophyStep3Desc =>
+      'Keep describing changes; AI hot-updates the UI without recreating';
+
+  @override
+  String get workbenchPhilosophyActivateHint =>
+      'Activate a Project in the list; its UI appears live on the right side of the Workspace while you keep editing with the left-side input.';
 }

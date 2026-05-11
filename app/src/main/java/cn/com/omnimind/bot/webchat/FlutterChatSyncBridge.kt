@@ -55,6 +55,16 @@ object FlutterChatSyncBridge {
         )
     }
 
+    fun dispatchWorkbenchProjectUpdated(projectId: String, updatedPaths: List<String> = emptyList()) {
+        dispatch(
+            method = "workbenchProjectUpdated",
+            arguments = mapOf(
+                "projectId" to projectId,
+                "updatedPaths" to updatedPaths
+            )
+        )
+    }
+
     private fun dispatch(method: String, arguments: Any?) {
         val channels = listOfNotNull(currentChannel, mainChannel).distinct()
         channels.forEach { target ->

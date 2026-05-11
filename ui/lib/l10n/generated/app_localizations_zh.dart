@@ -2750,134 +2750,132 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchTitle => '工作台';
 
   @override
-  String get workbenchWorkspaceTitle => 'Workspace';
+  String get workbenchWorkspaceTitle => '工作区';
 
   @override
-  String get workbenchWorkspaceOpenWorkbench => '打开 Workbench';
+  String get workbenchWorkspaceOpenWorkbench => '打开工作台';
 
   @override
-  String get workbenchWorkspaceOpenProjectConsole => '打开 Project 控制台';
+  String get workbenchWorkspaceOpenProjectConsole => '进入管理';
 
   @override
-  String get workbenchWorkspaceWorkMode => 'Work';
+  String get workbenchWorkspaceWorkMode => '文件';
 
   @override
-  String get workbenchWorkspaceProjectMode => 'Project';
+  String get workbenchWorkspaceProjectMode => '项目';
 
   @override
-  String get workbenchWorkspaceProjectFrontendsTitle => 'Project 窗口';
+  String get workbenchWorkspaceProjectFrontendsTitle => '项目窗口';
 
   @override
   String get workbenchWorkspaceProjectFrontendsSubtitle =>
-      '开启 Project 模式后，这里像子窗口一样直接承载当前激活 Project 的 OOB 原生前端。';
+      '开启项目模式后，这里像子窗口一样直接承载当前激活项目的 OOB 原生前端。';
 
   @override
   String get workbenchWorkspaceProjectFrontendsEmpty =>
-      '暂无 Project 前端。回到对话里描述需求后，Agent 会通过 Workbench 创建可显示的 Project。';
+      '暂无项目前端。回到对话里描述需求后，Agent 会通过工作台创建可显示的项目。';
 
   @override
-  String get workbenchWorkspaceProjectOpenFailed => '打开 Project 前端失败';
+  String get workbenchWorkspaceProjectOpenFailed => '打开项目前端失败';
 
   @override
   String get workbenchWorkspaceProjectUnsupportedDisplay =>
-      '这个 Display 暂不支持内嵌窗口显示，请用右上角打开为完整页面。';
+      '这个显示页暂不支持内嵌窗口显示，请用右上角打开为完整页面。';
 
   @override
-  String get workbenchWorkspaceGuideTooltip => '查看 Project 工作台说明';
+  String get workbenchWorkspaceGuideTooltip => '查看项目工作台说明';
 
   @override
   String get workbenchWorkspaceGuideClose => '关闭说明';
 
   @override
-  String get workbenchWorkspaceGuideTitle => 'Project 工作台怎么工作';
+  String get workbenchWorkspaceGuideTitle => '项目工作台怎么工作';
 
   @override
   String get workbenchWorkspaceGuideIntro =>
-      'Project 模式不是新的聊天页，而是 OOB 里用来承载 vibe project 的原生工作台。它把生成前端、后端 API、Workspace 文件、Skill 和持久化数据连成一个可继续编辑的单位。';
+      '项目模式不是新的聊天页，而是 OOB 里用来承载 vibe project 的原生工作台。它把生成前端、项目工具、工作区文件、Skill 和持久化数据连成一个可继续编辑的单位。';
 
   @override
   String get workbenchWorkspaceGuideFlowTitle => '交互链路';
 
   @override
-  String get workbenchWorkspaceGuideFlowPrompt => 'Prompt + Skill 拆解需求';
+  String get workbenchWorkspaceGuideFlowPrompt => '提示词 + Skill 拆解需求';
 
   @override
-  String get workbenchWorkspaceGuideFlowProject => 'Project registry 记录容器';
+  String get workbenchWorkspaceGuideFlowProject => '项目注册表记录容器';
 
   @override
-  String get workbenchWorkspaceGuideFlowApi => 'Project API Registry 注册业务后端';
+  String get workbenchWorkspaceGuideFlowApi => '项目工具注册业务能力';
 
   @override
-  String get workbenchWorkspaceGuideFlowDisplay => 'Flutter Display 展示业务前端';
+  String get workbenchWorkspaceGuideFlowDisplay => 'Flutter 显示页展示业务前端';
 
   @override
   String get workbenchWorkspaceGuideFlowPersist =>
       'data/ + logs/ 持久化 AI 与 UI 调用';
 
   @override
-  String get workbenchWorkspaceGuideProjectTitle => 'Project 绑定什么';
+  String get workbenchWorkspaceGuideProjectTitle => '项目绑定什么';
 
   @override
   String get workbenchWorkspaceGuideProjectBody =>
-      '一个 Project 会绑定目标、Skill、Workspace 文件、Display 列表、业务 API、数据和日志。它不是 MCP 工具列表，也不是随手生成的 HTML。';
+      '一个项目会绑定目标、Skill、工作区文件、显示页列表、项目工具、数据和日志。它不是 MCP 工具列表，也不是随手生成的 HTML。';
 
   @override
   String get workbenchWorkspaceGuideFrontendTitle => '前端怎么显示';
 
   @override
   String get workbenchWorkspaceGuideFrontendBody =>
-      '生成前端是 OOB 原生 Flutter Display。Workspace 切到 Project 后，不再显示大型管理列表，而是像浏览器子窗口一样直接承载当前激活 Project 的首页；一个 Project 可以有多个 Display，可用小菜单切换。';
+      '生成前端是 OOB 原生 Flutter 显示页。工作区切到项目后，不再显示大型管理列表，而是像浏览器子窗口一样直接承载当前激活项目的首页；一个项目可以有多个显示页，可用小菜单切换。';
 
   @override
   String get workbenchWorkspaceGuideBackendTitle => '后端怎么被调用';
 
   @override
   String get workbenchWorkspaceGuideBackendBody =>
-      '后端能力注册在 Project API Registry 里，例如 todo.add、todo.finish。AI 层和前端按钮都调用同一条 workbenchApiCall(projectId, apiId, inputs)，Project 创建、导出、删除等控制接口不会混进业务 API。';
+      '后端能力注册为项目工具，例如 todo.add、todo.finish。AI 层和前端按钮都调用同一条 workbenchApiCall(projectId, toolId, inputs)，项目创建、导出、删除等控制接口不会混进业务工具。';
 
   @override
   String get workbenchWorkspaceGuideDataTitle => '数据怎么流';
 
   @override
   String get workbenchWorkspaceGuideDataBody =>
-      '调用会经过 Flutter -> MethodChannel -> OOB native executor，然后写入 Project 的 data/ 和 logs/。前端刷新、AI 调用统计和重启后的状态都来自这份持久化数据。';
+      '调用会经过 Flutter -> MethodChannel -> OOB native executor，然后写入项目的 data/ 和 logs/。前端刷新、AI 调用统计和重启后的状态都来自这份持久化数据。';
 
   @override
   String get workbenchWorkspaceGuideVibeTitle => '怎么继续改';
 
   @override
   String get workbenchWorkspaceGuideVibeBody =>
-      '要继续 vibe coding，回到 Home 大输入框说需求。Workbench Skill 会判断是创建新 Project、扩充后端 API、调整 Display，还是对当前 Project 做 hot update。';
+      '要继续 vibe coding，回到首页大输入框说需求。工作台 Skill 会判断是创建新项目、扩充项目工具、调整显示页，还是对当前项目做热更新。';
 
   @override
   String get workbenchWorkspaceGuideExtendTitle => '扩充后端工具';
 
   @override
   String get workbenchWorkspaceGuideExtendBody =>
-      '新增能力时先定义 apiId、输入输出 schema、executorKind、持久化文件和前端触发位置，再通过 Workbench 接口注册 Project API；不要手写 registry 文件。';
+      '新增能力时先定义 toolId、输入输出 schema、executorKind、持久化文件和前端触发位置，再通过工作台接口注册项目工具；不要手写 registry 文件。';
 
   @override
   String workbenchWorkspaceProjectApiStats(int apiCount, int executionCount) {
-    return '$apiCount 个 API · 已执行 $executionCount 次';
+    return '$apiCount 个工具 · 已执行 $executionCount 次';
   }
 
   @override
-  String get workbenchSubtitle =>
-      '一个 OOB 原生 Project 示例，用来验证 Project API 注册、状态持久化和 Workbench 内显示。';
+  String get workbenchSubtitle => '一个 OOB 原生项目示例，用来验证项目工具注册、状态持久化和工作台内显示。';
 
   @override
-  String get workbenchVibeSubtitle =>
-      'Prompt 生成的原生前端、Project API 和 Workspace 文件在 OOB 内保持关联。';
+  String get workbenchVibeSubtitle => '提示词生成的原生前端、项目工具和工作区文件在 OOB 内保持关联。';
 
   @override
   String get workbenchGeneratedTodoSubtitle =>
-      'Todo 日志 (TODO) 是这个 Project 的业务前端之一。它和 Project 控制面分开，并直接调用已注册的业务 API。';
+      'Todo 日志 (TODO) 是这个项目的业务前端之一。它和项目控制面分开，并直接调用已注册的项目工具。';
 
   @override
   String get workbenchMockProjectName => 'Todo 日志 Mock';
 
   @override
-  String get workbenchTemplateProjectName => 'Todo 日志 Workbench';
+  String get workbenchTemplateProjectName => 'Todo 日志工作台';
 
   @override
   String get workbenchNativeUi => 'OOB 原生显示';
@@ -2904,19 +2902,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchDevelopmentMode => '开发模式';
 
   @override
-  String get workbenchProjectRegistryPath => 'Project 注册表';
+  String get workbenchProjectRegistryPath => '项目注册表';
 
   @override
-  String get workbenchApiRegistryPath => 'API 注册表';
+  String get workbenchApiRegistryPath => '工具注册表';
 
   @override
-  String get workbenchProjectFilePath => 'Project 文件';
+  String get workbenchProjectFilePath => '项目文件';
 
   @override
   String get workbenchDataFilePath => '数据文件';
 
   @override
-  String get workbenchLogFilePath => 'API 日志';
+  String get workbenchLogFilePath => '工具日志';
 
   @override
   String get workbenchBackendTools => '后端工具';
@@ -2928,14 +2926,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchTodoLog => 'Todo 日志';
 
   @override
-  String get workbenchCallApi => '调用 API';
+  String get workbenchCallApi => '调用工具';
 
   @override
   String get workbenchGeneratedFrontend => '生成的前端';
 
   @override
   String get workbenchGeneratedFrontendSubtitle =>
-      '打开 prompt 生成页面应该挂载的 OOB 原生预览容器。它和 AI 层共用同一组 Project API 与持久化数据。';
+      '打开提示词生成页面应该挂载的 OOB 原生预览容器。它和 AI 层共用同一组项目工具与持久化数据。';
 
   @override
   String get workbenchOpenGeneratedFrontend => '打开生成前端';
@@ -2944,20 +2942,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchPreviewClose => '关闭预览';
 
   @override
-  String get workbenchToolList => 'Project API';
+  String get workbenchToolList => '项目工具';
 
   @override
   String get workbenchProjectControlSubtitle =>
-      '这里只展示已注册的业务 API。Project 创建和打开仍属于 OOB Workbench 控制面。';
+      '这里只展示已注册的业务工具。项目创建和打开仍属于 OOB 工作台控制面。';
 
   @override
-  String get workbenchOpenWorkspace => '打开 Workspace';
+  String get workbenchOpenWorkspace => '打开工作区';
 
   @override
   String get workbenchApiEmpty => '暂无工具';
 
   @override
-  String get workbenchToolListDefaultTodo => 'Project API 点击了同一个后端';
+  String get workbenchToolListDefaultTodo => '项目工具点击了同一个后端';
 
   @override
   String workbenchToolExecutionCount(int count) {
@@ -2968,13 +2966,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchToolAddTodoTitle => '新增 Todo';
 
   @override
-  String get workbenchToolAddTodoDesc => '通过已注册的原生 Project API 创建一条 todo。';
+  String get workbenchToolAddTodoDesc => '通过已注册的原生项目工具创建一条 todo。';
 
   @override
   String get workbenchToolFinishTodoTitle => '归档 Todo';
 
   @override
-  String get workbenchToolFinishTodoDesc => '通过已注册的原生 Project API 把一条 todo 归档。';
+  String get workbenchToolFinishTodoDesc => '通过已注册的原生项目工具把一条 todo 归档。';
 
   @override
   String get workbenchFlowAddTodo => '页面输入 -> todo.add -> todo 列表';
@@ -3113,13 +3111,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchSchemaArchived => '已归档';
 
   @override
+  String get workbenchSchemaEditAction => '编辑';
+
+  @override
+  String get workbenchSchemaEditTitle => '编辑条目';
+
+  @override
   String get workbenchSchemaArchiveAction => '归档';
 
   @override
-  String get workbenchSchemaMissingCreateApi => '这个 Project 没有可用的新增 API';
+  String get workbenchSchemaMissingCreateApi => '这个项目没有可用的新增工具';
 
   @override
-  String get workbenchSchemaMissingArchiveApi => '这个 Project 没有可用的归档 API';
+  String get workbenchSchemaMissingUpdateApi => '这个项目没有可用的编辑工具';
+
+  @override
+  String get workbenchSchemaMissingArchiveApi => '这个项目没有可用的归档工具';
 
   @override
   String workbenchSchemaInputRequired(String entity) {
@@ -3129,6 +3136,11 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String workbenchSchemaItemCreated(String entity) {
     return '$entity 已新增';
+  }
+
+  @override
+  String workbenchSchemaItemUpdated(String entity) {
+    return '$entity 已保存';
   }
 
   @override
@@ -3143,7 +3155,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchLoadFailed => '加载失败';
 
   @override
-  String get workbenchUnknownTool => 'Workbench 工具执行失败';
+  String get workbenchUnknownTool => '工作台工具执行失败';
 
   @override
   String get workbenchStatusOpen => '等待处理';
@@ -3161,38 +3173,49 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchAssistantPromptHint => '说出你想实时调整的地方';
 
   @override
-  String get workbenchAssistantSend => '热更新当前 Project';
+  String get workbenchAssistantSend => '热更新当前项目';
 
   @override
-  String get workbenchAssistantApplied => 'Project 已热更新';
+  String get workbenchAssistantApplied => '项目已热更新';
 
   @override
   String get workbenchAssistantPromptRequired => '请先输入要调整的内容';
 
   @override
-  String get workbenchAssistantNoProject => '请先选择一个 Project';
+  String get workbenchAssistantNoProject => '请先选择一个项目';
 
   @override
-  String get workbenchAssistantHotUpdateFailed => 'Project 热更新失败';
+  String get workbenchAssistantHotUpdateFailed => '项目热更新失败';
 
   @override
   String get workbenchProjectModeTitle => '项目';
 
   @override
-  String get workbenchFlutterDisplay => 'Flutter 显示器';
+  String get workbenchFlutterDisplay => 'Flutter 显示页';
 
   @override
-  String get workbenchProjectSwitcher => '切换 Project';
+  String get workbenchFlutterEvalTitle => 'Flutter 运行页';
 
   @override
-  String get workbenchProjectGenerateTitle => 'Project 容器';
+  String get workbenchFlutterEvalNoSource =>
+      '当前项目还没有可运行的 Flutter 源码。请在 frontend/flutter/lib/main.dart 定义 OobProjectWidget。';
+
+  @override
+  String get workbenchFlutterEvalCompileFailed =>
+      'Flutter 源码暂不可运行，请回到输入框让小万修复这个页面。';
+
+  @override
+  String get workbenchProjectSwitcher => '切换项目';
+
+  @override
+  String get workbenchProjectGenerateTitle => '项目容器';
 
   @override
   String get workbenchProjectGenerateSubtitle =>
-      '这里只选择和打开 Project 容器。创建、编辑和热更新继续回到首页大输入框，由当前激活的 Project toolbox 承接。';
+      '这里只选择和打开项目容器。创建、编辑和热更新继续回到首页大输入框，由当前激活的项目 toolbox 承接。';
 
   @override
-  String get workbenchProjectPromptHint => '回到首页输入 Project 需求';
+  String get workbenchProjectPromptHint => '回到首页输入项目需求';
 
   @override
   String get workbenchProjectDefaultPrompt =>
@@ -3202,7 +3225,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchProjectGenerateButton => '回到首页继续';
 
   @override
-  String get workbenchInputProjectTooltip => '打开 Project 工作台';
+  String get workbenchInputProjectTooltip => '打开项目工作台';
 
   @override
   String get workbenchGeneratedTodoProjectName => 'Todo List 工作台';
@@ -3217,16 +3240,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchProjectPlanTitle => '拆分计划';
 
   @override
-  String get workbenchProjectPlanProject => '创建 Project 注册和可编辑 Workspace';
+  String get workbenchProjectPlanProject => '创建项目注册和可编辑工作区';
 
   @override
   String get workbenchProjectPlanFrontend => '生成 OOB 原生 Flutter 前端';
 
   @override
-  String get workbenchProjectPlanApi => '注册 AI/UI 共用业务 API';
+  String get workbenchProjectPlanApi => '注册 AI/UI 共用项目工具';
 
   @override
-  String get workbenchProjectPlanData => '写入持久化数据和 API 日志';
+  String get workbenchProjectPlanData => '写入持久化数据和工具日志';
 
   @override
   String get workbenchUseMode => '使用模式';
@@ -3252,14 +3275,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchDebugDisplay => '调试这个前端';
 
   @override
-  String get workbenchProjectCurrentTitle => 'Project 使用台';
+  String get workbenchProjectCurrentTitle => '项目使用台';
 
   @override
   String get workbenchProjectCurrentSubtitle =>
-      '默认打开前端会回到首页；调试打开会回到工作台。热更新通过首页大输入框和当前激活 Project 完成。';
+      '默认打开前端会回到首页；调试打开会回到工作台。热更新通过首页大输入框和当前激活项目完成。';
 
   @override
-  String get workbenchProjectModeCreateTitle => 'Vibe Project 入口';
+  String get workbenchProjectModeCreateTitle => 'Vibe 项目入口';
 
   @override
   String get workbenchProjectModeSubtitle => '这里只显示项目和当前激活项。';
@@ -3268,7 +3291,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchProjectActiveTitle => '当前项目';
 
   @override
-  String get workbenchProjectActiveEmpty => '尚未激活 Project';
+  String get workbenchProjectActiveEmpty => '尚未激活项目';
 
   @override
   String get workbenchProjectListTitle => '项目';
@@ -3280,39 +3303,38 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchProjectModeCreateButton => '去首页创建';
 
   @override
-  String get workbenchProjectCreateFromHome =>
-      '回到首页输入框，直接说 create project 或描述你想做的页面。';
+  String get workbenchProjectCreateFromHome => '回到首页输入框，直接说创建项目或描述你想做的页面。';
 
   @override
-  String get workbenchProjectModeProjectsTitle => '当前 Project API';
+  String get workbenchProjectModeProjectsTitle => '当前工具';
 
   @override
   String get workbenchProjectApiForProject => '工具';
 
   @override
-  String get workbenchProjectModeOpen => '打开 Project';
+  String get workbenchProjectModeOpen => '打开项目';
 
   @override
-  String get workbenchProjectModeEmpty => '暂无 Workbench Project';
+  String get workbenchProjectModeEmpty => '暂无工作台项目';
 
   @override
-  String get workbenchProjectModeLoadFailed => 'Project 模式加载失败';
+  String get workbenchProjectModeLoadFailed => '项目模式加载失败';
 
   @override
-  String get workbenchProjectPromptRequired => '请先输入 Project 需求';
+  String get workbenchProjectPromptRequired => '请先输入项目需求';
 
   @override
-  String get workbenchProjectGenerated => 'Project 已生成';
+  String get workbenchProjectGenerated => '项目已生成';
 
   @override
-  String get workbenchDeleteProject => '删除 Project';
+  String get workbenchDeleteProject => '删除项目';
 
   @override
-  String get workbenchDeleteProjectTitle => '删除 Project';
+  String get workbenchDeleteProjectTitle => '删除项目';
 
   @override
   String workbenchDeleteProjectMessage(String projectId) {
-    return '确定删除 $projectId？它会移除 Project 注册、业务 API 注册和 Workspace 项目文件。';
+    return '确定删除 $projectId？它会移除项目注册、业务工具注册和工作区项目文件。';
   }
 
   @override
@@ -3322,19 +3344,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchDeleteProjectConfirm => '删除';
 
   @override
-  String get workbenchDeleteProjectFailed => 'Project 删除失败';
+  String get workbenchDeleteProjectFailed => '项目删除失败';
 
   @override
-  String get workbenchProjectDeleted => 'Project 已删除';
+  String get workbenchProjectDeleted => '项目已删除';
 
   @override
-  String get workbenchProjectIdRequired => '请输入 Project ID';
+  String get workbenchProjectIdRequired => '请输入项目 ID';
 
   @override
-  String get workbenchProjectCreated => 'Project 已创建';
+  String get workbenchProjectCreated => '项目已创建';
 
   @override
-  String get workbenchProjectInfoTitle => 'Project 信息';
+  String get workbenchProjectInfoTitle => '项目信息';
 
   @override
   String get workbenchProjectInfoDisplayTitle => '显示入口';
@@ -3357,33 +3379,33 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchDebugToolsTitle => '调试工具';
 
   @override
-  String get workbenchDebugHotUpdate => '悬浮小万实时修改当前 Project';
+  String get workbenchDebugHotUpdate => '悬浮小万实时修改当前项目';
 
   @override
   String get workbenchDebugHotUpdateHomeInput =>
-      '回到首页大输入框描述修改，Agent 会带着当前 Project toolbox 执行热更新';
+      '回到首页大输入框描述修改，Agent 会带着当前项目 toolbox 执行热更新';
 
   @override
   String get workbenchDebugFloatingXiaowan =>
-      '悬浮小万可以带上当前前端上下文，选择页面信息后调用 workbench_project_hot_update 迭代这个 Project。';
+      '悬浮小万可以带上当前前端上下文，选择页面信息后调用 workbench_project_hot_update 迭代这个项目。';
 
   @override
   String get workbenchDebugVlmInput =>
-      'VLM 输入也可以附带当前 Display、可见状态、选中控件或截图摘要，作为 frontendContext 交给 Project Skill。';
+      'VLM 输入也可以附带当前显示页、可见状态、选中控件或截图摘要，作为 frontendContext 交给项目 Skill。';
 
   @override
   String workbenchDebugContextProject(String projectId) {
-    return 'Project $projectId';
+    return '项目 $projectId';
   }
 
   @override
   String workbenchDebugContextDisplay(String displayId) {
-    return 'Display $displayId';
+    return '显示页 $displayId';
   }
 
   @override
   String workbenchDebugContextRoute(String route) {
-    return 'Route $route';
+    return '路由 $route';
   }
 
   @override
@@ -3428,10 +3450,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get workbenchAnnotationDefaultPrompt => '根据画布标注调整当前 Project 前端。';
+  String get workbenchAnnotationDefaultPrompt => '根据画布标注调整当前项目前端。';
 
   @override
-  String get workbenchAnnotationHotUpdateSuccess => '已把标注应用到 Project';
+  String get workbenchAnnotationHotUpdateSuccess => '已把标注应用到项目';
 
   @override
   String get workbenchAnnotationHotUpdateFailed => '标注热更新失败';
@@ -3440,7 +3462,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchExportProjectPackage => '导出分发包';
 
   @override
-  String get workbenchProjectExportFailed => 'Project 导出失败';
+  String get workbenchProjectExportFailed => '项目导出失败';
 
   @override
   String workbenchProjectExported(String packageName) {
@@ -3460,7 +3482,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '输入 APK 或 Android 项目路径，例如 /workspace/apps/demo.apk';
 
   @override
-  String get workbenchAndroidIngestButton => '导入到当前 Project';
+  String get workbenchAndroidIngestButton => '导入到当前项目';
 
   @override
   String get workbenchAndroidSourceRequired => '请输入 Android 应用或项目路径';
@@ -3477,7 +3499,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchAndroidAssetsEmpty => '暂无导入的 Android 应用或项目';
 
   @override
-  String get workbenchProjectActivateFailed => 'Project 激活失败';
+  String get workbenchProjectActivateFailed => '项目激活失败';
 
   @override
   String workbenchProjectActivated(String projectName) {
@@ -3485,13 +3507,13 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get workbenchProjectDeactivateFailed => 'Project 取消激活失败';
+  String get workbenchProjectDeactivateFailed => '项目取消激活失败';
 
   @override
-  String get workbenchProjectDeactivated => '已取消激活 Project';
+  String get workbenchProjectDeactivated => '已取消激活项目';
 
   @override
-  String get workbenchActivateProject => '激活 Project';
+  String get workbenchActivateProject => '激活项目';
 
   @override
   String get workbenchDeactivateProject => '取消激活';
@@ -3527,31 +3549,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchInactiveProject => '未激活';
 
   @override
-  String get workbenchContinueInHome => '激活 Project';
+  String get workbenchContinueInHome => '激活项目';
 
   @override
-  String get workbenchProjectHelpTooltip => 'Project 工作台说明';
+  String get workbenchProjectHelpTooltip => '项目工作台说明';
 
   @override
-  String get workbenchProjectHelpTitle => 'Project 工作台';
+  String get workbenchProjectHelpTitle => '项目工作台';
 
   @override
   String get workbenchProjectHelpHomeInput => '创建、编辑和热更新都在首页大输入框里完成。';
 
   @override
-  String get workbenchProjectHelpSelect => '这里选择一个 Project，把它激活为 Agent 当前工作环境。';
+  String get workbenchProjectHelpSelect => '这里选择一个项目，把它激活为 Agent 当前工作环境。';
 
   @override
-  String get workbenchProjectHelpDisplays =>
-      '每个 Project 可以有多个 Flutter 前端 Display，从这里打开容器。';
+  String get workbenchProjectHelpDisplays => '每个项目可以有多个 Flutter 前端显示页，从这里打开容器。';
 
   @override
   String get workbenchProjectHelpApis =>
-      'Project API 是当前 Project 的业务 toolbox，和 MCP tools 分开管理。';
+      '项目工具是当前项目的业务 toolbox，和 MCP tools 分开管理。';
 
   @override
   String workbenchActiveProjectChip(String projectName) {
-    return 'Project：$projectName';
+    return '项目：$projectName';
   }
 
   @override
@@ -3588,6 +3609,93 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String workbenchApiCount(int count) {
-    return '$count 个 API';
+    return '$count 个工具';
   }
+
+  @override
+  String get workbenchPhilosophyBadge => '了解工作台';
+
+  @override
+  String get workbenchPhilosophyClose => '关闭';
+
+  @override
+  String get workbenchPhilosophyTitle => '端侧 AI 工作台';
+
+  @override
+  String get workbenchPhilosophyTagline => '一句话，创造属于自己的应用';
+
+  @override
+  String get workbenchPhilosophySubtitle =>
+      '手机本身就是最强后端——OOB 把所有原生能力装进工作台，用自然语言拼装，直接跑在你的设备上，无需云端，生成即可用。';
+
+  @override
+  String get workbenchPhilosophyPillarsTitle => '三层差异化';
+
+  @override
+  String get workbenchPhilosophyComposable => '可组装';
+
+  @override
+  String get workbenchPhilosophyComposableDesc =>
+      '工具 / 执行器 / UI / 数据 / Skill 任意拼装';
+
+  @override
+  String get workbenchPhilosophyAIDriven => 'AI 驱动';
+
+  @override
+  String get workbenchPhilosophyAIDrivenDesc => '自然语言描述需求，AI 完成组装';
+
+  @override
+  String get workbenchPhilosophyMobileNative => '端侧原生';
+
+  @override
+  String get workbenchPhilosophyMobileNativeDesc => '生成的应用调用真实的手机系统能力';
+
+  @override
+  String get workbenchPhilosophyStrengthsTitle => '三大能力';
+
+  @override
+  String get workbenchPhilosophyBackendTitle => '后端';
+
+  @override
+  String get workbenchPhilosophyBackendDesc =>
+      'OOB 全量原生工具（VLM / Alpine / 无障碍 / 文件 / 规划）、Omniflow 可执行记忆库、端侧推理框架';
+
+  @override
+  String get workbenchPhilosophyFrontendTitle => '前端';
+
+  @override
+  String get workbenchPhilosophyFrontendDesc =>
+      'Flutter 原生渲染（默认），自然语言热更新，无需重装 APK；HTML 路径规划中';
+
+  @override
+  String get workbenchPhilosophyRuntimeTitle => '运行时';
+
+  @override
+  String get workbenchPhilosophyRuntimeDesc =>
+      'Project 容器把前端 UI、项目 API、持久化数据、日志连成一个可演化的端侧应用实例，跨会话留存，一键导出';
+
+  @override
+  String get workbenchPhilosophyHowToTitle => '怎么用';
+
+  @override
+  String get workbenchPhilosophyStep1Label => '说';
+
+  @override
+  String get workbenchPhilosophyStep1Desc => '在首页输入框描述你想要的应用';
+
+  @override
+  String get workbenchPhilosophyStep2Label => '看';
+
+  @override
+  String get workbenchPhilosophyStep2Desc => '小万创建项目，Flutter 界面立刻可见';
+
+  @override
+  String get workbenchPhilosophyStep3Label => '改';
+
+  @override
+  String get workbenchPhilosophyStep3Desc => '继续描述修改，AI 热更新 UI，无需重新创建';
+
+  @override
+  String get workbenchPhilosophyActivateHint =>
+      '激活项目后，工作区右侧实时显示其界面；左侧输入框继续用自然语言编辑。';
 }

@@ -1071,26 +1071,26 @@
   "workbenchWorkspaceGuideTooltip": "View Project Workbench guide",
   "workbenchWorkspaceGuideClose": "Close guide",
   "workbenchWorkspaceGuideTitle": "How Project Workbench works",
-  "workbenchWorkspaceGuideIntro": "Project mode is not another chat page. It is the native OOB workbench for vibe projects, linking generated frontends, backend APIs, Workspace files, skills, and persistent data into one editable unit.",
+  "workbenchWorkspaceGuideIntro": "Project mode is not another chat page. It is the native OOB workbench for vibe projects, linking generated frontends, Project Tools, Workspace files, skills, and persistent data into one editable unit.",
   "workbenchWorkspaceGuideFlowTitle": "Interaction flow",
   "workbenchWorkspaceGuideFlowPrompt": "Prompt + Skill split the requirement",
   "workbenchWorkspaceGuideFlowProject": "Project registry records the container",
-  "workbenchWorkspaceGuideFlowApi": "Project API Registry registers business backend APIs",
+  "workbenchWorkspaceGuideFlowApi": "Project Tools register business capabilities",
   "workbenchWorkspaceGuideFlowDisplay": "Flutter Display renders the business frontend",
   "workbenchWorkspaceGuideFlowPersist": "data/ + logs/ persist AI and UI calls",
   "workbenchWorkspaceGuideProjectTitle": "What a Project binds",
-  "workbenchWorkspaceGuideProjectBody": "A Project binds the goal, skill, Workspace files, Display list, business APIs, data, and logs. It is not an MCP tool list and it is not a loose generated HTML page.",
+  "workbenchWorkspaceGuideProjectBody": "A Project binds the goal, skill, Workspace files, Display list, Project Tools, data, and logs. It is not an MCP tool list and it is not a loose generated HTML page.",
   "workbenchWorkspaceGuideFrontendTitle": "How the frontend is shown",
   "workbenchWorkspaceGuideFrontendBody": "The generated frontend is an OOB-native Flutter Display. After Workspace switches to Project mode, it no longer shows a large manager list; it hosts the active Project home like an embedded browser window. One Project can own multiple Displays, selected from the small menu.",
   "workbenchWorkspaceGuideBackendTitle": "How the backend is called",
-  "workbenchWorkspaceGuideBackendBody": "Backend capabilities are registered in the Project API Registry, such as todo.add and todo.finish. The AI layer and frontend buttons call the same workbenchApiCall(projectId, apiId, inputs) path. Project create, export, and delete remain control APIs and do not mix into business APIs.",
+  "workbenchWorkspaceGuideBackendBody": "Backend capabilities are registered as Project Tools, such as todo.add and todo.finish. The AI layer and frontend buttons call the same workbenchApiCall(projectId, toolId, inputs) path. Project create, export, and delete remain control APIs and do not mix into business tools.",
   "workbenchWorkspaceGuideDataTitle": "How data flows",
   "workbenchWorkspaceGuideDataBody": "A call goes through Flutter -> MethodChannel -> OOB native executor, then writes to the Project data/ and logs/. Frontend refreshes, AI execution stats, and state after restart all come from this persisted data.",
   "workbenchWorkspaceGuideVibeTitle": "How to keep editing",
-  "workbenchWorkspaceGuideVibeBody": "To continue vibe coding, go back to the main Home input and describe the change. The Workbench Skill decides whether to create a new Project, extend backend APIs, adjust Displays, or hot update the current Project.",
+  "workbenchWorkspaceGuideVibeBody": "To continue vibe coding, go back to the main Home input and describe the change. The Workbench Skill decides whether to create a new Project, extend Project Tools, adjust Displays, or hot update the current Project.",
   "workbenchWorkspaceGuideExtendTitle": "Extending backend tools",
-  "workbenchWorkspaceGuideExtendBody": "When adding a capability, define apiId, input/output schemas, executorKind, persistence files, and the frontend trigger first. Then register the Project API through Workbench interfaces; do not hand-edit registry files.",
-  "workbenchWorkspaceProjectApiStats": "{apiCount} APIs · {executionCount} executions",
+  "workbenchWorkspaceGuideExtendBody": "When adding a capability, define toolId, input/output schemas, executorKind, persistence files, and the frontend trigger first. Then register the Project Tool through Workbench interfaces; do not hand-edit registry files.",
+  "workbenchWorkspaceProjectApiStats": "{apiCount} tools · {executionCount} executions",
   "@workbenchWorkspaceProjectApiStats": {
     "placeholders": {
       "apiCount": {
@@ -1101,9 +1101,9 @@
       }
     }
   },
-  "workbenchSubtitle": "A native OOB project example that registers Project APIs, persists state, and renders inside the Workbench.",
-  "workbenchVibeSubtitle": "Prompt-built native frontend, project APIs, and workspace files stay connected inside OOB.",
-  "workbenchGeneratedTodoSubtitle": "Todo Log (TODO) is one business frontend in this Project. It is separate from the Project control surface and calls the registered APIs directly.",
+  "workbenchSubtitle": "A native OOB project example that registers Project Tools, persists state, and renders inside the Workbench.",
+  "workbenchVibeSubtitle": "Prompt-built native frontend, Project Tools, and workspace files stay connected inside OOB.",
+  "workbenchGeneratedTodoSubtitle": "Todo Log (TODO) is one business frontend in this Project. It is separate from the Project control surface and calls the registered Project Tools directly.",
   "workbenchMockProjectName": "Todo Log Mock",
   "workbenchTemplateProjectName": "Todo Log Workbench",
   "workbenchNativeUi": "OOB native UI",
@@ -1115,23 +1115,23 @@
   "workbenchPageIdsLabel": "Pages",
   "workbenchDevelopmentMode": "Development mode",
   "workbenchProjectRegistryPath": "Project registry",
-  "workbenchApiRegistryPath": "API registry",
+  "workbenchApiRegistryPath": "Tool registry",
   "workbenchProjectFilePath": "Project file",
   "workbenchDataFilePath": "Data file",
-  "workbenchLogFilePath": "API log",
+  "workbenchLogFilePath": "Tool log",
   "workbenchBackendTools": "Backend tools",
   "workbenchFrontendBinding": "Frontend binding",
   "workbenchTodoLog": "Todo log",
-  "workbenchCallApi": "Call API",
+  "workbenchCallApi": "Call tool",
   "workbenchGeneratedFrontend": "Generated frontend",
-  "workbenchGeneratedFrontendSubtitle": "Open the OOB-native preview that a prompt-generated page should target. It uses the same Project APIs and persistent data as the AI layer.",
+  "workbenchGeneratedFrontendSubtitle": "Open the OOB-native preview that a prompt-generated page should target. It uses the same Project Tools and persistent data as the AI layer.",
   "workbenchOpenGeneratedFrontend": "Open generated frontend",
   "workbenchPreviewClose": "Close preview",
-  "workbenchToolList": "Project APIs",
-  "workbenchProjectControlSubtitle": "Only registered business APIs are shown here. Project create/open stays in the OOB Workbench control surface.",
+  "workbenchToolList": "Project Tools",
+  "workbenchProjectControlSubtitle": "Only registered business tools are shown here. Project create/open stays in the OOB Workbench control surface.",
   "workbenchOpenWorkspace": "Open Workspace",
   "workbenchApiEmpty": "No tools yet",
-  "workbenchToolListDefaultTodo": "Project API clicked the shared backend",
+  "workbenchToolListDefaultTodo": "Project Tool clicked the shared backend",
   "workbenchToolExecutionCount": "Executed {count}",
   "@workbenchToolExecutionCount": {
     "placeholders": {
@@ -1141,9 +1141,9 @@
     }
   },
   "workbenchToolAddTodoTitle": "Add todo",
-  "workbenchToolAddTodoDesc": "Creates a todo item through the registered native Project API.",
+  "workbenchToolAddTodoDesc": "Creates a todo item through the registered native Project Tool.",
   "workbenchToolFinishTodoTitle": "Archive todo",
-  "workbenchToolFinishTodoDesc": "Archives a todo item through the registered native Project API.",
+  "workbenchToolFinishTodoDesc": "Archives a todo item through the registered native Project Tool.",
   "workbenchFlowAddTodo": "Page input -> todo.add -> todo list",
   "workbenchFlowFinishTodo": "Finish button -> todo.finish -> completed list",
   "workbenchAddTodoHint": "Add a todo",
@@ -1227,9 +1227,12 @@
   },
   "workbenchSchemaActive": "Active",
   "workbenchSchemaArchived": "Archived",
+  "workbenchSchemaEditAction": "Edit",
+  "workbenchSchemaEditTitle": "Edit item",
   "workbenchSchemaArchiveAction": "Archive",
-  "workbenchSchemaMissingCreateApi": "This Project has no create API",
-  "workbenchSchemaMissingArchiveApi": "This Project has no archive API",
+  "workbenchSchemaMissingCreateApi": "This Project has no create tool",
+  "workbenchSchemaMissingUpdateApi": "This Project has no edit tool",
+  "workbenchSchemaMissingArchiveApi": "This Project has no archive tool",
   "workbenchSchemaInputRequired": "Enter {entity} first",
   "@workbenchSchemaInputRequired": {
     "placeholders": {
@@ -1240,6 +1243,14 @@
   },
   "workbenchSchemaItemCreated": "{entity} created",
   "@workbenchSchemaItemCreated": {
+    "placeholders": {
+      "entity": {
+        "type": "String"
+      }
+    }
+  },
+  "workbenchSchemaItemUpdated": "{entity} saved",
+  "@workbenchSchemaItemUpdated": {
     "placeholders": {
       "entity": {
         "type": "String"
@@ -1269,6 +1280,9 @@
   "workbenchAssistantHotUpdateFailed": "Project hot update failed",
   "workbenchProjectModeTitle": "Projects",
   "workbenchFlutterDisplay": "Flutter Display",
+  "workbenchFlutterEvalTitle": "Flutter runtime",
+  "workbenchFlutterEvalNoSource": "This Project has no runnable Flutter source yet. Define OobProjectWidget in frontend/flutter/lib/main.dart.",
+  "workbenchFlutterEvalCompileFailed": "Flutter source is not runnable yet. Return to the input box and ask Xiaowan to fix this page.",
   "workbenchProjectSwitcher": "Switch Project",
   "workbenchProjectGenerateTitle": "Project container",
   "workbenchProjectGenerateSubtitle": "This page only selects and opens Project containers. Create, edit, and hot update from the Home input with the active Project toolbox.",
@@ -1282,8 +1296,8 @@
   "workbenchProjectPlanTitle": "Decomposition plan",
   "workbenchProjectPlanProject": "Create Project registry and editable Workspace",
   "workbenchProjectPlanFrontend": "Generate an OOB-native Flutter frontend",
-  "workbenchProjectPlanApi": "Register business APIs shared by AI and UI",
-  "workbenchProjectPlanData": "Persist data and API call logs",
+  "workbenchProjectPlanApi": "Register Project Tools shared by AI and UI",
+  "workbenchProjectPlanData": "Persist data and tool call logs",
   "workbenchUseMode": "Use mode",
   "workbenchDebugMode": "Debug mode",
   "workbenchDisplaysTitle": "Pages",
@@ -1308,7 +1322,7 @@
   "workbenchProjectDetailTitle": "Project",
   "workbenchProjectModeCreateButton": "Create from Home",
   "workbenchProjectCreateFromHome": "Return to the Home input and say create project or describe the page you want.",
-  "workbenchProjectModeProjectsTitle": "Current Project APIs",
+  "workbenchProjectModeProjectsTitle": "Current tools",
   "workbenchProjectApiForProject": "Tools",
   "workbenchProjectModeOpen": "Open project",
   "workbenchProjectModeEmpty": "No Workbench projects yet",
@@ -1317,7 +1331,7 @@
   "workbenchProjectGenerated": "Project generated",
   "workbenchDeleteProject": "Delete Project",
   "workbenchDeleteProjectTitle": "Delete Project",
-  "workbenchDeleteProjectMessage": "Delete {projectId}? This removes its Project registry entry, business API registrations, and Workspace project files.",
+  "workbenchDeleteProjectMessage": "Delete {projectId}? This removes its Project registry entry, business tool registrations, and Workspace project files.",
   "@workbenchDeleteProjectMessage": {
     "placeholders": {
       "projectId": {
@@ -1450,7 +1464,7 @@
   "workbenchProjectHelpHomeInput": "Create, edit, and hot update Projects from the Home input.",
   "workbenchProjectHelpSelect": "Select a Project here to activate it as the Agent workspace.",
   "workbenchProjectHelpDisplays": "Each Project can own multiple Flutter Displays; open containers from here.",
-  "workbenchProjectHelpApis": "Project APIs are the current Project business toolbox and stay separate from MCP tools.",
+  "workbenchProjectHelpApis": "Project Tools are the current Project business toolbox and stay separate from MCP tools.",
   "workbenchActiveProjectChip": "Project: {projectName}",
   "@workbenchActiveProjectChip": {
     "placeholders": {
@@ -1510,12 +1524,39 @@
       }
     }
   },
-  "workbenchApiCount": "{count} APIs",
+  "workbenchApiCount": "{count} tools",
   "@workbenchApiCount": {
     "placeholders": {
       "count": {
         "type": "int"
       }
     }
-  }
+  },
+  "workbenchPhilosophyBadge": "What is Workbench?",
+  "workbenchPhilosophyClose": "Close",
+  "workbenchPhilosophyTitle": "Mobile-Native AI Workbench",
+  "workbenchPhilosophyTagline": "Create your own app in one sentence",
+  "workbenchPhilosophySubtitle": "Your phone is already the most powerful backend. OOB puts all native capabilities into the Workbench, assembles them with natural language, and runs them directly on your device — no cloud, ready the moment it is generated.",
+  "workbenchPhilosophyPillarsTitle": "Three layers",
+  "workbenchPhilosophyComposable": "Composable",
+  "workbenchPhilosophyComposableDesc": "Tools / executors / UI / data / Skills assembled freely",
+  "workbenchPhilosophyAIDriven": "AI-driven",
+  "workbenchPhilosophyAIDrivenDesc": "Describe your need; AI assembles it",
+  "workbenchPhilosophyMobileNative": "Mobile-native",
+  "workbenchPhilosophyMobileNativeDesc": "Generated apps call real phone system capabilities",
+  "workbenchPhilosophyStrengthsTitle": "Three strengths",
+  "workbenchPhilosophyBackendTitle": "Backend",
+  "workbenchPhilosophyBackendDesc": "All OOB native tools (VLM / Alpine / Accessibility / Files / Planning), Omniflow executable memory, on-device inference",
+  "workbenchPhilosophyFrontendTitle": "Frontend",
+  "workbenchPhilosophyFrontendDesc": "Flutter native rendering (default), natural-language hot update, no APK reinstall; HTML path planned",
+  "workbenchPhilosophyRuntimeTitle": "Runtime",
+  "workbenchPhilosophyRuntimeDesc": "Project container links frontend UI, Project APIs, persistent data, and logs into one evolvable on-device app instance, survives sessions, one-tap export",
+  "workbenchPhilosophyHowToTitle": "How to use",
+  "workbenchPhilosophyStep1Label": "Say",
+  "workbenchPhilosophyStep1Desc": "Describe the app you want in the Home input",
+  "workbenchPhilosophyStep2Label": "See",
+  "workbenchPhilosophyStep2Desc": "OOB creates the Project; Flutter UI appears immediately",
+  "workbenchPhilosophyStep3Label": "Edit",
+  "workbenchPhilosophyStep3Desc": "Keep describing changes; AI hot-updates the UI without recreating",
+  "workbenchPhilosophyActivateHint": "Activate a Project in the list; its UI appears live on the right side of the Workspace while you keep editing with the left-side input."
 }

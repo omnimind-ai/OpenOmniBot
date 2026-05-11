@@ -4,13 +4,21 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
+import cn.com.omnimind.bot.terminal.EmbeddedTerminalRuntime
+import cn.com.omnimind.bot.workbench.executor.WorkbenchExecutor
+import cn.com.omnimind.bot.workbench.executor.WorkbenchExecutorRegistry
+import cn.com.omnimind.bot.webchat.AgentRunService
+import cn.com.omnimind.bot.webchat.ConversationDomainService
+import cn.com.omnimind.bot.webchat.FlutterChatSyncBridge
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import java.io.File
 import java.time.Instant
+import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlinx.coroutines.runBlocking
 
 const val WORKBENCH_TODO_TEMPLATE_ID = "todo_log_demo"
 const val WORKBENCH_SCHEMA_TEMPLATE_ID = "schema_app"
@@ -31,6 +39,8 @@ const val WORKBENCH_OSS_GITHUB_KIND = "github_repo"
 const val WORKBENCH_OSS_LOCAL_KIND = "local_source"
 const val WORKBENCH_SCHEMA_EXECUTOR_KIND = "native_schema_collection"
 const val WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND = "workspace_python_script"
+const val WORKBENCH_AGENT_TASK_EXECUTOR_KIND = "agent_task"
+const val WORKBENCH_WORKSPACE_SCRIPT_EXECUTOR_KIND = "workspace_script"
 
 data class WorkbenchProjectRecord(
     val projectId: String,
@@ -62,7 +72,8 @@ data class WorkbenchApiRecord(
     val description: String,
     val inputSchema: Map<String, Any?>,
     val outputSchema: Map<String, Any?>,
-    val executorKind: String
+    val executorKind: String,
+    val run: Map<String, Any?>? = null
 ) {
     fun toPayload(executionCount: Int = 0): Map<String, Any?> =
         WorkbenchToolboxBuilder.apiContract(this, executionCount)
@@ -215,7 +226,7 @@ data class WorkbenchOssSourceAsset(
 }
 
 /**
- * Stores OOB Workbench projects and their registered Project APIs under the shared workspace.
+ * Stores OOB Workbench projects and their registered Project Tools under the shared workspace.
  *
  * @param workspaceRoot Android-side workspace root that is bind-mounted as `/workspace` in Alpine.
  */
@@ -255,13 +266,44 @@ class WorkbenchProjectStore(
     private val exportsRoot: File
         get() = File(projectsRoot, "exports")
 
+    // ── Executor registry ────────────────────────────────────────────────────────────────────────
+    internal val executorRegistry = WorkbenchExecutorRegistry()
+
+    init {
+        executorRegistry.register("native_template", object : WorkbenchExecutor {
+            override suspend fun execute(projectId: String, api: WorkbenchApiRecord, inputs: Map<String, Any?>) =
+                when (api.toolId) {
+                    WORKBENCH_TODO_ADD_TOOL_ID -> addTodo(projectId, inputs)
+                    WORKBENCH_TODO_FINISH_TOOL_ID -> finishTodo(projectId, inputs)
+                    else -> apiError(api, "UNKNOWN_API", "Unknown native_template toolId: ${api.toolId}")
+                }
+        })
+        executorRegistry.register(WORKBENCH_SCHEMA_EXECUTOR_KIND, object : WorkbenchExecutor {
+            override suspend fun execute(projectId: String, api: WorkbenchApiRecord, inputs: Map<String, Any?>) =
+                callSchemaCollectionApi(projectId, api, inputs)
+        })
+        executorRegistry.register(WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND, object : WorkbenchExecutor {
+            override suspend fun execute(projectId: String, api: WorkbenchApiRecord, inputs: Map<String, Any?>) =
+                callQuickCaptureApi(projectId, api, inputs)
+        })
+        executorRegistry.register(WORKBENCH_AGENT_TASK_EXECUTOR_KIND, object : WorkbenchExecutor {
+            override suspend fun execute(projectId: String, api: WorkbenchApiRecord, inputs: Map<String, Any?>) =
+                callAgentTaskApi(findProject(projectId), api, inputs, "executor_registry")
+        })
+        executorRegistry.register(WORKBENCH_WORKSPACE_SCRIPT_EXECUTOR_KIND, object : WorkbenchExecutor {
+            override suspend fun execute(projectId: String, api: WorkbenchApiRecord, inputs: Map<String, Any?>) =
+                callWorkspaceScriptApi(projectId, api, inputs)
+        })
+    }
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+
     /**
      * Creates a Workbench project from a template config, or returns an existing project unchanged.
      *
      * @param config Project creation config from AI tools or Flutter. `todo_log_demo` keeps the
      * original demo path, while `schema_app` creates a generic OOB-native Project from API and
      * Display specs.
-     * @return Full project payload including registered business APIs and persisted state.
+     * @return Full project payload including registered Project Tools and persisted state.
      */
     @Synchronized
     fun createProject(config: Map<String, Any?>): Map<String, Any?> {
@@ -356,8 +398,19 @@ class WorkbenchProjectStore(
         ) {
             writeQuickCaptureItems(projectId, initialQuickCaptureItems(config))
         }
+        val requestedFlutterFiles = normalizeFrontendFlutterFiles(
+            config["flutterFiles"] ?: config["frontendFlutterFiles"]
+        )
         val creationPrompt = if (existing == null) sourcePrompt else null
         ensureProjectSourceFiles(record, apis, creationPrompt, config)
+        val writtenFlutterFiles = if (
+            requestedFlutterFiles.isNotEmpty() &&
+            (existing == null || readFrontendFlutterPayload(record.projectId).isEmpty())
+        ) {
+            writeFrontendFlutterFiles(record.projectId, requestedFlutterFiles)
+        } else {
+            emptyList()
+        }
         appendProjectProgress(
             projectId = record.projectId,
             stage = "project_workspace_ready",
@@ -367,7 +420,8 @@ class WorkbenchProjectStore(
             caller = "workbench",
             details = linkedMapOf(
                 "frontend" to "frontend/page_spec.json",
-                "backend" to "backend/api_spec.json"
+                "backend" to "backend/api_spec.json",
+                "flutterFiles" to writtenFlutterFiles.map { it["path"] }
             )
         )
         appendProjectProgress(
@@ -413,7 +467,7 @@ class WorkbenchProjectStore(
      * @param shortName Optional compact display label shown in Workbench surfaces.
      * @param description Optional app-language summary stored in the Display contract.
      * @param displays Optional Display pages to merge into `frontend/page_spec.json`.
-     * @param apis Optional business APIs to merge into Project API Registry and Tool Contract.
+     * @param apis Optional Project Tools to merge into the internal registry and Tool Contract.
      * @param flutterFiles Optional Project-owned Flutter source files to write under
      * `frontend/flutter/`. Paths must be relative and stay inside that directory.
      * @param prompt Optional user iteration request written into `logs/hot_updates.jsonl`.
@@ -572,12 +626,12 @@ class WorkbenchProjectStore(
                 projectId = updatedRecord.projectId,
                 stage = "project_contract_updated",
                 status = "completed",
-                message = "Project displays, business API contract, and source assets updated.",
+                message = "Project displays, Project Tool contract, and source assets updated.",
                 percent = 100,
                 caller = caller,
                 details = linkedMapOf(
                     "displayIds" to mergedDisplays.map { it["id"] ?: it["displayId"] ?: it["pageId"] },
-                    "apiIds" to mergedApis.map { it.apiId },
+                    "toolIds" to mergedApis.map { it.toolId },
                     "flutterFiles" to writtenFlutterFiles.map { it["path"] }
                 )
             )
@@ -586,6 +640,12 @@ class WorkbenchProjectStore(
         if (readActiveProjectId() == updatedRecord.projectId) {
             activeProjectFile.writeText(
                 gson.toJson(activeProjectManifest(updatedRecord, readActiveProjectActivatedAt()))
+            )
+        }
+        if (writtenFlutterFiles.isNotEmpty()) {
+            FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
+                projectId = updatedRecord.projectId,
+                updatedPaths = writtenFlutterFiles.map { it["path"]?.toString() ?: "" }
             )
         }
         return linkedMapOf(
@@ -611,7 +671,7 @@ class WorkbenchProjectStore(
             shortName = args["shortName"]?.toString(),
             description = args["description"]?.toString(),
             displays = args["displays"],
-            apis = args["apis"] ?: args["apiSpecs"],
+            apis = args["tools"] ?: args["projectTools"] ?: args["apis"] ?: args["apiSpecs"],
             flutterFiles = args["flutterFiles"] ?: args["frontendFlutterFiles"],
             prompt = args["prompt"]?.toString(),
             caller = caller
@@ -697,8 +757,8 @@ class WorkbenchProjectStore(
             "- ${display["id"]}: $title ($shortName) -> $route"
         }
         val counts = apiExecutionCounts(record.projectId)
-        val apis = projectApis(record.projectId).joinToString("\n") { api ->
-            "- ${api.apiId}: ${api.displayName}; inputs=${api.inputSchema.keys}; " +
+        val tools = projectApis(record.projectId).joinToString("\n") { api ->
+            "- ${api.toolId}: ${api.displayName}; inputs=${api.inputSchema.keys}; " +
                 "outputs=${api.outputSchema.keys}; executionCount=${counts[api.apiId] ?: 0}"
         }
         val sources = readOssSources(record.projectId).joinToString("\n") { source ->
@@ -712,11 +772,11 @@ class WorkbenchProjectStore(
             - skill: oob-native-workbench
             - displays:
             $displays
-            - project business APIs:
-            $apis
+            - project tools:
+            $tools
             - imported source assets:
             $sources
-            Rules: treat these APIs as the active Project toolbox, not as MCP tools. To use them, call `workbench_api_call` with this projectId and the apiId. To create, export, delete, open, or hot-update the Project, use the `workbench_project_*` control tools instead of writing registry files.
+            Rules: treat these tools as the active Project toolbox. To use them, call `workbench_api_call` with this projectId and the toolId. Most new work should be handled as an Agent vibe task with Project context; add a Project Tool only for stable reusable UI/AI actions. To create, export, delete, open, or hot-update the Project, use the `workbench_project_*` control tools instead of writing registry files.
         """.trimIndent()
     }
 
@@ -751,10 +811,10 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Lists registered business APIs. Control APIs such as project creation are intentionally excluded.
+     * Lists registered Project Tools. Control tools such as project creation are intentionally excluded.
      *
-     * @param projectId Optional project id filter. Null or blank returns all Project APIs.
-     * @return API registry entries suitable for AI tool calls and Flutter Tool List rendering.
+     * @param projectId Optional project id filter. Null or blank returns all Project Tools.
+     * @return Project Tool entries suitable for AI calls and Flutter Tool List rendering.
      */
     @Synchronized
     fun listApis(projectId: String? = null): List<Map<String, Any?>> {
@@ -789,7 +849,7 @@ class WorkbenchProjectStore(
     /**
      * Lists dynamic MCP tools mounted from the active Project's Toolbox.
      *
-     * @return MCP `tools/list` descriptors for active Project business APIs only.
+     * @return MCP `tools/list` descriptors for active Project Tools only.
      */
     @Synchronized
     fun activeMcpTools(): List<Map<String, Any?>> {
@@ -804,12 +864,12 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Calls a Project business API by its dynamic MCP Toolbox tool name.
+     * Calls a Project Tool by its dynamic MCP Toolbox tool name.
      *
      * @param toolName MCP dynamic tool name such as `quick_note.capture_ingest`.
-     * @param inputs MCP tool arguments that will be forwarded to the Project API executor.
+     * @param inputs MCP tool arguments that will be forwarded to the Project Tool executor.
      * @param caller Caller label written to `logs/api_calls.jsonl`; external MCP uses `mcp_toolbox`.
-     * @return Project API result with the resolved Project/API identifiers.
+     * @return Project Tool result with the resolved Project/tool identifiers.
      */
     @Synchronized
     fun callMcpTool(
@@ -871,7 +931,7 @@ class WorkbenchProjectStore(
             resources += mcpResource(prefix, record.name, "Project manifest for ${record.projectId}.")
             resources += mcpResource("$prefix/toolbox", "${record.name} Toolbox", "Project business tools mounted as MCP Tools.")
             resources += mcpResource("$prefix/progress", "${record.name} Progress", "Recent Project progress events.")
-            resources += mcpResource("$prefix/logs/api_calls", "${record.name} API Calls", "Recent Project API call log rows.")
+            resources += mcpResource("$prefix/logs/api_calls", "${record.name} Tool Calls", "Recent Project Tool call log rows.")
             resources += mcpResource("$prefix/source/manifest", "${record.name} Source Manifest", "Imported source asset summary.")
         }
         return resources
@@ -935,12 +995,12 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Calls a registered Project API through the native executor.
+     * Calls a registered Project Tool through the native executor.
      *
-     * @param projectId Project owning the API.
-     * @param apiId API id or tool id, for example `todo.add`.
-     * @param inputs User or AI supplied API inputs. Shape is validated by the executor.
-     * @param caller Caller label such as `ai` or `ui`, persisted in the API call log.
+     * @param projectId Project owning the tool.
+     * @param apiId Legacy API id or tool id, for example `todo.add`.
+     * @param inputs User or AI supplied tool inputs. Shape is validated by the executor.
+     * @param caller Caller label such as `ai` or `ui`, persisted in the tool call log.
      * @return Tool-style result payload plus the refreshed project state.
      */
     @Synchronized
@@ -960,8 +1020,8 @@ class WorkbenchProjectStore(
                 apiId = apiId.trim().ifBlank { "unknown" },
                 projectId = record.projectId,
                 toolId = apiId.trim().ifBlank { "unknown" },
-                displayName = apiId.trim().ifBlank { "Unknown API" },
-                description = "Unregistered Project API.",
+                displayName = apiId.trim().ifBlank { "Unknown tool" },
+                description = "Unregistered Project Tool.",
                 inputSchema = emptyMap(),
                 outputSchema = emptyMap(),
                 executorKind = "unknown"
@@ -969,7 +1029,7 @@ class WorkbenchProjectStore(
             val result = apiError(
                 missingApi,
                 "TOOL_NOT_FOUND",
-                "Workbench Project API not found: $apiId"
+                "Workbench Project Tool not found: $apiId"
             )
             appendApiCall(record.projectId, missingApi, inputs, caller, result, startedAt)
             writeProjectJson(record, projectApis(record.projectId))
@@ -980,22 +1040,20 @@ class WorkbenchProjectStore(
             apiError(api, "INVALID_INPUT", validationError)
         } else {
             runCatching {
-                when (api.toolId) {
-                    WORKBENCH_TODO_ADD_TOOL_ID -> addTodo(record.projectId, inputs)
-                    WORKBENCH_TODO_FINISH_TOOL_ID -> finishTodo(record.projectId, inputs)
-                    else -> if (api.executorKind == WORKBENCH_SCHEMA_EXECUTOR_KIND) {
-                        callSchemaCollectionApi(record.projectId, api, inputs)
-                    } else if (api.executorKind == WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND) {
-                        callQuickCaptureApi(record.projectId, api, inputs)
-                    } else {
-                        apiError(api, "UNKNOWN_API", "Unknown workbench API: ${api.toolId}")
-                    }
+                val effectiveKind = when {
+                    shouldRunAsAgentTask(api) -> WORKBENCH_AGENT_TASK_EXECUTOR_KIND
+                    else -> api.executorKind
+                }
+                runBlocking {
+                    executorRegistry.get(effectiveKind)
+                        ?.execute(record.projectId, api, inputs)
+                        ?: apiError(api, "UNKNOWN_API", "No executor registered for kind: $effectiveKind")
                 }
             }.getOrElse { error ->
                 apiError(
                     api,
                     "EXECUTOR_ERROR",
-                    error.message ?: "Project API executor failed."
+                    error.message ?: "Project Tool executor failed."
                 )
             }
         }
@@ -1026,6 +1084,58 @@ class WorkbenchProjectStore(
         val record = findProject(projectId)
         val request = prompt.trim()
         require(request.isNotEmpty()) { "Hot update prompt is required." }
+        val frontendFlutter = readFrontendFlutterPayload(record.projectId)
+        val frontendSources = frontendFlutter["sources"] as? Map<*, *>
+        if (!frontendSources.isNullOrEmpty()) {
+            val entryFile = frontendFlutter["entryFile"]?.toString()?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: "lib/main.dart"
+            val entryClass = frontendFlutter["entryClass"]?.toString()?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: "OobProjectWidget"
+            val appliedActions = listOf(
+                linkedMapOf<String, Any?>(
+                    "kind" to "flutter_regenerate_requested",
+                    "success" to true,
+                    "entryFile" to entryFile,
+                    "entryClass" to entryClass,
+                    "recommendedTool" to "workbench_project_update"
+                )
+            )
+            appendHotUpdate(record.projectId, request, caller, appliedActions, frontendContext)
+            appendProjectProgress(
+                projectId = record.projectId,
+                stage = "flutter_regenerate_requested",
+                status = "running",
+                message = "Flutter Display hot update requires the Agent to rewrite the full Dart source and call workbench_project_update.",
+                percent = 60,
+                caller = caller,
+                details = linkedMapOf(
+                    "entryFile" to entryFile,
+                    "entryClass" to entryClass,
+                    "sourceFiles" to frontendSources.keys.map { it.toString() },
+                    "frontendContext" to frontendContext
+                )
+            )
+            writeProjectJson(record, projectApis(record.projectId))
+            return linkedMapOf(
+                "success" to true,
+                "projectId" to record.projectId,
+                "prompt" to request,
+                "frontendContext" to frontendContext,
+                "appliedActions" to appliedActions,
+                "requiresAgentRegeneration" to true,
+                "recommendedTool" to "workbench_project_update",
+                "instructions" to listOf(
+                    "Read project.frontendFlutter.sources[$entryFile].",
+                    "Generate a complete replacement Dart file, not a patch or partial snippet.",
+                    "Call workbench_project_update with flutterFiles=[{path:\"$entryFile\", content:<complete Dart>}].",
+                    "Keep entry class $entryClass and the OOB MethodChannel Project Tool calls."
+                ),
+                "hotUpdateLogPath" to "${record.spacePath}/logs/hot_updates.jsonl",
+                "project" to getProject(record.projectId)
+            )
+        }
         require(
             record.templateId == WORKBENCH_TODO_TEMPLATE_ID ||
                 record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID ||
@@ -1389,7 +1499,7 @@ class WorkbenchProjectStore(
                 message = if (asset.requiresFetch) {
                     "OSS source URL registered and waiting for fetch."
                 } else {
-                    "OSS source import is ready for Project API binding."
+                    "OSS source import is ready for Project Tool binding."
                 },
                 percent = if (asset.requiresFetch) 60 else 100,
                 caller = caller,
@@ -1474,7 +1584,12 @@ class WorkbenchProjectStore(
      * @return OOB route that renders the project in the native Workbench UI.
      */
     fun routeForProject(projectId: String): String {
-        return findProject(projectId).route
+        val record = findProject(projectId)
+        return if (readFrontendFlutterPayload(record.projectId).isNotEmpty()) {
+            "/workbench/flutter_eval?projectId=${record.projectId}"
+        } else {
+            record.route
+        }
     }
 
     /**
@@ -1580,16 +1695,23 @@ class WorkbenchProjectStore(
         val androidAssets = readAndroidAssets(record.projectId)
         val sourceAssets = readOssSources(record.projectId)
         val displays = workbenchDisplays(record)
+        val frontendFlutter = readFrontendFlutterPayload(record.projectId)
+        val displayRoute = if (frontendFlutter.isNotEmpty()) {
+            "/workbench/flutter_eval?projectId=${record.projectId}"
+        } else {
+            record.route
+        }
         val toolbox = WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts)
         return linkedMapOf(
             "projectId" to record.projectId,
             "name" to record.name,
             "templateId" to record.templateId,
-            "route" to record.route,
+            "route" to displayRoute,
             "spacePath" to record.spacePath,
             "pageIds" to displays.mapNotNull { it["pageId"]?.toString() ?: it["id"]?.toString() },
             "displays" to displays,
             "schema" to workbenchPageSpec(record),
+            "frontendFlutter" to frontendFlutter,
             "apiIds" to record.apiIds,
             "tools" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
@@ -1614,13 +1736,20 @@ class WorkbenchProjectStore(
     ): Map<String, Any?> {
         val counts = apiExecutionCounts(record.projectId)
         val apis = projectApis(record.projectId)
+        val frontendFlutter = readFrontendFlutterPayload(record.projectId)
+        val displayRoute = if (frontendFlutter.isNotEmpty()) {
+            "/workbench/flutter_eval?projectId=${record.projectId}"
+        } else {
+            record.route
+        }
         return linkedMapOf(
             "projectId" to record.projectId,
             "name" to record.name,
-            "route" to record.route,
+            "route" to displayRoute,
             "spacePath" to record.spacePath,
             "skillId" to "oob-native-workbench",
             "displays" to workbenchDisplays(record),
+            "frontendFlutter" to frontendFlutter,
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "toolbox" to WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts),
             "sourceAssets" to readOssSources(record.projectId).map { it.toPayload() },
@@ -1656,6 +1785,12 @@ class WorkbenchProjectStore(
         val prompt = sourcePrompt?.trim()?.takeIf { it.isNotEmpty() }
             ?: readProjectSourcePrompt(record.projectId)
         val displays = workbenchDisplays(record)
+        val frontendFlutter = readFrontendFlutterPayload(record.projectId)
+        val displayRoute = if (frontendFlutter.isNotEmpty()) {
+            "/workbench/flutter_eval?projectId=${record.projectId}"
+        } else {
+            record.route
+        }
         val toolbox = WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts)
         val payload = linkedMapOf<String, Any?>(
             "project" to record.toPayload(),
@@ -1666,24 +1801,25 @@ class WorkbenchProjectStore(
                     "Project registry",
                     "App Display surface",
                     "Editable Flutter source assets",
-                    "Project business APIs",
-                    "Persistent data and API logs"
+                    "Project Tools",
+                    "Persistent data and tool logs"
                 ),
-                "displayContract" to "Generated Displays are user app surfaces. Project ids, API counts, executor kinds, Toolbox manifests, Workspace paths, and data/log paths belong to control/debug surfaces."
+                "displayContract" to "Generated Displays are user app surfaces. Project ids, tool counts, executor kinds, Toolbox manifests, Workspace paths, and data/log paths belong to control/debug surfaces."
             ),
             "page" to linkedMapOf(
                 "pageId" to ((displays.firstOrNull()?.get("pageId") ?: displays.firstOrNull()?.get("id"))
                     ?: "workbench-page"),
                 "renderer" to (workbenchPageSpec(record)["renderer"] ?: "oob_native_schema"),
-                "route" to record.route
+                "route" to displayRoute
             ),
             "frontendSource" to linkedMapOf(
                 "instantRuntime" to "frontend/page_spec.json",
                 "editableFlutterSource" to "frontend/flutter/",
-                "compileBoundary" to "Flutter source under frontend/flutter/ is a Project asset for Alpine/build/export. The installed OOB APK renders page_spec immediately; running new Dart code inside the installed app requires a controlled build/install path."
+                "compileBoundary" to "Flutter source under frontend/flutter/ is a Project asset loaded live by /workbench/flutter_eval through flutter_eval; no APK rebuild is required for supported Dart/Material UI."
             ),
             "displays" to displays,
             "schema" to workbenchPageSpec(record),
+            "frontendFlutter" to frontendFlutter,
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "toolbox" to toolbox,
             "android" to linkedMapOf(
@@ -1736,7 +1872,7 @@ class WorkbenchProjectStore(
      * Builds the native display registry exposed by one Workbench Project.
      *
      * @param record Project registry record that owns the display route and stable project id.
-     * @return Display payloads shown by Flutter as Project-scoped frontends, not business APIs.
+     * @return Display payloads shown by Flutter as Project-scoped frontends, not Project Tools.
      */
     private fun workbenchDisplays(record: WorkbenchProjectRecord): List<Map<String, Any?>> {
         val spec = workbenchPageSpec(record)
@@ -1751,6 +1887,21 @@ class WorkbenchProjectStore(
             if (displays.isNotEmpty()) {
                 return displays
             }
+        }
+        if (readFrontendFlutterPayload(record.projectId).isNotEmpty()) {
+            return listOf(
+                linkedMapOf(
+                    "id" to "flutter-main-display",
+                    "pageId" to "flutter-main-page",
+                    "title" to record.name,
+                    "shortName" to "APP",
+                    "route" to "/workbench/flutter_eval?projectId=${record.projectId}",
+                    "kind" to "oob_flutter_eval",
+                    "renderer" to "flutter_eval",
+                    "isDefault" to true,
+                    "description" to "Live Flutter Display bound to this Project."
+                )
+            )
         }
         if (record.templateId == WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID) {
             return quickCaptureDisplays(record, spec)
@@ -1781,7 +1932,7 @@ class WorkbenchProjectStore(
                     "kind" to "oob_flutter",
                     "renderer" to "oob_schema_collection",
                     "isDefault" to true,
-                    "description" to "Schema display bound to this Project API registry."
+                    "description" to "Schema display bound to this Project Tool registry."
                 )
             )
             WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID -> quickCaptureDisplays(record, spec)
@@ -1795,7 +1946,7 @@ class WorkbenchProjectStore(
                     "kind" to "oob_flutter",
                     "renderer" to "oob_native_schema",
                     "isDefault" to true,
-                    "description" to "Todo display bound to this Project API registry."
+                    "description" to "Todo display bound to this Project Tool registry."
                 )
             )
         }
@@ -1934,10 +2085,10 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Merges API registry records by `apiId` while preserving existing order.
+     * Merges Project Tool records by the legacy `apiId` field while preserving existing order.
      *
-     * @param base Existing Project business APIs.
-     * @param additions New or replacement business APIs from a Project update.
+     * @param base Existing Project Tools.
+     * @param additions New or replacement Project Tools from a Project update.
      * @return Updated API record list for `api_registry.json` and Tool Contract output.
      */
     private fun mergeApiRecords(
@@ -1952,11 +2103,11 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Appends frontend action bindings for newly registered business APIs.
+     * Appends frontend action bindings for newly registered Project Tools.
      *
      * @param value Existing `actions` value from `frontend/page_spec.json`.
      * @param apis Business APIs that should become available to the renderer.
-     * @return JSON-safe action list with no duplicate API ids.
+     * @return JSON-safe action list with no duplicate tool ids.
      */
     private fun mergePageActions(value: Any?, apis: List<WorkbenchApiRecord>): List<Map<String, Any?>> {
         val existing = (value as? Iterable<*>)
@@ -2112,6 +2263,46 @@ class WorkbenchProjectStore(
     }
 
     /**
+     * Loads Project-owned Flutter sources for the live `flutter_eval` Display.
+     *
+     * @param projectId Project id whose `frontend/flutter/` directory should be read.
+     * @return JSON-safe payload with entry metadata and relative-path source text. Empty means
+     * the Project has no live Flutter sources yet.
+     */
+    private fun readFrontendFlutterPayload(projectId: String): Map<String, Any?> {
+        val flutterDir = File(projectDir(projectId), "frontend/flutter")
+        if (!flutterDir.exists()) return emptyMap()
+        val root = flutterDir.canonicalFile
+        val sources = linkedMapOf<String, String>()
+        flutterDir.walkTopDown()
+            .filter { it.isFile && it.name != "manifest.json" && it.name != "README.md" }
+            .sortedBy { it.absolutePath }
+            .forEach { file ->
+                val relative = root.toPath()
+                    .relativize(file.canonicalFile.toPath())
+                    .toString()
+                    .replace(File.separatorChar, '/')
+                sources[relative] = file.readText()
+            }
+        if (sources.isEmpty()) return emptyMap()
+        val manifestFile = File(flutterDir, "manifest.json")
+        val manifest = if (manifestFile.exists()) {
+            runCatching {
+                gson.fromJson<Map<String, Any?>>(manifestFile.readText(), mapType)
+            }.getOrNull().orEmpty()
+        } else {
+            emptyMap()
+        }
+        return linkedMapOf(
+            "runtime" to "flutter_eval",
+            "entryFile" to "lib/main.dart",
+            "entryClass" to "OobProjectWidget",
+            "sources" to sources,
+            "manifest" to manifest
+        )
+    }
+
+    /**
      * Rebuilds the Project Flutter source manifest from files currently on disk.
      *
      * @param projectId Project id whose `frontend/flutter/manifest.json` should be materialized.
@@ -2140,7 +2331,7 @@ class WorkbenchProjectStore(
             gson.toJson(
                 linkedMapOf(
                     "generatedAt" to nowIso(),
-                    "runtimeBoundary" to "source_asset_not_hot_loaded",
+                    "runtimeBoundary" to "flutter_eval_live_runtime",
                     "files" to files
                 )
             )
@@ -2189,7 +2380,7 @@ class WorkbenchProjectStore(
                 |## Frontend
                 |The frontend is rendered by OOB's native Flutter Display. The editable page
                 |contract lives in `frontend/page_spec.json`; OOB binds visible controls to
-                |Project APIs through `workbenchApiCall`.
+                |Project Tools through `workbenchApiCall`.
                 |
                 |If the Project needs custom Flutter, generate or edit source under
                 |`frontend/flutter/` from the Alpine workspace. That source is a Project asset
@@ -2198,7 +2389,7 @@ class WorkbenchProjectStore(
                 |
                 |The Display is the user-facing app surface. It should show the product workflow,
                 |domain records, input forms, filters, and business actions. Project ids,
-                |API counts, executor names, Toolbox metadata, Workspace paths, and data/log
+                |Tool counts, executor names, Toolbox metadata, Workspace paths, and data/log
                 |paths belong in Workbench control/debug surfaces, not the app home.
                 |
                 |## Backend
@@ -2207,7 +2398,7 @@ class WorkbenchProjectStore(
                 |
                 |## Data
                 |$dataFiles
-                |- `logs/api_calls.jsonl`: append-only AI/UI API call log
+                |- `logs/api_calls.jsonl`: append-only AI/UI tool call log
                 |- `logs/hot_updates.jsonl`: append-only Xiaowan hot update requests
                 |- `android/manifest.json`: imported Android APK/project assets
                 |- `logs/android_ingest.jsonl`: append-only Android asset import log
@@ -2276,7 +2467,7 @@ class WorkbenchProjectStore(
                 |
                 |Use `workbench_project_ingest_oss` or MethodChannel
                 |`workbenchProjectIngestOss`; do not register source import as a Project
-                |business API and do not hand-edit `manifest.json`.
+                |Project Tool and do not hand-edit `manifest.json`.
                 |
                 |URL-only imports are recorded as fetch-required metadata. Fetch through the
                 |approved terminal/tool path, then ingest the downloaded directory with
@@ -2301,7 +2492,7 @@ class WorkbenchProjectStore(
                 |
                 |Use `workbench_project_ingest_android` or MethodChannel
                 |`workbenchProjectIngestAndroid`; do not register Android import as a Project
-                |business API and do not hand-edit `manifest.json`.
+                |Project Tool and do not hand-edit `manifest.json`.
                 |
                 """.trimMargin()
             )
@@ -2309,7 +2500,7 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Rewrites `backend/api_spec.json` from the current Project API registry.
+     * Rewrites `backend/api_spec.json` from the current Project Tool registry.
      *
      * @param record Project whose backend contract is being materialized.
      * @param apis Business APIs owned by the Project; control APIs are intentionally excluded.
@@ -2355,11 +2546,13 @@ class WorkbenchProjectStore(
                             "runtime" to linkedMapOf(
                                 "executorBoundary" to "oob_native_workbench",
                                 "executorKind" to api.executorKind,
+                                "run" to WorkbenchToolboxBuilder.runContract(api),
                                 "workingDirectory" to "backend",
-                                "status" to if (api.executorKind == WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND) {
-                                    "native_backed_workspace_script_contract"
-                                } else {
-                                    "native_executor"
+                                "status" to when (api.executorKind) {
+                                    WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND ->
+                                        "native_backed_workspace_script_contract"
+                                    WORKBENCH_AGENT_TASK_EXECUTOR_KIND -> "agent_task_dispatch"
+                                    else -> "native_executor"
                                 },
                                 "scriptPath" to if (api.executorKind == WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND) {
                                     "backend/scripts/${api.apiId.replace('.', '_')}.py"
@@ -2420,7 +2613,7 @@ class WorkbenchProjectStore(
                     "App Display -> quick capture workflow and inbox state",
                     "Multiple Displays -> capture, inbox, and archive pages inside one Project",
                     "Visible controls -> domain actions",
-                    "Control/debug surfaces -> Project metadata, API counts, Toolbox, logs, and Workspace"
+                    "Control/debug surfaces -> Project metadata, tool counts, Toolbox, logs, and Workspace"
                 ),
                 "iterationContract" to linkedMapOf(
                     "scope" to "same_project",
@@ -2478,7 +2671,7 @@ class WorkbenchProjectStore(
                     "Prompt requirement -> Project registry",
                     "App Display -> user workflow for $entityName",
                     "Visible controls -> domain actions",
-                    "Control/debug surfaces -> Project metadata, API counts, Toolbox, logs, and Workspace"
+                    "Control/debug surfaces -> Project metadata, tool counts, Toolbox, logs, and Workspace"
                 ),
                 "displayRules" to appDisplayRules(),
                 "state" to linkedMapOf("items" to "data/items.json"),
@@ -2523,7 +2716,7 @@ class WorkbenchProjectStore(
                 "Prompt requirement -> Project registry",
                 "App Display -> todo workflow",
                 "Visible controls -> domain actions",
-                "Control/debug surfaces -> Project metadata, API counts, Toolbox, logs, and Workspace"
+                "Control/debug surfaces -> Project metadata, tool counts, Toolbox, logs, and Workspace"
             ),
             "displayRules" to appDisplayRules(),
             "state" to linkedMapOf("todos" to "data/todos.json"),
@@ -2570,7 +2763,7 @@ class WorkbenchProjectStore(
         "controlSurfaceOnly" to listOf(
             "project id",
             "template id",
-            "API count",
+            "Tool count",
             "executor kind",
             "Toolbox manifest",
             "Workspace path",
@@ -2586,7 +2779,7 @@ class WorkbenchProjectStore(
      * Explains the prompt-to-runtime split in `backend/api_spec.json`.
      *
      * @param record Project whose template determines the state file.
-     * @param apis Registered business APIs for this Project.
+     * @param apis Registered Project Tools for this Project.
      * @return Stable metadata map for handoff, export, and future agents.
      */
     private fun promptDecomposition(
@@ -2628,7 +2821,7 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Lists Project files that a business API is expected to read or write.
+     * Lists Project files that a Project Tool is expected to read or write.
      *
      * @param record Project whose template owns the state file.
      * @return Relative persistence paths stored in API specs.
@@ -2872,7 +3065,7 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Counts persisted Project API executions from the append-only API call log.
+     * Counts persisted Project Tool executions from the append-only tool call log.
      *
      * @param projectId Project directory whose `logs/api_calls.jsonl` should be read.
      * @return Number of log records per API id. Both successful and failed calls count as executions.
@@ -3229,7 +3422,7 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Reduces a full API call result to a log-safe action summary.
+     * Reduces a full tool call result to a log-safe action summary.
      *
      * @param result Payload returned by `callApi`; the full refreshed Project is intentionally
      * omitted so `hot_updates.jsonl` stays small and append-only.
@@ -3415,7 +3608,7 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Builds Project APIs for the requested template.
+     * Builds Project Tools for the requested template.
      *
      * @param projectId Project namespace for API registry records.
      * @param templateId Template id selected by `workbench_project_create`.
@@ -3511,7 +3704,7 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Builds generic schema Project APIs from explicit config or a prompt-derived entity namespace.
+     * Builds generic schema Project Tools from explicit config or a prompt-derived entity namespace.
      *
      * @param projectId Project namespace for API registry records.
      * @param config Creation config. `apis` may provide apiId/displayName/schema/executorKind.
@@ -3559,7 +3752,10 @@ class WorkbenchProjectStore(
         projectId: String,
         config: Map<String, Any?>
     ): List<WorkbenchApiRecord> {
-        val raw = config["apis"] ?: config["apiSpecs"] ?: return emptyList()
+        val raw = config["tools"]
+            ?: config["projectTools"]
+            ?: config["apis"]
+            ?: config["apiSpecs"] ?: return emptyList()
         if (raw !is Iterable<*>) return emptyList()
         return raw.mapNotNull { item ->
             @Suppress("UNCHECKED_CAST")
@@ -3568,6 +3764,9 @@ class WorkbenchProjectStore(
                 ?: map["toolId"]?.toString()?.trim()
                 ?: return@mapNotNull null
             if (apiId.isEmpty()) return@mapNotNull null
+            val run = normalizeProjectToolRun(
+                map["run"] ?: map["runUse"] ?: map["use"]
+            )
             WorkbenchApiRecord(
                 apiId = apiId,
                 projectId = projectId,
@@ -3578,8 +3777,49 @@ class WorkbenchProjectStore(
                 inputSchema = asStringKeyMap(map["inputSchema"]),
                 outputSchema = asStringKeyMap(map["outputSchema"]),
                 executorKind = map["executorKind"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                    ?: WORKBENCH_SCHEMA_EXECUTOR_KIND
+                    ?: inferProjectToolExecutorKind(run, apiId),
+                run = run.ifEmpty { null }
             )
+        }
+    }
+
+
+    /**
+     * Normalizes Project Tool `run` declarations into the one-step v0.1 shape.
+     *
+     * @param value Creator-supplied run object, string shorthand, or null.
+     * @return JSON-safe map. A string such as `oob.vlm_task` becomes `{use: oob.vlm_task}`.
+     */
+    private fun normalizeProjectToolRun(value: Any?): Map<String, Any?> {
+        return when (value) {
+            is Map<*, *> -> value.entries.associate { it.key.toString() to it.value }
+            is String -> value.trim().takeIf { it.isNotEmpty() }
+                ?.let { linkedMapOf("use" to it) }
+                ?: emptyMap()
+            else -> emptyMap()
+        }
+    }
+
+    /**
+     * Infers the existing executor boundary for a Project Tool run declaration.
+     *
+     * @param run Normalized Project Tool run map.
+     * @param apiId Tool id used as a fallback when no run.use is supplied.
+     * @return Existing executor kind string; this keeps Project Tool as a light mapper.
+     */
+    private fun inferProjectToolExecutorKind(
+        run: Map<String, Any?>,
+        apiId: String
+    ): String {
+        val use = run["use"]?.toString()?.trim()?.lowercase().orEmpty()
+        return when {
+            use == "agent" || use.startsWith("agent.") -> WORKBENCH_AGENT_TASK_EXECUTOR_KIND
+            use.startsWith("oob.") || use.startsWith("mcp.") -> WORKBENCH_AGENT_TASK_EXECUTOR_KIND
+            use.startsWith("native.collection.") -> WORKBENCH_SCHEMA_EXECUTOR_KIND
+            use.startsWith("native.todo.") -> "native_template"
+            use == "script" || use.startsWith("script.") -> WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND
+            apiId.startsWith("todo.") -> "native_template"
+            else -> WORKBENCH_SCHEMA_EXECUTOR_KIND
         }
     }
 
@@ -3615,6 +3855,174 @@ class WorkbenchProjectStore(
             else -> apiError(api, "UNKNOWN_SCHEMA_ACTION", "Unknown schema API: ${api.apiId}")
         }
     }
+
+
+    /**
+     * Checks whether a Project Tool should be submitted to the normal OOB Agent runtime.
+     *
+     * @param api Registered Project Tool/API record.
+     * @return True for agent, OOB tool, and MCP tool backed runs.
+     */
+    private fun shouldRunAsAgentTask(api: WorkbenchApiRecord): Boolean {
+        val use = WorkbenchToolboxBuilder.runUse(api).lowercase()
+        return api.executorKind == WORKBENCH_AGENT_TASK_EXECUTOR_KIND ||
+            use == "agent" ||
+            use.startsWith("agent.") ||
+            use.startsWith("oob.") ||
+            use.startsWith("mcp.")
+    }
+
+    /**
+     * Starts an async Agent task for a Project Tool that needs OOB capability composition.
+     *
+     * @param record Owning Project record used for context injection.
+     * @param api Project Tool being executed.
+     * @param inputs Caller-supplied inputs from UI, AI, or MCP.
+     * @param caller Audit caller label written into Project logs.
+     * @return Tool-style pending result containing Agent task and conversation ids.
+     */
+    private fun callAgentTaskApi(
+        record: WorkbenchProjectRecord,
+        api: WorkbenchApiRecord,
+        inputs: Map<String, Any?>,
+        caller: String
+    ): Map<String, Any?> {
+        val context = appContext ?: return apiError(
+            api,
+            "AGENT_CONTEXT_UNAVAILABLE",
+            "Project Tool ${api.toolId} requires the OOB app context to start an Agent task."
+        )
+        val run = WorkbenchToolboxBuilder.runContract(api)
+        val taskId = "project-tool-${System.currentTimeMillis()}-${UUID.randomUUID()}"
+        return runCatching {
+            runBlocking {
+                val conversationService = ConversationDomainService(context)
+                val conversation = conversationService.createConversation(
+                    title = "Project Tool: ${api.displayName}",
+                    mode = "normal"
+                )
+                val conversationId = (conversation["id"] as? Number)?.toLong()
+                    ?: conversation["id"]?.toString()?.toLongOrNull()
+                    ?: throw IllegalStateException("Conversation id is invalid")
+                val accepted = AgentRunService(context).startConversationRun(
+                    conversationId = conversationId,
+                    request = linkedMapOf(
+                        "taskId" to taskId,
+                        "conversationMode" to "normal",
+                        "title" to "Project Tool: ${api.displayName}",
+                        "userMessage" to buildAgentTaskPrompt(record, api, run, inputs, caller)
+                    )
+                )
+                apiSuccess(
+                    api,
+                    linkedMapOf(
+                        "status" to "pending",
+                        "taskId" to (accepted["taskId"] ?: taskId),
+                        "conversationId" to conversationId,
+                        "run" to run,
+                        "message" to "Project Tool submitted to the OOB Agent runtime."
+                    )
+                )
+            }
+        }.getOrElse { error ->
+            apiError(api, "AGENT_TASK_START_FAILED", error.message ?: "Agent task failed to start.")
+        }
+    }
+
+    /**
+     * Builds the prompt used when a Project Tool delegates to the normal OOB Agent runtime.
+     *
+     * @param record Project that owns the tool and workspace context.
+     * @param api Project Tool being executed.
+     * @param run Normalized `run` declaration, such as `{use: oob.vlm_task}`.
+     * @param inputs Caller-supplied inputs to include as JSON.
+     * @param caller Audit label used by UI, AI, MCP, or tests.
+     * @return Agent user message with enough Project context to reuse OOB capabilities.
+     */
+
+    /**
+     * Executes a Project Tool backed by a workspace Python script.
+     *
+     * Resolves the script path from [WorkbenchApiRecord.metadata] key `scriptPath`, falling back to
+     * `backend/scripts/<apiId>.py`. Inputs are passed as a JSON string via stdin; the script must
+     * print a single JSON object on the last stdout line as its result.
+     */
+    private fun callWorkspaceScriptApi(
+        projectId: String,
+        api: WorkbenchApiRecord,
+        inputs: Map<String, Any?>
+    ): Map<String, Any?> {
+        val ctx = appContext ?: return apiError(
+            api, "CONTEXT_UNAVAILABLE", "workspace_script executor requires app context."
+        )
+        val scriptRelPath = api.run?.get("scriptPath")?.toString()?.trim()
+            ?: "backend/scripts/${api.apiId.replace('.', '_')}.py"
+        val scriptFile = File(projectDir(projectId), scriptRelPath)
+        if (!scriptFile.exists()) {
+            return apiError(
+                api, "SCRIPT_NOT_FOUND",
+                "Workspace script not found: $scriptRelPath (projectId=$projectId)"
+            )
+        }
+        val inputsJson = logGson.toJson(inputs)
+        val command = "echo ${shellQuote(inputsJson)} | python3 -u ${shellQuote(scriptFile.absolutePath)}"
+        val result = runBlocking {
+            EmbeddedTerminalRuntime.executeCommand(
+                context = ctx,
+                command = command,
+                workingDirectory = projectDir(projectId).absolutePath,
+                timeoutSeconds = 60
+            )
+        }
+        if (!result.success) {
+            return apiError(
+                api, "SCRIPT_ERROR",
+                result.errorMessage ?: result.output.takeLast(400).ifBlank { "Script exited non-zero." }
+            )
+        }
+        val lastLine = result.output.trimEnd().lines().lastOrNull { it.isNotBlank() }.orEmpty()
+        val parsed = runCatching {
+            @Suppress("UNCHECKED_CAST")
+            logGson.fromJson(lastLine, Map::class.java) as Map<String, Any?>
+        }.getOrNull()
+        return if (parsed != null) {
+            apiSuccess(api, parsed)
+        } else {
+            apiSuccess(api, linkedMapOf("output" to result.output.trim()))
+        }
+    }
+
+    private fun shellQuote(s: String): String = "'${s.replace("'", "'\\''")}'"
+
+    private fun buildAgentTaskPrompt(
+        record: WorkbenchProjectRecord,
+        api: WorkbenchApiRecord,
+        run: Map<String, Any?>,
+        inputs: Map<String, Any?>,
+        caller: String
+    ): String = """
+        Execute this OOB Project Tool as an async Agent task.
+
+        Project:
+        - projectId: ${record.projectId}
+        - name: ${record.name}
+        - workspace: ${record.spacePath}
+
+        Tool:
+        - toolId: ${api.toolId}
+        - displayName: ${api.displayName}
+        - description: ${api.description}
+        - run: ${logGson.toJson(run)}
+        - caller: ${caller.ifBlank { "unknown" }}
+
+        Inputs JSON:
+        ${logGson.toJson(inputs)}
+
+        Rules:
+        - Simple native Project data actions should use the registered Project Tools, not a new runtime.
+        - If run.use starts with oob. or mcp., use the matching OOB/MCP capability through the normal Agent tool chain.
+        - Do not recreate this Project. If data must be saved, call an existing Project Tool or Workbench control tool explicitly.
+    """.trimIndent()
 
     private fun createSchemaItem(
         projectId: String,
@@ -4037,7 +4445,7 @@ class WorkbenchProjectStore(
         val normalized = apiIdOrToolId.trim()
         return projectApis(projectId).firstOrNull { api ->
             api.apiId == normalized || api.toolId == normalized
-        } ?: throw IllegalArgumentException("Workbench API not found: $apiIdOrToolId")
+        } ?: throw IllegalArgumentException("Workbench Project Tool not found: $apiIdOrToolId")
     }
 
     private fun readActiveProjectId(): String? {
@@ -4247,13 +4655,6 @@ class WorkbenchProjectStore(
         )
     }
 
-    /**
-     * Reads recent API call rows from the append-only API call log.
-     *
-     * @param projectId Project whose `logs/api_calls.jsonl` should be tailed.
-     * @param limit Maximum number of newest rows to return.
-     * @return JSON-safe log rows ordered oldest to newest within the returned window.
-     */
     private fun readApiCallLog(projectId: String, limit: Int): List<Map<String, Any?>> {
         val file = File(projectDir(projectId), "logs/api_calls.jsonl")
         if (!file.exists()) return emptyList()
@@ -4267,9 +4668,9 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Reads the most recent failed API call for Project summaries.
+     * Reads the most recent failed Project Tool call for Project summaries.
      *
-     * @param projectId Project whose API call log should be inspected.
+     * @param projectId Project whose tool call log should be inspected.
      * @return Latest structured error row, or null when no failed call is present.
      */
     private fun lastApiError(projectId: String): Map<String, Any?>? {
@@ -4557,7 +4958,7 @@ class WorkbenchProjectStore(
      *
      * @param fileName Package/build file name.
      * @param content Small file body used for framework hints such as React or Vite.
-     * @return Stack labels that guide future Project API binding.
+     * @return Stack labels that guide future Project Tool binding.
      */
     private fun stackForPackageFile(fileName: String, content: String): List<String> {
         val lower = content.lowercase()
