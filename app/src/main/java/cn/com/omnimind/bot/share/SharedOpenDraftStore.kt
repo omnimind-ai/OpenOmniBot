@@ -141,6 +141,42 @@ object SharedOpenDraftStore {
         return draft
     }
 
+    fun storeMixedDraft(
+        context: Context,
+        text: String?,
+        imageUris: List<Uri>,
+        workspaceUris: List<Uri>,
+        mimeTypeHint: String? = null,
+    ): SharedOpenDraft? {
+        cleanupStaleFiles(context)
+        val now = System.currentTimeMillis()
+        val normalizedText = text?.trim()?.ifEmpty { null }
+        val attachments = buildList {
+            imageUris.mapNotNullTo(this) { uri ->
+                copyImageToLocalDraft(context, uri, mimeTypeHint)
+            }
+            workspaceUris.mapNotNullTo(this) { uri ->
+                copyUriToWorkspace(context, uri, mimeTypeHint, now)
+            }
+        }
+        if (normalizedText == null && attachments.isEmpty()) {
+            return null
+        }
+
+        val draft = SharedOpenDraft(
+            requestKey = now.toString(),
+            text = normalizedText,
+            attachments = attachments,
+            createdAt = now,
+        )
+
+        prefs(context)
+            .edit()
+            .putString(KEY_PENDING_DRAFT, draft.toJson().toString())
+            .apply()
+        return draft
+    }
+
     fun getPending(context: Context): Map<String, Any?>? {
         val raw = prefs(context).getString(KEY_PENDING_DRAFT, null) ?: return null
         return runCatching {

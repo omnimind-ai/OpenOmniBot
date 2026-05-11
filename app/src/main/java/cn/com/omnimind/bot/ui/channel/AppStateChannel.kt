@@ -90,14 +90,28 @@ class AppStateChannel {
                 }
                 result.success(SharedOpenPreferenceStore.getOpenMode(appContext))
             }
-            "setSharedOpenMode" -> {
+            "getSharedOpenModes" -> {
                 val appContext = context?.applicationContext
-                val mode = call.argument<String>("mode")
                 if (appContext == null) {
                     result.error("INVALID_CONTEXT", "Context is null", null)
                     return
                 }
-                result.success(SharedOpenPreferenceStore.setOpenMode(appContext, mode.orEmpty()))
+                result.success(SharedOpenPreferenceStore.getOpenModes(appContext))
+            }
+            "setSharedOpenMode" -> {
+                val appContext = context?.applicationContext
+                val mode = call.argument<String>("mode")
+                val target = call.argument<String>("target")?.trim()?.lowercase()
+                if (appContext == null) {
+                    result.error("INVALID_CONTEXT", "Context is null", null)
+                    return
+                }
+                val saved = when (target) {
+                    "image" -> SharedOpenPreferenceStore.setImageOpenMode(appContext, mode.orEmpty())
+                    "file" -> SharedOpenPreferenceStore.setFileOpenMode(appContext, mode.orEmpty())
+                    else -> SharedOpenPreferenceStore.setOpenMode(appContext, mode.orEmpty())
+                }
+                result.success(saved)
             }
             "applyLanguagePreference" -> {
                 val appContext = context?.applicationContext

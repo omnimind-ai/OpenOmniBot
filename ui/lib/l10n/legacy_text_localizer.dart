@@ -36,10 +36,25 @@ class LegacyTextLocalizer {
     '杂项': 'Misc',
     '闹钟、振动、自动回聊天与打开方式': 'Alarms, vibration, return-to-chat, and open behavior',
     '使用小万打开': 'Open with Omnibot',
+    '使用小万打开 - 图片': 'Open with Omnibot - Images',
+    '使用小万打开 - 文件': 'Open with Omnibot - Files',
+    '分别设置图片和文件的打开方式': 'Configure image and file open behavior separately',
+    '图片': 'Images',
+    '文件': 'Files',
     '复制到 workspace 并在提示词中发送文件路径':
         'Copy to workspace and send file paths in the prompt',
+    '添加到 workspace，附加到对话，并在提示词中发送文件路径':
+        'Add to workspace, attach to chat, and send the file path in the prompt',
+    '存入 workspace 并发送路径': 'Save to workspace and send path',
     '图片填入对话，其他文件走文件传输':
         'Attach images to chat; send other files through file transfer',
+    '附加到对话输入框': 'Attach to chat input',
+    '照片等文件会直接附加到对话输入框':
+        'Photos and similar files are attached directly to the chat input',
+    '启动文件服务器生成局域网链接': 'Start file server and create a LAN link',
+    '生成局域网文件链接': 'Create a LAN file link',
+    '非照片文件会启动文件服务器并生成局域网链接':
+        'Non-photo files start the file server and create a LAN link',
     '默认': 'Default',
     '陪伴权限授权': 'Companion App Permissions',
     '关于小万': 'About Omnibot',

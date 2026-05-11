@@ -3,7 +3,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_switch/flutter_switch.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/l10n/l10n.dart';
-import 'package:ui/services/app_state_service.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -20,13 +19,8 @@ class ExperienceMiscSettingPage extends StatefulWidget {
 }
 
 class _ExperienceMiscSettingPageState extends State<ExperienceMiscSettingPage> {
-  static const String _sharedOpenModeDefault = 'default';
-  static const String _sharedOpenModeWorkspace = 'workspace';
-
   bool _vibrationEnabled = true;
   bool _autoBackToChatAfterTaskEnabled = true;
-  String _sharedOpenMode = _sharedOpenModeDefault;
-  bool _sharedOpenModeLoaded = false;
 
   @override
   void initState() {
@@ -39,7 +33,6 @@ class _ExperienceMiscSettingPageState extends State<ExperienceMiscSettingPage> {
         true;
     _loadVibrationState();
     _loadAutoBackToChatAfterTaskState();
-    _loadSharedOpenMode();
   }
 
   Future<void> _loadVibrationState() async {
@@ -67,15 +60,6 @@ class _ExperienceMiscSettingPageState extends State<ExperienceMiscSettingPage> {
     } catch (e) {
       debugPrint('Error loading auto back to chat setting: $e');
     }
-  }
-
-  Future<void> _loadSharedOpenMode() async {
-    final mode = await AppStateService.getSharedOpenMode();
-    if (!mounted) return;
-    setState(() {
-      _sharedOpenMode = _normalizeSharedOpenMode(mode);
-      _sharedOpenModeLoaded = true;
-    });
   }
 
   Future<void> _onVibrationChanged(bool value) async {
@@ -107,34 +91,6 @@ class _ExperienceMiscSettingPageState extends State<ExperienceMiscSettingPage> {
       if (!mounted) return;
       showToast(context.l10n.settingsSaveFailed, type: ToastType.error);
     }
-  }
-
-  Future<void> _onSharedOpenModeChanged(String? value) async {
-    final nextMode = _normalizeSharedOpenMode(value);
-    if (nextMode == _sharedOpenMode) return;
-    final previousMode = _sharedOpenMode;
-    setState(() {
-      _sharedOpenMode = nextMode;
-    });
-    final saved = await AppStateService.setSharedOpenMode(nextMode);
-    if (!mounted) return;
-    final normalizedSaved = _normalizeSharedOpenMode(saved);
-    setState(() {
-      _sharedOpenMode = normalizedSaved;
-    });
-    if (normalizedSaved != nextMode) {
-      setState(() {
-        _sharedOpenMode = previousMode;
-      });
-      showToast(context.l10n.settingsSaveFailed, type: ToastType.error);
-    }
-  }
-
-  String _normalizeSharedOpenMode(String? value) {
-    return switch (value?.trim()) {
-      _sharedOpenModeWorkspace => _sharedOpenModeWorkspace,
-      _ => _sharedOpenModeDefault,
-    };
   }
 
   @override
@@ -175,10 +131,10 @@ class _ExperienceMiscSettingPageState extends State<ExperienceMiscSettingPage> {
           _SettingItem(
             icon: Icons.drive_folder_upload_outlined,
             title: context.trLegacy('使用小万打开'),
-            subtitle: _sharedOpenMode == _sharedOpenModeWorkspace
-                ? context.trLegacy('复制到 workspace 并在提示词中发送文件路径')
-                : context.trLegacy('图片填入对话，其他文件走文件传输'),
-            trailing: _buildSharedOpenModeDropdown(),
+            subtitle: context.trLegacy('分别设置图片和文件的打开方式'),
+            onTap: () {
+              GoRouterManager.push('/home/open_with_omnibot_setting');
+            },
           ),
         ],
       ),
@@ -195,55 +151,6 @@ class _ExperienceMiscSettingPageState extends State<ExperienceMiscSettingPage> {
           itemBuilder: (context, index) {
             return _buildSettingsSection(sections[index]);
           },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSharedOpenModeDropdown() {
-    final palette = context.omniPalette;
-    if (!_sharedOpenModeLoaded) {
-      return Padding(
-        padding: const EdgeInsets.only(left: 12),
-        child: SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: palette.accentPrimary,
-          ),
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.only(left: 12),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _sharedOpenMode,
-          isDense: true,
-          borderRadius: BorderRadius.circular(10),
-          dropdownColor: palette.surfacePrimary,
-          style: TextStyle(
-            color: palette.textPrimary,
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-          ),
-          icon: Icon(
-            Icons.keyboard_arrow_down_rounded,
-            size: 18,
-            color: palette.textTertiary,
-          ),
-          items: [
-            DropdownMenuItem(
-              value: _sharedOpenModeDefault,
-              child: Text(context.trLegacy('默认')),
-            ),
-            DropdownMenuItem(
-              value: _sharedOpenModeWorkspace,
-              child: Text('Workspace'),
-            ),
-          ],
-          onChanged: _onSharedOpenModeChanged,
         ),
       ),
     );

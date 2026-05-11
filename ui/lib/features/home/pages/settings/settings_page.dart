@@ -386,6 +386,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           _SettingItem(
             icon: Icons.more_horiz_rounded,
+            iconSvg: 'assets/home/misc_blocks_setting_icon.svg',
             title: context.trLegacy('杂项'),
             subtitle: context.trLegacy('闹钟、振动、自动回聊天与打开方式'),
             onTap: () {

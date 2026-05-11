@@ -68,10 +68,26 @@ class AppStateService {
     }
   }
 
-  static Future<String> setSharedOpenMode(String mode) async {
+  static Future<Map<String, String>> getSharedOpenModes() async {
+    try {
+      final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'getSharedOpenModes',
+      );
+      return {
+        'imageMode': _normalizeSharedOpenMode(result?['imageMode']?.toString()),
+        'fileMode': _normalizeSharedOpenMode(result?['fileMode']?.toString()),
+      };
+    } catch (e) {
+      debugPrint('⚠️ Failed to get shared open modes: $e');
+      return const {'imageMode': 'default', 'fileMode': 'default'};
+    }
+  }
+
+  static Future<String> setSharedOpenMode(String mode, {String? target}) async {
     try {
       final result = await _channel.invokeMethod<String>('setSharedOpenMode', {
         'mode': mode,
+        if (target != null) 'target': target,
       });
       return _normalizeSharedOpenMode(result);
     } catch (e) {
