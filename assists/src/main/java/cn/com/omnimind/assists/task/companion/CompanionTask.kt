@@ -28,6 +28,10 @@ class CompanionTask(
 
     override fun getTaskType(): TaskType = TaskType.COMPANION
 
+    override fun getTaskRunLogGoal(): String = "companion"
+
+    override fun getTaskRunLogSource(): String = "companion"
+
     fun start(companionFinishListener: () -> Unit, onTaskFinishListener: () -> Unit) {
         super.start {
             try {

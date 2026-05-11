@@ -20,20 +20,23 @@ class OmniFlowSimpleIngest(
     private val store: OmniFlowSimpleStore? = null,
     private val json: Json = OmniFlowSimpleStore.defaultJson
 ) {
-    fun ingestRunLogJson(payload: String): Pair<OmniFlowSimpleRunLog, OmniFlowSimpleFunction> {
+    fun ingestRunLogJson(payload: String): Pair<OmniFlowSimpleRunLog, OmniFlowSimpleFunction?> {
         val root = json.parseToJsonElement(payload).jsonObject
         return ingestRunLog(runLogFromJson(root))
     }
 
-    fun ingestRunLogMap(payload: Map<String, Any?>): Pair<OmniFlowSimpleRunLog, OmniFlowSimpleFunction> {
+    fun ingestRunLogMap(payload: Map<String, Any?>): Pair<OmniFlowSimpleRunLog, OmniFlowSimpleFunction?> {
         return ingestRunLog(runLogFromJson(payload.toJsonElement().jsonObject))
     }
 
-    fun ingestRunLog(runLog: OmniFlowSimpleRunLog): Pair<OmniFlowSimpleRunLog, OmniFlowSimpleFunction> {
+    fun ingestRunLog(runLog: OmniFlowSimpleRunLog): Pair<OmniFlowSimpleRunLog, OmniFlowSimpleFunction?> {
         val function = functionFromRunLog(runLog)
-        store?.saveRunLog(runLog)
-        store?.saveFunction(function)
-        return runLog to function
+        val savedRunLog = runLog.copy(replayable = function != null)
+        val persistedRunLog = store?.saveRunLog(savedRunLog) ?: savedRunLog
+        if (function != null) {
+            store?.saveFunction(function)
+        }
+        return persistedRunLog to function
     }
 
     fun runLogFromJson(root: JsonObject): OmniFlowSimpleRunLog {
@@ -50,27 +53,40 @@ class OmniFlowSimpleIngest(
         val steps = root["steps"]?.jsonArray.orEmpty().mapIndexedNotNull { index, item ->
             stepFromJson(index, item.jsonObject)
         }
+        val success = root.booleanValue("success") ?: true
         return OmniFlowSimpleRunLog(
             runId = runId,
             goal = root.stringValue("goal").orEmpty(),
-            success = root.booleanValue("success") ?: true,
+            success = success,
             startedAtMs = startedAtMs,
             finishedAtMs = finishedAtMs,
             durationMs = root.longValue("duration_ms")
                 ?: (finishedAtMs - startedAtMs).coerceAtLeast(0),
+            taskType = root.stringValue("task_type") ?: root.stringValue("taskType").orEmpty(),
+            taskId = root.stringValue("task_id") ?: root.stringValue("taskId"),
+            status = root.stringValue("status") ?: if (success) "success" else "failed",
+            message = root.stringValue("message").orEmpty(),
             finalPackageName = root.stringValue("final_package_name")
                 ?: root.stringValue("package_name"),
             appName = root.stringValue("app_name"),
             source = root.stringValue("source") ?: "vlm",
+            replayable = root.booleanValue("replayable") ?: false,
+            metadata = root["metadata"]?.jsonObject?.toStringMap().orEmpty(),
             steps = steps,
             createdAtMs = root.longValue("created_at_ms") ?: now
         )
     }
 
-    fun functionFromRunLog(runLog: OmniFlowSimpleRunLog): OmniFlowSimpleFunction {
+    fun functionFromRunLog(runLog: OmniFlowSimpleRunLog): OmniFlowSimpleFunction? {
+        if (!runLog.success) {
+            return null
+        }
         val replayableActions = runLog.steps
             .map { it.action.copy(type = it.action.normalizedType()) }
             .filter { it.isReplayable() }
+        if (replayableActions.none { it.normalizedType() != "finished" }) {
+            return null
+        }
         val functionId = "fn_${stableSlug(runLog.goal)}_${runLog.runId.hashCode().absoluteValue}"
         return OmniFlowSimpleFunction(
             functionId = functionId,
@@ -172,6 +188,16 @@ internal fun JsonObject.longValue(key: String): Long? {
 
 internal fun JsonObject.intValue(key: String): Int? {
     return longValue(key)?.toInt()
+}
+
+internal fun JsonObject.toStringMap(): Map<String, String> {
+    return entries.mapNotNull { (key, value) ->
+        val normalized = when (value) {
+            is JsonPrimitive -> value.contentOrNull
+            else -> value.toString()
+        }?.trim()
+        normalized?.takeIf { it.isNotEmpty() }?.let { key to it }
+    }.toMap()
 }
 
 internal fun String.parseIsoMillis(): Long? {

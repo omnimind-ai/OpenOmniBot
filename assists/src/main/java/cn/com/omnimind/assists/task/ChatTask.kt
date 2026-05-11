@@ -79,6 +79,32 @@ class ChatTask(override val taskChangeListener: TaskChangeListener,
         return TaskType.CHAT
     }
 
+    override fun getTaskRunLogGoal(): String {
+        return if (this::content.isInitialized) {
+            content.lastOrNull { it["role"] == "user" }?.get("content")?.toString()
+                ?: content.lastOrNull()?.get("content")?.toString()
+                ?: taskID
+        } else {
+            taskID
+        }
+    }
+
+    override fun getTaskRunLogSource(): String = "chat"
+
+    override fun getTaskRunLogMetadata(): Map<String, String> {
+        return buildMap {
+            if (this@ChatTask::taskID.isInitialized && taskID.isNotBlank()) {
+                put("external_task_id", taskID)
+            }
+            provider?.takeIf { it.isNotBlank() }?.let { put("provider", it) }
+            modelOverride?.modelId?.takeIf { it.isNotBlank() }?.let { put("model", it) }
+            reasoningEffort?.takeIf { it.isNotBlank() }?.let { put("reasoning_effort", it) }
+            if (this@ChatTask::content.isInitialized) {
+                put("message_count", content.size.toString())
+            }
+        }
+    }
+
     fun start(
         taskID: String,
         content: List<Map<String, Any>>,

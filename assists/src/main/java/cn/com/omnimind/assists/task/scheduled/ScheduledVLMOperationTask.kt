@@ -24,4 +24,8 @@ class ScheduledVLMOperationTask(
         return TaskType.SCHEDULED_VLM_OPERATION_EXECUTION
     }
 
+    override fun getTaskRunLogMetadata(): Map<String, String> {
+        return super.getTaskRunLogMetadata() + mapOf("scheduled_task_id" to scheduledTaskID)
+    }
+
 }

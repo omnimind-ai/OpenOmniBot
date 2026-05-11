@@ -47,10 +47,37 @@ class OmniFlowSimpleStore internal constructor(
     }
 
     fun saveRunLog(runLog: OmniFlowSimpleRunLog): OmniFlowSimpleRunLog {
+        var saved = runLog
         mutate { state ->
-            state.copy(runLogs = listOf(runLog) + state.runLogs.filterNot { it.runId == runLog.runId })
+            val existing = state.runLogs.firstOrNull { it.runId == runLog.runId }
+            if (existing != null) {
+                saved = if (existing.steps.isNotEmpty() && runLog.steps.isEmpty()) {
+                    existing.copy(
+                        taskType = runLog.taskType.ifBlank { existing.taskType },
+                        taskId = runLog.taskId ?: existing.taskId,
+                        status = runLog.status.ifBlank { existing.status },
+                        message = runLog.message.ifBlank { existing.message },
+                        source = runLog.source.ifBlank { existing.source },
+                        metadata = existing.metadata + runLog.metadata,
+                        replayable = existing.replayable || runLog.replayable
+                    )
+                } else {
+                    runLog.copy(
+                        taskType = runLog.taskType.ifBlank { existing.taskType },
+                        taskId = runLog.taskId ?: existing.taskId,
+                        status = runLog.status.ifBlank { existing.status },
+                        message = runLog.message.ifBlank { existing.message },
+                        finalPackageName = runLog.finalPackageName ?: existing.finalPackageName,
+                        appName = runLog.appName ?: existing.appName,
+                        source = runLog.source.ifBlank { existing.source },
+                        metadata = existing.metadata + runLog.metadata,
+                        replayable = existing.replayable || runLog.replayable
+                    )
+                }
+            }
+            state.copy(runLogs = listOf(saved) + state.runLogs.filterNot { it.runId == saved.runId })
         }
-        return runLog
+        return saved
     }
 
     fun saveFunction(function: OmniFlowSimpleFunction): OmniFlowSimpleFunction {

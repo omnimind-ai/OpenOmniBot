@@ -3,6 +3,9 @@ package cn.com.omnimind.assists.task
 import android.annotation.SuppressLint
 import android.icu.text.SimpleDateFormat
 import cn.com.omnimind.assists.TaskManager
+import cn.com.omnimind.assists.api.bean.TaskRunLogEvent
+import cn.com.omnimind.assists.api.bean.TaskRunLogEventBus
+import cn.com.omnimind.assists.api.bean.TaskRunLogPhase
 import cn.com.omnimind.assists.api.enums.TaskFinishType
 import cn.com.omnimind.assists.api.enums.TaskType
 import cn.com.omnimind.assists.api.interfaces.TaskChangeListener
@@ -27,6 +30,8 @@ abstract class Task(open val taskChangeListener: TaskChangeListener,open val tas
     var isRunning: Boolean = false
     open var taskScope = CoroutineScope( Dispatchers.IO)
     open val cancelScope = CoroutineScope( Dispatchers.IO)
+    private var taskRunLogStartedAtMs: Long = 0L
+
     fun getRequestHeader(): RequestHeader {
         return RequestHeader(
             requestId = getRequestID(),
@@ -44,6 +49,12 @@ abstract class Task(open val taskChangeListener: TaskChangeListener,open val tas
     }
 
     abstract fun getTaskType(): TaskType
+
+    open fun getTaskRunLogGoal(): String = ""
+
+    open fun getTaskRunLogSource(): String = getTaskType().name.lowercase()
+
+    open fun getTaskRunLogMetadata(): Map<String, String> = emptyMap()
 
 
     open fun finishTask(block: suspend CoroutineScope.() -> Unit) {
@@ -81,6 +92,10 @@ abstract class Task(open val taskChangeListener: TaskChangeListener,open val tas
         taskChangeListener.onTaskStart(getTaskType(),taskManager)
         OmniLog.i(TAG, " task started...")
         isRunning = true
+        if (taskRunLogStartedAtMs <= 0L) {
+            taskRunLogStartedAtMs = System.currentTimeMillis()
+        }
+        emitTaskRunLog(TaskRunLogPhase.STARTED)
 
     }
 
@@ -88,6 +103,11 @@ abstract class Task(open val taskChangeListener: TaskChangeListener,open val tas
         taskChangeListener.onTaskStop(getTaskType(),finishType, message,taskManager)
 
         OmniLog.i(TAG, " task ready to stop...")
+        emitTaskRunLog(
+            phase = TaskRunLogPhase.STOPPED,
+            finishType = finishType,
+            message = message
+        )
     }
 
     override suspend fun onTaskDestroy() {
@@ -100,6 +120,31 @@ abstract class Task(open val taskChangeListener: TaskChangeListener,open val tas
     open suspend fun onTaskCancelled() {
         OmniLog.i(TAG, " task was cancelled...")
         isRunning = false
+    }
+
+    private fun emitTaskRunLog(
+        phase: TaskRunLogPhase,
+        finishType: TaskFinishType? = null,
+        message: String = ""
+    ) {
+        val now = System.currentTimeMillis()
+        if (taskRunLogStartedAtMs <= 0L) {
+            taskRunLogStartedAtMs = now
+        }
+        TaskRunLogEventBus.emit(
+            TaskRunLogEvent(
+                taskId = id.ifBlank { "${getTaskType().name.lowercase()}-$now" },
+                taskType = getTaskType(),
+                phase = phase,
+                goal = getTaskRunLogGoal(),
+                source = getTaskRunLogSource(),
+                startedAtMs = taskRunLogStartedAtMs,
+                finishedAtMs = if (phase == TaskRunLogPhase.STOPPED) now else null,
+                finishType = finishType,
+                message = message,
+                metadata = getTaskRunLogMetadata()
+            )
+        )
     }
 
 }

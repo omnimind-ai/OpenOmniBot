@@ -17,8 +17,13 @@ import android.os.Handler
 import android.os.Looper
 import cn.com.omnimind.accessibility.api.Constant
 import cn.com.omnimind.assists.AssistsCore
+import cn.com.omnimind.assists.api.bean.TaskRunLogEvent
+import cn.com.omnimind.assists.api.bean.TaskRunLogEventBus
+import cn.com.omnimind.assists.api.bean.TaskRunLogListener
+import cn.com.omnimind.assists.api.bean.TaskRunLogPhase
 import cn.com.omnimind.assists.api.bean.TaskParams
 import cn.com.omnimind.assists.api.bean.VlmTaskTerminalResult
+import cn.com.omnimind.assists.api.enums.TaskFinishType
 import cn.com.omnimind.assists.api.interfaces.OnMessagePushListener
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.assists.task.scheduled.worker.ScheduledStates
@@ -88,6 +93,7 @@ import cn.com.omnimind.bot.agent.resolveToolExecutionStatus
 import cn.com.omnimind.bot.localmodel.LocalModelFeature
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
 import cn.com.omnimind.bot.omniflow.AndroidOmniFlowSimpleActionRunner
+import cn.com.omnimind.bot.omniflow.OmniFlowSimpleRunLog
 import cn.com.omnimind.bot.omniflow.OmniFlowSimpleExecutor
 import cn.com.omnimind.bot.omniflow.OmniFlowSimpleIngest
 import cn.com.omnimind.bot.omniflow.OmniFlowSimpleProviderClient
@@ -403,7 +409,7 @@ private fun extractTextPayload(raw: JsonElement?): String {
     }
 }
 
-class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
+class AssistsCoreManager(private val context: Context) : OnMessagePushListener, TaskRunLogListener {
     private val TAG = "[AssistsCoreManager]"
 
     companion object {
@@ -477,6 +483,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
     init {
         registerSharedInstance(this)
+        TaskRunLogEventBus.listener = this
     }
 
     private fun currentLocale(): PromptLocale = AppLocaleManager.resolvePromptLocale(context)
@@ -725,6 +732,130 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     private fun removeChatTaskPersistenceState(taskId: String): ChatTaskPersistenceState? {
         return synchronized(activeAgentLock) {
             chatTaskPersistenceStates.remove(taskId)
+        }
+    }
+
+    override fun onTaskRunLogEvent(event: TaskRunLogEvent) {
+        if (event.phase != TaskRunLogPhase.STOPPED) return
+        if (event.finishType == TaskFinishType.WAITING_INPUT ||
+            event.finishType == TaskFinishType.USER_PAUSED) {
+            return
+        }
+        workJob.launch {
+            runCatching {
+                val runLog = buildOmniFlowSimpleTaskRunLog(event)
+                omniFlowSimpleIngest.ingestRunLog(runLog)
+                runCatching { omniFlowSimpleProvider.ingestRunLog(runLog) }
+                OmniLog.d(
+                    TAG,
+                    "OmniFlow task runlog saved run=${runLog.runId} type=${runLog.taskType}"
+                )
+            }.onFailure {
+                OmniLog.w(TAG, "OmniFlow task runlog failed: ${it.message}")
+            }
+        }
+    }
+
+    private fun buildOmniFlowSimpleTaskRunLog(event: TaskRunLogEvent): OmniFlowSimpleRunLog {
+        val startedAt = event.startedAtMs
+        val finishedAt = event.finishedAtMs ?: System.currentTimeMillis()
+        val packageName = event.metadata["package_name"]
+            ?: runCatching { AssistsCore.getCurrentPackageName() }.getOrNull()
+        val appName = packageName
+            ?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { APPPackageUtil.getAppName(context, it) }.getOrNull() }
+            ?.takeIf { it.isNotBlank() }
+        val success = event.finishType == TaskFinishType.FINISH
+        val taskType = event.taskType.name.lowercase()
+        val status = when (event.finishType) {
+            TaskFinishType.FINISH -> "success"
+            TaskFinishType.ERROR -> "failed"
+            TaskFinishType.CANCEL -> "cancelled"
+            TaskFinishType.WAITING_INPUT -> "waiting"
+            TaskFinishType.USER_PAUSED -> "paused"
+            null -> if (success) "success" else "failed"
+        }
+        val runId = event.taskId.ifBlank { "task_${taskType}_${finishedAt}" }
+            .replace(Regex("[^A-Za-z0-9_.-]+"), "_")
+            .take(180)
+        return OmniFlowSimpleRunLog(
+            runId = runId,
+            goal = event.goal.ifBlank { taskType },
+            success = success,
+            startedAtMs = startedAt,
+            finishedAtMs = finishedAt,
+            durationMs = (finishedAt - startedAt).coerceAtLeast(0),
+            taskType = taskType,
+            taskId = event.taskId,
+            status = status,
+            message = event.message,
+            finalPackageName = packageName,
+            appName = appName,
+            source = event.source.ifBlank { taskType },
+            replayable = false,
+            metadata = event.metadata + mapOf(
+                "finish_type" to (event.finishType?.name ?: ""),
+                "phase" to event.phase.name.lowercase()
+            )
+        )
+    }
+
+    private fun recordAgentTaskRunLog(
+        taskId: String,
+        goal: String,
+        startedAtMs: Long,
+        success: Boolean,
+        status: String,
+        message: String,
+        conversationId: Long?,
+        conversationMode: String,
+        modelOverride: AgentModelOverride?,
+        reasoningEffort: String?,
+        toolCount: Int = 0,
+        outputKind: String? = null,
+        latestPromptTokens: Int? = null
+    ) {
+        val finishedAt = System.currentTimeMillis()
+        val currentPackageName = runCatching { AssistsCore.getCurrentPackageName() }.getOrNull()
+        val appName = currentPackageName
+            ?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { APPPackageUtil.getAppName(context, it) }.getOrNull() }
+            ?.takeIf { it.isNotBlank() }
+        val metadata = buildMap {
+            conversationId?.let { put("conversation_id", it.toString()) }
+            put("conversation_mode", conversationMode)
+            modelOverride?.providerProfileName?.takeIf { it.isNotBlank() }
+                ?.let { put("provider", it) }
+            modelOverride?.modelId?.takeIf { it.isNotBlank() }?.let { put("model", it) }
+            reasoningEffort?.takeIf { it.isNotBlank() }?.let { put("reasoning_effort", it) }
+            put("tool_count", toolCount.toString())
+            outputKind?.takeIf { it.isNotBlank() }?.let { put("output_kind", it) }
+            latestPromptTokens?.let { put("latest_prompt_tokens", it.toString()) }
+        }
+        val runLog = OmniFlowSimpleRunLog(
+            runId = "agent_${taskId}_${finishedAt}".replace(Regex("[^A-Za-z0-9_.-]+"), "_"),
+            goal = goal.ifBlank { "agent_task" },
+            success = success,
+            startedAtMs = startedAtMs,
+            finishedAtMs = finishedAt,
+            durationMs = (finishedAt - startedAtMs).coerceAtLeast(0),
+            taskType = "agent",
+            taskId = taskId,
+            status = status,
+            message = message,
+            finalPackageName = currentPackageName,
+            appName = appName,
+            source = "agent",
+            replayable = false,
+            metadata = metadata
+        )
+        workJob.launch {
+            runCatching {
+                omniFlowSimpleIngest.ingestRunLog(runLog)
+                runCatching { omniFlowSimpleProvider.ingestRunLog(runLog) }
+            }.onFailure {
+                OmniLog.w(TAG, "OmniFlow agent runlog failed: ${it.message}")
+            }
         }
     }
 
@@ -2010,7 +2141,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 runCatching { omniFlowSimpleProvider.ingestRunLog(runLog) }
                 OmniLog.d(
                     TAG,
-                    "OmniFlow simple UTG ingested run=${runLog.runId} function=${function.functionId}"
+                    "OmniFlow simple UTG ingested run=${runLog.runId} function=${function?.functionId ?: "none"}"
                 )
             }.onFailure {
                 OmniLog.w(TAG, "OmniFlow simple UTG ingest failed: ${it.message}")
@@ -3026,7 +3157,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     result.success(
                         linkedMapOf(
                             "run_log" to runLog.toMap(),
-                            "function" to function.toMap()
+                            "function" to function?.toMap()
                         )
                     )
                 }
@@ -4439,6 +4570,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         val agentRunScope = CoroutineScope(agentRunJob + Dispatchers.Default)
         val agentRunContext = ActiveAgentRunContext(taskId = taskId, job = agentRunJob)
         registerActiveAgentRun(taskId, agentRunContext)
+        val agentStartedAtMs = System.currentTimeMillis()
 
         agentRunScope.launch {
             var historyRepository: AgentConversationHistoryRepository? = null
@@ -5241,6 +5373,18 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         val latestPromptTokens = (result as? AgentResult.Success)?.latestPromptTokens
                         val promptTokenThreshold =
                             (result as? AgentResult.Success)?.promptTokenThreshold
+                        val executedTools = (result as? AgentResult.Success)?.executedTools
+                            ?: emptyList()
+                        val agentStatus = when {
+                            !isSuccess -> "failed"
+                            executedTools.any { it is ToolExecutionResult.PermissionRequired } ->
+                                "permission_required"
+                            executedTools.any { it is ToolExecutionResult.Interrupted } ->
+                                "interrupted"
+                            executedTools.any { it is ToolExecutionResult.Error } -> "failed"
+                            else -> "success"
+                        }
+                        val agentSuccess = agentStatus == "success"
                         val streamed = scheduledAssistantBuffer.toString().trim()
                         val fallback = (result as? AgentResult.Success)
                             ?.response
@@ -5319,6 +5463,21 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             latestPromptTokens = latestPromptTokens,
                             promptTokenThreshold = promptTokenThreshold
                         )
+                        recordAgentTaskRunLog(
+                            taskId = taskId,
+                            goal = userMessage,
+                            startedAtMs = agentStartedAtMs,
+                            success = agentSuccess,
+                            status = agentStatus,
+                            message = finalText,
+                            conversationId = conversationId,
+                            conversationMode = resolvedConversationMode,
+                            modelOverride = modelOverride,
+                            reasoningEffort = reasoningEffort,
+                            toolCount = executedTools.size,
+                            outputKind = outputKind,
+                            latestPromptTokens = latestPromptTokens
+                        )
                     }
 
                     override suspend fun onError(error: String) {
@@ -5381,6 +5540,18 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             roundIndex = errorRoundIndex,
                             error = error,
                             extras = mapOf("persistAsError" to resolution.persistAsError)
+                        )
+                        recordAgentTaskRunLog(
+                            taskId = taskId,
+                            goal = userMessage,
+                            startedAtMs = agentStartedAtMs,
+                            success = false,
+                            status = "failed",
+                            message = finalText.ifBlank { error },
+                            conversationId = conversationId,
+                            conversationMode = resolvedConversationMode,
+                            modelOverride = modelOverride,
+                            reasoningEffort = reasoningEffort
                         )
                     }
 
@@ -5529,6 +5700,18 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 )
             } catch (e: CancellationException) {
                 OmniLog.i(TAG, "createAgentTask cancelled: ${e.message}")
+                recordAgentTaskRunLog(
+                    taskId = taskId,
+                    goal = userMessage,
+                    startedAtMs = agentStartedAtMs,
+                    success = false,
+                    status = "cancelled",
+                    message = e.message.orEmpty(),
+                    conversationId = conversationId,
+                    conversationMode = resolvedConversationMode,
+                    modelOverride = modelOverride,
+                    reasoningEffort = reasoningEffort
+                )
             } catch (e: Exception) {
                 OmniLog.e(TAG, "createAgentTask error: ${e.message}")
                 val errorMessage = e.message?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -5583,6 +5766,18 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         OmniLog.w(TAG, "notify scheduled subagent failure failed: ${it.message}")
                     }
                 }
+                recordAgentTaskRunLog(
+                    taskId = taskId,
+                    goal = userMessage,
+                    startedAtMs = agentStartedAtMs,
+                    success = false,
+                    status = "failed",
+                    message = errorMessage,
+                    conversationId = conversationId,
+                    conversationMode = resolvedConversationMode,
+                    modelOverride = modelOverride,
+                    reasoningEffort = reasoningEffort
+                )
                 runCatching {
                     val failureEntryId = "$taskId-text"
                     val failureRoundIndex = 1

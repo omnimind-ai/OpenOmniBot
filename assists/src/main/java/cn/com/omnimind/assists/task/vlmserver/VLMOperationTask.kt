@@ -79,6 +79,9 @@ open class VLMOperationTask(
     private val summarySheetReadyChannel = Channel<Unit>(Channel.Factory.CONFLATED)
 
     private var goal: String? = null
+    private var model: String? = null
+    private var maxSteps: Int? = null
+    private var packageName: String? = null
     private var taskStartTime = 0L//任务开始时间
     private var setStartWithNotShowReadFlag = false
 
@@ -284,18 +287,45 @@ open class VLMOperationTask(
             }
             JSONObject().apply {
                 put("run_id", id.ifBlank { "vlm-$finishedMs" })
+                put("task_id", id)
+                put("task_type", getTaskType().name.lowercase())
                 put("goal", report.goal)
                 put("success", report.success)
+                put("status", if (report.success) "success" else "failed")
+                put("message", report.error.orEmpty())
                 put("started_at_ms", startMs)
                 put("finished_at_ms", finishedMs)
                 put("duration_ms", (finishedMs - startMs).coerceAtLeast(0))
                 put("final_package_name", AccessibilityController.getPackageName().orEmpty())
-                put("source", "vlm")
+                put("source", getTaskRunLogSource())
+                put(
+                    "metadata",
+                    JSONObject(getTaskRunLogMetadata())
+                )
                 put("steps", steps)
             }.toString()
         }.getOrElse { error ->
             OmniLog.w(Tag, "buildSimpleRunLogJson failed: ${error.message}")
             ""
+        }
+    }
+
+    override fun getTaskRunLogGoal(): String = goal.orEmpty()
+
+    override fun getTaskRunLogSource(): String {
+        return when (getTaskType()) {
+            TaskType.SCHEDULED_VLM_OPERATION_EXECUTION -> "scheduled_vlm"
+            else -> "vlm"
+        }
+    }
+
+    override fun getTaskRunLogMetadata(): Map<String, String> {
+        return buildMap {
+            model?.takeIf { it.isNotBlank() }?.let { put("model", it) }
+            maxSteps?.let { put("max_steps", it.toString()) }
+            packageName?.takeIf { it.isNotBlank() }?.let { put("package_name", it) }
+            put("need_summary", needSummary.toString())
+            put("is_sub_task", isSubTask.toString())
         }
     }
 
@@ -310,6 +340,9 @@ open class VLMOperationTask(
         stepSkillGuidance: String = ""
     ) {
         this.goal = goal;
+        this.model = model
+        this.maxSteps = maxSteps
+        this.packageName = packageName
         this.taskContext = context
         this.onTaskFinishListener = onTaskFinishListener
         super.start {
@@ -480,6 +513,9 @@ open class VLMOperationTask(
         maxSteps: Int?,
         onTaskFinishListener: () -> Unit
     ) {
+        this.goal = goal
+        this.model = model
+        this.maxSteps = maxSteps
         this.onTaskFinishListener = onTaskFinishListener
         this.isSubTask = true  // 标记为子任务
         this.taskContext = BaseApplication.instance

@@ -84,9 +84,15 @@ data class OmniFlowSimpleRunLog(
     val startedAtMs: Long,
     val finishedAtMs: Long,
     val durationMs: Long,
+    val taskType: String = "",
+    val taskId: String? = null,
+    val status: String = if (success) "success" else "failed",
+    val message: String = "",
     val finalPackageName: String? = null,
     val appName: String? = null,
     val source: String = "vlm",
+    val replayable: Boolean = false,
+    val metadata: Map<String, String> = emptyMap(),
     val steps: List<OmniFlowSimpleRunLogStep> = emptyList(),
     val createdAtMs: Long = System.currentTimeMillis()
 ) {
@@ -97,9 +103,15 @@ data class OmniFlowSimpleRunLog(
         "started_at" to startedAtMs.toIsoString(),
         "finished_at" to finishedAtMs.toIsoString(),
         "duration_ms" to durationMs,
+        "task_type" to taskType,
+        "task_id" to taskId,
+        "status" to status,
+        "message" to message,
         "final_package_name" to finalPackageName,
         "app_name" to appName,
         "source" to source,
+        "replayable" to replayable,
+        "metadata" to metadata,
         "steps" to steps.map { it.toMap() },
         "created_at" to createdAtMs.toIsoString()
     )

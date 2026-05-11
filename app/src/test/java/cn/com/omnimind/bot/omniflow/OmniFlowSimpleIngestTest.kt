@@ -53,10 +53,102 @@ class OmniFlowSimpleIngestTest {
         )
 
         assertEquals("run_settings_1", runLog.runId)
+        assertTrue(runLog.replayable)
+        requireNotNull(function)
         assertEquals("com.android.settings", function.packageName)
         assertEquals(listOf("open_app", "input_text"), function.actions.map { it.type })
         assertEquals("com.android.settings", function.actions[0].params["package_name"]?.toInteropValue())
         assertEquals("网络", function.actions[1].params["text"]?.toInteropValue())
+    }
+
+    @Test
+    fun `ingest stores summary task run log without creating function`() {
+        val store = tempStore()
+        val ingest = OmniFlowSimpleIngest(store)
+
+        val (runLog, function) = ingest.ingestRunLogJson(
+            """
+            {
+              "run_id": "chat_task_1",
+              "task_id": "chat_task_1",
+              "task_type": "chat",
+              "goal": "帮我整理今天的计划",
+              "success": true,
+              "status": "success",
+              "message": "done",
+              "source": "chat",
+              "started_at_ms": 1000,
+              "finished_at_ms": 2000,
+              "metadata": {
+                "provider": "openclaw",
+                "message_count": "2"
+              },
+              "steps": []
+            }
+            """.trimIndent()
+        )
+
+        assertEquals("chat", runLog.taskType)
+        assertFalse(runLog.replayable)
+        assertEquals("openclaw", runLog.metadata["provider"])
+        assertEquals(null, function)
+        assertEquals(1, store.listRunLogs().size)
+        assertTrue(store.listFunctions().isEmpty())
+    }
+
+    @Test
+    fun `action rich run log upgrades existing summary run log`() {
+        val store = tempStore()
+        val ingest = OmniFlowSimpleIngest(store)
+
+        ingest.ingestRunLogJson(
+            """
+            {
+              "run_id": "vlm_task_1",
+              "task_id": "vlm_task_1",
+              "task_type": "vlm_operation_execution",
+              "goal": "打开设置",
+              "success": true,
+              "started_at_ms": 1000,
+              "finished_at_ms": 1500,
+              "source": "vlm",
+              "metadata": {"model": "scene.vlm.operation.primary"},
+              "steps": []
+            }
+            """.trimIndent()
+        )
+
+        val (runLog, function) = ingest.ingestRunLogJson(
+            """
+            {
+              "run_id": "vlm_task_1",
+              "task_id": "vlm_task_1",
+              "task_type": "vlm_operation_execution",
+              "goal": "打开设置",
+              "success": true,
+              "started_at_ms": 1000,
+              "finished_at_ms": 2500,
+              "final_package_name": "com.android.settings",
+              "source": "vlm",
+              "steps": [
+                {
+                  "index": 0,
+                  "action": {
+                    "name": "open_app",
+                    "package_name": "com.android.settings"
+                  },
+                  "success": true
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+
+        assertTrue(runLog.replayable)
+        assertEquals("scene.vlm.operation.primary", runLog.metadata["model"])
+        requireNotNull(function)
+        assertEquals(1, store.listRunLogs().size)
+        assertEquals(1, store.listFunctions().size)
     }
 
     @Test

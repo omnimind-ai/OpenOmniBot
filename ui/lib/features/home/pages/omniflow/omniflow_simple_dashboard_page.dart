@@ -121,7 +121,7 @@ class _OmniFlowSimpleDashboardPageState
     if (functions.isEmpty && runLogs.isEmpty) {
       return Center(
         child: Text(
-          '暂无 Simple UTG runlog。跑一次 VLM GUI 任务后会自动出现。',
+          '暂无 OmniFlow runlog。执行任意 task 后会自动出现。',
           style: TextStyle(color: palette.textSecondary),
         ),
       );
@@ -241,7 +241,7 @@ class _OmniFlowSimpleDashboardPageState
           _SectionHeader(
             title: 'Run Logs',
             count: runLogs.length,
-            emptyText: 'Runlog 由 VLM GUI task terminal result 自动写入。',
+            emptyText: 'Runlog 会覆盖 chat、agent、companion、scheduled、VLM 等 task。',
           ),
           if (runLogs.isEmpty)
             _EmptyHint(text: '暂无 Run Log', palette: palette)

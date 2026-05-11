@@ -124,7 +124,8 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
                           detail.type == ExecutionDetailType.function
                               ? 'Function'
                               : 'Run Log',
-                          backgroundColor: detail.type == ExecutionDetailType.function
+                          backgroundColor:
+                              detail.type == ExecutionDetailType.function
                               ? const Color(0xFFE8F0FF)
                               : const Color(0xFFF0E8FF),
                           textColor: detail.type == ExecutionDetailType.function
@@ -133,17 +134,29 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
                         ),
                         const SizedBox(width: 8),
                         _buildPill(context, '${detail.stepCount} steps'),
-                        if (detail.success != null) ...[
+                        if (detail.statusText.isNotEmpty) ...[
                           const SizedBox(width: 8),
                           _buildPill(
                             context,
-                            detail.success! ? '成功' : '失败',
-                            backgroundColor: detail.success!
-                                ? const Color(0xFFE8F7EE)
-                                : const Color(0xFFFDECEC),
-                            textColor: detail.success!
-                                ? const Color(0xFF117A37)
-                                : const Color(0xFFB42318),
+                            detail.statusText,
+                            backgroundColor: _statusBackgroundColor(detail),
+                            textColor: _statusTextColor(detail),
+                          ),
+                        ],
+                        if (detail.type == ExecutionDetailType.runLog &&
+                            detail.taskType != null &&
+                            detail.taskType!.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          _buildPill(context, detail.taskType!),
+                        ],
+                        if (detail.type == ExecutionDetailType.runLog &&
+                            detail.replayable) ...[
+                          const SizedBox(width: 8),
+                          _buildPill(
+                            context,
+                            '可回放',
+                            backgroundColor: const Color(0xFFE8F7EE),
+                            textColor: const Color(0xFF117A37),
                           ),
                         ],
                       ],
@@ -170,20 +183,19 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
 
           // 应用信息
           if ((detail.appName != null && detail.appName!.isNotEmpty) ||
-              (detail.packageName != null && detail.packageName!.isNotEmpty)) ...[
+              (detail.packageName != null &&
+                  detail.packageName!.isNotEmpty)) ...[
             const SizedBox(height: 10),
             Row(
               children: [
                 Icon(Icons.android, size: 14, color: palette.textTertiary),
                 const SizedBox(width: 6),
                 Text(
-                  [detail.appName, detail.packageName]
-                      .where((e) => e != null && e.isNotEmpty)
-                      .join(' · '),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: palette.textTertiary,
-                  ),
+                  [
+                    detail.appName,
+                    detail.packageName,
+                  ].where((e) => e != null && e.isNotEmpty).join(' · '),
+                  style: TextStyle(fontSize: 12, color: palette.textTertiary),
                 ),
               ],
             ),
@@ -195,7 +207,11 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
             Row(
               children: [
                 if (detail.durationMs != null) ...[
-                  Icon(Icons.timer_outlined, size: 14, color: palette.textTertiary),
+                  Icon(
+                    Icons.timer_outlined,
+                    size: 14,
+                    color: palette.textTertiary,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     detail.durationText,
@@ -226,10 +242,7 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
                 Expanded(
                   child: Text(
                     '关联执行: ${detail.sourceRunIds.length} 条',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: palette.textTertiary,
-                    ),
+                    style: TextStyle(fontSize: 12, color: palette.textTertiary),
                   ),
                 ),
               ],
@@ -338,20 +351,22 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
           ],
         ),
         const SizedBox(height: 12),
-        ...steps.map((step) => ExecutionStepTile(
-              step: step,
-              expanded: _expandedSteps.contains(step.index),
-              onTap: () {
-                setState(() {
-                  if (_expandedSteps.contains(step.index)) {
-                    _expandedSteps.remove(step.index);
-                  } else {
-                    _expandedSteps.add(step.index);
-                  }
-                });
-              },
-              onCopyJson: () => _copyStepJson(step),
-            )),
+        ...steps.map(
+          (step) => ExecutionStepTile(
+            step: step,
+            expanded: _expandedSteps.contains(step.index),
+            onTap: () {
+              setState(() {
+                if (_expandedSteps.contains(step.index)) {
+                  _expandedSteps.remove(step.index);
+                } else {
+                  _expandedSteps.add(step.index);
+                }
+              });
+            },
+            onCopyJson: () => _copyStepJson(step),
+          ),
+        ),
       ],
     );
   }
@@ -402,5 +417,17 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
     } catch (_) {
       return isoTime;
     }
+  }
+
+  Color _statusBackgroundColor(ExecutionDetail detail) {
+    if (detail.statusIsPositive) return const Color(0xFFE8F7EE);
+    if (detail.statusIsWarning) return const Color(0xFFFFF7E6);
+    return const Color(0xFFFDECEC);
+  }
+
+  Color _statusTextColor(ExecutionDetail detail) {
+    if (detail.statusIsPositive) return const Color(0xFF117A37);
+    if (detail.statusIsWarning) return const Color(0xFF9A5B00);
+    return const Color(0xFFB42318);
   }
 }

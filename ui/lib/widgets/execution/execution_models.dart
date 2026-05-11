@@ -3,7 +3,7 @@
 
 /// Compile kind 枚举
 enum CompileKind {
-  hit,  // 复用已有技能
+  hit, // 复用已有技能
   miss, // VLM 执行
   none, // 无 compile 信息
 }
@@ -48,18 +48,18 @@ class ExecutionStep {
     int index,
     Map<String, dynamic> action,
   ) {
-    final params = (action['params'] as Map<dynamic, dynamic>?)?.map(
+    final params =
+        (action['params'] as Map<dynamic, dynamic>?)?.map(
           (k, v) => MapEntry(k.toString(), v),
         ) ??
         {};
     return ExecutionStep(
       index: index,
       actionType: (action['type'] ?? '').toString(),
-      targetDescription: (params['target_description'] ??
-              params['targetDescription'] ??
-              '')
-          .toString()
-          .trim(),
+      targetDescription:
+          (params['target_description'] ?? params['targetDescription'] ?? '')
+              .toString()
+              .trim(),
       params: Map<String, dynamic>.from(params),
     );
   }
@@ -67,8 +67,10 @@ class ExecutionStep {
   /// 从 run_log step 创建
   factory ExecutionStep.fromRunLogStep(int index, Map<String, dynamic> step) {
     final toolCall = (step['tool_call'] as Map<dynamic, dynamic>?) ?? {};
-    final compileResult = (step['compile_result'] as Map<dynamic, dynamic>?) ?? {};
-    final params = (toolCall['params'] as Map<dynamic, dynamic>?)?.map(
+    final compileResult =
+        (step['compile_result'] as Map<dynamic, dynamic>?) ?? {};
+    final params =
+        (toolCall['params'] as Map<dynamic, dynamic>?)?.map(
           (k, v) => MapEntry(k.toString(), v),
         ) ??
         {};
@@ -88,12 +90,13 @@ class ExecutionStep {
     return ExecutionStep(
       index: index,
       actionType: (toolCall['name'] ?? step['action_type'] ?? '').toString(),
-      targetDescription: (params['target_description'] ??
-              params['targetDescription'] ??
-              step['action_description'] ??
-              '')
-          .toString()
-          .trim(),
+      targetDescription:
+          (params['target_description'] ??
+                  params['targetDescription'] ??
+                  step['action_description'] ??
+                  '')
+              .toString()
+              .trim(),
       params: Map<String, dynamic>.from(params),
       compileLabel: apiCompileLabel,
       compileKind: compileKind,
@@ -139,8 +142,9 @@ class ExecutionStep {
   /// 获取动作的简要描述
   String get summary {
     final parts = <String>[];
-    final packageName =
-        (params['package_name'] ?? params['packageName'] ?? '').toString().trim();
+    final packageName = (params['package_name'] ?? params['packageName'] ?? '')
+        .toString()
+        .trim();
     final text = (params['text'] ?? params['content'] ?? '').toString().trim();
     final key = (params['key'] ?? '').toString().trim();
     final direction = (params['direction'] ?? '').toString().trim();
@@ -209,11 +213,13 @@ class AssetRefs {
   factory AssetRefs.fromMap(Map<String, dynamic>? map) {
     if (map == null) return const AssetRefs();
     return AssetRefs(
-      xmlRefs: (map['xml_refs'] as List<dynamic>?)
+      xmlRefs:
+          (map['xml_refs'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
-      screenshotRefs: (map['screenshot_refs'] as List<dynamic>?)
+      screenshotRefs:
+          (map['screenshot_refs'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
@@ -240,6 +246,10 @@ class ExecutionDetail {
   final List<String> sourceRunIds;
   final String? packageName;
   final String? appName;
+  final String? taskType;
+  final String? source;
+  final String? status;
+  final bool replayable;
 
   const ExecutionDetail({
     required this.id,
@@ -256,6 +266,10 @@ class ExecutionDetail {
     this.sourceRunIds = const [],
     this.packageName,
     this.appName,
+    this.taskType,
+    this.source,
+    this.status,
+    this.replayable = false,
   });
 
   /// 从 function 创建
@@ -268,15 +282,18 @@ class ExecutionDetail {
       return ExecutionStep.fromFunctionAction(e.key, action);
     }).toList();
 
-    final runStats = (func['run_stats'] as Map<dynamic, dynamic>?)?.map(
+    final runStats =
+        (func['run_stats'] as Map<dynamic, dynamic>?)?.map(
           (k, v) => MapEntry(k.toString(), v),
         ) ??
         {};
-    final assetRefsMap = (func['asset_refs'] as Map<dynamic, dynamic>?)?.map(
+    final assetRefsMap =
+        (func['asset_refs'] as Map<dynamic, dynamic>?)?.map(
           (k, v) => MapEntry(k.toString(), v),
         ) ??
         {};
-    final metadata = (func['metadata'] as Map<dynamic, dynamic>?)?.map(
+    final metadata =
+        (func['metadata'] as Map<dynamic, dynamic>?)?.map(
           (k, v) => MapEntry(k.toString(), v),
         ) ??
         {};
@@ -289,12 +306,15 @@ class ExecutionDetail {
       steps: steps,
       stats: ExecutionStats.fromMap(Map<String, dynamic>.from(runStats)),
       assetRefs: AssetRefs.fromMap(Map<String, dynamic>.from(assetRefsMap)),
-      sourceRunIds: (metadata['source_run_ids'] as List<dynamic>?)
+      sourceRunIds:
+          (metadata['source_run_ids'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
       packageName: (func['package_name'] ?? '').toString().trim(),
       appName: (func['app_name'] ?? '').toString().trim(),
+      source: 'function',
+      replayable: true,
     );
   }
 
@@ -319,6 +339,11 @@ class ExecutionDetail {
       finishedAt: runLog['finished_at']?.toString(),
       durationMs: (runLog['duration_ms'] as num?)?.toInt(),
       packageName: (runLog['final_package_name'] ?? '').toString().trim(),
+      appName: (runLog['app_name'] ?? '').toString().trim(),
+      taskType: (runLog['task_type'] ?? '').toString().trim(),
+      source: (runLog['source'] ?? '').toString().trim(),
+      status: (runLog['status'] ?? '').toString().trim(),
+      replayable: runLog['replayable'] == true,
     );
   }
 
@@ -331,9 +356,49 @@ class ExecutionDetail {
     final minutes = seconds / 60;
     return '${minutes.toStringAsFixed(1)}min';
   }
+
+  String get statusText {
+    final normalized = (status ?? '').trim().toLowerCase();
+    switch (normalized) {
+      case 'success':
+        return '成功';
+      case 'failed':
+      case 'error':
+        return '失败';
+      case 'cancelled':
+      case 'canceled':
+        return '已取消';
+      case 'waiting':
+        return '等待中';
+      case 'paused':
+        return '已暂停';
+      case 'permission_required':
+        return '缺权限';
+      case 'interrupted':
+        return '已中断';
+      default:
+        if (normalized.isNotEmpty) return normalized;
+        if (success == null) return '';
+        return success! ? '成功' : '失败';
+    }
+  }
+
+  bool get statusIsPositive {
+    final normalized = (status ?? '').trim().toLowerCase();
+    return normalized == 'success' || (normalized.isEmpty && success == true);
+  }
+
+  bool get statusIsWarning {
+    final normalized = (status ?? '').trim().toLowerCase();
+    return const {
+      'cancelled',
+      'canceled',
+      'waiting',
+      'paused',
+      'permission_required',
+      'interrupted',
+    }.contains(normalized);
+  }
 }
 
-enum ExecutionDetailType {
-  function,
-  runLog,
-}
+enum ExecutionDetailType { function, runLog }

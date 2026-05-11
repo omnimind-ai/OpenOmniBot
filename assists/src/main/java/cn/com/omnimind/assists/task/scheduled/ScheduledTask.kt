@@ -66,6 +66,30 @@ class ScheduledTask(val context: Context,
         return TaskType.SCHEDULED
     }
 
+    override fun getTaskRunLogGoal(): String {
+        return when (val params = scheduledParams?.taskParams) {
+            is TaskParams.VLMOperationTaskParams -> params.goal
+            is TaskParams.ScheduledVLMOperationTaskParams -> params.goal
+            is TaskParams.ChatTaskParams -> params.taskId
+            is TaskParams.CompanionTaskParams -> "companion"
+            is TaskParams.ScheduledTaskParams -> "scheduled_task"
+            null -> "scheduled_task"
+        }
+    }
+
+    override fun getTaskRunLogSource(): String = "scheduled"
+
+    override fun getTaskRunLogMetadata(): Map<String, String> {
+        return buildMap {
+            scheduled?.taskID?.takeIf { it.isNotBlank() }?.let { put("work_id", it) }
+            scheduledParams?.let {
+                put("delay_seconds", it.delayTimes.toString())
+                put("state", states.name.lowercase())
+                put("nested_task_type", it.taskParams::class.java.simpleName)
+            }
+        }
+    }
+
     override suspend fun onTaskStarted() {
         super.onTaskStarted()
         scheduledTaskManager = ScheduledTaskManager(context,executionTaskEventApi)
