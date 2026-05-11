@@ -92,7 +92,9 @@ class AgentStreamReducer {
     AgentStreamTaskState? current,
     AgentStreamEvent event,
   ) {
-    final previousState = current ?? AgentStreamTaskState(taskId: event.taskId);
+    final previousState = current?.taskId == event.taskId
+        ? current!
+        : AgentStreamTaskState(taskId: event.taskId);
     if (event.seq <= previousState.lastSeq) {
       return AgentStreamReduceResult(
         accepted: false,

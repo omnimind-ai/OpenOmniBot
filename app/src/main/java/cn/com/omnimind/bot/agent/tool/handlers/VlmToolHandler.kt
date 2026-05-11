@@ -45,12 +45,13 @@ class VlmToolHandler(
         callback: AgentCallback,
         toolHandle: AgentToolExecutionHandle
     ): ToolExecutionResult {
-        return executeVlmTask(args, env.userMessage, env.runtimeContextRepository, env.currentPackageName, env.resolvedSkills, callback)
+        return executeVlmTask(args, env.userMessage, env.attachments, env.runtimeContextRepository, env.currentPackageName, env.resolvedSkills, callback)
     }
 
     private suspend fun executeVlmTask(
         args: JsonObject,
         userMessage: String,
+        attachments: List<Map<String, Any?>>,
         runtimeContextRepository: AgentRuntimeContextRepository,
         currentPackageName: String?,
         resolvedSkills: List<ResolvedSkillContext>,
@@ -58,16 +59,40 @@ class VlmToolHandler(
     ): ToolExecutionResult {
         return try {
             helper.ensureRunActive()
-            val missing = checkExecutionPrerequisites()
-            if (missing.isNotEmpty()) {
-                return helper.permissionRequiredResult(callback, missing)
-            }
             val goal = args["goal"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Missing goal")
             val packageName = args["packageName"]?.jsonPrimitive?.contentOrNull
             val needSummary = args["needSummary"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
             val startFromCurrent = args["startFromCurrent"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
             val rawArgs = VlmExecutionArgs(goal = goal, packageName = packageName?.takeIf { it.isNotBlank() }, needSummary = needSummary, startFromCurrent = startFromCurrent)
             val appNameToPackage = runtimeContextRepository.getAppNameToPackageMap()
+            val detectedTargetPackage = detectTargetAppPackage(userMessage, appNameToPackage)
+                ?: detectTargetAppPackage(goal, appNameToPackage)
+            val uploadedImageOnly = hasUploadedImageAttachment(attachments) &&
+                    !hasScreenAutomationIntent("$userMessage\n$goal", rawArgs, detectedTargetPackage)
+            if (uploadedImageOnly) {
+                val payloadJson = helper.encodeLocalizedPayload(
+                    mapOf(
+                        "status" to "SKIPPED",
+                        "reason" to "uploaded_image_analysis_does_not_need_screen_task",
+                        "message" to helper.localized(
+                            "用户上传的图片已经在当前对话里可见。不要启动小万/VLM 屏幕任务；请直接基于图片内容回答。"
+                        )
+                    )
+                )
+                return ToolExecutionResult.ContextResult(
+                    toolName = "vlm_task",
+                    summaryText = helper.localized(
+                        "已跳过小万屏幕任务：上传图片分析应直接由当前多模态模型回答。"
+                    ),
+                    previewJson = payloadJson,
+                    rawResultJson = payloadJson,
+                    success = true
+                )
+            }
+            val missing = checkExecutionPrerequisites()
+            if (missing.isNotEmpty()) {
+                return helper.permissionRequiredResult(callback, missing)
+            }
             val sanitized = sanitizeVlmExecutionArgs(rawArgs = rawArgs, userMessage = userMessage, appNameToPackage = appNameToPackage, currentPackageName = currentPackageName)
             val safeArgs = sanitized.args
             if (sanitized.reasons.isNotEmpty()) {
@@ -188,6 +213,48 @@ class VlmToolHandler(
             .replace("\u201c", "").replace("\u201d", "").replace("\"", "").replace("'", "")
             .replace("。", "").replace("，", "").replace(",", "").replace("！", "").replace("!", "")
             .replace("？", "").replace("?", "")
+    }
+
+    private fun hasUploadedImageAttachment(attachments: List<Map<String, Any?>>): Boolean {
+        return attachments.any { item ->
+            item["isImage"]?.toString()?.toBooleanStrictOrNull() == true ||
+                    item["mimeType"]?.toString()?.trim()?.lowercase()?.startsWith("image/") == true ||
+                    looksLikeImagePath(item["path"]?.toString()) ||
+                    looksLikeImagePath(item["url"]?.toString()) ||
+                    item["dataUrl"]?.toString()?.trim()?.lowercase()?.startsWith("data:image/") == true
+        }
+    }
+
+    private fun looksLikeImagePath(value: String?): Boolean {
+        val normalized = value?.trim()?.lowercase()?.substringBefore("?").orEmpty()
+        if (normalized.isBlank()) return false
+        return normalized.endsWith(".png") ||
+                normalized.endsWith(".jpg") ||
+                normalized.endsWith(".jpeg") ||
+                normalized.endsWith(".webp") ||
+                normalized.endsWith(".gif") ||
+                normalized.endsWith(".bmp") ||
+                normalized.endsWith(".heic") ||
+                normalized.endsWith(".heif")
+    }
+
+    private fun hasScreenAutomationIntent(text: String, args: VlmExecutionArgs, detectedTargetPackage: String?): Boolean {
+        if (args.startFromCurrent || !args.packageName.isNullOrBlank() || !detectedTargetPackage.isNullOrBlank()) return true
+        if (text.isBlank()) return false
+        val normalized = normalizeIntentText(text)
+        val screenMarkers = listOf(
+            "当前屏幕", "当前页面", "当前界面", "当前应用", "手机屏幕", "这个页面", "这个界面",
+            "onthisscreen", "currentscreen", "currentpage", "currentapp", "phoneui", "devicescreen"
+        )
+        val operationMarkers = listOf(
+            "点击", "点一下", "点开", "滑动", "下滑", "上滑", "输入", "填写", "选择", "勾选",
+            "返回", "发送", "回复", "发布", "下单", "支付", "购买",
+            "操控", "操作", "控制", "自动执行", "帮我在手机", "帮我操作", "替我操作",
+            "tap", "click", "swipe", "scroll", "type", "enter", "select",
+            "send", "reply", "post", "pay", "buy", "control", "operate"
+        )
+        return screenMarkers.any { normalized.contains(normalizeIntentText(it)) } ||
+                operationMarkers.any { normalized.contains(normalizeIntentText(it)) }
     }
 
     private fun checkExecutionPrerequisites(): List<String> {

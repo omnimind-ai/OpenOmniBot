@@ -24,10 +24,10 @@ object WorkbenchToolboxBuilder {
     }
 
     /**
-     * Builds the dynamic MCP tool name for one Project API.
+     * Builds the dynamic MCP tool name for one Project Tool.
      *
-     * @param projectId OOB Project id that owns the API.
-     * @param apiId Business API id, for example `capture.ingest`.
+     * @param projectId OOB Project id that owns the tool.
+     * @param apiId Legacy tool id, for example `capture.ingest`.
      * @return MCP tool name in `<toolbox>.<api>` form.
      */
     fun toolName(projectId: String, apiId: String): String {
@@ -35,25 +35,29 @@ object WorkbenchToolboxBuilder {
     }
 
     /**
-     * Enriches a Project API registry record with v0.1 Tool Contract fields.
+     * Enriches a Project Tool registry record with v0.1 contract fields.
      *
-     * @param api Business API record from the Project API registry.
-     * @param executionCount Number of successful or failed executions observed in the API log.
-     * @return JSON-safe API contract payload used by `project.json` and `backend/api_spec.json`.
+     * @param api Project Tool record from the legacy registry.
+     * @param executionCount Number of successful or failed executions observed in the tool log.
+     * @return JSON-safe Project Tool contract payload used by `project.json` and `backend/api_spec.json`.
      */
     fun apiContract(api: WorkbenchApiRecord, executionCount: Int = 0): Map<String, Any?> {
+        val name = toolName(api.projectId, api.apiId)
         return linkedMapOf(
+            "toolId" to api.toolId,
+            "toolName" to name,
+            "toolKind" to "project_tool",
+            "run" to runContract(api),
+            "legacyApiId" to api.apiId,
             "apiId" to api.apiId,
             "projectId" to api.projectId,
-            "toolId" to api.toolId,
-            "toolName" to toolName(api.projectId, api.apiId),
             "apiVersion" to TOOLBOX_API_VERSION,
             "displayName" to api.displayName,
             "description" to api.description,
             "inputSchema" to api.inputSchema,
             "outputSchema" to api.outputSchema,
             "executorKind" to api.executorKind,
-            "kind" to api.executorKind,
+            "kind" to "project_tool",
             "capabilities" to capabilitiesFor(api),
             "sideEffects" to sideEffectsFor(api),
             "dataFiles" to dataFilesFor(api),
@@ -69,8 +73,8 @@ object WorkbenchToolboxBuilder {
      * Builds the active Project Toolbox manifest.
      *
      * @param record Project registry record currently being exposed.
-     * @param apis Business API records owned by the Project.
-     * @param executionCounts Per-API execution count summary.
+     * @param apis Project Tool records owned by the Project.
+     * @param executionCounts Per-tool execution count summary.
      * @return JSON-safe Toolbox manifest for Project payloads and MCP resources.
      */
     fun toolboxPayload(
@@ -89,11 +93,11 @@ object WorkbenchToolboxBuilder {
     }
 
     /**
-     * Builds MCP tool descriptors for Project business APIs.
+     * Builds MCP tool descriptors for Project Tools.
      *
      * @param record Active Project record.
-     * @param apis Business APIs from the Project API registry.
-     * @param executionCounts Per-API execution count summary.
+     * @param apis Project Tools from the legacy registry.
+     * @param executionCounts Per-tool execution count summary.
      * @return MCP `tools/list` descriptors. Workbench control APIs are never accepted here.
      */
     fun mcpTools(
@@ -105,15 +109,46 @@ object WorkbenchToolboxBuilder {
     }
 
     /**
-     * Returns true when the MCP tool name belongs to this Project API.
+     * Returns true when the MCP tool name belongs to this Project Tool.
      *
      * @param projectId Project id used to derive the Toolbox namespace.
-     * @param api Business API candidate.
+     * @param api Project Tool candidate.
      * @param toolName External MCP tool name.
      * @return Whether `toolName` resolves to `api` under this Project's Toolbox.
      */
     fun matchesTool(projectId: String, api: WorkbenchApiRecord, toolName: String): Boolean {
         return toolName(projectId, api.apiId) == toolName.trim()
+    }
+
+
+    /**
+     * Returns the normalized one-step Project Tool run contract.
+     *
+     * @param api Project Tool registry record.
+     * @return JSON-safe run map. Missing declarations are inferred from executor kind.
+     */
+    fun runContract(api: WorkbenchApiRecord): Map<String, Any?> {
+        api.run?.takeIf { it.isNotEmpty() }?.let { return it }
+        return linkedMapOf("use" to defaultRunUse(api))
+    }
+
+    /**
+     * Reads the Project Tool run target as a string.
+     *
+     * @param api Project Tool registry record.
+     * @return `run.use` or an inferred built-in run target.
+     */
+    fun runUse(api: WorkbenchApiRecord): String {
+        return runContract(api)["use"]?.toString()?.trim().orEmpty()
+    }
+
+    private fun defaultRunUse(api: WorkbenchApiRecord): String {
+        return when (api.executorKind) {
+            WORKBENCH_COLLECTION_EXECUTOR_KIND -> "native.collection.${projectAction(api)}"
+            WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND -> "script"
+            WORKBENCH_AGENT_TASK_EXECUTOR_KIND -> "agent"
+            else -> "native.collection.${projectAction(api)}"
+        }
     }
 
     private fun toolboxTool(
@@ -150,6 +185,9 @@ object WorkbenchToolboxBuilder {
             "outputSchema" to mcpOutputSchema(api),
             "projectId" to record.projectId,
             "apiId" to api.apiId,
+            "toolId" to api.toolId,
+            "toolKind" to "project_tool",
+            "run" to runContract(api),
             "toolboxId" to toolboxId(record.projectId),
             "apiVersion" to TOOLBOX_API_VERSION,
             "executorKind" to api.executorKind,
@@ -167,11 +205,15 @@ object WorkbenchToolboxBuilder {
                 "future_bridge_tools",
                 "future_alpine_execution"
             )
-            WORKBENCH_SCHEMA_EXECUTOR_KIND -> listOf(
+            WORKBENCH_COLLECTION_EXECUTOR_KIND -> listOf(
                 "persistent_project_data",
-                "native_collection_crud"
+                "native_project_data"
             )
-            else -> listOf("persistent_project_data", "native_template")
+            WORKBENCH_AGENT_TASK_EXECUTOR_KIND -> listOf(
+                "oob_agent_runtime",
+                "oob_tool_composition"
+            )
+            else -> listOf("persistent_project_data", "project_tool")
         }
     }
 
@@ -188,9 +230,11 @@ object WorkbenchToolboxBuilder {
         return when {
             api.executorKind == WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND ->
                 listOf("data/items.json")
-            api.executorKind == WORKBENCH_SCHEMA_EXECUTOR_KIND ->
+            api.executorKind == WORKBENCH_COLLECTION_EXECUTOR_KIND ->
                 listOf("data/items.json")
-            else -> listOf("data/todos.json")
+            api.executorKind == WORKBENCH_AGENT_TASK_EXECUTOR_KIND ->
+                emptyList()
+            else -> listOf("data/items.json")
         }
     }
 
@@ -206,13 +250,6 @@ object WorkbenchToolboxBuilder {
 
     private fun examplesFor(api: WorkbenchApiRecord): List<Map<String, Any?>> {
         val inputs = when {
-            api.apiId == WORKBENCH_CAPTURE_INGEST_TOOL_ID ->
-                linkedMapOf("text" to "记一下：明天 3 点开会")
-            api.apiId in listOf(
-                WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID,
-                WORKBENCH_CAPTURE_PROMOTE_TOOL_ID,
-                WORKBENCH_CAPTURE_SUMMARIZE_TOOL_ID
-            ) -> linkedMapOf("item_id" to "capture-example")
             api.apiId.endsWith(".list") || api.apiId.endsWith(".read") -> linkedMapOf<String, Any?>()
             api.apiId.endsWith(".update") -> linkedMapOf("item_id" to "item-example", "title" to "Updated item")
             else -> if (api.apiId.endsWith(".archive")) {
@@ -276,6 +313,21 @@ object WorkbenchToolboxBuilder {
             if (nullable != null) return !nullable.toString().equals("true", ignoreCase = true)
         }
         return !spec?.toString().orEmpty().trim().endsWith("?")
+    }
+
+    private fun projectAction(api: WorkbenchApiRecord): String {
+        val id = "${api.apiId}.${api.toolId}".lowercase()
+        return when {
+            listOf(".archive", ".finish", ".complete", ".done").any { id.contains(it) } ->
+                "archive"
+            listOf(".update", ".edit", ".patch").any { id.contains(it) } ->
+                "update"
+            listOf(".list", ".read", ".query", ".search").any { id.contains(it) } ->
+                "list"
+            listOf(".create", ".add", ".new").any { id.contains(it) } ->
+                "create"
+            else -> "custom"
+        }
     }
 
     private fun apiSlug(apiId: String): String = slug(apiId.replace('.', '_'))

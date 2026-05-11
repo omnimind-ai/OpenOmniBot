@@ -3,34 +3,32 @@ package cn.com.omnimind.bot.mcp
 /**
  * Built-in MCP Prompts for OOB Workbench Project workflows.
  *
- * Prompts return standard user instructions only. They do not write files or call Workbench APIs
+ * Prompts return standard user instructions only. They do not write files or call Workbench tools
  * by themselves; clients should pass the returned message to `agent_run` or invoke MCP tools.
  */
 object McpPromptDefinitions {
     private val promptBodies = linkedMapOf(
-        "create_quick_capture_project" to """
-            Create an OOB Workbench Project for quick capture / 随手记.
-
-            Requirements:
-            - projectId: oob-workbench-v01-quick-note
-            - templateId: quick_capture_inbox
-            - name: 随手记 Inbox
-            - It should capture text, links, shared content, and screenshot references.
-            - Activate the Project after creation.
-            - Seed one sample note through the Project business API, not by editing data files.
-            - Open the native OOB Display when ready.
-            - Keep Workbench control APIs out of the Project business API list.
-        """.trimIndent(),
-        "create_schema_project" to """
-            Create an OOB Workbench schema_app Project from the user's domain.
+        "create_html_project" to """
+            Create an OOB Workbench Project with an HTML Display.
 
             Requirements:
             - Choose a stable oob-workbench-* projectId.
-            - Use templateId=schema_app unless the user explicitly requested a different template.
-            - Register only business APIs such as <entity>.create and <entity>.archive.
+            - Provide htmlFiles with at least frontend/html/index.html content.
+            - Use window.oob.callApi(apiId, inputs) for all Project Tool calls.
+            - Register only Project Tools that the displayed UI needs.
+            - Activate the Project after creation.
+            - Open the HTML Display when ready.
+            - Keep Workbench control tools out of the Project Tool list.
+        """.trimIndent(),
+        "create_project_display" to """
+            Create an OOB Workbench Project from the user's domain.
+
+            Requirements:
+            - Choose a stable oob-workbench-* projectId.
+            - Register only Project Tools such as <entity>.create and <entity>.archive.
             - Activate the Project.
             - Seed initial data through workbench_api_call or the corresponding MCP Toolbox tool.
-            - Open the native OOB Display when ready.
+            - Open the Workbench Display when ready.
         """.trimIndent(),
         "inspect_active_toolbox" to """
             Inspect the currently active OOB Project Toolbox.
@@ -38,8 +36,8 @@ object McpPromptDefinitions {
             Steps:
             - Read MCP resource oob://projects/active.
             - Read the active Project's oob://projects/{projectId}/toolbox resource.
-            - List available MCP Tools and identify dynamic tools in <toolbox>.<api> form.
-            - Do not assume Workbench control APIs are Project business tools.
+            - List available MCP Tools and identify dynamic tools in <toolbox>.<tool> form.
+            - Do not assume Workbench control tools are Project Tools.
         """.trimIndent(),
         "fix_project_last_error" to """
             Fix the active OOB Workbench Project's last error.
@@ -47,8 +45,8 @@ object McpPromptDefinitions {
             Steps:
             - Read oob://projects/active.
             - Read oob://projects/{projectId}/logs/api_calls.
-            - Identify the latest failed Project business API call.
-            - Propose a minimal fix using the Project contract and existing Workbench APIs.
+            - Identify the latest failed Project Tool call.
+            - Propose a minimal fix using the Project contract and existing Workbench tools.
             - If execution is needed, call the Project's dynamic MCP Toolbox tool or ask OOB Agent through agent_run.
         """.trimIndent()
     )

@@ -49,7 +49,8 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
   String? _activeThinkingCardId;
   String? _pendingAgentTextTaskId;
   final AgentStreamReducer _agentStreamReducer = const AgentStreamReducer();
-  AgentStreamTaskState? _agentStreamState;
+  final Map<String, AgentStreamTaskState> _agentStreamStates =
+      <String, AgentStreamTaskState>{};
 
   String? get currentDispatchTaskId;
 
@@ -124,7 +125,10 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
   }
 
   void handleAgentStreamEvent(AgentStreamEvent event) {
-    final reduceResult = _agentStreamReducer.reduce(_agentStreamState, event);
+    final reduceResult = _agentStreamReducer.reduce(
+      _agentStreamStates[event.taskId],
+      event,
+    );
     if (!reduceResult.accepted) {
       return;
     }
@@ -132,7 +136,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       reduceResult,
       event,
     );
-    _agentStreamState = reduceResult.nextState;
+    _agentStreamStates[event.taskId] = reduceResult.nextState;
     _lastAgentTaskId = event.taskId;
     _activeThinkingCardId = reduceResult.nextState.activeThinkingEntryId;
     currentThinkingStage = reduceResult.nextState.thinkingStage;
@@ -172,6 +176,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         return;
       case AgentStreamEventKind.completed:
         _applyAgentCompletedStreamEvent(
+          event,
           completedThinkingCardId: thinkingCardToFinalize,
         );
         return;
@@ -362,22 +367,22 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       }
       isAiResponding = false;
     });
-    clearAgentStreamSessionState();
+    clearAgentStreamSessionState(taskId: event.taskId);
     resetDispatchState();
     _persistAgentConversationSafely();
   }
 
-  void _applyAgentCompletedStreamEvent({String? completedThinkingCardId}) {
+  void _applyAgentCompletedStreamEvent(
+    AgentStreamEvent event, {
+    String? completedThinkingCardId,
+  }) {
     setState(() {
       currentThinkingStage = ThinkingStage.complete.value;
       isDeepThinking = false;
-      _finalizeThinkingCardInMessages(
-        _lastAgentTaskId ?? '',
-        completedThinkingCardId,
-      );
+      _finalizeThinkingCardInMessages(event.taskId, completedThinkingCardId);
       isAiResponding = false;
     });
-    clearAgentStreamSessionState();
+    clearAgentStreamSessionState(taskId: event.taskId);
     resetDispatchState();
     _persistAgentConversationSafely();
   }
@@ -400,7 +405,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       }
       isAiResponding = false;
     });
-    clearAgentStreamSessionState();
+    clearAgentStreamSessionState(taskId: event.taskId);
     resetDispatchState();
     _persistAgentConversationSafely();
   }
@@ -485,7 +490,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       }
       isAiResponding = false;
     });
-    clearAgentStreamSessionState();
+    clearAgentStreamSessionState(taskId: event.taskId);
     resetDispatchState();
     _persistAgentConversationSafely();
   }
@@ -566,7 +571,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       );
     }
 
-    clearAgentStreamSessionState();
+    clearAgentStreamSessionState(taskId: taskId);
     resetDispatchState();
     _persistAgentConversationSafely();
   }
@@ -690,12 +695,28 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     return int.tryParse(messageId.substring(baseId.length + 1)) ?? 0;
   }
 
-  void clearAgentStreamSessionState() {
-    _lastAgentTaskId = null;
-    _pendingAgentTextTaskId = null;
-    _activeToolCardId = null;
-    _agentStreamState = null;
-    _activeThinkingCardId = null;
+  void clearAgentStreamSessionState({String? taskId}) {
+    final normalizedTaskId = taskId?.trim() ?? '';
+    if (normalizedTaskId.isEmpty) {
+      _lastAgentTaskId = null;
+      _pendingAgentTextTaskId = null;
+      _activeToolCardId = null;
+      _agentStreamStates.clear();
+      _activeThinkingCardId = null;
+    } else {
+      if (_lastAgentTaskId == normalizedTaskId) {
+        _lastAgentTaskId = null;
+      }
+      if (_pendingAgentTextTaskId == normalizedTaskId) {
+        _pendingAgentTextTaskId = null;
+      }
+      _agentStreamStates.remove(normalizedTaskId);
+      final activeThinkingState = _agentStreamStates.values.firstWhere(
+        (state) => state.activeThinkingEntryId != null,
+        orElse: () => AgentStreamTaskState(taskId: normalizedTaskId),
+      );
+      _activeThinkingCardId = activeThinkingState.activeThinkingEntryId;
+    }
   }
 
   void interruptActiveToolCard({String? summary}) {

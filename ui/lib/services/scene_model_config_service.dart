@@ -153,6 +153,8 @@ class SceneModelConfigService {
           .map((item) => SceneCatalogItem.fromMap(item as Map?))
           .where((item) => item.sceneId.isNotEmpty)
           .toList();
+    } on MissingPluginException {
+      return const [];
     } on PlatformException {
       return const [];
     }
@@ -171,6 +173,8 @@ class SceneModelConfigService {
                 item.modelId.isNotEmpty,
           )
           .toList();
+    } on MissingPluginException {
+      return const [];
     } on PlatformException {
       return const [];
     }

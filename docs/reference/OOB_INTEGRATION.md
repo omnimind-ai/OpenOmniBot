@@ -1,124 +1,117 @@
 # OOB Workbench Integration
 
-This note tracks the native Workbench boundary used by OOB Project editing.
+This note defines the current Workbench boundary used by OOB Project creation, display, and iteration.
 
-## Project Templates
+## Product Role
 
-- `todo_log_demo` is only the demo template. It registers `todo.add` and `todo.finish`, persists `data/todos.json`, and renders `/workbench/todo_log`.
-- `schema_app` is the first generic Project template. It creates an OOB-native schema display, registers Project APIs such as `<entity>.create`, `<entity>.archive`, `<entity>.update`, and `<entity>.list`, persists `data/items.json`, and renders `/workbench/schema_app`.
-- `quick_capture_inbox` is the daily-use validation template for 随手记/Inbox Projects. It registers `capture.ingest`, `capture.archive`, `capture.promote_to_todo`, and `capture.summarize`, persists `data/items.json`, writes workspace-script contract artifacts under `backend/`, and renders `/workbench/quick_capture`.
+OOB Workbench is an AI-product display layer. It is not the product being generated. Its job is to make an Agent result, workflow state, report, or dataset visible inside OOB, let the user interact with it, and let the Agent update the same surface quickly.
 
-## Frontend And Backend Contract
+The target loop is:
 
-- Project creation remains a Workbench control API: `workbench_project_create`.
-- Project iteration remains a Workbench control API: `workbench_project_update`
-  updates name/shortName/description and can merge new Display pages plus
-  Project business APIs into the same Project. It must not create a replacement
-  Project just to add features.
-- Active Project selection remains a Workbench control API:
-  `workbench_project_activate`, `workbench_project_active_get`, and
-  `workbench_project_deactivate`.
-- Project business APIs remain in the Project API Registry and are called through `workbench_api_call`.
-- External MCP clients should treat the active Project as a Toolbox. `tools/list`
-  returns fixed OOB MCP tools plus active Project dynamic tools in
-  `<toolbox_id>.<api_slug>` form, such as `quick_note.capture_ingest`.
-  Dynamic tools dispatch to the same Project API executor with
-  `caller=mcp_toolbox`; external clients no longer need to know the internal
-  `workbench_api_call(projectId, apiId)` shape.
-- Project creation/import progress remains a Workbench control API: `workbench_project_progress_get`.
-- OSS/GitHub source ingest remains a Workbench control API: `workbench_project_ingest_oss`. URL-only ingest records `requiresFetch=true`; local downloaded source paths are copied and analyzed.
-- Generated frontend contracts live in `frontend/page_spec.json`. This is the
-  immediate runtime surface rendered by the installed OOB app.
-- Custom Flutter source can live under `frontend/flutter/` as a Project asset
-  generated or edited from Alpine directly or through
-  `workbench_project_update.flutterFiles`. OOB refreshes
-  `frontend/flutter/manifest.json` after bounded writes. It is editable,
-  exportable, and buildable, but new Dart code there is not hot-loaded into the
-  already installed OOB APK; it needs a controlled Flutter build/install path
-  before it can run as native code. Keep `page_spec.json` as the fast
-  preview/hot-update surface.
-- Backend Tool Contracts live in `backend/api_spec.json` and include MCP
-  `toolName`, `apiVersion`, schemas, capabilities, side effects, data/log files,
-  and examples.
-- Source ingest contracts live in `source/manifest.json`.
-- UI clicks and AI calls share the same native executor path and append to `logs/api_calls.jsonl`.
-- MCP read-only context is exposed through `resources/list` and
-  `resources/read` for Project manifest, active Project, Toolbox, progress, API
-  logs, and source manifest. MCP prompt templates are exposed through
-  `prompts/list` and `prompts/get`.
-- Authenticated backend E2E can call `POST /mcp/workbench/call` with the local MCP/Dashboard bearer token. This debug transport calls the same native `WorkbenchProjectStore` methods but is not part of MCP tool discovery and never enters Project API Registry. `workbench_project_open` on this route switches to the Android main thread before navigating the native OOB UI through `TaskCompletionNavigator`, so the test can prove the actual Flutter Display is visible.
-- The same authenticated debug route has local-only model-provider setup helpers: `debug_model_provider_configure` and `debug_model_provider_get`. They are for device E2E setup, write the normal provider/profile stores, sync Agent AI config, and return only `apiKeyConfigured` rather than the raw key.
+```text
+AI output -> user sees it -> user says one thing -> AI updates it -> user sees it
+```
 
-## Display Boundary
+## Project Contract
 
-The Home Project surface embeds the active Project display as a child window. Schema Projects use the generic Flutter schema display; Quick Capture Projects use the native `workbench_quick_capture` display with multiple Display pages (`capture`, `inbox`, `archive`) that share one Project data/API contract; `todo_log_demo` remains a regression/demo template. Display navigation belongs inside the right-side Workbench Project surface, so switching pages never replaces the left Home conversation. The Project manager remains a secondary control surface, but its landing page is only a compact Project list plus the current active Project. The active summary and each Project row should show one product-language sentence about what the Project does; Project ids, API counts, template ids, and paths stay out of this compact list. Tap a Project row to open details for displays, Workspace, export, delete, and read-only API execution counts. Activation is a direct state toggle: the check control activates an inactive Project and deactivates the active Project, while details expose the same state as an icon action without coupling activation to returning Home. Project display name and short name are user-editable metadata and must update the Project registry plus `frontend/page_spec.json`.
+A Workbench Project is a persistent container with:
 
-Workbench management UI should follow the rest of OOB: icon-first controls with short tooltips, not long explanatory blocks. Keep technical ids, routes, paths, executor names, and implementation counts out of the first visual layer; show names, one-line purpose, small status, and direct icon actions first.
+- `projectId`: stable id for the container.
+- Project Tools: stable business actions shared by UI clicks, Agent calls, and MCP dynamic tools.
+- `initialItems`: optional structured state stored in `data/items.json`.
+- `htmlFiles`: optional HTML/CSS/JS files stored under `frontend/html/`.
+- `flutterFiles`: optional limited Dart files stored under `frontend/flutter/`.
+- Runtime files: `project.json`, `frontend/page_spec.json`, `backend/api_spec.json`, logs, and export metadata.
 
-The embedded Project toolbar stays fixed to four actions: open the current Project management page, show Project info, open the current Display fullscreen, and refresh the Project payload. Project switching and deeper management stay in `/workbench/projects`.
+The creation path is one generic control API:
 
-Generated Displays are application surfaces, not Project summary cards. The first viewport should show domain objects, inputs, filters, product status, and business actions. `frontend/page_spec.json` may carry API binding metadata, but visible UI must not expose Project id, template id, Toolbox/MCP tool names, API count, executor kind, Workspace path, `backend/api_spec.json`, data/log paths, progress rows, or implementation badges such as `OOB native UI`. Those belong in `/workbench/projects`, the info popup, MCP resources, logs, or developer documentation.
+```text
+workbench_project_create(projectId, name, prompt, entityName, initialItems, apis, htmlFiles, flutterFiles)
+```
 
-Project iteration updates the same Project. Adding a feature should call `workbench_project_update` to extend `frontend/page_spec.json` displays/actions, `backend/api_spec.json` business tools, and optional Project-owned Flutter source through `flutterFiles`; it then records the change in `logs/hot_updates.jsonl` and refreshes `frontend/flutter/manifest.json`. It should not create a replacement Project unless the user explicitly asks for a new app. Generic schema Projects currently execute `create/archive/update/list` style business APIs through the native collection executor. More custom verbs can be declared as Tool Contract entries first, then backed by `workspace_python_script`, provider, or a later Flutter/source build flow.
+Project operations remain Workbench control APIs:
 
-## Workspace Cache Boundary
+- `workbench_project_list`
+- `workbench_project_get`
+- `workbench_project_open`
+- `workbench_project_activate`
+- `workbench_project_active_get`
+- `workbench_project_deactivate`
+- `workbench_project_update`
+- `workbench_project_hot_update`
+- `workbench_project_export`
+- `workbench_project_delete`
+- `workbench_project_progress_get`
+- `workbench_project_ingest_oss`
+- `workbench_api_list`
+- `workbench_api_call`
 
-Workspace entry restores the last cached Workspace container state first. If the user last viewed file browsing, OOB reopens the cached Workspace directory when it still exists under `/workspace`. If the user last viewed the Project Display container, OOB reopens that Project frontend surface. The top Workbench mark is the explicit toggle between the active Project frontend and Workspace file browsing; direct Workspace entry should not reset the user back to a fixed default page.
+Project Tools are not Workbench control APIs. They are business actions owned by a Project.
 
-## Current E2E Shape
+## Renderer Boundary
 
-The normal prompt-generated path is `schema_app`: Home input -> Agent calls
-`workbench_project_create` -> Agent calls `workbench_project_activate` -> Agent
-seeds state through `workbench_api_call` -> OOB opens
-`/workbench/schema_app?projectId=<id>`. The generated frontend and the Agent use
-the same Project APIs, data files, and `logs/api_calls.jsonl`.
+The right-side Workspace host dispatches by renderer:
 
-The deterministic device proof for the daily-use template is `quick_capture_inbox`:
-Dashboard-token call -> `workbench_project_create` -> `workbench_project_activate`
--> `workbench_api_call(capture.ingest)` -> `workbench_project_open` -> native
-`/workbench/quick_capture?projectId=oob-workbench-vlm-quick-note` on
-`emulator-5554`. The proof must include app-data files under
-`workspace/projects/oob-workbench-vlm-quick-note/` and a live screenshot of
-`随手记 Inbox · NOTE` as an app surface. The 2026-05-10 final smoke showed
-persisted active/archived items and Project API writes through both
-`mcp_dashboard` and the native Flutter UI. Receipt/invoice text now lands in the current
-frontend-supported `summary` bucket instead of being misclassified as `todo`.
+- `html_webview`: loads `/workbench/html?projectId=<id>` and serves `frontend/html/`.
+- `oob_project_display`: renders generic structured data and actions through Flutter.
+- `flutter_eval`: loads limited Project-owned Dart from `frontend/flutter/`.
 
-The same run also validated the model-provider setup path enough for `vlm_task`
-to reach DashScope (`scene.vlm.operation.primary` bound to `dashboard-e2e`).
-It did not prove full VLM-to-Agent Project creation: VLM could click OOB Home,
-but Flutter text entry exposed no focused editable accessibility node, and
-in-process `input text/keyevent` is denied `INJECT_EVENTS` on this emulator.
-Do not mark the VLM/toolvox Project-creation path complete until a real in-app
-runner or reliable text-entry path submits the prompt and the resulting
-`workspace/projects/<project-id>/project.json` exists.
+HTML is the first-class path for rich reports, charts, comparison views, dashboards, and fast visual iteration. The page can call OOB only through the bridge:
 
-The approved MCP runner for the real in-app Agent path is `agent_run`. It creates
-or reuses an OOB conversation, calls the same `AgentRunService.startConversationRun`
-path used by WebChat/Home, and returns the accepted `taskId` plus
-`conversationId`. It does not expose Workbench control APIs; the Agent must still
-call internal Workbench tools itself, and success still requires runtime-file
-verification under `workspace/projects/<project-id>/`.
+```js
+await window.oob.callApi(apiId, inputs)
+await window.oob.getProject()
+window.oob.selectElement(payload)
+```
 
-## Startup Boundary
+Native/mobile capability must stay behind registered Project Tools. HTML must not receive arbitrary Android, filesystem, shell, or network bridges.
 
-Flutter first frame must not block on non-critical scheduler/workspace path work.
-The app startup path only awaits storage and background service state with short
-timeouts before allowing the first frame; scheduled-task and workspace-path
-initialization continue asynchronously. This keeps Workbench Project pages
-reachable during backend E2E on a fresh debug install.
+The default Project Display is a fallback for structured state and common actions: lists, forms, buttons, text, and status. It is a generic renderer, not a named product concept.
 
-## Backend Runtime Boundary
+`flutter_eval` is supplemental. It is useful only when HTML and the default Project Display are insufficient and the runtime limits are acceptable.
 
-OOB Workbench is now the runtime container for backend assets as well as UI:
+## Display Rules
 
-- Project creation writes `logs/project_progress.jsonl` and exposes the latest row as `lastProgress` in the Project payload.
-- `project.json` and `backend/api_spec.json` record the derived Toolbox manifest
-  so the active Project can be mounted through MCP dynamic tools.
-- `backend/api_spec.json` records executor metadata, control API names, persistence paths, source refs, Tool Contract fields, and examples so a Project API can later move from native-backed execution to Bridge/Alpine without changing internal `workbench_api_call` or external MCP Toolbox tool names.
-- `workbench_project_ingest_oss` imports local source snapshots under `source/repos/<source-id>/`, skips dependency/build directories, detects package files such as `package.json`, `pyproject.toml`, `pubspec.yaml`, and Gradle files, and stores entrypoint hints in `source/manifest.json`.
-- GitHub URL-only ingest is deliberately metadata-only. It is not a network fetch; after terminal/tool fetch downloads the repo, call the same API with `sourcePath`.
-- Workbench control APIs still do not appear in `workbench_api_list`; only Project business APIs are exposed to the generated frontend.
-- Workbench control APIs still do not appear in active Project Toolbox dynamic tools; only Project business APIs are mounted.
-- `/mcp/workbench/call` is the deterministic Dashboard-token test transport for Project backend runtime operations when VLM/model-provider setup is not the test subject.
-- `/mcp/call_tool` with `name=agent_run` is the deterministic MCP runner for the normal Agent/tool path when Flutter Home text entry is not the test subject; `/mcp/call_tool` with an active dynamic Toolbox tool name is the external MCP business API path.
+Generated Displays are application surfaces, not Project summary cards. The first viewport should show the AI output or workflow state itself: records, status, filters, forms, evidence, summaries, and business actions.
+
+Visible Displays must not expose control-plane details such as Project ids, Toolbox names, API counts, executor kinds, Workspace paths, data/log paths, source spec paths, progress rows, or implementation badges. Those details belong in `/workbench/projects`, the info popup, MCP resources, logs, or developer documentation.
+
+The Home Project surface embeds the active Project Display as a child window. Display navigation stays inside the right-side Workbench Project surface so switching pages never replaces the left Home conversation. The Project manager is a secondary control surface for activation, display selection, Workspace access, export, delete, and debug details.
+
+## Iteration Boundary
+
+Feature changes update the same Project:
+
+1. `workbench_project_hot_update` records the user request and current `frontendContext`.
+2. If HTML sources exist, the Agent should edit the smallest relevant HTML/CSS/JS file and call `workbench_project_update(htmlFiles=...)`.
+3. If Flutter sources exist, the Agent rewrites the full supported Dart file and calls `workbench_project_update(flutterFiles=...)`.
+4. If only structured state is involved, the Agent calls existing Project Tools through `workbench_api_call`.
+
+Adding a reusable backend action means extending the Project Tool contract and updating `backend/api_spec.json` through `workbench_project_update`, not creating a replacement Project.
+
+## MCP Boundary
+
+External MCP clients see:
+
+- fixed OOB MCP tools for control operations and Agent entry points
+- dynamic Project Toolbox tools for the active Project
+- read-only MCP resources for Project manifest, active Project, Toolbox, progress, API logs, and source manifest
+- reusable MCP prompts for common Workbench workflows
+
+Dynamic Project tools use `<toolbox_id>.<api_slug>` names and dispatch to the same Project Tool executor with `caller=mcp_toolbox`.
+
+## Source And Runtime Boundary
+
+Project runtime files are owned by `WorkbenchProjectStore`:
+
+- `frontend/html/`: editable WebView source
+- `frontend/flutter/`: editable limited Dart source
+- `frontend/page_spec.json`: display metadata and generic Project Display state
+- `backend/api_spec.json`: Project Tool contract
+- `data/items.json`: default structured state
+- `logs/api_calls.jsonl`: business action audit log
+- `logs/hot_updates.jsonl`: user-driven iteration log
+- `logs/project_progress.jsonl`: creation/import/update progress
+- `source/manifest.json`: imported source assets
+
+OSS/GitHub URL ingest is metadata-only until source is fetched through an approved terminal/tool path. Local source snapshots are copied under `source/repos/<source-id>/`, analyzed, and recorded in `source/manifest.json`.

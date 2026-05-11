@@ -1,11 +1,10 @@
 import 'package:ui/features/workbench/models/workbench_models.dart';
-import 'package:ui/features/workbench/services/workbench_todo_log_service.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart';
 
 String workbenchRouteForDisplay(
   WorkbenchProject project,
   WorkbenchDisplaySpec display, {
-  String fallbackRoute = '/workbench/quick_capture',
+  String fallbackRoute = '/workbench/project',
 }) {
   final route = display.route.trim().isEmpty
       ? project.route.trim()
@@ -22,7 +21,7 @@ Map<String, Object?> buildWorkbenchAnnotationFrontendContext({
   required WorkbenchAnnotationPayload payload,
   required String prompt,
   String source = 'workbench_annotation_canvas',
-  String fallbackRoute = '/workbench/quick_capture',
+  String fallbackRoute = '/workbench/project',
 }) {
   return payload.toFrontendContext(
     projectId: project.projectId,
@@ -41,7 +40,7 @@ Map<String, Object?> buildWorkbenchVisibleFrontendContext({
   required WorkbenchProject project,
   required WorkbenchDisplaySpec display,
   String source = 'workbench_flutter_display',
-  String fallbackRoute = '/workbench/quick_capture',
+  String fallbackRoute = '/workbench/project',
   Map<String, Object?> extraVisibleState = const {},
 }) {
   return {
@@ -65,54 +64,25 @@ Map<String, Object?> _visibleStateForProject(
   WorkbenchDisplaySpec display,
 ) {
   final common = <String, Object?>{
-    'templateId': project.templateId,
     'projectName': project.name,
     'displayTitle': display.label,
     'displayKind': display.kind,
     'displayRoute': display.route,
     'apiIds': project.tools.map((tool) => tool.id).toList(growable: false),
   };
-  if (project.templateId == workbenchTodoTemplateId ||
-      display.route.startsWith('/workbench/todo_log')) {
-    return {
-      ...common,
-      'openTodoCount': project.openTodos.length,
-      'finishedTodoCount': project.finishedTodos.length,
-      'todoTitles': project.todos
-          .take(8)
-          .map((todo) => todo.title)
-          .toList(growable: false),
-    };
-  }
-  if (project.templateId == 'schema_app' ||
-      display.route.startsWith('/workbench/schema_app')) {
-    return {
-      ...common,
-      'entityName':
-          project.schema['entityName']?.toString().trim().isNotEmpty == true
-          ? project.schema['entityName'].toString()
-          : 'item',
-      'description': project.schema['description']?.toString() ?? '',
-      'activeItemCount': project.activeItems.length,
-      'archivedItemCount': project.archivedItems.length,
-      'itemTitles': project.items
-          .take(8)
-          .map((item) => item.title)
-          .toList(growable: false),
-      'schemaKeys': project.schema.keys.toList(growable: false),
-    };
-  }
-  if (project.templateId == workbenchQuickCaptureTemplateId ||
-      display.route.startsWith('/workbench/quick_capture')) {
-    return {
-      ...common,
-      'activeItemCount': project.activeCaptureItems.length,
-      'archivedItemCount': project.archivedCaptureItems.length,
-      'itemTitles': project.captureItems
-          .take(8)
-          .map((item) => item.title)
-          .toList(growable: false),
-    };
-  }
-  return common;
+  return {
+    ...common,
+    'entityName':
+        project.pageSpec['entityName']?.toString().trim().isNotEmpty == true
+        ? project.pageSpec['entityName'].toString()
+        : 'item',
+    'description': project.pageSpec['description']?.toString() ?? '',
+    'activeItemCount': project.activeItems.length,
+    'archivedItemCount': project.archivedItems.length,
+    'itemTitles': project.items
+        .take(8)
+        .map((item) => item.title)
+        .toList(growable: false),
+    'pageSpecKeys': project.pageSpec.keys.toList(growable: false),
+  };
 }

@@ -49,6 +49,9 @@ class AssistsCoreChannel {
                 "createAgentTask" -> {
                     assistsCoreManager!!.createAgentTask( call, result)
                 }
+                "agentRunList" -> {
+                    assistsCoreManager!!.agentRunList(call, result)
+                }
                 "captureWorkbenchAnnotationAttachment" -> {
                     assistsCoreManager!!.captureWorkbenchAnnotationAttachment(call, result)
                 }

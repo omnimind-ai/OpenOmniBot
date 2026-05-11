@@ -150,21 +150,13 @@ class CatView @JvmOverloads constructor(
 
     fun doAnimationOnce(animRes: Int, imageRes: Int, animTimes: Long, onAnimEnd: () -> Unit = {}) {
         mainJob.cancel()
-        mainJob = CoroutineScope(Dispatchers.Main)
-        mainJob.launch {
-            playCatAnimationTimes(animRes, imageRes, 0)
-            delay(animTimes)
-            ivCat.setImageResource(imageRes)
-            onAnimEnd.invoke()
-        }
+        ivCat.setImageResource(imageRes)
+        onAnimEnd.invoke()
     }
 
     fun doAnimation(animRes: Int, imageRes: Int) {
         mainJob.cancel()
-        mainJob = CoroutineScope(Dispatchers.Main)
-        mainJob.launch {
-            playCatAnimationTimes(animRes, imageRes, -1)
-        }
+        ivCat.setImageResource(imageRes)
     }
 
     var resource: AnimatedImageDrawable? = null
@@ -235,12 +227,8 @@ class CatView @JvmOverloads constructor(
         onAnimEnd: () -> Unit = {}
     ) {
         mainJob.cancel()
-        mainJob = CoroutineScope(Dispatchers.Main)
-        mainJob.launch {
-            playCatAnimationTimes(R.raw.anim_cat_finish, -1, 0)
-            delay(2500)
-            onAnimEnd.invoke()
-        }
+        ivCat.setImageResource(R.mipmap.ic_cat_normal)
+        onAnimEnd.invoke()
     }
 
     fun cancelAnimation() {

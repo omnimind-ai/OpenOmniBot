@@ -23,7 +23,7 @@
     {
       "id": "oob-native-workbench",
       "name": "oob-native-workbench",
-      "description": "Build OOB-native Workbench projects that bind Skill-driven workflows, Project APIs, Workspace files, and Flutter frontend displays.",
+      "description": "Build OOB-native Workbench projects that bind Skill-driven workflows, Project Tools, Workspace files, and Flutter frontend displays.",
       "assetPath": "builtin_skills/oob-native-workbench",
       "hasScripts": false,
       "hasReferences": false,

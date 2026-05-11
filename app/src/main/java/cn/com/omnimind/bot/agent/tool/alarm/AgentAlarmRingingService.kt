@@ -19,12 +19,15 @@ import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import cn.com.omnimind.bot.R
 import cn.com.omnimind.bot.activity.MainActivity
+import com.tencent.mmkv.MMKV
 
 class AgentAlarmRingingService : Service() {
 
     companion object {
         private const val ACTION_START_RINGING =
             "cn.com.omnimind.bot.agent.ACTION_START_RINGING"
+        private const val ACTION_STOP_RINGING =
+            "cn.com.omnimind.bot.agent.ACTION_STOP_RINGING"
         private const val CHANNEL_ID = "agent_alarm_ringing_channel"
         private const val CHANNEL_NAME = "闹钟响铃"
 
@@ -52,7 +55,13 @@ class AgentAlarmRingingService : Service() {
         }
 
         fun stop(context: Context) {
-            context.stopService(Intent(context, AgentAlarmRingingService::class.java))
+            val appContext = context.applicationContext
+            runCatching {
+                appContext.startService(Intent(appContext, AgentAlarmRingingService::class.java).apply {
+                    action = ACTION_STOP_RINGING
+                })
+            }
+            appContext.stopService(Intent(appContext, AgentAlarmRingingService::class.java))
         }
     }
 
@@ -62,16 +71,22 @@ class AgentAlarmRingingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP_RINGING) {
+            stopRingingAndSelf()
+            return START_NOT_STICKY
+        }
+
         if (intent?.action != ACTION_START_RINGING) {
-            stopSelf()
+            stopRingingAndSelf()
             return START_NOT_STICKY
         }
 
         val alarmId = intent.getStringExtra(EXTRA_ALARM_ID).orEmpty()
         if (alarmId.isBlank()) {
-            stopSelf()
+            stopRingingAndSelf()
             return START_NOT_STICKY
         }
+        MMKV.defaultMMKV().encode(AgentAlarmToolService.KEY_CURRENT_RINGING_ALARM_ID, alarmId)
 
         val title = intent.getStringExtra(EXTRA_ALARM_TITLE).orEmpty().ifBlank { "提醒" }
         val message = intent.getStringExtra(EXTRA_ALARM_MESSAGE).orEmpty().ifBlank { "闹钟响了" }
@@ -90,7 +105,30 @@ class AgentAlarmRingingService : Service() {
     override fun onDestroy() {
         stopAlarmAudio()
         stopVibrationLoop()
+        stopForegroundCompat()
+        clearCurrentRingingAlarmId()
         super.onDestroy()
+    }
+
+    private fun stopRingingAndSelf() {
+        stopAlarmAudio()
+        stopVibrationLoop()
+        stopForegroundCompat()
+        clearCurrentRingingAlarmId()
+        stopSelf()
+    }
+
+    private fun stopForegroundCompat() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+    }
+
+    private fun clearCurrentRingingAlarmId() {
+        MMKV.defaultMMKV().removeValueForKey(AgentAlarmToolService.KEY_CURRENT_RINGING_ALARM_ID)
     }
 
     private fun buildNotification(alarmId: String, title: String, message: String): Notification {

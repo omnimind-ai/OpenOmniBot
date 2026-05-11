@@ -322,6 +322,46 @@ object McpToolExecutors {
             McpResponseBuilder.buildErrorText("Agent run failed: ${error.message}")
         }
     }
+
+
+    /**
+     * Submits a generic OOB tool call request through the normal Agent runtime.
+     *
+     * @param context Android application context used by [executeAgentRun].
+     * @param args MCP arguments containing `toolName`, optional `arguments`, and optional `goal`.
+     * @return Accepted Agent task response. Completion is observed through existing Agent channels.
+     */
+    suspend fun executeOobToolCall(
+        context: Context,
+        args: Map<String, Any?>?
+    ): Map<String, Any?> {
+        val requestArgs = args ?: emptyMap()
+        val toolName = requestArgs["toolName"]?.toString()?.trim().orEmpty()
+        if (toolName.isEmpty()) {
+            return McpResponseBuilder.buildErrorText("Missing toolName")
+        }
+        val toolArgs = (requestArgs["arguments"] as? Map<*, *>)
+            ?.entries
+            ?.associate { it.key.toString() to it.value }
+            ?: emptyMap<String, Any?>()
+        val goal = requestArgs["goal"]?.toString()?.trim().orEmpty()
+        val prompt = buildString {
+            appendLine("Call this OOB capability through the normal Agent tool chain.")
+            appendLine()
+            appendLine("Tool: $toolName")
+            if (goal.isNotEmpty()) appendLine("Goal: $goal")
+            appendLine("Arguments JSON: $toolArgs")
+            appendLine()
+            appendLine("Use existing OOB tools and permissions. Do not create a new Project unless the user explicitly asked for one.")
+        }
+        return executeAgentRun(
+            context,
+            linkedMapOf(
+                "userMessage" to prompt,
+                "title" to "OOB Tool Call: $toolName"
+            )
+        )
+    }
     
     private fun outcomeToMcpResponse(outcome: VlmToolOutcome): Map<String, Any?> {
         val state = McpTaskManager.getTask(outcome.taskId)

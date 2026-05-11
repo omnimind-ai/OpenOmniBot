@@ -413,11 +413,12 @@ object AgentToolDefinitions {
             "List exact_alarm reminders created and managed by this app.",
         "查看结果后再决定是否删除或继续创建。" to
             "Review the result before deciding whether to delete or create more reminders.",
-        "按 alarmId 删除本应用创建并托管的 exact_alarm 提醒闹钟。" to
-            "Delete an exact_alarm reminder created and managed by this app by alarmId.",
+        "按 alarmId 删除本应用创建并托管的 exact_alarm 提醒闹钟；未传 alarmId 时停止并清空所有应用内 exact_alarm 提醒闹钟。" to
+            "Delete an exact_alarm reminder created and managed by this app by alarmId. If alarmId is omitted, stop and clear all in-app exact_alarm reminders.",
         "删除后等待工具结果，再向用户确认。" to
             "Wait for the tool result after deleting, then confirm with the user.",
-        "闹钟 ID。" to "Alarm ID.",
+        "可选闹钟 ID；用户只要求关闭当前或全部提醒时可不传。" to
+            "Optional alarm ID. Omit it when the user asks to stop the current reminder or all reminders.",
         "查询设备日历账户列表，可用于选择 calendarId。" to
             "Query the device's calendar accounts so the agent can choose a calendarId.",
         "查看结果后再决定新建或管理日程。" to
@@ -550,7 +551,7 @@ object AgentToolDefinitions {
             put("toolType", "builtin")
             put(
                 "description",
-                "使用视觉语言模型执行手机屏幕操作任务。该工具会阻塞等待到任务完成、需要用户输入、屏幕锁定或超时，再把终态结果返回给模型。若需要最终整理文本，必须设置 needSummary=true。"
+                "使用视觉语言模型执行手机当前屏幕操作任务，只用于点击、滑动、输入、打开 App 或跨 App 自动化。不要用于用户上传图片/截图/照片的识别、OCR、解释、总结或对比；这类图片已在多模态对话里，应该直接回答。该工具会阻塞等待到任务完成、需要用户输入、屏幕锁定或超时，再把终态结果返回给模型。若需要最终整理文本，必须设置 needSummary=true。"
             )
             putJsonObject("parameters") {
                 put("type", "object")
@@ -1450,22 +1451,13 @@ object AgentToolDefinitions {
             put("name", "workbench_project_create")
             put("displayName", "创建 Workbench Project")
             put("toolType", "workbench")
-            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是审慎控制面能力，只有用户明确要求创建/新建 Project 时才调用，不会出现在 Project 自己的业务 API 列表里。支持 todo_log_demo、schema_app 和 quick_capture_inbox；不要直接写 registry 文件，也不要生成 HTML/WebView。生成的 Display 必须是用户应用界面，只展示业务工作流，不展示 Project id、API 数量、executor、Toolbox、Workspace 或日志路径等控制面摘要。")
+            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是审慎控制面能力，只有用户明确要求创建/新建 Project 时才调用，不会出现在 Project 自己的工具列表里。OOB Workbench 是 AI 产品输出展示层：AI 提供 projectId、Project Tools、持久化初始数据和可显示的 HTML/Flutter/page spec 资产，右侧 Flutter Workspace Host 负责优雅展示与交互。报告、图表、富文本、对比或快速局部视觉编辑优先通过 htmlFiles 创建内嵌 WebView renderer；结构化数据操作通过 Project Tools 和默认 Project Display 呈现；flutterFiles 只作为受限 flutter_eval 补充路径。不要直接写 registry 文件。Display 只展示业务工作流，不展示 Project id、工具数量、executor、Toolbox、Workspace 或日志路径等控制面摘要。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
                     putJsonObject("projectId") {
                         put("type", "string")
-                        put("description", "Project id，例如 oob-workbench-todo-log。只能包含字母、数字、下划线和连字符。")
-                    }
-                    putJsonObject("templateId") {
-                        put("type", "string")
-                        put("description", "Project 模板 id。todo_log_demo 用于旧 Todo demo；schema_app 用于通用 prompt 生成的 OOB 原生 Project；quick_capture_inbox 用于用户明确要求创建随手记/Inbox Project 时。")
-                        putJsonArray("enum") {
-                            add("todo_log_demo")
-                            add("schema_app")
-                            add("quick_capture_inbox")
-                        }
+                        put("description", "Project id，例如 oob-workbench-research-summary。只能包含字母、数字、下划线和连字符。")
                     }
                     putJsonObject("name") {
                         put("type", "string")
@@ -1475,30 +1467,33 @@ object AgentToolDefinitions {
                         put("type", "string")
                         put("description", "用户原始需求。Workbench 会把它写入 Project 源码规格，用于后续编辑和拆分复盘。")
                     }
-                    putJsonObject("initialTodos") {
-                        put("type", "array")
-                        put("description", "可选初始 todo 标题数组，仅 todo_log_demo 使用。")
-                    }
                     putJsonObject("entityName") {
                         put("type", "string")
-                        put("description", "schema_app 使用。Project 管理的业务实体名，例如 Note、Expense、Habit。")
+                        put("description", "可选。Project 管理的业务实体名，例如 Note、Expense、Habit。")
                     }
                     putJsonObject("description") {
                         put("type", "string")
-                        put("description", "schema_app 使用。生成应用界面的简短业务说明；不要写 Project/API/Toolbox/日志/Workspace 等控制面摘要。")
+                        put("description", "可选。Display 的简短业务说明；不要写 Project/Toolbox/日志/Workspace 等控制面摘要。")
                     }
                     putJsonObject("initialItems") {
                         put("type", "array")
-                        put("description", "schema_app 使用。可选初始条目数组，可传字符串或对象。")
+                        put("description", "可选初始条目数组，可传字符串或对象，写入 data/items.json。")
                     }
                     putJsonObject("apis") {
                         put("type", "array")
-                        put("description", "schema_app 可选业务 API 规格。每项可包含 apiId、toolId、displayName、description、inputSchema、outputSchema、executorKind。若不传，OOB 会按 entityName 生成 <entity>.create 与 <entity>.archive。quick_capture_inbox 会注册 capture.ingest/archive/promote_to_todo/summarize。")
+                        put("description", "可选 Project Tool 规格。每项可包含 apiId 或 toolId、displayName、description、inputSchema、outputSchema、run。run.use 可为 native.collection.create/archive/update/list、script、agent、oob.<tool> 或 mcp.<tool>。简单本地数据操作不需要 AI；复杂 OOB 能力组合可用 agent/oob.*。")
+                    }
+                    putJsonObject("htmlFiles") {
+                        put("type", "array")
+                        put("description", "可选。创建可即时运行的 HTML Display，路径限定在 frontend/html/ 内。每项包含 path 和 content，建议至少包含 {path:\"index.html\", content:\"...\"}。HTML 由右侧 Flutter Host 的内嵌 WebView renderer 承载，可用 window.oob.callApi(apiId, inputs) 调 Project Tool。")
+                    }
+                    putJsonObject("flutterFiles") {
+                        put("type", "array")
+                        put("description", "可选。创建受限 flutter_eval Display 源码资产，路径限定在 frontend/flutter/ 内。仅在默认 Project Display 和 HTML 都不适合时使用。源码必须暴露 OobProjectWidget(dynamic _, {super.key}) Widget 入口，禁止 void main()/runApp()/普通 Flutter App 入口；Project Tool 调用使用 cn.com.omnimind.bot/AssistCoreEvent 的 workbenchApiCall，并带 projectId/apiId/inputs。")
                     }
                 }
                 putJsonArray("required") {
                     add("projectId")
-                    add("templateId")
                 }
             }
         }
@@ -1508,15 +1503,15 @@ object AgentToolDefinitions {
         put("type", "function")
         putJsonObject("function") {
             put("name", "workbench_api_list")
-            put("displayName", "列出 Workbench API")
+            put("displayName", "列出 Project Tool")
             put("toolType", "workbench")
-            put("description", "列出已注册的 Project 业务 API。返回的是 Project API Registry，不包含 workbench_project_create 这类 OOB 控制面接口。")
+            put("description", "列出已注册的 Project Tools。返回的是当前 Project 可被 AI 或 Display 复用的稳定动作，不包含 workbench_project_create 这类 OOB 控制面接口。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
                     putJsonObject("projectId") {
                         put("type", "string")
-                        put("description", "可选 Project id；为空时返回所有 Workbench API。")
+                        put("description", "可选 Project id；为空时返回所有 Workbench Project Tools。")
                     }
                 }
             }
@@ -1529,7 +1524,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_list")
             put("displayName", "列出 Workbench Project")
             put("toolType", "workbench")
-            put("description", "列出 OOB Workbench 已注册 Project。它是 OOB 控制面能力，用于管理已有 Project，不属于 Project API Registry。")
+            put("description", "列出 OOB Workbench 已注册 Project。它是 OOB 控制面能力，用于管理已有 Project，不属于 Project Tool 列表。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {}
@@ -1543,7 +1538,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_get")
             put("displayName", "读取 Workbench Project")
             put("toolType", "workbench")
-            put("description", "读取某个 OOB Workbench Project 的注册信息、业务 API 和当前持久化状态。打开或管理已有 Project 前应先调用它。")
+            put("description", "读取某个 OOB Workbench Project 的注册信息、Project Tools 和当前持久化状态。打开或管理已有 Project 前应先调用它。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1565,7 +1560,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_update")
             put("displayName", "更新 Workbench Project")
             put("toolType", "workbench")
-            put("description", "在同一个 OOB Workbench Project 内追加或更新用户可见名称、Display 页面、业务 API 和 Project-owned Flutter 源码资产。用于 Project 迭代，不应为了加功能重新创建 Project。它会合并 frontend/page_spec.json、backend/api_spec.json、Project API Registry，安全写入 frontend/flutter/，并写入 logs/hot_updates.jsonl。即时显示仍通过 page_spec + OOB 内置 renderer；高度自定义 Flutter 源码可以作为 frontend/flutter/ 资产生成和导出，但要变成已安装 App 内可运行代码需要统一构建/编译。")
+            put("description", "在同一个 OOB Workbench Project 内追加或更新用户可见名称、Display 页面、Project Tools、Project-owned HTML 和 Flutter 源码资产。用于 Project 迭代，不应为了加功能重新创建 Project。它会合并 frontend/page_spec.json、backend/api_spec.json 和工具 registry，安全写入 frontend/html/ 与 frontend/flutter/，并写入 logs/hot_updates.jsonl。HTML 可通过右侧 Flutter Host 内的 /workbench/html WebView renderer 即时运行并调用 window.oob.callApi；Flutter 源码仍是受限 flutter_eval 补充路径。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1583,7 +1578,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("description") {
                         put("type", "string")
-                        put("description", "可选。更新应用视角的一句话说明，不要写 Project/API/Toolbox/路径等控制面内容。")
+                        put("description", "可选。更新应用视角的一句话说明，不要写 Project/Toolbox/路径等控制面内容。")
                     }
                     putJsonObject("displays") {
                         put("type", "array")
@@ -1591,11 +1586,15 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("apis") {
                         put("type", "array")
-                        put("description", "可选。追加或替换 Project 业务 API。每项可包含 apiId、toolId、displayName、description、inputSchema、outputSchema、executorKind。控制面 API 不允许放入这里。")
+                        put("description", "可选。追加或替换 Project Tool。每项可包含 apiId 或 toolId、displayName、description、inputSchema、outputSchema、run。run.use 决定复用 native.collection/script/agent/OOB/MCP 执行链。控制面工具不允许放入这里。")
                     }
                     putJsonObject("flutterFiles") {
                         put("type", "array")
-                        put("description", "可选。写入 Project 自有 Flutter 源码资产，路径限定在 frontend/flutter/ 内。每项包含 path 和 content。该源码可由 Alpine 生成/编辑，用于导出或受控 build/install；不会被已安装 APK 直接热加载。")
+                        put("description", "可选。写入 Project 自有 Flutter 源码资产，路径限定在 frontend/flutter/ 内。每项包含 path 和 content。该源码用于受限 flutter_eval 补充 renderer，不是默认 Display 路径。源码必须暴露 OobProjectWidget(dynamic _, {super.key}) Widget 入口，禁止 void main()/runApp()/普通 Flutter App 入口；Project Tool 调用使用 cn.com.omnimind.bot/AssistCoreEvent 的 workbenchApiCall，并带 projectId/apiId/inputs。")
+                    }
+                    putJsonObject("htmlFiles") {
+                        put("type", "array")
+                        put("description", "可选。写入 Project 自有 HTML/CSS/JS 源码资产，路径限定在 frontend/html/ 内。每项包含 path 和 content。HTML Display 可被右侧 Flutter Host 的 WebView renderer 即时加载，使用 window.oob.callApi 调 Project Tool。")
                     }
                     putJsonObject("prompt") {
                         put("type", "string")
@@ -1613,9 +1612,9 @@ object AgentToolDefinitions {
         put("type", "function")
         putJsonObject("function") {
             put("name", "workbench_api_call")
-            put("displayName", "调用 Workbench API")
+            put("displayName", "调用 Project Tool")
             put("toolType", "workbench")
-            put("description", "调用某个 Project 已注册的业务 API。AI 层必须通过这个接口调用 Project API，和前端 Tool List 使用同一个 native executor。")
+            put("description", "调用某个 Project 已注册的 Project Tool。AI 层和前端点击都通过这个接口进入同一个 native/script/agent executor；简单本地动作不需要额外 AI。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1625,11 +1624,11 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("apiId") {
                         put("type", "string")
-                        put("description", "业务 API id，例如 todo.add、todo.finish、capture.ingest 或 capture.archive。")
+                        put("description", "Project Tool id，例如 finding.create、finding.archive、record.update 或 record.list。")
                     }
                     putJsonObject("inputs") {
                         put("type", "object")
-                        put("description", "API 输入对象。例如 todo.add 需要 {title}，todo.finish 需要 {todo_id}，capture.ingest 可传 {text,url,sourceApp,shareText,screenshotPath}，capture.archive 需要 {item_id}。")
+                        put("description", "Project Tool 输入对象。例如 <entity>.create 可传 {title}，<entity>.archive 可传 {item_id}，<entity>.update 可传 {item_id,title}。")
                     }
                 }
                 putJsonArray("required") {
@@ -1647,7 +1646,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_export")
             put("displayName", "导出 Workbench Project")
             put("toolType", "workbench")
-            put("description", "把某个 Workbench Project 注册成可分发包并导出 zip。导出内容包括 Project 记录、业务 API、Workspace 项目文件、持久化数据、API 调用日志和内置 skill 契约。")
+            put("description", "把某个 Workbench Project 注册成可分发包并导出 zip。导出内容包括 Project 记录、Project Tools、Workspace 项目文件、持久化数据、工具调用日志和内置 skill 契约。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1669,7 +1668,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_open")
             put("displayName", "打开 Workbench Project")
             put("toolType", "workbench")
-            put("description", "打开某个 Workbench Project 的 OOB 原生 Display。用于完成 Project 创建和 API 调用后把应用界面展示给用户；可见页面应是业务应用视角，不是 Project/API/Toolbox 摘要。")
+            put("description", "打开某个 Workbench Project 的 OOB 原生 Display。用于完成 Project 创建和工具调用后把应用界面展示给用户；可见页面应是业务应用视角，不是 Project/Toolbox 摘要。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1691,7 +1690,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_activate")
             put("displayName", "激活 Workbench Project")
             put("toolType", "workbench")
-            put("description", "把某个 Workbench Project 设为当前 Agent 工作环境。激活后，该 Project 的 Displays、Workspace path、skill id 和业务 API manifest 会注入后续 Agent prompt。")
+            put("description", "把某个 Workbench Project 设为当前 Agent 工作环境。激活后，该 Project 的 Displays、Workspace path、skill id 和 Project Tool manifest 会注入后续 Agent prompt。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1741,7 +1740,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_delete")
             put("displayName", "删除 Workbench Project")
             put("toolType", "workbench")
-            put("description", "删除某个 Workbench Project 的 OOB 注册记录、业务 API 注册记录和 Workspace 项目文件。它是 OOB 控制面能力，不属于 Project API Registry。")
+            put("description", "删除某个 Workbench Project 的 OOB 注册记录、Project Tool 注册记录和 Workspace 项目文件。它是 OOB 控制面能力，不属于 Project Tool 列表。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1763,7 +1762,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_hot_update")
             put("displayName", "热更新 Workbench Project")
             put("toolType", "workbench")
-            put("description", "根据用户在 Project 页面里和小万悬浮窗、画图标注或 VLM 输入得到的 prompt，对已有 Workbench Project 做一次控制面热更新，并返回刷新后的 OOB 原生页面状态。调用时尽量附带当前 Flutter Display 的 frontendContext，例如 route、displayId、可见状态、用户选择的控件、选区、drawingPaths、annotationMeta 或截图摘要。形状和 UI 语义由 VLM 结合截图分析，不由前端预识别。热更新必须保持 Display 的应用视角，只改业务工作流、输入、列表、筛选、状态或业务按钮；不要把 Project id、API 数量、executor、Toolbox、Workspace、data/log 路径等控制面信息写进可见界面。它不会注册成 Project 业务 API，也不会出现在 workbench_api_list。")
+            put("description", "根据用户在 Project 页面里和小万悬浮窗、画图标注或 VLM 输入得到的 prompt，对已有 Workbench Project 做一次控制面热更新，并返回刷新后的 OOB 原生页面状态。调用时尽量附带当前 Flutter Display 的 frontendContext，例如 route、displayId、可见状态、用户选择的控件、选区、drawingPaths、annotationMeta 或截图摘要。形状和 UI 语义由 VLM 结合截图分析，不由前端预识别。热更新必须保持 Display 的应用视角，只改业务工作流、输入、列表、筛选、状态或业务按钮；不要把 Project id、工具数量、executor、Toolbox、Workspace、data/log 路径等控制面信息写进可见界面。它不会注册成 Project Tool，也不会出现在 workbench_api_list。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1773,7 +1772,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("prompt") {
                         put("type", "string")
-                        put("description", "用户希望修改当前 Project 或生成前端的自然语言请求。应按应用界面理解用户意图，避免生成 Project/API/Toolbox/日志/Workspace 等控制面摘要。")
+                        put("description", "用户希望修改当前 Project 或生成前端的自然语言请求。应按应用界面理解用户意图，避免生成 Project/Toolbox/日志/Workspace 等控制面摘要。")
                     }
                     putJsonObject("frontendContext") {
                         put("type", "object")
@@ -1795,7 +1794,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_ingest_android")
             put("displayName", "导入 Android 资产")
             put("toolType", "workbench")
-            put("description", "把一个 Android APK 文件或 Android 项目目录导入到已存在的 Workbench Project。它是 OOB Workbench 控制面能力，会写入 Project 的 android/manifest.json 和 logs/android_ingest.jsonl，不会注册成 Project 业务 API，也不会出现在 workbench_api_list。")
+            put("description", "把一个 Android APK 文件或 Android 项目目录导入到已存在的 Workbench Project。它是 OOB Workbench 控制面能力，会写入 Project 的 android/manifest.json 和 logs/android_ingest.jsonl，不会注册成 Project Tool，也不会出现在 workbench_api_list。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1834,7 +1833,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_ingest_oss")
             put("displayName", "导入 OSS/GitHub 源码")
             put("toolType", "workbench")
-            put("description", "把一个 GitHub/OSS 项目或已下载的本地源码目录导入到已存在的 Workbench Project。它是 OOB Workbench 控制面能力，会写入 Project 的 source/manifest.json、logs/oss_ingest.jsonl 和 logs/project_progress.jsonl，不会注册成 Project 业务 API，也不会出现在 workbench_api_list。URL-only 导入只登记 fetch-required 元数据；真正拉取源码应通过批准的 terminal/tool 路径完成后再用 sourcePath 导入。")
+            put("description", "把一个 GitHub/OSS 项目或已下载的本地源码目录导入到已存在的 Workbench Project。它是 OOB Workbench 控制面能力，会写入 Project 的 source/manifest.json、logs/oss_ingest.jsonl 和 logs/project_progress.jsonl，不会注册成 Project Tool，也不会出现在 workbench_api_list。URL-only 导入只登记 fetch-required 元数据；真正拉取源码应通过批准的 terminal/tool 路径完成后再用 sourcePath 导入。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1881,7 +1880,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_progress_get")
             put("displayName", "读取 Project 创建进度")
             put("toolType", "workbench")
-            put("description", "读取 Workbench Project 创建、源码导入、热更新等控制面进度。它是 OOB 运行时状态查询能力，不属于 Project API Registry。")
+            put("description", "读取 Workbench Project 创建、源码导入、热更新等控制面进度。它是 OOB 运行时状态查询能力，不属于 Project Tool 列表。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -2103,18 +2102,15 @@ object AgentToolDefinitions {
             put("name", "alarm_reminder_delete")
             put("displayName", "删除提醒闹钟")
             put("toolType", "alarm")
-            put("description", "按 alarmId 删除本应用创建并托管的 exact_alarm 提醒闹钟。")
+            put("description", "按 alarmId 删除本应用创建并托管的 exact_alarm 提醒闹钟；未传 alarmId 时停止并清空所有应用内 exact_alarm 提醒闹钟。")
             put("postToolRule", "删除后等待工具结果，再向用户确认。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
                     putJsonObject("alarmId") {
                         put("type", "string")
-                        put("description", "闹钟 ID。")
+                        put("description", "可选闹钟 ID；用户只要求关闭当前或全部提醒时可不传。")
                     }
-                }
-                putJsonArray("required") {
-                    add("alarmId")
                 }
             }
         }

@@ -18,6 +18,8 @@ This tool enables AI-driven device automation by using a visual language model t
 3. Execute UI actions (tap, scroll, input text, etc.)
 4. Iterate until the goal is achieved or intervention is needed
 
+Do not use this tool for uploaded image, screenshot, or photo recognition, OCR, explanation, summary, or comparison. Uploaded images are already part of the multimodal conversation; this tool is only for the current Android device screen and real UI automation.
+
 Use cases:
 - Automate repetitive mobile tasks (ordering food, sending messages, etc.)
 - Navigate complex app workflows autonomously
@@ -210,7 +212,7 @@ Use this when you need OOB itself to create or modify Workbench Projects, call i
 This is not a Workbench debug shortcut:
 - It starts the same Agent task path used by WebChat/Home.
 - The Agent must call Workbench tools such as workbench_project_create and workbench_api_call by itself.
-- Workbench control APIs are still not exposed as MCP tools or Project business APIs.
+- Workbench control tools are still not exposed as Project Tools.
 
 BEHAVIOR:
 - Returns once the Agent run is accepted.
@@ -253,28 +255,44 @@ BEHAVIOR:
         )
     )
 
+    val oobToolCallTool = mapOf(
+        "name" to "oob_tool_call",
+        "description" to """Call any OOB capability through the normal in-app Agent runtime. Use this as a generic bridge when a Project Tool needs VLM, files, terminal/Alpine, UI automation, memory, schedules, or another OOB tool that is not a simple local data action.""".trimIndent(),
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "toolName" to mapOf("type" to "string", "description" to "OOB or MCP tool name, for example vlm_task or file_transfer."),
+                "arguments" to mapOf("type" to "object", "description" to "Arguments to pass to the requested tool."),
+                "goal" to mapOf("type" to "string", "description" to "Optional natural-language goal when the tool requires planning or composition.")
+            ),
+            "required" to listOf("toolName")
+        )
+    )
+
     val oobProjectCreateTool = mapOf(
         "name" to "oob_project_create",
         "description" to """Create or reuse an OOB Workbench Project.
 
-This is the MCP control entry for Project creation. It writes the normal Workbench runtime files under /workspace/projects/<project-id>/ and registers Project business APIs. It does not add Workbench control APIs to the Project Toolbox.
+This is the MCP control entry for Project creation. It writes the normal Workbench runtime files under /workspace/projects/<project-id>/ and registers Project Tools. It does not add Workbench control tools to the Project Toolbox.
 """.trimIndent(),
         "inputSchema" to mapOf(
             "type" to "object",
             "properties" to mapOf(
-                "projectId" to mapOf("type" to "string", "description" to "Stable Project id. Example: oob-workbench-v01-quick-note"),
-                "templateId" to mapOf("type" to "string", "description" to "todo_log_demo | schema_app | quick_capture_inbox"),
+                "projectId" to mapOf("type" to "string", "description" to "Stable Project id. Example: oob-workbench-v01-research-summary"),
                 "name" to mapOf("type" to "string", "description" to "Human-readable Project name."),
                 "prompt" to mapOf("type" to "string", "description" to "Original creation prompt preserved in Project files."),
-                "entityName" to mapOf("type" to "string", "description" to "Schema entity name for schema_app Projects."),
-                "apis" to mapOf("type" to "array", "description" to "Optional explicit business API contracts.")
+                "entityName" to mapOf("type" to "string", "description" to "Optional Project entity name for the default Project Display."),
+                "initialItems" to mapOf("type" to "array", "description" to "Optional initial Project data written to data/items.json."),
+                "apis" to mapOf("type" to "array", "description" to "Optional Project Tool contracts. Each item may include apiId or toolId, displayName, description, inputSchema, outputSchema, and run."),
+                "htmlFiles" to mapOf("type" to "array", "description" to "Optional HTML/CSS/JS files under frontend/html/. Include index.html for html_webview Displays."),
+                "flutterFiles" to mapOf("type" to "array", "description" to "Optional Flutter files under frontend/flutter/ for the limited flutter_eval renderer. Expose an OobProjectWidget(dynamic _, {super.key}) Widget entry; do not include void main(), runApp(), normal app entry code, or third-party packages.")
             )
         )
     )
 
     val oobProjectActivateTool = mapOf(
         "name" to "oob_project_activate",
-        "description" to "Activate one OOB Project so its business APIs are mounted as the current MCP Toolbox.",
+        "description" to "Activate one OOB Project so its Project Tools are mounted as the current MCP Toolbox.",
         "inputSchema" to mapOf(
             "type" to "object",
             "properties" to mapOf(
@@ -316,6 +334,7 @@ This is the MCP control entry for Project creation. It writes the normal Workben
             taskWaitUnlockTool,
             fileTransferTool,
             agentRunTool,
+            oobToolCallTool,
             oobProjectCreateTool,
             oobProjectActivateTool,
             oobProjectOpenTool,

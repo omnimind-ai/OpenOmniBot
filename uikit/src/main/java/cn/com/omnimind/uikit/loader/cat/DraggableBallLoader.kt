@@ -495,23 +495,13 @@ class DraggableBallLoader(
         } else {
             0 - CatView.width.dpToPx() / 3
         }
-        // 修复ObjectAnimator duration不生效的问题
-        moveToScreenAnimator = ObjectAnimator.ofInt(catViewLayoutParams.x, targetX)
-        moveToScreenAnimator?.duration = Constant.QUICK_ANIM_TIME
-        moveToScreenAnimator?.addUpdateListener { animation ->
-            catViewLayoutParams.x = animation.animatedValue as Int
-            CatDialogStateData.catX = catViewLayoutParams.x
-            if (catView.isAttachedToWindow) {
-                getWindowManager().updateViewLayout(catView, catViewLayoutParams)
-            }
+        moveToScreenAnimator?.cancel()
+        catViewLayoutParams.x = targetX
+        CatDialogStateData.catX = catViewLayoutParams.x
+        if (catView.isAttachedToWindow) {
+            getWindowManager().updateViewLayout(catView, catViewLayoutParams)
         }
-        moveToScreenAnimator?.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                super.onAnimationEnd(animation)
-                collapseNotChangeState()
-            }
-        })
-        moveToScreenAnimator?.start()
+        collapseNotChangeState()
         collapseMenu()
 
     }

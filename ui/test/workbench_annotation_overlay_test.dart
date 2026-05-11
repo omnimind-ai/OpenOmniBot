@@ -42,8 +42,8 @@ void main() {
     final context = payload.toFrontendContext(
       projectId: 'demo-project',
       displayId: 'demo-display',
-      route: '/workbench/schema_app?projectId=demo-project',
-      visibleState: const {'templateId': 'schema_app'},
+      route: '/workbench/project?projectId=demo-project',
+      visibleState: const {'renderer': 'oob_project_display'},
     );
 
     expect(context['projectId'], 'demo-project');

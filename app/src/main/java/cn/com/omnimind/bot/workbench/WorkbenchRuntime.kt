@@ -20,32 +20,20 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.runBlocking
 
-const val WORKBENCH_TODO_TEMPLATE_ID = "todo_log_demo"
-const val WORKBENCH_SCHEMA_TEMPLATE_ID = "schema_app"
-const val WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID = "quick_capture_inbox"
-const val WORKBENCH_DEFAULT_PROJECT_ID = "oob-workbench-todo-log"
-const val WORKBENCH_QUICK_CAPTURE_PROJECT_ID = "oob-workbench-quick-capture"
-const val WORKBENCH_TODO_ADD_TOOL_ID = "todo.add"
-const val WORKBENCH_TODO_FINISH_TOOL_ID = "todo.finish"
-const val WORKBENCH_CAPTURE_INGEST_TOOL_ID = "capture.ingest"
-const val WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID = "capture.archive"
-const val WORKBENCH_CAPTURE_PROMOTE_TOOL_ID = "capture.promote_to_todo"
-const val WORKBENCH_CAPTURE_SUMMARIZE_TOOL_ID = "capture.summarize"
 const val WORKBENCH_HOT_UPDATE_CALLER = "xiaowan_hot_update"
 const val WORKBENCH_ANDROID_APK_KIND = "apk"
 const val WORKBENCH_ANDROID_PROJECT_KIND = "android_project"
 const val WORKBENCH_OSS_REPOSITORY_KIND = "oss_repo"
 const val WORKBENCH_OSS_GITHUB_KIND = "github_repo"
 const val WORKBENCH_OSS_LOCAL_KIND = "local_source"
-const val WORKBENCH_SCHEMA_EXECUTOR_KIND = "native_schema_collection"
+const val WORKBENCH_COLLECTION_EXECUTOR_KIND = "native_project_collection"
 const val WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND = "workspace_python_script"
 const val WORKBENCH_AGENT_TASK_EXECUTOR_KIND = "agent_task"
-const val WORKBENCH_WORKSPACE_SCRIPT_EXECUTOR_KIND = "workspace_script"
+const val WORKBENCH_HTML_RENDERER = "html_webview"
 
 data class WorkbenchProjectRecord(
     val projectId: String,
     val name: String,
-    val templateId: String,
     val route: String,
     val spacePath: String,
     val apiIds: List<String>,
@@ -55,7 +43,6 @@ data class WorkbenchProjectRecord(
     fun toPayload(): Map<String, Any?> = linkedMapOf(
         "projectId" to projectId,
         "name" to name,
-        "templateId" to templateId,
         "route" to route,
         "spacePath" to spacePath,
         "apiIds" to apiIds,
@@ -79,23 +66,7 @@ data class WorkbenchApiRecord(
         WorkbenchToolboxBuilder.apiContract(this, executionCount)
 }
 
-data class WorkbenchTodoRecord(
-    val id: String,
-    val title: String,
-    val status: String,
-    val createdAt: String,
-    val finishedAt: String? = null
-) {
-    fun toPayload(): Map<String, Any?> = linkedMapOf(
-        "id" to id,
-        "title" to title,
-        "status" to status,
-        "createdAt" to createdAt,
-        "finishedAt" to finishedAt
-    )
-}
-
-data class WorkbenchSchemaItemRecord(
+data class WorkbenchProjectItemRecord(
     val id: String,
     val title: String,
     val status: String,
@@ -109,42 +80,6 @@ data class WorkbenchSchemaItemRecord(
         "status" to status,
         "fields" to fields,
         "createdAt" to createdAt,
-        "archivedAt" to archivedAt
-    )
-}
-
-data class WorkbenchQuickCaptureRecord(
-    val id: String,
-    val type: String,
-    val title: String,
-    val summary: String,
-    val status: String,
-    val url: String? = null,
-    val sourceApp: String? = null,
-    val rawText: String? = null,
-    val shareText: String? = null,
-    val screenshotPath: String? = null,
-    val dueHint: String? = null,
-    val priority: String? = null,
-    val createdAt: String,
-    val updatedAt: String,
-    val archivedAt: String? = null
-) {
-    fun toPayload(): Map<String, Any?> = linkedMapOf(
-        "id" to id,
-        "type" to type,
-        "title" to title,
-        "summary" to summary,
-        "status" to status,
-        "url" to url,
-        "sourceApp" to sourceApp,
-        "rawText" to rawText,
-        "shareText" to shareText,
-        "screenshotPath" to screenshotPath,
-        "dueHint" to dueHint,
-        "priority" to priority,
-        "createdAt" to createdAt,
-        "updatedAt" to updatedAt,
         "archivedAt" to archivedAt
     )
 }
@@ -244,11 +179,8 @@ class WorkbenchProjectStore(
     private val projectRecordListType =
         object : TypeToken<List<WorkbenchProjectRecord>>() {}.type
     private val apiRecordListType = object : TypeToken<List<WorkbenchApiRecord>>() {}.type
-    private val todoRecordListType = object : TypeToken<List<WorkbenchTodoRecord>>() {}.type
-    private val schemaItemRecordListType =
-        object : TypeToken<List<WorkbenchSchemaItemRecord>>() {}.type
-    private val quickCaptureRecordListType =
-        object : TypeToken<List<WorkbenchQuickCaptureRecord>>() {}.type
+    private val projectItemRecordListType =
+        object : TypeToken<List<WorkbenchProjectItemRecord>>() {}.type
     private val androidAssetListType =
         object : TypeToken<List<WorkbenchAndroidAsset>>() {}.type
     private val ossSourceAssetListType =
@@ -270,27 +202,15 @@ class WorkbenchProjectStore(
     internal val executorRegistry = WorkbenchExecutorRegistry()
 
     init {
-        executorRegistry.register("native_template", object : WorkbenchExecutor {
+        executorRegistry.register(WORKBENCH_COLLECTION_EXECUTOR_KIND, object : WorkbenchExecutor {
             override suspend fun execute(projectId: String, api: WorkbenchApiRecord, inputs: Map<String, Any?>) =
-                when (api.toolId) {
-                    WORKBENCH_TODO_ADD_TOOL_ID -> addTodo(projectId, inputs)
-                    WORKBENCH_TODO_FINISH_TOOL_ID -> finishTodo(projectId, inputs)
-                    else -> apiError(api, "UNKNOWN_API", "Unknown native_template toolId: ${api.toolId}")
-                }
-        })
-        executorRegistry.register(WORKBENCH_SCHEMA_EXECUTOR_KIND, object : WorkbenchExecutor {
-            override suspend fun execute(projectId: String, api: WorkbenchApiRecord, inputs: Map<String, Any?>) =
-                callSchemaCollectionApi(projectId, api, inputs)
-        })
-        executorRegistry.register(WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND, object : WorkbenchExecutor {
-            override suspend fun execute(projectId: String, api: WorkbenchApiRecord, inputs: Map<String, Any?>) =
-                callQuickCaptureApi(projectId, api, inputs)
+                callProjectCollectionApi(projectId, api, inputs)
         })
         executorRegistry.register(WORKBENCH_AGENT_TASK_EXECUTOR_KIND, object : WorkbenchExecutor {
             override suspend fun execute(projectId: String, api: WorkbenchApiRecord, inputs: Map<String, Any?>) =
                 callAgentTaskApi(findProject(projectId), api, inputs, "executor_registry")
         })
-        executorRegistry.register(WORKBENCH_WORKSPACE_SCRIPT_EXECUTOR_KIND, object : WorkbenchExecutor {
+        executorRegistry.register(WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND, object : WorkbenchExecutor {
             override suspend fun execute(projectId: String, api: WorkbenchApiRecord, inputs: Map<String, Any?>) =
                 callWorkspaceScriptApi(projectId, api, inputs)
         })
@@ -298,42 +218,34 @@ class WorkbenchProjectStore(
     // ─────────────────────────────────────────────────────────────────────────────────────────────
 
     /**
-     * Creates a Workbench project from a template config, or returns an existing project unchanged.
+     * Creates a Workbench Project, or returns an existing project unchanged.
      *
-     * @param config Project creation config from AI tools or Flutter. `todo_log_demo` keeps the
-     * original demo path, while `schema_app` creates a generic OOB-native Project from API and
-     * Display specs.
-     * @return Full project payload including registered Project Tools and persisted state.
+     * Workbench is a skill runtime: AI supplies a Project id, Display assets, and Project Tool
+     * contracts. Fixed templates are intentionally not part of this API.
      */
     @Synchronized
     fun createProject(config: Map<String, Any?>): Map<String, Any?> {
-        val templateId = config["templateId"]?.toString()?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?: WORKBENCH_TODO_TEMPLATE_ID
-        require(
-            templateId == WORKBENCH_TODO_TEMPLATE_ID ||
-                templateId == WORKBENCH_SCHEMA_TEMPLATE_ID ||
-                templateId == WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID
-        ) { "Unsupported workbench template: $templateId" }
+        val requestedHtmlFiles = normalizeFrontendHtmlFiles(
+            config["htmlFiles"] ?: config["frontendHtmlFiles"]
+        )
         val projectId = sanitizeProjectId(
             config["projectId"]?.toString()?.trim()
                 ?.takeIf { it.isNotEmpty() }
-                ?: defaultProjectId(templateId, config)
+                ?: defaultProjectId(config)
         )
         val name = config["name"]?.toString()?.trim()
             ?.takeIf { it.isNotEmpty() }
             ?: config["displayName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-            ?: defaultProjectName(templateId, config)
+            ?: defaultProjectName(config)
         val sourcePrompt = config["prompt"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
         val now = nowIso()
         val existing = readProjectRegistry().firstOrNull { it.projectId == projectId }
-        val apis = templateApis(projectId, templateId, config)
+        val apis = defaultProjectApis(projectId, config)
         val record = existing
             ?: WorkbenchProjectRecord(
                 projectId = projectId,
                 name = name,
-                templateId = templateId,
-                route = routeForTemplate(projectId, templateId),
+                route = routeForProjectId(projectId),
                 spacePath = "${AgentWorkspaceManager.SHELL_ROOT_PATH}/projects/$projectId",
                 apiIds = apis.map { it.apiId },
                 createdAt = now,
@@ -350,7 +262,6 @@ class WorkbenchProjectStore(
             percent = 5,
             caller = "workbench",
             details = linkedMapOf(
-                "templateId" to templateId,
                 "isExistingProject" to (existing != null)
             )
         )
@@ -386,23 +297,22 @@ class WorkbenchProjectStore(
                 details = linkedMapOf("missingApiIds" to missingApis.map { it.apiId })
             )
         }
-        if (record.templateId == WORKBENCH_TODO_TEMPLATE_ID && !todosFile(projectId).exists()) {
-            writeTodos(projectId, initialTodos(config))
-        }
-        if (record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID && !schemaItemsFile(projectId).exists()) {
-            writeSchemaItems(projectId, initialSchemaItems(config))
-        }
-        if (
-            record.templateId == WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID &&
-            !quickCaptureItemsFile(projectId).exists()
-        ) {
-            writeQuickCaptureItems(projectId, initialQuickCaptureItems(config))
+        if (!projectItemsFile(projectId).exists()) {
+            writeProjectItems(projectId, initialProjectItems(config))
         }
         val requestedFlutterFiles = normalizeFrontendFlutterFiles(
             config["flutterFiles"] ?: config["frontendFlutterFiles"]
         )
         val creationPrompt = if (existing == null) sourcePrompt else null
         ensureProjectSourceFiles(record, apis, creationPrompt, config)
+        val writtenHtmlFiles = if (
+            requestedHtmlFiles.isNotEmpty() &&
+            (existing == null || readFrontendHtmlPayload(record.projectId).isEmpty())
+        ) {
+            writeFrontendHtmlFiles(record.projectId, requestedHtmlFiles)
+        } else {
+            emptyList()
+        }
         val writtenFlutterFiles = if (
             requestedFlutterFiles.isNotEmpty() &&
             (existing == null || readFrontendFlutterPayload(record.projectId).isEmpty())
@@ -421,6 +331,7 @@ class WorkbenchProjectStore(
             details = linkedMapOf(
                 "frontend" to "frontend/page_spec.json",
                 "backend" to "backend/api_spec.json",
+                "htmlFiles" to writtenHtmlFiles.map { it["path"] },
                 "flutterFiles" to writtenFlutterFiles.map { it["path"] }
             )
         )
@@ -470,6 +381,8 @@ class WorkbenchProjectStore(
      * @param apis Optional Project Tools to merge into the internal registry and Tool Contract.
      * @param flutterFiles Optional Project-owned Flutter source files to write under
      * `frontend/flutter/`. Paths must be relative and stay inside that directory.
+     * @param htmlFiles Optional Project-owned HTML/CSS/JS/source assets to write under
+     * `frontend/html/`. Paths must be relative and stay inside that directory.
      * @param prompt Optional user iteration request written into `logs/hot_updates.jsonl`.
      * @param caller Caller label stored in progress and audit logs.
      * @return Updated Project payload for Flutter, MCP debug, or Agent callers.
@@ -483,6 +396,7 @@ class WorkbenchProjectStore(
         displays: Any? = null,
         apis: Any? = null,
         flutterFiles: Any? = null,
+        htmlFiles: Any? = null,
         prompt: String? = null,
         caller: String = "unknown"
     ): Map<String, Any?> {
@@ -494,6 +408,7 @@ class WorkbenchProjectStore(
         val newDisplays = normalizeDisplaySpecs(record, displays)
         val newApis = explicitApiRecords(record.projectId, mapOf("apis" to apis))
         val requestedFlutterFiles = normalizeFrontendFlutterFiles(flutterFiles)
+        val requestedHtmlFiles = normalizeFrontendHtmlFiles(htmlFiles)
         require(
             updatedName != null ||
                 updatedShortName != null ||
@@ -501,9 +416,10 @@ class WorkbenchProjectStore(
                 newDisplays.isNotEmpty() ||
                 newApis.isNotEmpty() ||
                 requestedFlutterFiles.isNotEmpty() ||
+                requestedHtmlFiles.isNotEmpty() ||
                 updatePrompt != null
         ) {
-            "Project update requires name, shortName, description, displays, apis, flutterFiles, or prompt."
+            "Project update requires name, shortName, description, displays, apis, flutterFiles, htmlFiles, or prompt."
         }
         val mergedApis = mergeApiRecords(projectApis(record.projectId), newApis)
         val now = nowIso()
@@ -556,9 +472,20 @@ class WorkbenchProjectStore(
                 display
             }
         }
-        val mergedDisplays = mergeDisplaySpecs(
-            base = (pageSpec["displays"] as? List<*>) ?: workbenchDisplays(record),
-            additions = newDisplays
+        val displayAdditions = if (
+            requestedHtmlFiles.isNotEmpty() &&
+            newDisplays.none { isHtmlDisplay(it) }
+        ) {
+            newDisplays + htmlWorkbenchDisplay(updatedRecord)
+        } else {
+            newDisplays
+        }
+        val mergedDisplays = normalizeDefaultDisplaySelection(
+            mergeDisplaySpecs(
+                base = (pageSpec["displays"] as? List<*>) ?: workbenchDisplays(record),
+                additions = displayAdditions
+            ),
+            preferredDisplayId = if (requestedHtmlFiles.isNotEmpty()) "html-main-display" else null
         )
         if (mergedDisplays.isNotEmpty()) {
             pageSpec["displays"] = mergedDisplays
@@ -575,6 +502,10 @@ class WorkbenchProjectStore(
             projectId = updatedRecord.projectId,
             files = requestedFlutterFiles
         )
+        val writtenHtmlFiles = writeFrontendHtmlFiles(
+            projectId = updatedRecord.projectId,
+            files = requestedHtmlFiles
+        )
         pageSpec["iterationContract"] = projectIterationContract()
         if (updatePrompt != null) {
             pageSpec["lastUpdatePrompt"] = updatePrompt
@@ -584,9 +515,10 @@ class WorkbenchProjectStore(
         if (
             newDisplays.isNotEmpty() ||
             newApis.isNotEmpty() ||
-            writtenFlutterFiles.isNotEmpty() ||
-            updatedDescription != null ||
-            updatePrompt != null
+                writtenFlutterFiles.isNotEmpty() ||
+                writtenHtmlFiles.isNotEmpty() ||
+                updatedDescription != null ||
+                updatePrompt != null
         ) {
             val actions = mutableListOf<Map<String, Any?>>()
             if (newDisplays.isNotEmpty()) {
@@ -607,6 +539,12 @@ class WorkbenchProjectStore(
                     "paths" to writtenFlutterFiles.map { it["path"] }
                 )
             }
+            if (writtenHtmlFiles.isNotEmpty()) {
+                actions += linkedMapOf(
+                    "kind" to "html_source_updated",
+                    "paths" to writtenHtmlFiles.map { it["path"] }
+                )
+            }
             if (updatedDescription != null) {
                 actions += linkedMapOf("kind" to "description_updated")
             }
@@ -619,6 +557,7 @@ class WorkbenchProjectStore(
                     "source" to "workbench_project_update",
                     "displayIds" to mergedDisplays.map { it["id"] ?: it["displayId"] ?: it["pageId"] },
                     "apiIds" to mergedApis.map { it.apiId },
+                    "htmlFiles" to writtenHtmlFiles.map { it["path"] },
                     "flutterFiles" to writtenFlutterFiles.map { it["path"] }
                 )
             )
@@ -632,6 +571,7 @@ class WorkbenchProjectStore(
                 details = linkedMapOf(
                     "displayIds" to mergedDisplays.map { it["id"] ?: it["displayId"] ?: it["pageId"] },
                     "toolIds" to mergedApis.map { it.toolId },
+                    "htmlFiles" to writtenHtmlFiles.map { it["path"] },
                     "flutterFiles" to writtenFlutterFiles.map { it["path"] }
                 )
             )
@@ -642,10 +582,12 @@ class WorkbenchProjectStore(
                 gson.toJson(activeProjectManifest(updatedRecord, readActiveProjectActivatedAt()))
             )
         }
-        if (writtenFlutterFiles.isNotEmpty()) {
+        if (writtenFlutterFiles.isNotEmpty() || writtenHtmlFiles.isNotEmpty()) {
             FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
                 projectId = updatedRecord.projectId,
-                updatedPaths = writtenFlutterFiles.map { it["path"]?.toString() ?: "" }
+                updatedPaths = (writtenHtmlFiles + writtenFlutterFiles).map {
+                    it["path"]?.toString() ?: ""
+                }
             )
         }
         return linkedMapOf(
@@ -659,7 +601,8 @@ class WorkbenchProjectStore(
      * Applies a map-shaped Project update request from MethodChannel, Agent tools, or MCP debug.
      *
      * @param args Update arguments. Supports `name`, `shortName`, `description`, `displays`,
-     * `apis`, `flutterFiles`, and `prompt`; unknown fields are ignored for forward compatibility.
+     * `apis`, `flutterFiles`, `htmlFiles`, and `prompt`; unknown fields are ignored for forward
+     * compatibility.
      * @param caller Caller label persisted into progress and hot-update logs.
      * @return Updated Project payload.
      */
@@ -671,8 +614,9 @@ class WorkbenchProjectStore(
             shortName = args["shortName"]?.toString(),
             description = args["description"]?.toString(),
             displays = args["displays"],
-            apis = args["tools"] ?: args["projectTools"] ?: args["apis"] ?: args["apiSpecs"],
+            apis = args["apis"],
             flutterFiles = args["flutterFiles"] ?: args["frontendFlutterFiles"],
+            htmlFiles = args["htmlFiles"] ?: args["frontendHtmlFiles"],
             prompt = args["prompt"]?.toString(),
             caller = caller
         )
@@ -691,6 +635,11 @@ class WorkbenchProjectStore(
         val manifest = activeProjectManifest(record, nowIso())
         projectsRoot.mkdirs()
         activeProjectFile.writeText(gson.toJson(manifest))
+        FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
+            projectId = record.projectId,
+            updatedPaths = listOf("active_project.json"),
+            reason = "project_activated"
+        )
         return linkedMapOf(
             "success" to true,
             "activeProject" to manifest,
@@ -731,6 +680,11 @@ class WorkbenchProjectStore(
     fun deactivateProject(): Map<String, Any?> {
         val previousProjectId = readActiveProjectId()
         activeProjectFile.delete()
+        FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
+            projectId = previousProjectId.orEmpty(),
+            updatedPaths = listOf("active_project.json"),
+            reason = "project_deactivated"
+        )
         return linkedMapOf(
             "success" to true,
             "previousProjectId" to previousProjectId
@@ -776,7 +730,7 @@ class WorkbenchProjectStore(
             $tools
             - imported source assets:
             $sources
-            Rules: treat these tools as the active Project toolbox. To use them, call `workbench_api_call` with this projectId and the toolId. Most new work should be handled as an Agent vibe task with Project context; add a Project Tool only for stable reusable UI/AI actions. To create, export, delete, open, or hot-update the Project, use the `workbench_project_*` control tools instead of writing registry files.
+            Rules: treat these tools as the active Project toolbox. To use them, call `workbench_api_call` with this projectId and the toolId. Most new work should be handled as an Agent task with Project context; add a Project Tool only for stable reusable UI/AI actions. To create, export, delete, open, or hot-update the Project, use the `workbench_project_*` control tools instead of writing registry files.
         """.trimIndent()
     }
 
@@ -801,6 +755,11 @@ class WorkbenchProjectStore(
         if (readActiveProjectId() == record.projectId) {
             activeProjectFile.delete()
         }
+        FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
+            projectId = record.projectId,
+            updatedPaths = listOf("registry.json", "active_project.json"),
+            reason = "project_deleted"
+        )
         return linkedMapOf(
             "success" to true,
             "projectId" to record.projectId,
@@ -998,7 +957,7 @@ class WorkbenchProjectStore(
      * Calls a registered Project Tool through the native executor.
      *
      * @param projectId Project owning the tool.
-     * @param apiId Legacy API id or tool id, for example `todo.add`.
+     * @param apiId Legacy API id or tool id.
      * @param inputs User or AI supplied tool inputs. Shape is validated by the executor.
      * @param caller Caller label such as `ai` or `ui`, persisted in the tool call log.
      * @return Tool-style result payload plus the refreshed project state.
@@ -1059,6 +1018,15 @@ class WorkbenchProjectStore(
         }
         appendApiCall(record.projectId, api, inputs, caller, result, startedAt)
         writeProjectJson(record, projectApis(record.projectId))
+        val runUse = WorkbenchToolboxBuilder.runUse(api).lowercase()
+        val isReadOnly = runUse == "native.collection.list" || runUse == "native.collection.get"
+        if (!isReadOnly) {
+            FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
+                projectId = record.projectId,
+                updatedPaths = listOf("data/items.json"),
+                reason = "api_call:${api.toolId}"
+            )
+        }
         return result + ("project" to getProject(record.projectId))
     }
 
@@ -1067,7 +1035,7 @@ class WorkbenchProjectStore(
      *
      * @param projectId Project whose native display should refresh after the update.
      * @param prompt User request captured from the Xiaowan floating assistant; it is stored in
-     * `logs/hot_updates.jsonl` and interpreted by the current project template.
+     * `logs/hot_updates.jsonl` and interpreted against the current Project contract.
      * @param caller Caller label such as `ui` or `ai`, persisted for audit and future replay.
      * @param frontendContext Optional current Flutter Display context attached by Xiaowan or VLM
      * input, such as route, display id, visible state, selected element, selected region,
@@ -1084,6 +1052,53 @@ class WorkbenchProjectStore(
         val record = findProject(projectId)
         val request = prompt.trim()
         require(request.isNotEmpty()) { "Hot update prompt is required." }
+        val frontendHtml = readFrontendHtmlPayload(record.projectId)
+        val htmlSources = frontendHtml["sources"] as? Map<*, *>
+        if (!htmlSources.isNullOrEmpty()) {
+            val entryFile = frontendHtml["entryFile"]?.toString()?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: "index.html"
+            val appliedActions = listOf(
+                linkedMapOf<String, Any?>(
+                    "kind" to "html_regenerate_requested",
+                    "success" to true,
+                    "entryFile" to entryFile,
+                    "recommendedTool" to "workbench_project_update"
+                )
+            )
+            appendHotUpdate(record.projectId, request, caller, appliedActions, frontendContext)
+            appendProjectProgress(
+                projectId = record.projectId,
+                stage = "html_regenerate_requested",
+                status = "running",
+                message = "HTML Display hot update requires the Agent to update frontend/html source files and call workbench_project_update.",
+                percent = 60,
+                caller = caller,
+                details = linkedMapOf(
+                    "entryFile" to entryFile,
+                    "sourceFiles" to htmlSources.keys.map { it.toString() },
+                    "frontendContext" to frontendContext
+                )
+            )
+            writeProjectJson(record, projectApis(record.projectId))
+            return linkedMapOf(
+                "success" to true,
+                "projectId" to record.projectId,
+                "prompt" to request,
+                "frontendContext" to frontendContext,
+                "appliedActions" to appliedActions,
+                "requiresAgentRegeneration" to true,
+                "recommendedTool" to "workbench_project_update",
+                "instructions" to listOf(
+                    "Read project.frontendHtml.sources and prefer editing the smallest affected HTML/CSS/JS file.",
+                    "Preserve the existing window.oob.callApi(apiId, inputs), window.oob.getProject(), and data-oob-id hooks.",
+                    "Call workbench_project_update with htmlFiles=[{path:\"$entryFile\", content:<updated HTML>}], or include multiple htmlFiles for CSS/JS changes.",
+                    "Keep native/mobile capabilities behind registered Project Tools; do not invent direct Android, filesystem, shell, or network bridge calls."
+                ),
+                "hotUpdateLogPath" to "${record.spacePath}/logs/hot_updates.jsonl",
+                "project" to getProject(record.projectId)
+            )
+        }
         val frontendFlutter = readFrontendFlutterPayload(record.projectId)
         val frontendSources = frontendFlutter["sources"] as? Map<*, *>
         if (!frontendSources.isNullOrEmpty()) {
@@ -1136,93 +1151,13 @@ class WorkbenchProjectStore(
                 "project" to getProject(record.projectId)
             )
         }
-        require(
-            record.templateId == WORKBENCH_TODO_TEMPLATE_ID ||
-                record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID ||
-                record.templateId == WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID
-        ) { "Unsupported workbench hot update template: ${record.templateId}" }
         val appliedActions = mutableListOf<Map<String, Any?>>()
         val lower = request.lowercase()
-        val wantsFinish =
+        val wantsArchive =
             listOf("归档", "完成", "finish", "archive", "done").any { lower.contains(it) }
         val wantsAdd =
             listOf("增加", "新增", "添加", "add", "create").any { lower.contains(it) }
-
-        if (record.templateId == WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID) {
-            if (wantsFinish) {
-                val activeItem = readQuickCaptureItems(record.projectId)
-                    .firstOrNull { it.status != "archived" }
-                if (activeItem == null) {
-                    appliedActions.add(
-                        linkedMapOf(
-                            "apiId" to WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID,
-                            "success" to false,
-                            "errorCode" to "NO_ACTIVE_CAPTURE_ITEM"
-                        )
-                    )
-                } else {
-                    appliedActions.add(
-                        compactToolResult(
-                            callApi(
-                                projectId = record.projectId,
-                                apiId = WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID,
-                                inputs = mapOf("item_id" to activeItem.id),
-                                caller = WORKBENCH_HOT_UPDATE_CALLER
-                            )
-                        )
-                    )
-                }
-            }
-            if (wantsAdd || !wantsFinish) {
-                appliedActions.add(
-                    compactToolResult(
-                        callApi(
-                            projectId = record.projectId,
-                            apiId = WORKBENCH_CAPTURE_INGEST_TOOL_ID,
-                            inputs = mapOf("text" to hotUpdateTodoTitle(request)),
-                            caller = WORKBENCH_HOT_UPDATE_CALLER
-                        )
-                    )
-                )
-            }
-        } else if (record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID) {
-            applySchemaHotUpdate(record, request, wantsAdd, wantsFinish, appliedActions)
-        } else if (wantsFinish) {
-            val openTodo = readTodos(record.projectId).firstOrNull { it.status != "finished" }
-            if (openTodo == null) {
-                appliedActions.add(
-                    linkedMapOf(
-                        "apiId" to WORKBENCH_TODO_FINISH_TOOL_ID,
-                        "success" to false,
-                        "errorCode" to "NO_OPEN_TODO"
-                    )
-                )
-            } else {
-                appliedActions.add(
-                    compactToolResult(
-                        callApi(
-                            projectId = record.projectId,
-                            apiId = WORKBENCH_TODO_FINISH_TOOL_ID,
-                            inputs = mapOf("todo_id" to openTodo.id),
-                            caller = WORKBENCH_HOT_UPDATE_CALLER
-                        )
-                    )
-                )
-            }
-        }
-
-        if (record.templateId == WORKBENCH_TODO_TEMPLATE_ID && (wantsAdd || !wantsFinish)) {
-            appliedActions.add(
-                compactToolResult(
-                    callApi(
-                        projectId = record.projectId,
-                        apiId = WORKBENCH_TODO_ADD_TOOL_ID,
-                        inputs = mapOf("title" to hotUpdateTodoTitle(request)),
-                        caller = WORKBENCH_HOT_UPDATE_CALLER
-                    )
-                )
-            )
-        }
+        applyProjectDataHotUpdate(record, request, wantsAdd, wantsArchive, appliedActions)
 
         appendHotUpdate(record.projectId, request, caller, appliedActions, frontendContext)
         writeProjectJson(record, projectApis(record.projectId))
@@ -1553,7 +1488,6 @@ class WorkbenchProjectStore(
                 linkedMapOf<String, Any?>(
                     "projectId" to record.projectId,
                     "name" to record.name,
-                    "templateId" to record.templateId,
                     "lastProgress" to lastProjectProgress(record.projectId),
                     "progressLogPath" to "${record.spacePath}/logs/project_progress.jsonl"
                 )
@@ -1585,11 +1519,7 @@ class WorkbenchProjectStore(
      */
     fun routeForProject(projectId: String): String {
         val record = findProject(projectId)
-        return if (readFrontendFlutterPayload(record.projectId).isNotEmpty()) {
-            "/workbench/flutter_eval?projectId=${record.projectId}"
-        } else {
-            record.route
-        }
+        return defaultDisplayRoute(record)
     }
 
     /**
@@ -1676,41 +1606,24 @@ class WorkbenchProjectStore(
     private fun projectPayload(record: WorkbenchProjectRecord): Map<String, Any?> {
         val apis = projectApis(record.projectId)
         ensureProjectSourceFiles(record, apis)
-        val todos = if (record.templateId == WORKBENCH_TODO_TEMPLATE_ID) {
-            readTodos(record.projectId)
-        } else {
-            emptyList()
-        }
-        val schemaItems = if (record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID) {
-            readSchemaItems(record.projectId)
-        } else {
-            emptyList()
-        }
-        val quickCaptureItems = if (record.templateId == WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID) {
-            readQuickCaptureItems(record.projectId)
-        } else {
-            emptyList()
-        }
+        val items = readProjectItems(record.projectId)
         val counts = apiExecutionCounts(record.projectId)
         val androidAssets = readAndroidAssets(record.projectId)
         val sourceAssets = readOssSources(record.projectId)
         val displays = workbenchDisplays(record)
+        val frontendHtml = readFrontendHtmlPayload(record.projectId)
         val frontendFlutter = readFrontendFlutterPayload(record.projectId)
-        val displayRoute = if (frontendFlutter.isNotEmpty()) {
-            "/workbench/flutter_eval?projectId=${record.projectId}"
-        } else {
-            record.route
-        }
+        val displayRoute = defaultDisplayRoute(record, displays)
         val toolbox = WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts)
         return linkedMapOf(
             "projectId" to record.projectId,
             "name" to record.name,
-            "templateId" to record.templateId,
             "route" to displayRoute,
             "spacePath" to record.spacePath,
             "pageIds" to displays.mapNotNull { it["pageId"]?.toString() ?: it["id"]?.toString() },
             "displays" to displays,
-            "schema" to workbenchPageSpec(record),
+            "pageSpec" to workbenchPageSpec(record),
+            "frontendHtml" to frontendHtml,
             "frontendFlutter" to frontendFlutter,
             "apiIds" to record.apiIds,
             "tools" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
@@ -1719,9 +1632,7 @@ class WorkbenchProjectStore(
             "androidAssets" to androidAssets.map { it.toPayload() },
             "sourceAssets" to sourceAssets.map { it.toPayload() },
             "flows" to emptyList<Map<String, Any?>>(),
-            "todos" to todos.map { it.toPayload() },
-            "items" to schemaItems.map { it.toPayload() },
-            "captureItems" to quickCaptureItems.map { it.toPayload() },
+            "items" to items.map { it.toPayload() },
             "lastProgress" to lastProjectProgress(record.projectId),
             "lastError" to lastApiError(record.projectId),
             "progressLogPath" to "${record.spacePath}/logs/project_progress.jsonl",
@@ -1736,19 +1647,18 @@ class WorkbenchProjectStore(
     ): Map<String, Any?> {
         val counts = apiExecutionCounts(record.projectId)
         val apis = projectApis(record.projectId)
+        val displays = workbenchDisplays(record)
+        val frontendHtml = readFrontendHtmlPayload(record.projectId)
         val frontendFlutter = readFrontendFlutterPayload(record.projectId)
-        val displayRoute = if (frontendFlutter.isNotEmpty()) {
-            "/workbench/flutter_eval?projectId=${record.projectId}"
-        } else {
-            record.route
-        }
+        val displayRoute = defaultDisplayRoute(record, displays)
         return linkedMapOf(
             "projectId" to record.projectId,
             "name" to record.name,
             "route" to displayRoute,
             "spacePath" to record.spacePath,
             "skillId" to "oob-native-workbench",
-            "displays" to workbenchDisplays(record),
+            "displays" to displays,
+            "frontendHtml" to frontendHtml,
             "frontendFlutter" to frontendFlutter,
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "toolbox" to WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts),
@@ -1767,30 +1677,13 @@ class WorkbenchProjectStore(
         val counts = apiExecutionCounts(record.projectId)
         val androidAssets = readAndroidAssets(record.projectId)
         val sourceAssets = readOssSources(record.projectId)
-        val todos = if (record.templateId == WORKBENCH_TODO_TEMPLATE_ID) {
-            readTodos(record.projectId)
-        } else {
-            emptyList()
-        }
-        val schemaItems = if (record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID) {
-            readSchemaItems(record.projectId)
-        } else {
-            emptyList()
-        }
-        val quickCaptureItems = if (record.templateId == WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID) {
-            readQuickCaptureItems(record.projectId)
-        } else {
-            emptyList()
-        }
+        val items = readProjectItems(record.projectId)
         val prompt = sourcePrompt?.trim()?.takeIf { it.isNotEmpty() }
             ?: readProjectSourcePrompt(record.projectId)
         val displays = workbenchDisplays(record)
+        val frontendHtml = readFrontendHtmlPayload(record.projectId)
         val frontendFlutter = readFrontendFlutterPayload(record.projectId)
-        val displayRoute = if (frontendFlutter.isNotEmpty()) {
-            "/workbench/flutter_eval?projectId=${record.projectId}"
-        } else {
-            record.route
-        }
+        val displayRoute = defaultDisplayRoute(record, displays)
         val toolbox = WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts)
         val payload = linkedMapOf<String, Any?>(
             "project" to record.toPayload(),
@@ -1800,25 +1693,34 @@ class WorkbenchProjectStore(
                 "decomposition" to listOf(
                     "Project registry",
                     "App Display surface",
+                    "Editable HTML source assets",
                     "Editable Flutter source assets",
                     "Project Tools",
                     "Persistent data and tool logs"
                 ),
-                "displayContract" to "Generated Displays are user app surfaces. Project ids, tool counts, executor kinds, Toolbox manifests, Workspace paths, and data/log paths belong to control/debug surfaces."
+                "displayContract" to "Workbench Displays are user app surfaces. Project ids, tool counts, executor kinds, Toolbox manifests, Workspace paths, and data/log paths belong to control/debug surfaces."
             ),
             "page" to linkedMapOf(
                 "pageId" to ((displays.firstOrNull()?.get("pageId") ?: displays.firstOrNull()?.get("id"))
                     ?: "workbench-page"),
-                "renderer" to (workbenchPageSpec(record)["renderer"] ?: "oob_native_schema"),
+                "renderer" to (
+                    (displays.firstOrNull { it["isDefault"] == true } ?: displays.firstOrNull())
+                        ?.get("renderer")
+                        ?: workbenchPageSpec(record)["renderer"]
+                        ?: "oob_project_display"
+                    ),
                 "route" to displayRoute
             ),
             "frontendSource" to linkedMapOf(
                 "instantRuntime" to "frontend/page_spec.json",
+                "editableHtmlSource" to "frontend/html/",
                 "editableFlutterSource" to "frontend/flutter/",
+                "htmlRuntimeBoundary" to "HTML source under frontend/html/ can be loaded live by /workbench/html through WebView; native access stays behind Project Tool bridge.",
                 "compileBoundary" to "Flutter source under frontend/flutter/ is a Project asset loaded live by /workbench/flutter_eval through flutter_eval; no APK rebuild is required for supported Dart/Material UI."
             ),
             "displays" to displays,
-            "schema" to workbenchPageSpec(record),
+            "pageSpec" to workbenchPageSpec(record),
+            "frontendHtml" to frontendHtml,
             "frontendFlutter" to frontendFlutter,
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "toolbox" to toolbox,
@@ -1836,15 +1738,9 @@ class WorkbenchProjectStore(
             ),
             "lastError" to lastApiError(record.projectId),
             "state" to linkedMapOf(
-                "todoCount" to todos.size,
-                "openTodoCount" to todos.count { it.status != "finished" },
-                "finishedTodoCount" to todos.count { it.status == "finished" },
-                "itemCount" to schemaItems.size,
-                "activeItemCount" to schemaItems.count { it.status != "archived" },
-                "archivedItemCount" to schemaItems.count { it.status == "archived" },
-                "captureItemCount" to quickCaptureItems.size,
-                "activeCaptureItemCount" to quickCaptureItems.count { it.status != "archived" },
-                "archivedCaptureItemCount" to quickCaptureItems.count { it.status == "archived" },
+                "itemCount" to items.size,
+                "activeItemCount" to items.count { it.status != "archived" },
+                "archivedItemCount" to items.count { it.status == "archived" },
                 "androidAssetCount" to androidAssets.size,
                 "sourceAssetCount" to sourceAssets.size
             )
@@ -1855,10 +1751,10 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Reads the editable frontend schema for one Project.
+     * Reads the editable frontend page spec for one Project.
      *
      * @param record Project whose `frontend/page_spec.json` may define the current Display.
-     * @return Parsed schema map, or an empty map when the Project predates schema files.
+     * @return Parsed page spec map, or an empty map when the Project predates page spec files.
      */
     private fun workbenchPageSpec(record: WorkbenchProjectRecord): Map<String, Any?> {
         val file = File(projectDir(record.projectId), "frontend/page_spec.json")
@@ -1888,6 +1784,9 @@ class WorkbenchProjectStore(
                 return displays
             }
         }
+        if (readFrontendHtmlPayload(record.projectId).isNotEmpty()) {
+            return listOf(htmlWorkbenchDisplay(record))
+        }
         if (readFrontendFlutterPayload(record.projectId).isNotEmpty()) {
             return listOf(
                 linkedMapOf(
@@ -1903,101 +1802,51 @@ class WorkbenchProjectStore(
                 )
             )
         }
-        if (record.templateId == WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID) {
-            return quickCaptureDisplays(record, spec)
-        }
         if (spec.isNotEmpty() && spec["route"]?.toString()?.trim()?.isNotEmpty() == true) {
             return listOf(
                 linkedMapOf(
-                    "id" to (spec["displayId"] ?: spec["pageId"] ?: "schema-main-display"),
-                    "pageId" to (spec["pageId"] ?: "schema-main-page"),
+                    "id" to (spec["displayId"] ?: spec["pageId"] ?: "project-main-display"),
+                    "pageId" to (spec["pageId"] ?: "project-main-page"),
                     "title" to (spec["title"] ?: record.name),
                     "shortName" to (spec["shortName"] ?: "APP"),
                     "route" to spec["route"],
                     "kind" to "oob_flutter",
-                    "renderer" to (spec["renderer"] ?: "oob_schema_collection"),
+                    "renderer" to (spec["renderer"] ?: "oob_project_display"),
                     "isDefault" to true,
                     "description" to (spec["description"] ?: spec["subtitle"] ?: "")
                 )
             )
         }
-        return when (record.templateId) {
-            WORKBENCH_SCHEMA_TEMPLATE_ID -> listOf(
-                linkedMapOf(
-                    "id" to "schema-main-display",
-                    "pageId" to "schema-main-page",
-                    "title" to record.name,
-                    "shortName" to "APP",
-                    "route" to record.route,
-                    "kind" to "oob_flutter",
-                    "renderer" to "oob_schema_collection",
-                    "isDefault" to true,
-                    "description" to "Schema display bound to this Project Tool registry."
-                )
+        return listOf(
+            linkedMapOf(
+                "id" to "project-main-display",
+                "pageId" to "project-main-page",
+                "title" to record.name,
+                "shortName" to "APP",
+                "route" to record.route,
+                "kind" to "oob_flutter",
+                "renderer" to "oob_project_display",
+                "isDefault" to true,
+                "description" to "Display bound to this Project API registry."
             )
-            WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID -> quickCaptureDisplays(record, spec)
-            else -> listOf(
-                linkedMapOf(
-                    "id" to "todo-log-display",
-                    "pageId" to "todo-log-page",
-                    "title" to "Todo 日志",
-                    "shortName" to "TODO",
-                    "route" to record.route,
-                    "kind" to "oob_flutter",
-                    "renderer" to "oob_native_schema",
-                    "isDefault" to true,
-                    "description" to "Todo display bound to this Project Tool registry."
-                )
-            )
-        }
+        )
     }
 
-    /**
-     * Builds the v0.1 multi-display Quick Capture app shell.
-     *
-     * @param record Project registry record used for stable route and display ownership.
-     * @param spec Optional existing `frontend/page_spec.json`; title/short name are preserved
-     * when the user has renamed the Project.
-     * @return Display pages that share one Project data/API contract while navigating inside the
-     * right-side Workbench display surface.
-     */
-    private fun quickCaptureDisplays(
+    private fun defaultDisplayRoute(
         record: WorkbenchProjectRecord,
-        spec: Map<String, Any?> = emptyMap()
-    ): List<Map<String, Any?>> {
-        val baseRoute = record.route.ifBlank {
-            "/workbench/quick_capture?projectId=${record.projectId}"
+        displays: List<Map<String, Any?>> = workbenchDisplays(record)
+    ): String {
+        val display = displays.firstOrNull { it["isDefault"] == true } ?: displays.firstOrNull()
+        val renderer = display?.get("renderer")?.toString()?.trim().orEmpty()
+        return when {
+            renderer == WORKBENCH_HTML_RENDERER -> display?.get("route")?.toString()?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: htmlRoute(record.projectId)
+            renderer == "flutter_eval" -> display?.get("route")?.toString()?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: "/workbench/flutter_eval?projectId=${record.projectId}"
+            else -> record.route
         }
-        val title = spec["title"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-            ?: record.name.ifBlank { "随手记" }
-        val shortName = spec["shortName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-            ?: "NOTE"
-        fun display(
-            id: String,
-            pageId: String,
-            pageTitle: String,
-            isDefault: Boolean = false
-        ): Map<String, Any?> {
-            val separator = if (baseRoute.contains("?")) "&" else "?"
-            return linkedMapOf(
-                "id" to id,
-                "pageId" to pageId,
-                "title" to pageTitle,
-                "shortName" to shortName,
-                "route" to "$baseRoute${separator}displayId=$id",
-                "kind" to "oob_flutter",
-                "renderer" to "oob_quick_capture_inbox",
-                "surfaceKind" to "app_display",
-                "navigationScope" to "right_workbench_display",
-                "isDefault" to isDefault,
-                "description" to "Quick Capture page in one shared Project app."
-            )
-        }
-        return listOf(
-            display("quick-capture-capture", "quick-capture-capture-page", title, isDefault = true),
-            display("quick-capture-inbox", "quick-capture-inbox-page", "收件箱"),
-            display("quick-capture-archive", "quick-capture-archive-page", "归档")
-        )
     }
 
     /**
@@ -2021,8 +1870,15 @@ class WorkbenchProjectStore(
             if (id.isEmpty()) return@mapNotNull null
             val pageId = display["pageId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 ?: "$id-page"
+            val renderer = display["renderer"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                ?: workbenchPageSpec(record)["renderer"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "oob_project_display"
             val route = display["route"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                ?: displayRouteWithId(record.route, id)
+                ?: if (renderer == WORKBENCH_HTML_RENDERER) {
+                    htmlRoute(record.projectId)
+                } else {
+                    displayRouteWithId(record.route, id)
+                }
             linkedMapOf(
                 "id" to id,
                 "pageId" to pageId,
@@ -2037,12 +1893,11 @@ class WorkbenchProjectStore(
                         ?: "APP"
                     ),
                 "route" to route,
-                "kind" to (display["kind"]?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: "oob_flutter"),
-                "renderer" to (
-                    display["renderer"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                        ?: workbenchPageSpec(record)["renderer"]
-                        ?: "oob_schema_collection"
+                "kind" to (
+                    display["kind"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: if (renderer == WORKBENCH_HTML_RENDERER) "oob_html_webview" else "oob_flutter"
                     ),
+                "renderer" to renderer,
                 "surfaceKind" to "app_display",
                 "navigationScope" to "right_workbench_display",
                 "isDefault" to (display["isDefault"] == true),
@@ -2120,9 +1975,9 @@ class WorkbenchProjectStore(
             if (existingApiIds.add(api.apiId)) {
                 existing += linkedMapOf(
                     "apiId" to api.apiId,
-                    "kind" to schemaApiAction(api),
+                    "kind" to projectApiAction(api),
                     "label" to api.displayName,
-                    "inputs" to when (schemaApiAction(api)) {
+                    "inputs" to when (projectApiAction(api)) {
                         "archive", "update" -> linkedMapOf("item_id" to "item.id")
                         "list" -> emptyMap<String, String>()
                         else -> linkedMapOf("title" to "page.input.title")
@@ -2148,8 +2003,8 @@ class WorkbenchProjectStore(
             "logs/hot_updates.jsonl"
         ),
         "displayNavigationScope" to "right_workbench_display",
-        "rule" to "Add features by extending displays, actions, and Project business tools; do not create a replacement Project unless the user asks."
-    )
+            "rule" to "Add features by extending displays, actions, and Project business tools; do not create a replacement Project unless the user asks."
+        )
 
     private fun displayKey(display: Map<String, Any?>): String {
         return display["id"]?.toString()?.trim()
@@ -2159,9 +2014,248 @@ class WorkbenchProjectStore(
     }
 
     private fun displayRouteWithId(route: String, displayId: String): String {
-        val base = route.ifBlank { "/workbench/schema_app" }
+        val base = route.ifBlank { "/workbench/project" }
         val separator = if (base.contains("?")) "&" else "?"
         return if (base.contains("displayId=")) base else "$base${separator}displayId=$displayId"
+    }
+
+    private fun htmlRoute(projectId: String): String = "/workbench/html?projectId=$projectId"
+
+    private fun htmlWorkbenchDisplay(record: WorkbenchProjectRecord): Map<String, Any?> = linkedMapOf(
+        "id" to "html-main-display",
+        "pageId" to "html-main-page",
+        "title" to record.name,
+        "shortName" to "WEB",
+        "route" to htmlRoute(record.projectId),
+        "kind" to "oob_html_webview",
+        "renderer" to WORKBENCH_HTML_RENDERER,
+        "surfaceKind" to "app_display",
+        "navigationScope" to "right_workbench_display",
+        "isDefault" to true,
+        "description" to "Live HTML Display bound to this Project."
+    )
+
+    private fun isHtmlDisplay(display: Map<String, Any?>): Boolean {
+        val renderer = display["renderer"]?.toString()?.trim()
+        val kind = display["kind"]?.toString()?.trim()
+        val route = display["route"]?.toString()?.trim().orEmpty()
+        return renderer == WORKBENCH_HTML_RENDERER ||
+            kind == WORKBENCH_HTML_RENDERER ||
+            route.startsWith("/workbench/html")
+    }
+
+    private fun normalizeDefaultDisplaySelection(
+        displays: List<Map<String, Any?>>,
+        preferredDisplayId: String?
+    ): List<Map<String, Any?>> {
+        val preferred = preferredDisplayId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return displays
+        if (displays.none { displayKey(it) == preferred }) return displays
+        return displays.map { display ->
+            if (displayKey(display) == preferred) {
+                display + ("isDefault" to true)
+            } else if (display["isDefault"] == true) {
+                display + ("isDefault" to false)
+            } else {
+                display
+            }
+        }
+    }
+
+    /**
+     * Normalizes Project-owned HTML source updates into relative-path/content pairs.
+     *
+     * @param value Tool or MethodChannel payload. Supported shapes are a map of
+     * `path -> content`, a list of `{path, content}`, or `{files: [...]}`.
+     * @return Sanitized relative file specs ready for bounded writes under `frontend/html/`.
+     */
+    private fun normalizeFrontendHtmlFiles(value: Any?): List<Pair<String, String>> {
+        if (value == null) return emptyList()
+        if (value is Map<*, *>) {
+            val map = asStringKeyMap(value)
+            val directPath = map["path"] ?: map["relativePath"] ?: map["filePath"]
+            val directContent = map["content"] ?: map["source"] ?: map["text"]
+            if (directPath != null && directContent != null) {
+                return listOf(frontendHtmlFileSpec(directPath, directContent))
+            }
+            val nested = map["files"] ?: map["items"]
+            if (nested is Iterable<*>) {
+                return normalizeFrontendHtmlFiles(nested)
+            }
+            return map.mapNotNull { (path, content) ->
+                if (path == "files" || path == "items") null else frontendHtmlFileSpec(path, content)
+            }.distinctBy { it.first }
+        }
+        val raw = value as? Iterable<*> ?: return emptyList()
+        return raw.mapNotNull { item ->
+            val map = item as? Map<*, *> ?: return@mapNotNull null
+            val file = asStringKeyMap(map)
+            val path = file["path"] ?: file["relativePath"] ?: file["filePath"] ?: return@mapNotNull null
+            val content = file["content"] ?: file["source"] ?: file["text"] ?: return@mapNotNull null
+            frontendHtmlFileSpec(path, content)
+        }.distinctBy { it.first }
+    }
+
+    private fun frontendHtmlFileSpec(path: Any?, content: Any?): Pair<String, String> {
+        val normalized = cleanFrontendHtmlPath(path?.toString().orEmpty())
+        return normalized to content?.toString().orEmpty()
+    }
+
+    private fun cleanFrontendHtmlPath(rawPath: String): String {
+        val normalized = rawPath.replace('\\', '/').trim().removePrefix("/")
+        require(normalized.isNotEmpty()) { "HTML source file path is required." }
+        require(!normalized.contains(":")) { "HTML source file path must be relative." }
+        val parts = normalized.split('/').filter { it.isNotBlank() }
+        require(parts.none { it == ".." }) { "HTML source file path cannot escape frontend/html/." }
+        require(parts.lastOrNull() != "manifest.json") {
+            "frontend/html/manifest.json is generated by OOB."
+        }
+        return parts.joinToString("/")
+    }
+
+    private fun writeFrontendHtmlFiles(
+        projectId: String,
+        files: List<Pair<String, String>>
+    ): List<Map<String, Any?>> {
+        if (files.isEmpty()) return emptyList()
+        val htmlDir = File(projectDir(projectId), "frontend/html")
+        htmlDir.mkdirs()
+        val root = htmlDir.canonicalFile
+        val rootPrefix = root.path + File.separator
+        val writtenAt = nowIso()
+        val written = files.map { (relativePath, content) ->
+            val target = File(root, relativePath).canonicalFile
+            require(target.path == root.path || target.path.startsWith(rootPrefix)) {
+                "HTML source file path cannot escape frontend/html/."
+            }
+            target.parentFile?.mkdirs()
+            target.writeText(content)
+            linkedMapOf<String, Any?>(
+                "path" to "frontend/html/$relativePath",
+                "bytes" to content.toByteArray(Charsets.UTF_8).size,
+                "updatedAt" to writtenAt
+            )
+        }
+        writeFrontendHtmlManifest(projectId)
+        return written
+    }
+
+    private fun readFrontendHtmlPayload(projectId: String): Map<String, Any?> {
+        val htmlDir = File(projectDir(projectId), "frontend/html")
+        if (!htmlDir.exists()) return emptyMap()
+        val root = htmlDir.canonicalFile
+        val sources = linkedMapOf<String, String>()
+        val assets = mutableListOf<Map<String, Any?>>()
+        htmlDir.walkTopDown()
+            .filter { it.isFile && it.name != "manifest.json" && it.name != "README.md" }
+            .sortedBy { it.absolutePath }
+            .forEach { file ->
+                val relative = root.toPath()
+                    .relativize(file.canonicalFile.toPath())
+                    .toString()
+                    .replace(File.separatorChar, '/')
+                val payload = linkedMapOf<String, Any?>(
+                    "path" to "frontend/html/$relative",
+                    "relativePath" to relative,
+                    "bytes" to file.length(),
+                    "updatedAt" to Instant.ofEpochMilli(file.lastModified()).toString()
+                )
+                if (isTextFrontendHtmlFile(file)) {
+                    sources[relative] = file.readText()
+                    assets += payload + ("kind" to "source")
+                } else {
+                    assets += payload + ("kind" to "asset")
+                }
+            }
+        if (sources.isEmpty() && assets.isEmpty()) return emptyMap()
+        val manifestFile = File(htmlDir, "manifest.json")
+        val manifest = if (manifestFile.exists()) {
+            runCatching {
+                gson.fromJson<Map<String, Any?>>(manifestFile.readText(), mapType)
+            }.getOrNull().orEmpty()
+        } else {
+            emptyMap()
+        }
+        val entryFile = manifest["entryFile"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: when {
+                sources.containsKey("index.html") -> "index.html"
+                sources.keys.any { it.endsWith(".html") } -> sources.keys.first { it.endsWith(".html") }
+                else -> sources.keys.firstOrNull().orEmpty()
+            }
+        val entry = entryFile.takeIf { it.isNotEmpty() }?.let { File(root, it).canonicalFile }
+        val entryPath = entry?.takeIf { file ->
+            val rootPrefix = root.path + File.separator
+            file.path == root.path || file.path.startsWith(rootPrefix)
+        }?.absolutePath.orEmpty()
+        return linkedMapOf(
+            "runtime" to WORKBENCH_HTML_RENDERER,
+            "renderer" to WORKBENCH_HTML_RENDERER,
+            "entryFile" to entryFile,
+            "entryPath" to entryPath,
+            "sources" to sources,
+            "assets" to assets,
+            "manifest" to manifest
+        )
+    }
+
+    private fun writeFrontendHtmlManifest(projectId: String): List<Map<String, Any?>> {
+        val htmlDir = File(projectDir(projectId), "frontend/html")
+        htmlDir.mkdirs()
+        val root = htmlDir.canonicalFile
+        val files = htmlDir.walkTopDown()
+            .filter { it.isFile && it.name != "manifest.json" }
+            .map { file ->
+                val relative = root.toPath()
+                    .relativize(file.canonicalFile.toPath())
+                    .toString()
+                    .replace(File.separatorChar, '/')
+                linkedMapOf<String, Any?>(
+                    "path" to "frontend/html/$relative",
+                    "relativePath" to relative,
+                    "bytes" to file.length(),
+                    "updatedAt" to Instant.ofEpochMilli(file.lastModified()).toString(),
+                    "kind" to if (isTextFrontendHtmlFile(file)) "source" else "asset"
+                )
+            }
+            .sortedBy { it["path"]?.toString().orEmpty() }
+            .toList()
+        val entryFile = files.firstOrNull { it["relativePath"] == "index.html" }?.get("relativePath")
+            ?: files.firstOrNull {
+                it["relativePath"]?.toString()?.endsWith(".html") == true
+            }?.get("relativePath")
+            ?: files.firstOrNull()?.get("relativePath")
+        File(htmlDir, "manifest.json").writeText(
+            gson.toJson(
+                linkedMapOf(
+                    "generatedAt" to nowIso(),
+                    "runtimeBoundary" to "html_webview_live_runtime",
+                    "entryFile" to entryFile,
+                    "files" to files,
+                    "security" to linkedMapOf(
+                        "nativeBridge" to "Project Tool whitelist only",
+                        "externalNavigation" to "blocked in Workbench Display",
+                        "remoteSubresources" to "allowed for demo/CDN; prefer vendored assets for production"
+                    )
+                )
+            )
+        )
+        return files
+    }
+
+    private fun isTextFrontendHtmlFile(file: File): Boolean {
+        val name = file.name.lowercase()
+        return listOf(
+            ".html",
+            ".htm",
+            ".css",
+            ".js",
+            ".mjs",
+            ".json",
+            ".svg",
+            ".txt",
+            ".md",
+            ".csv"
+        ).any { name.endsWith(it) }
     }
 
     /**
@@ -2217,7 +2311,11 @@ class WorkbenchProjectStore(
      * @return Slash-normalized path with no absolute, parent, or manifest overwrite segments.
      */
     private fun cleanFrontendFlutterPath(rawPath: String): String {
-        val normalized = rawPath.replace('\\', '/').trim().removePrefix("/")
+        val normalized = rawPath.replace('\\', '/')
+            .trim()
+            .removePrefix("/")
+            .removePrefix("frontend/flutter/")
+            .removePrefix("flutter/")
         require(normalized.isNotEmpty()) { "Flutter source file path is required." }
         require(!normalized.contains(":")) { "Flutter source file path must be relative." }
         val parts = normalized.split('/').filter { it.isNotBlank() }
@@ -2293,10 +2391,20 @@ class WorkbenchProjectStore(
         } else {
             emptyMap()
         }
+        val entryFile = manifest["entryFile"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: when {
+                sources.containsKey("lib/main.dart") -> "lib/main.dart"
+                sources.containsKey("main.dart") -> "main.dart"
+                sources.containsKey("frontend/flutter/lib/main.dart") -> "frontend/flutter/lib/main.dart"
+                sources.keys.any { it.endsWith("/main.dart") } -> sources.keys.first { it.endsWith("/main.dart") }
+                else -> sources.keys.firstOrNull().orEmpty()
+            }
+        val entryClass = manifest["entryClass"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "OobProjectWidget"
         return linkedMapOf(
             "runtime" to "flutter_eval",
-            "entryFile" to "lib/main.dart",
-            "entryClass" to "OobProjectWidget",
+            "entryFile" to entryFile,
+            "entryClass" to entryClass,
             "sources" to sources,
             "manifest" to manifest
         )
@@ -2332,6 +2440,12 @@ class WorkbenchProjectStore(
                 linkedMapOf(
                     "generatedAt" to nowIso(),
                     "runtimeBoundary" to "flutter_eval_live_runtime",
+                    "entryFile" to when {
+                        files.any { it["path"] == "frontend/flutter/lib/main.dart" } -> "lib/main.dart"
+                        files.any { it["path"] == "frontend/flutter/main.dart" } -> "main.dart"
+                        else -> "lib/main.dart"
+                    },
+                    "entryClass" to "OobProjectWidget",
                     "files" to files
                 )
             )
@@ -2355,15 +2469,7 @@ class WorkbenchProjectStore(
         projectDir.mkdirs()
         val readme = File(projectDir, "README.md")
         if (!readme.exists()) {
-            val dataFiles = when (record.templateId) {
-                WORKBENCH_SCHEMA_TEMPLATE_ID ->
-                    "- `data/items.json`: persistent schema item state"
-                WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID ->
-                    "- `data/items.json`: persistent quick capture inbox state\n" +
-                        "- `logs/link_fetch.jsonl`: best-effort link read and fallback log\n" +
-                        "- `logs/script_runs.jsonl`: workspace Python executor audit log"
-                else -> "- `data/todos.json`: persistent todo state"
-            }
+            val dataFiles = "- `data/items.json`: persistent Project item state"
             readme.writeText(
                 """
                 |# ${record.name}
@@ -2373,7 +2479,6 @@ class WorkbenchProjectStore(
                 |
                 |## Runtime
                 |- Project id: `${record.projectId}`
-                |- Template: `${record.templateId}`
                 |- Native display route: `${record.route}`
                 |- Workspace path: `${record.spacePath}`
                 |
@@ -2382,10 +2487,15 @@ class WorkbenchProjectStore(
                 |contract lives in `frontend/page_spec.json`; OOB binds visible controls to
                 |Project Tools through `workbenchApiCall`.
                 |
+                |If the Project needs generated HTML, generate or edit source under
+                |`frontend/html/`. OOB can load `frontend/html/index.html` directly in the
+                |right-side Workbench WebView Display and bridge `window.oob.callApi()` to
+                |Project Tools.
+                |
                 |If the Project needs custom Flutter, generate or edit source under
-                |`frontend/flutter/` from the Alpine workspace. That source is a Project asset
-                |for export/build/future renderer promotion; it is not hot-loaded into the
-                |already installed OOB APK without a controlled build/install step.
+                |`frontend/flutter/` from the Alpine workspace. The supported runtime subset is
+                |loaded by `/workbench/flutter_eval`; unsupported native/package code still needs
+                |a controlled build/install path.
                 |
                 |The Display is the user-facing app surface. It should show the product workflow,
                 |domain records, input forms, filters, and business actions. Project ids,
@@ -2416,6 +2526,30 @@ class WorkbenchProjectStore(
         frontendDir.mkdirs()
         backendDir.mkdirs()
         scriptsDir.mkdirs()
+        val htmlDir = File(frontendDir, "html")
+        htmlDir.mkdirs()
+        val htmlReadme = File(htmlDir, "README.md")
+        if (!htmlReadme.exists()) {
+            htmlReadme.writeText(
+                """
+                |# HTML Display Source
+                |
+                |This directory stores Project-owned HTML/CSS/JS generated or edited from the
+                |Agent workspace.
+                |
+                |Runtime boundary:
+                |- `frontend/html/index.html` can be loaded live by the right-side Workbench
+                |  WebView Display when the Project renderer is `html_webview`.
+                |- HTML calls native/project capabilities through `window.oob.callApi(...)`.
+                |- The bridge is limited to registered Project Tools; do not assume arbitrary
+                |  Android, filesystem, shell, or network APIs are exposed.
+                |
+                |Prefer local vendored JS/CSS assets for production displays. CDN dependencies
+                |are acceptable for demos and iteration, but they reduce offline reliability.
+                |
+                """.trimMargin()
+            )
+        }
         val flutterDir = File(frontendDir, "flutter")
         flutterDir.mkdirs()
         val flutterReadme = File(flutterDir, "README.md")
@@ -2430,10 +2564,11 @@ class WorkbenchProjectStore(
                 |Runtime boundary:
                 |- `frontend/page_spec.json` is the immediate OOB Display contract rendered by the
                 |  installed app.
-                |- `frontend/flutter/` is editable source for export, build, or future renderer
-                |  promotion.
-                |- New Dart code written here is not hot-loaded into the already installed OOB APK.
-                |  It needs a controlled Flutter build/install path before it can run as native code.
+                |- `frontend/flutter/` is editable source for the `/workbench/flutter_eval`
+                |  renderer, export, or a controlled native build path.
+                |- Dart code written here can run only inside the supported flutter_eval subset.
+                |  Unsupported packages/native integrations need a controlled Flutter build/install
+                |  path before they can run as app code.
                 |
                 |Use this directory when a Project needs highly custom Flutter beyond the current
                 |page-spec renderer. Keep `page_spec.json` as the fast preview surface.
@@ -2476,9 +2611,6 @@ class WorkbenchProjectStore(
                 """.trimMargin()
             )
         }
-        if (record.templateId == WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID) {
-            writeQuickCaptureScriptFiles(backendDir, scriptsDir)
-        }
         val androidDir = File(projectDir, "android")
         androidDir.mkdirs()
         val androidReadme = File(androidDir, "README.md")
@@ -2519,10 +2651,11 @@ class WorkbenchProjectStore(
                 linkedMapOf<String, Any?>(
                     "executorBoundary" to "oob_native_workbench",
                     "sourcePrompt" to sourcePrompt,
-                    "templateId" to record.templateId,
                         "runtime" to linkedMapOf(
                             "workspace" to record.spacePath,
                             "frontendPageSpec" to "frontend/page_spec.json",
+                            "frontendHtmlSource" to "frontend/html/",
+                            "frontendHtmlManifest" to "frontend/html/manifest.json",
                             "frontendFlutterSource" to "frontend/flutter/",
                             "frontendFlutterManifest" to "frontend/flutter/manifest.json",
                             "progressLog" to "logs/project_progress.jsonl",
@@ -2578,7 +2711,7 @@ class WorkbenchProjectStore(
      * Builds the editable frontend contract for a new Project.
      *
      * @param record Project registry record used for route and identity.
-     * @param apis Business APIs that the generated Display can bind to.
+     * @param apis Business APIs that the Display can bind to.
      * @param sourcePrompt User's original prompt, persisted for later hot-update context.
      * @param config Optional creation config containing entity/display hints for generic Projects.
      * @return Page spec written to `frontend/page_spec.json`.
@@ -2589,159 +2722,65 @@ class WorkbenchProjectStore(
         sourcePrompt: String?,
         config: Map<String, Any?>
     ): Map<String, Any?> {
-        if (record.templateId == WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID) {
-            return linkedMapOf(
-                "pageId" to "quick-capture-page",
-                "displayId" to "quick-capture-display",
-                "title" to "随手记 Inbox",
-                "shortName" to "NOTE",
-                "description" to "Capture text, links, share content, and screenshots into Todo, Summary, Link Card, and later-read items.",
-                "renderer" to "oob_quick_capture_inbox",
-                "surfaceKind" to "app_display",
-                "route" to record.route,
-                "templateId" to record.templateId,
-                "sourcePrompt" to sourcePrompt,
-                "navigationScope" to "right_workbench_display",
-                "frontendRuntime" to linkedMapOf(
-                    "instantSurface" to "frontend/page_spec.json",
-                    "editableFlutterSource" to "frontend/flutter/",
-                    "compileBoundary" to "Flutter source is generated and edited in the Project workspace; it is not hot-loaded into the installed OOB APK without a controlled build/install step."
-                ),
-                "displays" to quickCaptureDisplays(record),
-                "decomposition" to listOf(
-                    "Explicit Project creation prompt -> Project registry",
-                    "App Display -> quick capture workflow and inbox state",
-                    "Multiple Displays -> capture, inbox, and archive pages inside one Project",
-                    "Visible controls -> domain actions",
-                    "Control/debug surfaces -> Project metadata, tool counts, Toolbox, logs, and Workspace"
-                ),
-                "iterationContract" to linkedMapOf(
-                    "scope" to "same_project",
-                    "mutationTargets" to listOf("frontend/page_spec.json", "backend/api_spec.json", "data/items.json", "logs/hot_updates.jsonl"),
-                    "rule" to "Add features by extending displays, actions, and Project business tools; do not create a replacement Project unless the user asks."
-                ),
-                "displayRules" to appDisplayRules(),
-                "state" to linkedMapOf("items" to "data/items.json"),
-                "categories" to listOf("todo", "summary", "link", "later"),
-                "bindings" to listOf(
-                    linkedMapOf(
-                        "controlId" to "quick-capture-ingest",
-                        "apiId" to WORKBENCH_CAPTURE_INGEST_TOOL_ID,
-                        "inputs" to linkedMapOf("text" to "page.capture_input")
-                    ),
-                    linkedMapOf(
-                        "controlId" to "quick-capture-archive",
-                        "apiId" to WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID,
-                        "inputs" to linkedMapOf("item_id" to "item.id")
-                    ),
-                    linkedMapOf(
-                        "controlId" to "quick-capture-promote-to-todo",
-                        "apiId" to WORKBENCH_CAPTURE_PROMOTE_TOOL_ID,
-                        "inputs" to linkedMapOf("item_id" to "item.id")
-                    ),
-                    linkedMapOf(
-                        "controlId" to "quick-capture-summarize",
-                        "apiId" to WORKBENCH_CAPTURE_SUMMARIZE_TOOL_ID,
-                        "inputs" to linkedMapOf("item_id" to "item.id")
-                    )
-                )
-            )
-        }
-        if (record.templateId == WORKBENCH_SCHEMA_TEMPLATE_ID) {
-            val entityName = schemaEntityName(config, record.name, sourcePrompt)
-            val title = config["title"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                ?: config["displayName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                ?: record.name
-            val description = config["description"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                ?: "Manage $entityName records with saved status and quick actions."
-            return linkedMapOf(
-                "pageId" to "schema-main-page",
-                "displayId" to "schema-main-display",
-                "title" to title,
-                "shortName" to schemaShortName(entityName),
-                "description" to description,
-                "renderer" to "oob_schema_collection",
-                "surfaceKind" to "app_display",
-                "route" to record.route,
-                "templateId" to record.templateId,
-                "sourcePrompt" to sourcePrompt,
-                "entityName" to entityName,
-                "primaryField" to "title",
-                "decomposition" to listOf(
-                    "Prompt requirement -> Project registry",
-                    "App Display -> user workflow for $entityName",
-                    "Visible controls -> domain actions",
-                    "Control/debug surfaces -> Project metadata, tool counts, Toolbox, logs, and Workspace"
-                ),
-                "displayRules" to appDisplayRules(),
-                "state" to linkedMapOf("items" to "data/items.json"),
-                "frontendRuntime" to linkedMapOf(
-                    "instantSurface" to "frontend/page_spec.json",
-                    "editableFlutterSource" to "frontend/flutter/",
-                    "compileBoundary" to "Flutter source is generated and edited in the Project workspace; it is not hot-loaded into the installed OOB APK without a controlled build/install step."
-                ),
-                "fields" to listOf(
-                    linkedMapOf(
-                        "id" to "title",
-                        "label" to entityName,
-                        "type" to "string",
-                        "required" to true
-                    )
-                ),
-                "actions" to apis.map { api ->
-                    linkedMapOf(
-                        "apiId" to api.apiId,
-                        "kind" to schemaApiAction(api),
-                        "label" to api.displayName,
-                        "inputs" to if (schemaApiAction(api) == "archive") {
-                            linkedMapOf("item_id" to "item.id")
-                        } else {
-                            linkedMapOf("title" to "page.input.title")
-                        }
-                    )
-                }
-            )
-        }
+        val entityName = projectEntityName(config, record.name, sourcePrompt)
+        val title = config["title"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: config["displayName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: record.name
+        val description = config["description"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "Display and operate $entityName records through Project APIs."
         return linkedMapOf(
-            "pageId" to "todo-log-page",
-            "displayId" to "todo-log-display",
-            "title" to "Todo 日志",
-            "shortName" to "TODO",
-            "renderer" to "oob_native_flutter_display",
+            "pageId" to "project-main-page",
+            "displayId" to "project-main-display",
+            "title" to title,
+            "shortName" to projectShortName(entityName),
+            "description" to description,
+            "renderer" to "oob_project_display",
             "surfaceKind" to "app_display",
             "route" to record.route,
-            "templateId" to record.templateId,
             "sourcePrompt" to sourcePrompt,
+            "entityName" to entityName,
+            "primaryField" to "title",
             "decomposition" to listOf(
                 "Prompt requirement -> Project registry",
-                "App Display -> todo workflow",
+                "App Display -> user workflow for $entityName",
                 "Visible controls -> domain actions",
                 "Control/debug surfaces -> Project metadata, tool counts, Toolbox, logs, and Workspace"
             ),
             "displayRules" to appDisplayRules(),
-            "state" to linkedMapOf("todos" to "data/todos.json"),
+            "state" to linkedMapOf("items" to "data/items.json"),
             "frontendRuntime" to linkedMapOf(
                 "instantSurface" to "frontend/page_spec.json",
+                "editableHtmlSource" to "frontend/html/",
                 "editableFlutterSource" to "frontend/flutter/",
-                "compileBoundary" to "Flutter source is generated and edited in the Project workspace; it is not hot-loaded into the installed OOB APK without a controlled build/install step."
+                "htmlRuntimeBoundary" to "HTML source is generated and edited in the Project workspace and can be loaded live by /workbench/html through WebView.",
+                "compileBoundary" to "Flutter source is generated and edited in the Project workspace; it is loaded by /workbench/flutter_eval for the supported runtime subset."
             ),
-            "bindings" to listOf(
+            "fields" to listOf(
                 linkedMapOf(
-                    "controlId" to "add-todo-button",
-                    "apiId" to WORKBENCH_TODO_ADD_TOOL_ID,
-                    "inputs" to linkedMapOf("title" to "page.todo_input")
-                ),
-                linkedMapOf(
-                    "controlId" to "finish-todo-button",
-                    "apiId" to WORKBENCH_TODO_FINISH_TOOL_ID,
-                    "inputs" to linkedMapOf("todo_id" to "todo.id")
+                    "id" to "title",
+                    "label" to entityName,
+                    "type" to "string",
+                    "required" to true
                 )
-            )
+            ),
+            "actions" to apis.map { api ->
+                val action = projectApiAction(api)
+                linkedMapOf(
+                    "apiId" to api.apiId,
+                    "kind" to action,
+                    "label" to api.displayName,
+                    "inputs" to if (action == "archive" || action == "update") {
+                        linkedMapOf("item_id" to "item.id")
+                    } else {
+                        linkedMapOf("title" to "page.input.title")
+                    }
+                )
+            }
         )
     }
 
     /**
-     * Returns the app/control surface split that every generated Display must preserve.
+     * Returns the app/control surface split that every Display must preserve.
      *
      * The payload is persisted into `frontend/page_spec.json` so future agents and hot-update
      * passes keep user-facing app screens separate from Workbench management/debug metadata.
@@ -2762,7 +2801,6 @@ class WorkbenchProjectStore(
         ),
         "controlSurfaceOnly" to listOf(
             "project id",
-            "template id",
             "Tool count",
             "executor kind",
             "Toolbox manifest",
@@ -2778,7 +2816,7 @@ class WorkbenchProjectStore(
     /**
      * Explains the prompt-to-runtime split in `backend/api_spec.json`.
      *
-     * @param record Project whose template determines the state file.
+     * @param record Project whose workspace owns the state file.
      * @param apis Registered Project Tools for this Project.
      * @return Stable metadata map for handoff, export, and future agents.
      */
@@ -2786,57 +2824,24 @@ class WorkbenchProjectStore(
         record: WorkbenchProjectRecord,
         apis: List<WorkbenchApiRecord>
     ): Map<String, Any?> {
-        return when (record.templateId) {
-            WORKBENCH_SCHEMA_TEMPLATE_ID -> linkedMapOf(
-                "frontend" to "frontend/page_spec.json",
-                "data" to "data/items.json",
-                "logs" to "logs/api_calls.jsonl",
-                "hotUpdates" to "logs/hot_updates.jsonl",
-                "businessApis" to apis.map { it.apiId }
-            )
-            WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID -> linkedMapOf(
-                "ingest" to WORKBENCH_CAPTURE_INGEST_TOOL_ID,
-                "archive" to WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID,
-                "promoteToTodo" to WORKBENCH_CAPTURE_PROMOTE_TOOL_ID,
-                "summarize" to WORKBENCH_CAPTURE_SUMMARIZE_TOOL_ID,
-                "frontend" to "frontend/page_spec.json",
-                "backendScripts" to "backend/scripts/*.py",
-                "data" to "data/items.json",
-                "logs" to listOf(
-                    "logs/api_calls.jsonl",
-                    "logs/link_fetch.jsonl",
-                    "logs/script_runs.jsonl",
-                    "logs/hot_updates.jsonl"
-                )
-            )
-            else -> linkedMapOf(
-                "addTodo" to WORKBENCH_TODO_ADD_TOOL_ID,
-                "archiveTodo" to WORKBENCH_TODO_FINISH_TOOL_ID,
-                "frontend" to "frontend/page_spec.json",
-                "data" to "data/todos.json",
-                "logs" to "logs/api_calls.jsonl",
-                "hotUpdates" to "logs/hot_updates.jsonl"
-            )
-        }
+        return linkedMapOf(
+            "frontend" to "frontend/page_spec.json",
+            "html" to "frontend/html/",
+            "data" to "data/items.json",
+            "logs" to "logs/api_calls.jsonl",
+            "hotUpdates" to "logs/hot_updates.jsonl",
+            "businessApis" to apis.map { it.apiId }
+        )
     }
 
     /**
      * Lists Project files that a Project Tool is expected to read or write.
      *
-     * @param record Project whose template owns the state file.
+     * @param record Project whose workspace owns the state file.
      * @return Relative persistence paths stored in API specs.
      */
     private fun persistenceFiles(record: WorkbenchProjectRecord): List<String> {
-        return when (record.templateId) {
-            WORKBENCH_SCHEMA_TEMPLATE_ID -> listOf("data/items.json", "logs/api_calls.jsonl")
-            WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID -> listOf(
-                "data/items.json",
-                "logs/api_calls.jsonl",
-                "logs/link_fetch.jsonl",
-                "logs/script_runs.jsonl"
-            )
-            else -> listOf("data/todos.json", "logs/api_calls.jsonl")
-        }
+        return listOf("data/items.json", "logs/api_calls.jsonl")
     }
 
     /**
@@ -2910,145 +2915,6 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Writes illustrative workspace Python script files for the quick-capture executor contract.
-     *
-     * @param backendDir Project backend directory that receives `oob_sdk.py`.
-     * @param scriptsDir Project script directory that receives one file per capture API.
-     */
-    private fun writeQuickCaptureScriptFiles(backendDir: File, scriptsDir: File) {
-        val sdkDir = File(backendDir, "oob_sdk")
-        sdkDir.mkdirs()
-        val sdk = File(backendDir, "oob_sdk.py")
-        if (!sdk.exists()) {
-            sdk.writeText(
-                """
-                |class OobProjectSdk:
-                |    '''Minimal SDK sketch for OOB Workbench Project scripts.'''
-                |
-                |    def __init__(self, project_id):
-                |        self.project_id = project_id
-                |
-                |    def read_json(self, path, default=None):
-                |        return default
-                |
-                |    def write_json(self, path, value):
-                |        return value
-                |
-                |    def browser_use(self, **kwargs):
-                |        return {"status": "deferred", **kwargs}
-                |
-                |    def vlm_task(self, **kwargs):
-                |        return {"status": "deferred", **kwargs}
-                |
-                |    def memory_write_daily(self, **kwargs):
-                |        return {"status": "optional", **kwargs}
-                |
-                |
-                |def execute(inputs, sdk):
-                |    raise NotImplementedError("Each script defines its own execute(inputs, sdk).")
-                |
-                """.trimMargin()
-            )
-        }
-        val initFile = File(sdkDir, "__init__.py")
-        if (!initFile.exists()) {
-            initFile.writeText("from .oob import OobProjectSdk\n")
-        }
-        val oobFile = File(sdkDir, "oob.py")
-        if (!oobFile.exists()) {
-            oobFile.writeText(
-                """
-                |class OobProjectSdk:
-                |    '''Stable facade for generated OOB Workbench scripts.'''
-                |
-                |    def __init__(self, project_id, bridge=None):
-                |        self.project_id = project_id
-                |        self.bridge = bridge
-                |
-                |    def vlm_task(self, **kwargs):
-                |        return self._call("vlm_task", kwargs)
-                |
-                |    def file_read(self, path):
-                |        return self._call("file_read", {"path": path})
-                |
-                |    def file_write(self, path, content):
-                |        return self._call("file_write", {"path": path, "content": content})
-                |
-                |    def memory_write_daily(self, text):
-                |        return self._call("memory_write_daily", {"text": text})
-                |
-                |    def browser_use(self, **kwargs):
-                |        return self._call("browser_use", kwargs)
-                |
-                |    def _call(self, tool, args):
-                |        if self.bridge is None:
-                |            return {"tool": tool, "status": "deferred", "args": args}
-                |        return self.bridge.call(tool, args)
-                |
-                """.trimMargin()
-            )
-        }
-        val bridgeFile = File(sdkDir, "_bridge.py")
-        if (!bridgeFile.exists()) {
-            bridgeFile.writeText(
-                """
-                |class WorkbenchBridge:
-                |    '''Placeholder bridge client; native BridgeServer will replace this in a later executor pass.'''
-                |
-                |    def __init__(self, socket_path):
-                |        self.socket_path = socket_path
-                |
-                |    def call(self, tool, args):
-                |        return {"tool": tool, "status": "deferred", "socket_path": self.socket_path, "args": args}
-                |
-                """.trimMargin()
-            )
-        }
-        val runnerFile = File(sdkDir, "runner.py")
-        if (!runnerFile.exists()) {
-            runnerFile.writeText(
-                """
-                |import json
-                |import sys
-                |
-                |
-                |def main(handler):
-                |    payload = json.load(sys.stdin)
-                |    result = handler(payload.get("inputs", {}))
-                |    json.dump(result, sys.stdout, ensure_ascii=False)
-                |
-                """.trimMargin()
-            )
-        }
-        val scripts = mapOf(
-            "capture_ingest.py" to "Classify text/url/share/screenshot into Todo, Summary, Link Card, or later-read item.",
-            "capture_archive.py" to "Archive one item by item_id.",
-            "capture_promote_to_todo.py" to "Convert an existing item into a todo.",
-            "capture_summarize.py" to "Refresh an existing item's summary."
-        )
-        scripts.forEach { (name, description) ->
-            val file = File(scriptsDir, name)
-            if (!file.exists()) {
-                file.writeText(
-                    """
-                    |from oob_sdk import OobProjectSdk
-                    |
-                    |
-                    |def execute(inputs: dict, sdk: OobProjectSdk) -> dict:
-                    |    '''$description
-                    |
-                    |    OOB v1 runs this contract through the native Workbench executor while
-                    |    keeping the editable script artifact in Workspace for future replacement.
-                    |    '''
-                    |    return {"ok": True, "inputs": inputs}
-                    |
-                    """.trimMargin()
-                )
-            }
-        }
-    }
-
-    /**
      * Preserves the original prompt stored in `project.json` when an existing project is reopened.
      *
      * @param projectId Project directory id whose current metadata should be inspected.
@@ -3083,50 +2949,6 @@ class WorkbenchProjectStore(
                 }
         }
         return counts
-    }
-
-    private fun addTodo(projectId: String, inputs: Map<String, Any?>): Map<String, Any?> {
-        val api = findApi(projectId, WORKBENCH_TODO_ADD_TOOL_ID)
-        val title = inputs["title"]?.toString()?.trim().orEmpty()
-        if (title.isEmpty()) {
-            return apiError(api, "EMPTY_TODO_TITLE", "Todo title is required.")
-        }
-        val todos = readTodos(projectId).toMutableList()
-        val now = nowIso()
-        val todo = WorkbenchTodoRecord(
-            id = "todo-${System.currentTimeMillis()}-${todos.size + 1}",
-            title = title,
-            status = "open",
-            createdAt = now
-        )
-        todos.add(0, todo)
-        writeTodos(projectId, todos)
-        return apiSuccess(api, mapOf("todo" to todo.toPayload()))
-    }
-
-    private fun finishTodo(projectId: String, inputs: Map<String, Any?>): Map<String, Any?> {
-        val api = findApi(projectId, WORKBENCH_TODO_FINISH_TOOL_ID)
-        val todoId = inputs["todo_id"]?.toString()?.trim()
-            ?: inputs["todoId"]?.toString()?.trim()
-            ?: ""
-        if (todoId.isEmpty()) {
-            return apiError(api, "MISSING_TODO_ID", "todo_id is required.")
-        }
-        val todos = readTodos(projectId)
-        val index = todos.indexOfFirst { it.id == todoId }
-        if (index < 0) {
-            return apiError(api, "TODO_NOT_FOUND", "Todo not found: $todoId")
-        }
-        val current = todos[index]
-        val finished = if (current.status == "finished") {
-            current
-        } else {
-            current.copy(status = "finished", finishedAt = nowIso())
-        }
-        val updated = todos.toMutableList()
-        updated[index] = finished
-        writeTodos(projectId, updated)
-        return apiSuccess(api, mapOf("todo" to finished.toPayload()))
     }
 
     private fun apiSuccess(
@@ -3437,14 +3259,7 @@ class WorkbenchProjectStore(
         )
     }
 
-    /**
-     * Converts a natural-language hot update prompt into the demo todo title.
-     *
-     * @param prompt Raw prompt from Xiaowan. If it contains a colon, the text after the first
-     * colon is treated as the concrete todo title; otherwise the full prompt is used.
-     * @return Bounded todo title suitable for persistence in `data/todos.json`.
-     */
-    private fun hotUpdateTodoTitle(prompt: String): String {
+    private fun hotUpdateItemTitle(prompt: String): String {
         val candidate = when {
             prompt.contains("：") -> prompt.substringAfter("：")
             prompt.contains(":") -> prompt.substringAfter(":")
@@ -3454,15 +3269,14 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Applies a natural-language hot update to a generic schema Project.
+     * Applies a simple natural-language hot update to the default Project item API.
      *
-     * @param record Project whose API registry owns schema create/archive APIs.
      * @param request Raw user hot-update request.
      * @param wantsAdd Whether the prompt appears to request a new item.
      * @param wantsArchive Whether the prompt appears to request archiving an item.
      * @param appliedActions Mutable action list written into `hot_updates.jsonl`.
      */
-    private fun applySchemaHotUpdate(
+    private fun applyProjectDataHotUpdate(
         record: WorkbenchProjectRecord,
         request: String,
         wantsAdd: Boolean,
@@ -3470,10 +3284,10 @@ class WorkbenchProjectStore(
         appliedActions: MutableList<Map<String, Any?>>
     ) {
         val apis = projectApis(record.projectId)
-        val createApi = apis.firstOrNull { schemaApiAction(it) == "create" }
-        val archiveApi = apis.firstOrNull { schemaApiAction(it) == "archive" }
+        val createApi = apis.firstOrNull { projectApiAction(it) == "create" }
+        val archiveApi = apis.firstOrNull { projectApiAction(it) == "archive" }
         if (wantsArchive && archiveApi != null) {
-            val activeItem = readSchemaItems(record.projectId).firstOrNull { it.status != "archived" }
+            val activeItem = readProjectItems(record.projectId).firstOrNull { it.status != "archived" }
             if (activeItem == null) {
                 appliedActions.add(
                     linkedMapOf(
@@ -3498,35 +3312,13 @@ class WorkbenchProjectStore(
         if ((wantsAdd || !wantsArchive) && createApi != null) {
             appliedActions.add(
                 compactToolResult(
-                    callApi(
-                        projectId = record.projectId,
-                        apiId = createApi.apiId,
-                        inputs = mapOf("title" to hotUpdateTodoTitle(request)),
-                        caller = WORKBENCH_HOT_UPDATE_CALLER
-                    )
+                        callApi(
+                            projectId = record.projectId,
+                            apiId = createApi.apiId,
+                            inputs = mapOf("title" to hotUpdateItemTitle(request)),
+                            caller = WORKBENCH_HOT_UPDATE_CALLER
+                        )
                 )
-            )
-        }
-    }
-
-    private fun initialTodos(config: Map<String, Any?>): List<WorkbenchTodoRecord> {
-        val raw = config["initialTodos"]
-        val titles = when (raw) {
-            is Iterable<*> -> raw.mapNotNull { item ->
-                when (item) {
-                    is Map<*, *> -> item["title"]?.toString()
-                    else -> item?.toString()
-                }?.trim()?.takeIf { it.isNotEmpty() }
-            }
-            else -> emptyList()
-        }
-        val now = nowIso()
-        return titles.mapIndexed { index, title ->
-            WorkbenchTodoRecord(
-                id = "todo-initial-${index + 1}",
-                title = title,
-                status = "open",
-                createdAt = now
             )
         }
     }
@@ -3537,7 +3329,7 @@ class WorkbenchProjectStore(
      * @param config Project creation config; accepts `initialItems` as strings or maps.
      * @return Initial item records for `data/items.json`.
      */
-    private fun initialSchemaItems(config: Map<String, Any?>): List<WorkbenchSchemaItemRecord> {
+    private fun initialProjectItems(config: Map<String, Any?>): List<WorkbenchProjectItemRecord> {
         val raw = config["initialItems"] ?: config["items"]
         val entries = when (raw) {
             is Iterable<*> -> raw.mapNotNull { item ->
@@ -3558,7 +3350,7 @@ class WorkbenchProjectStore(
         }
         val now = nowIso()
         return entries.mapIndexed { index, (title, fields) ->
-            WorkbenchSchemaItemRecord(
+            WorkbenchProjectItemRecord(
                 id = "item-initial-${index + 1}",
                 title = title,
                 status = "active",
@@ -3569,174 +3361,39 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Parses initial quick-capture items from explicit Project creation config.
-     *
-     * @param config Project creation config; accepts `initialItems` or `initialCaptures`.
-     * @return Initial active capture records for `data/items.json`.
-     */
-    private fun initialQuickCaptureItems(config: Map<String, Any?>): List<WorkbenchQuickCaptureRecord> {
-        val raw = config["initialCaptures"] ?: config["initialItems"] ?: return emptyList()
-        if (raw !is Iterable<*>) return emptyList()
-        val now = nowIso()
-        return raw.mapIndexedNotNull { index, item ->
-            val map = item as? Map<*, *>
-            val text = map?.get("text")?.toString()?.trim()
-                ?: map?.get("title")?.toString()?.trim()
-                ?: item?.toString()?.trim()
-            val title = text?.takeIf { it.isNotEmpty() } ?: return@mapIndexedNotNull null
-            val url = map?.get("url")?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                ?: extractFirstUrl(title).takeIf { it.isNotEmpty() }
-            val requestedType = map?.get("type")?.toString()?.trim()?.lowercase()
-            val type = when (requestedType) {
-                "todo", "summary", "link", "later" -> requestedType
-                "read_later", "read-later" -> "later"
-                "expense", "receipt", "invoice" -> "summary"
-                else -> quickCaptureType(title, url.orEmpty(), "")
-            }
-            WorkbenchQuickCaptureRecord(
-                id = "capture-initial-${index + 1}",
-                type = type,
-                title = quickCaptureTitle(type, title, url.orEmpty()),
-                summary = quickCaptureSummary(type, title, url.orEmpty()),
-                status = "active",
-                url = url,
-                rawText = title,
-                createdAt = now,
-                updatedAt = now
-            )
-        }
-    }
-
-    /**
-     * Builds Project Tools for the requested template.
-     *
-     * @param projectId Project namespace for API registry records.
-     * @param templateId Template id selected by `workbench_project_create`.
-     * @param config Creation config that may include explicit schema APIs.
-     * @return Business API records only; Workbench control APIs are excluded.
-     */
-    private fun templateApis(
-        projectId: String,
-        templateId: String,
-        config: Map<String, Any?>
-    ): List<WorkbenchApiRecord> {
-        return when (templateId) {
-            WORKBENCH_SCHEMA_TEMPLATE_ID -> schemaTemplateApis(projectId, config)
-            WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID -> quickCaptureTemplateApis(projectId)
-            else -> todoTemplateApis(projectId)
-        }
-    }
-
-    private fun todoTemplateApis(projectId: String): List<WorkbenchApiRecord> {
-        return listOf(
-            WorkbenchApiRecord(
-                apiId = WORKBENCH_TODO_ADD_TOOL_ID,
-                projectId = projectId,
-                toolId = WORKBENCH_TODO_ADD_TOOL_ID,
-                displayName = "Add todo",
-                description = "Create a todo item in the project state.",
-                inputSchema = linkedMapOf("title" to "string"),
-                outputSchema = linkedMapOf("todo" to "object"),
-                executorKind = "native_template"
-            ),
-            WorkbenchApiRecord(
-                apiId = WORKBENCH_TODO_FINISH_TOOL_ID,
-                projectId = projectId,
-                toolId = WORKBENCH_TODO_FINISH_TOOL_ID,
-                displayName = "Archive todo",
-                description = "Archive an existing todo item.",
-                inputSchema = linkedMapOf("todo_id" to "string"),
-                outputSchema = linkedMapOf("todo" to "object"),
-                executorKind = "native_template"
-            )
-        )
-    }
-
-    private fun quickCaptureTemplateApis(projectId: String): List<WorkbenchApiRecord> {
-        return listOf(
-            WorkbenchApiRecord(
-                apiId = WORKBENCH_CAPTURE_INGEST_TOOL_ID,
-                projectId = projectId,
-                toolId = WORKBENCH_CAPTURE_INGEST_TOOL_ID,
-                displayName = "Capture ingest",
-                description = "Classify text, links, share content, or screenshot references into the inbox.",
-                inputSchema = linkedMapOf(
-                    "text" to "string?",
-                    "url" to "string?",
-                    "sourceApp" to "string?",
-                    "shareText" to "string?",
-                    "screenshotPath" to "string?"
-                ),
-                outputSchema = linkedMapOf("item" to "object", "items" to "array"),
-                executorKind = WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND
-            ),
-            WorkbenchApiRecord(
-                apiId = WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID,
-                projectId = projectId,
-                toolId = WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID,
-                displayName = "Archive capture",
-                description = "Archive one quick capture inbox item.",
-                inputSchema = linkedMapOf("item_id" to "string"),
-                outputSchema = linkedMapOf("item" to "object"),
-                executorKind = WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND
-            ),
-            WorkbenchApiRecord(
-                apiId = WORKBENCH_CAPTURE_PROMOTE_TOOL_ID,
-                projectId = projectId,
-                toolId = WORKBENCH_CAPTURE_PROMOTE_TOOL_ID,
-                displayName = "Promote to todo",
-                description = "Convert a summary, link card, or later-read item into a todo.",
-                inputSchema = linkedMapOf("item_id" to "string", "todo_title" to "string?"),
-                outputSchema = linkedMapOf("item" to "object"),
-                executorKind = WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND
-            ),
-            WorkbenchApiRecord(
-                apiId = WORKBENCH_CAPTURE_SUMMARIZE_TOOL_ID,
-                projectId = projectId,
-                toolId = WORKBENCH_CAPTURE_SUMMARIZE_TOOL_ID,
-                displayName = "Summarize capture",
-                description = "Refresh the summary for an existing quick capture item.",
-                inputSchema = linkedMapOf("item_id" to "string"),
-                outputSchema = linkedMapOf("item" to "object"),
-                executorKind = WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND
-            )
-        )
-    }
-
-    /**
-     * Builds generic schema Project Tools from explicit config or a prompt-derived entity namespace.
+     * Builds generic Project Tools from explicit config or a prompt-derived entity namespace.
      *
      * @param projectId Project namespace for API registry records.
      * @param config Creation config. `apis` may provide apiId/displayName/schema/executorKind.
-     * @return API records handled by the native schema collection executor.
+     * @return API records handled by the native Project collection executor.
      */
-    private fun schemaTemplateApis(
+    private fun defaultProjectApis(
         projectId: String,
         config: Map<String, Any?>
     ): List<WorkbenchApiRecord> {
         val explicit = explicitApiRecords(projectId, config)
         if (explicit.isNotEmpty()) return explicit
-        val namespace = schemaApiNamespace(config)
+        val namespace = projectApiNamespace(config)
         return listOf(
             WorkbenchApiRecord(
                 apiId = "$namespace.create",
                 projectId = projectId,
                 toolId = "$namespace.create",
-                displayName = "Create ${schemaEntityName(config, namespace, null)}",
-                description = "Create an item in this schema Project state.",
+                displayName = "Create ${projectEntityName(config, namespace, null)}",
+                description = "Create an item in this Project state.",
                 inputSchema = linkedMapOf("title" to "string"),
                 outputSchema = linkedMapOf("item" to "object"),
-                executorKind = WORKBENCH_SCHEMA_EXECUTOR_KIND
+                executorKind = WORKBENCH_COLLECTION_EXECUTOR_KIND
             ),
             WorkbenchApiRecord(
                 apiId = "$namespace.archive",
                 projectId = projectId,
                 toolId = "$namespace.archive",
-                displayName = "Archive ${schemaEntityName(config, namespace, null)}",
-                description = "Archive an active item in this schema Project state.",
+                displayName = "Archive ${projectEntityName(config, namespace, null)}",
+                description = "Archive an active item in this Project state.",
                 inputSchema = linkedMapOf("item_id" to "string"),
                 outputSchema = linkedMapOf("item" to "object"),
-                executorKind = WORKBENCH_SCHEMA_EXECUTOR_KIND
+                executorKind = WORKBENCH_COLLECTION_EXECUTOR_KIND
             )
         )
     }
@@ -3752,10 +3409,7 @@ class WorkbenchProjectStore(
         projectId: String,
         config: Map<String, Any?>
     ): List<WorkbenchApiRecord> {
-        val raw = config["tools"]
-            ?: config["projectTools"]
-            ?: config["apis"]
-            ?: config["apiSpecs"] ?: return emptyList()
+        val raw = config["apis"] ?: return emptyList()
         if (raw !is Iterable<*>) return emptyList()
         return raw.mapNotNull { item ->
             @Suppress("UNCHECKED_CAST")
@@ -3774,8 +3428,8 @@ class WorkbenchProjectStore(
                 displayName = map["displayName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                     ?: apiId,
                 description = map["description"]?.toString()?.trim().orEmpty(),
-                inputSchema = asStringKeyMap(map["inputSchema"]),
-                outputSchema = asStringKeyMap(map["outputSchema"]),
+                inputSchema = normalizeProjectToolSchema(map["inputSchema"]),
+                outputSchema = normalizeProjectToolSchema(map["outputSchema"]),
                 executorKind = map["executorKind"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                     ?: inferProjectToolExecutorKind(run, apiId),
                 run = run.ifEmpty { null }
@@ -3815,11 +3469,9 @@ class WorkbenchProjectStore(
         return when {
             use == "agent" || use.startsWith("agent.") -> WORKBENCH_AGENT_TASK_EXECUTOR_KIND
             use.startsWith("oob.") || use.startsWith("mcp.") -> WORKBENCH_AGENT_TASK_EXECUTOR_KIND
-            use.startsWith("native.collection.") -> WORKBENCH_SCHEMA_EXECUTOR_KIND
-            use.startsWith("native.todo.") -> "native_template"
+            use.startsWith("native.collection.") -> WORKBENCH_COLLECTION_EXECUTOR_KIND
             use == "script" || use.startsWith("script.") -> WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND
-            apiId.startsWith("todo.") -> "native_template"
-            else -> WORKBENCH_SCHEMA_EXECUTOR_KIND
+            else -> WORKBENCH_COLLECTION_EXECUTOR_KIND
         }
     }
 
@@ -3835,24 +3487,89 @@ class WorkbenchProjectStore(
     }
 
     /**
-     * Executes generic schema collection create/archive APIs.
+     * Accepts both OOB's compact Project Tool schema (`{"title":"string"}`) and standard JSON
+     * Schema (`{"type":"object","properties":{"title":{"type":"string"}},"required":["title"]}`).
+     *
+     * Internally the registry stores a field map because executors validate business inputs, not
+     * schema documents. Without this normalization, `type`, `properties`, and `required` become
+     * fake required business fields and valid calls like `{weight: 80}` fail validation.
+     */
+    private fun normalizeProjectToolSchema(value: Any?): Map<String, Any?> {
+        val raw = asStringKeyMap(value)
+        val properties = raw["properties"] as? Map<*, *> ?: return raw
+        val requiredFields = requiredFieldSet(raw["required"])
+        val hasRequiredDeclaration = raw.containsKey("required")
+        return properties.entries.associate { entry ->
+            val fieldName = entry.key.toString()
+            val fieldSpec = asRegistryFieldSpec(entry.value).toMutableMap()
+            val explicitRequired = booleanLike(fieldSpec["required"])
+            val explicitNullable = booleanLike(fieldSpec["nullable"])
+            val required = when {
+                hasRequiredDeclaration -> requiredFields.contains(fieldName)
+                explicitRequired != null -> explicitRequired
+                explicitNullable != null -> !explicitNullable
+                else -> false
+            }
+            fieldSpec["required"] = required
+            fieldName to fieldSpec
+        }
+    }
+
+    private fun asRegistryFieldSpec(value: Any?): Map<String, Any?> {
+        val map = asStringKeyMap(value)
+        if (map.isNotEmpty()) {
+            return map
+        }
+        val raw = value?.toString()?.trim().orEmpty()
+        val type = raw.removeSuffix("?").ifBlank { "string" }
+        return linkedMapOf(
+            "type" to type,
+            "required" to (raw.isNotEmpty() && !raw.endsWith("?"))
+        )
+    }
+
+    private fun requiredFieldSet(value: Any?): Set<String> {
+        return when (value) {
+            is Iterable<*> -> value.mapNotNull { it?.toString()?.trim()?.takeIf(String::isNotEmpty) }.toSet()
+            is Array<*> -> value.mapNotNull { it?.toString()?.trim()?.takeIf(String::isNotEmpty) }.toSet()
+            is String -> value.split(',', ' ', '\n', '\t')
+                .mapNotNull { it.trim().takeIf(String::isNotEmpty) }
+                .toSet()
+            else -> emptySet()
+        }
+    }
+
+    private fun booleanLike(value: Any?): Boolean? {
+        return when (value) {
+            is Boolean -> value
+            is String -> when (value.trim().lowercase()) {
+                "true" -> true
+                "false" -> false
+                else -> null
+            }
+            else -> null
+        }
+    }
+
+    /**
+     * Executes generic Project item create/archive/update/list APIs.
      *
      * @param projectId Project whose `data/items.json` should be updated.
      * @param api API registry record. The action is inferred from its id.
      * @param inputs Tool inputs from AI or UI.
      * @return Tool-style success/error payload.
      */
-    private fun callSchemaCollectionApi(
+    private fun callProjectCollectionApi(
         projectId: String,
         api: WorkbenchApiRecord,
         inputs: Map<String, Any?>
     ): Map<String, Any?> {
-        return when (schemaApiAction(api)) {
-            "create" -> createSchemaItem(projectId, api, inputs)
-            "archive" -> archiveSchemaItem(projectId, api, inputs)
-            "update" -> updateSchemaItem(projectId, api, inputs)
-            "list" -> listSchemaItems(projectId, api)
-            else -> apiError(api, "UNKNOWN_SCHEMA_ACTION", "Unknown schema API: ${api.apiId}")
+        return when (projectApiAction(api)) {
+            "create" -> createProjectItem(projectId, api, inputs)
+            "archive" -> archiveProjectItem(projectId, api, inputs)
+            "update" -> updateProjectItem(projectId, api, inputs)
+            "list" -> listProjectItems(projectId, api)
+            else -> apiError(api, "UNKNOWN_PROJECT_ACTION", "Unknown Project Tool: ${api.apiId}")
         }
     }
 
@@ -3908,7 +3625,7 @@ class WorkbenchProjectStore(
                     conversationId = conversationId,
                     request = linkedMapOf(
                         "taskId" to taskId,
-                        "conversationMode" to "normal",
+                        "conversationMode" to "subagent",
                         "title" to "Project Tool: ${api.displayName}",
                         "userMessage" to buildAgentTaskPrompt(record, api, run, inputs, caller)
                     )
@@ -4024,20 +3741,20 @@ class WorkbenchProjectStore(
         - Do not recreate this Project. If data must be saved, call an existing Project Tool or Workbench control tool explicitly.
     """.trimIndent()
 
-    private fun createSchemaItem(
+    private fun createProjectItem(
         projectId: String,
         api: WorkbenchApiRecord,
         inputs: Map<String, Any?>
     ): Map<String, Any?> {
-        val title = schemaItemTitle(inputs)
+        val title = projectItemTitle(inputs)
         if (title.isEmpty()) {
             return apiError(api, "EMPTY_ITEM_TITLE", "Item title is required.")
         }
-        val items = readSchemaItems(projectId).toMutableList()
+        val items = readProjectItems(projectId).toMutableList()
         val fields = inputs.filterKeys { key ->
             key !in setOf("id", "item_id", "itemId", "title", "name", "label", "status")
         }
-        val item = WorkbenchSchemaItemRecord(
+        val item = WorkbenchProjectItemRecord(
             id = "item-${System.currentTimeMillis()}-${items.size + 1}",
             title = title,
             status = "active",
@@ -4045,11 +3762,11 @@ class WorkbenchProjectStore(
             createdAt = nowIso()
         )
         items.add(0, item)
-        writeSchemaItems(projectId, items)
+        writeProjectItems(projectId, items)
         return apiSuccess(api, mapOf("item" to item.toPayload()))
     }
 
-    private fun archiveSchemaItem(
+    private fun archiveProjectItem(
         projectId: String,
         api: WorkbenchApiRecord,
         inputs: Map<String, Any?>
@@ -4061,7 +3778,7 @@ class WorkbenchProjectStore(
         if (itemId.isEmpty()) {
             return apiError(api, "MISSING_ITEM_ID", "item_id is required.")
         }
-        val items = readSchemaItems(projectId)
+        val items = readProjectItems(projectId)
         val index = items.indexOfFirst { it.id == itemId }
         if (index < 0) {
             return apiError(api, "ITEM_NOT_FOUND", "Item not found: $itemId")
@@ -4074,20 +3791,14 @@ class WorkbenchProjectStore(
         }
         val updated = items.toMutableList()
         updated[index] = archived
-        writeSchemaItems(projectId, updated)
+        writeProjectItems(projectId, updated)
         return apiSuccess(api, mapOf("item" to archived.toPayload()))
     }
 
     /**
-     * Updates fields on one generic schema item.
-     *
-     * @param projectId Project whose `data/items.json` owns the item.
-     * @param api API registry record using an update-like id.
-     * @param inputs Caller payload; `item_id`/`itemId`/`id` selects the item and remaining keys
-     * update the title or custom fields.
-     * @return Tool-style result containing the updated item.
+     * Updates fields on one Project item.
      */
-    private fun updateSchemaItem(
+    private fun updateProjectItem(
         projectId: String,
         api: WorkbenchApiRecord,
         inputs: Map<String, Any?>
@@ -4099,7 +3810,7 @@ class WorkbenchProjectStore(
         if (itemId.isEmpty()) {
             return apiError(api, "MISSING_ITEM_ID", "item_id is required.")
         }
-        val items = readSchemaItems(projectId)
+        val items = readProjectItems(projectId)
         val index = items.indexOfFirst { it.id == itemId }
         if (index < 0) {
             return apiError(api, "ITEM_NOT_FOUND", "Item not found: $itemId")
@@ -4117,19 +3828,15 @@ class WorkbenchProjectStore(
         )
         val next = items.toMutableList()
         next[index] = updated
-        writeSchemaItems(projectId, next)
+        writeProjectItems(projectId, next)
         return apiSuccess(api, mapOf("item" to updated.toPayload()))
     }
 
     /**
-     * Reads generic schema items without mutating Project data.
-     *
-     * @param projectId Project whose `data/items.json` should be read.
-     * @param api API registry record using a list/read/query-like id.
-     * @return Tool-style result containing all items plus active/archive subsets.
+     * Reads Project items without mutating Project data.
      */
-    private fun listSchemaItems(projectId: String, api: WorkbenchApiRecord): Map<String, Any?> {
-        val items = readSchemaItems(projectId)
+    private fun listProjectItems(projectId: String, api: WorkbenchApiRecord): Map<String, Any?> {
+        val items = readProjectItems(projectId)
         return apiSuccess(
             api,
             mapOf(
@@ -4140,7 +3847,7 @@ class WorkbenchProjectStore(
         )
     }
 
-    private fun schemaItemTitle(inputs: Map<String, Any?>): String {
+    private fun projectItemTitle(inputs: Map<String, Any?>): String {
         val direct = inputs["title"]?.toString()?.trim()
             ?: inputs["name"]?.toString()?.trim()
             ?: inputs["label"]?.toString()?.trim()
@@ -4150,7 +3857,7 @@ class WorkbenchProjectStore(
         }?.toString()?.trim()?.take(160).orEmpty()
     }
 
-    private fun schemaApiAction(api: WorkbenchApiRecord): String {
+    private fun projectApiAction(api: WorkbenchApiRecord): String {
         val id = "${api.apiId}.${api.toolId}".lowercase()
         return when {
             listOf(".archive", ".finish", ".complete", ".done").any { id.contains(it) } ->
@@ -4163,272 +3870,6 @@ class WorkbenchProjectStore(
                 "create"
             else -> "custom"
         }
-    }
-
-    /**
-     * Executes the v1 quick-capture workspace script contract through the native Workbench path.
-     *
-     * @param projectId Project whose `data/items.json` and script logs are updated.
-     * @param api API registry record using `workspace_python_script`.
-     * @param inputs Capture, archive, promote, or summarize inputs from AI/UI.
-     * @return Tool-style result with refreshed inbox item state.
-     */
-    private fun callQuickCaptureApi(
-        projectId: String,
-        api: WorkbenchApiRecord,
-        inputs: Map<String, Any?>
-    ): Map<String, Any?> {
-        val result = when (api.toolId) {
-            WORKBENCH_CAPTURE_INGEST_TOOL_ID -> ingestQuickCapture(projectId, api, inputs)
-            WORKBENCH_CAPTURE_ARCHIVE_TOOL_ID -> archiveQuickCapture(projectId, api, inputs)
-            WORKBENCH_CAPTURE_PROMOTE_TOOL_ID -> promoteQuickCaptureToTodo(projectId, api, inputs)
-            WORKBENCH_CAPTURE_SUMMARIZE_TOOL_ID -> summarizeQuickCapture(projectId, api, inputs)
-            else -> apiError(api, "UNKNOWN_CAPTURE_ACTION", "Unknown capture API: ${api.apiId}")
-        }
-        appendScriptRun(projectId, api, inputs, result)
-        return result
-    }
-
-    private fun ingestQuickCapture(
-        projectId: String,
-        api: WorkbenchApiRecord,
-        inputs: Map<String, Any?>
-    ): Map<String, Any?> {
-        val directText = inputs["text"]?.toString()?.trim().orEmpty()
-        val shareText = inputs["shareText"]?.toString()?.trim().orEmpty()
-        val explicitUrl = inputs["url"]?.toString()?.trim().orEmpty()
-        val screenshotPath = inputs["screenshotPath"]?.toString()?.trim().orEmpty()
-        val combined = listOf(directText, shareText, explicitUrl, screenshotPath)
-            .filter { it.isNotEmpty() }
-            .joinToString("\n")
-            .trim()
-        if (combined.isEmpty()) {
-            return apiError(api, "EMPTY_CAPTURE_INPUT", "Capture text, url, shareText, or screenshotPath is required.")
-        }
-        val url = explicitUrl.ifBlank { extractFirstUrl(combined) }
-        val sourceApp = inputs["sourceApp"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-        val requestedType = inputs["type"]?.toString()?.trim()?.lowercase()
-        val itemType = when (requestedType) {
-            "todo", "summary", "link", "later" -> requestedType
-            "read_later", "read-later" -> "later"
-            "expense", "receipt", "invoice" -> "summary"
-            else -> quickCaptureType(combined, url, screenshotPath)
-        }
-        val now = nowIso()
-        val items = readQuickCaptureItems(projectId).toMutableList()
-        val item = WorkbenchQuickCaptureRecord(
-            id = "capture-${System.currentTimeMillis()}-${items.size + 1}",
-            type = itemType,
-            title = quickCaptureTitle(itemType, combined, url),
-            summary = quickCaptureSummary(itemType, combined, url),
-            status = "active",
-            url = url.takeIf { it.isNotEmpty() },
-            sourceApp = sourceApp,
-            rawText = directText.takeIf { it.isNotEmpty() },
-            shareText = shareText.takeIf { it.isNotEmpty() },
-            screenshotPath = screenshotPath.takeIf { it.isNotEmpty() },
-            dueHint = quickCaptureDueHint(combined),
-            priority = quickCapturePriority(combined),
-            createdAt = now,
-            updatedAt = now
-        )
-        items.add(0, item)
-        writeQuickCaptureItems(projectId, items)
-        if (url.isNotEmpty()) {
-            appendLinkFetch(projectId, item.id, url, sourceApp, combined)
-        }
-        return apiSuccess(
-            api,
-            mapOf(
-                "item" to item.toPayload(),
-                "items" to items.map { it.toPayload() }
-            )
-        )
-    }
-
-    private fun archiveQuickCapture(
-        projectId: String,
-        api: WorkbenchApiRecord,
-        inputs: Map<String, Any?>
-    ): Map<String, Any?> {
-        val itemId = captureItemId(inputs)
-        if (itemId.isEmpty()) {
-            return apiError(api, "MISSING_ITEM_ID", "item_id is required.")
-        }
-        val items = readQuickCaptureItems(projectId)
-        val index = items.indexOfFirst { it.id == itemId }
-        if (index < 0) {
-            return apiError(api, "CAPTURE_ITEM_NOT_FOUND", "Capture item not found: $itemId")
-        }
-        val current = items[index]
-        val now = nowIso()
-        val archived = if (current.status == "archived") {
-            current
-        } else {
-            current.copy(status = "archived", updatedAt = now, archivedAt = now)
-        }
-        val updated = items.toMutableList()
-        updated[index] = archived
-        writeQuickCaptureItems(projectId, updated)
-        return apiSuccess(api, mapOf("item" to archived.toPayload()))
-    }
-
-    private fun promoteQuickCaptureToTodo(
-        projectId: String,
-        api: WorkbenchApiRecord,
-        inputs: Map<String, Any?>
-    ): Map<String, Any?> {
-        val itemId = captureItemId(inputs)
-        if (itemId.isEmpty()) {
-            return apiError(api, "MISSING_ITEM_ID", "item_id is required.")
-        }
-        val items = readQuickCaptureItems(projectId)
-        val index = items.indexOfFirst { it.id == itemId }
-        if (index < 0) {
-            return apiError(api, "CAPTURE_ITEM_NOT_FOUND", "Capture item not found: $itemId")
-        }
-        val current = items[index]
-        val title = inputs["todo_title"]?.toString()?.trim()
-            ?: inputs["todoTitle"]?.toString()?.trim()
-            ?: current.title
-        val updatedItem = current.copy(
-            type = "todo",
-            title = title.take(120).ifBlank { current.title },
-            summary = current.summary.ifBlank { "Converted to a todo from quick capture." },
-            updatedAt = nowIso()
-        )
-        val updated = items.toMutableList()
-        updated[index] = updatedItem
-        writeQuickCaptureItems(projectId, updated)
-        return apiSuccess(api, mapOf("item" to updatedItem.toPayload()))
-    }
-
-    private fun summarizeQuickCapture(
-        projectId: String,
-        api: WorkbenchApiRecord,
-        inputs: Map<String, Any?>
-    ): Map<String, Any?> {
-        val itemId = captureItemId(inputs)
-        if (itemId.isEmpty()) {
-            return apiError(api, "MISSING_ITEM_ID", "item_id is required.")
-        }
-        val items = readQuickCaptureItems(projectId)
-        val index = items.indexOfFirst { it.id == itemId }
-        if (index < 0) {
-            return apiError(api, "CAPTURE_ITEM_NOT_FOUND", "Capture item not found: $itemId")
-        }
-        val current = items[index]
-        val source = listOfNotNull(current.rawText, current.shareText, current.url, current.screenshotPath)
-            .joinToString("\n")
-        val updatedItem = current.copy(
-            type = if (current.type == "todo") current.type else "summary",
-            summary = quickCaptureSummary("summary", source.ifBlank { current.title }, current.url.orEmpty()),
-            updatedAt = nowIso()
-        )
-        val updated = items.toMutableList()
-        updated[index] = updatedItem
-        writeQuickCaptureItems(projectId, updated)
-        return apiSuccess(api, mapOf("item" to updatedItem.toPayload()))
-    }
-
-    private fun captureItemId(inputs: Map<String, Any?>): String {
-        return inputs["item_id"]?.toString()?.trim()
-            ?: inputs["itemId"]?.toString()?.trim()
-            ?: inputs["id"]?.toString()?.trim()
-            ?: ""
-    }
-
-    private fun quickCaptureType(text: String, url: String, screenshotPath: String): String {
-        val lower = text.lowercase()
-        return when {
-            screenshotPath.isNotEmpty() -> "summary"
-            listOf("receipt", "invoice", "expense", "账单", "收据", "发票", "消费").any { lower.contains(it) } ->
-                "summary"
-            quickCaptureLooksActionable(lower) -> "todo"
-            url.isNotEmpty() && listOf("稍后", "later", "read later", "收藏").any { lower.contains(it) } ->
-                "later"
-            url.isNotEmpty() -> "link"
-            text.length > 120 || text.lines().size > 2 -> "summary"
-            else -> "todo"
-        }
-    }
-
-    private fun quickCaptureLooksActionable(lower: String): Boolean {
-        return listOf(
-            "记一下",
-            "提醒",
-            "待办",
-            "todo",
-            "明天",
-            "后天",
-            "今天",
-            "整理",
-            "问",
-            "买",
-            "做",
-            "follow up",
-            "remind"
-        ).any { lower.contains(it) }
-    }
-
-    private fun quickCaptureTitle(itemType: String, text: String, url: String): String {
-        val withoutUrl = text.replace(url, "")
-        val afterMarker = when {
-            withoutUrl.contains("记一下：") -> withoutUrl.substringAfter("记一下：")
-            withoutUrl.contains("记一下:") -> withoutUrl.substringAfter("记一下:")
-            else -> withoutUrl
-        }
-        val cleaned = afterMarker.trim()
-            .lines()
-            .firstOrNull { it.trim().isNotEmpty() }
-            ?.trim()
-            .orEmpty()
-        val fallback = when {
-            cleaned.isNotEmpty() -> cleaned
-            url.isNotEmpty() -> url.removePrefix("https://").removePrefix("http://")
-            itemType == "summary" -> "新摘要"
-            else -> "新随手记"
-        }
-        return fallback.take(120)
-    }
-
-    private fun quickCaptureSummary(itemType: String, text: String, url: String): String {
-        val compact = text
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .take(220)
-        return when {
-            itemType == "link" && url.isNotEmpty() ->
-                "链接已保存。若页面需要登录或 App 内访问，可继续补充分享文本或截图让 VLM 摘要。"
-            itemType == "later" && url.isNotEmpty() ->
-                "已加入稍后读。能访问时可用 summarize 刷新摘要，不能访问时保留链接和上下文。"
-            itemType == "todo" ->
-                compact.ifBlank { "已整理为待办。" }
-            compact.isNotEmpty() -> compact
-            else -> "已保存到随手记 Inbox。"
-        }
-    }
-
-    private fun quickCaptureDueHint(text: String): String? {
-        val lower = text.lowercase()
-        return listOf("今天", "明天", "后天", "下周", "本周", "today", "tomorrow", "next week")
-            .firstOrNull { lower.contains(it) }
-    }
-
-    private fun quickCapturePriority(text: String): String? {
-        val lower = text.lowercase()
-        return when {
-            listOf("紧急", "重要", "urgent", "asap").any { lower.contains(it) } -> "high"
-            else -> null
-        }
-    }
-
-    private fun extractFirstUrl(text: String): String {
-        return Regex("""https?://[^\s，。；；、)）\]】"'<>]+""")
-            .find(text)
-            ?.value
-            ?.trim()
-            .orEmpty()
     }
 
     private fun projectApis(projectId: String): List<WorkbenchApiRecord> {
@@ -4502,80 +3943,25 @@ class WorkbenchProjectStore(
         )
     }
 
-    private fun readTodos(projectId: String): List<WorkbenchTodoRecord> {
-        val file = todosFile(projectId)
-        if (!file.exists()) return emptyList()
-        return runCatching {
-            gson.fromJson<List<WorkbenchTodoRecord>>(
-                file.readText(),
-                todoRecordListType
-            ) ?: emptyList()
-        }.getOrElse { emptyList() }
-    }
-
-    private fun writeTodos(projectId: String, todos: List<WorkbenchTodoRecord>) {
-        val file = todosFile(projectId)
-        file.parentFile?.mkdirs()
-        file.writeText(gson.toJson(todos))
-    }
-
     /**
-     * Reads generic schema items for a Project.
-     *
-     * @param projectId Project whose `data/items.json` should be parsed.
-     * @return Persisted item records, or an empty list for non-schema Projects.
+     * Reads Project items from `data/items.json`.
      */
-    private fun readSchemaItems(projectId: String): List<WorkbenchSchemaItemRecord> {
-        val file = schemaItemsFile(projectId)
+    private fun readProjectItems(projectId: String): List<WorkbenchProjectItemRecord> {
+        val file = projectItemsFile(projectId)
         if (!file.exists()) return emptyList()
         return runCatching {
-            gson.fromJson<List<WorkbenchSchemaItemRecord>>(
+            gson.fromJson<List<WorkbenchProjectItemRecord>>(
                 file.readText(),
-                schemaItemRecordListType
+                projectItemRecordListType
             ) ?: emptyList()
         }.getOrElse { emptyList() }
     }
 
     /**
-     * Writes generic schema item state for a Project.
-     *
-     * @param projectId Project whose state file should be replaced.
-     * @param items Full desired item state.
+     * Writes Project item state to `data/items.json`.
      */
-    private fun writeSchemaItems(projectId: String, items: List<WorkbenchSchemaItemRecord>) {
-        val file = schemaItemsFile(projectId)
-        file.parentFile?.mkdirs()
-        file.writeText(gson.toJson(items))
-    }
-
-    /**
-     * Reads quick-capture inbox items from Project state.
-     *
-     * @param projectId Project whose `data/items.json` stores capture records.
-     * @return Persisted capture items, or an empty list when absent.
-     */
-    private fun readQuickCaptureItems(projectId: String): List<WorkbenchQuickCaptureRecord> {
-        val file = quickCaptureItemsFile(projectId)
-        if (!file.exists()) return emptyList()
-        return runCatching {
-            gson.fromJson<List<WorkbenchQuickCaptureRecord>>(
-                file.readText(),
-                quickCaptureRecordListType
-            ) ?: emptyList()
-        }.getOrElse { emptyList() }
-    }
-
-    /**
-     * Writes quick-capture inbox state.
-     *
-     * @param projectId Project whose state file should be replaced.
-     * @param items Full desired capture item state.
-     */
-    private fun writeQuickCaptureItems(
-        projectId: String,
-        items: List<WorkbenchQuickCaptureRecord>
-    ) {
-        val file = quickCaptureItemsFile(projectId)
+    private fun writeProjectItems(projectId: String, items: List<WorkbenchProjectItemRecord>) {
+        val file = projectItemsFile(projectId)
         file.parentFile?.mkdirs()
         file.writeText(gson.toJson(items))
     }
@@ -5194,39 +4580,27 @@ class WorkbenchProjectStore(
             ?: throw IllegalArgumentException("$key is required.")
     }
 
-    private fun defaultProjectId(templateId: String, config: Map<String, Any?>): String {
-        return when (templateId) {
-            WORKBENCH_SCHEMA_TEMPLATE_ID -> "oob-workbench-${schemaApiNamespace(config)}"
-            WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID -> WORKBENCH_QUICK_CAPTURE_PROJECT_ID
-            else -> WORKBENCH_DEFAULT_PROJECT_ID
-        }
+    private fun defaultProjectId(config: Map<String, Any?>): String {
+        return "oob-workbench-${projectApiNamespace(config)}"
     }
 
-    private fun defaultProjectName(templateId: String, config: Map<String, Any?>): String {
-        return when (templateId) {
-            WORKBENCH_SCHEMA_TEMPLATE_ID -> "${schemaEntityName(config, "Project", null)} Workbench"
-            WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID -> "随手记 Inbox"
-            else -> "Todo Log Workbench"
-        }
+    private fun defaultProjectName(config: Map<String, Any?>): String {
+        return "${projectEntityName(config, "Project", null)} Workbench"
     }
 
-    private fun routeForTemplate(projectId: String, templateId: String): String {
-        return when (templateId) {
-            WORKBENCH_SCHEMA_TEMPLATE_ID -> "/workbench/schema_app?projectId=$projectId"
-            WORKBENCH_QUICK_CAPTURE_TEMPLATE_ID -> "/workbench/quick_capture?projectId=$projectId"
-            else -> "/workbench/todo_log?projectId=$projectId"
-        }
+    private fun routeForProjectId(projectId: String): String {
+        return "/workbench/project?projectId=$projectId"
     }
 
     /**
-     * Resolves a human-facing entity name for generic schema Projects.
+     * Resolves a human-facing entity name for Project data.
      *
      * @param config Project creation config supplied by UI or Agent.
      * @param fallback Value used when no explicit entity can be found.
      * @param prompt Optional natural language prompt used for simple domain inference.
      * @return Display entity label stored in frontend/backend specs.
      */
-    private fun schemaEntityName(
+    private fun projectEntityName(
         config: Map<String, Any?>,
         fallback: String,
         prompt: String?
@@ -5249,7 +4623,7 @@ class WorkbenchProjectStore(
         }
     }
 
-    private fun schemaApiNamespace(config: Map<String, Any?>): String {
+    private fun projectApiNamespace(config: Map<String, Any?>): String {
         val raw = config["apiNamespace"]?.toString()?.trim()
             ?: config["entityName"]?.toString()?.trim()
             ?: config["entity"]?.toString()?.trim()
@@ -5258,7 +4632,7 @@ class WorkbenchProjectStore(
         return sanitizeApiSegment(raw)
     }
 
-    private fun schemaShortName(entityName: String): String {
+    private fun projectShortName(entityName: String): String {
         val ascii = sanitizeApiSegment(entityName).uppercase().take(5)
         return ascii.ifBlank { "APP" }
     }
@@ -5272,15 +4646,7 @@ class WorkbenchProjectStore(
             .take(48)
     }
 
-    private fun todosFile(projectId: String): File {
-        return File(projectDir(projectId), "data/todos.json")
-    }
-
-    private fun schemaItemsFile(projectId: String): File {
-        return File(projectDir(projectId), "data/items.json")
-    }
-
-    private fun quickCaptureItemsFile(projectId: String): File {
+    private fun projectItemsFile(projectId: String): File {
         return File(projectDir(projectId), "data/items.json")
     }
 

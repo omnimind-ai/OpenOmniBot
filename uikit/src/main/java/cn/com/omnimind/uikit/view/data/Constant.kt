@@ -12,8 +12,8 @@ class Constant {
         val CAT_VIEW_LAYOUT_MARGIN = 50.dpToPx()
         val SLIDING_THRESHOLD = 5
         val CLICK_TIME_THRESHOLD = 200
-        val NORMAL_ANIM_TIME = 500L
-        val QUICK_ANIM_TIME = 300L
+        val NORMAL_ANIM_TIME = 0L
+        val QUICK_ANIM_TIME = 0L
         val BG_LINEAR_GRADIENT_COLORS=intArrayOf(
             R.color.uikit00AEFF.getResColor(),
             R.color.uikit0000AEFF.getResColor(),

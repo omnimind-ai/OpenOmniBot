@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
-import 'package:ui/features/workbench/services/workbench_todo_log_service.dart';
+import 'package:ui/features/workbench/services/workbench_project_service.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_context.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart';
 import 'package:ui/l10n/l10n.dart';
@@ -12,10 +12,10 @@ import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 
-class WorkbenchSchemaProjectPage extends StatefulWidget {
-  const WorkbenchSchemaProjectPage({
+class WorkbenchProjectDisplayPage extends StatefulWidget {
+  const WorkbenchProjectDisplayPage({
     super.key,
-    WorkbenchTodoLogService? service,
+    WorkbenchProjectService? service,
     String? projectId,
     String? displayId,
     String? returnTo,
@@ -30,7 +30,7 @@ class WorkbenchSchemaProjectPage extends StatefulWidget {
        _annotationMode = annotationMode,
        _embedded = embedded;
 
-  final WorkbenchTodoLogService? _service;
+  final WorkbenchProjectService? _service;
   final String? _projectId;
   final String? _displayId;
   final String? _returnTo;
@@ -39,13 +39,13 @@ class WorkbenchSchemaProjectPage extends StatefulWidget {
   final bool _embedded;
 
   @override
-  State<WorkbenchSchemaProjectPage> createState() =>
-      _WorkbenchSchemaProjectPageState();
+  State<WorkbenchProjectDisplayPage> createState() =>
+      _WorkbenchProjectDisplayPageState();
 }
 
-class _WorkbenchSchemaProjectPageState
-    extends State<WorkbenchSchemaProjectPage> {
-  late final WorkbenchTodoLogService _service;
+class _WorkbenchProjectDisplayPageState
+    extends State<WorkbenchProjectDisplayPage> {
+  late final WorkbenchProjectService _service;
   late final bool _ownsService = widget._service == null;
   final TextEditingController _itemController = TextEditingController();
   String? _lastReportedFrontendKey;
@@ -55,9 +55,9 @@ class _WorkbenchSchemaProjectPageState
     super.initState();
     _service =
         widget._service ??
-        WorkbenchTodoLogService.native(
-          projectId: widget._projectId,
-          autoCreateTodoIfMissing: false,
+        WorkbenchProjectService.native(
+          projectId: widget._projectId ?? '',
+          autoCreateIfMissing: false,
         );
     _service.initialize();
   }
@@ -76,7 +76,7 @@ class _WorkbenchSchemaProjectPageState
     final title = _itemController.text.trim();
     if (api == null) {
       showToast(
-        context.l10n.workbenchSchemaMissingCreateApi,
+        context.l10n.workbenchProjectMissingCreateApi,
         type: ToastType.error,
       );
       return;
@@ -85,26 +85,26 @@ class _WorkbenchSchemaProjectPageState
     if (!mounted) return;
     if (!result.success) {
       showToast(
-        context.l10n.workbenchSchemaInputRequired(_entityName(project)),
+        context.l10n.workbenchProjectInputRequired(_entityName(project)),
         type: ToastType.error,
       );
       return;
     }
     _itemController.clear();
     showToast(
-      context.l10n.workbenchSchemaItemCreated(_entityName(project)),
+      context.l10n.workbenchProjectItemCreated(_entityName(project)),
       type: ToastType.success,
     );
   }
 
   Future<void> _archiveItem(
     WorkbenchProject project,
-    WorkbenchSchemaItem item,
+    WorkbenchProjectItem item,
   ) async {
     final api = _archiveApi(project);
     if (api == null) {
       showToast(
-        context.l10n.workbenchSchemaMissingArchiveApi,
+        context.l10n.workbenchProjectMissingArchiveApi,
         type: ToastType.error,
       );
       return;
@@ -116,7 +116,82 @@ class _WorkbenchSchemaProjectPageState
       return;
     }
     showToast(
-      context.l10n.workbenchSchemaItemArchived(_entityName(project)),
+      context.l10n.workbenchProjectItemArchived(_entityName(project)),
+      type: ToastType.success,
+    );
+  }
+
+  Future<void> _showEditItemDialog(
+    WorkbenchProject project,
+    WorkbenchProjectItem item,
+  ) async {
+    final controller = TextEditingController(text: item.title);
+    final nextTitle = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(context.l10n.workbenchProjectEditTitle),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+            decoration: InputDecoration(
+              labelText: context.l10n.workbenchProjectInputHint(
+                _entityName(project),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(context.l10n.workbenchDeleteProjectCancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+              child: Text(context.l10n.workbenchSaveProjectLabels),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    if (nextTitle == null) return;
+    await _updateItem(project, item, nextTitle);
+  }
+
+  Future<void> _updateItem(
+    WorkbenchProject project,
+    WorkbenchProjectItem item,
+    String title,
+  ) async {
+    final api = _updateApi(project);
+    final nextTitle = title.trim();
+    if (api == null) {
+      showToast(
+        context.l10n.workbenchProjectMissingUpdateApi,
+        type: ToastType.error,
+      );
+      return;
+    }
+    if (nextTitle.isEmpty) {
+      showToast(
+        context.l10n.workbenchProjectInputRequired(_entityName(project)),
+        type: ToastType.error,
+      );
+      return;
+    }
+    final result = await _service.runTool(api.id, {
+      'item_id': item.id,
+      'title': nextTitle,
+    });
+    if (!mounted) return;
+    if (!result.success) {
+      showToast(context.l10n.workbenchUnknownTool, type: ToastType.error);
+      return;
+    }
+    showToast(
+      context.l10n.workbenchProjectItemUpdated(_entityName(project)),
       type: ToastType.success,
     );
   }
@@ -133,7 +208,7 @@ class _WorkbenchSchemaProjectPageState
         display: _selectedDisplay(project),
         payload: payload,
         prompt: prompt,
-        fallbackRoute: '/workbench/schema_app',
+        fallbackRoute: '/workbench/project',
       ),
     );
     if (!mounted) return false;
@@ -169,7 +244,7 @@ class _WorkbenchSchemaProjectPageState
     final route = workbenchRouteForDisplay(
       project,
       display,
-      fallbackRoute: '/workbench/schema_app',
+      fallbackRoute: '/workbench/project',
     );
     final key = '${project.projectId}:${display.id}:$route:${widget._embedded}';
     if (_lastReportedFrontendKey == key) return;
@@ -180,8 +255,8 @@ class _WorkbenchSchemaProjectPageState
           buildWorkbenchVisibleFrontendContext(
             project: project,
             display: display,
-            source: 'workbench_schema_project_page',
-            fallbackRoute: '/workbench/schema_app',
+            source: 'workbench_project_display_page',
+            fallbackRoute: '/workbench/project',
             extraVisibleState: {'embedded': widget._embedded},
           ),
         ),
@@ -196,8 +271,12 @@ class _WorkbenchSchemaProjectPageState
       animation: _service,
       builder: (context, _) {
         final project = _service.project;
+        if (project == null) {
+          return _buildLoadingOrError();
+        }
         _reportVisibleDisplay(project);
         final annotationActive = widget._debugMode || widget._annotationMode;
+        final description = _businessDescription(project);
         final content = ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
@@ -205,8 +284,10 @@ class _WorkbenchSchemaProjectPageState
               const LinearProgressIndicator(minHeight: 2),
               const SizedBox(height: 12),
             ],
-            _buildHeader(project),
-            const SizedBox(height: 12),
+            if (description.isNotEmpty) ...[
+              _buildBusinessDescription(description),
+              const SizedBox(height: 12),
+            ],
             _buildCreateCard(project),
             const SizedBox(height: 12),
             _buildItemsCard(project),
@@ -233,7 +314,9 @@ class _WorkbenchSchemaProjectPageState
       child: Scaffold(
         backgroundColor: palette.pageBackground,
         appBar: CommonAppBar(
-          title: _displayTitle(_service.project),
+          title: _service.project == null
+              ? context.l10n.workbenchProjectModeTitle
+              : _displayTitle(_service.project!),
           primary: true,
           onBackPressed: _handleBackNavigation,
         ),
@@ -242,60 +325,36 @@ class _WorkbenchSchemaProjectPageState
     );
   }
 
-  Widget _buildHeader(WorkbenchProject project) {
+  Widget _buildLoadingOrError() {
     final palette = context.omniPalette;
-    final display = _selectedDisplay(project);
-    final description = _schemaString(project, 'description').isEmpty
-        ? display.description
-        : _schemaString(project, 'description');
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          display.title.trim().isEmpty ? project.name : display.title,
-          style: TextStyle(
-            color: palette.textPrimary,
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-          ),
+    final error = _service.errorMessage;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Text(
+          error == null || error.isEmpty ? context.l10n.commonLoading : error,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: palette.textSecondary, fontSize: 13),
         ),
-        if (description.trim().isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Text(
-            description,
-            style: TextStyle(
-              color: palette.textSecondary,
-              fontSize: 14,
-              height: 1.35,
-            ),
-          ),
-        ],
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _buildPill(
-              Icons.dataset_outlined,
-              context.l10n.workbenchSchemaItemCount(
-                project.activeItems.length,
-                project.archivedItems.length,
-              ),
-            ),
-            _buildPill(Icons.widgets_rounded, context.l10n.workbenchNativeUi),
-            _buildPill(
-              Icons.api_rounded,
-              context.l10n.workbenchApiCount(project.tools.length),
-            ),
-          ],
-        ),
-      ],
+      ),
+    );
+  }
+
+  Widget _buildBusinessDescription(String description) {
+    final palette = context.omniPalette;
+    return Text(
+      description,
+      style: TextStyle(
+        color: palette.textSecondary,
+        fontSize: 14,
+        height: 1.35,
+      ),
     );
   }
 
   Widget _buildCreateCard(WorkbenchProject project) {
     return _buildSectionCard(
-      title: context.l10n.workbenchSchemaCreateTitle(_entityName(project)),
+      title: context.l10n.workbenchProjectCreateTitle(_entityName(project)),
       icon: Icons.add_box_outlined,
       child: Row(
         children: [
@@ -305,7 +364,7 @@ class _WorkbenchSchemaProjectPageState
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _createItem(project),
               decoration: InputDecoration(
-                hintText: context.l10n.workbenchSchemaInputHint(
+                hintText: context.l10n.workbenchProjectInputHint(
                   _entityName(project),
                 ),
                 filled: true,
@@ -324,7 +383,7 @@ class _WorkbenchSchemaProjectPageState
           const SizedBox(width: 10),
           IconButton.filled(
             onPressed: () => _createItem(project),
-            tooltip: context.l10n.workbenchSchemaCreateTitle(
+            tooltip: context.l10n.workbenchProjectCreateTitle(
               _entityName(project),
             ),
             icon: const Icon(Icons.add_rounded),
@@ -337,7 +396,7 @@ class _WorkbenchSchemaProjectPageState
   Widget _buildItemsCard(WorkbenchProject project) {
     final items = project.items;
     return _buildSectionCard(
-      title: context.l10n.workbenchSchemaItemsTitle(_entityName(project)),
+      title: context.l10n.workbenchProjectItemsTitle(_entityName(project)),
       icon: Icons.view_list_rounded,
       child: items.isEmpty
           ? _buildEmpty(project)
@@ -345,7 +404,7 @@ class _WorkbenchSchemaProjectPageState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (project.activeItems.isNotEmpty) ...[
-                  _buildGroupLabel(context.l10n.workbenchSchemaActive),
+                  _buildGroupLabel(context.l10n.workbenchProjectActiveItems),
                   const SizedBox(height: 8),
                   ...project.activeItems.map(
                     (item) => _buildActiveItemTile(project, item),
@@ -353,7 +412,7 @@ class _WorkbenchSchemaProjectPageState
                 ],
                 if (project.archivedItems.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  _buildGroupLabel(context.l10n.workbenchSchemaArchived),
+                  _buildGroupLabel(context.l10n.workbenchProjectArchivedItems),
                   const SizedBox(height: 8),
                   ...project.archivedItems.map(_buildArchivedItemTile),
                 ],
@@ -364,7 +423,7 @@ class _WorkbenchSchemaProjectPageState
 
   Widget _buildActiveItemTile(
     WorkbenchProject project,
-    WorkbenchSchemaItem item,
+    WorkbenchProjectItem item,
   ) {
     final palette = context.omniPalette;
     return Container(
@@ -387,16 +446,26 @@ class _WorkbenchSchemaProjectPageState
           ),
         ),
         subtitle: _buildFieldSummary(item),
-        trailing: IconButton(
-          tooltip: context.l10n.workbenchSchemaArchiveAction,
-          onPressed: () => _archiveItem(project, item),
-          icon: const Icon(Icons.archive_outlined),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: context.l10n.workbenchProjectEditAction,
+              onPressed: () => _showEditItemDialog(project, item),
+              icon: const Icon(Icons.edit_outlined),
+            ),
+            IconButton(
+              tooltip: context.l10n.workbenchProjectArchiveAction,
+              onPressed: () => _archiveItem(project, item),
+              icon: const Icon(Icons.archive_outlined),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildArchivedItemTile(WorkbenchSchemaItem item) {
+  Widget _buildArchivedItemTile(WorkbenchProjectItem item) {
     final palette = context.omniPalette;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -415,14 +484,14 @@ class _WorkbenchSchemaProjectPageState
           ),
         ),
         subtitle: Text(
-          context.l10n.workbenchSchemaArchived,
+          context.l10n.workbenchProjectArchivedItems,
           style: TextStyle(color: palette.textTertiary, fontSize: 12),
         ),
       ),
     );
   }
 
-  Widget _buildFieldSummary(WorkbenchSchemaItem item) {
+  Widget _buildFieldSummary(WorkbenchProjectItem item) {
     final visibleFields = item.fields.entries
         .where((entry) => entry.value?.toString().trim().isNotEmpty == true)
         .take(2)
@@ -430,7 +499,7 @@ class _WorkbenchSchemaProjectPageState
         .join(' · ');
     return Text(
       visibleFields.isEmpty
-          ? context.l10n.workbenchSchemaActive
+          ? context.l10n.workbenchProjectActiveItems
           : visibleFields,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
@@ -448,7 +517,7 @@ class _WorkbenchSchemaProjectPageState
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        context.l10n.workbenchSchemaEmpty(_entityName(project)),
+        context.l10n.workbenchProjectEmpty(_entityName(project)),
         textAlign: TextAlign.center,
         style: TextStyle(color: palette.textSecondary, fontSize: 13),
       ),
@@ -502,32 +571,6 @@ class _WorkbenchSchemaProjectPageState
     );
   }
 
-  Widget _buildPill(IconData icon, String label) {
-    final palette = context.omniPalette;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: palette.surfaceSecondary,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: palette.accentPrimary),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(
-              color: palette.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildGroupLabel(String label) {
     return Text(
       label,
@@ -559,6 +602,18 @@ class _WorkbenchSchemaProjectPageState
     return null;
   }
 
+  WorkbenchToolSpec? _updateApi(WorkbenchProject project) {
+    for (final tool in project.tools) {
+      final id = tool.id.toLowerCase();
+      if (id.endsWith('.update') ||
+          id.endsWith('.edit') ||
+          id.endsWith('.patch')) {
+        return tool;
+      }
+    }
+    return null;
+  }
+
   WorkbenchDisplaySpec _selectedDisplay(WorkbenchProject project) {
     final displayId = widget._displayId?.trim();
     if (displayId != null && displayId.isNotEmpty) {
@@ -575,11 +630,15 @@ class _WorkbenchSchemaProjectPageState
   }
 
   String _entityName(WorkbenchProject project) {
-    final entity = _schemaString(project, 'entityName');
-    return entity.isEmpty ? context.l10n.workbenchSchemaDefaultEntity : entity;
+    final entity = _pageSpecString(project, 'entityName');
+    return entity.isEmpty ? context.l10n.workbenchProjectDefaultEntity : entity;
   }
 
-  String _schemaString(WorkbenchProject project, String key) {
-    return project.schema[key]?.toString().trim() ?? '';
+  String _businessDescription(WorkbenchProject project) {
+    return _pageSpecString(project, 'description');
+  }
+
+  String _pageSpecString(WorkbenchProject project, String key) {
+    return project.pageSpec[key]?.toString().trim() ?? '';
   }
 }

@@ -2868,26 +2868,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchVibeSubtitle => '提示词生成的原生前端、项目工具和工作区文件在 OOB 内保持关联。';
 
   @override
-  String get workbenchGeneratedTodoSubtitle =>
-      'Todo 日志 (TODO) 是这个项目的业务前端之一。它和项目控制面分开，并直接调用已注册的项目工具。';
-
-  @override
-  String get workbenchMockProjectName => 'Todo 日志 Mock';
-
-  @override
-  String get workbenchTemplateProjectName => 'Todo 日志工作台';
-
-  @override
-  String get workbenchNativeUi => 'OOB 原生显示';
+  String get workbenchProjectDisplay => '项目显示';
 
   @override
   String get workbenchProjectSection => '项目';
 
   @override
   String get workbenchProjectIdLabel => '项目 ID';
-
-  @override
-  String get workbenchTemplateIdLabel => '模板 ID';
 
   @override
   String get workbenchRouteLabel => '路由';
@@ -2921,9 +2908,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get workbenchFrontendBinding => '前后端绑定';
-
-  @override
-  String get workbenchTodoLog => 'Todo 日志';
 
   @override
   String get workbenchCallApi => '调用工具';
@@ -2963,193 +2947,71 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get workbenchToolAddTodoTitle => '新增 Todo';
+  String get workbenchProjectDefaultEntity => '条目';
 
   @override
-  String get workbenchToolAddTodoDesc => '通过已注册的原生项目工具创建一条 todo。';
-
-  @override
-  String get workbenchToolFinishTodoTitle => '归档 Todo';
-
-  @override
-  String get workbenchToolFinishTodoDesc => '通过已注册的原生项目工具把一条 todo 归档。';
-
-  @override
-  String get workbenchFlowAddTodo => '页面输入 -> todo.add -> todo 列表';
-
-  @override
-  String get workbenchFlowFinishTodo => '完成按钮 -> todo.finish -> 完成列表';
-
-  @override
-  String get workbenchAddTodoHint => '添加一条 todo';
-
-  @override
-  String get workbenchAddTodo => '添加 Todo';
-
-  @override
-  String get workbenchTodoEmpty => '暂无 todo';
-
-  @override
-  String get workbenchTodoOpen => '待完成';
-
-  @override
-  String get workbenchTodoFinished => '已归档';
-
-  @override
-  String get workbenchFinishTodo => '归档 todo';
-
-  @override
-  String get workbenchTodoAdded => 'Todo 已添加';
-
-  @override
-  String get workbenchTodoFinishedToast => 'Todo 已归档';
-
-  @override
-  String get workbenchTodoInputRequired => '请先输入 todo';
-
-  @override
-  String get workbenchQuickCaptureTitle => '随手记 Inbox';
-
-  @override
-  String get workbenchQuickCaptureSubtitle =>
-      '把文字、链接、分享内容或截图丢进来，自动整理成待办、摘要、链接卡片或稍后读。';
-
-  @override
-  String get workbenchQuickCapturePageCapture => '收集';
-
-  @override
-  String get workbenchQuickCapturePageInbox => '收件箱';
-
-  @override
-  String workbenchQuickCaptureInboxSubtitle(int count) {
-    return '$count 条正在处理的内容。';
-  }
-
-  @override
-  String workbenchQuickCaptureArchiveSubtitle(int count) {
-    return '$count 条已归档内容。';
-  }
-
-  @override
-  String get workbenchQuickCaptureInputHint => '粘贴一句话、链接或分享文本';
-
-  @override
-  String get workbenchQuickCaptureAction => '收进来';
-
-  @override
-  String get workbenchQuickCaptureCaptured => '已收进随手记';
-
-  @override
-  String get workbenchQuickCaptureInputRequired => '请先输入文字或链接';
-
-  @override
-  String get workbenchQuickCaptureEmpty => '暂无随手记';
-
-  @override
-  String get workbenchQuickCaptureFilterAll => 'Inbox';
-
-  @override
-  String get workbenchQuickCaptureTypeTodo => 'Todo';
-
-  @override
-  String get workbenchQuickCaptureTypeSummary => '摘要';
-
-  @override
-  String get workbenchQuickCaptureTypeLink => '链接';
-
-  @override
-  String get workbenchQuickCaptureTypeLater => '稍后读';
-
-  @override
-  String get workbenchQuickCaptureArchived => '已归档';
-
-  @override
-  String get workbenchQuickCaptureArchive => '归档';
-
-  @override
-  String get workbenchQuickCapturePromoteToTodo => '转成 Todo';
-
-  @override
-  String get workbenchQuickCaptureSummarize => '重新摘要';
-
-  @override
-  String get workbenchQuickCaptureArchivedToast => '随手记已归档';
-
-  @override
-  String get workbenchQuickCapturePromotedToast => '已转成 Todo';
-
-  @override
-  String get workbenchQuickCaptureSummarizedToast => '摘要已刷新';
-
-  @override
-  String get workbenchSchemaDefaultEntity => '条目';
-
-  @override
-  String workbenchSchemaCreateTitle(String entity) {
+  String workbenchProjectCreateTitle(String entity) {
     return '新增 $entity';
   }
 
   @override
-  String workbenchSchemaInputHint(String entity) {
+  String workbenchProjectInputHint(String entity) {
     return '输入 $entity 名称';
   }
 
   @override
-  String workbenchSchemaItemsTitle(String entity) {
+  String workbenchProjectItemsTitle(String entity) {
     return '$entity 列表';
   }
 
   @override
-  String workbenchSchemaEmpty(String entity) {
+  String workbenchProjectEmpty(String entity) {
     return '暂无 $entity';
   }
 
   @override
-  String get workbenchSchemaActive => '进行中';
+  String get workbenchProjectActiveItems => '进行中';
 
   @override
-  String get workbenchSchemaArchived => '已归档';
+  String get workbenchProjectArchivedItems => '已归档';
 
   @override
-  String get workbenchSchemaEditAction => '编辑';
+  String get workbenchProjectEditAction => '编辑';
 
   @override
-  String get workbenchSchemaEditTitle => '编辑条目';
+  String get workbenchProjectEditTitle => '编辑条目';
 
   @override
-  String get workbenchSchemaArchiveAction => '归档';
+  String get workbenchProjectArchiveAction => '归档';
 
   @override
-  String get workbenchSchemaMissingCreateApi => '这个项目没有可用的新增工具';
+  String get workbenchProjectMissingCreateApi => '这个项目没有可用的新增工具';
 
   @override
-  String get workbenchSchemaMissingUpdateApi => '这个项目没有可用的编辑工具';
+  String get workbenchProjectMissingUpdateApi => '这个项目没有可用的编辑工具';
 
   @override
-  String get workbenchSchemaMissingArchiveApi => '这个项目没有可用的归档工具';
+  String get workbenchProjectMissingArchiveApi => '这个项目没有可用的归档工具';
 
   @override
-  String workbenchSchemaInputRequired(String entity) {
+  String workbenchProjectInputRequired(String entity) {
     return '请先输入 $entity';
   }
 
   @override
-  String workbenchSchemaItemCreated(String entity) {
+  String workbenchProjectItemCreated(String entity) {
     return '$entity 已新增';
   }
 
   @override
-  String workbenchSchemaItemUpdated(String entity) {
+  String workbenchProjectItemUpdated(String entity) {
     return '$entity 已保存';
   }
 
   @override
-  String workbenchSchemaItemArchived(String entity) {
+  String workbenchProjectItemArchived(String entity) {
     return '$entity 已归档';
   }
-
-  @override
-  String get workbenchNoOpenTodo => '没有可完成的 todo';
 
   @override
   String get workbenchLoadFailed => '加载失败';
@@ -3576,14 +3438,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get workbenchProjectSummaryQuickCapture =>
-      '收集文字、链接、分享和截图，沉淀成待办、摘要、链接卡片或稍后读。';
-
-  @override
-  String get workbenchProjectSummaryTodo => '记录待办事项，并在完成后归档。';
-
-  @override
-  String workbenchProjectSummarySchema(String entityName) {
+  String workbenchProjectSummaryGeneric(String entityName) {
     return '管理 $entityName 记录，并保留状态和快捷操作。';
   }
 
@@ -3593,17 +3448,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String workbenchTodoCount(int openCount, int finishedCount) {
-    return '$openCount 条待完成 / $finishedCount 条已完成';
-  }
-
-  @override
-  String workbenchQuickCaptureCount(int activeCount, int archivedCount) {
-    return '$activeCount 条活跃 / $archivedCount 条归档';
-  }
-
-  @override
-  String workbenchSchemaItemCount(int activeCount, int archivedCount) {
+  String workbenchProjectItemCount(int activeCount, int archivedCount) {
     return '$activeCount 条进行中 / $archivedCount 条归档';
   }
 

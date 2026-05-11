@@ -14,6 +14,7 @@ import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/app_theme_controller.dart';
 import 'package:ui/theme/app_theme_mode.dart';
 import 'package:ui/theme/app_theme.dart';
+import 'package:ui/widgets/agent_run_monitor_overlay.dart';
 import 'package:ui/widgets/embedded_terminal_init_overlay.dart';
 
 import 'core/router/go_router_manager.dart';
@@ -174,6 +175,7 @@ class _MyAppState extends ConsumerState<MyApp> {
             children: [
               child ?? const SizedBox.shrink(),
               const EmbeddedTerminalInitToastListener(),
+              if (!GoRouterManager.isSubEngine) const AgentRunMonitorOverlay(),
             ],
           ),
         );

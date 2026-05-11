@@ -13,9 +13,9 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Routes OOB Workbench control tools and Project API calls through the native Project store.
+ * Routes OOB Workbench control tools and Project Tool calls through the native Project store.
  *
- * The handler keeps Workbench tools inside OOB instead of exposing Project APIs as MCP tools.
+ * The handler keeps Workbench tools inside OOB; active Project Tools can also be exposed through MCP.
  * `env.workspaceDescriptor` is used only to stamp results with the active Agent workspace id.
  */
 class WorkbenchToolHandler(
@@ -182,12 +182,12 @@ class WorkbenchToolHandler(
     ): ToolExecutionResult {
         val toolName = "workbench_api_list"
         return try {
-            helper.reportToolProgress(callback, toolName, "Listing Workbench Project APIs")
+            helper.reportToolProgress(callback, toolName, "Listing Workbench Project Tools")
             val projectId = args["projectId"]?.jsonPrimitive?.contentOrNull
             val apis = workbenchProjectStore.listApis(projectId)
             contextResult(
                 toolName = toolName,
-                summaryText = "Workbench APIs listed",
+                summaryText = "Workbench Project Tools listed",
                 payload = linkedMapOf(
                     "success" to true,
                     "projectId" to projectId,
@@ -200,7 +200,7 @@ class WorkbenchToolHandler(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            helper.errorResult(toolName, e.message, "Workbench API list failed")
+            helper.errorResult(toolName, e.message, "Workbench Project Tool list failed")
         }
     }
 
@@ -211,7 +211,7 @@ class WorkbenchToolHandler(
     ): ToolExecutionResult {
         val toolName = "workbench_api_call"
         return try {
-            helper.reportToolProgress(callback, toolName, "Calling Workbench Project API")
+            helper.reportToolProgress(callback, toolName, "Calling Workbench Project Tool")
             val projectId = args["projectId"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
             val apiId = args["apiId"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
             val inputs = (args["inputs"] as? JsonObject)
@@ -226,9 +226,9 @@ class WorkbenchToolHandler(
             contextResult(
                 toolName = toolName,
                 summaryText = if (payload["success"] == true) {
-                    "Workbench API called"
+                    "Workbench Project Tool called"
                 } else {
-                    payload["errorMessage"]?.toString() ?: "Workbench API call failed"
+                    payload["errorMessage"]?.toString() ?: "Workbench Project Tool call failed"
                 },
                 payload = payload,
                 success = payload["success"] == true,
@@ -237,7 +237,7 @@ class WorkbenchToolHandler(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            helper.errorResult(toolName, e.message, "Workbench API call failed")
+            helper.errorResult(toolName, e.message, "Workbench Project Tool call failed")
         }
     }
 

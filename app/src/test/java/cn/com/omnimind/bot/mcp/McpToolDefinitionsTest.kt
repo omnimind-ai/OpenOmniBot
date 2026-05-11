@@ -11,6 +11,7 @@ class McpToolDefinitionsTest {
 
         assertTrue(names.contains("vlm_task"))
         assertTrue(names.contains("agent_run"))
+        assertTrue(names.contains("oob_tool_call"))
         assertTrue(names.contains("oob_project_create"))
         assertTrue(names.contains("oob_project_activate"))
         assertTrue(names.contains("oob_project_open"))

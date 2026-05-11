@@ -523,8 +523,11 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     )
 
     private class ActiveAgentRunContext(
-        private val taskId: String,
-        val job: Job
+        val taskId: String,
+        val job: Job,
+        val startedAtMillis: Long,
+        val conversationId: Long?,
+        val conversationMode: String
     ) : AgentRunControl {
         private val lock = Any()
         private var generationCounter = 0L
@@ -564,6 +567,20 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 if (activeTool === handle) {
                     activeTool = null
                 }
+            }
+        }
+
+        fun snapshot(now: Long = System.currentTimeMillis()): Map<String, Any?> {
+            return synchronized(lock) {
+                linkedMapOf(
+                    "taskId" to taskId,
+                    "conversationId" to conversationId,
+                    "conversationMode" to conversationMode,
+                    "startedAtMillis" to startedAtMillis,
+                    "elapsedMillis" to (now - startedAtMillis).coerceAtLeast(0L),
+                    "isActive" to job.isActive,
+                    "activeTool" to activeTool?.snapshot()
+                )
             }
         }
     }
@@ -629,6 +646,20 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             return synchronized(lock) { latestSnapshot }
         }
 
+        fun snapshot(): Map<String, Any?> {
+            return synchronized(lock) {
+                linkedMapOf(
+                    "toolName" to toolName,
+                    "toolCallId" to toolCallId,
+                    "cardId" to cardId,
+                    "summary" to latestSnapshot.summary,
+                    "extras" to latestSnapshot.extras,
+                    "manualStopRequested" to manualStopRequested,
+                    "completed" to completed
+                )
+            }
+        }
+
         override fun isManualStopRequested(): Boolean {
             return synchronized(lock) { manualStopRequested }
         }
@@ -692,6 +723,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         synchronized(activeAgentLock) {
             activeAgentRuns[taskId] = context
         }
+        dispatchAgentRunStateChanged("agent_run_started")
     }
 
     private fun registerChatTaskPersistenceState(taskId: String, state: ChatTaskPersistenceState) {
@@ -713,10 +745,15 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     }
 
     private fun clearActiveAgentJob(taskId: String, job: Job) {
-        synchronized(activeAgentLock) {
+        val removed = synchronized(activeAgentLock) {
             if (activeAgentRuns[taskId]?.job == job) {
-                activeAgentRuns.remove(taskId)
+                activeAgentRuns.remove(taskId) != null
+            } else {
+                false
             }
+        }
+        if (removed) {
+            dispatchAgentRunStateChanged("agent_run_finished")
         }
     }
 
@@ -751,6 +788,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             jobsToCancel.forEach { job ->
                 job.cancel(CancellationException(reason))
             }
+            dispatchAgentRunStateChanged("agent_run_cancelled")
         }
     }
 
@@ -1056,6 +1094,45 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     fun activeAgentTaskIds(): List<String> {
         return synchronized(activeAgentLock) {
             activeAgentRuns.keys.toList()
+        }
+    }
+
+    private fun activeAgentRunsPayload(reason: String? = null): Map<String, Any?> {
+        val now = System.currentTimeMillis()
+        val runs = synchronized(activeAgentLock) {
+            activeAgentRuns.values
+                .sortedBy { it.startedAtMillis }
+                .map { it.snapshot(now) }
+        }
+        return linkedMapOf(
+            "success" to true,
+            "reason" to reason.orEmpty(),
+            "count" to runs.size,
+            "running" to runs.isNotEmpty(),
+            "runs" to runs
+        )
+    }
+
+    private fun dispatchAgentRunStateChanged(reason: String) {
+        val payload = activeAgentRunsPayload(reason)
+        mainJob.launch(Dispatchers.Main) {
+            invokeFlutterEventSafely("onAgentRunStateChanged", payload)
+        }
+    }
+
+    fun agentRunList(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            try {
+                val payload = activeAgentRunsPayload("agent_run_list")
+                withContext(Dispatchers.Main) {
+                    result.success(payload)
+                }
+            } catch (e: Exception) {
+                OmniLog.e(TAG, "agentRunList error: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    result.error("AGENT_RUN_LIST_ERROR", e.message, null)
+                }
+            }
         }
     }
 
@@ -2295,13 +2372,14 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
      */
     fun deleteAgentExactAlarm(call: MethodCall, result: MethodChannel.Result) {
         val alarmId = call.argument<String>("alarmId")?.trim().orEmpty()
-        if (alarmId.isEmpty()) {
-            result.error("INVALID_ARGUMENTS", "alarmId is empty", null)
-            return
-        }
         workJob.launch {
             try {
-                val payload = AgentAlarmToolService(context).deleteExactReminder(alarmId)
+                val alarmToolService = AgentAlarmToolService(context)
+                val payload = if (alarmId.isEmpty()) {
+                    alarmToolService.deleteAllExactReminders()
+                } else {
+                    alarmToolService.deleteExactReminder(alarmId)
+                }
                 withContext(Dispatchers.Main) {
                     result.success(payload)
                 }
@@ -4013,7 +4091,11 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     fun workbenchApiCall(call: MethodCall, result: MethodChannel.Result) {
         workJob.launch {
             runCatching {
-                val projectId = call.argument<String>("projectId")?.trim().orEmpty()
+                val requestedProjectId = call.argument<String>("projectId")?.trim().orEmpty()
+                val projectId = requestedProjectId.ifBlank {
+                    val activeProject = workbenchProjectStore.getActiveProject()["project"] as? Map<*, *>
+                    activeProject?.get("projectId")?.toString()?.trim().orEmpty()
+                }
                 val apiId = call.argument<String>("apiId")?.trim()
                     ?: call.argument<String>("toolId")?.trim().orEmpty()
                 val inputs = normalizeMethodCallMap(call.argument<Any>("inputs"))
@@ -4269,7 +4351,13 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
         val agentRunJob = SupervisorJob()
         val agentRunScope = CoroutineScope(agentRunJob + Dispatchers.Default)
-        val agentRunContext = ActiveAgentRunContext(taskId = taskId, job = agentRunJob)
+        val agentRunContext = ActiveAgentRunContext(
+            taskId = taskId,
+            job = agentRunJob,
+            startedAtMillis = System.currentTimeMillis(),
+            conversationId = conversationId,
+            conversationMode = resolvedConversationMode
+        )
         registerActiveAgentRun(taskId, agentRunContext)
 
         agentRunScope.launch {

@@ -1,18 +1,23 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/omnibot_workspace/widgets/omnibot_workspace_browser.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
-import 'package:ui/features/workbench/pages/workbench_quick_capture_page.dart';
-import 'package:ui/features/workbench/pages/workbench_schema_project_page.dart';
-import 'package:ui/features/workbench/pages/workbench_todo_log_page.dart';
-import 'package:ui/features/workbench/services/workbench_todo_log_service.dart';
+import 'package:ui/features/workbench/pages/workbench_flutter_eval_page.dart';
+import 'package:ui/features/workbench/pages/workbench_html_display_page.dart';
+import 'package:ui/features/workbench/pages/workbench_project_display_page.dart';
+import 'package:ui/features/workbench/services/workbench_project_service.dart';
+import 'package:ui/features/workbench/widgets/workbench_annotation_context.dart';
+import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/app_background_service.dart';
+import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/theme_context.dart';
+import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/app_background_widgets.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 
@@ -694,18 +699,35 @@ class _OmnibotWorkspaceProjectFrontendsState
   late final WorkbenchProjectModeService _service =
       widget._service ?? WorkbenchProjectModeService.native();
   late final bool _ownsService = widget._service == null;
-  bool _annotationEnabled = false;
+  final TextEditingController _editPromptController = TextEditingController();
+  final FocusNode _editPromptFocusNode = FocusNode();
+  final List<WorkbenchAnnotationStroke> _editStrokes = [];
+  final List<Offset> _editCurrentPoints = [];
+  StreamSubscription<Map<String, dynamic>>? _projectUpdateSub;
+  bool _editPromptVisible = false;
+  bool _editDrawingEnabled = true;
+  bool _submittingEdit = false;
+  Size _editCanvasSize = Size.zero;
+  int _nextEditStrokeId = 0;
+
+  static const Color _editStrokeColor = Color(0xFFE13D56);
+  static const double _editStrokeWidth = 4;
 
   @override
   void initState() {
     super.initState();
     _service.addListener(_handleServiceChanged);
+    _projectUpdateSub = AssistsMessageService.workbenchProjectUpdatedStream
+        .listen(_handleWorkbenchProjectUpdated);
     unawaited(_refreshAndEnsureActive());
   }
 
   @override
   void dispose() {
+    _projectUpdateSub?.cancel();
     _service.removeListener(_handleServiceChanged);
+    _editPromptController.dispose();
+    _editPromptFocusNode.dispose();
     if (_ownsService) {
       _service.dispose();
     }
@@ -718,6 +740,19 @@ class _OmnibotWorkspaceProjectFrontendsState
     }
   }
 
+  void _handleWorkbenchProjectUpdated(Map<String, dynamic> event) {
+    if (!mounted) return;
+    final reason = event['reason']?.toString() ?? '';
+    final isActiveProjectChange =
+        reason == 'project_activated' ||
+        reason == 'project_deactivated' ||
+        reason == 'project_deleted';
+    if (isActiveProjectChange) {
+      _closeEditPrompt();
+    }
+    unawaited(_service.refresh());
+  }
+
   Future<void> _refreshAndEnsureActive() async {
     await _service.refresh();
     if (!mounted ||
@@ -728,25 +763,12 @@ class _OmnibotWorkspaceProjectFrontendsState
     await _service.activateProject(_service.projects.first);
   }
 
-  void _showWorkbenchGuide() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return OmnibotWorkbenchGuideSheet(
-          translucent: widget.translucentSurfaces,
-        );
-      },
-    );
-  }
-
   String _displayRoute(WorkbenchProject project, WorkbenchDisplaySpec display) {
     final rawRoute = display.route.trim().isEmpty
         ? project.route.trim()
         : display.route.trim();
     final resolvedRoute = rawRoute.isEmpty
-        ? '/workbench/todo_log?projectId=${Uri.encodeQueryComponent(project.projectId)}'
+        ? '/workbench/project?projectId=${Uri.encodeQueryComponent(project.projectId)}'
         : rawRoute;
     final uri = Uri.parse(resolvedRoute);
     return uri
@@ -774,10 +796,271 @@ class _OmnibotWorkspaceProjectFrontendsState
     );
   }
 
-  void _toggleAnnotationMode() {
+  void _toggleEditPrompt(WorkbenchProject? project) {
+    if (project == null) {
+      showToast(
+        context.l10n.workbenchAssistantNoProject,
+        type: ToastType.warning,
+      );
+      return;
+    }
     setState(() {
-      _annotationEnabled = !_annotationEnabled;
+      _editPromptVisible = !_editPromptVisible;
+      if (_editPromptVisible) {
+        _editDrawingEnabled = true;
+      } else {
+        _clearEditDrawing(clearPrompt: false);
+      }
     });
+    if (_editPromptVisible) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _editPromptFocusNode.requestFocus();
+      });
+    } else {
+      _editPromptFocusNode.unfocus();
+    }
+  }
+
+  List<String> _sourceFileKeys(Map<String, Object?> frontendPayload) {
+    final sources = frontendPayload['sources'];
+    if (sources is! Map) return const [];
+    return sources.keys.map((key) => key.toString()).toList(growable: false);
+  }
+
+  String _routeForDisplay(
+    WorkbenchProject project,
+    WorkbenchDisplaySpec display,
+  ) {
+    return workbenchRouteForDisplay(
+      project,
+      display,
+      fallbackRoute: '/workbench/project',
+    );
+  }
+
+  Map<String, Object?> _buildToolbarEditFrontendContext(
+    WorkbenchProject project,
+    WorkbenchDisplaySpec display,
+    WorkbenchAnnotationPayload? annotationPayload,
+  ) {
+    final renderer = display.renderer.trim().isEmpty
+        ? display.kind.trim()
+        : display.renderer.trim();
+    final html = project.frontendHtml;
+    final flutter = project.frontendFlutter;
+    final baseContext = buildWorkbenchVisibleFrontendContext(
+      project: project,
+      display: display,
+      source: 'workspace_project_toolbar_edit',
+      extraVisibleState: {
+        'renderer': renderer,
+        'hasHtml': html.isNotEmpty,
+        'hasFlutter': flutter.isNotEmpty,
+        'htmlEntryFile': html['entryFile']?.toString(),
+        'htmlEntryPath': html['entryPath']?.toString(),
+        'htmlSourceFiles': _sourceFileKeys(html),
+        'flutterEntryFile': flutter['entryFile']?.toString(),
+        'flutterEntryClass': flutter['entryClass']?.toString(),
+        'flutterSourceFiles': _sourceFileKeys(flutter),
+      },
+    );
+    if (annotationPayload == null) return baseContext;
+    final visibleState = baseContext['visibleState'] is Map
+        ? Map<String, Object?>.from(baseContext['visibleState'] as Map)
+        : <String, Object?>{};
+    final annotationContext = annotationPayload.toFrontendContext(
+      projectId: project.projectId,
+      displayId: display.id,
+      route: _routeForDisplay(project, display),
+      source: 'workspace_project_toolbar_drawing_edit',
+      visibleState: visibleState,
+    );
+    return {
+      ...baseContext,
+      ...annotationContext,
+      'toolbarEditContext': baseContext,
+      'screenshotSummary':
+          'Use the visible Workbench Display plus these red annotation paths to infer the marked target UI. The Flutter client does not classify the shape.',
+    };
+  }
+
+  String _buildToolbarEditAgentContinuationMessage(
+    String prompt,
+    Map<String, Object?> frontendContext,
+    WorkbenchProjectHotUpdateResult hotUpdateResult,
+  ) {
+    const encoder = JsonEncoder.withIndent('  ');
+    final contextJson = encoder.convert(frontendContext);
+    final instructionsJson = encoder.convert(hotUpdateResult.instructions);
+    return '''
+$prompt
+
+当前 Workbench 右侧显示区已经先调用 workbench_project_hot_update 并记录了这次编辑请求。不要再次调用 workbench_project_hot_update，不要开启新的产品生成流程；请继续读取当前 Project，并调用 workbench_project_update 只改必要的 frontend/html 或 frontend/flutter 文件。不要把 Project ID、工具数量、executor、workspace、data/log 路径等控制面信息写到可见界面。
+
+hot_update 返回信息：
+
+```json
+{
+  "projectId": "${hotUpdateResult.projectId}",
+  "requiresAgentRegeneration": ${hotUpdateResult.requiresAgentRegeneration},
+  "recommendedTool": "${hotUpdateResult.recommendedTool}",
+  "instructions": $instructionsJson
+}
+```
+
+当前前端上下文：
+
+```json
+$contextJson
+```
+''';
+  }
+
+  Future<void> _submitProjectEdit(
+    WorkbenchProject? project,
+    WorkbenchDisplaySpec? display,
+  ) async {
+    if (_submittingEdit) return;
+    final rawPrompt = _editPromptController.text.trim();
+    final hasDrawing = _editStrokes.isNotEmpty;
+    final prompt = rawPrompt.isEmpty && hasDrawing
+        ? context.l10n.workbenchAnnotationDefaultPrompt
+        : rawPrompt;
+    if (prompt.isEmpty) {
+      showToast(
+        context.l10n.workbenchAssistantPromptRequired,
+        type: ToastType.warning,
+      );
+      return;
+    }
+    if (project == null || display == null) {
+      showToast(
+        context.l10n.workbenchAssistantNoProject,
+        type: ToastType.warning,
+      );
+      return;
+    }
+    setState(() => _submittingEdit = true);
+    final annotationPayload = hasDrawing
+        ? WorkbenchAnnotationPayload(
+            strokes: List<WorkbenchAnnotationStroke>.unmodifiable(_editStrokes),
+            canvasSize: _editCanvasSize,
+            prompt: prompt,
+          )
+        : null;
+    final frontendContext = _buildToolbarEditFrontendContext(
+      project,
+      display,
+      annotationPayload,
+    );
+    final backend = NativeWorkbenchProjectBackend();
+    await backend.setActiveFrontendContext(frontendContext);
+    final hotUpdateResult = await _service.applyHotUpdate(
+      project,
+      prompt,
+      frontendContext: frontendContext,
+    );
+    final needsAgent = hotUpdateResult?.requiresAgentRegeneration == true;
+    var success = hotUpdateResult?.success == true;
+    if (success && needsAgent) {
+      final taskId =
+          'workbench-toolbar-edit-${DateTime.now().millisecondsSinceEpoch}';
+      success = await AssistsMessageService.createAgentTask(
+        taskId: taskId,
+        userMessage: _buildToolbarEditAgentContinuationMessage(
+          prompt,
+          frontendContext,
+          hotUpdateResult!,
+        ),
+        conversationMode: 'subagent',
+      );
+    }
+    if (!mounted) return;
+    setState(() {
+      _submittingEdit = false;
+      if (success) {
+        _editPromptVisible = false;
+        _editPromptController.clear();
+        _clearEditDrawing(clearPrompt: false);
+      }
+    });
+    if (success) {
+      _editPromptFocusNode.unfocus();
+      showToast(needsAgent ? '已开始调整当前项目' : '已应用到当前项目', type: ToastType.success);
+    } else {
+      showToast(
+        context.l10n.workbenchAssistantHotUpdateFailed,
+        type: ToastType.error,
+      );
+    }
+  }
+
+  void _startEditStroke(DragStartDetails details) {
+    if (_submittingEdit || !_editDrawingEnabled) return;
+    setState(() {
+      _editCurrentPoints
+        ..clear()
+        ..add(details.localPosition);
+    });
+  }
+
+  void _appendEditStrokePoint(DragUpdateDetails details) {
+    if (_submittingEdit || !_editDrawingEnabled || _editCurrentPoints.isEmpty) {
+      return;
+    }
+    setState(() {
+      _editCurrentPoints.add(details.localPosition);
+    });
+  }
+
+  void _finishEditStroke([DragEndDetails? _]) {
+    if (_submittingEdit || _editCurrentPoints.length < 2) {
+      setState(_editCurrentPoints.clear);
+      return;
+    }
+    final points = List<Offset>.unmodifiable(_editCurrentPoints);
+    setState(() {
+      _editStrokes.add(
+        WorkbenchAnnotationStroke(
+          id: 'toolbar-stroke-${_nextEditStrokeId++}',
+          points: points,
+          color: _editStrokeColor,
+          strokeWidth: _editStrokeWidth,
+        ),
+      );
+      _editCurrentPoints.clear();
+    });
+  }
+
+  void _undoEditStroke() {
+    if (_editStrokes.isEmpty || _submittingEdit) return;
+    setState(() {
+      _editStrokes.removeLast();
+    });
+  }
+
+  void _clearEditDrawing({bool clearPrompt = false}) {
+    _editStrokes.clear();
+    _editCurrentPoints.clear();
+    if (clearPrompt) {
+      _editPromptController.clear();
+    }
+  }
+
+  void _clearEditDrawingWithRefresh() {
+    if (_submittingEdit ||
+        (_editStrokes.isEmpty && _editCurrentPoints.isEmpty)) {
+      return;
+    }
+    setState(() => _clearEditDrawing());
+  }
+
+  void _closeEditPrompt() {
+    setState(() {
+      _editPromptVisible = false;
+      _clearEditDrawing(clearPrompt: false);
+    });
+    _editPromptFocusNode.unfocus();
   }
 
   WorkbenchProject? _currentProject(List<WorkbenchProject> projects) {
@@ -792,9 +1075,31 @@ class _OmnibotWorkspaceProjectFrontendsState
     return projects.isEmpty ? null : projects.first;
   }
 
-  String _projectDisplayName(WorkbenchProject project) {
+  String? _projectDisplayName(WorkbenchProject? project) {
+    if (project == null) return null;
     final name = project.name.trim();
     return name.isEmpty ? project.projectId : name;
+  }
+
+  String? _projectDescription(
+    WorkbenchProject? project,
+    WorkbenchDisplaySpec? display,
+  ) {
+    if (project == null) return null;
+    final candidates = [
+      project.pageSpec['description'],
+      project.pageSpec['subtitle'],
+      display?.description,
+    ];
+    for (final candidate in candidates) {
+      final value = candidate?.toString().trim() ?? '';
+      if (value.isEmpty) continue;
+      if (value.startsWith('Live HTML Display')) continue;
+      if (value.startsWith('Live Flutter Display')) continue;
+      if (value.startsWith('Display bound to')) continue;
+      return value;
+    }
+    return null;
   }
 
   @override
@@ -806,48 +1111,106 @@ class _OmnibotWorkspaceProjectFrontendsState
       children: [
         if (_service.loading) const LinearProgressIndicator(minHeight: 2),
         _WorkspaceProjectMiniBar(
-          project: project,
-          display: display,
-          projectName: project == null ? null : _projectDisplayName(project),
+          projectName: _projectDisplayName(project),
+          projectDescription: _projectDescription(project, display),
           translucent: widget.translucentSurfaces,
           onOpenProjectManager: () => _openProjectManager(project),
           onRefresh: _refreshAndEnsureActive,
+          onEdit: project == null ? null : () => _toggleEditPrompt(project),
+          editing: _editPromptVisible,
           onOpenDisplay: project == null || display == null
               ? null
               : () => _openDisplayRoute(project, display),
-          annotationEnabled: _annotationEnabled,
-          onToggleAnnotation: project == null || display == null
-              ? null
-              : _toggleAnnotationMode,
-          onShowGuide: _showWorkbenchGuide,
         ),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border.all(color: context.omniPalette.borderSubtle),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                ),
-                child: project == null || display == null
-                    ? _WorkspaceProjectStatusCard(
-                        icon: Icons.phone_android_outlined,
-                        label: context
-                            .l10n
-                            .workbenchWorkspaceProjectFrontendsEmpty,
-                        translucent: widget.translucentSurfaces,
-                      )
-                    : _WorkspaceProjectDisplayHost(
-                        key: ValueKey(
-                          'workspace-project-host-${project.projectId}-${display.id}',
-                        ),
-                        project: project,
-                        display: display,
-                        annotationMode: _annotationEnabled,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: context.omniPalette.borderSubtle,
                       ),
-              ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: project == null || display == null
+                        ? _WorkspaceProjectStatusCard(
+                            icon: Icons.phone_android_outlined,
+                            label: context
+                                .l10n
+                                .workbenchWorkspaceProjectFrontendsEmpty,
+                            translucent: widget.translucentSurfaces,
+                          )
+                        : _WorkspaceProjectDisplayHost(
+                            key: ValueKey(
+                              'workspace-project-host-${project.projectId}-${display.id}',
+                            ),
+                            project: project,
+                            display: display,
+                          ),
+                  ),
+                ),
+                if (_editPromptVisible)
+                  Positioned.fill(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        _editCanvasSize = Size(
+                          constraints.maxWidth.isFinite
+                              ? constraints.maxWidth
+                              : 0,
+                          constraints.maxHeight.isFinite
+                              ? constraints.maxHeight
+                              : 0,
+                        );
+                        return IgnorePointer(
+                          ignoring: !_editDrawingEnabled || _submittingEdit,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onPanStart: _startEditStroke,
+                            onPanUpdate: _appendEditStrokePoint,
+                            onPanEnd: _finishEditStroke,
+                            onPanCancel: () => _finishEditStroke(),
+                            child: CustomPaint(
+                              painter: WorkbenchAnnotationPainter(
+                                strokes: _editStrokes,
+                                currentPoints: _editCurrentPoints,
+                                currentColor: _editStrokeColor,
+                                currentStrokeWidth: _editStrokeWidth,
+                                drawingEnabled: _editDrawingEnabled,
+                              ),
+                              child: const SizedBox.expand(),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                if (_editPromptVisible && project != null && display != null)
+                  Positioned(
+                    left: 10,
+                    right: 10,
+                    bottom: 10,
+                    child: _WorkspaceProjectEditBubble(
+                      translucent: widget.translucentSurfaces,
+                      controller: _editPromptController,
+                      focusNode: _editPromptFocusNode,
+                      submitting: _submittingEdit,
+                      drawingEnabled: _editDrawingEnabled,
+                      strokeCount: _editStrokes.length,
+                      onToggleDrawing: () => setState(
+                        () => _editDrawingEnabled = !_editDrawingEnabled,
+                      ),
+                      onUndoDrawing: _undoEditStroke,
+                      onClearDrawing: _clearEditDrawingWithRefresh,
+                      onClose: _closeEditPrompt,
+                      onSubmit: () => _submitProjectEdit(project, display),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
@@ -868,46 +1231,38 @@ class _OmnibotWorkspaceProjectFrontendsState
 
 class _WorkspaceProjectMiniBar extends StatelessWidget {
   const _WorkspaceProjectMiniBar({
-    required this.project,
-    required this.display,
     required this.projectName,
+    required this.projectDescription,
     required this.translucent,
     required this.onOpenProjectManager,
     required this.onRefresh,
+    required this.onEdit,
+    required this.editing,
     required this.onOpenDisplay,
-    required this.annotationEnabled,
-    required this.onToggleAnnotation,
-    required this.onShowGuide,
   });
 
-  final WorkbenchProject? project;
-  final WorkbenchDisplaySpec? display;
   final String? projectName;
+  final String? projectDescription;
   final bool translucent;
   final VoidCallback onOpenProjectManager;
   final Future<void> Function() onRefresh;
+  final VoidCallback? onEdit;
+  final bool editing;
   final VoidCallback? onOpenDisplay;
-  final bool annotationEnabled;
-  final VoidCallback? onToggleAnnotation;
-  final VoidCallback onShowGuide;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
-    final activeDisplay = display;
-    final displayLabel = activeDisplay == null
-        ? context.l10n.workbenchWorkspaceProjectFrontendsTitle
-        : activeDisplay.label.trim().isEmpty
-        ? context.l10n.workbenchUnnamedDisplay
-        : activeDisplay.label;
     final background = backgroundSurfaceColor(
       translucent: translucent,
       baseColor: palette.surfacePrimary,
       opacity: 0.74,
     );
+    final title = projectName?.trim() ?? '';
+    final subtitle = projectDescription?.trim() ?? '';
     return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: background,
         border: Border(bottom: BorderSide(color: palette.borderSubtle)),
@@ -915,72 +1270,307 @@ class _WorkspaceProjectMiniBar extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  displayLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
+            child: title.isEmpty
+                ? const SizedBox.shrink()
+                : Column(
+                    mainAxisAlignment: subtitle.isEmpty
+                        ? MainAxisAlignment.center
+                        : MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: palette.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      if (subtitle.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.textTertiary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                ),
-                if (projectName != null)
-                  Text(
-                    projectName!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: palette.textTertiary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-              ],
+          ),
+          const SizedBox(width: 8),
+          Tooltip(
+            message: context.l10n.workbenchProjectEditAction,
+            child: IconButton(
+              onPressed: onEdit,
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              padding: EdgeInsets.zero,
+              icon: Icon(
+                Icons.edit_outlined,
+                color: editing ? palette.accentPrimary : palette.textSecondary,
+              ),
             ),
           ),
           IconButton(
             tooltip: context.l10n.workbenchWorkspaceOpenProjectConsole,
             onPressed: onOpenProjectManager,
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            padding: EdgeInsets.zero,
             icon: Icon(
               Icons.dashboard_customize_outlined,
               color: palette.textSecondary,
             ),
           ),
           IconButton(
-            tooltip: context.l10n.workbenchWorkspaceGuideTooltip,
-            onPressed: onShowGuide,
-            icon: Icon(
-              Icons.info_outline_rounded,
-              color: palette.textSecondary,
-            ),
-          ),
-          IconButton(
             tooltip: context.l10n.workbenchOpenDisplay,
             onPressed: onOpenDisplay,
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            padding: EdgeInsets.zero,
             icon: Icon(Icons.open_in_new_rounded, color: palette.textSecondary),
-          ),
-          IconButton(
-            tooltip: context.l10n.workbenchAnnotationTitle,
-            onPressed: onToggleAnnotation,
-            icon: Icon(
-              annotationEnabled ? Icons.edit_off_outlined : Icons.draw_outlined,
-              color: annotationEnabled
-                  ? palette.accentPrimary
-                  : palette.textSecondary,
-            ),
           ),
           IconButton(
             tooltip: context.l10n.omniflowRefresh,
             onPressed: () => unawaited(onRefresh()),
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            padding: EdgeInsets.zero,
             icon: Icon(Icons.refresh_rounded, color: palette.textSecondary),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _WorkspaceProjectEditBubble extends StatelessWidget {
+  const _WorkspaceProjectEditBubble({
+    required this.translucent,
+    required this.controller,
+    required this.focusNode,
+    required this.submitting,
+    required this.drawingEnabled,
+    required this.strokeCount,
+    required this.onToggleDrawing,
+    required this.onUndoDrawing,
+    required this.onClearDrawing,
+    required this.onClose,
+    required this.onSubmit,
+  });
+
+  final bool translucent;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool submitting;
+  final bool drawingEnabled;
+  final int strokeCount;
+  final VoidCallback onToggleDrawing;
+  final VoidCallback onUndoDrawing;
+  final VoidCallback onClearDrawing;
+  final VoidCallback onClose;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final background = backgroundSurfaceColor(
+      translucent: translucent,
+      baseColor: palette.surfacePrimary,
+      opacity: 0.96,
+    );
+    return Material(
+      color: Colors.transparent,
+      elevation: 10,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: palette.borderSubtle),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.14),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                _WorkspaceEditToolButton(
+                  tooltip: drawingEnabled
+                      ? context.l10n.workbenchAnnotationBrowseMode
+                      : context.l10n.workbenchAnnotationDrawMode,
+                  icon: drawingEnabled
+                      ? Icons.pan_tool_alt_outlined
+                      : Icons.draw_outlined,
+                  active: drawingEnabled,
+                  onPressed: submitting ? null : onToggleDrawing,
+                ),
+                _WorkspaceEditToolButton(
+                  tooltip: context.l10n.workbenchAnnotationUndo,
+                  icon: Icons.undo_rounded,
+                  onPressed: submitting || strokeCount == 0
+                      ? null
+                      : onUndoDrawing,
+                ),
+                _WorkspaceEditToolButton(
+                  tooltip: context.l10n.workbenchAnnotationClear,
+                  icon: Icons.delete_sweep_outlined,
+                  onPressed: submitting || strokeCount == 0
+                      ? null
+                      : onClearDrawing,
+                ),
+                const SizedBox(width: 4),
+                Container(
+                  height: 26,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: palette.surfaceSecondary.withValues(alpha: 0.78),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: palette.borderSubtle),
+                  ),
+                  child: Text(
+                    strokeCount == 0
+                        ? context.l10n.workbenchAnnotationNoShape
+                        : context.l10n.workbenchAnnotationShapeCount(
+                            strokeCount,
+                          ),
+                    style: TextStyle(
+                      color: palette.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                  onPressed: submitting ? null : onClose,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 32,
+                    height: 32,
+                  ),
+                  padding: EdgeInsets.zero,
+                  icon: Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: palette.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 7),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    enabled: !submitting,
+                    minLines: 1,
+                    maxLines: 4,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) {
+                      if (!submitting) onSubmit();
+                    },
+                    decoration: InputDecoration(
+                      hintText: context.l10n.workbenchAssistantPromptHint,
+                      isDense: true,
+                      filled: true,
+                      fillColor: palette.surfaceSecondary.withValues(
+                        alpha: 0.7,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: palette.borderSubtle),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: palette.borderSubtle),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: palette.accentPrimary),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 9,
+                      ),
+                    ),
+                    style: TextStyle(
+                      color: palette.textPrimary,
+                      fontSize: 13,
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                IconButton(
+                  tooltip: context.l10n.workbenchAssistantSend,
+                  onPressed: submitting ? null : onSubmit,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 34,
+                    height: 34,
+                  ),
+                  padding: EdgeInsets.zero,
+                  icon: submitting
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: palette.accentPrimary,
+                          ),
+                        )
+                      : Icon(
+                          Icons.arrow_upward_rounded,
+                          size: 19,
+                          color: palette.accentPrimary,
+                        ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceEditToolButton extends StatelessWidget {
+  const _WorkspaceEditToolButton({
+    required this.tooltip,
+    required this.icon,
+    this.active = false,
+    this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final bool active;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final color = active ? palette.accentPrimary : palette.textSecondary;
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+      padding: EdgeInsets.zero,
+      icon: Icon(icon, size: 18, color: color),
     );
   }
 }
@@ -990,96 +1580,46 @@ class _WorkspaceProjectDisplayHost extends StatelessWidget {
     super.key,
     required this.project,
     required this.display,
-    required this.annotationMode,
   });
 
   final WorkbenchProject project;
   final WorkbenchDisplaySpec display;
-  final bool annotationMode;
 
   @override
   Widget build(BuildContext context) {
     final route = display.route.trim().isEmpty
         ? project.route.trim()
         : display.route.trim();
-    final hostsTodoLog =
-        project.templateId == workbenchTodoTemplateId ||
-        route.startsWith('/workbench/todo_log');
-    if (hostsTodoLog) {
-      return WorkbenchTodoLogPage(
-        projectId: project.projectId,
-        displayId: display.id,
-        annotationMode: annotationMode,
-        embedded: true,
-      );
-    }
-    final hostsQuickCapture =
-        project.templateId == workbenchQuickCaptureTemplateId ||
-        route.startsWith('/workbench/quick_capture');
-    if (hostsQuickCapture) {
-      return WorkbenchQuickCapturePage(
+    final renderer = display.renderer.trim().isEmpty
+        ? display.kind.trim()
+        : display.renderer.trim();
+    final hostsHtmlDisplay =
+        renderer == 'html_webview' ||
+        display.id == 'html-main-display' ||
+        route.startsWith('/workbench/html');
+    if (hostsHtmlDisplay) {
+      return WorkbenchHtmlDisplayPage(
         projectId: project.projectId,
         displayId: display.id,
         embedded: true,
       );
     }
-    final hostsSchemaDisplay =
-        project.templateId == 'schema_app' ||
-        route.startsWith('/workbench/schema_app');
-    if (hostsSchemaDisplay) {
-      return WorkbenchSchemaProjectPage(
+    final hostsFlutterEval =
+        renderer == 'flutter_eval' ||
+        display.id == 'flutter-main-display' ||
+        route.startsWith('/workbench/flutter_eval');
+    if (hostsFlutterEval) {
+      return WorkbenchFlutterEvalPage(
         projectId: project.projectId,
         displayId: display.id,
-        annotationMode: annotationMode,
         embedded: true,
       );
     }
-    return _WorkspaceProjectUnsupportedDisplay(display: display);
-  }
-}
-
-class _WorkspaceProjectUnsupportedDisplay extends StatelessWidget {
-  const _WorkspaceProjectUnsupportedDisplay({required this.display});
-
-  final WorkbenchDisplaySpec display;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final label = display.label.trim().isEmpty
-        ? context.l10n.workbenchUnnamedDisplay
-        : display.label;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.widgets_outlined, color: palette.textTertiary, size: 34),
-            const SizedBox(height: 10),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: palette.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              context.l10n.workbenchWorkspaceProjectUnsupportedDisplay,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: palette.textSecondary,
-                fontSize: 12,
-                height: 1.3,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return WorkbenchProjectDisplayPage(
+      projectId: project.projectId,
+      displayId: display.id,
+      annotationMode: false,
+      embedded: true,
     );
   }
 }

@@ -3008,26 +3008,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Prompt-built native frontend, Project Tools, and workspace files stay connected inside OOB.';
 
   @override
-  String get workbenchGeneratedTodoSubtitle =>
-      'Todo Log (TODO) is one business frontend in this Project. It is separate from the Project control surface and calls the registered Project Tools directly.';
-
-  @override
-  String get workbenchMockProjectName => 'Todo Log Mock';
-
-  @override
-  String get workbenchTemplateProjectName => 'Todo Log Workbench';
-
-  @override
-  String get workbenchNativeUi => 'OOB native UI';
+  String get workbenchProjectDisplay => 'Project Display';
 
   @override
   String get workbenchProjectSection => 'Project';
 
   @override
   String get workbenchProjectIdLabel => 'Project ID';
-
-  @override
-  String get workbenchTemplateIdLabel => 'Template ID';
 
   @override
   String get workbenchRouteLabel => 'Route';
@@ -3061,9 +3048,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workbenchFrontendBinding => 'Frontend binding';
-
-  @override
-  String get workbenchTodoLog => 'Todo log';
 
   @override
   String get workbenchCallApi => 'Call tool';
@@ -3104,199 +3088,74 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get workbenchToolAddTodoTitle => 'Add todo';
+  String get workbenchProjectDefaultEntity => 'Item';
 
   @override
-  String get workbenchToolAddTodoDesc =>
-      'Creates a todo item through the registered native Project Tool.';
-
-  @override
-  String get workbenchToolFinishTodoTitle => 'Archive todo';
-
-  @override
-  String get workbenchToolFinishTodoDesc =>
-      'Archives a todo item through the registered native Project Tool.';
-
-  @override
-  String get workbenchFlowAddTodo => 'Page input -> todo.add -> todo list';
-
-  @override
-  String get workbenchFlowFinishTodo =>
-      'Finish button -> todo.finish -> completed list';
-
-  @override
-  String get workbenchAddTodoHint => 'Add a todo';
-
-  @override
-  String get workbenchAddTodo => 'Add todo';
-
-  @override
-  String get workbenchTodoEmpty => 'No todo yet';
-
-  @override
-  String get workbenchTodoOpen => 'Open';
-
-  @override
-  String get workbenchTodoFinished => 'Archived';
-
-  @override
-  String get workbenchFinishTodo => 'Archive todo';
-
-  @override
-  String get workbenchTodoAdded => 'Todo added';
-
-  @override
-  String get workbenchTodoFinishedToast => 'Todo archived';
-
-  @override
-  String get workbenchTodoInputRequired => 'Enter a todo first';
-
-  @override
-  String get workbenchQuickCaptureTitle => 'Quick Capture Inbox';
-
-  @override
-  String get workbenchQuickCaptureSubtitle =>
-      'Drop text, links, share snippets, or screenshots here, then sort them into todos, summaries, link cards, or later-read items.';
-
-  @override
-  String get workbenchQuickCapturePageCapture => 'Capture';
-
-  @override
-  String get workbenchQuickCapturePageInbox => 'Inbox';
-
-  @override
-  String workbenchQuickCaptureInboxSubtitle(int count) {
-    return '$count active items.';
-  }
-
-  @override
-  String workbenchQuickCaptureArchiveSubtitle(int count) {
-    return '$count archived items.';
-  }
-
-  @override
-  String get workbenchQuickCaptureInputHint =>
-      'Paste a note, link, or share text';
-
-  @override
-  String get workbenchQuickCaptureAction => 'Capture';
-
-  @override
-  String get workbenchQuickCaptureCaptured => 'Captured';
-
-  @override
-  String get workbenchQuickCaptureInputRequired => 'Enter text or a link first';
-
-  @override
-  String get workbenchQuickCaptureEmpty => 'No captures yet';
-
-  @override
-  String get workbenchQuickCaptureFilterAll => 'Inbox';
-
-  @override
-  String get workbenchQuickCaptureTypeTodo => 'Todo';
-
-  @override
-  String get workbenchQuickCaptureTypeSummary => 'Summary';
-
-  @override
-  String get workbenchQuickCaptureTypeLink => 'Link';
-
-  @override
-  String get workbenchQuickCaptureTypeLater => 'Later';
-
-  @override
-  String get workbenchQuickCaptureArchived => 'Archived';
-
-  @override
-  String get workbenchQuickCaptureArchive => 'Archive';
-
-  @override
-  String get workbenchQuickCapturePromoteToTodo => 'Turn into todo';
-
-  @override
-  String get workbenchQuickCaptureSummarize => 'Summarize';
-
-  @override
-  String get workbenchQuickCaptureArchivedToast => 'Capture archived';
-
-  @override
-  String get workbenchQuickCapturePromotedToast => 'Moved to todo';
-
-  @override
-  String get workbenchQuickCaptureSummarizedToast => 'Summary refreshed';
-
-  @override
-  String get workbenchSchemaDefaultEntity => 'Item';
-
-  @override
-  String workbenchSchemaCreateTitle(String entity) {
+  String workbenchProjectCreateTitle(String entity) {
     return 'Create $entity';
   }
 
   @override
-  String workbenchSchemaInputHint(String entity) {
+  String workbenchProjectInputHint(String entity) {
     return 'Enter $entity name';
   }
 
   @override
-  String workbenchSchemaItemsTitle(String entity) {
+  String workbenchProjectItemsTitle(String entity) {
     return '$entity list';
   }
 
   @override
-  String workbenchSchemaEmpty(String entity) {
+  String workbenchProjectEmpty(String entity) {
     return 'No $entity yet';
   }
 
   @override
-  String get workbenchSchemaActive => 'Active';
+  String get workbenchProjectActiveItems => 'Active';
 
   @override
-  String get workbenchSchemaArchived => 'Archived';
+  String get workbenchProjectArchivedItems => 'Archived';
 
   @override
-  String get workbenchSchemaEditAction => 'Edit';
+  String get workbenchProjectEditAction => 'Edit';
 
   @override
-  String get workbenchSchemaEditTitle => 'Edit item';
+  String get workbenchProjectEditTitle => 'Edit item';
 
   @override
-  String get workbenchSchemaArchiveAction => 'Archive';
+  String get workbenchProjectArchiveAction => 'Archive';
 
   @override
-  String get workbenchSchemaMissingCreateApi =>
+  String get workbenchProjectMissingCreateApi =>
       'This Project has no create tool';
 
   @override
-  String get workbenchSchemaMissingUpdateApi => 'This Project has no edit tool';
+  String get workbenchProjectMissingUpdateApi =>
+      'This Project has no edit tool';
 
   @override
-  String get workbenchSchemaMissingArchiveApi =>
+  String get workbenchProjectMissingArchiveApi =>
       'This Project has no archive tool';
 
   @override
-  String workbenchSchemaInputRequired(String entity) {
+  String workbenchProjectInputRequired(String entity) {
     return 'Enter $entity first';
   }
 
   @override
-  String workbenchSchemaItemCreated(String entity) {
+  String workbenchProjectItemCreated(String entity) {
     return '$entity created';
   }
 
   @override
-  String workbenchSchemaItemUpdated(String entity) {
+  String workbenchProjectItemUpdated(String entity) {
     return '$entity saved';
   }
 
   @override
-  String workbenchSchemaItemArchived(String entity) {
+  String workbenchProjectItemArchived(String entity) {
     return '$entity archived';
   }
-
-  @override
-  String get workbenchNoOpenTodo => 'No open todo to finish';
 
   @override
   String get workbenchLoadFailed => 'Load failed';
@@ -3740,15 +3599,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get workbenchProjectSummaryQuickCapture =>
-      'Capture text, links, shares, and screenshots into todos, summaries, link cards, or later-read items.';
-
-  @override
-  String get workbenchProjectSummaryTodo =>
-      'Track todos and archive them when they are done.';
-
-  @override
-  String workbenchProjectSummarySchema(String entityName) {
+  String workbenchProjectSummaryGeneric(String entityName) {
     return 'Manage $entityName records with saved status and quick actions.';
   }
 
@@ -3758,17 +3609,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String workbenchTodoCount(int openCount, int finishedCount) {
-    return '$openCount open / $finishedCount finished';
-  }
-
-  @override
-  String workbenchQuickCaptureCount(int activeCount, int archivedCount) {
-    return '$activeCount active / $archivedCount archived';
-  }
-
-  @override
-  String workbenchSchemaItemCount(int activeCount, int archivedCount) {
+  String workbenchProjectItemCount(int activeCount, int archivedCount) {
     return '$activeCount active / $archivedCount archived';
   }
 

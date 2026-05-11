@@ -1,81 +1,5 @@
-enum WorkbenchTodoStatus {
-  open,
-  finished;
-
-  bool get isFinished => this == WorkbenchTodoStatus.finished;
-
-  static WorkbenchTodoStatus fromWire(Object? value) {
-    return value?.toString() == 'finished'
-        ? WorkbenchTodoStatus.finished
-        : WorkbenchTodoStatus.open;
-  }
-
-  String get wireName => switch (this) {
-    WorkbenchTodoStatus.open => 'open',
-    WorkbenchTodoStatus.finished => 'finished',
-  };
-}
-
-class WorkbenchTodoItem {
-  const WorkbenchTodoItem({
-    required this.id,
-    required this.title,
-    required this.status,
-    required this.createdAt,
-    this.finishedAt,
-  });
-
-  final String id;
-  final String title;
-  final WorkbenchTodoStatus status;
-  final DateTime createdAt;
-  final DateTime? finishedAt;
-
-  bool get isFinished => status.isFinished;
-
-  factory WorkbenchTodoItem.fromMap(Map<dynamic, dynamic> map) {
-    return WorkbenchTodoItem(
-      id: (map['id'] ?? '').toString(),
-      title: (map['title'] ?? '').toString(),
-      status: WorkbenchTodoStatus.fromWire(map['status']),
-      createdAt:
-          DateTime.tryParse((map['createdAt'] ?? '').toString()) ??
-          DateTime.fromMillisecondsSinceEpoch(0),
-      finishedAt: map['finishedAt'] == null
-          ? null
-          : DateTime.tryParse(map['finishedAt'].toString()),
-    );
-  }
-
-  Map<String, Object?> toMap() {
-    return {
-      'id': id,
-      'title': title,
-      'status': status.wireName,
-      'createdAt': createdAt.toIso8601String(),
-      'finishedAt': finishedAt?.toIso8601String(),
-    };
-  }
-
-  WorkbenchTodoItem copyWith({
-    String? id,
-    String? title,
-    WorkbenchTodoStatus? status,
-    DateTime? createdAt,
-    DateTime? finishedAt,
-  }) {
-    return WorkbenchTodoItem(
-      id: id ?? this.id,
-      title: title ?? this.title,
-      status: status ?? this.status,
-      createdAt: createdAt ?? this.createdAt,
-      finishedAt: finishedAt ?? this.finishedAt,
-    );
-  }
-}
-
-class WorkbenchSchemaItem {
-  const WorkbenchSchemaItem({
+class WorkbenchProjectItem {
+  const WorkbenchProjectItem({
     required this.id,
     required this.title,
     required this.status,
@@ -93,9 +17,9 @@ class WorkbenchSchemaItem {
 
   bool get isArchived => status == 'archived';
 
-  factory WorkbenchSchemaItem.fromMap(Map<dynamic, dynamic> map) {
+  factory WorkbenchProjectItem.fromMap(Map<dynamic, dynamic> map) {
     final fields = map['fields'];
-    return WorkbenchSchemaItem(
+    return WorkbenchProjectItem(
       id: (map['id'] ?? '').toString(),
       title: (map['title'] ?? map['name'] ?? '').toString(),
       status: (map['status'] ?? 'active').toString(),
@@ -103,74 +27,6 @@ class WorkbenchSchemaItem {
       createdAt:
           DateTime.tryParse((map['createdAt'] ?? '').toString()) ??
           DateTime.fromMillisecondsSinceEpoch(0),
-      archivedAt: map['archivedAt'] == null
-          ? null
-          : DateTime.tryParse(map['archivedAt'].toString()),
-    );
-  }
-}
-
-class WorkbenchQuickCaptureItem {
-  const WorkbenchQuickCaptureItem({
-    required this.id,
-    required this.type,
-    required this.title,
-    required this.summary,
-    required this.status,
-    required this.createdAt,
-    required this.updatedAt,
-    this.url,
-    this.sourceApp,
-    this.rawText,
-    this.shareText,
-    this.screenshotPath,
-    this.dueHint,
-    this.priority,
-    this.archivedAt,
-  });
-
-  final String id;
-  final String type;
-  final String title;
-  final String summary;
-  final String status;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-  final String? url;
-  final String? sourceApp;
-  final String? rawText;
-  final String? shareText;
-  final String? screenshotPath;
-  final String? dueHint;
-  final String? priority;
-  final DateTime? archivedAt;
-
-  bool get isArchived => status == 'archived';
-  bool get isTodo => type == 'todo';
-  bool get isSummary => type == 'summary';
-  bool get isLink => type == 'link';
-  bool get isLater => type == 'later';
-
-  factory WorkbenchQuickCaptureItem.fromMap(Map<dynamic, dynamic> map) {
-    return WorkbenchQuickCaptureItem(
-      id: (map['id'] ?? '').toString(),
-      type: (map['type'] ?? 'todo').toString(),
-      title: (map['title'] ?? '').toString(),
-      summary: (map['summary'] ?? '').toString(),
-      status: (map['status'] ?? 'active').toString(),
-      createdAt:
-          DateTime.tryParse((map['createdAt'] ?? '').toString()) ??
-          DateTime.fromMillisecondsSinceEpoch(0),
-      updatedAt:
-          DateTime.tryParse((map['updatedAt'] ?? '').toString()) ??
-          DateTime.fromMillisecondsSinceEpoch(0),
-      url: map['url']?.toString(),
-      sourceApp: map['sourceApp']?.toString(),
-      rawText: map['rawText']?.toString(),
-      shareText: map['shareText']?.toString(),
-      screenshotPath: map['screenshotPath']?.toString(),
-      dueHint: map['dueHint']?.toString(),
-      priority: map['priority']?.toString(),
       archivedAt: map['archivedAt'] == null
           ? null
           : DateTime.tryParse(map['archivedAt'].toString()),
@@ -334,6 +190,7 @@ class WorkbenchDisplaySpec {
     required this.route,
     this.description = '',
     this.kind = 'oob_flutter',
+    this.renderer = 'oob_flutter',
     this.isDefault = false,
   });
 
@@ -343,6 +200,7 @@ class WorkbenchDisplaySpec {
   final String route;
   final String description;
   final String kind;
+  final String renderer;
   final bool isDefault;
 
   String get label {
@@ -366,71 +224,26 @@ class WorkbenchDisplaySpec {
       route: (map['route'] ?? '').toString(),
       description: (map['description'] ?? '').toString(),
       kind: (map['kind'] ?? map['renderer'] ?? 'oob_flutter').toString(),
+      renderer: (map['renderer'] ?? map['kind'] ?? 'oob_flutter').toString(),
       isDefault: map['isDefault'] == true,
     );
   }
 
-  static WorkbenchDisplaySpec todoLog({
+  static WorkbenchDisplaySpec project({
     required String projectId,
     required String route,
   }) {
     final resolvedRoute = route.trim().isEmpty
-        ? '/workbench/todo_log?projectId=$projectId'
+        ? '/workbench/project?projectId=$projectId'
         : route.trim();
     return WorkbenchDisplaySpec(
-      id: 'todo-log-display',
-      title: 'Todo 日志',
-      shortName: 'TODO',
+      id: 'project-main-display',
+      title: 'Project',
+      shortName: 'APP',
       route: resolvedRoute,
-      description: 'Todo list display bound to the Project API registry.',
+      description: 'Display bound to Project Tools.',
       isDefault: true,
     );
-  }
-
-  static WorkbenchDisplaySpec quickCapture({
-    required String projectId,
-    required String route,
-    String displayId = 'quick-capture-capture',
-    String title = '随手记',
-    bool isDefault = true,
-  }) {
-    final resolvedRoute = route.trim().isEmpty
-        ? '/workbench/quick_capture?projectId=$projectId&displayId=$displayId'
-        : route.trim();
-    return WorkbenchDisplaySpec(
-      id: displayId,
-      title: title,
-      shortName: 'NOTE',
-      route: resolvedRoute.contains('displayId=')
-          ? resolvedRoute
-          : '$resolvedRoute${resolvedRoute.contains('?') ? '&' : '?'}displayId=$displayId',
-      description: 'Quick Capture page in one shared Project app.',
-      kind: 'oob_quick_capture_inbox',
-      isDefault: isDefault,
-    );
-  }
-
-  static List<WorkbenchDisplaySpec> quickCaptureDisplays({
-    required String projectId,
-    required String route,
-  }) {
-    return [
-      quickCapture(projectId: projectId, route: route),
-      quickCapture(
-        projectId: projectId,
-        route: route,
-        displayId: 'quick-capture-inbox',
-        title: '收件箱',
-        isDefault: false,
-      ),
-      quickCapture(
-        projectId: projectId,
-        route: route,
-        displayId: 'quick-capture-archive',
-        title: '归档',
-        isDefault: false,
-      ),
-    ];
   }
 }
 
@@ -438,7 +251,6 @@ class WorkbenchProject {
   const WorkbenchProject({
     required this.projectId,
     required this.name,
-    required this.templateId,
     required this.route,
     required this.spacePath,
     required this.pageIds,
@@ -446,15 +258,14 @@ class WorkbenchProject {
     required this.tools,
     required this.flows,
     required this.androidAssets,
-    required this.todos,
     required this.items,
-    required this.captureItems,
-    this.schema = const {},
+    this.pageSpec = const {},
+    this.frontendHtml = const {},
+    this.frontendFlutter = const {},
   });
 
   final String projectId;
   final String name;
-  final String templateId;
   final String route;
   final String spacePath;
   final List<String> pageIds;
@@ -462,28 +273,16 @@ class WorkbenchProject {
   final List<WorkbenchToolSpec> tools;
   final List<WorkbenchFlowSpec> flows;
   final List<WorkbenchAndroidAsset> androidAssets;
-  final List<WorkbenchTodoItem> todos;
-  final List<WorkbenchSchemaItem> items;
-  final List<WorkbenchQuickCaptureItem> captureItems;
-  final Map<String, Object?> schema;
+  final List<WorkbenchProjectItem> items;
+  final Map<String, Object?> pageSpec;
+  final Map<String, Object?> frontendHtml;
+  final Map<String, Object?> frontendFlutter;
 
-  List<WorkbenchTodoItem> get openTodos =>
-      todos.where((todo) => !todo.isFinished).toList(growable: false);
-
-  List<WorkbenchTodoItem> get finishedTodos =>
-      todos.where((todo) => todo.isFinished).toList(growable: false);
-
-  List<WorkbenchSchemaItem> get activeItems =>
+  List<WorkbenchProjectItem> get activeItems =>
       items.where((item) => !item.isArchived).toList(growable: false);
 
-  List<WorkbenchSchemaItem> get archivedItems =>
+  List<WorkbenchProjectItem> get archivedItems =>
       items.where((item) => item.isArchived).toList(growable: false);
-
-  List<WorkbenchQuickCaptureItem> get activeCaptureItems =>
-      captureItems.where((item) => !item.isArchived).toList(growable: false);
-
-  List<WorkbenchQuickCaptureItem> get archivedCaptureItems =>
-      captureItems.where((item) => item.isArchived).toList(growable: false);
 
   WorkbenchDisplaySpec get primaryDisplay {
     for (final display in displays) {
@@ -494,7 +293,7 @@ class WorkbenchProject {
     if (displays.isNotEmpty) {
       return displays.first;
     }
-    return WorkbenchDisplaySpec.todoLog(projectId: projectId, route: route);
+    return WorkbenchDisplaySpec.project(projectId: projectId, route: route);
   }
 
   factory WorkbenchProject.fromMap(Map<dynamic, dynamic> map) {
@@ -505,10 +304,10 @@ class WorkbenchProject {
     final tools = map['tools'] ?? map['apis'];
     final flows = map['flows'];
     final androidAssets = map['androidAssets'];
-    final todos = map['todos'];
     final items = map['items'];
-    final captureItems = map['captureItems'];
-    final schema = map['schema'];
+    final pageSpec = map['pageSpec'];
+    final frontendHtml = map['frontendHtml'];
+    final frontendFlutter = map['frontendFlutter'];
     final parsedDisplays = displays is List
         ? displays
               .whereType<Map<dynamic, dynamic>>()
@@ -519,24 +318,13 @@ class WorkbenchProject {
     return WorkbenchProject(
       projectId: projectId,
       name: (map['name'] ?? map['displayName'] ?? '').toString(),
-      templateId: (map['templateId'] ?? '').toString(),
       route: route,
       spacePath: (map['spacePath'] ?? '').toString(),
       pageIds: pageIds is List
           ? pageIds.map((item) => item.toString()).toList(growable: false)
           : const [],
       displays: parsedDisplays.isEmpty
-          ? (map['templateId'] ?? '').toString() == 'quick_capture_inbox'
-                ? WorkbenchDisplaySpec.quickCaptureDisplays(
-                    projectId: projectId,
-                    route: route,
-                  )
-                : [
-                    WorkbenchDisplaySpec.todoLog(
-                      projectId: projectId,
-                      route: route,
-                    ),
-                  ]
+          ? [WorkbenchDisplaySpec.project(projectId: projectId, route: route)]
           : parsedDisplays,
       tools: tools is List
           ? tools
@@ -556,32 +344,27 @@ class WorkbenchProject {
                 .map(WorkbenchAndroidAsset.fromMap)
                 .toList(growable: false)
           : const [],
-      todos: todos is List
-          ? todos
-                .whereType<Map<dynamic, dynamic>>()
-                .map(WorkbenchTodoItem.fromMap)
-                .toList(growable: false)
-          : const [],
       items: items is List
           ? items
                 .whereType<Map<dynamic, dynamic>>()
-                .map(WorkbenchSchemaItem.fromMap)
+                .map(WorkbenchProjectItem.fromMap)
                 .toList(growable: false)
           : const [],
-      captureItems: captureItems is List
-          ? captureItems
-                .whereType<Map<dynamic, dynamic>>()
-                .map(WorkbenchQuickCaptureItem.fromMap)
-                .toList(growable: false)
-          : const [],
-      schema: schema is Map ? Map<String, Object?>.from(schema) : const {},
+      pageSpec: pageSpec is Map
+          ? Map<String, Object?>.from(pageSpec)
+          : const {},
+      frontendHtml: frontendHtml is Map
+          ? Map<String, Object?>.from(frontendHtml)
+          : const {},
+      frontendFlutter: frontendFlutter is Map
+          ? Map<String, Object?>.from(frontendFlutter)
+          : const {},
     );
   }
 
   WorkbenchProject copyWith({
     String? projectId,
     String? name,
-    String? templateId,
     String? route,
     String? spacePath,
     List<String>? pageIds,
@@ -589,15 +372,14 @@ class WorkbenchProject {
     List<WorkbenchToolSpec>? tools,
     List<WorkbenchFlowSpec>? flows,
     List<WorkbenchAndroidAsset>? androidAssets,
-    List<WorkbenchTodoItem>? todos,
-    List<WorkbenchSchemaItem>? items,
-    List<WorkbenchQuickCaptureItem>? captureItems,
-    Map<String, Object?>? schema,
+    List<WorkbenchProjectItem>? items,
+    Map<String, Object?>? pageSpec,
+    Map<String, Object?>? frontendHtml,
+    Map<String, Object?>? frontendFlutter,
   }) {
     return WorkbenchProject(
       projectId: projectId ?? this.projectId,
       name: name ?? this.name,
-      templateId: templateId ?? this.templateId,
       route: route ?? this.route,
       spacePath: spacePath ?? this.spacePath,
       pageIds: pageIds ?? this.pageIds,
@@ -605,10 +387,10 @@ class WorkbenchProject {
       tools: tools ?? this.tools,
       flows: flows ?? this.flows,
       androidAssets: androidAssets ?? this.androidAssets,
-      todos: todos ?? this.todos,
       items: items ?? this.items,
-      captureItems: captureItems ?? this.captureItems,
-      schema: schema ?? this.schema,
+      pageSpec: pageSpec ?? this.pageSpec,
+      frontendHtml: frontendHtml ?? this.frontendHtml,
+      frontendFlutter: frontendFlutter ?? this.frontendFlutter,
     );
   }
 }
@@ -714,6 +496,9 @@ class WorkbenchProjectHotUpdateResult {
     required this.appliedActionCount,
     this.project,
     this.hotUpdateLogPath = '',
+    this.requiresAgentRegeneration = false,
+    this.recommendedTool = '',
+    this.instructions = const <String>[],
   });
 
   final bool success;
@@ -722,10 +507,14 @@ class WorkbenchProjectHotUpdateResult {
   final int appliedActionCount;
   final WorkbenchProject? project;
   final String hotUpdateLogPath;
+  final bool requiresAgentRegeneration;
+  final String recommendedTool;
+  final List<String> instructions;
 
   factory WorkbenchProjectHotUpdateResult.fromMap(Map<dynamic, dynamic> map) {
     final project = map['project'];
     final appliedActions = map['appliedActions'];
+    final rawInstructions = map['instructions'];
     return WorkbenchProjectHotUpdateResult(
       success: map['success'] == true,
       projectId: (map['projectId'] ?? '').toString(),
@@ -733,6 +522,13 @@ class WorkbenchProjectHotUpdateResult {
       appliedActionCount: appliedActions is List ? appliedActions.length : 0,
       project: project is Map ? WorkbenchProject.fromMap(project) : null,
       hotUpdateLogPath: (map['hotUpdateLogPath'] ?? '').toString(),
+      requiresAgentRegeneration: map['requiresAgentRegeneration'] == true,
+      recommendedTool: (map['recommendedTool'] ?? '').toString(),
+      instructions: rawInstructions is List
+          ? rawInstructions
+                .map((item) => item.toString())
+                .toList(growable: false)
+          : const <String>[],
     );
   }
 }
@@ -764,143 +560,6 @@ class WorkbenchAndroidIngestResult {
       project: project is Map ? WorkbenchProject.fromMap(project) : null,
       androidManifestPath: (map['androidManifestPath'] ?? '').toString(),
       androidIngestLogPath: (map['androidIngestLogPath'] ?? '').toString(),
-    );
-  }
-}
-
-class WorkbenchTodoToolIds {
-  const WorkbenchTodoToolIds._();
-
-  static const addTodo = 'todo.add';
-  static const finishTodo = 'todo.finish';
-}
-
-class WorkbenchQuickCaptureToolIds {
-  const WorkbenchQuickCaptureToolIds._();
-
-  static const ingest = 'capture.ingest';
-  static const archive = 'capture.archive';
-  static const promoteToTodo = 'capture.promote_to_todo';
-  static const summarize = 'capture.summarize';
-}
-
-class WorkbenchTodoProjectFactory {
-  const WorkbenchTodoProjectFactory._();
-
-  static WorkbenchProject create() {
-    return WorkbenchProject(
-      projectId: 'oob-workbench-todo-log',
-      name: 'Todo Log Workbench',
-      templateId: 'todo_log_demo',
-      route: '/workbench/todo_log?projectId=oob-workbench-todo-log',
-      spacePath: '/workspace/projects/oob-workbench-todo-log',
-      pageIds: const ['todo-log-page'],
-      displays: const [
-        WorkbenchDisplaySpec(
-          id: 'todo-log-display',
-          title: 'Todo 日志',
-          shortName: 'TODO',
-          route: '/workbench/todo_log?projectId=oob-workbench-todo-log',
-          description: 'Todo list display bound to the Project API registry.',
-          isDefault: true,
-        ),
-      ],
-      tools: const [
-        WorkbenchToolSpec(
-          id: WorkbenchTodoToolIds.addTodo,
-          kind: 'native_template',
-          inputKeys: ['title'],
-          outputKeys: ['todo'],
-        ),
-        WorkbenchToolSpec(
-          id: WorkbenchTodoToolIds.finishTodo,
-          kind: 'native_template',
-          inputKeys: ['todo_id'],
-          outputKeys: ['todo'],
-        ),
-      ],
-      flows: const [
-        WorkbenchFlowSpec(
-          id: 'todo-log-page.add',
-          pageId: 'todo-log-page',
-          triggerId: 'add-button',
-          toolId: WorkbenchTodoToolIds.addTodo,
-          inputBinding: {'title': 'page.todo_input'},
-          outputBinding: {'todo': 'project.todos'},
-        ),
-        WorkbenchFlowSpec(
-          id: 'todo-log-page.finish',
-          pageId: 'todo-log-page',
-          triggerId: 'finish-button',
-          toolId: WorkbenchTodoToolIds.finishTodo,
-          inputBinding: {'todo_id': 'todo.id'},
-          outputBinding: {'todo': 'project.todos'},
-        ),
-      ],
-      androidAssets: const [],
-      todos: const [],
-      items: const [],
-      captureItems: const [],
-    );
-  }
-}
-
-class WorkbenchQuickCaptureProjectFactory {
-  const WorkbenchQuickCaptureProjectFactory._();
-
-  static WorkbenchProject create() {
-    return WorkbenchProject(
-      projectId: 'oob-workbench-quick-capture',
-      name: '随手记 Inbox',
-      templateId: 'quick_capture_inbox',
-      route: '/workbench/quick_capture?projectId=oob-workbench-quick-capture',
-      spacePath: '/workspace/projects/oob-workbench-quick-capture',
-      pageIds: const [
-        'quick-capture-capture-page',
-        'quick-capture-inbox-page',
-        'quick-capture-archive-page',
-      ],
-      displays: WorkbenchDisplaySpec.quickCaptureDisplays(
-        projectId: 'oob-workbench-quick-capture',
-        route: '/workbench/quick_capture?projectId=oob-workbench-quick-capture',
-      ),
-      tools: const [
-        WorkbenchToolSpec(
-          id: WorkbenchQuickCaptureToolIds.ingest,
-          kind: 'workspace_python_script',
-          inputKeys: [
-            'text',
-            'url',
-            'sourceApp',
-            'shareText',
-            'screenshotPath',
-          ],
-          outputKeys: ['item', 'items'],
-        ),
-        WorkbenchToolSpec(
-          id: WorkbenchQuickCaptureToolIds.archive,
-          kind: 'workspace_python_script',
-          inputKeys: ['item_id'],
-          outputKeys: ['item'],
-        ),
-        WorkbenchToolSpec(
-          id: WorkbenchQuickCaptureToolIds.promoteToTodo,
-          kind: 'workspace_python_script',
-          inputKeys: ['item_id', 'todo_title'],
-          outputKeys: ['item'],
-        ),
-        WorkbenchToolSpec(
-          id: WorkbenchQuickCaptureToolIds.summarize,
-          kind: 'workspace_python_script',
-          inputKeys: ['item_id'],
-          outputKeys: ['item'],
-        ),
-      ],
-      flows: const [],
-      androidAssets: const [],
-      todos: const [],
-      items: const [],
-      captureItems: const [],
     );
   }
 }

@@ -15,7 +15,6 @@ import android.os.Looper
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.WindowManager.BadTokenException
-import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.baselib.util.OmniLog
@@ -67,7 +66,6 @@ class FloatingHalfScreenLoader(
             return getInstance()?.isShowing() ?: false
         }
     }
-    private val screenHeight = context.resources.displayMetrics.heightPixels
     private var flutterView: View? = null
 
     private var container: HalfScreenView? = null
@@ -106,8 +104,7 @@ class FloatingHalfScreenLoader(
                 ).apply {
                     gravity = Gravity.BOTTOM
                 }
-                // 预先设置透明度为0，准备渐变显示
-                alpha = 0f
+                alpha = 1f
                 visibility = View.VISIBLE
             }
             OmniLog.d("HalfScreen", "✅ FlutterView 创建完成")
@@ -158,21 +155,7 @@ class FloatingHalfScreenLoader(
             OmniLog.d("HalfScreen", "✅ FlutterView 已添加到容器")
 
             isAttachedToWindow = true
-
-            OmniLog.d("HalfScreen", "🎬 准备启动渐变动画...")
-            // 视图添加完成后，使用 post 确保在下一帧开始动画
-            flutterView?.post {
-                OmniLog.d("HalfScreen", "▶️ 开始执行渐变动画")
-                // 使用属性动画，渐变显示
-                flutterView?.animate()
-                    ?.alpha(1f)
-                    ?.setDuration(200)
-                    ?.setInterpolator(DecelerateInterpolator())
-                    ?.withEndAction {
-                        OmniLog.d("HalfScreen", "🎉 [5/5] 渐变动画完成，半屏已完全展示")
-                    }
-                    ?.start()
-            }
+            OmniLog.d("HalfScreen", "✅ 半屏已直接展示")
         } catch (e: Exception) {
             e.printStackTrace()
             OmniLog.e("HalfScreen", "❌ loadFloatingHalfScreen 失败: ${e.message}", e)
@@ -194,8 +177,7 @@ class FloatingHalfScreenLoader(
                 ).apply {
                     gravity = Gravity.BOTTOM
                 }
-                // 预先设置 translationY，使视图从屏幕下方开始
-                translationY = screenHeight.toFloat()
+                translationY = 0f
                 visibility = View.VISIBLE
             }
 
@@ -234,16 +216,6 @@ class FloatingHalfScreenLoader(
             }
             (container as HalfScreenView).addView(flutterView)
             isAttachedToWindow = true
-
-            // 视图添加完成后，使用 post 确保在下一帧开始动画
-            flutterView?.post {
-                // 使用属性动画代替 TranslateAnimation，更流畅
-                flutterView?.animate()
-                    ?.translationY(0f)
-                    ?.setDuration(300)
-                    ?.setInterpolator(DecelerateInterpolator())
-                    ?.start()
-            }
         } catch (e: Exception) {
             OmniLog.e("FloatingHalfScreenLoader", "load error: ${e.message}")
         }

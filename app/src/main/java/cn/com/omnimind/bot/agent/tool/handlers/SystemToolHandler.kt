@@ -166,8 +166,11 @@ class SystemToolHandler(
                 "alarm_reminder_delete" -> {
                     helper.reportToolProgress(callback, toolName, "正在删除提醒闹钟")
                     val alarmId = args["alarmId"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
-                    if (alarmId.isBlank()) { throw IllegalArgumentException("alarmId 不能为空") }
-                    val payload = alarmToolService.deleteExactReminder(alarmId)
+                    val payload = if (alarmId.isBlank()) {
+                        alarmToolService.deleteAllExactReminders()
+                    } else {
+                        alarmToolService.deleteExactReminder(alarmId)
+                    }
                     val payloadJson = helper.encodeLocalizedPayload(payload)
                     ToolExecutionResult.ContextResult(
                         toolName = toolName,

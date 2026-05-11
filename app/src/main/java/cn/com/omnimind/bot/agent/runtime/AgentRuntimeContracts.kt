@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonObject
 interface AgentExecutionEnvironment {
     val agentRunId: String
     val userMessage: String
+    val attachments: List<Map<String, Any?>>
     val currentPackageName: String?
     val runtimeContextRepository: AgentRuntimeContextRepository
     val workspaceDescriptor: AgentWorkspaceDescriptor
@@ -21,6 +22,7 @@ interface AgentExecutionEnvironment {
 data class DefaultAgentExecutionEnvironment(
     override val agentRunId: String,
     override val userMessage: String,
+    override val attachments: List<Map<String, Any?>> = emptyList(),
     override val currentPackageName: String?,
     override val runtimeContextRepository: AgentRuntimeContextRepository,
     override val workspaceDescriptor: AgentWorkspaceDescriptor,

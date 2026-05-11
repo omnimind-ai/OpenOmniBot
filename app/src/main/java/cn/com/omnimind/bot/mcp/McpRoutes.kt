@@ -239,6 +239,7 @@ object McpRoutes {
             "task_wait_unlock" -> McpToolExecutors.executeTaskWaitUnlock(context, args, serverScope)
             "file_transfer" -> McpToolExecutors.executeFileTransfer(args)
             "agent_run" -> McpToolExecutors.executeAgentRun(context, args)
+            "oob_tool_call" -> McpToolExecutors.executeOobToolCall(context, args)
             "oob_project_create" -> mcpProjectCreate(context, args)
             "oob_project_activate" -> mcpProjectActivate(context, args)
             "oob_project_open" -> mcpProjectOpen(context, args)

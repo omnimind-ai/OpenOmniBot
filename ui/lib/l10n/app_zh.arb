@@ -129,7 +129,6 @@
   "browserOverlayUnsupported": "当前平台暂不支持浏览器工具视图",
   "networkErrorMessage": "抱歉，刚刚网络开小差了。再发一次试试？",
   "rateLimitErrorMessage": "小万忙不过来了，等会儿再试试吧",
-
   "chatHistoryArchivedTitle": "归档对话",
   "chatHistoryTitle": "聊天记录",
   "chatHistoryNoArchived": "暂无归档对话",
@@ -144,7 +143,6 @@
   "homeDrawerArchive": "归档对话",
   "homeDrawerNewChat": "新对话",
   "webchatNoChats": "开始一个新的对话吧",
-
   "memoryCenterTitle": "记忆中心",
   "memoryShortTermTitle": "短期记忆",
   "memoryLongTermTitle": "长期记忆",
@@ -175,7 +173,6 @@
   "memoryLongTermFailed": "长期记忆操作失败：{error}",
   "memoryNoMemories": "暂无记忆",
   "memoryNoMemoriesDesc": "快去探索，添加喜欢的内容吧",
-
   "skillStoreTitle": "技能仓库",
   "skillBuiltin": "内置",
   "skillUser": "用户",
@@ -198,7 +195,6 @@
   "skillDisabledMsg": "已禁用 {name}",
   "skillToggleFailed": "切换失败",
   "skillLoadFailed": "加载技能仓库失败",
-
   "trajectoryTitle": "轨迹",
   "trajectoryNoRecords": "暂无执行记录",
   "trajectoryNoRecordsDesc": "小万为你执行的视觉任务，都会在此展示",
@@ -211,7 +207,6 @@
   "executionHistorySubtitle": "近3次任务执行历史",
   "executionHistoryEmpty": "暂无执行历史",
   "executionHistoryTaskLabel": "{option}任务",
-
   "modelProviderConfigTitle": "Provider 配置",
   "modelProviderConfigDesc": "新增、切换并维护模型服务提供商的名称、地址与密钥。",
   "modelProviderName": "Provider 名称",
@@ -248,7 +243,6 @@
     }
   },
   "modelProviderFetchFailed": "拉取模型列表失败：{error}",
-
   "sceneModelMapping": "场景映射",
   "sceneModelMappingDesc": "按场景绑定 Provider 与模型，未绑定的场景会继续使用默认模型。",
   "sceneModelRefreshList": "刷新模型列表",
@@ -308,7 +302,6 @@
       "error": {}
     }
   },
-
   "localModelsTitle": "本地模型",
   "localModelsAutoPreheat": "打开 App 时自动预热",
   "localModelsAutoPreheatDesc": "进入应用后自动启动本地服务，并直接加载当前模型。",
@@ -355,33 +348,47 @@
   "localModelsDownloadStartedToast": "开始下载：{modelName}",
   "@localModelsDownloadStartedToast": {
     "placeholders": {
-      "modelName": { "type": "String" }
+      "modelName": {
+        "type": "String"
+      }
     }
   },
   "localModelsDownloadPausedToast": "下载已暂停：{modelName}",
   "@localModelsDownloadPausedToast": {
     "placeholders": {
-      "modelName": { "type": "String" }
+      "modelName": {
+        "type": "String"
+      }
     }
   },
   "localModelsDownloadCompletedToast": "下载完成：{modelName}",
   "@localModelsDownloadCompletedToast": {
     "placeholders": {
-      "modelName": { "type": "String" }
+      "modelName": {
+        "type": "String"
+      }
     }
   },
   "localModelsDownloadFailedToast": "下载失败：{modelName} — {reason}",
   "@localModelsDownloadFailedToast": {
     "placeholders": {
-      "modelName": { "type": "String" },
-      "reason": { "type": "String" }
+      "modelName": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
     }
   },
   "localModelsDownloadCancelledToast": "下载已取消：{modelName} — {reason}",
   "@localModelsDownloadCancelledToast": {
     "placeholders": {
-      "modelName": { "type": "String" },
-      "reason": { "type": "String" }
+      "modelName": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
     }
   },
   "localModelsDownloadErrorUnknown": "未知错误",
@@ -424,13 +431,20 @@
   "localModelsImportSuccess": "模型导入成功",
   "localModelsImportFailed": "导入失败：{reason}",
   "@localModelsImportFailed": {
-    "placeholders": { "reason": { "type": "String" } }
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
   },
   "localModelsImporting": "正在导入 {modelId}...",
   "@localModelsImporting": {
-    "placeholders": { "modelId": { "type": "String" } }
+    "placeholders": {
+      "modelId": {
+        "type": "String"
+      }
+    }
   },
-
   "alarmSaved": "闹钟设置已保存",
   "alarmRingtoneSource": "铃声来源",
   "alarmSystemDefault": "系统默认铃声",
@@ -445,7 +459,6 @@
   "alarmEnterHttpsUrl": "请输入 http(s) 开头的 mp3 直链",
   "alarmLocalFile": "本地文件",
   "alarmSelectMp3": "选择 mp3 文件",
-
   "authorizePageTitle": "应用权限授权",
   "authorizeReceiveNotifications": "接收消息通知",
   "authorizeNotificationsDesc": "打开后可以及时了解任务进展",
@@ -453,7 +466,6 @@
   "companionPermissionDesc": "关闭对应的授权后，小万仍会显示，但不会展示任务执行内容",
   "companionPermissionNote": "权限说明",
   "companionAuthorizedApps": "授权应用",
-
   "storageUsageTitle": "存储占用",
   "storageUsageSubtitle": "查看空间占用明细，支持分项清理",
   "storageAnalyzeFailed": "存储分析失败，请重试",
@@ -489,7 +501,6 @@
   "storageSystemStats": "系统统计（与系统设置更接近）",
   "storageDirectoryScan": "目录扫描估算",
   "storageAdditionalInfo": "附加信息",
-
   "storageCatAppBinary": "应用安装包",
   "storageCatAppBinaryDesc": "应用安装文件占用（APK/AAB split）",
   "storageCatCache": "缓存",
@@ -539,14 +550,12 @@
   "storageCatLegacyWorkspaceHint": "建议确认无用后再清理",
   "storageCatOtherUserData": "其他数据",
   "storageCatOtherUserDataDesc": "未命中分类规则的数据",
-
   "storageStrategySafeQuick": "安全快速清理",
   "storageStrategySafeQuickDesc": "优先清理低风险缓存与临时产物",
   "storageStrategyBalanceDeep": "平衡深度清理",
   "storageStrategyBalanceDeepDesc": "释放更多空间，保留核心模型与用户文件",
   "storageStrategyFree1gb": "目标释放 1GB",
   "storageStrategyFree1gbDesc": "按高收益顺序清理，尽量达到 1GB 释放目标",
-
   "storageHintConversation": "如历史未释放，请重新进入页面执行「重新分析」",
   "storageHintLocalModels": "模型被清理后，可在「本地模型服务」页面重新下载",
   "storageHintTerminal": "终端运行时被清理后，可在 Alpine 环境页重新初始化",
@@ -557,7 +566,6 @@
   "storageCleanPartialFailedGeneric": "部分文件清理失败，请稍后重试",
   "storageTrendVsLast": "对比上次分析：总计 {total}，可清理 {cleanable}",
   "storageLastAnalyzed": "上次分析时间：{time}",
-
   "aboutDescription": "小万，是一款以智能对话为核心的手机AI助\n手，通过语义理解与持续学习能力，协助用户\n完成信息处理、决策辅助和日常管理。",
   "aboutBetaProgramTitle": "加入 beta 测试",
   "aboutBetaProgramDescription": "接收更快的四段版更新。",
@@ -571,7 +579,6 @@
   "aboutApkSourceOptionGithubDescription": "官方 Release",
   "aboutApkSourceSwitchFailed": "安装包下载源切换失败",
   "aboutUpdateHintDefault": "检查更新获取最新版本",
-
   "workspaceMemoryLoadFailed": "加载 workspace 记忆配置失败",
   "workspaceSoulSaved": "SOUL.md 已保存",
   "workspaceSoulSaveFailed": "SOUL.md 保存失败",
@@ -597,7 +604,6 @@
   "workspaceSoulMd": "SOUL.md（Agent 灵魂）",
   "workspaceChatMd": "CHAT.md（纯聊天系统提示词）",
   "workspaceMemoryMd": "MEMORY.md（长期记忆）",
-
   "alpineNodeJs": "Node.js 运行时",
   "alpineNpm": "Node.js 包管理器",
   "alpineGit": "Git 版本控制",
@@ -654,9 +660,7 @@
   "alpineAiAgent": "AI Agent",
   "alpineEnvConfig": "环境配置",
   "alpineWorkDirValue": "工作目录：{dir}",
-
   "workspaceEmbeddingRetrieval": "记忆嵌入检索",
-
   "chatHistoryStartConversation": "开始对话",
   "homeDrawerSearching": "正在搜索对话内容…",
   "homeDrawerNoResults": "没有找到相关对话",
@@ -706,7 +710,6 @@
   "homeDrawerLateNightSub": "明天才能元气满满～",
   "homeDrawerLateNightGreeting2": "深夜了",
   "homeDrawerLateNightSub2": "好好和今天说晚安～",
-
   "omniflowPanelTitle": "OmniFlow 轨迹面板",
   "omniflowPanelDesc": "管理 OmniFlow Function：查看、执行或删除 Function 资产。",
   "omniflowFunctionList": "Function 列表",
@@ -751,7 +754,6 @@
   "omniflowClearFailed": "清空失败",
   "omniflowProviderActionSuccess": "provider {action} 成功",
   "omniflowProviderActionFailed": "provider {action} 失败",
-
   "functionLibraryTitle": "功能库",
   "functionLibrarySearchHint": "搜索功能名称或应用",
   "functionLibraryEmpty": "暂无已学习的功能",
@@ -831,7 +833,6 @@
   "functionLibraryDetailNoBlocks": "当前没有展开的内部 function block",
   "functionLibraryDetailNoBundle": "当前没有可展示的 bundle function",
   "functionLibraryDetailFunctionSchema": "Function Schema",
-
   "executionCompileHit": "复用技能",
   "executionCompileHitWithFunction": "复用技能 · {functionId}",
   "executionVlmExecution": "VLM 执行",
@@ -850,7 +851,6 @@
   "executionStepLabel": "{count} steps",
   "executionSuccess": "成功",
   "executionFailed": "失败",
-
   "memorySaveAsSkillTitle": "保存为功能（Function）",
   "memorySaveAsSkillContent": "是否将这次执行记录保存为可复用的功能？\n\n保存后可在「功能库」中查看和管理。",
   "memorySavingProgress": "正在保存功能...",
@@ -876,7 +876,6 @@
     }
   },
   "memoryRunIdMissing": "执行记录 ID 缺失，无法保存",
-
   "omniflowAssetSuccess": "成功",
   "omniflowAssetFailed": "失败",
   "omniflowAssetRunning": "运行中",
@@ -966,7 +965,6 @@
     }
   },
   "omniflowAssetNoSteps": "没有可展示的步骤",
-
   "functionLibraryEnrich": "升级",
   "functionLibraryEnrichTitle": "升级功能",
   "functionLibraryEnrichConfirm": "使用 AI 补齐此功能的语义信息？\n\n将自动生成：描述、参数槽位、前置/后置条件等。",
@@ -994,7 +992,6 @@
     }
   },
   "functionLibrarySplitFailed": "拆分失败",
-
   "actionTypeOpenApp": "打开应用",
   "actionTypeClick": "点击",
   "actionTypeClickNode": "点击节点",
@@ -1006,7 +1003,6 @@
   "actionTypeFinished": "结束",
   "actionTypeCallFunction": "调用功能",
   "actionTypeDefault": "动作",
-
   "omniflowProviderUpdate": "Provider 更新",
   "omniflowConnectionMode": "当前连接",
   "omniflowConnectionModeBridge": "Bridge 连接",
@@ -1051,7 +1047,11 @@
   "runLogTimelineViewSteps": "查看步骤",
   "runLogTimelineStepCount": "{count} 步",
   "@runLogTimelineStepCount": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "runLogTimelineLoadFailed": "加载步骤失败",
   "runLogTimelineEmpty": "暂无步骤数据",
@@ -1103,13 +1103,9 @@
   },
   "workbenchSubtitle": "一个 OOB 原生项目示例，用来验证项目工具注册、状态持久化和工作台内显示。",
   "workbenchVibeSubtitle": "提示词生成的原生前端、项目工具和工作区文件在 OOB 内保持关联。",
-  "workbenchGeneratedTodoSubtitle": "Todo 日志 (TODO) 是这个项目的业务前端之一。它和项目控制面分开，并直接调用已注册的项目工具。",
-  "workbenchMockProjectName": "Todo 日志 Mock",
-  "workbenchTemplateProjectName": "Todo 日志工作台",
-  "workbenchNativeUi": "OOB 原生显示",
+  "workbenchProjectDisplay": "项目显示",
   "workbenchProjectSection": "项目",
   "workbenchProjectIdLabel": "项目 ID",
-  "workbenchTemplateIdLabel": "模板 ID",
   "workbenchRouteLabel": "路由",
   "workbenchSpacePathLabel": "Space 路径",
   "workbenchPageIdsLabel": "页面",
@@ -1121,7 +1117,6 @@
   "workbenchLogFilePath": "工具日志",
   "workbenchBackendTools": "后端工具",
   "workbenchFrontendBinding": "前后端绑定",
-  "workbenchTodoLog": "Todo 日志",
   "workbenchCallApi": "调用工具",
   "workbenchGeneratedFrontend": "生成的前端",
   "workbenchGeneratedFrontendSubtitle": "打开提示词生成页面应该挂载的 OOB 原生预览容器。它和 AI 层共用同一组项目工具与持久化数据。",
@@ -1140,132 +1135,79 @@
       }
     }
   },
-  "workbenchToolAddTodoTitle": "新增 Todo",
-  "workbenchToolAddTodoDesc": "通过已注册的原生项目工具创建一条 todo。",
-  "workbenchToolFinishTodoTitle": "归档 Todo",
-  "workbenchToolFinishTodoDesc": "通过已注册的原生项目工具把一条 todo 归档。",
-  "workbenchFlowAddTodo": "页面输入 -> todo.add -> todo 列表",
-  "workbenchFlowFinishTodo": "完成按钮 -> todo.finish -> 完成列表",
-  "workbenchAddTodoHint": "添加一条 todo",
-  "workbenchAddTodo": "添加 Todo",
-  "workbenchTodoEmpty": "暂无 todo",
-  "workbenchTodoOpen": "待完成",
-  "workbenchTodoFinished": "已归档",
-  "workbenchFinishTodo": "归档 todo",
-  "workbenchTodoAdded": "Todo 已添加",
-  "workbenchTodoFinishedToast": "Todo 已归档",
-  "workbenchTodoInputRequired": "请先输入 todo",
-  "workbenchQuickCaptureTitle": "随手记 Inbox",
-  "workbenchQuickCaptureSubtitle": "把文字、链接、分享内容或截图丢进来，自动整理成待办、摘要、链接卡片或稍后读。",
-  "workbenchQuickCapturePageCapture": "收集",
-  "workbenchQuickCapturePageInbox": "收件箱",
-  "workbenchQuickCaptureInboxSubtitle": "{count} 条正在处理的内容。",
-  "@workbenchQuickCaptureInboxSubtitle": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "workbenchQuickCaptureArchiveSubtitle": "{count} 条已归档内容。",
-  "@workbenchQuickCaptureArchiveSubtitle": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "workbenchQuickCaptureInputHint": "粘贴一句话、链接或分享文本",
-  "workbenchQuickCaptureAction": "收进来",
-  "workbenchQuickCaptureCaptured": "已收进随手记",
-  "workbenchQuickCaptureInputRequired": "请先输入文字或链接",
-  "workbenchQuickCaptureEmpty": "暂无随手记",
-  "workbenchQuickCaptureFilterAll": "Inbox",
-  "workbenchQuickCaptureTypeTodo": "Todo",
-  "workbenchQuickCaptureTypeSummary": "摘要",
-  "workbenchQuickCaptureTypeLink": "链接",
-  "workbenchQuickCaptureTypeLater": "稍后读",
-  "workbenchQuickCaptureArchived": "已归档",
-  "workbenchQuickCaptureArchive": "归档",
-  "workbenchQuickCapturePromoteToTodo": "转成 Todo",
-  "workbenchQuickCaptureSummarize": "重新摘要",
-  "workbenchQuickCaptureArchivedToast": "随手记已归档",
-  "workbenchQuickCapturePromotedToast": "已转成 Todo",
-  "workbenchQuickCaptureSummarizedToast": "摘要已刷新",
-  "workbenchSchemaDefaultEntity": "条目",
-  "workbenchSchemaCreateTitle": "新增 {entity}",
-  "@workbenchSchemaCreateTitle": {
+  "workbenchProjectDefaultEntity": "条目",
+  "workbenchProjectCreateTitle": "新增 {entity}",
+  "@workbenchProjectCreateTitle": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaInputHint": "输入 {entity} 名称",
-  "@workbenchSchemaInputHint": {
+  "workbenchProjectInputHint": "输入 {entity} 名称",
+  "@workbenchProjectInputHint": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaItemsTitle": "{entity} 列表",
-  "@workbenchSchemaItemsTitle": {
+  "workbenchProjectItemsTitle": "{entity} 列表",
+  "@workbenchProjectItemsTitle": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaEmpty": "暂无 {entity}",
-  "@workbenchSchemaEmpty": {
+  "workbenchProjectEmpty": "暂无 {entity}",
+  "@workbenchProjectEmpty": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaActive": "进行中",
-  "workbenchSchemaArchived": "已归档",
-  "workbenchSchemaEditAction": "编辑",
-  "workbenchSchemaEditTitle": "编辑条目",
-  "workbenchSchemaArchiveAction": "归档",
-  "workbenchSchemaMissingCreateApi": "这个项目没有可用的新增工具",
-  "workbenchSchemaMissingUpdateApi": "这个项目没有可用的编辑工具",
-  "workbenchSchemaMissingArchiveApi": "这个项目没有可用的归档工具",
-  "workbenchSchemaInputRequired": "请先输入 {entity}",
-  "@workbenchSchemaInputRequired": {
+  "workbenchProjectActiveItems": "进行中",
+  "workbenchProjectArchivedItems": "已归档",
+  "workbenchProjectEditAction": "编辑",
+  "workbenchProjectEditTitle": "编辑条目",
+  "workbenchProjectArchiveAction": "归档",
+  "workbenchProjectMissingCreateApi": "这个项目没有可用的新增工具",
+  "workbenchProjectMissingUpdateApi": "这个项目没有可用的编辑工具",
+  "workbenchProjectMissingArchiveApi": "这个项目没有可用的归档工具",
+  "workbenchProjectInputRequired": "请先输入 {entity}",
+  "@workbenchProjectInputRequired": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaItemCreated": "{entity} 已新增",
-  "@workbenchSchemaItemCreated": {
+  "workbenchProjectItemCreated": "{entity} 已新增",
+  "@workbenchProjectItemCreated": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaItemUpdated": "{entity} 已保存",
-  "@workbenchSchemaItemUpdated": {
+  "workbenchProjectItemUpdated": "{entity} 已保存",
+  "@workbenchProjectItemUpdated": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaItemArchived": "{entity} 已归档",
-  "@workbenchSchemaItemArchived": {
+  "workbenchProjectItemArchived": "{entity} 已归档",
+  "@workbenchProjectItemArchived": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchNoOpenTodo": "没有可完成的 todo",
   "workbenchLoadFailed": "加载失败",
   "workbenchUnknownTool": "工作台工具执行失败",
   "workbenchStatusOpen": "等待处理",
@@ -1473,10 +1415,8 @@
       }
     }
   },
-  "workbenchProjectSummaryQuickCapture": "收集文字、链接、分享和截图，沉淀成待办、摘要、链接卡片或稍后读。",
-  "workbenchProjectSummaryTodo": "记录待办事项，并在完成后归档。",
-  "workbenchProjectSummarySchema": "管理 {entityName} 记录，并保留状态和快捷操作。",
-  "@workbenchProjectSummarySchema": {
+  "workbenchProjectSummaryGeneric": "管理 {entityName} 记录，并保留状态和快捷操作。",
+  "@workbenchProjectSummaryGeneric": {
     "placeholders": {
       "entityName": {
         "type": "String"
@@ -1491,30 +1431,8 @@
       }
     }
   },
-  "workbenchTodoCount": "{openCount} 条待完成 / {finishedCount} 条已完成",
-  "@workbenchTodoCount": {
-    "placeholders": {
-      "openCount": {
-        "type": "int"
-      },
-      "finishedCount": {
-        "type": "int"
-      }
-    }
-  },
-  "workbenchQuickCaptureCount": "{activeCount} 条活跃 / {archivedCount} 条归档",
-  "@workbenchQuickCaptureCount": {
-    "placeholders": {
-      "activeCount": {
-        "type": "int"
-      },
-      "archivedCount": {
-        "type": "int"
-      }
-    }
-  },
-  "workbenchSchemaItemCount": "{activeCount} 条进行中 / {archivedCount} 条归档",
-  "@workbenchSchemaItemCount": {
+  "workbenchProjectItemCount": "{activeCount} 条进行中 / {archivedCount} 条归档",
+  "@workbenchProjectItemCount": {
     "placeholders": {
       "activeCount": {
         "type": "int"

@@ -37,7 +37,12 @@ class AgentAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action.orEmpty()
         val alarmId = intent?.getStringExtra(EXTRA_ALARM_ID).orEmpty()
-        if (alarmId.isBlank()) return
+        if (alarmId.isBlank() &&
+            action != ACTION_AGENT_ALARM_CLOSE &&
+            action != ACTION_AGENT_ALARM_SNOOZE
+        ) {
+            return
+        }
 
         val toolService = AgentAlarmToolService(context)
         when (action) {
@@ -51,7 +56,11 @@ class AgentAlarmReceiver : BroadcastReceiver() {
 
             ACTION_AGENT_ALARM_CLOSE -> {
                 AgentAlarmRingingService.stop(context)
-                val closed = toolService.closeExactReminder(alarmId)
+                val closed = if (alarmId.isBlank()) {
+                    toolService.deleteAllExactReminders()["success"] == true
+                } else {
+                    toolService.closeExactReminder(alarmId)
+                }
                 showToast(
                     context,
                     if (closed) "闹钟已关闭" else "关闭闹钟失败"

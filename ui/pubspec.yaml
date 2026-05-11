@@ -45,6 +45,7 @@ dependencies:
   http: ^1.5.0
   flutter_riverpod: ^2.5.1
   riverpod_annotation: ^2.3.5
+  flutter_inappwebview: ^6.1.5
   webview_flutter: ^4.4.2
   webview_flutter_android: 4.10.13
   fluttertoast: ^9.0.0
@@ -62,6 +63,7 @@ dependencies:
   flutter_math_fork: ^0.7.3
   video_player: ^2.10.0
   xml: ^6.6.1
+  flutter_eval: ^0.8.2
 
 dev_dependencies:
   flutter_test:
@@ -77,7 +79,6 @@ dependency_overrides:
   shared_preferences_android: 2.4.21
   url_launcher_android: 6.3.28
   video_player_android: 2.9.4
-  webview_flutter_android: 4.10.13
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

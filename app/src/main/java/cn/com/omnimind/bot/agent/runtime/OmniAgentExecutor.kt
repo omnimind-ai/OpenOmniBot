@@ -154,6 +154,7 @@ class OmniAgentExecutor(
                     executionEnv = DefaultAgentExecutionEnvironment(
                         agentRunId = agentRunId,
                         userMessage = userMessage,
+                        attachments = attachments,
                         currentPackageName = currentPackageName,
                         runtimeContextRepository = runtimeContextRepository,
                         workspaceDescriptor = workspaceDescriptor,

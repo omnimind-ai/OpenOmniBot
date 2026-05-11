@@ -1302,6 +1302,9 @@ class AssistsMessageService {
   static final StreamController<Map<String, dynamic>>
   _workbenchProjectUpdatedController =
       StreamController<Map<String, dynamic>>.broadcast();
+  static final StreamController<Map<String, dynamic>>
+  _agentRunStateChangedController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   // 改为回调列表，支持多个监听器
   static final List<ChatTaskMessageCallBack> _onChatTaskMessageCallBacks = [];
@@ -1322,6 +1325,8 @@ class AssistsMessageService {
       _browserSessionSnapshotChangedController.stream;
   static Stream<Map<String, dynamic>> get workbenchProjectUpdatedStream =>
       _workbenchProjectUpdatedController.stream;
+  static Stream<Map<String, dynamic>> get agentRunStateChangedStream =>
+      _agentRunStateChangedController.stream;
 
   static void initialize() {
     assistCore.setMethodCallHandler(_handleMethod);
@@ -1382,6 +1387,13 @@ class AssistsMessageService {
           break;
         case 'workbenchProjectUpdated':
           _workbenchProjectUpdatedController.add(
+            Map<String, dynamic>.from(
+              (call.arguments as Map?) ?? const <String, dynamic>{},
+            ),
+          );
+          break;
+        case 'onAgentRunStateChanged':
+          _agentRunStateChangedController.add(
             Map<String, dynamic>.from(
               (call.arguments as Map?) ?? const <String, dynamic>{},
             ),
@@ -1718,6 +1730,26 @@ class AssistsMessageService {
     } on PlatformException catch (e) {
       print('取消运行中任务失败: ${e.message}');
       return false;
+    }
+  }
+
+  /// 查询后端当前正在执行的 Agent 任务。
+  static Future<List<Map<String, dynamic>>> listActiveAgentRuns() async {
+    try {
+      final result = await assistCore.invokeMethod<Map<dynamic, dynamic>>(
+        'agentRunList',
+      );
+      final runs = (result?['runs'] as List?) ?? const [];
+      return runs
+          .whereType<Map>()
+          .map(
+            (item) => item.map((key, value) => MapEntry(key.toString(), value)),
+          )
+          .toList(growable: false);
+    } on Exception catch (e) {
+      final message = e is PlatformException ? e.message : e.toString();
+      print('查询运行中 Agent 失败: $message');
+      return const [];
     }
   }
 
@@ -2512,6 +2544,20 @@ class AssistsMessageService {
       return result?['success'] == true;
     } on PlatformException catch (e) {
       print('删除应用内闹钟失败: ${e.message}');
+      return false;
+    }
+  }
+
+  /// 停止并清空统一 Agent 创建的应用内闹钟（exact_alarm）
+  static Future<bool> deleteAllAgentExactAlarms() async {
+    try {
+      final result = await assistCore.invokeMethod<Map<dynamic, dynamic>>(
+        'deleteAgentExactAlarm',
+        {'alarmId': ''},
+      );
+      return result?['success'] == true;
+    } on PlatformException catch (e) {
+      print('清空应用内闹钟失败: ${e.message}');
       return false;
     }
   }

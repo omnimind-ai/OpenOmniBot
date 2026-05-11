@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
-import 'package:ui/features/workbench/services/workbench_todo_log_service.dart';
+import 'package:ui/features/workbench/services/workbench_project_service.dart';
 import 'package:ui/l10n/generated/app_localizations.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
@@ -84,8 +84,6 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     selected ??= _service.activeProject == null
         ? null
         : _findProject(_service.activeProject!.projectId);
-    selected ??= _findProject(workbenchQuickCaptureProjectId);
-    selected ??= _firstNonTodoProject(projects);
     selected ??= projects.first;
     if (_selectedProjectId != selected.projectId) {
       setState(() => _selectedProjectId = selected!.projectId);
@@ -100,13 +98,6 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   WorkbenchProject? _findProject(String projectId) {
     for (final project in _service.projects) {
       if (project.projectId == projectId) return project;
-    }
-    return null;
-  }
-
-  WorkbenchProject? _firstNonTodoProject(List<WorkbenchProject> projects) {
-    for (final project in projects) {
-      if (project.templateId != workbenchTodoTemplateId) return project;
     }
     return null;
   }
@@ -263,12 +254,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
         ? project.route.trim()
         : display.route.trim();
     final fallbackRoute = _fallbackDisplayRoute(project);
-    final resolvedRoute =
-        rawRoute.isEmpty ||
-            (rawRoute.startsWith('/workbench/todo_log') &&
-                project.templateId != workbenchTodoTemplateId)
-        ? fallbackRoute
-        : rawRoute;
+    final resolvedRoute = rawRoute.isEmpty ? fallbackRoute : rawRoute;
     final uri = Uri.parse(resolvedRoute);
     final params = <String, String>{
       ...uri.queryParameters,
@@ -287,16 +273,13 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
 
   String _fallbackDisplayRoute(WorkbenchProject project) {
     final encodedProjectId = Uri.encodeQueryComponent(project.projectId);
-    if (project.templateId == workbenchQuickCaptureTemplateId ||
-        project.tools.any(
-          (tool) => tool.id.startsWith(WorkbenchQuickCaptureToolIds.ingest),
-        )) {
-      return '/workbench/quick_capture?projectId=$encodedProjectId';
+    if (project.frontendHtml.isNotEmpty) {
+      return '/workbench/html?projectId=$encodedProjectId';
     }
-    if (project.templateId == 'schema_app') {
-      return '/workbench/schema_app?projectId=$encodedProjectId';
+    if (project.frontendFlutter.isNotEmpty) {
+      return '/workbench/flutter_eval?projectId=$encodedProjectId';
     }
-    return '/workbench/quick_capture?projectId=$encodedProjectId';
+    return '/workbench/project?projectId=$encodedProjectId';
   }
 
   Future<void> _openWorkspace(WorkbenchProject project) async {
@@ -1202,13 +1185,10 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
 
   IconData _toolIcon(String toolId) {
     final id = toolId.toLowerCase();
-    if (id == WorkbenchTodoToolIds.addTodo ||
-        id.endsWith('.create') ||
-        id.endsWith('.add')) {
+    if (id.endsWith('.create') || id.endsWith('.add')) {
       return Icons.add_box_outlined;
     }
-    if (id == WorkbenchTodoToolIds.finishTodo ||
-        id.endsWith('.archive') ||
+    if (id.endsWith('.archive') ||
         id.endsWith('.finish') ||
         id.endsWith('.complete')) {
       return Icons.archive_outlined;
@@ -1219,31 +1199,21 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   String _toolTitle(WorkbenchToolSpec tool) {
     final displayName = tool.displayName?.trim();
     if (displayName != null && displayName.isNotEmpty) return displayName;
-    return tool.id == WorkbenchTodoToolIds.addTodo
-        ? context.l10n.workbenchToolAddTodoTitle
-        : tool.id == WorkbenchTodoToolIds.finishTodo
-        ? context.l10n.workbenchToolFinishTodoTitle
-        : tool.id;
+    return tool.id;
   }
 
   String _projectOneLineSummary(WorkbenchProject project) {
-    final description = project.schema['description']?.toString().trim();
+    final description = project.pageSpec['description']?.toString().trim();
     if (description != null &&
         description.isNotEmpty &&
         !_looksLikeControlCopy(description)) {
       return description;
     }
-    if (project.templateId == workbenchQuickCaptureTemplateId) {
-      return context.l10n.workbenchProjectSummaryQuickCapture;
-    }
-    if (project.templateId == workbenchTodoTemplateId) {
-      return context.l10n.workbenchProjectSummaryTodo;
-    }
     final entityName =
-        project.schema['entityName']?.toString().trim().isNotEmpty == true
-        ? project.schema['entityName'].toString().trim()
-        : context.l10n.workbenchSchemaDefaultEntity;
-    return context.l10n.workbenchProjectSummarySchema(entityName);
+        project.pageSpec['entityName']?.toString().trim().isNotEmpty == true
+        ? project.pageSpec['entityName'].toString().trim()
+        : context.l10n.workbenchProjectDefaultEntity;
+    return context.l10n.workbenchProjectSummaryGeneric(entityName);
   }
 
   bool _looksLikeControlCopy(String value) {

@@ -60,6 +60,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     unawaited(_refreshCodexStatus());
 
     _inputFocusNode.addListener(_onFocusChange);
+    _messageController.addListener(_handleMessageControllerChanged);
     _messageController.addListener(_handleSlashCommandInput);
     unawaited(_bootstrapConversationThread());
   }
@@ -584,6 +585,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     AppUpdateService.statusNotifier.removeListener(
       _handleAppUpdateStatusChanged,
     );
+    _messageController.removeListener(_handleMessageControllerChanged);
     _messageController.removeListener(_handleSlashCommandInput);
     _messageController.dispose();
     _normalMessageScrollController.dispose();
@@ -746,16 +748,14 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       });
       return;
     }
-    final currentPage = _modePageController.page?.round();
+    final currentPage = _safeModePageControllerPage?.round();
     if (currentPage == targetPage) return;
-    if (animate) {
-      _modePageController.animateToPage(
-        targetPage,
-        duration: const Duration(milliseconds: 240),
-        curve: Curves.easeOutCubic,
-      );
-    } else {
-      _modePageController.jumpToPage(targetPage);
+    final didDrive = _driveModePagePositions(targetPage, animate: animate);
+    if (!didDrive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _jumpToCurrentModePage(animate: animate);
+      });
     }
   }
 
@@ -823,7 +823,6 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
         if (requestedProjectMode) {
           _workspaceBrowserCanGoUp = false;
         }
-        _messageController.clear();
         _setChatIslandDisplayLayerForMode(
           ChatPageMode.normal,
           ChatIslandDisplayLayer.mode,
@@ -875,13 +874,25 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     _draftMessageByMode[_activeConversationMode] = _messageController.text;
   }
 
+  void _handleMessageControllerChanged() {
+    if (_isApplyingDraftToMessageController) {
+      return;
+    }
+    _storeDraftForActiveConversationMode();
+  }
+
   @override
   void _applyDraftForConversationMode(ChatPageMode mode) {
     final draft = _draftMessageByMode[mode] ?? '';
-    _messageController.value = TextEditingValue(
-      text: draft,
-      selection: TextSelection.collapsed(offset: draft.length),
-    );
+    _isApplyingDraftToMessageController = true;
+    try {
+      _messageController.value = TextEditingValue(
+        text: draft,
+        selection: TextSelection.collapsed(offset: draft.length),
+      );
+    } finally {
+      _isApplyingDraftToMessageController = false;
+    }
   }
 
   Future<ConversationThreadTarget> _overrideTargetWithSharedDraftIfNeeded(

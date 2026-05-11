@@ -2,22 +2,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
 
-const String workbenchTodoDefaultProjectId = 'oob-workbench-todo-log';
-const String workbenchTodoTemplateId = 'todo_log_demo';
-const String workbenchQuickCaptureProjectId = 'oob-workbench-quick-capture';
-const String workbenchQuickCaptureTemplateId = 'quick_capture_inbox';
-
 abstract class WorkbenchProjectBackend {
   Future<WorkbenchProject> createProject({
     required String projectId,
-    required String templateId,
     String? name,
     String? prompt,
-    List<String>? initialTodos,
     String? entityName,
     String? description,
     List<Object?>? initialItems,
     List<Map<String, Object?>>? apis,
+    List<Map<String, Object?>>? htmlFiles,
+    List<Map<String, Object?>>? flutterFiles,
   });
 
   Future<WorkbenchProject> getProject(String projectId);
@@ -29,6 +24,7 @@ abstract class WorkbenchProjectBackend {
     String? description,
     List<Map<String, Object?>>? displays,
     List<Map<String, Object?>>? apis,
+    List<Map<String, Object?>>? htmlFiles,
     List<Map<String, Object?>>? flutterFiles,
     String? prompt,
   });
@@ -57,7 +53,7 @@ abstract class WorkbenchProjectBackend {
   ///
   /// `projectId` identifies the persisted Project package, and `prompt` is the
   /// user request captured from the Xiaowan floating assistant. Implementations
-  /// must not register this control action as a Project business API.
+  /// must not register this control action as a Project Tool.
   Future<WorkbenchProjectHotUpdateResult> hotUpdateProject({
     required String projectId,
     required String prompt,
@@ -67,7 +63,7 @@ abstract class WorkbenchProjectBackend {
   /// Imports an APK file or Android project directory into a Workbench Project.
   ///
   /// This is a Workbench control-plane operation. It stores the Android asset
-  /// under the Project workspace and must not register a Project business API.
+  /// under the Project workspace and must not register a Project Tool.
   Future<WorkbenchAndroidIngestResult> ingestAndroidAsset({
     required String projectId,
     required String sourcePath,
@@ -88,23 +84,20 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
   @override
   Future<WorkbenchProject> createProject({
     required String projectId,
-    required String templateId,
     String? name,
     String? prompt,
-    List<String>? initialTodos,
     String? entityName,
     String? description,
     List<Object?>? initialItems,
     List<Map<String, Object?>>? apis,
+    List<Map<String, Object?>>? htmlFiles,
+    List<Map<String, Object?>>? flutterFiles,
   }) async {
     final result = await _channel
         .invokeMethod<Map<dynamic, dynamic>>('workbenchProjectCreate', {
           'projectId': projectId,
-          'templateId': templateId,
           if (name != null && name.trim().isNotEmpty) 'name': name,
           if (prompt != null && prompt.trim().isNotEmpty) 'prompt': prompt,
-          if (initialTodos != null && initialTodos.isNotEmpty)
-            'initialTodos': initialTodos,
           if (entityName != null && entityName.trim().isNotEmpty)
             'entityName': entityName,
           if (description != null && description.trim().isNotEmpty)
@@ -112,6 +105,9 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
           if (initialItems != null && initialItems.isNotEmpty)
             'initialItems': initialItems,
           if (apis != null && apis.isNotEmpty) 'apis': apis,
+          if (htmlFiles != null && htmlFiles.isNotEmpty) 'htmlFiles': htmlFiles,
+          if (flutterFiles != null && flutterFiles.isNotEmpty)
+            'flutterFiles': flutterFiles,
         });
     return WorkbenchProject.fromMap(result ?? const {});
   }
@@ -133,6 +129,7 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
     String? description,
     List<Map<String, Object?>>? displays,
     List<Map<String, Object?>>? apis,
+    List<Map<String, Object?>>? htmlFiles,
     List<Map<String, Object?>>? flutterFiles,
     String? prompt,
   }) async {
@@ -147,6 +144,7 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
           'description': description.trim(),
         if (displays != null && displays.isNotEmpty) 'displays': displays,
         if (apis != null && apis.isNotEmpty) 'apis': apis,
+        if (htmlFiles != null && htmlFiles.isNotEmpty) 'htmlFiles': htmlFiles,
         if (flutterFiles != null && flutterFiles.isNotEmpty)
           'flutterFiles': flutterFiles,
         if (prompt != null && prompt.trim().isNotEmpty) 'prompt': prompt.trim(),
@@ -201,7 +199,7 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
         {'context': frontendContext},
       );
     } on PlatformException catch (error) {
-      debugPrint('保存 Workbench 前端上下文失败: ${error.message}');
+      debugPrint('保存工作台前端上下文失败: ${error.message}');
     }
   }
 
@@ -213,7 +211,7 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
       if (result == null || result.isEmpty) return null;
       return result.map((key, value) => MapEntry(key.toString(), value));
     } on PlatformException catch (error) {
-      debugPrint('读取 Workbench 前端上下文失败: ${error.message}');
+      debugPrint('读取工作台前端上下文失败: ${error.message}');
       return null;
     }
   }
@@ -311,36 +309,36 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
   }
 }
 
-class WorkbenchTodoLogService extends ChangeNotifier {
-  WorkbenchTodoLogService({
+class WorkbenchProjectService extends ChangeNotifier {
+  WorkbenchProjectService({
     required WorkbenchProjectBackend backend,
-    String projectId = workbenchTodoDefaultProjectId,
+    required String projectId,
     WorkbenchProject? initialProject,
-    bool autoCreateTodoIfMissing = true,
+    bool autoCreateIfMissing = false,
   }) : _backend = backend,
        _projectId = projectId,
-       _project = initialProject ?? WorkbenchTodoProjectFactory.create(),
-       _autoCreateTodoIfMissing = autoCreateTodoIfMissing;
+       _project = initialProject,
+       _autoCreateIfMissing = autoCreateIfMissing;
 
-  factory WorkbenchTodoLogService.native({
-    String? projectId,
-    bool autoCreateTodoIfMissing = true,
+  factory WorkbenchProjectService.native({
+    required String projectId,
+    bool autoCreateIfMissing = false,
   }) {
-    return WorkbenchTodoLogService(
+    return WorkbenchProjectService(
       backend: NativeWorkbenchProjectBackend(),
-      projectId: projectId ?? workbenchTodoDefaultProjectId,
-      autoCreateTodoIfMissing: autoCreateTodoIfMissing,
+      projectId: projectId,
+      autoCreateIfMissing: autoCreateIfMissing,
     );
   }
 
   final WorkbenchProjectBackend _backend;
   final String _projectId;
-  final bool _autoCreateTodoIfMissing;
-  WorkbenchProject _project;
+  final bool _autoCreateIfMissing;
+  WorkbenchProject? _project;
   bool _loading = false;
   String? _errorMessage;
 
-  WorkbenchProject get project => _project;
+  WorkbenchProject? get project => _project;
   bool get loading => _loading;
   String? get errorMessage => _errorMessage;
 
@@ -368,19 +366,23 @@ class WorkbenchTodoLogService extends ChangeNotifier {
       if (!message.contains('not found')) {
         rethrow;
       }
-      if (!_autoCreateTodoIfMissing) {
+      if (!_autoCreateIfMissing) {
         rethrow;
       }
     }
     return _backend.createProject(
       projectId: _projectId,
-      templateId: workbenchTodoTemplateId,
     );
   }
 
   Future<void> refresh() async {
+    final current = _project;
+    if (current == null) {
+      await initialize();
+      return;
+    }
     try {
-      final latest = await _backend.getProject(_project.projectId);
+      final latest = await _backend.getProject(current.projectId);
       final apis = await _backend.listApis(latest.projectId);
       _project = latest.copyWith(tools: apis);
       _errorMessage = null;
@@ -395,8 +397,22 @@ class WorkbenchTodoLogService extends ChangeNotifier {
     String apiId,
     Map<String, Object?> inputs,
   ) async {
+    final current = _project;
+    if (current == null) {
+      await initialize();
+    }
+    final project = _project;
+    if (project == null) {
+      return const WorkbenchToolRunResult(
+        toolId: '',
+        success: false,
+        outputs: {},
+        errorCode: 'PROJECT_NOT_LOADED',
+        errorMessage: 'Workbench Project is not loaded.',
+      );
+    }
     final result = await _backend.callApi(
-      projectId: _project.projectId,
+      projectId: project.projectId,
       apiId: apiId,
       inputs: inputs,
     );
@@ -420,7 +436,7 @@ class WorkbenchTodoLogService extends ChangeNotifier {
     Map<String, Object?>? frontendContext,
   }) async {
     final result = await _backend.hotUpdateProject(
-      projectId: _project.projectId,
+      projectId: _project?.projectId ?? _projectId,
       prompt: prompt,
       frontendContext: frontendContext,
     );
@@ -472,30 +488,6 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     }
   }
 
-  Future<WorkbenchProject?> createTodoLogProject(String projectId) async {
-    final normalizedProjectId = projectId.trim();
-    if (normalizedProjectId.isEmpty) {
-      return null;
-    }
-    _loading = true;
-    _errorMessage = null;
-    notifyListeners();
-    try {
-      final project = await _backend.createProject(
-        projectId: normalizedProjectId,
-        templateId: workbenchTodoTemplateId,
-      );
-      _projects = await _backend.listProjects();
-      return project;
-    } catch (error) {
-      _errorMessage = error.toString();
-      return null;
-    } finally {
-      _loading = false;
-      notifyListeners();
-    }
-  }
-
   Future<WorkbenchProject?> activateProject(WorkbenchProject project) async {
     _loading = true;
     _errorMessage = null;
@@ -527,6 +519,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     String? description,
     List<Map<String, Object?>>? displays,
     List<Map<String, Object?>>? apis,
+    List<Map<String, Object?>>? htmlFiles,
     List<Map<String, Object?>>? flutterFiles,
     String? prompt,
   }) async {
@@ -540,6 +533,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
         (normalizedPrompt == null || normalizedPrompt.isEmpty) &&
         (displays == null || displays.isEmpty) &&
         (apis == null || apis.isEmpty) &&
+        (htmlFiles == null || htmlFiles.isEmpty) &&
         (flutterFiles == null || flutterFiles.isEmpty)) {
       return null;
     }
@@ -554,6 +548,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
         description: normalizedDescription,
         displays: displays,
         apis: apis,
+        htmlFiles: htmlFiles,
         flutterFiles: flutterFiles,
         prompt: normalizedPrompt,
       );
@@ -602,94 +597,27 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     }
   }
 
-  Future<WorkbenchProject?> createTodoLogProjectFromPrompt(
-    String prompt, {
-    required String name,
-    required List<String> initialTodos,
-  }) async {
-    final normalizedPrompt = prompt.trim();
-    if (normalizedPrompt.isEmpty) {
-      return null;
-    }
-    _loading = true;
-    _errorMessage = null;
-    notifyListeners();
-    try {
-      _projects = await _backend.listProjects();
-      final projectId = _nextPromptProjectId();
-      final project = await _backend.createProject(
-        projectId: projectId,
-        templateId: workbenchTodoTemplateId,
-        name: name,
-        prompt: normalizedPrompt,
-      );
-      var latestProject = project;
-      final addedTodoIds = <String>[];
-      for (final title in initialTodos) {
-        final trimmedTitle = title.trim();
-        if (trimmedTitle.isEmpty) {
-          continue;
-        }
-        final result = await _backend.callApi(
-          projectId: project.projectId,
-          apiId: WorkbenchTodoToolIds.addTodo,
-          inputs: {'title': trimmedTitle},
-        );
-        if (result.project != null) {
-          latestProject = result.project!;
-        }
-        final todo = result.outputs['todo'];
-        if (todo is WorkbenchTodoItem) {
-          addedTodoIds.add(todo.id);
-        } else if (todo is Map) {
-          final todoId = todo['id']?.toString().trim();
-          if (todoId != null && todoId.isNotEmpty) {
-            addedTodoIds.add(todoId);
-          }
-        }
-      }
-      if (addedTodoIds.isNotEmpty) {
-        final result = await _backend.callApi(
-          projectId: project.projectId,
-          apiId: WorkbenchTodoToolIds.finishTodo,
-          inputs: {'todo_id': addedTodoIds.first},
-        );
-        if (result.project != null) {
-          latestProject = result.project!;
-        }
-      }
-      _projects = await _backend.listProjects();
-      return latestProject;
-    } catch (error) {
-      _errorMessage = error.toString();
-      return null;
-    } finally {
-      _loading = false;
-      notifyListeners();
-    }
-  }
-
-  /// Creates a generic schema Project through the Workbench control API.
+  /// Creates a generic Project through the Workbench control API.
   ///
   /// `prompt` is the user's original requirement for future iteration,
-  /// `entityName` names the business object the generated frontend manages,
+  /// `entityName` optionally names the business object the display manages,
   /// and `initialItems` seeds persisted Project state without writing files
   /// directly from Flutter.
-  Future<WorkbenchProject?> createSchemaProjectFromPrompt(
+  Future<WorkbenchProject?> createProjectFromPrompt(
     String prompt, {
     required String projectId,
     required String name,
-    required String entityName,
+    String? entityName,
     String? description,
     List<Object?> initialItems = const [],
     List<Map<String, Object?>> apis = const [],
+    List<Map<String, Object?>> htmlFiles = const [],
+    List<Map<String, Object?>> flutterFiles = const [],
   }) async {
     final normalizedPrompt = prompt.trim();
     final normalizedProjectId = projectId.trim();
-    final normalizedEntityName = entityName.trim();
-    if (normalizedPrompt.isEmpty ||
-        normalizedProjectId.isEmpty ||
-        normalizedEntityName.isEmpty) {
+    final normalizedEntityName = entityName?.trim();
+    if (normalizedPrompt.isEmpty || normalizedProjectId.isEmpty) {
       return null;
     }
     _loading = true;
@@ -698,13 +626,14 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     try {
       final project = await _backend.createProject(
         projectId: normalizedProjectId,
-        templateId: 'schema_app',
         name: name,
         prompt: normalizedPrompt,
         entityName: normalizedEntityName,
         description: description,
         initialItems: initialItems,
         apis: apis,
+        htmlFiles: htmlFiles,
+        flutterFiles: flutterFiles,
       );
       _projects = await _backend.listProjects();
       return project;
@@ -715,19 +644,6 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
-  }
-
-  String _nextPromptProjectId() {
-    const base = 'oob-workbench-todolist';
-    final existing = _projects.map((project) => project.projectId).toSet();
-    if (!existing.contains(base)) {
-      return base;
-    }
-    var index = 2;
-    while (existing.contains('$base-$index')) {
-      index += 1;
-    }
-    return '$base-$index';
   }
 
   Future<WorkbenchToolRunResult> runTool(

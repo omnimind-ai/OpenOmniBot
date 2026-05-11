@@ -7,7 +7,7 @@ import cn.com.omnimind.bot.workbench.WorkbenchApiRecord
  *
  * Implement this interface and register via [WorkbenchExecutorRegistry.register] to add a new
  * executor kind without modifying [WorkbenchProjectStore]. All built-in executors
- * (native_template, native_schema_collection, workspace_python_script) are registered at
+ * (native_project_collection, workspace_python_script, agent_task) are registered at
  * construction time; future executors (agent_task, workspace_script, dart_eval, etc.) add a new
  * file + one register() call.
  */

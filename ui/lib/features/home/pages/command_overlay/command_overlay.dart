@@ -11,7 +11,7 @@ import 'package:ui/services/storage_service.dart';
 import 'package:ui/constants/openclaw/openclaw_keys.dart';
 import 'package:ui/features/home/pages/common/openclaw_connection_checker.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
-import 'package:ui/features/workbench/services/workbench_todo_log_service.dart';
+import 'package:ui/features/workbench/services/workbench_project_service.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_context.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart';
 import 'package:ui/utils/data_parser.dart';

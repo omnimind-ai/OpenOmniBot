@@ -1,5 +1,7 @@
 package cn.com.omnimind.bot.webchat
 
+import android.os.Handler
+import android.os.Looper
 import cn.com.omnimind.baselib.util.OmniLog
 import io.flutter.plugin.common.MethodChannel
 
@@ -55,23 +57,34 @@ object FlutterChatSyncBridge {
         )
     }
 
-    fun dispatchWorkbenchProjectUpdated(projectId: String, updatedPaths: List<String> = emptyList()) {
+    fun dispatchWorkbenchProjectUpdated(
+        projectId: String,
+        updatedPaths: List<String> = emptyList(),
+        reason: String = "project_updated"
+    ) {
         dispatch(
             method = "workbenchProjectUpdated",
             arguments = mapOf(
                 "projectId" to projectId,
-                "updatedPaths" to updatedPaths
+                "updatedPaths" to updatedPaths,
+                "reason" to reason
             )
         )
     }
 
     private fun dispatch(method: String, arguments: Any?) {
         val channels = listOfNotNull(currentChannel, mainChannel).distinct()
-        channels.forEach { target ->
-            runCatching {
-                target.invokeMethod(method, arguments)
-            }.onFailure {
-                OmniLog.w(TAG, "dispatch $method failed: ${it.message}")
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            channels.forEach { target ->
+                runCatching { target.invokeMethod(method, arguments) }
+                    .onFailure { OmniLog.w(TAG, "dispatch $method failed: ${it.message}") }
+            }
+        } else {
+            Handler(Looper.getMainLooper()).post {
+                channels.forEach { target ->
+                    runCatching { target.invokeMethod(method, arguments) }
+                        .onFailure { OmniLog.w(TAG, "dispatch $method failed: ${it.message}") }
+                }
             }
         }
     }

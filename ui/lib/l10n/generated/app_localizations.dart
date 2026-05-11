@@ -5450,29 +5450,11 @@ abstract class AppLocalizations {
   /// **'提示词生成的原生前端、项目工具和工作区文件在 OOB 内保持关联。'**
   String get workbenchVibeSubtitle;
 
-  /// No description provided for @workbenchGeneratedTodoSubtitle.
+  /// No description provided for @workbenchProjectDisplay.
   ///
   /// In zh, this message translates to:
-  /// **'Todo 日志 (TODO) 是这个项目的业务前端之一。它和项目控制面分开，并直接调用已注册的项目工具。'**
-  String get workbenchGeneratedTodoSubtitle;
-
-  /// No description provided for @workbenchMockProjectName.
-  ///
-  /// In zh, this message translates to:
-  /// **'Todo 日志 Mock'**
-  String get workbenchMockProjectName;
-
-  /// No description provided for @workbenchTemplateProjectName.
-  ///
-  /// In zh, this message translates to:
-  /// **'Todo 日志工作台'**
-  String get workbenchTemplateProjectName;
-
-  /// No description provided for @workbenchNativeUi.
-  ///
-  /// In zh, this message translates to:
-  /// **'OOB 原生显示'**
-  String get workbenchNativeUi;
+  /// **'项目显示'**
+  String get workbenchProjectDisplay;
 
   /// No description provided for @workbenchProjectSection.
   ///
@@ -5485,12 +5467,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'项目 ID'**
   String get workbenchProjectIdLabel;
-
-  /// No description provided for @workbenchTemplateIdLabel.
-  ///
-  /// In zh, this message translates to:
-  /// **'模板 ID'**
-  String get workbenchTemplateIdLabel;
 
   /// No description provided for @workbenchRouteLabel.
   ///
@@ -5558,12 +5534,6 @@ abstract class AppLocalizations {
   /// **'前后端绑定'**
   String get workbenchFrontendBinding;
 
-  /// No description provided for @workbenchTodoLog.
-  ///
-  /// In zh, this message translates to:
-  /// **'Todo 日志'**
-  String get workbenchTodoLog;
-
   /// No description provided for @workbenchCallApi.
   ///
   /// In zh, this message translates to:
@@ -5630,341 +5600,107 @@ abstract class AppLocalizations {
   /// **'已执行 {count} 次'**
   String workbenchToolExecutionCount(int count);
 
-  /// No description provided for @workbenchToolAddTodoTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'新增 Todo'**
-  String get workbenchToolAddTodoTitle;
-
-  /// No description provided for @workbenchToolAddTodoDesc.
-  ///
-  /// In zh, this message translates to:
-  /// **'通过已注册的原生项目工具创建一条 todo。'**
-  String get workbenchToolAddTodoDesc;
-
-  /// No description provided for @workbenchToolFinishTodoTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'归档 Todo'**
-  String get workbenchToolFinishTodoTitle;
-
-  /// No description provided for @workbenchToolFinishTodoDesc.
-  ///
-  /// In zh, this message translates to:
-  /// **'通过已注册的原生项目工具把一条 todo 归档。'**
-  String get workbenchToolFinishTodoDesc;
-
-  /// No description provided for @workbenchFlowAddTodo.
-  ///
-  /// In zh, this message translates to:
-  /// **'页面输入 -> todo.add -> todo 列表'**
-  String get workbenchFlowAddTodo;
-
-  /// No description provided for @workbenchFlowFinishTodo.
-  ///
-  /// In zh, this message translates to:
-  /// **'完成按钮 -> todo.finish -> 完成列表'**
-  String get workbenchFlowFinishTodo;
-
-  /// No description provided for @workbenchAddTodoHint.
-  ///
-  /// In zh, this message translates to:
-  /// **'添加一条 todo'**
-  String get workbenchAddTodoHint;
-
-  /// No description provided for @workbenchAddTodo.
-  ///
-  /// In zh, this message translates to:
-  /// **'添加 Todo'**
-  String get workbenchAddTodo;
-
-  /// No description provided for @workbenchTodoEmpty.
-  ///
-  /// In zh, this message translates to:
-  /// **'暂无 todo'**
-  String get workbenchTodoEmpty;
-
-  /// No description provided for @workbenchTodoOpen.
-  ///
-  /// In zh, this message translates to:
-  /// **'待完成'**
-  String get workbenchTodoOpen;
-
-  /// No description provided for @workbenchTodoFinished.
-  ///
-  /// In zh, this message translates to:
-  /// **'已归档'**
-  String get workbenchTodoFinished;
-
-  /// No description provided for @workbenchFinishTodo.
-  ///
-  /// In zh, this message translates to:
-  /// **'归档 todo'**
-  String get workbenchFinishTodo;
-
-  /// No description provided for @workbenchTodoAdded.
-  ///
-  /// In zh, this message translates to:
-  /// **'Todo 已添加'**
-  String get workbenchTodoAdded;
-
-  /// No description provided for @workbenchTodoFinishedToast.
-  ///
-  /// In zh, this message translates to:
-  /// **'Todo 已归档'**
-  String get workbenchTodoFinishedToast;
-
-  /// No description provided for @workbenchTodoInputRequired.
-  ///
-  /// In zh, this message translates to:
-  /// **'请先输入 todo'**
-  String get workbenchTodoInputRequired;
-
-  /// No description provided for @workbenchQuickCaptureTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'随手记 Inbox'**
-  String get workbenchQuickCaptureTitle;
-
-  /// No description provided for @workbenchQuickCaptureSubtitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'把文字、链接、分享内容或截图丢进来，自动整理成待办、摘要、链接卡片或稍后读。'**
-  String get workbenchQuickCaptureSubtitle;
-
-  /// No description provided for @workbenchQuickCapturePageCapture.
-  ///
-  /// In zh, this message translates to:
-  /// **'收集'**
-  String get workbenchQuickCapturePageCapture;
-
-  /// No description provided for @workbenchQuickCapturePageInbox.
-  ///
-  /// In zh, this message translates to:
-  /// **'收件箱'**
-  String get workbenchQuickCapturePageInbox;
-
-  /// No description provided for @workbenchQuickCaptureInboxSubtitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'{count} 条正在处理的内容。'**
-  String workbenchQuickCaptureInboxSubtitle(int count);
-
-  /// No description provided for @workbenchQuickCaptureArchiveSubtitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'{count} 条已归档内容。'**
-  String workbenchQuickCaptureArchiveSubtitle(int count);
-
-  /// No description provided for @workbenchQuickCaptureInputHint.
-  ///
-  /// In zh, this message translates to:
-  /// **'粘贴一句话、链接或分享文本'**
-  String get workbenchQuickCaptureInputHint;
-
-  /// No description provided for @workbenchQuickCaptureAction.
-  ///
-  /// In zh, this message translates to:
-  /// **'收进来'**
-  String get workbenchQuickCaptureAction;
-
-  /// No description provided for @workbenchQuickCaptureCaptured.
-  ///
-  /// In zh, this message translates to:
-  /// **'已收进随手记'**
-  String get workbenchQuickCaptureCaptured;
-
-  /// No description provided for @workbenchQuickCaptureInputRequired.
-  ///
-  /// In zh, this message translates to:
-  /// **'请先输入文字或链接'**
-  String get workbenchQuickCaptureInputRequired;
-
-  /// No description provided for @workbenchQuickCaptureEmpty.
-  ///
-  /// In zh, this message translates to:
-  /// **'暂无随手记'**
-  String get workbenchQuickCaptureEmpty;
-
-  /// No description provided for @workbenchQuickCaptureFilterAll.
-  ///
-  /// In zh, this message translates to:
-  /// **'Inbox'**
-  String get workbenchQuickCaptureFilterAll;
-
-  /// No description provided for @workbenchQuickCaptureTypeTodo.
-  ///
-  /// In zh, this message translates to:
-  /// **'Todo'**
-  String get workbenchQuickCaptureTypeTodo;
-
-  /// No description provided for @workbenchQuickCaptureTypeSummary.
-  ///
-  /// In zh, this message translates to:
-  /// **'摘要'**
-  String get workbenchQuickCaptureTypeSummary;
-
-  /// No description provided for @workbenchQuickCaptureTypeLink.
-  ///
-  /// In zh, this message translates to:
-  /// **'链接'**
-  String get workbenchQuickCaptureTypeLink;
-
-  /// No description provided for @workbenchQuickCaptureTypeLater.
-  ///
-  /// In zh, this message translates to:
-  /// **'稍后读'**
-  String get workbenchQuickCaptureTypeLater;
-
-  /// No description provided for @workbenchQuickCaptureArchived.
-  ///
-  /// In zh, this message translates to:
-  /// **'已归档'**
-  String get workbenchQuickCaptureArchived;
-
-  /// No description provided for @workbenchQuickCaptureArchive.
-  ///
-  /// In zh, this message translates to:
-  /// **'归档'**
-  String get workbenchQuickCaptureArchive;
-
-  /// No description provided for @workbenchQuickCapturePromoteToTodo.
-  ///
-  /// In zh, this message translates to:
-  /// **'转成 Todo'**
-  String get workbenchQuickCapturePromoteToTodo;
-
-  /// No description provided for @workbenchQuickCaptureSummarize.
-  ///
-  /// In zh, this message translates to:
-  /// **'重新摘要'**
-  String get workbenchQuickCaptureSummarize;
-
-  /// No description provided for @workbenchQuickCaptureArchivedToast.
-  ///
-  /// In zh, this message translates to:
-  /// **'随手记已归档'**
-  String get workbenchQuickCaptureArchivedToast;
-
-  /// No description provided for @workbenchQuickCapturePromotedToast.
-  ///
-  /// In zh, this message translates to:
-  /// **'已转成 Todo'**
-  String get workbenchQuickCapturePromotedToast;
-
-  /// No description provided for @workbenchQuickCaptureSummarizedToast.
-  ///
-  /// In zh, this message translates to:
-  /// **'摘要已刷新'**
-  String get workbenchQuickCaptureSummarizedToast;
-
-  /// No description provided for @workbenchSchemaDefaultEntity.
+  /// No description provided for @workbenchProjectDefaultEntity.
   ///
   /// In zh, this message translates to:
   /// **'条目'**
-  String get workbenchSchemaDefaultEntity;
+  String get workbenchProjectDefaultEntity;
 
-  /// No description provided for @workbenchSchemaCreateTitle.
+  /// No description provided for @workbenchProjectCreateTitle.
   ///
   /// In zh, this message translates to:
   /// **'新增 {entity}'**
-  String workbenchSchemaCreateTitle(String entity);
+  String workbenchProjectCreateTitle(String entity);
 
-  /// No description provided for @workbenchSchemaInputHint.
+  /// No description provided for @workbenchProjectInputHint.
   ///
   /// In zh, this message translates to:
   /// **'输入 {entity} 名称'**
-  String workbenchSchemaInputHint(String entity);
+  String workbenchProjectInputHint(String entity);
 
-  /// No description provided for @workbenchSchemaItemsTitle.
+  /// No description provided for @workbenchProjectItemsTitle.
   ///
   /// In zh, this message translates to:
   /// **'{entity} 列表'**
-  String workbenchSchemaItemsTitle(String entity);
+  String workbenchProjectItemsTitle(String entity);
 
-  /// No description provided for @workbenchSchemaEmpty.
+  /// No description provided for @workbenchProjectEmpty.
   ///
   /// In zh, this message translates to:
   /// **'暂无 {entity}'**
-  String workbenchSchemaEmpty(String entity);
+  String workbenchProjectEmpty(String entity);
 
-  /// No description provided for @workbenchSchemaActive.
+  /// No description provided for @workbenchProjectActiveItems.
   ///
   /// In zh, this message translates to:
   /// **'进行中'**
-  String get workbenchSchemaActive;
+  String get workbenchProjectActiveItems;
 
-  /// No description provided for @workbenchSchemaArchived.
+  /// No description provided for @workbenchProjectArchivedItems.
   ///
   /// In zh, this message translates to:
   /// **'已归档'**
-  String get workbenchSchemaArchived;
+  String get workbenchProjectArchivedItems;
 
-  /// No description provided for @workbenchSchemaEditAction.
+  /// No description provided for @workbenchProjectEditAction.
   ///
   /// In zh, this message translates to:
   /// **'编辑'**
-  String get workbenchSchemaEditAction;
+  String get workbenchProjectEditAction;
 
-  /// No description provided for @workbenchSchemaEditTitle.
+  /// No description provided for @workbenchProjectEditTitle.
   ///
   /// In zh, this message translates to:
   /// **'编辑条目'**
-  String get workbenchSchemaEditTitle;
+  String get workbenchProjectEditTitle;
 
-  /// No description provided for @workbenchSchemaArchiveAction.
+  /// No description provided for @workbenchProjectArchiveAction.
   ///
   /// In zh, this message translates to:
   /// **'归档'**
-  String get workbenchSchemaArchiveAction;
+  String get workbenchProjectArchiveAction;
 
-  /// No description provided for @workbenchSchemaMissingCreateApi.
+  /// No description provided for @workbenchProjectMissingCreateApi.
   ///
   /// In zh, this message translates to:
   /// **'这个项目没有可用的新增工具'**
-  String get workbenchSchemaMissingCreateApi;
+  String get workbenchProjectMissingCreateApi;
 
-  /// No description provided for @workbenchSchemaMissingUpdateApi.
+  /// No description provided for @workbenchProjectMissingUpdateApi.
   ///
   /// In zh, this message translates to:
   /// **'这个项目没有可用的编辑工具'**
-  String get workbenchSchemaMissingUpdateApi;
+  String get workbenchProjectMissingUpdateApi;
 
-  /// No description provided for @workbenchSchemaMissingArchiveApi.
+  /// No description provided for @workbenchProjectMissingArchiveApi.
   ///
   /// In zh, this message translates to:
   /// **'这个项目没有可用的归档工具'**
-  String get workbenchSchemaMissingArchiveApi;
+  String get workbenchProjectMissingArchiveApi;
 
-  /// No description provided for @workbenchSchemaInputRequired.
+  /// No description provided for @workbenchProjectInputRequired.
   ///
   /// In zh, this message translates to:
   /// **'请先输入 {entity}'**
-  String workbenchSchemaInputRequired(String entity);
+  String workbenchProjectInputRequired(String entity);
 
-  /// No description provided for @workbenchSchemaItemCreated.
+  /// No description provided for @workbenchProjectItemCreated.
   ///
   /// In zh, this message translates to:
   /// **'{entity} 已新增'**
-  String workbenchSchemaItemCreated(String entity);
+  String workbenchProjectItemCreated(String entity);
 
-  /// No description provided for @workbenchSchemaItemUpdated.
+  /// No description provided for @workbenchProjectItemUpdated.
   ///
   /// In zh, this message translates to:
   /// **'{entity} 已保存'**
-  String workbenchSchemaItemUpdated(String entity);
+  String workbenchProjectItemUpdated(String entity);
 
-  /// No description provided for @workbenchSchemaItemArchived.
+  /// No description provided for @workbenchProjectItemArchived.
   ///
   /// In zh, this message translates to:
   /// **'{entity} 已归档'**
-  String workbenchSchemaItemArchived(String entity);
-
-  /// No description provided for @workbenchNoOpenTodo.
-  ///
-  /// In zh, this message translates to:
-  /// **'没有可完成的 todo'**
-  String get workbenchNoOpenTodo;
+  String workbenchProjectItemArchived(String entity);
 
   /// No description provided for @workbenchLoadFailed.
   ///
@@ -6746,23 +6482,11 @@ abstract class AppLocalizations {
   /// **'项目：{projectName}'**
   String workbenchActiveProjectChip(String projectName);
 
-  /// No description provided for @workbenchProjectSummaryQuickCapture.
-  ///
-  /// In zh, this message translates to:
-  /// **'收集文字、链接、分享和截图，沉淀成待办、摘要、链接卡片或稍后读。'**
-  String get workbenchProjectSummaryQuickCapture;
-
-  /// No description provided for @workbenchProjectSummaryTodo.
-  ///
-  /// In zh, this message translates to:
-  /// **'记录待办事项，并在完成后归档。'**
-  String get workbenchProjectSummaryTodo;
-
-  /// No description provided for @workbenchProjectSummarySchema.
+  /// No description provided for @workbenchProjectSummaryGeneric.
   ///
   /// In zh, this message translates to:
   /// **'管理 {entityName} 记录，并保留状态和快捷操作。'**
-  String workbenchProjectSummarySchema(String entityName);
+  String workbenchProjectSummaryGeneric(String entityName);
 
   /// No description provided for @workbenchAndroidAssetCount.
   ///
@@ -6770,23 +6494,11 @@ abstract class AppLocalizations {
   /// **'{count} 个 Android 资产'**
   String workbenchAndroidAssetCount(int count);
 
-  /// No description provided for @workbenchTodoCount.
-  ///
-  /// In zh, this message translates to:
-  /// **'{openCount} 条待完成 / {finishedCount} 条已完成'**
-  String workbenchTodoCount(int openCount, int finishedCount);
-
-  /// No description provided for @workbenchQuickCaptureCount.
-  ///
-  /// In zh, this message translates to:
-  /// **'{activeCount} 条活跃 / {archivedCount} 条归档'**
-  String workbenchQuickCaptureCount(int activeCount, int archivedCount);
-
-  /// No description provided for @workbenchSchemaItemCount.
+  /// No description provided for @workbenchProjectItemCount.
   ///
   /// In zh, this message translates to:
   /// **'{activeCount} 条进行中 / {archivedCount} 条归档'**
-  String workbenchSchemaItemCount(int activeCount, int archivedCount);
+  String workbenchProjectItemCount(int activeCount, int archivedCount);
 
   /// No description provided for @workbenchApiCount.
   ///

@@ -57,6 +57,7 @@ class AgentAlarmToolService(
 
         private const val KEY_AGENT_EXACT_ALARM_RECORDS = "agent_exact_alarm_records_v2"
         private const val KEY_AGENT_ALARM_SOUND_SETTINGS = "agent_alarm_sound_settings_v1"
+        const val KEY_CURRENT_RINGING_ALARM_ID = "agent_current_ringing_alarm_id_v1"
 
         fun stableNotificationId(alarmId: String): Int {
             val value = alarmId.hashCode() and 0x7FFFFFFF
@@ -197,27 +198,62 @@ class AgentAlarmToolService(
     }
 
     fun deleteExactReminder(alarmId: String): Map<String, Any?> {
-        val closed = closeExactReminder(alarmId)
+        val normalizedAlarmId = alarmId.trim()
+        if (normalizedAlarmId.isBlank() ||
+            normalizedAlarmId == "*" ||
+            normalizedAlarmId.equals("all", ignoreCase = true)
+        ) {
+            return deleteAllExactReminders()
+        }
+
+        val closed = closeExactReminder(normalizedAlarmId)
         if (!closed) {
             throw IllegalArgumentException("未找到对应提醒闹钟")
         }
         return mapOf(
             "success" to true,
-            "alarmId" to alarmId,
+            "alarmId" to normalizedAlarmId,
             "summary" to "提醒闹钟已删除"
         )
     }
 
-    fun closeExactReminder(alarmId: String): Boolean {
-        if (alarmId.isBlank()) return false
-        val records = loadRecords().toMutableList()
-        val record = records.firstOrNull { it.alarmId == alarmId } ?: return false
-
+    fun deleteAllExactReminders(): Map<String, Any?> {
+        val records = loadRecords()
         AgentAlarmRingingService.stop(context)
+        records.forEach { record ->
+            cancelExactAlarms(record)
+            cancelNotification(record.alarmId)
+        }
+        MMKV.defaultMMKV().removeValueForKey(KEY_CURRENT_RINGING_ALARM_ID)
+        persistRecords(emptyList())
+        return mapOf(
+            "success" to true,
+            "deletedCount" to records.size,
+            "summary" to if (records.isEmpty()) {
+                "已停止所有提醒闹钟"
+            } else {
+                "已删除 ${records.size} 个提醒闹钟"
+            }
+        )
+    }
+
+    fun closeExactReminder(alarmId: String): Boolean {
+        val normalizedAlarmId = alarmId.trim()
+        if (normalizedAlarmId.isBlank()) return false
+        val records = loadRecords().toMutableList()
+        val record = records.firstOrNull { it.alarmId == normalizedAlarmId } ?: return false
+
+        val currentRingingAlarmId = MMKV.defaultMMKV()
+            .decodeString(KEY_CURRENT_RINGING_ALARM_ID)
+            .orEmpty()
+        if (record.state == STATE_RINGING || currentRingingAlarmId == normalizedAlarmId) {
+            AgentAlarmRingingService.stop(context)
+            MMKV.defaultMMKV().removeValueForKey(KEY_CURRENT_RINGING_ALARM_ID)
+        }
         cancelExactAlarms(record)
-        records.removeAll { it.alarmId == alarmId }
+        records.removeAll { it.alarmId == normalizedAlarmId }
         persistRecords(records)
-        cancelNotification(alarmId)
+        cancelNotification(normalizedAlarmId)
         return true
     }
 

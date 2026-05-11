@@ -191,7 +191,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
                 onBeforeTaskExecute: widget.onBeforeTaskExecute,
                 onCancelTask: widget.onCancelTask,
                 enableThinkingCollapse: true,
-                thinkingAutoCollapseOnComplete: true,
+                thinkingAutoCollapseOnComplete: false,
                 showThinkingAvatarOverride: hideAvatar ? false : null,
                 parentScrollController: widget.parentScrollController,
                 onParentScrollHandoff: widget.onParentScrollHandoff,

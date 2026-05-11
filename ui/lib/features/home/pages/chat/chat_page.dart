@@ -181,6 +181,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     ChatPageMode.openclaw: '',
     ChatPageMode.codex: '',
   };
+  bool _isApplyingDraftToMessageController = false;
   final Map<ChatPageMode, ChatIslandDisplayLayer>
   _chatIslandDisplayLayerByMode = {
     ChatPageMode.normal: ChatIslandDisplayLayer.mode,
@@ -565,11 +566,79 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     if (!_modePageController.hasClients) {
       return fallback;
     }
-    final page = _modePageController.page;
+    final page = _safeModePageControllerPage;
     if (page == null || !page.isFinite) {
       return fallback;
     }
     return page.clamp(0.0, 1.0).toDouble();
+  }
+
+  double? get _safeModePageControllerPage {
+    final positions = _modePageController.positions.toList(growable: false);
+    if (positions.isEmpty) return null;
+    final scrollingPositions = positions.where(
+      (position) => position.isScrollingNotifier.value,
+    );
+    for (final position in [...scrollingPositions, ...positions]) {
+      final page = _pageForModeScrollPosition(position);
+      if (page != null) return page;
+    }
+    return null;
+  }
+
+  double? _pageForModeScrollPosition(ScrollPosition position) {
+    if (!position.hasPixels || !position.hasViewportDimension) {
+      return null;
+    }
+    final viewportDimension = position.viewportDimension;
+    if (!viewportDimension.isFinite || viewportDimension <= 0) {
+      return null;
+    }
+    final page = position.pixels / viewportDimension;
+    return page.isFinite ? page : null;
+  }
+
+  bool _modeScrollPositionCanMove(ScrollPosition position) {
+    return position.hasPixels &&
+        position.hasViewportDimension &&
+        position.hasContentDimensions &&
+        position.viewportDimension.isFinite &&
+        position.viewportDimension > 0;
+  }
+
+  double _targetPixelsForModePage(ScrollPosition position, int page) {
+    final targetPixels = position.viewportDimension * page;
+    return targetPixels
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
+  }
+
+  bool _driveModePagePositions(int page, {required bool animate}) {
+    final positions = _modePageController.positions.toList(growable: false);
+    final movablePositions = positions
+        .where(_modeScrollPositionCanMove)
+        .toList(growable: false);
+    if (movablePositions.isEmpty) {
+      return false;
+    }
+    if (animate) {
+      unawaited(
+        Future.wait(
+          movablePositions.map((position) {
+            return position.animateTo(
+              _targetPixelsForModePage(position, page),
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOutCubic,
+            );
+          }),
+        ),
+      );
+    } else {
+      for (final position in movablePositions) {
+        position.jumpTo(_targetPixelsForModePage(position, page));
+      }
+    }
+    return true;
   }
 
   double get _normalSurfaceVisibility =>
@@ -1041,7 +1110,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       final pageMetrics = notification.metrics;
       final rawPage = pageMetrics is PageMetrics
           ? pageMetrics.page
-          : (_modePageController.hasClients ? _modePageController.page : null);
+          : _safeModePageControllerPage;
       final settledPageIndex =
           (rawPage ?? _pageIndexForSurface(_activeSurfaceMode).toDouble())
               .round();
@@ -1498,7 +1567,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   );
 
   @override
-  void clearAgentStreamSessionState() {
+  void clearAgentStreamSessionState({String? taskId}) {
     final conversationId = _currentConversationId;
     if (conversationId == null) return;
     _runtimeCoordinator.clearConversationRuntimeSession(

@@ -129,7 +129,6 @@
   "browserOverlayUnsupported": "Browser tool view is not supported on this platform yet",
   "networkErrorMessage": "Sorry, the network stumbled just now. Please try sending it again.",
   "rateLimitErrorMessage": "Omnibot is busy right now. Please try again in a moment.",
-
   "chatHistoryArchivedTitle": "Archived Conversations",
   "chatHistoryTitle": "Chat History",
   "chatHistoryNoArchived": "No archived conversations",
@@ -144,7 +143,6 @@
   "homeDrawerArchive": "Archive",
   "homeDrawerNewChat": "New conversation",
   "webchatNoChats": "Start a new conversation",
-
   "memoryCenterTitle": "Memory Center",
   "memoryShortTermTitle": "Short-term Memory",
   "memoryLongTermTitle": "Long-term Memory",
@@ -175,7 +173,6 @@
   "memoryLongTermFailed": "Long-term memory operation failed: {error}",
   "memoryNoMemories": "No memories",
   "memoryNoMemoriesDesc": "Start exploring and add content you like",
-
   "skillStoreTitle": "Skill Store",
   "skillBuiltin": "Built-in",
   "skillUser": "User",
@@ -198,7 +195,6 @@
   "skillDisabledMsg": "Disabled {name}",
   "skillToggleFailed": "Failed to toggle",
   "skillLoadFailed": "Failed to load skills",
-
   "trajectoryTitle": "Trajectory",
   "trajectoryNoRecords": "No execution records",
   "trajectoryNoRecordsDesc": "VLM tasks will be displayed here",
@@ -211,7 +207,6 @@
   "executionHistorySubtitle": "Recent 3 task executions",
   "executionHistoryEmpty": "No execution history",
   "executionHistoryTaskLabel": "{option} Tasks",
-
   "modelProviderConfigTitle": "Provider Configuration",
   "modelProviderConfigDesc": "Add, switch, and maintain model service provider names, addresses, and keys.",
   "modelProviderName": "Provider Name",
@@ -248,7 +243,6 @@
     }
   },
   "modelProviderFetchFailed": "Failed to fetch the model list: {error}",
-
   "sceneModelMapping": "Scene Mapping",
   "sceneModelMappingDesc": "Bind Providers and models by scene. Unbound scenes will continue using the default model.",
   "sceneModelRefreshList": "Refresh model list",
@@ -308,7 +302,6 @@
       "error": {}
     }
   },
-
   "localModelsTitle": "Local Models",
   "localModelsAutoPreheat": "Auto preheat on app open",
   "localModelsAutoPreheatDesc": "Automatically start local service and load the current model when entering the app.",
@@ -355,33 +348,47 @@
   "localModelsDownloadStartedToast": "Download started: {modelName}",
   "@localModelsDownloadStartedToast": {
     "placeholders": {
-      "modelName": { "type": "String" }
+      "modelName": {
+        "type": "String"
+      }
     }
   },
   "localModelsDownloadPausedToast": "Download paused: {modelName}",
   "@localModelsDownloadPausedToast": {
     "placeholders": {
-      "modelName": { "type": "String" }
+      "modelName": {
+        "type": "String"
+      }
     }
   },
   "localModelsDownloadCompletedToast": "Download completed: {modelName}",
   "@localModelsDownloadCompletedToast": {
     "placeholders": {
-      "modelName": { "type": "String" }
+      "modelName": {
+        "type": "String"
+      }
     }
   },
   "localModelsDownloadFailedToast": "Download failed: {modelName} — {reason}",
   "@localModelsDownloadFailedToast": {
     "placeholders": {
-      "modelName": { "type": "String" },
-      "reason": { "type": "String" }
+      "modelName": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
     }
   },
   "localModelsDownloadCancelledToast": "Download cancelled: {modelName} — {reason}",
   "@localModelsDownloadCancelledToast": {
     "placeholders": {
-      "modelName": { "type": "String" },
-      "reason": { "type": "String" }
+      "modelName": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
     }
   },
   "localModelsDownloadErrorUnknown": "Unknown error",
@@ -424,13 +431,20 @@
   "localModelsImportSuccess": "Model imported successfully",
   "localModelsImportFailed": "Import failed: {reason}",
   "@localModelsImportFailed": {
-    "placeholders": { "reason": { "type": "String" } }
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
   },
   "localModelsImporting": "Importing {modelId}...",
   "@localModelsImporting": {
-    "placeholders": { "modelId": { "type": "String" } }
+    "placeholders": {
+      "modelId": {
+        "type": "String"
+      }
+    }
   },
-
   "alarmSaved": "Alarm settings saved",
   "alarmRingtoneSource": "Ringtone Source",
   "alarmSystemDefault": "System Default",
@@ -445,7 +459,6 @@
   "alarmEnterHttpsUrl": "Please enter an HTTP(S) MP3 URL",
   "alarmLocalFile": "Local File",
   "alarmSelectMp3": "Select MP3 File",
-
   "authorizePageTitle": "App Permission Authorization",
   "authorizeReceiveNotifications": "Receive message notifications",
   "authorizeNotificationsDesc": "Enable this to get task progress updates in time",
@@ -453,7 +466,6 @@
   "companionPermissionDesc": "After revoking authorization, Omnibot will still be displayed but task execution content will be hidden",
   "companionPermissionNote": "Permission Notes",
   "companionAuthorizedApps": "Authorized Apps",
-
   "storageUsageTitle": "Storage Usage",
   "storageUsageSubtitle": "View storage usage details and clean up by category",
   "storageAnalyzeFailed": "Storage analysis failed, please try again",
@@ -489,7 +501,6 @@
   "storageSystemStats": "System statistics (closer to system settings)",
   "storageDirectoryScan": "Directory scan estimate",
   "storageAdditionalInfo": "Additional Info",
-
   "storageCatAppBinary": "App Binary",
   "storageCatAppBinaryDesc": "Installed app files (APK/AAB split)",
   "storageCatCache": "Cache",
@@ -539,14 +550,12 @@
   "storageCatLegacyWorkspaceHint": "Confirm it is no longer needed before cleanup",
   "storageCatOtherUserData": "Other Data",
   "storageCatOtherUserDataDesc": "Data not matched to any category rule",
-
   "storageStrategySafeQuick": "Safe Quick Cleanup",
   "storageStrategySafeQuickDesc": "Prioritize cleaning low-risk cache and temporary artifacts",
   "storageStrategyBalanceDeep": "Balanced Deep Cleanup",
   "storageStrategyBalanceDeepDesc": "Free more space while keeping core models and user files",
   "storageStrategyFree1gb": "Target Free 1GB",
   "storageStrategyFree1gbDesc": "Clean in high-value order, aiming for 1GB release target",
-
   "storageHintConversation": "If history is not released, re-enter the page and run \"Reanalyze\"",
   "storageHintLocalModels": "After models are cleaned, you can re-download from the Local Model Service page",
   "storageHintTerminal": "After terminal runtime is cleaned, you can re-initialize from the Alpine Environment page",
@@ -557,7 +566,6 @@
   "storageCleanPartialFailedGeneric": "Some files failed to clean up, please try again later",
   "storageTrendVsLast": "Vs last analysis: total {total}, cleanable {cleanable}",
   "storageLastAnalyzed": "Last analyzed: {time}",
-
   "aboutDescription": "Omnibot is an AI assistant app centered on\nintelligent conversation, using semantic understanding\nand continuous learning to help with information\nprocessing, decision support, and daily management.",
   "aboutBetaProgramTitle": "Join beta testing",
   "aboutBetaProgramDescription": "Get faster four-part beta updates.",
@@ -571,7 +579,6 @@
   "aboutApkSourceOptionGithubDescription": "Official release source",
   "aboutApkSourceSwitchFailed": "Failed to switch APK download source",
   "aboutUpdateHintDefault": "Check for updates to get the latest version",
-
   "workspaceMemoryLoadFailed": "Failed to load workspace memory config",
   "workspaceSoulSaved": "SOUL.md saved",
   "workspaceSoulSaveFailed": "Failed to save SOUL.md",
@@ -597,7 +604,6 @@
   "workspaceSoulMd": "SOUL.md (Agent Soul)",
   "workspaceChatMd": "CHAT.md (Chat-only system prompt)",
   "workspaceMemoryMd": "MEMORY.md (Long-term Memory)",
-
   "alpineNodeJs": "Node.js Runtime",
   "alpineNpm": "Node.js Package Manager",
   "alpineGit": "Git Version Control",
@@ -654,9 +660,7 @@
   "alpineAiAgent": "AI Agent",
   "alpineEnvConfig": "Environment Config",
   "alpineWorkDirValue": "Working directory: {dir}",
-
   "workspaceEmbeddingRetrieval": "Memory Embedding Retrieval",
-
   "chatHistoryStartConversation": "Start a conversation",
   "homeDrawerSearching": "Searching conversations...",
   "homeDrawerNoResults": "No matching conversations found",
@@ -706,7 +710,6 @@
   "homeDrawerLateNightSub": "Recharge for tomorrow",
   "homeDrawerLateNightGreeting2": "It is late",
   "homeDrawerLateNightSub2": "Say good night to today",
-
   "omniflowPanelTitle": "OmniFlow Trajectory Panel",
   "omniflowPanelDesc": "Manage OmniFlow Functions: view, execute, or delete Function assets.",
   "omniflowFunctionList": "Function List",
@@ -751,7 +754,6 @@
   "omniflowClearFailed": "Clear failed",
   "omniflowProviderActionSuccess": "provider {action} success",
   "omniflowProviderActionFailed": "provider {action} failed",
-
   "functionLibraryTitle": "Functions",
   "functionLibrarySearchHint": "Search functions or apps",
   "functionLibraryEmpty": "No learned functions yet",
@@ -831,7 +833,6 @@
   "functionLibraryDetailNoBlocks": "No internal function blocks are available",
   "functionLibraryDetailNoBundle": "No bundle function is available",
   "functionLibraryDetailFunctionSchema": "Function Schema",
-
   "executionCompileHit": "Reuse Skill",
   "executionCompileHitWithFunction": "Reuse Skill · {functionId}",
   "executionVlmExecution": "VLM Execution",
@@ -850,7 +851,6 @@
   "executionStepLabel": "{count} steps",
   "executionSuccess": "Success",
   "executionFailed": "Failed",
-
   "memorySaveAsSkillTitle": "Save as Function",
   "memorySaveAsSkillContent": "Save this execution as a reusable function?\n\nYou can view and manage it in the Function Library.",
   "memorySavingProgress": "Saving function...",
@@ -876,7 +876,6 @@
     }
   },
   "memoryRunIdMissing": "Execution record ID missing, cannot save",
-
   "omniflowAssetSuccess": "Success",
   "omniflowAssetFailed": "Failed",
   "omniflowAssetRunning": "Running",
@@ -966,7 +965,6 @@
     }
   },
   "omniflowAssetNoSteps": "No steps to display",
-
   "functionLibraryEnrich": "Upgrade",
   "functionLibraryEnrichTitle": "Upgrade Function",
   "functionLibraryEnrichConfirm": "Use AI to enrich this function's semantic info?\n\nWill auto-generate: description, parameter slots, pre/post conditions, etc.",
@@ -994,7 +992,6 @@
     }
   },
   "functionLibrarySplitFailed": "Split failed",
-
   "actionTypeOpenApp": "Open App",
   "actionTypeClick": "Click",
   "actionTypeClickNode": "Click Node",
@@ -1006,7 +1003,6 @@
   "actionTypeFinished": "Finished",
   "actionTypeCallFunction": "Call Function",
   "actionTypeDefault": "Action",
-
   "omniflowProviderUpdate": "Provider Update",
   "omniflowConnectionMode": "Connection Mode",
   "omniflowConnectionModeBridge": "Bridge Connection",
@@ -1051,7 +1047,11 @@
   "runLogTimelineViewSteps": "View Steps",
   "runLogTimelineStepCount": "{count} steps",
   "@runLogTimelineStepCount": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "runLogTimelineLoadFailed": "Failed to load steps",
   "runLogTimelineEmpty": "No step data",
@@ -1103,13 +1103,9 @@
   },
   "workbenchSubtitle": "A native OOB project example that registers Project Tools, persists state, and renders inside the Workbench.",
   "workbenchVibeSubtitle": "Prompt-built native frontend, Project Tools, and workspace files stay connected inside OOB.",
-  "workbenchGeneratedTodoSubtitle": "Todo Log (TODO) is one business frontend in this Project. It is separate from the Project control surface and calls the registered Project Tools directly.",
-  "workbenchMockProjectName": "Todo Log Mock",
-  "workbenchTemplateProjectName": "Todo Log Workbench",
-  "workbenchNativeUi": "OOB native UI",
+  "workbenchProjectDisplay": "Project Display",
   "workbenchProjectSection": "Project",
   "workbenchProjectIdLabel": "Project ID",
-  "workbenchTemplateIdLabel": "Template ID",
   "workbenchRouteLabel": "Route",
   "workbenchSpacePathLabel": "Space path",
   "workbenchPageIdsLabel": "Pages",
@@ -1121,7 +1117,6 @@
   "workbenchLogFilePath": "Tool log",
   "workbenchBackendTools": "Backend tools",
   "workbenchFrontendBinding": "Frontend binding",
-  "workbenchTodoLog": "Todo log",
   "workbenchCallApi": "Call tool",
   "workbenchGeneratedFrontend": "Generated frontend",
   "workbenchGeneratedFrontendSubtitle": "Open the OOB-native preview that a prompt-generated page should target. It uses the same Project Tools and persistent data as the AI layer.",
@@ -1140,132 +1135,79 @@
       }
     }
   },
-  "workbenchToolAddTodoTitle": "Add todo",
-  "workbenchToolAddTodoDesc": "Creates a todo item through the registered native Project Tool.",
-  "workbenchToolFinishTodoTitle": "Archive todo",
-  "workbenchToolFinishTodoDesc": "Archives a todo item through the registered native Project Tool.",
-  "workbenchFlowAddTodo": "Page input -> todo.add -> todo list",
-  "workbenchFlowFinishTodo": "Finish button -> todo.finish -> completed list",
-  "workbenchAddTodoHint": "Add a todo",
-  "workbenchAddTodo": "Add todo",
-  "workbenchTodoEmpty": "No todo yet",
-  "workbenchTodoOpen": "Open",
-  "workbenchTodoFinished": "Archived",
-  "workbenchFinishTodo": "Archive todo",
-  "workbenchTodoAdded": "Todo added",
-  "workbenchTodoFinishedToast": "Todo archived",
-  "workbenchTodoInputRequired": "Enter a todo first",
-  "workbenchQuickCaptureTitle": "Quick Capture Inbox",
-  "workbenchQuickCaptureSubtitle": "Drop text, links, share snippets, or screenshots here, then sort them into todos, summaries, link cards, or later-read items.",
-  "workbenchQuickCapturePageCapture": "Capture",
-  "workbenchQuickCapturePageInbox": "Inbox",
-  "workbenchQuickCaptureInboxSubtitle": "{count} active items.",
-  "@workbenchQuickCaptureInboxSubtitle": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "workbenchQuickCaptureArchiveSubtitle": "{count} archived items.",
-  "@workbenchQuickCaptureArchiveSubtitle": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "workbenchQuickCaptureInputHint": "Paste a note, link, or share text",
-  "workbenchQuickCaptureAction": "Capture",
-  "workbenchQuickCaptureCaptured": "Captured",
-  "workbenchQuickCaptureInputRequired": "Enter text or a link first",
-  "workbenchQuickCaptureEmpty": "No captures yet",
-  "workbenchQuickCaptureFilterAll": "Inbox",
-  "workbenchQuickCaptureTypeTodo": "Todo",
-  "workbenchQuickCaptureTypeSummary": "Summary",
-  "workbenchQuickCaptureTypeLink": "Link",
-  "workbenchQuickCaptureTypeLater": "Later",
-  "workbenchQuickCaptureArchived": "Archived",
-  "workbenchQuickCaptureArchive": "Archive",
-  "workbenchQuickCapturePromoteToTodo": "Turn into todo",
-  "workbenchQuickCaptureSummarize": "Summarize",
-  "workbenchQuickCaptureArchivedToast": "Capture archived",
-  "workbenchQuickCapturePromotedToast": "Moved to todo",
-  "workbenchQuickCaptureSummarizedToast": "Summary refreshed",
-  "workbenchSchemaDefaultEntity": "Item",
-  "workbenchSchemaCreateTitle": "Create {entity}",
-  "@workbenchSchemaCreateTitle": {
+  "workbenchProjectDefaultEntity": "Item",
+  "workbenchProjectCreateTitle": "Create {entity}",
+  "@workbenchProjectCreateTitle": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaInputHint": "Enter {entity} name",
-  "@workbenchSchemaInputHint": {
+  "workbenchProjectInputHint": "Enter {entity} name",
+  "@workbenchProjectInputHint": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaItemsTitle": "{entity} list",
-  "@workbenchSchemaItemsTitle": {
+  "workbenchProjectItemsTitle": "{entity} list",
+  "@workbenchProjectItemsTitle": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaEmpty": "No {entity} yet",
-  "@workbenchSchemaEmpty": {
+  "workbenchProjectEmpty": "No {entity} yet",
+  "@workbenchProjectEmpty": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaActive": "Active",
-  "workbenchSchemaArchived": "Archived",
-  "workbenchSchemaEditAction": "Edit",
-  "workbenchSchemaEditTitle": "Edit item",
-  "workbenchSchemaArchiveAction": "Archive",
-  "workbenchSchemaMissingCreateApi": "This Project has no create tool",
-  "workbenchSchemaMissingUpdateApi": "This Project has no edit tool",
-  "workbenchSchemaMissingArchiveApi": "This Project has no archive tool",
-  "workbenchSchemaInputRequired": "Enter {entity} first",
-  "@workbenchSchemaInputRequired": {
+  "workbenchProjectActiveItems": "Active",
+  "workbenchProjectArchivedItems": "Archived",
+  "workbenchProjectEditAction": "Edit",
+  "workbenchProjectEditTitle": "Edit item",
+  "workbenchProjectArchiveAction": "Archive",
+  "workbenchProjectMissingCreateApi": "This Project has no create tool",
+  "workbenchProjectMissingUpdateApi": "This Project has no edit tool",
+  "workbenchProjectMissingArchiveApi": "This Project has no archive tool",
+  "workbenchProjectInputRequired": "Enter {entity} first",
+  "@workbenchProjectInputRequired": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaItemCreated": "{entity} created",
-  "@workbenchSchemaItemCreated": {
+  "workbenchProjectItemCreated": "{entity} created",
+  "@workbenchProjectItemCreated": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaItemUpdated": "{entity} saved",
-  "@workbenchSchemaItemUpdated": {
+  "workbenchProjectItemUpdated": "{entity} saved",
+  "@workbenchProjectItemUpdated": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchSchemaItemArchived": "{entity} archived",
-  "@workbenchSchemaItemArchived": {
+  "workbenchProjectItemArchived": "{entity} archived",
+  "@workbenchProjectItemArchived": {
     "placeholders": {
       "entity": {
         "type": "String"
       }
     }
   },
-  "workbenchNoOpenTodo": "No open todo to finish",
   "workbenchLoadFailed": "Load failed",
   "workbenchUnknownTool": "Workbench tool failed",
   "workbenchStatusOpen": "Waiting",
@@ -1473,10 +1415,8 @@
       }
     }
   },
-  "workbenchProjectSummaryQuickCapture": "Capture text, links, shares, and screenshots into todos, summaries, link cards, or later-read items.",
-  "workbenchProjectSummaryTodo": "Track todos and archive them when they are done.",
-  "workbenchProjectSummarySchema": "Manage {entityName} records with saved status and quick actions.",
-  "@workbenchProjectSummarySchema": {
+  "workbenchProjectSummaryGeneric": "Manage {entityName} records with saved status and quick actions.",
+  "@workbenchProjectSummaryGeneric": {
     "placeholders": {
       "entityName": {
         "type": "String"
@@ -1491,30 +1431,8 @@
       }
     }
   },
-  "workbenchTodoCount": "{openCount} open / {finishedCount} finished",
-  "@workbenchTodoCount": {
-    "placeholders": {
-      "openCount": {
-        "type": "int"
-      },
-      "finishedCount": {
-        "type": "int"
-      }
-    }
-  },
-  "workbenchQuickCaptureCount": "{activeCount} active / {archivedCount} archived",
-  "@workbenchQuickCaptureCount": {
-    "placeholders": {
-      "activeCount": {
-        "type": "int"
-      },
-      "archivedCount": {
-        "type": "int"
-      }
-    }
-  },
-  "workbenchSchemaItemCount": "{activeCount} active / {archivedCount} archived",
-  "@workbenchSchemaItemCount": {
+  "workbenchProjectItemCount": "{activeCount} active / {archivedCount} archived",
+  "@workbenchProjectItemCount": {
     "placeholders": {
       "activeCount": {
         "type": "int"
