@@ -4773,6 +4773,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
                 suspend fun finalizeThinkingCardIfNeeded(publish: Boolean = true) {
                     val entryId = activeThinkingEntryId ?: return
+                    if (latestThinkingContent.isBlank()) return
                     upsertThinkingCard(
                         entryId = entryId,
                         roundIndex = thinkingRound.coerceAtLeast(1),
@@ -5042,16 +5043,6 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         activeThinkingEntryId = entryId
                         thinkingCardStartTimes.putIfAbsent(entryId, startTime)
                         markAssistantRoundBoundary()
-                        upsertThinkingCard(
-                            entryId = entryId,
-                            roundIndex = thinkingRound,
-                            thinkingContent = if (startsNewSegment) "" else latestThinkingContent,
-                            isLoading = true,
-                            stage = 1,
-                            createdAt = startTime,
-                            streamKind = "thinking_started",
-                            publish = false
-                        )
                         if (startsNewSegment) {
                             sendStreamEvent(
                                 kind = "thinking_started",
@@ -5065,6 +5056,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
                     override suspend fun onThinkingUpdate(thinking: String) {
                         val normalizedThinking = AgentTextSanitizer.sanitizeUtf16(thinking).trim()
+                        if (normalizedThinking.isBlank()) return
                         if (activeThinkingEntryId == null || shouldStartNewThinkingSegment) {
                             thinkingRound = (thinkingRound + 1).coerceAtLeast(1)
                             val generated = resolveThinkingEntryId(thinkingRound)
@@ -5085,6 +5077,17 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         }
                         val entryId = activeThinkingEntryId
                         latestThinkingContent = normalizedThinking
+                        entryId?.let { thinkingEntryId ->
+                            upsertThinkingCard(
+                                entryId = thinkingEntryId,
+                                roundIndex = thinkingRound.coerceAtLeast(1),
+                                thinkingContent = normalizedThinking,
+                                isLoading = true,
+                                stage = 1,
+                                streamKind = "thinking_snapshot",
+                                publish = false
+                            )
+                        }
                         sendStreamEvent(
                             kind = "thinking_snapshot",
                             entryId = entryId,
@@ -5106,7 +5109,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         val roundIndex = currentToolRoundIndex()
                         pushToolValue(activeToolEntryIds, toolName, entryId)
                         agentRunContext.bindActiveToolCardId(entryId)
-                        activeThinkingEntryId?.let { thinkingEntryId ->
+                        activeThinkingEntryId?.takeIf { latestThinkingContent.isNotBlank() }?.let { thinkingEntryId ->
                             upsertThinkingCard(
                                 entryId = thinkingEntryId,
                                 roundIndex = thinkingRound.coerceAtLeast(roundIndex),
@@ -5222,7 +5225,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             "$taskId-tool-${++toolSequence}"
                         }
                         val roundIndex = currentToolRoundIndex()
-                        activeThinkingEntryId?.let { thinkingEntryId ->
+                        activeThinkingEntryId?.takeIf { latestThinkingContent.isNotBlank() }?.let { thinkingEntryId ->
                             upsertThinkingCard(
                                 entryId = thinkingEntryId,
                                 roundIndex = thinkingRound.coerceAtLeast(roundIndex),

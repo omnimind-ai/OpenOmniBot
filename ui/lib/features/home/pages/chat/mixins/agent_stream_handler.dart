@@ -201,7 +201,8 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
   }) {
     final cardId = (event.entryId ?? '').trim();
     if (cardId.isEmpty) return;
-    if (event.thinking.isNotEmpty) {
+    final hasThinkingContent = event.thinking.trim().isNotEmpty;
+    if (hasThinkingContent) {
       deepThinkingContent = event.thinking;
     }
     setState(() {
@@ -211,13 +212,13 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         updateThinkingCardForAgent(
           event.taskId,
           cardId: cardId,
-          thinkingContent: event.thinking.isNotEmpty ? event.thinking : null,
+          thinkingContent: hasThinkingContent ? event.thinking : null,
           isLoading: true,
           stage: event.stage <= 0 ? ThinkingStage.thinking.value : event.stage,
           streamMeta: _streamMetaFromEvent(event),
           lockCompleted: false,
         );
-      } else {
+      } else if (hasThinkingContent) {
         createThinkingCardForAgent(
           event.taskId,
           cardId: cardId,

@@ -1647,7 +1647,8 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     final previousThinking =
         runtime.currentThinkingMessages[event.taskId] ?? '';
     var nextThinking = previousThinking;
-    if (event.thinking.isNotEmpty) {
+    final hasThinkingContent = event.thinking.trim().isNotEmpty;
+    if (hasThinkingContent) {
       nextThinking = mergeAgentTextSnapshot(previousThinking, event.thinking);
       runtime.currentThinkingMessages[event.taskId] = nextThinking;
       runtime.deepThinkingContent = nextThinking;
@@ -1657,6 +1658,10 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       event.taskId,
       cardId: completedThinkingCardId,
     );
+    if (!hasThinkingContent && nextThinking.trim().isEmpty) {
+      notifyListeners();
+      return;
+    }
     final exists = runtime.messages.any((message) => message.id == cardId);
     var didUpdateVisibleCard = false;
     if (exists) {
