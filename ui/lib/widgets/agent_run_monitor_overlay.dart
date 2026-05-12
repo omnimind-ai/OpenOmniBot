@@ -3,6 +3,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:ui/core/router/go_router_manager.dart';
+import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
+import 'package:ui/features/home/pages/chat/widgets/chat_tool_activity_strip.dart'
+    show ToolActivityRow;
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/floating_overlay_service.dart';
@@ -116,7 +119,13 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
 
   void _handleAgentEvent(AgentStreamEvent event) {
     if (!_floatingOverlayEnabled) return;
-    _latestEvents[event.taskId] = _AgentRunEventSummary.fromEvent(event);
+    if (mounted) {
+      setState(() {
+        _latestEvents[event.taskId] = _AgentRunEventSummary.fromEvent(event);
+      });
+    } else {
+      _latestEvents[event.taskId] = _AgentRunEventSummary.fromEvent(event);
+    }
     unawaited(_refresh());
   }
 
@@ -127,10 +136,17 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
     try {
       final rows = await AssistsMessageService.listActiveAgentRuns();
       if (!mounted) return;
+      final snapshots = rows
+          .map(_AgentRunSnapshot.fromMap)
+          .toList(growable: false);
+      final activeTaskIds = snapshots.map((run) => run.taskId).toSet();
       setState(() {
         _runs
           ..clear()
-          ..addAll(rows.map(_AgentRunSnapshot.fromMap));
+          ..addAll(snapshots);
+        _latestEvents.removeWhere(
+          (taskId, _) => !activeTaskIds.contains(taskId),
+        );
       });
     } finally {
       _refreshing = false;
@@ -544,70 +560,34 @@ class _AgentRunCompactRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
-    final summary = latestEvent?.label ?? run.compactSummary;
+    final displayCard = _agentRunToolActivityCard(run, latestEvent);
     return Container(
       height: 37,
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
         color: palette.surfaceSecondary.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: palette.borderSubtle),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              color: latestEvent?.isError == true
-                  ? const Color(0xFFB25518)
-                  : palette.accentPrimary,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  run.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.textPrimary,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w900,
-                    height: 1,
-                  ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Center(
+          child: ToolActivityRow(
+            card: displayCard,
+            trailing: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                run.elapsedCompactLabel,
+                maxLines: 1,
+                style: TextStyle(
+                  color: palette.textTertiary,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  summary,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.textSecondary,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-          const SizedBox(width: 8),
-          Text(
-            run.elapsedLabel,
-            style: TextStyle(
-              color: palette.textTertiary,
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -888,7 +868,8 @@ class _AgentRunTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
     final accent = palette.accentPrimary;
-    final toolText = run.toolText;
+    final activityCard = _agentRunToolActivityCard(run, latestEvent);
+    final activityPreview = resolveAgentToolPreview(activityCard);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -927,57 +908,31 @@ class _AgentRunTile extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              Text(
-                toolText,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: palette.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  height: 1.25,
+              Container(
+                decoration: BoxDecoration(
+                  color: palette.surfacePrimary.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(color: palette.borderSubtle),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(9),
+                  child: ToolActivityRow(card: activityCard),
                 ),
               ),
-              if (latestEvent != null) ...[
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: palette.surfacePrimary.withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: palette.borderSubtle),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        latestEvent!.icon,
-                        size: 15,
-                        color: latestEvent!.isError
-                            ? const Color(0xFFB25518)
-                            : accent,
-                      ),
-                      const SizedBox(width: 7),
-                      Expanded(
-                        child: Text(
-                          latestEvent!.label,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: latestEvent!.isError
-                                ? const Color(0xFFB25518)
-                                : palette.textSecondary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            height: 1.25,
-                          ),
-                        ),
-                      ),
-                    ],
+              if (activityPreview.isNotEmpty) ...[
+                const SizedBox(height: 7),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Text(
+                    activityPreview,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                    ),
                   ),
                 ),
               ],
@@ -1116,11 +1071,13 @@ class _AgentRunEventSummary {
     required this.label,
     required this.icon,
     this.isError = false,
+    this.toolCard,
   });
 
   final String label;
   final IconData icon;
   final bool isError;
+  final Map<String, dynamic>? toolCard;
 
   factory _AgentRunEventSummary.fromEvent(AgentStreamEvent event) {
     final raw = event.raw;
@@ -1134,6 +1091,7 @@ class _AgentRunEventSummary {
       (raw['inputPreview'] ?? '').toString(),
       (raw['resultPreview'] ?? '').toString(),
     ]);
+    final toolCard = _toolCardFromEvent(event, message);
     return switch (event.kind) {
       AgentStreamEventKind.thinkingStarted => const _AgentRunEventSummary(
         label: '正在思考',
@@ -1150,16 +1108,19 @@ class _AgentRunEventSummary {
       AgentStreamEventKind.toolStarted => _AgentRunEventSummary(
         label: toolName.isEmpty ? '开始调用工具' : '调用 $toolName',
         icon: Icons.build_circle_outlined,
+        toolCard: toolCard,
       ),
       AgentStreamEventKind.toolProgress => _AgentRunEventSummary(
         label: message.isEmpty
             ? (toolName.isEmpty ? '工具执行中' : '$toolName 执行中')
             : message,
         icon: Icons.sync_rounded,
+        toolCard: toolCard,
       ),
       AgentStreamEventKind.toolCompleted => _AgentRunEventSummary(
         label: toolName.isEmpty ? '工具完成' : '$toolName 完成',
         icon: Icons.check_circle_outline_rounded,
+        toolCard: toolCard,
       ),
       AgentStreamEventKind.permissionRequired => const _AgentRunEventSummary(
         label: '等待权限确认',
@@ -1181,6 +1142,33 @@ class _AgentRunEventSummary {
     };
   }
 
+  static Map<String, dynamic>? _toolCardFromEvent(
+    AgentStreamEvent event,
+    String message,
+  ) {
+    final raw = <String, dynamic>{...event.raw};
+    if (message.isNotEmpty) {
+      raw.putIfAbsent('summary', () => message);
+      raw.putIfAbsent('progress', () => message);
+    }
+    return switch (event.kind) {
+      AgentStreamEventKind.toolStarted => buildAgentToolActivityCard(
+        raw,
+        taskId: event.taskId,
+      ),
+      AgentStreamEventKind.toolProgress => buildAgentToolActivityCard(
+        raw,
+        taskId: event.taskId,
+      ),
+      AgentStreamEventKind.toolCompleted => buildAgentToolActivityCard(
+        raw,
+        taskId: event.taskId,
+        defaultStatus: event.success ? 'success' : 'error',
+      ),
+      _ => null,
+    };
+  }
+
   static String _firstNonEmpty(List<String> values) {
     for (final value in values) {
       final trimmed = value.trim();
@@ -1190,6 +1178,28 @@ class _AgentRunEventSummary {
     }
     return '';
   }
+}
+
+Map<String, dynamic> _agentRunToolActivityCard(
+  _AgentRunSnapshot run,
+  _AgentRunEventSummary? latestEvent,
+) {
+  final card = latestEvent?.toolCard ?? run.toolActivityCard;
+  if (card != null) {
+    return card;
+  }
+  final summary = latestEvent?.label ?? run.compactSummary;
+  return buildAgentToolActivityCard(
+    {
+      'toolName': run.conversationMode,
+      'displayName': run.conversationModeLabel,
+      'toolTitle': summary,
+      'summary': summary,
+      'toolType': run.conversationMode == 'subagent' ? 'subagent' : 'builtin',
+    },
+    taskId: run.taskId,
+    defaultStatus: latestEvent?.isError == true ? 'error' : 'running',
+  );
 }
 
 class _AgentRunSnapshot {
@@ -1202,6 +1212,7 @@ class _AgentRunSnapshot {
     required this.toolName,
     required this.toolSummary,
     required this.userMessage,
+    required this.toolActivityCard,
   });
 
   final String taskId;
@@ -1212,6 +1223,7 @@ class _AgentRunSnapshot {
   final String toolName;
   final String toolSummary;
   final String userMessage;
+  final Map<String, dynamic>? toolActivityCard;
 
   factory _AgentRunSnapshot.fromMap(Map<String, dynamic> map) {
     final activeTool = _asStringMap(map['activeTool']);
@@ -1224,6 +1236,7 @@ class _AgentRunSnapshot {
       toolName: (activeTool['toolName'] ?? '').toString(),
       toolSummary: (activeTool['summary'] ?? '').toString(),
       userMessage: (map['userMessage'] ?? '').toString(),
+      toolActivityCard: buildAgentToolActivityCardFromActiveRun(map),
     );
   }
 
@@ -1276,6 +1289,16 @@ class _AgentRunSnapshot {
     final hours = minutes ~/ 60;
     final restMinutes = minutes % 60;
     return '${hours}h ${restMinutes}m';
+  }
+
+  String get elapsedCompactLabel {
+    final seconds = (elapsedMillis / 1000).floor();
+    if (seconds < 60) return '${seconds}s';
+    final minutes = seconds ~/ 60;
+    if (minutes < 60) return '${minutes}m';
+    final hours = minutes ~/ 60;
+    if (hours < 24) return '${hours}h';
+    return '${hours ~/ 24}d';
   }
 
   static int? _asInt(dynamic raw) {

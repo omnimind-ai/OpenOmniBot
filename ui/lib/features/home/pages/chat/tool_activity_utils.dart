@@ -193,9 +193,103 @@ Map<String, dynamic>? resolveActiveAgentToolCard(
   return cards.first;
 }
 
+Map<String, dynamic>? buildAgentToolActivityCardFromActiveRun(
+  Map<String, dynamic> run,
+) {
+  final activeTool = _asStringKeyMap(run['activeTool']);
+  if (activeTool.isEmpty) {
+    return null;
+  }
+  final extras = _asStringKeyMap(activeTool['extras']);
+  final raw = <String, dynamic>{...extras};
+  for (final key in const [
+    'toolName',
+    'toolCallId',
+    'cardId',
+    'summary',
+    'manualStopRequested',
+    'completed',
+  ]) {
+    final value = activeTool[key];
+    if (value != null) {
+      raw[key] = value;
+    }
+  }
+  final manualStopRequested = activeTool['manualStopRequested'] == true;
+  final completed = activeTool['completed'] == true;
+  return buildAgentToolActivityCard(
+    raw,
+    taskId: (run['taskId'] ?? '').toString(),
+    defaultStatus: manualStopRequested
+        ? 'interrupted'
+        : completed
+        ? 'success'
+        : 'running',
+  );
+}
+
+Map<String, dynamic> buildAgentToolActivityCard(
+  Map<dynamic, dynamic> raw, {
+  String? taskId,
+  String defaultStatus = 'running',
+}) {
+  final card = raw.map((key, value) => MapEntry(key.toString(), value));
+  card['type'] = kAgentToolSummaryCardType;
+
+  final normalizedTaskId = taskId?.trim() ?? '';
+  if (normalizedTaskId.isNotEmpty) {
+    card['taskId'] = normalizedTaskId;
+  } else {
+    final existingTaskId = (card['taskId'] ?? '').toString().trim();
+    if (existingTaskId.isNotEmpty) {
+      card['taskId'] = existingTaskId;
+    }
+  }
+
+  final toolName = (card['toolName'] ?? card['name'] ?? '').toString().trim();
+  if (toolName.isNotEmpty) {
+    card['toolName'] = toolName;
+  }
+
+  final status = (card['status'] ?? '').toString().trim();
+  if (status.isEmpty) {
+    card['status'] = defaultStatus;
+  }
+
+  final cardId = (card['cardId'] ?? '').toString().trim();
+  if (cardId.isEmpty) {
+    final toolCallId = (card['toolCallId'] ?? '').toString().trim();
+    if (toolCallId.isNotEmpty) {
+      card['cardId'] = toolCallId;
+    }
+  }
+
+  final progress = (card['progress'] ?? '').toString().trim();
+  final summary = (card['summary'] ?? '').toString().trim();
+  if (progress.isEmpty && summary.isNotEmpty) {
+    card['progress'] = summary;
+  } else if (summary.isEmpty && progress.isNotEmpty) {
+    card['summary'] = progress;
+  }
+
+  final displayName = (card['displayName'] ?? '').toString().trim();
+  if (displayName.isEmpty && toolName.isNotEmpty) {
+    card['displayName'] = toolName;
+  }
+
+  return card;
+}
+
 bool _isAgentToolSummaryMessage(ChatMessageModel message) {
   return (message.cardData?['type'] ?? '').toString() ==
       kAgentToolSummaryCardType;
+}
+
+Map<String, dynamic> _asStringKeyMap(dynamic value) {
+  if (value is! Map) {
+    return const <String, dynamic>{};
+  }
+  return value.map((key, item) => MapEntry(key.toString(), item));
 }
 
 String? _resolveSnapshotTaskId(List<ChatMessageModel> messages) {
