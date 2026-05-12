@@ -3,9 +3,7 @@ package cn.com.omnimind.bot.agent
 import cn.com.omnimind.assists.controller.http.HttpController
 import cn.com.omnimind.baselib.llm.ChatCompletionRequest
 import cn.com.omnimind.baselib.llm.ChatCompletionTurn
-import cn.com.omnimind.baselib.llm.DeepSeekProvider
 import cn.com.omnimind.baselib.llm.LocalModelProviderBridge
-import cn.com.omnimind.baselib.llm.ModelProviderConfigStore
 import cn.com.omnimind.baselib.llm.ReasoningStreamUpdatePolicy
 import cn.com.omnimind.baselib.util.OmniLog
 import kotlinx.coroutines.CompletableDeferred
@@ -153,13 +151,20 @@ class HttpAgentLlmClient(
     ): ChatCompletionTurn {
         val streamDone = CompletableDeferred<ChatCompletionTurn>()
         val completed = AtomicBoolean(false)
+        val routeInfo = HttpController.resolveChatCompletionRouteInfo(
+            modelOrScene = model,
+            explicitApiBase = modelOverride?.apiBase,
+            explicitApiKey = modelOverride?.apiKey,
+            explicitModel = modelOverride?.modelId,
+            explicitProtocolType = modelOverride?.protocolType
+        )
         val accumulator = AgentLlmStreamAccumulator(
             json = json,
             preferInlineThinkTags = LocalModelProviderBridge.isBuiltinLocalProvider(
                 modelOverride?.providerProfileId,
                 modelOverride?.apiBase
             ),
-            includeReasoningInAssistantMessage = isOfficialDeepSeekTarget()
+            includeReasoningInAssistantMessage = routeInfo?.requiresReasoningEcho == true
         )
         var lastReasoning = ""
         var lastReasoningEmitLength = 0
@@ -265,6 +270,7 @@ class HttpAgentLlmClient(
             if (!completed.compareAndSet(false, true)) return
             runCatching {
                 val turn = accumulator.buildTurn()
+                enforceReasoningEchoIfRequired(turn, routeInfo)
                 emitReasoning(force = true)
                 emitContent()
                 turn
@@ -340,6 +346,25 @@ class HttpAgentLlmClient(
         }
     }
 
+    private fun enforceReasoningEchoIfRequired(
+        turn: ChatCompletionTurn,
+        routeInfo: HttpController.ChatCompletionRouteInfo
+    ) {
+        if (!routeInfo.requiresReasoningEcho) {
+            return
+        }
+        if (turn.reasoning.isBlank()) {
+            return
+        }
+        if (!turn.message.reasoningContent.isNullOrBlank()) {
+            return
+        }
+        throw IllegalStateException(
+            "assistant turn is missing reasoning_content for route=${routeInfo.resolvedModel} " +
+                "protocol=${routeInfo.protocolType} despite non-empty reasoning output"
+        )
+    }
+
     private fun buildRequestVariants(request: ChatCompletionRequest): List<StreamRequestVariant> {
         val variants = mutableListOf<StreamRequestVariant>()
         val seenPayloads = LinkedHashSet<String>()
@@ -379,21 +404,6 @@ class HttpAgentLlmClient(
             )
         }
         return variants
-    }
-
-    private fun isOfficialDeepSeekTarget(): Boolean {
-        if (modelOverride != null) {
-            return DeepSeekProvider.shouldUseOfficialAdapter(
-                protocolType = modelOverride.protocolType,
-                apiBase = modelOverride.apiBase
-            )
-        }
-        val profile = runCatching { ModelProviderConfigStore.getEditingProfile() }
-            .getOrNull()
-        return DeepSeekProvider.shouldUseOfficialAdapter(
-            protocolType = profile?.protocolType,
-            apiBase = profile?.baseUrl
-        )
     }
 
     private fun toLegacyFunctionCall(toolChoice: JsonElement?): JsonElement? {

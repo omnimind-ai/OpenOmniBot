@@ -77,6 +77,7 @@ class AgentConversationHistoryRepository(
         text: String,
         isError: Boolean = false,
         attachments: List<Map<String, Any?>> = emptyList(),
+        reasoningContent: String? = null,
         streamMeta: Map<String, Any?>? = null,
         createdAt: Long = System.currentTimeMillis()
     ) {
@@ -85,6 +86,7 @@ class AgentConversationHistoryRepository(
             user = 2,
             text = text,
             attachments = attachments,
+            reasoningContent = reasoningContent,
             isError = isError,
             streamMeta = streamMeta,
             createdAt = createdAt

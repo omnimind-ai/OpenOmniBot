@@ -4104,6 +4104,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             entryId = entryId,
                             text = normalizedText,
                             isError = isError,
+                            reasoningContent = latestThinkingContent
+                                .takeIf { it.isNotBlank() }
+                                ?.let(AgentTextSanitizer::sanitizeUtf16),
                             streamMeta = streamMeta(
                                 entryId = entryId,
                                 roundIndex = roundIndex,

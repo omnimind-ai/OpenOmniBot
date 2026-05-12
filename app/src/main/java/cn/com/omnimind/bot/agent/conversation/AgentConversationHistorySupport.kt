@@ -69,11 +69,14 @@ internal object AgentConversationHistorySupport {
         user: Int,
         text: String,
         attachments: List<Map<String, Any?>> = emptyList(),
+        reasoningContent: String? = null,
         isError: Boolean,
         streamMeta: Map<String, Any?>?,
         createdAt: Long
     ): Map<String, Any?> {
         val safeText = AgentTextSanitizer.sanitizeUtf16(text)
+        val safeReasoning = AgentTextSanitizer.sanitizeUtf16(reasoningContent.orEmpty())
+            .takeIf { it.isNotBlank() }
         val historyAttachments = AgentImageAttachmentSupport
             .prepareAttachments(attachments)
             .historyAttachments
@@ -94,6 +97,7 @@ internal object AgentConversationHistorySupport {
             "isError" to isError,
             "isSummarizing" to false,
             "streamMeta" to streamMeta,
+            "reasoning_content" to safeReasoning,
             "createAt" to Instant.ofEpochMilli(createdAt).toString()
         ).filterValues { it != null }
     }
@@ -528,10 +532,16 @@ internal object AgentConversationHistorySupport {
         val payload = readMap(entry.payloadJson)
         val content = buildPromptContentFromMessagePayload(payload) ?: return emptyList()
         if (content.isBlankJsonPrimitive()) return emptyList()
+        val reasoningContent = AgentTextSanitizer.sanitizeUtf16(
+            payload["reasoning_content"]?.toString()
+                ?: payload["reasoningContent"]?.toString()
+                ?: ""
+        ).takeIf { it.isNotBlank() }
         return listOf(
             ChatCompletionMessage(
                 role = "assistant",
-                content = content
+                content = content,
+                reasoningContent = reasoningContent
             )
         )
     }
@@ -1390,6 +1400,18 @@ internal object AgentConversationHistorySupport {
             content["text"]?.toString().orEmpty().ifBlank { entry.summary },
             MAX_STORAGE_MESSAGE_TEXT_CHARS
         )
+        val safeReasoningContent = if (
+            entry.entryType == AgentConversationHistoryRepository.ENTRY_TYPE_ASSISTANT_MESSAGE
+        ) {
+            trimText(
+                payload["reasoning_content"]?.toString()
+                    ?: payload["reasoningContent"]?.toString()
+                    ?: "",
+                MAX_STORAGE_MESSAGE_TEXT_CHARS
+            ).takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
         val safeStreamMeta = compactDisplayStreamMeta(payload["streamMeta"])
         val safeAttachments = compactDisplayList(content["attachments"])
         fun buildPayload(attachments: List<Map<String, Any?>>): Map<String, Any?> {
@@ -1402,6 +1424,7 @@ internal object AgentConversationHistorySupport {
                 },
                 text = safeText,
                 attachments = attachments,
+                reasoningContent = safeReasoningContent,
                 isError = parseBoolean(
                     payload["isError"],
                     default = entry.status == AgentConversationHistoryRepository.STATUS_ERROR

@@ -60,6 +60,20 @@ object HttpController {
     private const val ANTHROPIC_MAX_CACHE_BREAKPOINTS = 4
     private const val LOCAL_BACKEND_MAX_COMPLETION_TOKENS = 4096
 
+    data class ChatCompletionRouteInfo(
+        val requestedModel: String,
+        val resolvedModel: String,
+        val apiBase: String?,
+        val providerProfileId: String?,
+        val providerProfileName: String?,
+        val routeTag: String?,
+        val bindingApplied: Boolean,
+        val bindingProfileMissing: Boolean,
+        val overrideApplied: Boolean,
+        val protocolType: String = "openai_compatible",
+        val requiresReasoningEcho: Boolean = false
+    )
+
     private data class ResolvedSceneRequest(
         val requestedModel: String,
         val resolvedModel: String,
@@ -94,6 +108,22 @@ object HttpController {
         val code: Int? = null,
         val message: String
     )
+
+    fun resolveChatCompletionRouteInfo(
+        modelOrScene: String,
+        explicitApiBase: String? = null,
+        explicitApiKey: String? = null,
+        explicitModel: String? = null,
+        explicitProtocolType: String? = null
+    ): ChatCompletionRouteInfo {
+        return resolveSceneRequest(
+            modelOrScene = modelOrScene,
+            explicitApiBase = explicitApiBase,
+            explicitApiKey = explicitApiKey,
+            explicitModel = explicitModel,
+            explicitProtocolType = explicitProtocolType
+        ).toRouteInfo()
+    }
 
     private val openClawStreamClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -395,6 +425,25 @@ object HttpController {
         OmniLog.i(
             TAG,
             "scene_profile scene=${profile.sceneId} model=${resolved.resolvedModel} transport=${resolved.effectiveTransport.wireValue} parser=${resolved.responseParser.wireValue} source=${profile.modelSource.wireValue} config_source=${profile.configSource.wireValue} override_group=${profile.overrideGroup.orEmpty()} custom_api_base=${resolved.customApiBaseApplied} binding_applied=${resolved.bindingApplied} binding_profile=${resolved.providerProfileId.orEmpty()} binding_profile_missing=${resolved.bindingProfileMissing} override_applied=${resolved.overrideApplied} override_model=${resolved.overrideModel.orEmpty()}"
+        )
+    }
+
+    private fun ResolvedSceneRequest.toRouteInfo(): ChatCompletionRouteInfo {
+        return ChatCompletionRouteInfo(
+            requestedModel = requestedModel,
+            resolvedModel = resolvedModel,
+            apiBase = apiBase,
+            providerProfileId = providerProfileId,
+            providerProfileName = providerProfileName,
+            routeTag = routeTag,
+            bindingApplied = bindingApplied,
+            bindingProfileMissing = bindingProfileMissing,
+            overrideApplied = overrideApplied,
+            protocolType = protocolType,
+            requiresReasoningEcho = DeepSeekProvider.shouldUseOfficialAdapter(
+                protocolType = protocolType,
+                apiBase = apiBase
+            )
         )
     }
 
