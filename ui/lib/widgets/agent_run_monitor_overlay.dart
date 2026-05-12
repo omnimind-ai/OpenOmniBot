@@ -19,8 +19,12 @@ class AgentRunMonitorOverlay extends StatefulWidget {
 class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
   static const _positionXKey = 'agent_run_monitor_capsule_x';
   static const _positionYKey = 'agent_run_monitor_capsule_y';
-  static const _capsuleHitWidth = 54.0;
-  static const _capsuleHitHeight = 48.0;
+  static const _collapsedKey = 'agent_run_monitor_capsule_collapsed';
+  static const _capsuleHitWidth = 40.0;
+  static const _capsuleHitHeight = 34.0;
+  static const _expandedCapsuleMaxWidth = 320.0;
+  static const _expandedCapsuleMinWidth = 236.0;
+  static const _expandedCapsuleMaxHeight = 244.0;
   static const _edgeMargin = 8.0;
 
   final List<_AgentRunSnapshot> _runs = [];
@@ -30,6 +34,7 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
   Offset? _capsulePosition;
   bool _refreshing = false;
   bool _dragging = false;
+  bool _capsuleCollapsed = true;
   bool _floatingOverlayEnabled = FloatingOverlayService.isEnabled;
 
   @override
@@ -83,6 +88,8 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
       if (x != null && y != null) {
         _capsulePosition = Offset(x, y);
       }
+      _capsuleCollapsed =
+          StorageService.getBool(_collapsedKey, defaultValue: true) ?? true;
     } catch (_) {
       _capsulePosition = null;
     }
@@ -96,6 +103,14 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
       await StorageService.setDouble(_positionYKey, position.dy);
     } catch (_) {
       // Position persistence is best-effort. The monitor should still work.
+    }
+  }
+
+  Future<void> _saveCapsuleCollapsed() async {
+    try {
+      await StorageService.setBool(_collapsedKey, _capsuleCollapsed);
+    } catch (_) {
+      // Collapse state persistence is best-effort.
     }
   }
 
@@ -133,9 +148,16 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
         initialRuns: List.of(_runs),
         initialEvents: Map.of(_latestEvents),
         onOpenRun: _openRun,
+        onDisableFloatingOverlay: _disableFloatingOverlay,
       ),
     );
     unawaited(_refresh());
+  }
+
+  void _setCapsuleCollapsed(bool collapsed) {
+    if (_capsuleCollapsed == collapsed) return;
+    setState(() => _capsuleCollapsed = collapsed);
+    unawaited(_saveCapsuleCollapsed());
   }
 
   void _openRun(_AgentRunSnapshot run) {
@@ -154,14 +176,37 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
     );
   }
 
-  Rect _dragBounds(Size size, EdgeInsets padding) {
+  Future<void> _disableFloatingOverlay() async {
+    if (!_floatingOverlayEnabled) return;
+    setState(() => _floatingOverlayEnabled = false);
+    final success = await FloatingOverlayService.setEnabled(false);
+    if (!mounted) return;
+    if (!success) {
+      setState(() => _floatingOverlayEnabled = true);
+      _showSnack('关闭悬浮球失败');
+      return;
+    }
+    _showSnack('悬浮球已关闭，可在设置里重新开启');
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Rect _dragBounds(Size size, EdgeInsets padding, Size capsuleSize) {
     final maxLeft = math.max(
       _edgeMargin,
-      size.width - _capsuleHitWidth - _edgeMargin,
+      size.width - capsuleSize.width - _edgeMargin,
     );
     final maxTop = math.max(
       padding.top + _edgeMargin,
-      size.height - _capsuleHitHeight - padding.bottom - _edgeMargin,
+      size.height - capsuleSize.height - padding.bottom - _edgeMargin,
     );
     return Rect.fromLTRB(
       _edgeMargin,
@@ -171,16 +216,42 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
     );
   }
 
-  Offset _defaultCapsulePosition(Size size, EdgeInsets padding) {
-    final bounds = _dragBounds(size, padding);
+  Size _capsuleSize(Size size) {
+    if (_capsuleCollapsed) {
+      return const Size(_capsuleHitWidth, _capsuleHitHeight);
+    }
+    final width = math.min(
+      _expandedCapsuleMaxWidth,
+      size.width - _edgeMargin * 2,
+    );
+    final visibleRows = math.min(_runs.length, 4);
+    final listHeight = visibleRows * 37.0 + math.max(0, visibleRows - 1) * 5.0;
+    final desiredHeight = 16.0 + 30.0 + 7.0 + listHeight;
+    final maxHeight = math.min(size.height * 0.42, _expandedCapsuleMaxHeight);
+    return Size(
+      math.max(_expandedCapsuleMinWidth, width),
+      math.min(math.max(96.0, desiredHeight), maxHeight),
+    );
+  }
+
+  Offset _defaultCapsulePosition(
+    Size size,
+    EdgeInsets padding,
+    Size capsuleSize,
+  ) {
+    final bounds = _dragBounds(size, padding, capsuleSize);
     return Offset(bounds.right, padding.top + 10).clampTo(bounds);
   }
 
-  Offset _resolvedCapsulePosition(Size size, EdgeInsets padding) {
-    final bounds = _dragBounds(size, padding);
-    return (_capsulePosition ?? _defaultCapsulePosition(size, padding)).clampTo(
-      bounds,
-    );
+  Offset _resolvedCapsulePosition(
+    Size size,
+    EdgeInsets padding,
+    Size capsuleSize,
+  ) {
+    final bounds = _dragBounds(size, padding, capsuleSize);
+    return (_capsulePosition ??
+            _defaultCapsulePosition(size, padding, capsuleSize))
+        .clampTo(bounds);
   }
 
   void _moveCapsule(DragUpdateDetails details, Rect bounds, Offset fallback) {
@@ -214,8 +285,9 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
                 : mediaSize.height,
           );
           final padding = MediaQuery.viewPaddingOf(context);
-          final bounds = _dragBounds(size, padding);
-          final position = _resolvedCapsulePosition(size, padding);
+          final capsuleSize = _capsuleSize(size);
+          final bounds = _dragBounds(size, padding, capsuleSize);
+          final position = _resolvedCapsulePosition(size, padding, capsuleSize);
           return Stack(
             children: [
               Positioned(
@@ -223,7 +295,9 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
                 top: position.dy,
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: _showRuns,
+                  onTap: _capsuleCollapsed
+                      ? () => _setCapsuleCollapsed(false)
+                      : _showRuns,
                   onPanStart: (_) {
                     setState(() {
                       _dragging = true;
@@ -236,15 +310,26 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
                   onPanCancel: _endDrag,
                   child: Semantics(
                     button: true,
-                    label: '运行中的 Agent：${_runs.length} 个',
+                    label: _capsuleCollapsed
+                        ? '运行中的 Agent：${_runs.length} 个。轻点展开摘要。'
+                        : '运行中的 Agent：${_runs.length} 个。轻点打开完整管理面板。',
                     child: SizedBox(
-                      width: _capsuleHitWidth,
-                      height: _capsuleHitHeight,
+                      width: capsuleSize.width,
+                      height: capsuleSize.height,
                       child: Center(
-                        child: _AgentRunMiniCapsule(
-                          count: _runs.length,
-                          dragging: _dragging,
-                        ),
+                        child: _capsuleCollapsed
+                            ? _AgentRunMiniCapsule(
+                                count: _runs.length,
+                                dragging: _dragging,
+                              )
+                            : _AgentRunExpandedCapsule(
+                                runs: _runs,
+                                latestEvents: _latestEvents,
+                                dragging: _dragging,
+                                onCollapse: () => _setCapsuleCollapsed(true),
+                                onDisable: () =>
+                                    unawaited(_disableFloatingOverlay()),
+                              ),
                       ),
                     ),
                   ),
@@ -274,9 +359,9 @@ class _AgentRunMiniCapsule extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         curve: Curves.easeOutCubic,
-        constraints: const BoxConstraints(minWidth: 42),
-        height: 34,
-        padding: const EdgeInsets.symmetric(horizontal: 9),
+        constraints: const BoxConstraints(minWidth: 34),
+        height: 26,
+        padding: const EdgeInsets.symmetric(horizontal: 7),
         decoration: BoxDecoration(
           color: palette.surfacePrimary.withValues(alpha: 0.96),
           borderRadius: BorderRadius.circular(999),
@@ -296,13 +381,13 @@ class _AgentRunMiniCapsule extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _AgentRunPulse(color: palette.accentPrimary, size: 12),
-            const SizedBox(width: 6),
+            _AgentRunStatusDot(color: palette.accentPrimary, size: 6),
+            const SizedBox(width: 5),
             Text(
               count > 99 ? '99+' : '$count',
               style: TextStyle(
                 color: palette.textPrimary,
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: FontWeight.w900,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
@@ -314,16 +399,226 @@ class _AgentRunMiniCapsule extends StatelessWidget {
   }
 }
 
+class _AgentRunExpandedCapsule extends StatelessWidget {
+  const _AgentRunExpandedCapsule({
+    required this.runs,
+    required this.latestEvents,
+    required this.dragging,
+    required this.onCollapse,
+    required this.onDisable,
+  });
+
+  final List<_AgentRunSnapshot> runs;
+  final Map<String, _AgentRunEventSummary> latestEvents;
+  final bool dragging;
+  final VoidCallback onCollapse;
+  final VoidCallback onDisable;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    return AnimatedScale(
+      scale: dragging ? 1.02 : 1,
+      duration: const Duration(milliseconds: 140),
+      curve: Curves.easeOutCubic,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        width: double.infinity,
+        height: double.infinity,
+        padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+        decoration: BoxDecoration(
+          color: palette.surfacePrimary.withValues(alpha: 0.97),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: palette.accentPrimary.withValues(
+              alpha: dragging ? 0.5 : 0.28,
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: dragging ? 0.18 : 0.12),
+              blurRadius: dragging ? 18 : 14,
+              offset: Offset(0, dragging ? 9 : 6),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                _AgentRunPulse(color: palette.accentPrimary, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '运行中 ${runs.length} 个 Agent',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.textPrimary,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w900,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+                Text(
+                  '点开',
+                  style: TextStyle(
+                    color: palette.textTertiary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Tooltip(
+                  message: '隐藏悬浮球',
+                  child: IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 28,
+                      height: 28,
+                    ),
+                    onPressed: onDisable,
+                    icon: Icon(
+                      Icons.visibility_off_outlined,
+                      size: 17,
+                      color: palette.textTertiary,
+                    ),
+                  ),
+                ),
+                Tooltip(
+                  message: '收起',
+                  child: IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 30,
+                      height: 30,
+                    ),
+                    onPressed: onCollapse,
+                    icon: Icon(
+                      Icons.keyboard_arrow_right_rounded,
+                      size: 20,
+                      color: palette.textTertiary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 7),
+            Flexible(
+              child: ListView.separated(
+                padding: EdgeInsets.zero,
+                itemCount: runs.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 5),
+                itemBuilder: (context, index) {
+                  final run = runs[index];
+                  return _AgentRunCompactRow(
+                    run: run,
+                    latestEvent: latestEvents[run.taskId],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AgentRunCompactRow extends StatelessWidget {
+  const _AgentRunCompactRow({required this.run, required this.latestEvent});
+
+  final _AgentRunSnapshot run;
+  final _AgentRunEventSummary? latestEvent;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final summary = latestEvent?.label ?? run.compactSummary;
+    return Container(
+      height: 37,
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: palette.surfaceSecondary.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: latestEvent?.isError == true
+                  ? const Color(0xFFB25518)
+                  : palette.accentPrimary,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  run.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  summary,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.textSecondary,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            run.elapsedLabel,
+            style: TextStyle(
+              color: palette.textTertiary,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AgentRunMonitorSheet extends StatefulWidget {
   const _AgentRunMonitorSheet({
     required this.initialRuns,
     required this.initialEvents,
     required this.onOpenRun,
+    required this.onDisableFloatingOverlay,
   });
 
   final List<_AgentRunSnapshot> initialRuns;
   final Map<String, _AgentRunEventSummary> initialEvents;
   final ValueChanged<_AgentRunSnapshot> onOpenRun;
+  final VoidCallback onDisableFloatingOverlay;
 
   @override
   State<_AgentRunMonitorSheet> createState() => _AgentRunMonitorSheetState();
@@ -418,6 +713,11 @@ class _AgentRunMonitorSheetState extends State<_AgentRunMonitorSheet> {
     widget.onOpenRun(run);
   }
 
+  void _disableFloatingOverlay() {
+    Navigator.of(context).pop();
+    widget.onDisableFloatingOverlay();
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
@@ -496,6 +796,11 @@ class _AgentRunMonitorSheetState extends State<_AgentRunMonitorSheet> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.refresh_rounded),
+                  ),
+                  IconButton(
+                    tooltip: '隐藏悬浮球',
+                    onPressed: _disableFloatingOverlay,
+                    icon: const Icon(Icons.visibility_off_outlined),
                   ),
                   IconButton.filledTonal(
                     tooltip: '停止全部',
@@ -718,6 +1023,32 @@ class _AgentRunTile extends StatelessWidget {
   }
 }
 
+class _AgentRunStatusDot extends StatelessWidget {
+  const _AgentRunStatusDot({required this.color, this.size = 6});
+
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.28),
+            blurRadius: 5,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AgentRunPulse extends StatelessWidget {
   const _AgentRunPulse({required this.color, this.size = 14});
 
@@ -864,6 +1195,7 @@ class _AgentRunSnapshot {
     required this.elapsedMillis,
     required this.toolName,
     required this.toolSummary,
+    required this.userMessage,
   });
 
   final String taskId;
@@ -873,6 +1205,7 @@ class _AgentRunSnapshot {
   final int elapsedMillis;
   final String toolName;
   final String toolSummary;
+  final String userMessage;
 
   factory _AgentRunSnapshot.fromMap(Map<String, dynamic> map) {
     final activeTool = _asStringMap(map['activeTool']);
@@ -884,6 +1217,7 @@ class _AgentRunSnapshot {
       elapsedMillis: _asInt(map['elapsedMillis']) ?? 0,
       toolName: (activeTool['toolName'] ?? '').toString(),
       toolSummary: (activeTool['summary'] ?? '').toString(),
+      userMessage: (map['userMessage'] ?? '').toString(),
     );
   }
 
@@ -909,6 +1243,12 @@ class _AgentRunSnapshot {
     if (summary.isEmpty) return name;
     if (name.isEmpty) return summary;
     return '$name · $summary';
+  }
+
+  String get compactSummary {
+    final message = userMessage.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (message.isNotEmpty) return message;
+    return toolText;
   }
 
   String get conversationModeLabel {

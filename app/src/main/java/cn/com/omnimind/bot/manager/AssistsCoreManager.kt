@@ -528,7 +528,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         val job: Job,
         val startedAtMillis: Long,
         val conversationId: Long?,
-        val conversationMode: String
+        val conversationMode: String,
+        val userMessage: String
     ) : AgentRunControl {
         private val lock = Any()
         private var generationCounter = 0L
@@ -577,6 +578,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     "taskId" to taskId,
                     "conversationId" to conversationId,
                     "conversationMode" to conversationMode,
+                    "userMessage" to userMessage,
                     "startedAtMillis" to startedAtMillis,
                     "elapsedMillis" to (now - startedAtMillis).coerceAtLeast(0L),
                     "isActive" to job.isActive,
@@ -4358,7 +4360,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             job = agentRunJob,
             startedAtMillis = System.currentTimeMillis(),
             conversationId = conversationId,
-            conversationMode = resolvedConversationMode
+            conversationMode = resolvedConversationMode,
+            userMessage = userMessage
         )
         registerActiveAgentRun(taskId, agentRunContext)
 
