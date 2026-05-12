@@ -1936,6 +1936,145 @@ Color _warningColor(BuildContext context) {
       : const Color(0xFFFFC04D);
 }
 
+List<Map<String, dynamic>> _extractTimelineCards(Map<String, dynamic> payload) {
+  return _findTimelineCards(payload, <Object>{});
+}
+
+List<Map<String, dynamic>> _findTimelineCards(
+  dynamic value,
+  Set<Object> visited,
+) {
+  final decoded = _decodeJsonIfNeeded(value);
+  if (decoded is List) {
+    return _cardsFromList(decoded);
+  }
+  if (decoded is! Map) {
+    return const <Map<String, dynamic>>[];
+  }
+  if (!visited.add(decoded)) {
+    return const <Map<String, dynamic>>[];
+  }
+
+  final map = decoded.map((key, item) => MapEntry(key.toString(), item));
+  for (final key in const <String>[
+    'cards',
+    'steps',
+    'timeline_cards',
+    'timelineCards',
+    'timeline_steps',
+    'timelineSteps',
+    'run_steps',
+    'runSteps',
+  ]) {
+    final cards = _cardsFromValue(map[key]);
+    if (cards.isNotEmpty) {
+      return cards;
+    }
+  }
+
+  for (final key in const <String>[
+    'timeline',
+    'timeline_payload',
+    'timelinePayload',
+    'run_log',
+    'runLog',
+    'run',
+    'detail',
+    'data',
+    'payload',
+    'result',
+  ]) {
+    final cards = _findTimelineCards(map[key], visited);
+    if (cards.isNotEmpty) {
+      return cards;
+    }
+  }
+
+  return const <Map<String, dynamic>>[];
+}
+
+List<Map<String, dynamic>> _cardsFromValue(dynamic value) {
+  final decoded = _decodeJsonIfNeeded(value);
+  if (decoded is! List) {
+    return const <Map<String, dynamic>>[];
+  }
+  return _cardsFromList(decoded);
+}
+
+List<Map<String, dynamic>> _cardsFromList(List<dynamic> items) {
+  final cards = <Map<String, dynamic>>[];
+  for (var index = 0; index < items.length; index++) {
+    final card = _asStringKeyMap(items[index]);
+    if (card.isEmpty) {
+      continue;
+    }
+    cards.add(_normalizeTimelineCard(card, index));
+  }
+  return cards;
+}
+
+Map<String, dynamic> _normalizeTimelineCard(
+  Map<String, dynamic> card,
+  int fallbackIndex,
+) {
+  final normalized = Map<String, dynamic>.from(card);
+  normalized.putIfAbsent('step_index', () => fallbackIndex);
+
+  final toolCall = _extractToolCall(normalized);
+  final function = _asStringKeyMap(toolCall['function']);
+  final toolName = _firstNonBlank([
+    toolCall['name'],
+    toolCall['tool_name'],
+    toolCall['toolName'],
+    function['name'],
+    normalized['tool_name'],
+    normalized['toolName'],
+    normalized['action_type'],
+    normalized['actionType'],
+  ]);
+  final title = _firstNonBlank([
+    normalized['title'],
+    normalized['summary'],
+    normalized['operation_description'],
+    normalized['operationDescription'],
+    toolName,
+  ]);
+
+  if (_asStringKeyMap(normalized['header']).isEmpty) {
+    normalized['header'] = <String, dynamic>{
+      'step_index': fallbackIndex,
+      if (title.isNotEmpty) 'title': title,
+      if (toolName.isNotEmpty) 'tool_name': toolName,
+      if (normalized.containsKey('status')) 'status': normalized['status'],
+      if (normalized.containsKey('success')) 'success': normalized['success'],
+      if (normalized.containsKey('duration_ms'))
+        'duration_ms': normalized['duration_ms'],
+      if (normalized.containsKey('durationMs'))
+        'duration_ms': normalized['durationMs'],
+    };
+  }
+
+  if (toolCall.isEmpty && toolName.isNotEmpty) {
+    final args = _firstPresent([
+      normalized['arguments'],
+      normalized['params'],
+      normalized['args'],
+    ]);
+    normalized['tool_call'] = <String, dynamic>{
+      'id': _firstNonBlank([
+        normalized['tool_call_id'],
+        normalized['toolCallId'],
+        normalized['card_id'],
+        normalized['cardId'],
+      ]),
+      'name': toolName,
+      if (args != null) 'arguments': args,
+    };
+  }
+
+  return normalized;
+}
+
 Map<String, dynamic> _asStringKeyMap(dynamic value) {
   final decoded = _decodeJsonIfNeeded(value);
   if (decoded is! Map) {
