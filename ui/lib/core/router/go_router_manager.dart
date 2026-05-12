@@ -185,11 +185,16 @@ class GoRouterManager {
 
     // Determine effective initial location with onboarding guard
     final welcomeCompleted =
-        StorageService.getBool(StorageKeys.welcomeCompleted,
-            defaultValue: false) ??
+        StorageService.getBool(
+          StorageKeys.welcomeCompleted,
+          defaultValue: false,
+        ) ??
         false;
-    final requestedInitial = _initialRoute ?? homeRoute;
-    final effectiveInitial = (!welcomeCompleted &&
+    // Secondary engines are attached to floating/embedded surfaces after
+    // startup. Keep them blank until native pushes the real overlay route.
+    final requestedInitial = _initialRoute ?? (_isSubEngine ? '/' : homeRoute);
+    final effectiveInitial =
+        (!welcomeCompleted &&
             !requestedInitial.startsWith('/welcome') &&
             !_isSubEngine)
         ? '/welcome/choice'
@@ -201,9 +206,11 @@ class GoRouterManager {
       redirect: _isSubEngine
           ? null
           : (context, state) {
-              final completed = StorageService.getBool(
-                      StorageKeys.welcomeCompleted,
-                      defaultValue: false) ??
+              final completed =
+                  StorageService.getBool(
+                    StorageKeys.welcomeCompleted,
+                    defaultValue: false,
+                  ) ??
                   false;
               final location = state.matchedLocation;
               final isWelcomeRoute = location.startsWith('/welcome');
@@ -218,10 +225,7 @@ class GoRouterManager {
               }
               return null;
             },
-      observers: [
-        routeObserver,
-        if (kDebugMode) LoggingRouterObserver(),
-      ],
+      observers: [routeObserver, if (kDebugMode) LoggingRouterObserver()],
       routes: [
         GoRoute(
           path: '/',

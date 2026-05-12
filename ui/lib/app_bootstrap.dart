@@ -98,8 +98,6 @@ Future<void> bootstrapSubEngine(List<String> args) async {
       child: MyApp(args: args),
     ),
   );
-  unawaited(ScheduledTaskSchedulerService.initialize());
-  unawaited(OmnibotResourceService.ensureWorkspacePathsLoaded());
 }
 
 Brightness _resolveStartupBrightness(AppThemeMode mode) {
