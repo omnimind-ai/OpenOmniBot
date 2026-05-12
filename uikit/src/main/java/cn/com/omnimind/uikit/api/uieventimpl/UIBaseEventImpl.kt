@@ -9,6 +9,7 @@ import cn.com.omnimind.uikit.loader.CancelClickLoader
 import cn.com.omnimind.uikit.loader.FloatingHalfScreenLoader
 import cn.com.omnimind.uikit.loader.ScreenMaskLoader
 import cn.com.omnimind.uikit.loader.cat.DraggableBallInstance
+import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
 import cn.com.omnimind.uikit.view.indicator.BaseIndicator
 import cn.com.omnimind.uikit.view.indicator.ClickIndicator
 import kotlinx.coroutines.CoroutineScope
@@ -27,7 +28,16 @@ class UIBaseEventImpl : UIBaseEvent {
     override fun onUIInit(context: Context) {
         this.context = context;
     }
+    private fun isFloatingUiEnabled(): Boolean {
+        val enabled = CompanionOverlaySettings.isEnabled(context)
+        if (!enabled) {
+            CompanionOverlaySettings.dismissFloatingUi()
+        }
+        return enabled
+    }
+
     override fun visibleCatInMain() {
+        if (!isFloatingUiEnabled()) return
         DraggableBallInstance.visible()
     }
 
@@ -43,6 +53,7 @@ class UIBaseEventImpl : UIBaseEvent {
         FloatingHalfScreenLoader.destroyInstance()
     }
     override suspend fun showClickIndicator(x: Int, y: Int) = withContext(Dispatchers.Main) {
+        if (!isFloatingUiEnabled()) return@withContext
         currentIndicator?.dismiss()
         if (context == null) {
             return@withContext
@@ -65,6 +76,7 @@ class UIBaseEventImpl : UIBaseEvent {
 
 
     override suspend fun visibleCat() = withContext(Dispatchers.Main) {
+        if (!isFloatingUiEnabled()) return@withContext
         DraggableBallInstance.visible()
     }
 
@@ -72,6 +84,7 @@ class UIBaseEventImpl : UIBaseEvent {
     override suspend fun move(
         startX: Float, startY: Float, endX: Float, endY: Float
     ): Boolean {
+        if (!isFloatingUiEnabled()) return false
         withContext(Dispatchers.Main) {
             DraggableBallInstance.getInstance()
                 ?.move(startX.toInt(), startY.toInt(), endX.toInt(), endY.toInt())
@@ -80,10 +93,12 @@ class UIBaseEventImpl : UIBaseEvent {
     }
 
     override suspend fun message(text: String) = withContext(Dispatchers.Main) {
+        if (!isFloatingUiEnabled()) return@withContext
         DraggableBallInstance.message(text)
     }
 
     override suspend fun startCompanion() {
+        if (!isFloatingUiEnabled()) return
         if (taskUIJob?.isActive == true) {
             withContext(Dispatchers.Main) {
                 ScreenMaskLoader.destroyInstance()
@@ -111,6 +126,10 @@ class UIBaseEventImpl : UIBaseEvent {
     }
 
     override suspend fun finishCompanion() {
+        if (!isFloatingUiEnabled()) {
+            CompanionOverlaySettings.dismissFloatingUi()
+            return
+        }
         VibrationUtil.vibrateLight()
         if (taskUIJob?.isActive == true) {
             taskUIJob?.cancel()
@@ -135,6 +154,9 @@ class UIBaseEventImpl : UIBaseEvent {
     override suspend fun <T> doAssistsUnlockScreenMask(
         block: suspend () -> T, lockScreenDelay: Long
     ): T {
+        if (!isFloatingUiEnabled()) {
+            return block()
+        }
         if (AssistsService.isInit()) {
             withContext(Dispatchers.Main) {
                 ScreenMaskLoader.loadUnlockScreenMask()
@@ -153,12 +175,14 @@ class UIBaseEventImpl : UIBaseEvent {
     }
 
     override suspend fun lockScreenMask() = withContext(Dispatchers.Main) {
+        if (!isFloatingUiEnabled()) return@withContext
         if (AssistsService.isInit()) {
             ScreenMaskLoader.loadUnlockScreenMask()
         }
     }
 
     override suspend fun cancelLockScreenMask() = withContext(Dispatchers.Main) {
+        if (!isFloatingUiEnabled()) return@withContext
         if (AssistsService.isInit()) {
             ScreenMaskLoader.loadLockScreenMask()
         }

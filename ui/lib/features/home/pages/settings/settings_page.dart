@@ -8,6 +8,7 @@ import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/local_model/local_model_feature.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/assists_core_service.dart';
+import 'package:ui/services/floating_overlay_service.dart';
 import 'package:ui/services/hide_from_recents_service.dart';
 import 'package:ui/services/mcp_server_service.dart';
 import 'package:ui/services/special_permission.dart';
@@ -29,6 +30,8 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   bool vibrationEnabled = true;
   bool hideFromRecentsEnabled = false;
+  bool _floatingOverlayEnabled = true;
+  bool _floatingOverlayBusy = false;
   bool _autoBackToChatAfterTaskEnabled = true;
   bool _mcpEnabled = false;
   bool _mcpLoaded = false;
@@ -49,6 +52,7 @@ class _SettingsPageState extends State<SettingsPage> {
         true;
     _loadVibrationState();
     _loadHideFromRecentsState();
+    _loadFloatingOverlayState();
     _loadAutoBackToChatAfterTaskState();
     _loadMcpServerState();
     _loadWorkspaceMemoryState();
@@ -94,6 +98,37 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (e) {
       debugPrint('Error loading hide from recents state: $e');
     }
+  }
+
+  Future<void> _loadFloatingOverlayState() async {
+    try {
+      final enabled = await FloatingOverlayService.loadEnabled();
+      if (!mounted) return;
+      setState(() {
+        _floatingOverlayEnabled = enabled;
+      });
+    } catch (e) {
+      debugPrint('Error loading floating overlay state: $e');
+    }
+  }
+
+  Future<void> _onFloatingOverlayChanged(bool value) async {
+    if (_floatingOverlayBusy) return;
+    setState(() {
+      _floatingOverlayBusy = true;
+      _floatingOverlayEnabled = value;
+    });
+    final success = await FloatingOverlayService.setEnabled(value);
+    if (!mounted) return;
+    setState(() {
+      _floatingOverlayBusy = false;
+      _floatingOverlayEnabled = success ? value : !value;
+    });
+    if (!success) {
+      showToast(context.trLegacy('设置悬浮窗失败'), type: ToastType.error);
+      return;
+    }
+    showToast(context.trLegacy(value ? '小万悬浮窗已开启' : '小万悬浮窗已关闭'));
   }
 
   Future<void> _onHideFromRecentsChanged(bool value) async {
@@ -281,6 +316,9 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   TextButton(
                     onPressed: () async {
+                      final successToast = context.l10n.settingsTokenRefreshed;
+                      final failedToast =
+                          context.l10n.settingsTokenRefreshFailed;
                       Navigator.of(context).pop();
                       try {
                         final refreshed = await McpServerService.refreshToken();
@@ -288,12 +326,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         setState(() {
                           _mcpInfo = refreshed ?? _mcpInfo;
                         });
-                        showToast(context.l10n.settingsTokenRefreshed);
+                        showToast(successToast);
                       } catch (_) {
-                        showToast(
-                          context.l10n.settingsTokenRefreshFailed,
-                          type: ToastType.error,
-                        );
+                        showToast(failedToast, type: ToastType.error);
                       }
                     },
                     child: Text(context.l10n.settingsRefreshToken),
@@ -470,6 +505,16 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           _SettingItem(
+            icon: Icons.assistant_photo_outlined,
+            title: context.trLegacy('小万悬浮窗'),
+            subtitle: context.trLegacy('关闭后不再显示桌面悬浮球、半屏输入层和运行胶囊'),
+            trailing: _buildSwitchTrailing(
+              value: _floatingOverlayEnabled,
+              enabled: !_floatingOverlayBusy,
+              onToggle: _onFloatingOverlayChanged,
+            ),
+          ),
+          _SettingItem(
             icon: Icons.chat_outlined,
             iconSvg: 'assets/home/auto_back_chat_setting_icon.svg',
             title: context.l10n.settingsAutoBackTitle,
@@ -499,6 +544,8 @@ class _SettingsPageState extends State<SettingsPage> {
             title: context.l10n.settingsCompanionPermissionTitle,
             subtitle: context.l10n.settingsCompanionPermissionSubtitle,
             onTap: () async {
+              final failedToast =
+                  context.l10n.settingsInstalledAppsPermissionFailed;
               try {
                 final granted = await ensureInstalledAppsPermission();
                 if (granted == true) {
@@ -506,7 +553,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 }
               } catch (e) {
                 debugPrint('Failed to request installed apps permission: $e');
-                showToast(context.l10n.settingsInstalledAppsPermissionFailed);
+                showToast(failedToast);
               }
             },
           ),

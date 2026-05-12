@@ -5,6 +5,7 @@ import cn.com.omnimind.uikit.UIKit
 import cn.com.omnimind.uikit.api.callback.CatApi
 import cn.com.omnimind.uikit.loader.ScreenMaskLoader
 import cn.com.omnimind.uikit.loader.cat.DraggableBallInstance
+import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,6 +28,7 @@ class CatApiImpl : CatApi {
      * 普通状态下,长按小猫可以打开菜单
      */
     override fun onCatLongPress() {
+        if (!CompanionOverlaySettings.isEnabled()) return
         DraggableBallInstance.showMenu()
     }
 
@@ -35,6 +37,10 @@ class CatApiImpl : CatApi {
     }
 
     override fun onCatClick(x: Int, y: Int) {
+        if (!CompanionOverlaySettings.isEnabled()) {
+            CompanionOverlaySettings.dismissFloatingUi()
+            return
+        }
         doTask.cancel()
         doTask = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         doTask.launch {

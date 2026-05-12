@@ -98,4 +98,41 @@ class AppStateService {
       return false;
     }
   }
+
+  static Future<bool?> getFloatingOverlayEnabled() async {
+    try {
+      final result = await _channel.invokeMethod<dynamic>(
+        'getFloatingOverlayEnabled',
+      );
+      return result == true;
+    } catch (e) {
+      debugPrint('⚠️ Failed to read floating overlay setting: $e');
+      return null;
+    }
+  }
+
+  static Future<bool> setFloatingOverlayEnabled(bool enabled) async {
+    try {
+      final result = await _channel.invokeMethod<dynamic>(
+        'setFloatingOverlayEnabled',
+        {'enabled': enabled},
+      );
+      return result == true;
+    } catch (e) {
+      debugPrint('⚠️ Failed to update floating overlay setting: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> dismissFloatingOverlay() async {
+    try {
+      final result = await _channel.invokeMethod<dynamic>(
+        'dismissFloatingOverlay',
+      );
+      return result == true;
+    } catch (e) {
+      debugPrint('⚠️ Failed to dismiss floating overlay: $e');
+      return false;
+    }
+  }
 }

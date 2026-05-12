@@ -9,6 +9,7 @@ import cn.com.omnimind.uikit.loader.CancelClickLoader
 import cn.com.omnimind.uikit.loader.FloatingHalfScreenLoader
 import cn.com.omnimind.uikit.loader.ScreenMaskLoader
 import cn.com.omnimind.uikit.loader.cat.DraggableBallInstance
+import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -24,7 +25,16 @@ class UITaskEventImpl : UITaskEvent {
         this.context = context
     }
 
+    private fun isFloatingUiEnabled(): Boolean {
+        val enabled = CompanionOverlaySettings.isEnabled(context)
+        if (!enabled) {
+            CompanionOverlaySettings.dismissFloatingUi()
+        }
+        return enabled
+    }
+
     override suspend fun startCompanionAndDoingTask() {
+        if (!isFloatingUiEnabled()) return
         if (taskUIJob?.isActive == true) {
             withContext(Dispatchers.Main) {
                 ScreenMaskLoader.destroyInstance()
@@ -53,6 +63,7 @@ class UITaskEventImpl : UITaskEvent {
     }
 
     override suspend fun waitingUserAction(message: String): Boolean {
+        if (!isFloatingUiEnabled()) return false
         VibrationUtil.vibrateLight()
         withContext(Dispatchers.Main) {
             ScreenMaskLoader.loadGoneViewScreenMask()
@@ -72,6 +83,7 @@ class UITaskEventImpl : UITaskEvent {
     }
 
     override suspend fun pauseTask(message: String) {
+        if (!isFloatingUiEnabled()) return
         VibrationUtil.vibrateLight()
         withContext(Dispatchers.Main) {
             ScreenMaskLoader.loadGoneViewScreenMask()
@@ -80,6 +92,7 @@ class UITaskEventImpl : UITaskEvent {
     }
 
     override suspend fun readyDoingTask(message: String) {
+        if (!isFloatingUiEnabled()) return
         VibrationUtil.vibrateNormal()
         withContext(Dispatchers.Main) {
             ScreenMaskLoader.loadLockScreenMask()
@@ -88,6 +101,7 @@ class UITaskEventImpl : UITaskEvent {
     }
 
     override suspend fun startDoingAutoTask(message: String, subMessage: String) {
+        if (!isFloatingUiEnabled()) return
         VibrationUtil.vibrateNormal()
         withContext(Dispatchers.Main) {
             ScreenMaskLoader.loadLockScreenMask()
@@ -96,6 +110,7 @@ class UITaskEventImpl : UITaskEvent {
     }
 
     override suspend fun finishDoingTask(message: String) {
+        if (!isFloatingUiEnabled()) return
         VibrationUtil.vibrateNormal()
         withContext(Dispatchers.Main) {
             ScreenMaskLoader.loadGoneViewScreenMask()
@@ -104,6 +119,7 @@ class UITaskEventImpl : UITaskEvent {
     }
 
     override suspend fun setDoing(message: String, showTakeOver: Boolean) {
+        if (!isFloatingUiEnabled()) return
         withContext(Dispatchers.Main) {
             ScreenMaskLoader.loadLockScreenMask()
             DraggableBallInstance.setDoing(message, showTakeOver)
@@ -114,6 +130,7 @@ class UITaskEventImpl : UITaskEvent {
         closeTimer: Long,
         doTaskTimer: Long,
     ) {
+        if (!isFloatingUiEnabled()) return
         withContext(Dispatchers.Main) {
             DraggableBallInstance.showScheduledTip(closeTimer, doTaskTimer)
         }

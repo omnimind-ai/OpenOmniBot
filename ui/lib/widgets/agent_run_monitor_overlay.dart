@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/services/assists_core_service.dart';
+import 'package:ui/services/floating_overlay_service.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/theme_context.dart';
 
@@ -29,11 +30,16 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
   Offset? _capsulePosition;
   bool _refreshing = false;
   bool _dragging = false;
+  bool _floatingOverlayEnabled = FloatingOverlayService.isEnabled;
 
   @override
   void initState() {
     super.initState();
     _restoreCapsulePosition();
+    FloatingOverlayService.enabledListenable.addListener(
+      _handleFloatingOverlayPreferenceChanged,
+    );
+    unawaited(FloatingOverlayService.loadEnabled());
     _stateSub = AssistsMessageService.agentRunStateChangedStream.listen(
       (_) => unawaited(_refresh()),
     );
@@ -49,8 +55,25 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
   void dispose() {
     _pollTimer?.cancel();
     _stateSub?.cancel();
+    FloatingOverlayService.enabledListenable.removeListener(
+      _handleFloatingOverlayPreferenceChanged,
+    );
     AssistsMessageService.removeOnAgentStreamEventCallback(_handleAgentEvent);
     super.dispose();
+  }
+
+  void _handleFloatingOverlayPreferenceChanged() {
+    if (!mounted) return;
+    final enabled = FloatingOverlayService.isEnabled;
+    setState(() {
+      _floatingOverlayEnabled = enabled;
+      if (!enabled) {
+        _runs.clear();
+      }
+    });
+    if (enabled) {
+      unawaited(_refresh());
+    }
   }
 
   void _restoreCapsulePosition() {
@@ -77,11 +100,13 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
   }
 
   void _handleAgentEvent(AgentStreamEvent event) {
+    if (!_floatingOverlayEnabled) return;
     _latestEvents[event.taskId] = _AgentRunEventSummary.fromEvent(event);
     unawaited(_refresh());
   }
 
   Future<void> _refresh() async {
+    if (!_floatingOverlayEnabled) return;
     if (_refreshing) return;
     _refreshing = true;
     try {
@@ -174,6 +199,7 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_floatingOverlayEnabled) return const SizedBox.shrink();
     if (_runs.isEmpty) return const SizedBox.shrink();
     return Positioned.fill(
       child: LayoutBuilder(

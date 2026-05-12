@@ -4,6 +4,7 @@ import android.os.Handler
 import android.os.Looper
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.uikit.loader.cat.DraggableBallInstance
+import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -59,6 +60,11 @@ class OverlayChannel {
         retryDelayMs: Long,
         currentRetry: Int = 0
     ) {
+        if (!CompanionOverlaySettings.isEnabled()) {
+            CompanionOverlaySettings.dismissFloatingUi()
+            result.success(false)
+            return
+        }
         val instance = DraggableBallInstance.getInstance()
         if (instance == null) {
             if (currentRetry < maxRetries) {

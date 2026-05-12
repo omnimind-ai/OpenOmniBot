@@ -32,6 +32,12 @@ class LegacyTextLocalizer {
     '后台隐藏': 'Hide from Recents',
     '闹钟设置': 'Alarm Settings',
     '振动反馈': 'Vibration Feedback',
+    '小万悬浮窗': 'Omnibot Floating Window',
+    '关闭后不再显示桌面悬浮球、半屏输入层和运行胶囊':
+        'Hide the desktop floating ball, half-screen input, and running capsule',
+    '小万悬浮窗已开启': 'Omnibot floating window enabled',
+    '小万悬浮窗已关闭': 'Omnibot floating window disabled',
+    '设置悬浮窗失败': 'Failed to update floating window setting',
     '任务完成后自动回聊天': 'Return to Chat After Tasks',
     '陪伴权限授权': 'Companion App Permissions',
     '关于小万': 'About Omnibot',
@@ -176,7 +182,6 @@ class LegacyTextLocalizer {
     '已归档': 'Archived',
     '归档对话': 'Archived Conversations',
     '执行历史': 'Execution History',
-    '本地模型': 'Local Models',
     '新增': 'Add',
     '安装': 'Install',
     '未安装': 'Not installed',
@@ -373,8 +378,7 @@ class LegacyTextLocalizer {
     '连接 OpenAI、Anthropic 或兼容的 API 服务':
         'Connect to OpenAI, Anthropic, or compatible APIs',
     '本地模型': 'Local Model',
-    '在设备上运行本地 AI，离线可用，隐私安全':
-        'Run local AI on your device, offline and private',
+    '在设备上运行本地 AI，离线可用，隐私安全': 'Run local AI on your device, offline and private',
     '继续': 'Continue',
     '跳过，稍后在设置中配置': 'Skip, configure later in Settings',
     '云 AI 服务配置': 'Cloud AI Setup',
@@ -388,19 +392,15 @@ class LegacyTextLocalizer {
     '发现': 'found',
     '个模型': 'models',
     '连接失败': 'Connection failed',
-    '保存': 'Save',
-    '保存失败': 'Save failed',
     '在设备上运行本地 AI': 'Run Local AI on Your Device',
     '优势': 'Advantages',
     '隐私安全': 'Privacy',
     '数据完全留在设备上，不会发送到任何服务器':
         'Data stays entirely on your device, never sent to any server',
     '离线可用': 'Offline',
-    '无需网络连接，随时随地使用 AI 助手':
-        'No internet needed, use AI assistant anytime',
+    '无需网络连接，随时随地使用 AI 助手': 'No internet needed, use AI assistant anytime',
     '完全免费': 'Free',
-    '无需 API 费用或订阅，没有使用限制':
-        'No API costs or subscriptions, no usage limits',
+    '无需 API 费用或订阅，没有使用限制': 'No API costs or subscriptions, no usage limits',
     '局限性': 'Limitations',
     '性能受限': 'Limited Performance',
     '端侧模型较小，能力有限，回复质量不如云端模型':
@@ -411,8 +411,7 @@ class LegacyTextLocalizer {
     '下一步': 'Next',
     '下载本地模型': 'Download Local Model',
     '推荐模型': 'Recommended Model',
-    '根据你的设备推荐的轻量模型，适合日常对话':
-        'A lightweight model recommended for your device',
+    '根据你的设备推荐的轻量模型，适合日常对话': 'A lightweight model recommended for your device',
     '正在加载模型信息...': 'Loading model info...',
     '下载模型': 'Download Model',
     '暂停': 'Pause',

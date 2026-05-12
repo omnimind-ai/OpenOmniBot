@@ -53,7 +53,7 @@ object DraggableBallInstance {
      * 收起小猫
      */
     fun collapse() {
-        getInstance()?.collapse()
+        dragBall?.collapse()
 
     }
 
@@ -258,13 +258,14 @@ object DraggableBallInstance {
 
     fun destroy() {
         // 取消待执行的动画任务
-        getInstance()?.destroy()
+        dragBall?.destroy()
         // 清除单例实例引用
         dragBall = null
     }
 
     fun closeAllWithoutDoing() {
-        val currentState = getInstance()?.catDialogLayoutView?.getCurrentState()
+        val instance = dragBall ?: return
+        val currentState = instance.catDialogLayoutView?.getCurrentState()
         if (currentState != DraggableViewState.MESSAGE && currentState != DraggableViewState.DOING_TASK && currentState != DraggableViewState.COLLAPSED) {
             collapse()
         }
@@ -295,8 +296,8 @@ object DraggableBallInstance {
     }
 
     fun cancelAnimation() {
-        getInstance()?.moveToScreenAnimator?.cancel()
-        getInstance()?.catView?.cancelAnimation()
+        dragBall?.moveToScreenAnimator?.cancel()
+        dragBall?.catView?.cancelAnimation()
     }
 
     fun moveToTop() {
@@ -309,7 +310,7 @@ object DraggableBallInstance {
     }
 
     fun gone() {
-        val instance = getInstance() ?: return
+        val instance = dragBall ?: return
         val windowManager = instance.getWindowManager()
         val isAttachedToWindow = instance.isAttachedToWindow
 

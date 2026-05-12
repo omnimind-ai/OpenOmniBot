@@ -410,9 +410,16 @@ class _CommandOverlayState extends State<CommandOverlay> {
 
   void _onFocusChange() {}
 
-  void _closePage() {
+  Future<void> _dismissFloatingOverlay() async {
     _inputFocusNode.unfocus();
-    ScreenDialogService.closeChatBotDialog();
+    final dismissed = await AppStateService.dismissFloatingOverlay();
+    if (!dismissed) {
+      await ScreenDialogService.closeChatBotDialog();
+    }
+  }
+
+  void _closePage() {
+    unawaited(_dismissFloatingOverlay());
   }
 
   Future<void> _toggleConversationPanel() async {
@@ -464,6 +471,8 @@ class _CommandOverlayState extends State<CommandOverlay> {
             ? 'Failed to open conversation'
             : '无法打开对话',
       );
+    } else {
+      unawaited(AppStateService.dismissFloatingOverlay());
     }
   }
 
@@ -519,6 +528,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
     String? initialDisplayMessage,
     List<Map<String, dynamic>> initialAttachments = const [],
   }) {
+    if (_isChatSheetVisible) return;
     if (mounted) {
       setState(() => _isChatSheetVisible = true);
     }
@@ -546,7 +556,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
           _conversationSummariesLoaded = false;
         }
       }
-      ScreenDialogService.closeChatBotDialog();
+      unawaited(_dismissFloatingOverlay());
     });
   }
 
@@ -1178,14 +1188,6 @@ $contextJson
         bottomPadding + _chatInputAreaHeight + inputHeaderOffset + 8;
     final content = Stack(
       children: [
-        // 蒙层背景 - 点击关闭页面
-        Positioned.fill(
-          child: GestureDetector(
-            onTap: _closePage,
-            behavior: HitTestBehavior.opaque,
-            child: Container(color: Colors.black.withValues(alpha: 0)),
-          ),
-        ),
         // 快捷提示气泡 - 随键盘移动
         Positioned(
           left: 24,
@@ -1291,7 +1293,7 @@ $contextJson
       backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: false,
       body: Listener(
-        behavior: HitTestBehavior.translucent,
+        behavior: HitTestBehavior.deferToChild,
         onPointerDown: (event) => _handleOutsideTap(event.position),
         child: bodyChild,
       ),
@@ -1300,6 +1302,7 @@ $contextJson
 
   /// 点击预约气泡后显示预约卡片
   void _showScheduleSheet() {
+    if (_isChatSheetVisible) return;
     final wasFailedOnEnter = _scheduleInfo?['scheduleStatus'] == 'FAILED';
     if (mounted) {
       setState(() => _isChatSheetVisible = true);
@@ -1319,7 +1322,7 @@ $contextJson
       if (mounted) {
         setState(() => _isChatSheetVisible = false);
       }
-      ScreenDialogService.closeChatBotDialog();
+      unawaited(_dismissFloatingOverlay());
       if (wasFailedOnEnter) {
         AssistsMessageService.clearScheduleTask();
       }

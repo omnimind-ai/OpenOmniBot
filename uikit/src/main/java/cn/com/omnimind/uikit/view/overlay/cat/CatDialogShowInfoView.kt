@@ -149,6 +149,7 @@ class CatDialogShowInfoView @JvmOverloads constructor(
         showInfoView.visibility = GONE
         visibility = VISIBLE
         setMessage(message)
+        setSubMessage("准备执行中")
         showInfoView.readyDoingTask()
         CatDialogStateData.viewState = CatDialogViewState.MESSAGE_INFO
 

@@ -1,11 +1,12 @@
 package cn.com.omnimind.uikit.api.callbackimpl
 
+import cn.com.omnimind.assists.AssistsCore
 import cn.com.omnimind.assists.api.eventapi.ExecutingTaskType
 import cn.com.omnimind.baselib.util.VibrationUtil
 import cn.com.omnimind.uikit.UIKit
 import cn.com.omnimind.uikit.api.callback.CatStepLayoutApi
 import cn.com.omnimind.uikit.loader.cat.DraggableBallInstance
-import cn.com.omnimind.uikit.loader.cat.DraggableBallLoader
+import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
 
 class CatStepLayoutApiImpl : CatStepLayoutApi {
     override fun onResumeClick() {
@@ -24,6 +25,11 @@ class CatStepLayoutApiImpl : CatStepLayoutApi {
         DraggableBallInstance.finishDoingTask("任务已结束!")
         if (UIKit.executionTaskEventApi?.taskType == ExecutingTaskType.VLM) {
             UIKit.executionTaskEventApi?.vlmTask?.finishTask()
+        } else {
+            AssistsCore.finishDoingTask()
+        }
+        if (!CompanionOverlaySettings.isEnabled()) {
+            CompanionOverlaySettings.dismissFloatingUi()
         }
     }
 

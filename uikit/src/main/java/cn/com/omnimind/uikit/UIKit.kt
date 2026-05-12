@@ -26,6 +26,7 @@ import cn.com.omnimind.uikit.api.uievent.UITaskEvent
 import cn.com.omnimind.uikit.api.uieventimpl.UIBaseEventImpl
 import cn.com.omnimind.uikit.api.uieventimpl.UIChatEventImpl
 import cn.com.omnimind.uikit.api.uieventimpl.UITaskEventImpl
+import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
 
 class UIKit {
     companion object {
@@ -43,6 +44,7 @@ class UIKit {
         var executionTaskEventApi: ExecutionTaskEventApi? = null
 
         fun init(context: Context, halfScreenApi: HalfScreenApi) {
+            CompanionOverlaySettings.init(context)
             UIKit.halfScreenApi = halfScreenApi
             catApi = CatApiImpl()
             catLayoutApi = CatLayoutApiImpl()

@@ -20,6 +20,7 @@ import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.uikit.UIKit
 import cn.com.omnimind.uikit.api.callback.HalfScreenApi
+import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
 import cn.com.omnimind.uikit.view.layout.HalfScreenView
 
 
@@ -51,19 +52,27 @@ class FloatingHalfScreenLoader(
         }
 
         fun loadFloatingHalfScreen(path: String) {
+            if (!CompanionOverlaySettings.isEnabled()) {
+                destroyInstance()
+                return
+            }
             getInstance()?.loadFloatingHalfScreen(path)
         }
 
         fun loadFloatingLearnScreen(path: String) {
+            if (!CompanionOverlaySettings.isEnabled()) {
+                destroyInstance()
+                return
+            }
             getInstance()?.loadFloatingLearnScreen(path)
         }
 
         fun destroyInstance() {
-            getInstance()?.removeView()
+            INSTANCE?.removeView()
             INSTANCE = null
         }
         fun isShowing(): Boolean {
-            return getInstance()?.isShowing() ?: false
+            return INSTANCE?.isShowing() ?: false
         }
     }
     private var flutterView: View? = null

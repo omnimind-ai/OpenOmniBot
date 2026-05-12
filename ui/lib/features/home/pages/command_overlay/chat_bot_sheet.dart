@@ -91,6 +91,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
   final Map<String, String> _currentAiMessages = {};
   final Set<String> _expandedAgentRunTaskIds = <String>{};
+  final Set<String> _ownedAgentStreamTaskIds = <String>{};
   bool _autoStickMessageListToLatest = true;
   bool _messageStickToLatestScheduled = false;
   bool _messageListScrollWasUserDriven = false;
@@ -879,6 +880,13 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
   void _handleIncomingAgentStreamEvent(AgentStreamEvent event) {
     if (!mounted) return;
+    final taskId = event.taskId.trim();
+    if (taskId.isEmpty) return;
+    if (!_ownedAgentStreamTaskIds.contains(taskId) &&
+        _currentDispatchTaskId != taskId) {
+      return;
+    }
+    _ownedAgentStreamTaskIds.add(taskId);
     handleAgentStreamEvent(event);
   }
 
@@ -1437,6 +1445,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     };
 
     setState(() {
+      _messages.removeWhere((msg) => msg.id == thinkingCardId);
       _messages.insert(
         0,
         ChatMessageModel(
@@ -1617,6 +1626,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   /// 重置dispatch状态
   void _resetDispatchState() {
     _currentDispatchTaskId = null;
+    _ownedAgentStreamTaskIds.clear();
     _deepThinkingContent = '';
     _isDeepThinking = false;
     clearAgentStreamSessionState();
@@ -1768,6 +1778,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     try {
       setState(() {
         _currentDispatchTaskId = aiMessageId;
+        _ownedAgentStreamTaskIds.add(aiMessageId);
         _deepThinkingContent = '';
         _isDeepThinking = false;
         _currentThinkingStage = 1;
@@ -2016,12 +2027,21 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
             ? 'Failed to open conversation'
             : '无法打开对话',
       );
+    } else {
+      await AppStateService.dismissFloatingOverlay();
+    }
+  }
+
+  Future<void> _dismissFloatingOverlay() async {
+    _inputFocusNode.unfocus();
+    final dismissed = await AppStateService.dismissFloatingOverlay();
+    if (!dismissed) {
+      await ScreenDialogService.closeChatBotDialog();
     }
   }
 
   void _closeFloatingWindow() {
-    _inputFocusNode.unfocus();
-    ScreenDialogService.closeChatBotDialog();
+    unawaited(_dismissFloatingOverlay());
   }
 
   Widget _buildSheetHeader(double screenHeight) {

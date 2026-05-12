@@ -8,6 +8,7 @@ import cn.com.omnimind.bot.activity.MainActivity
 import cn.com.omnimind.bot.activity.StartupThemeResolver
 import cn.com.omnimind.bot.share.SharedOpenDraftStore
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
+import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -90,6 +91,7 @@ class AppStateChannel {
                     val conversationId = parseLong(args?.get("conversationId"))
                     val mode = args?.get("mode")?.toString()
                     TaskCompletionNavigator.navigateBackToChat(context, conversationId, mode)
+                    CompanionOverlaySettings.dismissFloatingUi()
                     result.success(true)
                 } else {
                     OmniLog.e(TAG, "Context unavailable, cannot navigate back to chat")
@@ -122,6 +124,33 @@ class AppStateChannel {
                     return
                 }
                 StartupThemeResolver.applyApplicationNightMode(appContext, mode)
+                result.success(true)
+            }
+            "getFloatingOverlayEnabled" -> {
+                val appContext = context?.applicationContext
+                if (appContext == null) {
+                    result.error("INVALID_CONTEXT", "Context is null", null)
+                    return
+                }
+                CompanionOverlaySettings.init(appContext)
+                result.success(CompanionOverlaySettings.isEnabled(appContext))
+            }
+            "setFloatingOverlayEnabled" -> {
+                val appContext = context?.applicationContext
+                val enabled = call.argument<Boolean>("enabled")
+                if (appContext == null) {
+                    result.error("INVALID_CONTEXT", "Context is null", null)
+                    return
+                }
+                if (enabled == null) {
+                    result.error("INVALID_ARGUMENT", "enabled is required", null)
+                    return
+                }
+                CompanionOverlaySettings.setEnabled(appContext, enabled)
+                result.success(true)
+            }
+            "dismissFloatingOverlay" -> {
+                CompanionOverlaySettings.dismissFloatingUi()
                 result.success(true)
             }
             else -> {

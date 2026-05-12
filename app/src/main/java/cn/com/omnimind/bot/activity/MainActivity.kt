@@ -20,6 +20,7 @@ import cn.com.omnimind.bot.ui.platformview.EmbeddedTerminalPlatformViewFactory
 import cn.com.omnimind.bot.update.AppUpdateManager
 import cn.com.omnimind.bot.util.AssistsUtil
 import cn.com.omnimind.bot.util.SchemeUtil
+import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import kotlinx.coroutines.launch
@@ -57,6 +58,7 @@ class MainActivity : FlutterActivity() {
         setTheme(StartupThemeResolver.resolveSplashTheme(this))
         applyResponsiveOrientation()
         super.onCreate(savedInstanceState)
+        CompanionOverlaySettings.init(this)
         val channelStart = System.currentTimeMillis()
         channelManager.onCreate(this)
         OmniLog.d(TAG, "MainActivity channelManager.onCreate cost: ${System.currentTimeMillis() - channelStart}ms")

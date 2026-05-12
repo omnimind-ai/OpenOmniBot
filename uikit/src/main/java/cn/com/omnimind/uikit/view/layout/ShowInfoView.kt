@@ -467,10 +467,11 @@ class ShowInfoView @JvmOverloads constructor(
      * 宽高从 40dp 动画到 80dp
      */
     fun readyDoingTask() {
-        bottomContentLayout?.visibility = GONE
+        bottomContentLayout?.visibility = VISIBLE
         ivResume?.visibility = GONE
         llResume?.visibility = GONE
-        llTakeOver?.visibility = VISIBLE
+        llTakeOver?.visibility = GONE
+        llStop?.visibility = VISIBLE
         gradientBorderContainer?.cornerRadiusProgress = 0.0f
         innerRelativeLayout?.setPadding(12.dpToPx(), 12.dpToPx(), 12.dpToPx(), 12.dpToPx())
         visibility = GONE
@@ -491,5 +492,4 @@ class ShowInfoView @JvmOverloads constructor(
         delayTask = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 }
-
 

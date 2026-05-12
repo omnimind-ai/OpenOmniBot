@@ -541,6 +541,8 @@ class DraggableBallLoader(
      */
     override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
         if (catView.getViewState() == DraggableViewState.DOING_TASK) {
+            collapseMenu()
+            catLayoutApi?.onOpenHomeParam("/home/chat", false)
             return true
         }
         if (catView.getViewState() != DraggableViewState.COLLAPSED) {
