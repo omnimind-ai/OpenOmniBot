@@ -1050,6 +1050,9 @@ class _WebChatHomeState extends State<_WebChatHome> {
     final nextThinking = event.thinking.trim().isNotEmpty
         ? event.thinking
         : (existingCardData['thinkingContent'] ?? '').toString();
+    if (nextThinking.trim().isEmpty && existing == null) {
+      return;
+    }
     final startTime =
         _asInt(existingCardData['startTime']) ?? event.createdAtMs;
     final cardData = <String, dynamic>{

@@ -496,10 +496,10 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
         hintText = LegacyTextLocalizer.localize('正在思考');
         break;
       case 2:
-        hintText = LegacyTextLocalizer.localize('正在思考');
+        hintText = LegacyTextLocalizer.localize('正在调用工具');
         break;
       case 3:
-        hintText = LegacyTextLocalizer.localize('正在思考');
+        hintText = LegacyTextLocalizer.localize('执行中');
         break;
       case 4:
       case 5:
