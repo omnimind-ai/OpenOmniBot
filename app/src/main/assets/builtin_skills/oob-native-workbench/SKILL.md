@@ -118,14 +118,17 @@ Route:
 
 Pass files through `htmlFiles` in `workbench_project_create` or `workbench_project_update`. Include at least `index.html`.
 
-**Viewport rule: declare the layout width explicitly so OOB renders at the right scale.**
+**Target runtime: phone portrait Workspace WebView.**
 
-- Mobile-first layout (lists, forms, dashboards): `<meta name="viewport" content="width=device-width, initial-scale=1">` — renders at native phone width, no scaling.
-- Fixed-width presentation or document (slide deck, report, comparison table): `<meta name="viewport" content="width=1280">` (or the actual design width) — OOB scales it down to fit the screen automatically.
+Generated HTML is normally shown inside the right-side OOB Workspace on a real phone. Assume a narrow portrait viewport, roughly 360-430dp wide, with vertical scrolling. The first viewport must be compact and useful: show the title, current state/summary, and the primary controls or top findings. Do not generate desktop landing heroes, oversized banners, large decorative cards, or wide tables that require horizontal scrolling.
 
-If no viewport tag is present, OOB defaults to `width=device-width`.
+**Viewport and layout profiles:**
 
-For mobile-first HTML: use `width: 100%`, `max-width: 480px`, flexbox or grid. Touch targets ≥ 44px tall.
+- Mobile interaction UI (lists, forms, dashboards): `<meta name="viewport" content="width=device-width, initial-scale=1">`. Use one-column layouts, `width: 100%`, `max-width: 430px`, compact spacing, sticky/visible primary actions, and touch targets at least 44px tall.
+- Portrait report/document: also use `<meta name="viewport" content="width=device-width, initial-scale=1">`. Render as a phone-width article: top executive summary, section anchors, responsive charts, stacked comparison rows, and readable 14-16px body text. Convert wide tables into cards, definition lists, or horizontally summarized sections.
+- Wide report, slide deck, or landscape comparison: use `<meta name="viewport" content="width=1280">` only when the user explicitly needs a wide fixed canvas. OOB scales it down to fit, so this is not the default for phone reports.
+
+If no viewport tag is present, OOB defaults to `width=device-width`, but generated HTML should declare the intended profile explicitly.
 
 HTML bridge:
 

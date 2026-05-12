@@ -1451,7 +1451,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_create")
             put("displayName", "创建 Workbench Project")
             put("toolType", "workbench")
-            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是审慎控制面能力，只有用户明确要求创建/新建 Project 时才调用，不会出现在 Project 自己的工具列表里。OOB Workbench 是 AI 产品输出展示层：AI 提供 projectId、Project Tools、持久化初始数据和可显示的 HTML/Flutter/page spec 资产，右侧 Flutter Workspace Host 负责优雅展示与交互。报告、图表、富文本、对比或快速局部视觉编辑优先通过 htmlFiles 创建内嵌 WebView renderer；结构化数据操作通过 Project Tools 和默认 Project Display 呈现；flutterFiles 只作为受限 flutter_eval 补充路径。不要直接写 registry 文件。Display 只展示业务工作流，不展示 Project id、工具数量、executor、Toolbox、Workspace 或日志路径等控制面摘要。")
+            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是审慎控制面能力，只有用户明确要求创建/新建 Project 时才调用，不会出现在 Project 自己的工具列表里。OOB Workbench 是 AI 产品输出展示层：AI 提供 projectId、Project Tools、持久化初始数据和可显示的 HTML/Flutter/page spec 资产，右侧 Flutter Workspace Host 负责优雅展示与交互。报告、图表、富文本、对比或快速局部视觉编辑优先通过 htmlFiles 创建内嵌 WebView renderer；默认按真机右侧 Workspace 的手机竖屏设计，约 360-430dp 宽，首屏紧凑。竖屏报告也应使用手机宽文章布局；只有明确宽屏报告/PPT/横向对比时才用 1280 固定画布。结构化数据操作通过 Project Tools 和默认 Project Display 呈现；flutterFiles 只作为受限 flutter_eval 补充路径。不要直接写 registry 文件。Display 只展示业务工作流，不展示 Project id、工具数量、executor、Toolbox、Workspace 或日志路径等控制面摘要。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1485,7 +1485,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("htmlFiles") {
                         put("type", "array")
-                        put("description", "可选。创建可即时运行的 HTML Display，路径限定在 frontend/html/ 内。每项包含 path 和 content，建议至少包含 {path:\"index.html\", content:\"...\"}。HTML 由右侧 Flutter Host 的内嵌 WebView renderer 承载，可用 window.oob.callApi(apiId, inputs) 调 Project Tool。")
+                        put("description", "可选。创建可即时运行的 HTML Display，路径限定在 frontend/html/ 内。每项包含 path 和 content，建议至少包含 {path:\"index.html\", content:\"...\"}。HTML 由右侧 Flutter Host 的内嵌 WebView renderer 承载，可用 window.oob.callApi(apiId, inputs) 调 Project Tool。默认按手机竖屏 Workspace WebView 生成：viewport=device-width、单列、约 430px 最大宽度、首屏紧凑；竖屏报告用手机宽文章布局。只有明确宽屏报告/PPT 时才使用 viewport width=1280。")
                     }
                     putJsonObject("flutterFiles") {
                         put("type", "array")
@@ -1594,7 +1594,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("htmlFiles") {
                         put("type", "array")
-                        put("description", "可选。写入 Project 自有 HTML/CSS/JS 源码资产，路径限定在 frontend/html/ 内。每项包含 path 和 content。HTML Display 可被右侧 Flutter Host 的 WebView renderer 即时加载，使用 window.oob.callApi 调 Project Tool。")
+                        put("description", "可选。写入 Project 自有 HTML/CSS/JS 源码资产，路径限定在 frontend/html/ 内。每项包含 path 和 content。HTML Display 可被右侧 Flutter Host 的 WebView renderer 即时加载，使用 window.oob.callApi 调 Project Tool。更新时保持手机竖屏约 360-430dp 的默认布局；竖屏报告使用 phone-width article，避免宽表格和桌面 hero；仅明确宽屏报告/PPT 时使用 1280 固定画布。")
                     }
                     putJsonObject("prompt") {
                         put("type", "string")

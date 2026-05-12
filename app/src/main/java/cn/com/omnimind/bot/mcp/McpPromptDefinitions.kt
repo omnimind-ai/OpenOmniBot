@@ -14,6 +14,9 @@ object McpPromptDefinitions {
             Requirements:
             - Choose a stable oob-workbench-* projectId.
             - Provide htmlFiles with at least frontend/html/index.html content.
+            - Target the real-phone right-side Workspace WebView by default: portrait, roughly 360-430dp wide, compact first viewport.
+            - Use viewport width=device-width for mobile UI and portrait reports. Use a phone-width article layout for portrait reports.
+            - Use viewport width=1280 only for explicitly wide reports, slide decks, or landscape comparison canvases.
             - Use window.oob.callApi(apiId, inputs) for all Project Tool calls.
             - Register only Project Tools that the displayed UI needs.
             - Activate the Project after creation.
