@@ -136,19 +136,80 @@ If no viewport tag is present, OOB defaults to `width=device-width`, but generat
 
 Every item written by `callApi` is stored in the Project's `data/items.json` and survives app restarts. The HTML must read and render from `project.items` — never hardcode sample data arrays. On page load, call `window.oob.getProject()` to get the current real state.
 
+Persisted items always use the Workbench item envelope:
+
+```js
+{
+  id: "item-id",
+  title: "User visible title",
+  status: "active",        // archived/deleted records may still exist
+  fields: {
+    // domain fields written by Project Tools live here
+    amount: 12.5,
+    type: "expense",
+    category: "餐饮",
+    date: "2026-05-12",
+    note: "午饭"
+  }
+}
+```
+
+HTML must treat `id`, `title`, and `status` as Workbench metadata, and all app/domain fields as `item.fields.*`. Do not read raw persisted records as `item.amount`, `item.type`, `item.category`, `item.date`, `item.note`, etc. unless the code first normalizes from `item.fields`.
+
+Use a small view-model adapter at the boundary:
+
+```js
+function toViewItem(item) {
+  const fields = item && item.fields ? item.fields : {};
+  return {
+    id: item.id,
+    title: item.title || fields.title || '',
+    status: item.status || 'active',
+    amount: Number(fields.amount || 0),
+    type: fields.type || 'expense',
+    category: fields.category || '',
+    date: fields.date || '',
+    note: fields.note || ''
+  };
+}
+
+function activeViewItems(project) {
+  return (project.items || [])
+    .filter(item => (item.status || 'active') === 'active')
+    .map(toViewItem);
+}
+```
+
+`window.oob.callApi(apiId, inputs)` returns a result envelope, not a raw list:
+
+```js
+{
+  success: true,
+  apiId: "expense.list",
+  outputs: { items: [/* optional API outputs */] },
+  project: { items: [/* updated Workbench item envelopes */] },
+  errorCode: "OPTIONAL_ERROR",
+  errorMessage: "Optional error message"
+}
+```
+
+For list APIs, use `result.outputs.items || result.project.items`, then normalize each item from `fields`. Never use `result.items`. For create/update/archive, refresh immediately from `result.project.items` if present; otherwise call `window.oob.getProject()` again.
+
+If a Project Tool uses `run.use: "workspace_python_script"` or `run.use: "script"`, the referenced script file must be present under the Project backend, for example `backend/scripts/expense_stats.py`. If the script is missing, the API returns `SCRIPT_NOT_FOUND`; either provide the script or compute simple derived values in HTML from `project.items`.
+
 HTML bridge:
 
 ```js
 // ── Page load: read real data, never hardcode ──────────────────────────────
 window.addEventListener('load', async function() {
   const project = await window.oob.getProject();
-  renderItems(project.items); // project.items = real persisted records
+  renderItems(activeViewItems(project)); // normalized from item.fields
 });
 
 // ── Synchronous CRUD: result.project.items is the updated state ───────────
 async function addEntry(amount, note) {
   const result = await window.oob.callApi('entry.create', { amount, note });
-  renderItems(result.project.items); // re-render immediately from result
+  renderItems((result.project.items || []).map(toViewItem)); // re-render immediately
 }
 
 // ── Async agent_task: result arrives via onProjectUpdated ─────────────────
@@ -157,7 +218,7 @@ await window.oob.callApi('meal.analyze', { date: '2026-05-12' });
 
 window.oob.onProjectUpdated(function(project) {
   if (project._taskError) { showError(project.errorMessage); return; }
-  renderItems(project.items);
+  renderItems(activeViewItems(project));
 });
 
 // ── Inspect mode ──────────────────────────────────────────────────────────
@@ -199,9 +260,12 @@ Rules:
 
 1. Use `window.oob.callApi(apiId, inputs)` for every backend action.
 2. **On page load, call `window.oob.getProject()` and render from `project.items`. Never hardcode data arrays — `project.items` is the real persistent state.**
-3. For sync CRUD (`native.collection.create/update/archive`): re-render from `result.project.items` returned by `callApi`. No need to call `getProject()` again.
-4. Use `window.oob.getProject()` only when you need full project state outside of a callApi flow.
-5. Use `window.oob.onProjectUpdated(callback)` when a tool uses `run.use: "agent"` — the result arrives asynchronously after the agent writes back to project data.
+3. Always normalize raw Workbench items before rendering: app fields live under `item.fields`, not on the top-level item object.
+4. Treat `callApi` return values as envelopes. Read API outputs from `result.outputs`, updated Project state from `result.project`, and errors from `result.errorCode` / `result.errorMessage`; never read `result.items`.
+5. For sync CRUD (`native.collection.create/update/archive`): re-render from `result.project.items` returned by `callApi`. If the envelope has no `project.items`, call `getProject()` and render that state.
+6. For list APIs: prefer `result.outputs.items || result.project.items`, then normalize from `fields`.
+7. Use `window.oob.getProject()` only when you need full project state outside of a callApi flow.
+8. Use `window.oob.onProjectUpdated(callback)` when a tool uses `run.use: "agent"` — the result arrives asynchronously after the agent writes back to project data.
    - **Do not read `result.project` from `callApi` to get agent_task results** — that snapshot is captured before the agent runs. Read state only inside the `onProjectUpdated` callback.
    - Show a loading state between the `callApi` call and the `onProjectUpdated` callback.
    - Check `project._taskError` in the callback: if true, the agent task timed out or failed. Show an error message and hide the loading state.
@@ -209,13 +273,15 @@ Rules:
    window.oob.onProjectUpdated(function(project) {
      hideLoading();
      if (project._taskError) { showError(project.errorMessage); return; }
-     renderItems(project.items);
+     renderItems(activeViewItems(project));
    });
    ```
-6. Use `data-oob-id` on important elements so inspect/edit can target small changes.
-7. Show domain labels to users, not tool ids, Project ids, executor names, paths, logs, or implementation badges.
-8. Handle loading, empty, success, and error states inside the HTML.
-9. Prefer local assets for production. CDN is acceptable for demos and iteration, especially charts.
+9. Before finalizing HTML, scan for raw `project.items` usages that read domain fields directly, such as `item.amount`, `item.type`, `item.category`, `item.date`, or `item.note`. Those are valid only on normalized view models, not on Workbench item envelopes.
+10. If an API references `script` or `workspace_python_script`, include the referenced backend script file or remove that API. A missing script is a backend contract failure, not an empty-data state.
+11. Use `data-oob-id` on important elements so inspect/edit can target small changes.
+12. Show domain labels to users, not tool ids, Project ids, executor names, paths, logs, or implementation badges.
+13. Handle loading, empty, success, and error states inside the HTML.
+14. Prefer local assets for production. CDN is acceptable for demos and iteration, especially charts.
 
 ## Default Project Display
 

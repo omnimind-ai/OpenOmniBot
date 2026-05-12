@@ -105,6 +105,62 @@ window.oob.selectElement(payload)
 
 Use `data-oob-id` on important elements so inspect/edit mode can target smaller changes.
 
+### HTML Data Contract
+
+The Workbench frontend must render persisted Project data, not generated sample arrays. On load, call `window.oob.getProject()` and render from `project.items`.
+
+Workbench item records are envelopes:
+
+```js
+{
+  id: "item-id",
+  title: "Display title",
+  status: "active",
+  fields: {
+    amount: 12.5,
+    type: "expense",
+    category: "餐饮",
+    date: "2026-05-12",
+    note: "午饭"
+  }
+}
+```
+
+Only `id`, `title`, and `status` are top-level item metadata. Business fields produced by Project Tools live under `item.fields`. Generated HTML must not read raw persisted items as `item.amount`, `item.type`, `item.category`, `item.date`, `item.note`, etc. Normalize at the boundary:
+
+```js
+function toViewItem(item) {
+  const fields = item && item.fields ? item.fields : {};
+  return {
+    id: item.id,
+    title: item.title || fields.title || '',
+    status: item.status || 'active',
+    amount: Number(fields.amount || 0),
+    type: fields.type || 'expense',
+    category: fields.category || '',
+    date: fields.date || '',
+    note: fields.note || ''
+  };
+}
+```
+
+`window.oob.callApi(apiId, inputs)` returns an envelope:
+
+```js
+{
+  success: true,
+  apiId: "expense.list",
+  outputs: { items: [] },
+  project: { items: [] },
+  errorCode: "OPTIONAL_ERROR",
+  errorMessage: "Optional error message"
+}
+```
+
+Generated HTML must read list outputs from `result.outputs.items || result.project.items`, never `result.items`. After create/update/archive, refresh from `result.project.items` or call `getProject()` again.
+
+If a Project Tool references `run.use: "script"` or `run.use: "workspace_python_script"`, the referenced script file must be present in the Project backend, such as `backend/scripts/expense_stats.py`. Missing scripts cause `SCRIPT_NOT_FOUND` and are backend contract failures, not empty frontend data.
+
 ## Hot Update
 
 For user iteration:
