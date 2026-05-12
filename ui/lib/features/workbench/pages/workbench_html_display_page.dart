@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:collection';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:go_router/go_router.dart';
@@ -11,7 +13,6 @@ import 'package:ui/features/workbench/models/workbench_models.dart';
 import 'package:ui/features/workbench/services/workbench_project_service.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/theme/theme_context.dart';
-import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/chat_drawer_gesture_guard.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 
@@ -26,6 +27,10 @@ const String _kViewportScript = '''
     vp.content = 'width=device-width, initial-scale=1';
     (document.head || document.documentElement).appendChild(vp);
   }
+  // Eliminate 300ms double-tap delay while preserving pinch-zoom.
+  var s = document.createElement('style');
+  s.textContent = 'html,body{touch-action:manipulation;}';
+  (document.head || document.documentElement).appendChild(s);
 })();
 ''';
 
@@ -162,7 +167,6 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
 
   bool _webViewLoading = false;
   String? _errorMessage;
-  Map<String, Object?>? _selectedElement;
 
   @override
   void initState() {
@@ -185,14 +189,52 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
 
   void _onProjectUpdated(Map<String, dynamic> event) {
     final id = event['projectId'] as String?;
-    if (id == null || id != (_loader.project?.projectId ?? widget._projectId))
+    if (id == null || id != (_loader.project?.projectId ?? widget._projectId)) {
       return;
+    }
+
+    final paths = (event['updatedPaths'] as List?)?.cast<String>() ?? [];
+    final isHtmlChange = paths.any(
+      (p) => p.endsWith('.html') || p.endsWith('.css') || p.endsWith('.js'),
+    );
+
+    if (isHtmlChange) {
+      // HTML source changed — full reload required.
+      _refreshDebounce?.cancel();
+      _refreshDebounce = Timer(const Duration(milliseconds: 100), () {
+        unawaited(
+          _loader.refresh().then((_) {
+            if (!mounted) return;
+            unawaited(_loadHtml());
+          }),
+        );
+      });
+      return;
+    }
+
+    // Data-only update — use items from event if available, otherwise refresh.
+    final rawItems = event['items'];
+    if (rawItems is List) {
+      _refreshDebounce?.cancel();
+      _refreshDebounce = Timer(const Duration(milliseconds: 100), () {
+        if (!mounted) return;
+        _loader.applyItems(rawItems.cast<Map>());
+        final payload = _bridgeUpdatePayload(_loader.project);
+        final js =
+            'window.oob && window.oob.__dispatchUpdate && '
+            'window.oob.__dispatchUpdate(${jsonEncode(payload)});';
+        unawaited(_webController?.evaluateJavascript(source: js));
+      });
+      return;
+    }
+
+    // Fallback: full refresh (for events without inline items).
     _refreshDebounce?.cancel();
-    _refreshDebounce = Timer(const Duration(milliseconds: 300), () {
+    _refreshDebounce = Timer(const Duration(milliseconds: 100), () {
       unawaited(
         _loader.refresh().then((_) {
           if (!mounted) return;
-          final payload = _bridgeProjectPayload(_loader.project);
+          final payload = _bridgeUpdatePayload(_loader.project);
           final js =
               'window.oob && window.oob.__dispatchUpdate && '
               'window.oob.__dispatchUpdate(${jsonEncode(payload)});';
@@ -239,11 +281,6 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
         final selection = raw is Map
             ? raw.map((k, v) => MapEntry(k.toString(), v))
             : <String, Object?>{};
-        if (mounted) {
-          setState(() {
-            _selectedElement = selection;
-          });
-        }
         await _publishFrontendContext(selection);
         return {'success': true};
       },
@@ -262,11 +299,12 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
     final entryFile = html['entryFile']?.toString().trim() ?? 'index.html';
     final sources = html['sources'];
 
-    if (mounted)
+    if (mounted) {
       setState(() {
         _webViewLoading = true;
         _errorMessage = null;
       });
+    }
 
     try {
       final entry = File(entryPath);
@@ -296,11 +334,12 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
         });
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _webViewLoading = false;
           _errorMessage = '$e';
         });
+      }
     }
   }
 
@@ -328,12 +367,6 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
       );
     }
     return '<!doctype html><html><head>\n$_kBridgeBootstrapTag</head><body>$html</body></html>';
-  }
-
-  Future<void> _setInspectEnabled(bool enabled) async {
-    await _webController?.evaluateJavascript(
-      source: 'window.__oobInspectEnabled = ${enabled ? 'true' : 'false'};',
-    );
   }
 
   // ── bridge handlers ────────────────────────────────────────────────────────
@@ -395,30 +428,48 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
       'displayId': widget._displayId ?? project.primaryDisplay.id,
       'pageSpec': project.pageSpec,
       'frontendHtml': project.frontendHtml,
-      'tools': project.tools
-          .map(
-            (t) => {
-              'id': t.id,
-              'toolId': t.id,
-              'displayName': t.displayName,
-              'description': t.description,
-              'inputKeys': t.inputKeys,
-              'outputKeys': t.outputKeys,
-            },
-          )
-          .toList(growable: false),
-      'items': project.items
-          .map(
-            (item) => {
-              'id': item.id,
-              'title': item.title,
-              'status': item.status,
-              'fields': item.fields,
-            },
-          )
-          .toList(growable: false),
+      'tools': _bridgeTools(project),
+      'items': _bridgeItems(project),
     };
   }
+
+  // Lightweight payload for data-only updates — omits frontendHtml which is
+  // already loaded in the WebView and never changes during item mutations.
+  Map<String, Object?> _bridgeUpdatePayload(WorkbenchProject? project) {
+    if (project == null) return const {};
+    return {
+      'projectId': project.projectId,
+      'name': project.name,
+      'tools': _bridgeTools(project),
+      'items': _bridgeItems(project),
+    };
+  }
+
+  List<Map<String, Object?>> _bridgeTools(WorkbenchProject project) => project
+      .tools
+      .map(
+        (t) => <String, Object?>{
+          'id': t.id,
+          'toolId': t.id,
+          'displayName': t.displayName,
+          'description': t.description,
+          'inputKeys': t.inputKeys,
+          'outputKeys': t.outputKeys,
+        },
+      )
+      .toList(growable: false);
+
+  List<Map<String, Object?>> _bridgeItems(WorkbenchProject project) => project
+      .items
+      .map(
+        (item) => <String, Object?>{
+          'id': item.id,
+          'title': item.title,
+          'status': item.status,
+          'fields': item.fields,
+        },
+      )
+      .toList(growable: false);
 
   // ── navigation ─────────────────────────────────────────────────────────────
 
@@ -495,6 +546,7 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
         javaScriptEnabled: true,
         allowFileAccess: true,
         allowContentAccess: true,
+        useHybridComposition: false,
         supportZoom: true,
         useWideViewPort: true,
         loadWithOverviewMode: true,
@@ -517,13 +569,17 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
         ),
       ]),
+      gestureRecognizers: {
+        Factory<EagerGestureRecognizer>(() => EagerGestureRecognizer()),
+      },
       onWebViewCreated: _onWebViewCreated,
       onLoadStart: (_, __) {
-        if (mounted)
+        if (mounted) {
           setState(() {
             _webViewLoading = true;
             _errorMessage = null;
           });
+        }
       },
       onLoadStop: (controller, __) async {
         await controller.evaluateJavascript(source: _kBridgeScript);
@@ -532,11 +588,12 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
         if (mounted) setState(() => _webViewLoading = false);
       },
       onReceivedError: (_, __, error) {
-        if (mounted)
+        if (mounted) {
           setState(() {
             _webViewLoading = false;
             _errorMessage = error.description;
           });
+        }
       },
       shouldOverrideUrlLoading: (_, action) async {
         final uri = action.request.url;
@@ -613,5 +670,14 @@ class _HtmlProjectLoader extends ChangeNotifier {
   void setProject(WorkbenchProject project) {
     _project = project;
     notifyListeners();
+  }
+
+  // Apply an inline items list from a dispatch event without a disk round-trip.
+  void applyItems(List<Map> rawItems) {
+    final current = _project;
+    if (current == null) return;
+    final parsed = rawItems.map(WorkbenchProjectItem.fromMap).toList();
+    _project = current.copyWith(items: parsed);
+    // No notifyListeners: the caller dispatches __dispatchUpdate directly to JS.
   }
 }

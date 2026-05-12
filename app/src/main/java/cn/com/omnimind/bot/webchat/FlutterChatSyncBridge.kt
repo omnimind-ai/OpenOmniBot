@@ -60,16 +60,16 @@ object FlutterChatSyncBridge {
     fun dispatchWorkbenchProjectUpdated(
         projectId: String,
         updatedPaths: List<String> = emptyList(),
-        reason: String = "project_updated"
+        reason: String = "project_updated",
+        items: List<Map<String, Any?>>? = null
     ) {
-        dispatch(
-            method = "workbenchProjectUpdated",
-            arguments = mapOf(
-                "projectId" to projectId,
-                "updatedPaths" to updatedPaths,
-                "reason" to reason
-            )
+        val args = linkedMapOf<String, Any?>(
+            "projectId" to projectId,
+            "updatedPaths" to updatedPaths,
+            "reason" to reason
         )
+        if (items != null) args["items"] = items
+        dispatch(method = "workbenchProjectUpdated", arguments = args)
     }
 
     private fun dispatch(method: String, arguments: Any?) {

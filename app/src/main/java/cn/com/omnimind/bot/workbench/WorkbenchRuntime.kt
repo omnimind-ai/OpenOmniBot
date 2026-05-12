@@ -1027,10 +1027,12 @@ class WorkbenchProjectStore(
         val runUse = WorkbenchToolboxBuilder.runUse(api).lowercase()
         val isReadOnly = runUse == "native.collection.list" || runUse == "native.collection.get"
         if (!isReadOnly) {
+            val currentItems = readProjectItems(record.projectId).map { it.toPayload() }
             FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
                 projectId = record.projectId,
                 updatedPaths = listOf("data/items.json"),
-                reason = "api_call:${api.toolId}"
+                reason = "api_call:${api.toolId}",
+                items = currentItems
             )
         }
         return result + ("project" to getProject(record.projectId))
