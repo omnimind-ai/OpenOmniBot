@@ -147,6 +147,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       'cardId': thinkingCardId,
       'startTime': startTime,
       'endTime': null,
+      'isCollapsible': true,
     };
 
     setState(() {
@@ -195,6 +196,8 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       int? endTime = cardData['endTime'] as int?;
       if (newStage == 4 && endTime == null) {
         endTime = DateTime.now().millisecondsSinceEpoch;
+      } else if (newStage != 4 && newStage != 5) {
+        endTime = null;
       }
 
       cardData['thinkingContent'] = thinkingContent ?? _deepThinkingContent;
@@ -386,9 +389,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     if (_isOmniInferLocalModelSelected &&
         activeConversationModeValue != ConversationMode.chatOnly) {
       showToast(
-        LegacyTextLocalizer.localize(
-          '本地模型仅支持纯聊天模式，请开启新的纯聊天对话后再使用本地模型',
-        ),
+        LegacyTextLocalizer.localize('本地模型仅支持纯聊天模式，请开启新的纯聊天对话后再使用本地模型'),
         type: ToastType.warning,
       );
       return;

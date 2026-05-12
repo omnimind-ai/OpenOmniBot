@@ -1498,14 +1498,19 @@ class _ChatMessageListState extends State<ChatMessageList> {
   bool _outerScrollWasUserDriven = false;
   bool _isAutoLoadingHistory = false;
   final Set<String> _localExpandedAgentRunTaskIds = <String>{};
+  final AgentRunCompletionExpansionTracker _agentRunExpansionTracker =
+      AgentRunCompletionExpansionTracker();
   static const double _latestEdgeTolerance = 48.0;
   static const double _manualLatestAttachTolerance = 2.0;
   static const double _historyLoadTriggerExtent = 180.0;
   ObservableChatMessageList? _observableMessages;
   DateTime? _autoStickSuppressedUntil;
 
-  Set<String> get _expandedAgentRunTaskIds =>
+  Set<String> get _manualExpandedAgentRunTaskIds =>
       widget.expandedAgentRunTaskIds ?? _localExpandedAgentRunTaskIds;
+
+  Set<String> get _expandedAgentRunTaskIds => _agentRunExpansionTracker
+      .effectiveExpandedTaskIds(_manualExpandedAgentRunTaskIds);
 
   bool get _isAutoStickTemporarilySuppressed {
     final suppressedUntil = _autoStickSuppressedUntil;
@@ -1523,6 +1528,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
   void initState() {
     super.initState();
     _bindObservableMessages(widget.messages);
+    _syncAgentRunExpansion();
     _scheduleStickToBottom();
   }
 
@@ -1530,6 +1536,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
   void didUpdateWidget(covariant ChatMessageList oldWidget) {
     super.didUpdateWidget(oldWidget);
     _bindObservableMessages(widget.messages);
+    _syncAgentRunExpansion();
     if (oldWidget.scrollController != widget.scrollController) {
       _autoStickToLatest = true;
       _outerScrollWasUserDriven = false;
@@ -1661,6 +1668,16 @@ class _ChatMessageListState extends State<ChatMessageList> {
     _outerScrollWasUserDriven = false;
   }
 
+  void _syncAgentRunExpansion() {
+    final changed = _agentRunExpansionTracker.sync(
+      messages: widget.messages,
+      activeTaskIds: widget.activeAgentTaskIds,
+    );
+    if (changed) {
+      _scheduleStickToLatest();
+    }
+  }
+
   void _suspendAutoStickForAgentRunToggle() {
     _autoStickToLatest = false;
     _outerScrollWasUserDriven = false;
@@ -1675,8 +1692,15 @@ class _ChatMessageListState extends State<ChatMessageList> {
       return;
     }
     _suspendAutoStickForAgentRunToggle();
-    final nextExpandedTaskIds = Set<String>.from(_expandedAgentRunTaskIds);
-    if (nextExpandedTaskIds.contains(normalizedTaskId)) {
+    final wasExpanded = _agentRunExpansionTracker.isTaskExpanded(
+      normalizedTaskId,
+      _manualExpandedAgentRunTaskIds,
+    );
+    _agentRunExpansionTracker.consumeAutoExpandedTask(normalizedTaskId);
+    final nextExpandedTaskIds = Set<String>.from(
+      _manualExpandedAgentRunTaskIds,
+    );
+    if (wasExpanded) {
       nextExpandedTaskIds.remove(normalizedTaskId);
     } else {
       nextExpandedTaskIds.add(normalizedTaskId);

@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart'
     hide buildAgentToolTranscript;
 import 'package:ui/features/home/pages/command_overlay/services/tool_card_detail_gesture_gate.dart';
@@ -36,6 +38,7 @@ const double _kToolActivitySurfaceHorizontalInset = 20;
 const double _kToolActivityDrawerMaxHeight = 264;
 const double _kToolActivityTypeSlotWidth = 34;
 const double _kToolActivityStatusSlotWidth = 42;
+const double _kToolActivityRunLogSlotWidth = 22;
 const double _kToolActivityTrailingSlotWidth = 24;
 const double _kToolActivityAttachedBorderReveal = 1.5;
 const Color _kToolActivitySurfaceColor = Color(0xFFF9FCFF);
@@ -911,12 +914,14 @@ class ToolActivityRow extends StatelessWidget {
     this.leadingInset = 0,
     this.onTap,
     this.trailing,
+    this.showRunLogButton = true,
   });
 
   final Map<String, dynamic> card;
   final double leadingInset;
   final VoidCallback? onTap;
   final Widget? trailing;
+  final bool showRunLogButton;
 
   @override
   Widget build(BuildContext context) {
@@ -930,6 +935,7 @@ class ToolActivityRow extends StatelessWidget {
     final status = (card['status'] ?? 'running').toString();
     final toolTypeLabel = resolveAgentToolTypeLabel(card);
     final statusLabel = resolveAgentToolStatusLabel(card);
+    final runLogId = showRunLogButton ? _resolveRunLogId(card) : '';
 
     return SizedBox(
       height: _kToolActivityRowHeight,
@@ -943,6 +949,7 @@ class ToolActivityRow extends StatelessWidget {
                 constraints.maxWidth >=
                 _kToolActivityTypeSlotWidth +
                     _kToolActivityStatusSlotWidth +
+                    (runLogId.isNotEmpty ? _kToolActivityRunLogSlotWidth : 0) +
                     _kToolActivityTrailingSlotWidth +
                     28;
             return Row(
@@ -1004,6 +1011,11 @@ class ToolActivityRow extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (runLogId.isNotEmpty)
+                          SizedBox(
+                            width: _kToolActivityRunLogSlotWidth,
+                            child: _RunLogActivityButton(runLogId: runLogId),
+                          ),
                       ],
                     ),
                   ),
@@ -1023,6 +1035,79 @@ class ToolActivityRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RunLogActivityButton extends StatelessWidget {
+  const _RunLogActivityButton({required this.runLogId});
+
+  final String runLogId;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = context.isDarkTheme
+        ? context.omniPalette.textSecondary
+        : const Color(0xFF657891);
+    return Tooltip(
+      message: _text(context, '查看 RunLog', 'View RunLog'),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => GoRouterManager.push(
+          '/task/run_log_timeline',
+          extra: {'runId': runLogId, 'title': 'RunLog'},
+        ),
+        child: Center(
+          child: Icon(Icons.description_outlined, size: 14, color: color),
+        ),
+      ),
+    );
+  }
+}
+
+String _resolveRunLogId(Map<String, dynamic> cardData) {
+  return _firstNonBlank([
+    cardData['runLogId'],
+    cardData['run_log_id'],
+    cardData['runId'],
+    cardData['run_id'],
+    _runLogIdFromJsonString(cardData['resultPreviewJson']),
+    _runLogIdFromJsonString(cardData['rawResultJson']),
+    cardData['toolTaskId'],
+    cardData['taskId'],
+    cardData['taskID'],
+  ]);
+}
+
+String _runLogIdFromJsonString(dynamic raw) {
+  final text = raw?.toString().trim() ?? '';
+  if (text.isEmpty) return '';
+  try {
+    final decoded = jsonDecode(text);
+    if (decoded is! Map) return '';
+    return _firstNonBlank([
+      decoded['runLogId'],
+      decoded['run_log_id'],
+      decoded['runId'],
+      decoded['run_id'],
+      decoded['taskId'],
+      decoded['task_id'],
+    ]);
+  } catch (_) {
+    return '';
+  }
+}
+
+String _firstNonBlank(Iterable<Object?> values) {
+  for (final value in values) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isNotEmpty) {
+      return text;
+    }
+  }
+  return '';
+}
+
+String _text(BuildContext context, String zh, String en) {
+  return Localizations.localeOf(context).languageCode == 'zh' ? zh : en;
 }
 
 class _StatusDot extends StatelessWidget {

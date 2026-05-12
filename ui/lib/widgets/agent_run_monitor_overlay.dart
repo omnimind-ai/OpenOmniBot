@@ -6,11 +6,14 @@ import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/chat/widgets/chat_tool_activity_strip.dart'
     show ToolActivityRow;
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/floating_overlay_service.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/theme_context.dart';
+
+String _t(String text) => LegacyTextLocalizer.localize(text);
 
 class AgentRunMonitorOverlay extends StatefulWidget {
   const AgentRunMonitorOverlay({super.key});
@@ -153,29 +156,6 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
     }
   }
 
-  Future<void> _showRuns() async {
-    await _refresh();
-    if (!mounted) return;
-    final sheetContext = GoRouterManager.rootNavigatorKey.currentContext;
-    if (sheetContext == null || !sheetContext.mounted) {
-      _showSnack('无法打开 Agent 管理面板');
-      return;
-    }
-    await showModalBottomSheet<void>(
-      context: sheetContext,
-      useRootNavigator: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _AgentRunMonitorSheet(
-        initialRuns: List.of(_runs),
-        initialEvents: Map.of(_latestEvents),
-        onOpenRun: _openRun,
-        onDisableFloatingOverlay: _disableFloatingOverlay,
-      ),
-    );
-    unawaited(_refresh());
-  }
-
   void _setCapsuleCollapsed(bool collapsed) {
     if (_capsuleCollapsed == collapsed) return;
     setState(() => _capsuleCollapsed = collapsed);
@@ -205,10 +185,10 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
     if (!mounted) return;
     if (!success) {
       setState(() => _floatingOverlayEnabled = true);
-      _showSnack('关闭悬浮球失败');
+      _showSnack(_t('关闭悬浮球失败'));
       return;
     }
-    _showSnack('悬浮球已关闭，可在设置里重新开启');
+    _showSnack(_t('悬浮球已关闭，可在设置里重新开启'));
   }
 
   void _showSnack(String message) {
@@ -246,7 +226,7 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
       _expandedCapsuleMaxWidth,
       size.width - _edgeMargin * 2,
     );
-    final visibleRows = math.min(_runs.length, 4);
+    final visibleRows = math.max(1, math.min(_runs.length, 4));
     final listHeight = visibleRows * 37.0 + math.max(0, visibleRows - 1) * 5.0;
     final desiredHeight = 16.0 + 30.0 + 7.0 + listHeight;
     final maxHeight = math.min(size.height * 0.42, _expandedCapsuleMaxHeight);
@@ -293,7 +273,6 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
   @override
   Widget build(BuildContext context) {
     if (!_floatingOverlayEnabled) return const SizedBox.shrink();
-    if (_runs.isEmpty) return const SizedBox.shrink();
     return Positioned.fill(
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -318,8 +297,11 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: _capsuleCollapsed
-                      ? () => _setCapsuleCollapsed(false)
-                      : _showRuns,
+                      ? () {
+                          unawaited(_refresh());
+                          _setCapsuleCollapsed(false);
+                        }
+                      : null,
                   onPanStart: (_) {
                     setState(() {
                       _dragging = true;
@@ -333,8 +315,8 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
                   child: Semantics(
                     button: true,
                     label: _capsuleCollapsed
-                        ? '运行中的 Agent：${_runs.length} 个。轻点展开摘要。'
-                        : '运行中的 Agent：${_runs.length} 个。轻点打开完整管理面板。',
+                        ? _t('运行中的 Agent：${_runs.length} 个。轻点展开摘要。')
+                        : _t('运行中的 Agent：${_runs.length} 个。'),
                     child: SizedBox(
                       width: capsuleSize.width,
                       height: capsuleSize.height,
@@ -350,6 +332,7 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
                               latestEvents: _latestEvents,
                               dragging: _dragging,
                               onCollapse: () => _setCapsuleCollapsed(true),
+                              onOpenRun: _openRun,
                               onDisable: () =>
                                   unawaited(_disableFloatingOverlay()),
                             ),
@@ -374,6 +357,11 @@ class _AgentRunMiniCapsule extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
+    final idle = count <= 0;
+    final statusColor = idle
+        ? palette.textTertiary.withValues(alpha: 0.72)
+        : palette.accentPrimary;
+    final textColor = idle ? palette.textSecondary : palette.textPrimary;
     return AnimatedScale(
       scale: dragging ? 1.06 : 1,
       duration: const Duration(milliseconds: 140),
@@ -403,12 +391,12 @@ class _AgentRunMiniCapsule extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _AgentRunStatusDot(color: palette.accentPrimary, size: 6),
+            _AgentRunStatusDot(color: statusColor, size: 6),
             const SizedBox(width: 5),
             Text(
               count > 99 ? '99+' : '$count',
               style: TextStyle(
-                color: palette.textPrimary,
+                color: textColor,
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
                 fontFeatures: const [FontFeature.tabularFigures()],
@@ -427,6 +415,7 @@ class _AgentRunExpandedCapsule extends StatelessWidget {
     required this.latestEvents,
     required this.dragging,
     required this.onCollapse,
+    required this.onOpenRun,
     required this.onDisable,
   });
 
@@ -434,11 +423,13 @@ class _AgentRunExpandedCapsule extends StatelessWidget {
   final Map<String, _AgentRunEventSummary> latestEvents;
   final bool dragging;
   final VoidCallback onCollapse;
+  final ValueChanged<_AgentRunSnapshot> onOpenRun;
   final VoidCallback onDisable;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
+    final hasActiveRuns = runs.isNotEmpty;
     return AnimatedScale(
       scale: dragging ? 1.02 : 1,
       duration: const Duration(milliseconds: 140),
@@ -472,7 +463,9 @@ class _AgentRunExpandedCapsule extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '运行中 ${runs.length} 个 Agent',
+                    hasActiveRuns
+                        ? _t('运行中 ${runs.length} 个 Agent')
+                        : _t('Agent 空闲'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -483,17 +476,9 @@ class _AgentRunExpandedCapsule extends StatelessWidget {
                     ),
                   ),
                 ),
-                Text(
-                  '点开',
-                  style: TextStyle(
-                    color: palette.textTertiary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
                 Semantics(
                   button: true,
-                  label: '隐藏悬浮球',
+                  label: _t('隐藏悬浮球'),
                   child: IconButton(
                     visualDensity: VisualDensity.compact,
                     padding: EdgeInsets.zero,
@@ -511,7 +496,7 @@ class _AgentRunExpandedCapsule extends StatelessWidget {
                 ),
                 Semantics(
                   button: true,
-                  label: '收起',
+                  label: _t('收起'),
                   child: IconButton(
                     visualDensity: VisualDensity.compact,
                     padding: EdgeInsets.zero,
@@ -531,18 +516,23 @@ class _AgentRunExpandedCapsule extends StatelessWidget {
             ),
             const SizedBox(height: 7),
             Flexible(
-              child: ListView.separated(
-                padding: EdgeInsets.zero,
-                itemCount: runs.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 5),
-                itemBuilder: (context, index) {
-                  final run = runs[index];
-                  return _AgentRunCompactRow(
-                    run: run,
-                    latestEvent: latestEvents[run.taskId],
-                  );
-                },
-              ),
+              child: hasActiveRuns
+                  ? ListView.separated(
+                      padding: EdgeInsets.zero,
+                      itemCount: runs.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 5),
+                      itemBuilder: (context, index) {
+                        final run = runs[index];
+                        return _AgentRunCompactRow(
+                          run: run,
+                          latestEvent: latestEvents[run.taskId],
+                          onTap: run.conversationId == null
+                              ? null
+                              : () => onOpenRun(run),
+                        );
+                      },
+                    )
+                  : const _AgentRunIdleRow(),
             ),
           ],
         ),
@@ -552,433 +542,94 @@ class _AgentRunExpandedCapsule extends StatelessWidget {
 }
 
 class _AgentRunCompactRow extends StatelessWidget {
-  const _AgentRunCompactRow({required this.run, required this.latestEvent});
+  const _AgentRunCompactRow({
+    required this.run,
+    required this.latestEvent,
+    required this.onTap,
+  });
 
   final _AgentRunSnapshot run;
   final _AgentRunEventSummary? latestEvent;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
     final displayCard = _agentRunToolActivityCard(run, latestEvent);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 37,
+          decoration: BoxDecoration(
+            color: palette.surfaceSecondary.withValues(alpha: 0.78),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: palette.borderSubtle),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Center(
+              child: ToolActivityRow(
+                card: displayCard,
+                showRunLogButton: false,
+                trailing: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    run.elapsedCompactLabel,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: palette.textTertiary,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AgentRunIdleRow extends StatelessWidget {
+  const _AgentRunIdleRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
     return Container(
       height: 37,
+      padding: const EdgeInsets.symmetric(horizontal: 11),
       decoration: BoxDecoration(
         color: palette.surfaceSecondary.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: palette.borderSubtle),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Center(
-          child: ToolActivityRow(
-            card: displayCard,
-            trailing: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                run.elapsedCompactLabel,
-                maxLines: 1,
-                style: TextStyle(
-                  color: palette.textTertiary,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+      child: Row(
+        children: [
+          _AgentRunStatusDot(
+            color: palette.textTertiary.withValues(alpha: 0.72),
+            size: 6,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _t('当前没有运行中的 Agent'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: palette.textSecondary,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AgentRunMonitorSheet extends StatefulWidget {
-  const _AgentRunMonitorSheet({
-    required this.initialRuns,
-    required this.initialEvents,
-    required this.onOpenRun,
-    required this.onDisableFloatingOverlay,
-  });
-
-  final List<_AgentRunSnapshot> initialRuns;
-  final Map<String, _AgentRunEventSummary> initialEvents;
-  final ValueChanged<_AgentRunSnapshot> onOpenRun;
-  final VoidCallback onDisableFloatingOverlay;
-
-  @override
-  State<_AgentRunMonitorSheet> createState() => _AgentRunMonitorSheetState();
-}
-
-class _AgentRunMonitorSheetState extends State<_AgentRunMonitorSheet> {
-  late List<_AgentRunSnapshot> _runs = widget.initialRuns;
-  late final Map<String, _AgentRunEventSummary> _latestEvents = Map.of(
-    widget.initialEvents,
-  );
-  StreamSubscription<Map<String, dynamic>>? _stateSub;
-  bool _loading = false;
-  bool _cancellingAll = false;
-  final Set<String> _cancellingTaskIds = <String>{};
-
-  @override
-  void initState() {
-    super.initState();
-    _stateSub = AssistsMessageService.agentRunStateChangedStream.listen(
-      (_) => unawaited(_refresh()),
-    );
-    AssistsMessageService.setOnAgentStreamEventCallback(_handleAgentEvent);
-    unawaited(_refresh());
-  }
-
-  @override
-  void dispose() {
-    _stateSub?.cancel();
-    AssistsMessageService.removeOnAgentStreamEventCallback(_handleAgentEvent);
-    super.dispose();
-  }
-
-  void _handleAgentEvent(AgentStreamEvent event) {
-    if (!mounted) return;
-    setState(() {
-      _latestEvents[event.taskId] = _AgentRunEventSummary.fromEvent(event);
-    });
-  }
-
-  Future<void> _refresh() async {
-    if (mounted) {
-      setState(() => _loading = true);
-    }
-    final rows = await AssistsMessageService.listActiveAgentRuns();
-    if (!mounted) return;
-    setState(() {
-      _runs = rows.map(_AgentRunSnapshot.fromMap).toList(growable: false);
-      _loading = false;
-    });
-  }
-
-  Future<void> _cancelRun(_AgentRunSnapshot run) async {
-    if (_cancellingTaskIds.contains(run.taskId)) return;
-    setState(() => _cancellingTaskIds.add(run.taskId));
-    final success = await AssistsMessageService.cancelRunningTask(
-      taskId: run.taskId,
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    if (!mounted) return;
-    setState(() => _cancellingTaskIds.remove(run.taskId));
-    if (!success) {
-      _showSnack('停止失败');
-    }
-    await _refresh();
-  }
-
-  Future<void> _cancelAll() async {
-    if (_cancellingAll) return;
-    setState(() => _cancellingAll = true);
-    final success = await AssistsMessageService.cancelRunningTask();
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    if (!mounted) return;
-    setState(() => _cancellingAll = false);
-    if (!success) {
-      _showSnack('停止失败');
-    }
-    await _refresh();
-  }
-
-  void _showSnack(String message) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  void _openRun(_AgentRunSnapshot run) {
-    Navigator.of(context).pop();
-    widget.onOpenRun(run);
-  }
-
-  void _disableFloatingOverlay() {
-    Navigator.of(context).pop();
-    widget.onDisableFloatingOverlay();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final maxHeight = MediaQuery.sizeOf(context).height * 0.72;
-    return SafeArea(
-      top: false,
-      child: Container(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        decoration: BoxDecoration(
-          color: palette.surfacePrimary,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          border: Border(top: BorderSide(color: palette.borderSubtle)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 38,
-              height: 4,
-              decoration: BoxDecoration(
-                color: palette.borderStrong,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 10, 10),
-              child: Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: palette.accentPrimary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.hub_outlined,
-                      color: palette.accentPrimary,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '运行中的 Agent',
-                          style: TextStyle(
-                            color: palette.textPrimary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        Text(
-                          _runs.isEmpty
-                              ? '当前没有后端任务'
-                              : '${_runs.length} 个后端任务正在执行',
-                          style: TextStyle(
-                            color: palette.textTertiary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: '刷新',
-                    onPressed: _loading ? null : () => unawaited(_refresh()),
-                    icon: _loading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh_rounded),
-                  ),
-                  IconButton(
-                    tooltip: '隐藏悬浮球',
-                    onPressed: _disableFloatingOverlay,
-                    icon: const Icon(Icons.visibility_off_outlined),
-                  ),
-                  IconButton.filledTonal(
-                    tooltip: '停止全部',
-                    onPressed: _runs.isEmpty || _cancellingAll
-                        ? null
-                        : () => unawaited(_cancelAll()),
-                    icon: _cancellingAll
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.stop_circle_outlined, size: 20),
-                  ),
-                ],
-              ),
-            ),
-            Divider(height: 1, color: palette.borderSubtle),
-            Flexible(
-              child: _runs.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(28),
-                        child: Text(
-                          '没有正在执行的 Agent 后端任务',
-                          style: TextStyle(
-                            color: palette.textSecondary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    )
-                  : ListView.separated(
-                      shrinkWrap: true,
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
-                      itemCount: _runs.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
-                        final run = _runs[index];
-                        final cancelling = _cancellingTaskIds.contains(
-                          run.taskId,
-                        );
-                        return _AgentRunTile(
-                          run: run,
-                          latestEvent: _latestEvents[run.taskId],
-                          cancelling: cancelling,
-                          onOpen: run.conversationId == null
-                              ? null
-                              : () => _openRun(run),
-                          onCancel: () => unawaited(_cancelRun(run)),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AgentRunTile extends StatelessWidget {
-  const _AgentRunTile({
-    required this.run,
-    required this.latestEvent,
-    required this.cancelling,
-    required this.onOpen,
-    required this.onCancel,
-  });
-
-  final _AgentRunSnapshot run;
-  final _AgentRunEventSummary? latestEvent;
-  final bool cancelling;
-  final VoidCallback? onOpen;
-  final VoidCallback onCancel;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final accent = palette.accentPrimary;
-    final activityCard = _agentRunToolActivityCard(run, latestEvent);
-    final activityPreview = resolveAgentToolPreview(activityCard);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onOpen,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: palette.surfaceSecondary.withValues(alpha: 0.78),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: palette.borderSubtle),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  _AgentRunPulse(color: accent, size: 18),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      run.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: palette.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _AgentRunChip(label: run.conversationModeLabel),
-                  const SizedBox(width: 6),
-                  _AgentRunChip(label: run.elapsedLabel),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Container(
-                decoration: BoxDecoration(
-                  color: palette.surfacePrimary.withValues(alpha: 0.72),
-                  borderRadius: BorderRadius.circular(9),
-                  border: Border.all(color: palette.borderSubtle),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(9),
-                  child: ToolActivityRow(card: activityCard),
-                ),
-              ),
-              if (activityPreview.isNotEmpty) ...[
-                const SizedBox(height: 7),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Text(
-                    activityPreview,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: palette.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      height: 1.25,
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      run.taskId,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: palette.textTertiary,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  if (onOpen != null) ...[
-                    TextButton.icon(
-                      onPressed: onOpen,
-                      icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                      label: const Text('打开'),
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                  ],
-                  IconButton.filledTonal(
-                    tooltip: '停止这个 Agent',
-                    onPressed: cancelling ? null : onCancel,
-                    icon: cancelling
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.stop_rounded, size: 18),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -1039,33 +690,6 @@ class _AgentRunPulse extends StatelessWidget {
   }
 }
 
-class _AgentRunChip extends StatelessWidget {
-  const _AgentRunChip({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: palette.surfacePrimary.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: palette.borderSubtle),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: palette.textSecondary,
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-}
-
 class _AgentRunEventSummary {
   const _AgentRunEventSummary({
     required this.label,
@@ -1093,50 +717,50 @@ class _AgentRunEventSummary {
     ]);
     final toolCard = _toolCardFromEvent(event, message);
     return switch (event.kind) {
-      AgentStreamEventKind.thinkingStarted => const _AgentRunEventSummary(
-        label: '正在思考',
+      AgentStreamEventKind.thinkingStarted => _AgentRunEventSummary(
+        label: _t('正在思考'),
         icon: Icons.psychology_alt_outlined,
       ),
       AgentStreamEventKind.thinkingSnapshot => _AgentRunEventSummary(
-        label: message.isEmpty ? '正在整理方案' : message,
+        label: message.isEmpty ? _t('正在整理方案') : message,
         icon: Icons.psychology_alt_outlined,
       ),
       AgentStreamEventKind.textSnapshot => _AgentRunEventSummary(
-        label: message.isEmpty ? '正在输出' : message,
+        label: message.isEmpty ? _t('正在输出') : message,
         icon: Icons.notes_rounded,
       ),
       AgentStreamEventKind.toolStarted => _AgentRunEventSummary(
-        label: toolName.isEmpty ? '开始调用工具' : '调用 $toolName',
+        label: toolName.isEmpty ? _t('开始调用工具') : _t('调用 $toolName'),
         icon: Icons.build_circle_outlined,
         toolCard: toolCard,
       ),
       AgentStreamEventKind.toolProgress => _AgentRunEventSummary(
         label: message.isEmpty
-            ? (toolName.isEmpty ? '工具执行中' : '$toolName 执行中')
+            ? (toolName.isEmpty ? _t('工具执行中') : _t('$toolName 执行中'))
             : message,
         icon: Icons.sync_rounded,
         toolCard: toolCard,
       ),
       AgentStreamEventKind.toolCompleted => _AgentRunEventSummary(
-        label: toolName.isEmpty ? '工具完成' : '$toolName 完成',
+        label: toolName.isEmpty ? _t('工具完成') : _t('$toolName 完成'),
         icon: Icons.check_circle_outline_rounded,
         toolCard: toolCard,
       ),
-      AgentStreamEventKind.permissionRequired => const _AgentRunEventSummary(
-        label: '等待权限确认',
+      AgentStreamEventKind.permissionRequired => _AgentRunEventSummary(
+        label: _t('等待权限确认'),
         icon: Icons.verified_user_outlined,
       ),
       AgentStreamEventKind.clarifyRequired => _AgentRunEventSummary(
-        label: event.question.isEmpty ? '等待补充信息' : event.question,
+        label: event.question.isEmpty ? _t('等待补充信息') : event.question,
         icon: Icons.help_outline_rounded,
       ),
       AgentStreamEventKind.error => _AgentRunEventSummary(
-        label: message.isEmpty ? '运行出错' : message,
+        label: message.isEmpty ? _t('运行出错') : message,
         icon: Icons.error_outline_rounded,
         isError: true,
       ),
-      AgentStreamEventKind.completed => const _AgentRunEventSummary(
-        label: '即将完成',
+      AgentStreamEventKind.completed => _AgentRunEventSummary(
+        label: _t('即将完成'),
         icon: Icons.done_all_rounded,
       ),
     };
@@ -1243,10 +867,10 @@ class _AgentRunSnapshot {
   String get title {
     final id = conversationId;
     if (id != null && id.isNotEmpty) {
-      return '对话 #$id';
+      return _t('对话 #$id');
     }
     final suffix = shortTaskId;
-    return suffix.isEmpty ? 'Agent 后端任务' : 'Agent $suffix';
+    return suffix.isEmpty ? _t('Agent 后端任务') : _t('Agent $suffix');
   }
 
   String get shortTaskId {
@@ -1258,7 +882,7 @@ class _AgentRunSnapshot {
   String get toolText {
     final name = toolName.trim();
     final summary = toolSummary.trim();
-    if (name.isEmpty && summary.isEmpty) return '等待模型响应';
+    if (name.isEmpty && summary.isEmpty) return _t('等待模型响应');
     if (summary.isEmpty) return name;
     if (name.isEmpty) return summary;
     return '$name · $summary';
@@ -1272,8 +896,8 @@ class _AgentRunSnapshot {
 
   String get conversationModeLabel {
     return switch (conversationMode) {
-      'chat_only' => '纯聊天',
-      'subagent' => '子任务',
+      'chat_only' => _t('纯聊天'),
+      'subagent' => _t('子任务'),
       'openclaw' => 'OpenClaw',
       'codex' => 'Codex',
       _ => 'Agent',

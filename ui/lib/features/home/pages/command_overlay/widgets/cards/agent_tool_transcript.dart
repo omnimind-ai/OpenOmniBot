@@ -884,6 +884,7 @@ class _AgentToolDetailContent extends StatelessWidget {
     final statusLabel = resolveAgentToolStatusLabel(cardData);
     final detailSpan = _buildDetailTextSpan(transcript);
 
+    final inputChips = _buildInputChips(cardData);
     return Column(
       children: [
         Padding(
@@ -911,6 +912,11 @@ class _AgentToolDetailContent extends StatelessWidget {
             ],
           ),
         ),
+        if (inputChips.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+            child: Wrap(spacing: 6, runSpacing: 4, children: inputChips),
+          ),
         Expanded(
           child: SingleChildScrollView(
             padding: scrollPadding,
@@ -918,6 +924,81 @@ class _AgentToolDetailContent extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+List<Widget> _buildInputChips(Map<String, dynamic> cardData) {
+  const skipKeys = {
+    'tool_title',
+    'toolTitle',
+    'tool_call_id',
+    'workingDirectory',
+    'cwd',
+  };
+  final args = _decodeJsonMap((cardData['argsJson'] ?? '').toString());
+  if (args.isEmpty) return const [];
+  final chips = <Widget>[];
+  for (final entry in args.entries) {
+    final key = entry.key.trim();
+    if (key.isEmpty || skipKeys.contains(key)) continue;
+    final rawVal = entry.value;
+    if (rawVal == null) continue;
+    String display;
+    if (rawVal is String) {
+      final s = rawVal.trim();
+      if (s.isEmpty) continue;
+      display = s.length > 60 ? '${s.substring(0, 60)}…' : s;
+    } else if (rawVal is bool || rawVal is num) {
+      display = rawVal.toString();
+    } else {
+      final s = rawVal.toString();
+      display = s.length > 60 ? '${s.substring(0, 60)}…' : s;
+    }
+    chips.add(_InputChip(label: key, value: display));
+    if (chips.length >= 8) break;
+  }
+  return chips;
+}
+
+class _InputChip extends StatelessWidget {
+  const _InputChip({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E1B2A),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFF1F3450)),
+      ),
+      child: RichText(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: const TextStyle(
+                color: Color(0xFF5B8DB8),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+              ),
+            ),
+            TextSpan(
+              text: value,
+              style: const TextStyle(
+                color: Color(0xFFB8CFE8),
+                fontSize: 11,
+                fontWeight: FontWeight.w400,
+                height: 1.3,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

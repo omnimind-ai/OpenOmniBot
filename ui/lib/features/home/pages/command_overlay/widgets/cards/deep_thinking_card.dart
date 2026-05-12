@@ -431,6 +431,33 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
   }
 
   /// 构建文本显示
+  Widget _buildCollapsedSummary(String thinkingText, Color textColor) {
+    final firstLine = thinkingText
+        .split('\n')
+        .map((l) => l.trim())
+        .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+    if (firstLine.isEmpty) return const SizedBox.shrink();
+    final localizedLine = LegacyTextLocalizer.localize(firstLine);
+    final summary = localizedLine.length > 80
+        ? '${localizedLine.substring(0, 80)}…'
+        : localizedLine;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, left: 2),
+      child: Text(
+        summary,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: textColor.withValues(alpha: 0.6),
+          fontSize: 11 * widget.textScale,
+          fontFamily: 'PingFang SC',
+          fontWeight: FontWeight.w400,
+          height: 1.4,
+        ),
+      ),
+    );
+  }
+
   Widget _buildText(String text, Color textColor) {
     final localizedText = text
         .split('\n')
@@ -482,51 +509,59 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
         hintText = LegacyTextLocalizer.localize('正在思考');
     }
 
+    final collapsedSummary =
+        (canCollapse && _isCollapsed && widget.thinkingText.isNotEmpty)
+        ? _buildCollapsedSummary(widget.thinkingText, secondaryTextColor)
+        : null;
     final header = canCollapse && hasContent
         ? InkWell(
             onTap: _toggleCollapsed,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    BotStatus(
-                      status: (widget.stage == 4 || widget.stage == 5)
-                          ? BotStatusType.completed
-                          : BotStatusType.hint,
-                      hintText: hintText,
-                      costTime: _formatTime(_elapsedSeconds),
-                      showAvatar: widget.showStatusAvatar,
-                      shimmerText: widget.stage != 4 && widget.stage != 5,
-                      textStyle: TextStyle(
-                        color: secondaryTextColor,
-                        fontSize: 12 * widget.textScale,
-                        fontFamily: 'PingFang SC',
-                        fontWeight: FontWeight.w400,
-                        height: 1.50,
-                        letterSpacing: 0.33,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      BotStatus(
+                        status: (widget.stage == 4 || widget.stage == 5)
+                            ? BotStatusType.completed
+                            : BotStatusType.hint,
+                        hintText: hintText,
+                        costTime: _formatTime(_elapsedSeconds),
+                        showAvatar: widget.showStatusAvatar,
+                        shimmerText: widget.stage != 4 && widget.stage != 5,
+                        textStyle: TextStyle(
+                          color: secondaryTextColor,
+                          fontSize: 12 * widget.textScale,
+                          fontFamily: 'PingFang SC',
+                          fontWeight: FontWeight.w400,
+                          height: 1.50,
+                          letterSpacing: 0.33,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 2),
-                    AnimatedBuilder(
-                      animation: _collapseController,
-                      builder: (context, child) {
-                        return Transform.rotate(
-                          angle: (1 - _collapseController.value) * math.pi,
-                          child: child,
-                        );
-                      },
-                      child: Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 16,
-                        color: secondaryTextColor,
+                      const SizedBox(width: 2),
+                      AnimatedBuilder(
+                        animation: _collapseController,
+                        builder: (context, child) {
+                          return Transform.rotate(
+                            angle: (1 - _collapseController.value) * math.pi,
+                            child: child,
+                          );
+                        },
+                        child: Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 16,
+                          color: secondaryTextColor,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                  if (collapsedSummary != null) collapsedSummary,
+                ],
               ),
             ),
           )

@@ -1640,6 +1640,10 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
 
     runtime.isAiResponding = true;
     final streamMeta = _streamMetaFromEvent(event);
+    if (event.kind == AgentStreamEventKind.thinkingStarted) {
+      runtime.currentThinkingMessages[event.taskId] = '';
+      runtime.deepThinkingContent = '';
+    }
     final previousThinking =
         runtime.currentThinkingMessages[event.taskId] ?? '';
     var nextThinking = previousThinking;
@@ -2719,6 +2723,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       'cardId': thinkingCardId,
       'startTime': startTime,
       'endTime': null,
+      'isCollapsible': true,
     };
 
     runtime.messages.removeWhere((msg) => msg.id == thinkingCardId);
@@ -2872,6 +2877,8 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     int? endTime = cardData['endTime'] as int?;
     if (newStage == 4 && endTime == null) {
       endTime = DateTime.now().millisecondsSinceEpoch;
+    } else if (newStage != 4 && newStage != 5) {
+      endTime = null;
     }
 
     cardData['thinkingContent'] =

@@ -750,7 +750,11 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     }
     final currentPage = _safeModePageControllerPage?.round();
     if (currentPage == targetPage) return;
-    final didDrive = _driveModePagePositions(targetPage, animate: animate);
+    final effectiveAnimate = animate && !_workspaceProjectModeEnabled;
+    final didDrive = _driveModePagePositions(
+      targetPage,
+      animate: effectiveAnimate,
+    );
     if (!didDrive) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;

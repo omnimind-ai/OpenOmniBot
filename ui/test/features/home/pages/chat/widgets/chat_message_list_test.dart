@@ -104,7 +104,8 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 32));
 
     final deepThinkingCard = find.descendant(
       of: find.byType(ChatMessageList),
@@ -113,12 +114,14 @@ void main() {
     await tester.tap(
       find.descendant(of: deepThinkingCard, matching: find.byType(InkWell)),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 32));
 
     final dragStart =
         tester.getTopLeft(deepThinkingCard) + const Offset(120, 96);
     await tester.dragFrom(dragStart, const Offset(0, 60));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 32));
 
     expect(controller.offset, lessThan(controller.position.maxScrollExtent));
 
@@ -130,7 +133,8 @@ void main() {
     });
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 16));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
 
     expect(controller.offset, closeTo(controller.position.maxScrollExtent, 1));
 
@@ -142,7 +146,8 @@ void main() {
     });
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 16));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
 
     expect(controller.offset, closeTo(controller.position.maxScrollExtent, 1));
   });
@@ -221,7 +226,8 @@ void main() {
     await tester.pumpWidget(
       _buildChatMessageListHarness(controller: controller, messages: messages),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
 
     final latestBubble = find.byKey(
       const ValueKey('user-message-bubble-latest-user'),
@@ -534,7 +540,8 @@ void main() {
     await tester.pumpWidget(
       _buildChatMessageListHarness(controller: controller, messages: messages),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
 
     expect(find.byType(RefreshIndicator), findsNothing);
   });
@@ -558,7 +565,8 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
 
     expect(find.text('已思考'), findsOneWidget);
     expect(find.text('最终回答'), findsOneWidget);
@@ -577,7 +585,8 @@ void main() {
     );
     expect(find.byType(DeepThinkingCard), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 120));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
 
     expect(find.text('运行 git status'), findsOneWidget);
     expect(find.text('详细思考过程'), findsNothing);
@@ -769,6 +778,53 @@ void main() {
     expect(find.text('详细思考过程'), findsOneWidget);
     expect(find.text('运行 git status'), findsOneWidget);
     expect(find.text('最终回答'), findsOneWidget);
+  });
+
+  testWidgets('completed active run keeps tool output visible', (tester) async {
+    final controller = ScrollController();
+    var messages = _buildActiveAgentRunMessages();
+    var activeTaskIds = const <String>{'task-1'};
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        child: SizedBox(
+          width: 400,
+          height: 520,
+          child: ChatMessageList(
+            messages: messages,
+            activeAgentTaskIds: activeTaskIds,
+            scrollController: controller,
+            onBeforeTaskExecute: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    messages = _buildCompletedAgentRunMessages();
+    activeTaskIds = const <String>{};
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        child: SizedBox(
+          width: 400,
+          height: 520,
+          child: ChatMessageList(
+            messages: messages,
+            activeAgentTaskIds: activeTaskIds,
+            scrollController: controller,
+            onBeforeTaskExecute: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(find.text('已思考'), findsOneWidget);
+    expect(find.text('运行 git status'), findsOneWidget);
+    expect(find.text('最终回答'), findsOneWidget);
+    expect(find.text('详细思考过程'), findsNothing);
   });
 
   testWidgets('reaching top auto-loads older messages without jumping to top', (

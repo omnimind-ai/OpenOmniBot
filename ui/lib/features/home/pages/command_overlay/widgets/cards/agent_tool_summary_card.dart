@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
 import 'package:ui/services/app_background_service.dart';
@@ -26,6 +28,7 @@ class AgentToolSummaryCard extends StatelessWidget {
     final preview = resolveAgentToolPreview(cardData);
     final typeLabel = resolveAgentToolTypeLabel(cardData);
     final statusColor = resolveAgentToolStatusColor(status);
+    final runLogId = _resolveRunLogId(cardData);
     final palette = context.omniPalette;
     final cardBackgroundColor = context.isDarkTheme
         ? Color.alphaBlend(
@@ -127,6 +130,21 @@ class AgentToolSummaryCard extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (runLogId.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Tooltip(
+                            message: _text(context, '查看 RunLog', 'View RunLog'),
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => _openRunLog(runLogId),
+                              child: Icon(
+                                Icons.route_rounded,
+                                size: 15,
+                                color: statusTagTextColor,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -138,6 +156,60 @@ class AgentToolSummaryCard extends StatelessWidget {
       ),
     );
   }
+}
+
+void _openRunLog(String runLogId) {
+  GoRouterManager.push(
+    '/task/run_log_timeline',
+    extra: {'runId': runLogId, 'title': 'RunLog'},
+  );
+}
+
+String _resolveRunLogId(Map<String, dynamic> cardData) {
+  return _firstNonBlank([
+    cardData['runLogId'],
+    cardData['run_log_id'],
+    cardData['runId'],
+    cardData['run_id'],
+    _runLogIdFromJsonString(cardData['resultPreviewJson']),
+    _runLogIdFromJsonString(cardData['rawResultJson']),
+    cardData['toolTaskId'],
+    cardData['taskId'],
+    cardData['taskID'],
+  ]);
+}
+
+String _runLogIdFromJsonString(dynamic raw) {
+  final text = raw?.toString().trim() ?? '';
+  if (text.isEmpty) return '';
+  try {
+    final decoded = jsonDecode(text);
+    if (decoded is! Map) return '';
+    return _firstNonBlank([
+      decoded['runLogId'],
+      decoded['run_log_id'],
+      decoded['runId'],
+      decoded['run_id'],
+      decoded['taskId'],
+      decoded['task_id'],
+    ]);
+  } catch (_) {
+    return '';
+  }
+}
+
+String _firstNonBlank(Iterable<Object?> values) {
+  for (final value in values) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isNotEmpty) {
+      return text;
+    }
+  }
+  return '';
+}
+
+String _text(BuildContext context, String zh, String en) {
+  return Localizations.localeOf(context).languageCode == 'zh' ? zh : en;
 }
 
 class _StatusIcon extends StatelessWidget {

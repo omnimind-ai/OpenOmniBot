@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/card_widget_factory.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/message_bubble.dart';
@@ -137,6 +138,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
         _AgentRunSummaryHeader(
           key: ValueKey('agent-run-summary-${widget.group.taskId}'),
           taskId: widget.group.taskId,
+          runLogId: widget.group.runLogId,
           isActiveRun: widget.group.isActiveRun,
           expanded: widget.expanded,
           onTap: widget.onToggleExpanded,
@@ -242,12 +244,14 @@ class _AgentRunSummaryHeader extends StatelessWidget {
   const _AgentRunSummaryHeader({
     super.key,
     required this.taskId,
+    required this.runLogId,
     required this.isActiveRun,
     required this.expanded,
     required this.onTap,
   });
 
   final String taskId;
+  final String runLogId;
   final bool isActiveRun;
   final bool expanded;
   final VoidCallback onTap;
@@ -307,6 +311,27 @@ class _AgentRunSummaryHeader extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(child: Container(height: 1, color: lineColor)),
                 const SizedBox(width: 6),
+                Tooltip(
+                  message: isEnglish ? 'View RunLog' : '查看 RunLog',
+                  child: InkResponse(
+                    onTap: () {
+                      final resolvedRunLogId = runLogId.trim().isEmpty
+                          ? taskId
+                          : runLogId.trim();
+                      GoRouterManager.push(
+                        '/task/run_log_timeline',
+                        extra: {'runId': resolvedRunLogId, 'title': 'RunLog'},
+                      );
+                    },
+                    radius: 18,
+                    child: Icon(
+                      Icons.route_rounded,
+                      size: 16,
+                      color: labelColor,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 AnimatedRotation(
                   turns: expanded ? 0 : -0.25,
                   duration: _AgentRunGroupMessageState._kToggleDuration,

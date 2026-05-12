@@ -91,6 +91,8 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
   final Map<String, String> _currentAiMessages = {};
   final Set<String> _expandedAgentRunTaskIds = <String>{};
+  final AgentRunCompletionExpansionTracker _agentRunExpansionTracker =
+      AgentRunCompletionExpansionTracker();
   final Set<String> _ownedAgentStreamTaskIds = <String>{};
   bool _autoStickMessageListToLatest = true;
   bool _messageStickToLatestScheduled = false;
@@ -1122,7 +1124,12 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       return;
     }
     setState(() {
-      if (_expandedAgentRunTaskIds.contains(normalizedTaskId)) {
+      final wasExpanded = _agentRunExpansionTracker.isTaskExpanded(
+        normalizedTaskId,
+        _expandedAgentRunTaskIds,
+      );
+      _agentRunExpansionTracker.consumeAutoExpandedTask(normalizedTaskId);
+      if (wasExpanded) {
         _expandedAgentRunTaskIds.remove(normalizedTaskId);
       } else {
         _expandedAgentRunTaskIds.add(normalizedTaskId);
@@ -1131,6 +1138,13 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     if (_autoStickMessageListToLatest) {
       _scheduleMessageStickToLatest();
     }
+  }
+
+  void _syncAgentRunExpansion(Set<String> activeTaskIds) {
+    _agentRunExpansionTracker.sync(
+      messages: _messages,
+      activeTaskIds: activeTaskIds,
+    );
   }
 
   void _handleParentScrollHandoff() {
@@ -1438,10 +1452,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       'isLoading': isLoading ?? _isDeepThinking,
       'thinkingContent': thinkingContent ?? '',
       'stage': stage ?? _currentThinkingStage,
-      'taskID': taskID, // 添加taskID用于创建稳定的key
+      'taskID': taskID,
       'cardId': thinkingCardId,
-      'startTime': startTime, // 添加开始时间
-      'endTime': null, // 结束时间初始为null
+      'startTime': startTime,
+      'endTime': null,
+      'isCollapsible': true,
     };
 
     setState(() {
@@ -1489,10 +1504,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
         // 保留开始时间（从现有 cardData 中读取）
         final startTime = cardData['startTime'] as int?;
 
-        // 如果思考完成且还没有结束时间，记录结束时间
         int? endTime = cardData['endTime'] as int?;
         if (newStage == 4 && endTime == null) {
           endTime = DateTime.now().millisecondsSinceEpoch;
+        } else if (newStage != 4 && newStage != 5) {
+          endTime = null;
         }
 
         // 更新卡片数据
@@ -2253,12 +2269,14 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     if (_autoStickMessageListToLatest) {
       _scheduleMessageStickToLatest();
     }
+    final activeTaskIds = <String>{
+      ..._currentAiMessages.keys,
+      ...activeAgentStreamTaskIds(),
+    };
+    _syncAgentRunExpansion(activeTaskIds);
     final timelineEntries = buildAgentRunTimelineEntries(
       _messages,
-      activeTaskIds: {
-        ..._currentAiMessages.keys,
-        ...activeAgentStreamTaskIds(),
-      },
+      activeTaskIds: activeTaskIds,
     );
     return Align(
       alignment: Alignment.topCenter,
@@ -2306,9 +2324,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
             child: AgentRunGroupMessage(
               key: ValueKey('overlay-agent-run-${group.taskId}'),
               group: group,
-              expanded:
-                  group.isActiveRun ||
-                  _expandedAgentRunTaskIds.contains(group.taskId),
+              expanded: _agentRunExpansionTracker.isGroupExpanded(
+                group,
+                _expandedAgentRunTaskIds,
+              ),
               onToggleExpanded: () => _toggleAgentRunGroup(group.taskId),
               onBeforeTaskExecute: _handleBeforeTaskExecute,
               onCancelTask: _onCancelTaskFromCard,

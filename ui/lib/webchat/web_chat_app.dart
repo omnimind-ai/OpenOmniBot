@@ -257,6 +257,8 @@ class _WebChatHomeState extends State<_WebChatHome> {
   final List<_PendingAttachment> _pendingAttachments = <_PendingAttachment>[];
   final Set<String> _expandedAgentRunTaskIds = <String>{};
   final Set<String> _activeAgentRunTaskIds = <String>{};
+  final AgentRunCompletionExpansionTracker _agentRunExpansionTracker =
+      AgentRunCompletionExpansionTracker();
   List<Map<String, dynamic>> _workspaceItems = <Map<String, dynamic>>[];
   Map<String, dynamic>? _workspaceInfo;
   Map<String, dynamic>? _browserSnapshot;
@@ -446,6 +448,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
         _messages = <ChatMessageModel>[];
         _expandedAgentRunTaskIds.clear();
         _activeAgentRunTaskIds.clear();
+        _agentRunExpansionTracker.clear();
       });
     }
   }
@@ -464,6 +467,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
       if (isSwitchingConversation) {
         _expandedAgentRunTaskIds.clear();
         _activeAgentRunTaskIds.clear();
+        _agentRunExpansionTracker.clear();
       }
       _selectedConversation = conversation;
       _messages = messages;
@@ -1299,6 +1303,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
       } else {
         _activeAgentRunTaskIds.remove(taskId);
       }
+      _agentRunExpansionTracker.sync(
+        messages: _displayMessages,
+        activeTaskIds: _activeAgentRunTaskIds,
+      );
     });
   }
 
@@ -1361,7 +1369,12 @@ class _WebChatHomeState extends State<_WebChatHome> {
       return;
     }
     setState(() {
-      if (_expandedAgentRunTaskIds.contains(normalizedTaskId)) {
+      final wasExpanded = _agentRunExpansionTracker.isTaskExpanded(
+        normalizedTaskId,
+        _expandedAgentRunTaskIds,
+      );
+      _agentRunExpansionTracker.consumeAutoExpandedTask(normalizedTaskId);
+      if (wasExpanded) {
         _expandedAgentRunTaskIds.remove(normalizedTaskId);
       } else {
         _expandedAgentRunTaskIds.add(normalizedTaskId);
@@ -1396,8 +1409,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
     BuildContext context,
     AgentRunTimelineGroup group,
   ) {
-    final expanded =
-        group.isActiveRun || _expandedAgentRunTaskIds.contains(group.taskId);
+    final expanded = _agentRunExpansionTracker.isGroupExpanded(
+      group,
+      _expandedAgentRunTaskIds,
+    );
     final label = group.isActiveRun
         ? (LegacyTextLocalizer.isEnglish ? 'Running' : '运行中')
         : (LegacyTextLocalizer.isEnglish ? 'Run trace' : '已思考');

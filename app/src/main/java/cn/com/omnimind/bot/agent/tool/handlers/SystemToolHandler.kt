@@ -24,7 +24,8 @@ class SystemToolHandler(
         "schedule_task_create", "schedule_task_list", "schedule_task_update", "schedule_task_delete",
         "alarm_reminder_create", "alarm_reminder_list", "alarm_reminder_delete",
         "calendar_list", "calendar_event_create", "calendar_event_list", "calendar_event_update", "calendar_event_delete",
-        "music_playback_control"
+        "music_playback_control",
+        "notification_send"
     )
 
     private val alarmToolService = AgentAlarmToolService(helper.context)
@@ -48,6 +49,7 @@ class SystemToolHandler(
             in setOf("calendar_list", "calendar_event_create", "calendar_event_list", "calendar_event_update", "calendar_event_delete") ->
                 executeCalendarTool(toolName, args, callback)
             "music_playback_control" -> executeMusicTool(args, env.workspaceDescriptor, callback)
+            "notification_send" -> executeNotificationSend(args)
             else -> ToolExecutionResult.Error(toolName, "Unknown system tool")
         }
     }
@@ -341,5 +343,44 @@ class SystemToolHandler(
             )
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { ToolExecutionResult.Error(toolName, helper.localized(e.message ?: "Music tool failed")) }
+    }
+
+    private suspend fun executeNotificationSend(args: JsonObject): ToolExecutionResult {
+        return try {
+            val title = args["title"]?.jsonPrimitive?.contentOrNull?.trim() ?: "OOB 通知"
+            val body = args["body"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+            val channelId = args["channel"]?.jsonPrimitive?.contentOrNull?.trim() ?: "oob_agent_notify"
+            if (body.isEmpty()) return ToolExecutionResult.Error("notification_send", "body 不能为空")
+
+            val ctx = helper.context
+            val notificationManager = ctx.getSystemService(android.app.NotificationManager::class.java)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                if (notificationManager.getNotificationChannel(channelId) == null) {
+                    val channel = android.app.NotificationChannel(
+                        channelId, "OOB Agent 通知", android.app.NotificationManager.IMPORTANCE_DEFAULT
+                    )
+                    notificationManager.createNotificationChannel(channel)
+                }
+            }
+            val notification = androidx.core.app.NotificationCompat.Builder(ctx, channelId)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(body))
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
+                .setAutoCancel(true)
+                .build()
+            val id = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
+            androidx.core.app.NotificationManagerCompat.from(ctx).notify(id, notification)
+            ToolExecutionResult.ContextResult(
+                toolName = "notification_send",
+                summaryText = "已发送通知：$title",
+                previewJson = """{"title":"$title","body":"${body.take(100)}","success":true}""",
+                rawResultJson = """{"title":"$title","body":"${body.take(100)}","success":true}""",
+                success = true
+            )
+        } catch (e: Exception) {
+            ToolExecutionResult.Error("notification_send", e.message ?: "通知发送失败")
+        }
     }
 }

@@ -873,9 +873,21 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeOutCubic,
           child: _workspaceProjectModeEnabled
-              ? OmnibotWorkspaceProjectFrontends(
-                  key: const ValueKey('chat-workspace-project-mode'),
-                  translucentSurfaces: backgroundActive,
+              ? Stack(
+                  children: [
+                    OmnibotWorkspaceProjectFrontends(
+                      key: const ValueKey('chat-workspace-project-mode'),
+                      translucentSurfaces: backgroundActive,
+                    ),
+                    _EdgeSwipeToChatZone(
+                      onSwipedRight: () => unawaited(
+                        _switchChatMode(
+                          ChatSurfaceMode.normal,
+                          syncPage: true,
+                        ),
+                      ),
+                    ),
+                  ],
                 )
               : OmnibotWorkspaceBrowser(
                   key: _workspaceBrowserKey,
@@ -2901,6 +2913,47 @@ class _ThresholdMetric extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Transparent 28-px left-edge zone that triggers a chat-mode switch when the
+/// user drags rightward by more than 48 logical pixels.
+class _EdgeSwipeToChatZone extends StatefulWidget {
+  const _EdgeSwipeToChatZone({required this.onSwipedRight});
+
+  final VoidCallback onSwipedRight;
+
+  @override
+  State<_EdgeSwipeToChatZone> createState() => _EdgeSwipeToChatZoneState();
+}
+
+class _EdgeSwipeToChatZoneState extends State<_EdgeSwipeToChatZone> {
+  double _dx = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SizedBox(
+        width: 28,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragUpdate: (details) {
+            if (details.delta.dx > 0) {
+              _dx += details.delta.dx;
+              if (_dx > 48) {
+                _dx = 0;
+                widget.onSwipedRight();
+              }
+            } else {
+              _dx = 0;
+            }
+          },
+          onHorizontalDragEnd: (_) => _dx = 0,
+          onHorizontalDragCancel: () => _dx = 0,
+        ),
       ),
     );
   }
