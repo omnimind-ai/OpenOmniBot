@@ -188,6 +188,8 @@ Rules:
 1. Use `window.oob.callApi(apiId, inputs)` for every backend action.
 2. Use `window.oob.getProject()` to read current state synchronously after CRUD operations.
 3. Use `window.oob.onProjectUpdated(callback)` when a tool uses `run.use: "agent"` — the result arrives asynchronously after the agent writes back to project data.
+   - **Do not read `result.project` from `callApi` to get agent_task results** — that snapshot is captured before the agent runs. Read state only inside the `onProjectUpdated` callback.
+   - Show a loading state between the `callApi` call and the `onProjectUpdated` callback.
 4. Use `data-oob-id` on important elements so inspect/edit can target small changes.
 5. Show domain labels to users, not tool ids, Project ids, executor names, paths, logs, or implementation badges.
 6. Handle loading, empty, success, and error states inside the HTML.
