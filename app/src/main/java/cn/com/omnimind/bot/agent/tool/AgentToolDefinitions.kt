@@ -1451,7 +1451,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_create")
             put("displayName", "创建 Workbench Project")
             put("toolType", "workbench")
-            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是审慎控制面能力，只有用户明确要求创建/新建 Project 时才调用，不会出现在 Project 自己的工具列表里。OOB Workbench 是 AI 产品输出展示层：AI 提供 projectId、Project Tools、持久化初始数据和可显示的 HTML/Flutter/page spec 资产，右侧 Flutter Workspace Host 负责优雅展示与交互。报告、图表、富文本、对比或快速局部视觉编辑优先通过 htmlFiles 创建内嵌 WebView renderer；默认按真机右侧 Workspace 的手机竖屏设计，同时考虑宽度和手机长度，约 360-430dp 宽、640-820dp 可见高，首屏必须紧凑。竖屏报告也应使用手机宽文章布局，首屏给摘要，图表高度控制在约 280-360dp；只有明确宽屏报告/PPT/横向对比时才用 1280 固定画布。结构化数据操作通过 Project Tools 和默认 Project Display 呈现；flutterFiles 只作为受限 flutter_eval 补充路径。不要直接写 registry 文件。Display 只展示业务工作流，不展示 Project id、工具数量、executor、Toolbox、Workspace 或日志路径等控制面摘要。")
+            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是审慎控制面能力，只有用户明确要求创建/新建 Project 时才调用，不会出现在 Project 自己的工具列表里。OOB Workbench 是 AI 产品输出展示层：AI 提供 projectId、Project Tools、持久化初始数据和可显示的 HTML/Flutter/page spec 资产，右侧 Flutter Workspace Host 负责优雅展示与交互。报告、图表、富文本、对比或快速局部视觉编辑优先通过 htmlFiles 创建内嵌 WebView renderer；默认按 App 运行时注入的 Workbench Display layout profile 设计，使用实测 viewportWidthDp/viewportHeightDp 作为右侧 Workspace/WebView 的宽度和可见高度，首屏必须紧凑。竖屏报告也应使用手机宽文章布局，首屏给摘要，图表高度按实测可见高度响应式控制；只有明确宽屏报告/PPT/横向对比时才用 1280 固定画布。结构化数据操作通过 Project Tools 和默认 Project Display 呈现；flutterFiles 只作为受限 flutter_eval 补充路径。不要直接写 registry 文件。Display 只展示业务工作流，不展示 Project id、工具数量、executor、Toolbox、Workspace 或日志路径等控制面摘要。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1485,7 +1485,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("htmlFiles") {
                         put("type", "array")
-                        put("description", "可选。创建可即时运行的 HTML Display，路径限定在 frontend/html/ 内。每项包含 path 和 content，建议至少包含 {path:\"index.html\", content:\"...\"}。HTML 由右侧 Flutter Host 的内嵌 WebView renderer 承载，可用 window.oob.callApi(apiId, inputs) 调 Project Tool。默认按手机竖屏 Workspace WebView 生成：viewport=device-width、单列、约 430px 最大宽度、640-820dp 可见高、首屏紧凑；竖屏报告用手机宽文章布局，首屏 640-720dp 放摘要，图表约 280-360dp 高。只有明确宽屏报告/PPT 时才使用 viewport width=1280。")
+                        put("description", "可选。创建可即时运行的 HTML Display，路径限定在 frontend/html/ 内。每项包含 path 和 content，建议至少包含 {path:\"index.html\", content:\"...\"}。HTML 由右侧 Flutter Host 的内嵌 WebView renderer 承载，可用 window.oob.callApi(apiId, inputs) 调 Project Tool。默认按系统提示中的 Workbench Display layout profile 生成：viewport=device-width、单列、以实测 viewportWidthDp/viewportHeightDp 为目标、首屏紧凑；竖屏报告用手机宽文章布局，首屏放摘要，图表按实测可见高度响应式控制。只有明确宽屏报告/PPT 时才使用 viewport width=1280。")
                     }
                     putJsonObject("flutterFiles") {
                         put("type", "array")
@@ -1594,7 +1594,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("htmlFiles") {
                         put("type", "array")
-                        put("description", "可选。写入 Project 自有 HTML/CSS/JS 源码资产，路径限定在 frontend/html/ 内。每项包含 path 和 content。HTML Display 可被右侧 Flutter Host 的 WebView renderer 即时加载，使用 window.oob.callApi 调 Project Tool。更新时保持手机竖屏约 360-430dp 宽、640-820dp 高的默认布局；竖屏报告使用 phone-width article，首屏放摘要，避免宽表格、满屏装饰区和桌面 hero；仅明确宽屏报告/PPT 时使用 1280 固定画布。")
+                        put("description", "可选。写入 Project 自有 HTML/CSS/JS 源码资产，路径限定在 frontend/html/ 内。每项包含 path 和 content。HTML Display 可被右侧 Flutter Host 的 WebView renderer 即时加载，使用 window.oob.callApi 调 Project Tool。更新时保持与 App 实测 Workbench Display layout profile 匹配；竖屏报告使用 phone-width article，首屏放摘要，避免宽表格、满屏装饰区和桌面 hero；仅明确宽屏报告/PPT 时使用 1280 固定画布。")
                     }
                     putJsonObject("prompt") {
                         put("type", "string")
@@ -1762,7 +1762,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_hot_update")
             put("displayName", "热更新 Workbench Project")
             put("toolType", "workbench")
-            put("description", "根据用户在 Project 页面里和小万悬浮窗、画图标注或 VLM 输入得到的 prompt，对已有 Workbench Project 做一次控制面热更新，并返回刷新后的 OOB 原生页面状态。调用时尽量附带当前 Flutter Display 的 frontendContext，例如 route、displayId、可见状态、用户选择的控件、选区、drawingPaths、annotationMeta 或截图摘要。形状和 UI 语义由 VLM 结合截图分析，不由前端预识别。热更新必须保持 Display 的应用视角，只改业务工作流、输入、列表、筛选、状态或业务按钮；不要把 Project id、工具数量、executor、Toolbox、Workspace、data/log 路径等控制面信息写进可见界面。它不会注册成 Project Tool，也不会出现在 workbench_api_list。")
+            put("description", "根据用户在 Project 页面里和小万悬浮窗、画图标注或 VLM 输入得到的 prompt，对已有 Workbench Project 做一次控制面热更新，并返回刷新后的 OOB 原生页面状态。调用时尽量附带当前 Flutter Display 的 frontendContext，例如 route、displayId、可见状态、用户选择的控件、选区、drawingPaths、annotationMeta、workbenchLayout 或截图摘要。形状和 UI 语义由 VLM 结合截图分析，不由前端预识别。热更新必须保持 Display 的应用视角，只改业务工作流、输入、列表、筛选、状态或业务按钮；不要把 Project id、工具数量、executor、Toolbox、Workspace、data/log 路径等控制面信息写进可见界面。它不会注册成 Project Tool，也不会出现在 workbench_api_list。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1776,7 +1776,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("frontendContext") {
                         put("type", "object")
-                        put("description", "可选。当前生成前端页面上下文，由小万悬浮窗、画图标注或 VLM 输入附带，例如 projectId、displayId、route、visibleState、selectedElement、selectedRegion、drawingPaths、annotationMeta、screenshotSummary。")
+                        put("description", "可选。当前生成前端页面上下文，由小万悬浮窗、画图标注或 VLM 输入附带，例如 projectId、displayId、route、visibleState、selectedElement、selectedRegion、drawingPaths、annotationMeta、workbenchLayout、screenshotSummary。workbenchLayout 由 App 实测右侧 Workspace/WebView 的 viewportWidthDp/viewportHeightDp。")
                         put("additionalProperties", true)
                     }
                 }

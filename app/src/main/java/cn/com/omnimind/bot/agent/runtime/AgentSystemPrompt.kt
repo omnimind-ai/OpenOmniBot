@@ -13,6 +13,7 @@ object AgentSystemPrompt {
         resolvedSkills: List<ResolvedSkillContext>,
         memoryContext: WorkspaceMemoryPromptContext?,
         activeWorkbenchProjectContext: String?,
+        workbenchDisplayLayoutContext: String?,
         locale: PromptLocale = AppLocaleManager.currentPromptLocale()
     ): String {
         val visibleInstalledSkills = installedSkills.filter { skill ->
@@ -153,6 +154,12 @@ object AgentSystemPrompt {
                 zhCN = "当前未激活 OOB Workbench Project。只有用户选择 Project 后，才把 Project API 当作当前工作环境 toolbox。",
                 enUS = "No OOB Workbench Project is active. Treat Project APIs as the current toolbox only after the user selects a Project."
             ).resolve(locale)
+        val workbenchLayoutSection = workbenchDisplayLayoutContext
+            ?.takeIf { it.isNotBlank() }
+            ?: when (locale) {
+                PromptLocale.ZH_CN -> "当前没有可用的 Workbench Display 布局实测值；HTML 生成必须保持响应式，并在 App 上报布局后按实测值热更新。"
+                PromptLocale.EN_US -> "No measured Workbench Display layout is available yet; generated HTML must remain responsive and update against measured app layout once reported."
+            }
 
         val workbenchProjectOperationRules = when (locale) {
             PromptLocale.ZH_CN -> """
@@ -165,9 +172,9 @@ object AgentSystemPrompt {
                 - 用户要求删除 `delete project <明确 projectId>` 时，可以直接调用 `workbench_project_delete`；如果没有明确 projectId，先调用 `workbench_project_list`，有多个候选时让用户指定，只有当前 active Project 或唯一候选时也要先请用户确认。
                 - 用户要求修改当前 Project 前端或后端时，优先使用当前激活 Project；如果用户明确给出 projectId，则使用指定 Project。先读 `workbench_project_get`，再按需求调用 `workbench_project_hot_update` 或 Project 业务 API。
                 - 用户只是说“记一下/总结这个链接/归档这条/新增一条记录”这类业务操作时，不要创建 Project，也不要改数据文件；先确认 active Project（必要时 `workbench_project_active_get`），再 `workbench_api_list(projectId)`，然后调用 `workbench_api_call(projectId, apiId, inputs)`。如果没有 active Project，要求用户先明确创建或选择 Project。
-                - 小万悬浮窗、画图标注或 VLM 当前屏幕输入用于前端迭代时，把它们作为 `frontendContext` 传给 `workbench_project_hot_update`，例如 `projectId/displayId/route/visibleState/selectedElement/selectedRegion/drawingPaths/annotationMeta/screenshotSummary`。画图上下文只提供红色笔迹和选区；形状和 UI 语义由 VLM 结合截图判断，不由前端预识别。它是热更新输入，不是 Project 业务 API，不进入 Project API Registry。
+                - 小万悬浮窗、画图标注或 VLM 当前屏幕输入用于前端迭代时，把它们作为 `frontendContext` 传给 `workbench_project_hot_update`，例如 `projectId/displayId/route/visibleState/workbenchLayout/selectedElement/selectedRegion/drawingPaths/annotationMeta/screenshotSummary`。画图上下文只提供红色笔迹和选区；形状和 UI 语义由 VLM 结合截图判断，不由前端预识别。它是热更新输入，不是 Project 业务 API，不进入 Project API Registry。
                 - HTML UI 热更新流程：当 `workbench_project_hot_update` 返回 `requiresAgentRegeneration=true` 且 project.frontendHtml.sources 非空，必须优先小范围修改 HTML/CSS/JS：读取 sources 中 entryFile 或相关 data-oob-id 附近代码，结合 frontendContext.selectedElement，调用 `workbench_project_update` 传 `htmlFiles`。HTML 里只能通过 `window.oob.callApi(apiId, inputs)`、`window.oob.getProject()`、`window.oob.selectElement(payload)` 访问 OOB；不要发明任意 Android/文件/shell 桥。
-                - HTML UI 创建：提供 `htmlFiles`，至少含 `index.html`。默认目标是真机右侧 Workspace WebView 的手机竖屏，同时约束宽度和手机长度：约 360-430dp 宽、640-820dp 可见高；首屏必须在一个可见屏内紧凑展示标题、当前状态/摘要、主操作或关键结论。移动交互 UI 和竖屏报告都用 `<meta name="viewport" content="width=device-width, initial-scale=1">`，单列布局，最大宽度约 430px，避免桌面 hero、满屏装饰区、大卡片堆叠、横向宽表格；竖屏报告用手机宽文章，首屏 640-720dp 内给出 executive summary，后续短分节、响应式图表（约 280-360dp 高）、堆叠对比行。只有用户明确要宽屏报告/PPT/横向对比画布时才用 `<meta name="viewport" content="width=1280">`。
+                - HTML UI 创建：提供 `htmlFiles`，至少含 `index.html`。默认目标是真机右侧 Workspace/WebView，尺寸来自下方“当前 Workbench Display 布局”，不要写死手机宽高。首屏必须在当前 viewportHeightDp 内紧凑展示标题、当前状态/摘要、主操作或关键结论。移动交互 UI 和竖屏报告都用 `<meta name="viewport" content="width=device-width, initial-scale=1">`，单列布局，避免桌面 hero、满屏装饰区、大卡片堆叠、横向宽表格；竖屏报告用手机宽文章，首屏给出 executive summary，后续短分节、响应式图表、堆叠对比行。只有用户明确要宽屏报告/PPT/横向对比画布时才用 `<meta name="viewport" content="width=1280">`。
             """.trimIndent()
             PromptLocale.EN_US -> """
                 OOB Workbench Project rules for the Home input:
@@ -179,9 +186,9 @@ object AgentSystemPrompt {
                 - When the user says `delete project <explicit projectId>`, you may call `workbench_project_delete` directly. If the project id is missing, call `workbench_project_list` first; ask the user to choose when there are multiple candidates, and ask for confirmation even when there is only the active Project or one candidate.
                 - When the user asks to modify the current Project frontend or backend, prefer the active Project; if the user names a projectId, use that Project. Read it with `workbench_project_get`, then call `workbench_project_hot_update` or the relevant Project business API.
                 - For business requests such as “save this”, “summarize this link”, “archive this item”, or “add a record”, do not create a Project and do not edit data files. Confirm the active Project first when needed with `workbench_project_active_get`, call `workbench_api_list(projectId)`, then `workbench_api_call(projectId, apiId, inputs)`. If there is no active Project, ask the user to explicitly create or select one first.
-                - When floating Xiaowan, drawing annotations, or VLM screen input are used to iterate a frontend, pass them as `frontendContext` to `workbench_project_hot_update`, for example `projectId/displayId/route/visibleState/selectedElement/selectedRegion/drawingPaths/annotationMeta/screenshotSummary`. Drawing context only carries red strokes and the selected region; shape and UI semantics are inferred by the VLM from the screenshot, not pre-detected by the frontend. It is hot-update input, not a Project business API, and must not enter the Project API Registry.
+                - When floating Xiaowan, drawing annotations, or VLM screen input are used to iterate a frontend, pass them as `frontendContext` to `workbench_project_hot_update`, for example `projectId/displayId/route/visibleState/workbenchLayout/selectedElement/selectedRegion/drawingPaths/annotationMeta/screenshotSummary`. Drawing context only carries red strokes and the selected region; shape and UI semantics are inferred by the VLM from the screenshot, not pre-detected by the frontend. It is hot-update input, not a Project business API, and must not enter the Project API Registry.
                 - HTML UI hot-update flow: when `workbench_project_hot_update` returns requiresAgentRegeneration=true and project.frontendHtml.sources is non-empty, prefer small HTML/CSS/JS edits: read the entryFile or nearby code around the relevant data-oob-id, use frontendContext.selectedElement, then call `workbench_project_update` with `htmlFiles`. HTML can access OOB only through `window.oob.callApi(apiId, inputs)`, `window.oob.getProject()`, and `window.oob.selectElement(payload)`; do not invent arbitrary Android/filesystem/shell bridges.
-                - HTML UI creation: provide `htmlFiles` with at least `index.html`. The default target is the real-phone right-side Workspace WebView in portrait, constrained by both phone width and usable screen length: roughly 360-430dp wide and 640-820dp tall after app chrome. The first viewport must fit one visible screen and remain useful: title, current state/summary, primary action, or key findings. Mobile interaction UI and portrait reports both use `<meta name="viewport" content="width=device-width, initial-scale=1">`, one-column layout, about 430px max width, and no desktop hero, full-screen decorative sections, oversized card stacks, or wide horizontal tables. Portrait reports should be phone-width articles: executive summary in the first 640-720dp, short sections, responsive charts around 280-360dp tall, and stacked comparison rows. Use `<meta name="viewport" content="width=1280">` only when the user explicitly asks for a wide report, slide deck, or landscape comparison canvas.
+                - HTML UI creation: provide `htmlFiles` with at least `index.html`. The default target is the real-phone right-side Workspace/WebView using the "Current Workbench Display layout" below; do not hard-code phone width or height. The first viewport must fit within the current viewportHeightDp and remain useful: title, current state/summary, primary action, or key findings. Mobile interaction UI and portrait reports both use `<meta name="viewport" content="width=device-width, initial-scale=1">`, one-column layout, and no desktop hero, full-screen decorative sections, oversized card stacks, or wide horizontal tables. Portrait reports should be phone-width articles with an executive summary in the first viewport, short sections, responsive charts, and stacked comparison rows. Use `<meta name="viewport" content="width=1280">` only when the user explicitly asks for a wide report, slide deck, or landscape comparison canvas.
             """.trimIndent()
         }
 
@@ -251,6 +258,7 @@ object AgentSystemPrompt {
                 $soulSection
                 $memorySection
                 $workbenchProjectSection
+                $workbenchLayoutSection
                 $workbenchProjectOperationRules
             """.trimIndent()
             PromptLocale.EN_US -> """
@@ -318,6 +326,7 @@ object AgentSystemPrompt {
                 $soulSection
                 $memorySection
                 $workbenchProjectSection
+                $workbenchLayoutSection
                 $workbenchProjectOperationRules
             """.trimIndent()
         }

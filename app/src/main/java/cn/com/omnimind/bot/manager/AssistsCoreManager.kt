@@ -91,6 +91,7 @@ import cn.com.omnimind.bot.webchat.ConversationDomainService
 import cn.com.omnimind.bot.webchat.FlutterChatSyncBridge
 import cn.com.omnimind.bot.webchat.RealtimeHub
 import cn.com.omnimind.bot.workspace.PublicStorageAccess
+import cn.com.omnimind.bot.workbench.WorkbenchDisplayLayoutContext
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import cn.com.omnimind.bot.workspace.WorkspaceStorageAccess
 import cn.com.omnimind.uikit.UIKit
@@ -984,6 +985,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         val contextPayload = sanitizeInteropMap(raw).toMutableMap().apply {
             put("nativeUpdatedAtMillis", System.currentTimeMillis())
         }
+        WorkbenchDisplayLayoutContext.updateFromFrontendContext(contextPayload)
         latestWorkbenchFrontendContext = contextPayload
         result.success(
             mapOf(

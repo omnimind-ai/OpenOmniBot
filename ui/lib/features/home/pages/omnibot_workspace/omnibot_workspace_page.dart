@@ -12,6 +12,7 @@ import 'package:ui/features/workbench/pages/workbench_project_display_page.dart'
 import 'package:ui/features/workbench/services/workbench_project_service.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_context.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart';
+import 'package:ui/features/workbench/widgets/workbench_layout_profile.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/app_background_service.dart';
 import 'package:ui/services/assists_core_service.dart';
@@ -708,6 +709,7 @@ class _OmnibotWorkspaceProjectFrontendsState
   bool _editDrawingEnabled = true;
   bool _submittingEdit = false;
   Size _editCanvasSize = Size.zero;
+  Map<String, Object?>? _latestLayoutProfile;
   int _nextEditStrokeId = 0;
 
   static const Color _editStrokeColor = Color(0xFFE13D56);
@@ -838,6 +840,43 @@ class _OmnibotWorkspaceProjectFrontendsState
     );
   }
 
+  void _reportWorkbenchLayout(
+    BuildContext context,
+    BoxConstraints constraints,
+    WorkbenchProject? project,
+    WorkbenchDisplaySpec? display,
+  ) {
+    final route = project != null && display != null
+        ? _routeForDisplay(project, display)
+        : null;
+    final profile = buildWorkbenchLayoutProfile(
+      context: context,
+      constraints: constraints,
+      source: 'workspace_project_display_host',
+      project: project,
+      display: display,
+      route: route,
+    );
+    if (workbenchLayoutProfilesEquivalent(_latestLayoutProfile, profile)) {
+      return;
+    }
+    _latestLayoutProfile = profile;
+    final payload = <String, Object?>{
+      'source': 'workspace_project_display_layout',
+      if (project != null) 'projectId': project.projectId,
+      if (display != null) 'displayId': display.id,
+      if (route != null) 'route': route,
+      'workbenchLayout': profile,
+      'visibleState': <String, Object?>{'workbenchLayout': profile},
+    };
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(
+        NativeWorkbenchProjectBackend().setActiveFrontendContext(payload),
+      );
+    });
+  }
+
   Map<String, Object?> _buildToolbarEditFrontendContext(
     WorkbenchProject project,
     WorkbenchDisplaySpec display,
@@ -862,11 +901,17 @@ class _OmnibotWorkspaceProjectFrontendsState
         'flutterEntryFile': flutter['entryFile']?.toString(),
         'flutterEntryClass': flutter['entryClass']?.toString(),
         'flutterSourceFiles': _sourceFileKeys(flutter),
+        if (_latestLayoutProfile != null)
+          'workbenchLayout': _latestLayoutProfile,
       },
     );
-    if (annotationPayload == null) return baseContext;
-    final visibleState = baseContext['visibleState'] is Map
-        ? Map<String, Object?>.from(baseContext['visibleState'] as Map)
+    final baseWithLayout = {
+      ...baseContext,
+      if (_latestLayoutProfile != null) 'workbenchLayout': _latestLayoutProfile,
+    };
+    if (annotationPayload == null) return baseWithLayout;
+    final visibleState = baseWithLayout['visibleState'] is Map
+        ? Map<String, Object?>.from(baseWithLayout['visibleState'] as Map)
         : <String, Object?>{};
     final annotationContext = annotationPayload.toFrontendContext(
       projectId: project.projectId,
@@ -876,9 +921,10 @@ class _OmnibotWorkspaceProjectFrontendsState
       visibleState: visibleState,
     );
     return {
-      ...baseContext,
+      ...baseWithLayout,
       ...annotationContext,
-      'toolbarEditContext': baseContext,
+      if (_latestLayoutProfile != null) 'workbenchLayout': _latestLayoutProfile,
+      'toolbarEditContext': baseWithLayout,
       'screenshotSummary':
           'Use the visible Workbench Display plus these red annotation paths to infer the marked target UI. The Flutter client does not classify the shape.',
     };
@@ -1125,92 +1171,99 @@ $contextJson
         Expanded(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: context.omniPalette.borderSubtle,
-                      ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                _reportWorkbenchLayout(context, constraints, project, display);
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: project == null || display == null
-                        ? _WorkspaceProjectStatusCard(
-                            icon: Icons.phone_android_outlined,
-                            label: context
-                                .l10n
-                                .workbenchWorkspaceProjectFrontendsEmpty,
-                            translucent: widget.translucentSurfaces,
-                          )
-                        : _WorkspaceProjectDisplayHost(
-                            key: ValueKey(
-                              'workspace-project-host-${project.projectId}-${display.id}',
-                            ),
-                            project: project,
-                            display: display,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: context.omniPalette.borderSubtle,
                           ),
-                  ),
-                ),
-                if (_editPromptVisible)
-                  Positioned.fill(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        _editCanvasSize = Size(
-                          constraints.maxWidth.isFinite
-                              ? constraints.maxWidth
-                              : 0,
-                          constraints.maxHeight.isFinite
-                              ? constraints.maxHeight
-                              : 0,
-                        );
-                        return IgnorePointer(
-                          ignoring: !_editDrawingEnabled || _submittingEdit,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.translucent,
-                            onPanStart: _startEditStroke,
-                            onPanUpdate: _appendEditStrokePoint,
-                            onPanEnd: _finishEditStroke,
-                            onPanCancel: () => _finishEditStroke(),
-                            child: CustomPaint(
-                              painter: WorkbenchAnnotationPainter(
-                                strokes: _editStrokes,
-                                currentPoints: _editCurrentPoints,
-                                currentColor: _editStrokeColor,
-                                currentStrokeWidth: _editStrokeWidth,
-                                drawingEnabled: _editDrawingEnabled,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: project == null || display == null
+                            ? _WorkspaceProjectStatusCard(
+                                icon: Icons.phone_android_outlined,
+                                label: context
+                                    .l10n
+                                    .workbenchWorkspaceProjectFrontendsEmpty,
+                                translucent: widget.translucentSurfaces,
+                              )
+                            : _WorkspaceProjectDisplayHost(
+                                key: ValueKey(
+                                  'workspace-project-host-${project.projectId}-${display.id}',
+                                ),
+                                project: project,
+                                display: display,
                               ),
-                              child: const SizedBox.expand(),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                if (_editPromptVisible && project != null && display != null)
-                  Positioned(
-                    left: 10,
-                    right: 10,
-                    bottom: 10,
-                    child: _WorkspaceProjectEditBubble(
-                      translucent: widget.translucentSurfaces,
-                      controller: _editPromptController,
-                      focusNode: _editPromptFocusNode,
-                      submitting: _submittingEdit,
-                      drawingEnabled: _editDrawingEnabled,
-                      strokeCount: _editStrokes.length,
-                      onToggleDrawing: () => setState(
-                        () => _editDrawingEnabled = !_editDrawingEnabled,
                       ),
-                      onUndoDrawing: _undoEditStroke,
-                      onClearDrawing: _clearEditDrawingWithRefresh,
-                      onClose: _closeEditPrompt,
-                      onSubmit: () => _submitProjectEdit(project, display),
                     ),
-                  ),
-              ],
+                    if (_editPromptVisible)
+                      Positioned.fill(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            _editCanvasSize = Size(
+                              constraints.maxWidth.isFinite
+                                  ? constraints.maxWidth
+                                  : 0,
+                              constraints.maxHeight.isFinite
+                                  ? constraints.maxHeight
+                                  : 0,
+                            );
+                            return IgnorePointer(
+                              ignoring: !_editDrawingEnabled || _submittingEdit,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onPanStart: _startEditStroke,
+                                onPanUpdate: _appendEditStrokePoint,
+                                onPanEnd: _finishEditStroke,
+                                onPanCancel: () => _finishEditStroke(),
+                                child: CustomPaint(
+                                  painter: WorkbenchAnnotationPainter(
+                                    strokes: _editStrokes,
+                                    currentPoints: _editCurrentPoints,
+                                    currentColor: _editStrokeColor,
+                                    currentStrokeWidth: _editStrokeWidth,
+                                    drawingEnabled: _editDrawingEnabled,
+                                  ),
+                                  child: const SizedBox.expand(),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    if (_editPromptVisible &&
+                        project != null &&
+                        display != null)
+                      Positioned(
+                        left: 10,
+                        right: 10,
+                        bottom: 10,
+                        child: _WorkspaceProjectEditBubble(
+                          translucent: widget.translucentSurfaces,
+                          controller: _editPromptController,
+                          focusNode: _editPromptFocusNode,
+                          submitting: _submittingEdit,
+                          drawingEnabled: _editDrawingEnabled,
+                          strokeCount: _editStrokes.length,
+                          onToggleDrawing: () => setState(
+                            () => _editDrawingEnabled = !_editDrawingEnabled,
+                          ),
+                          onUndoDrawing: _undoEditStroke,
+                          onClearDrawing: _clearEditDrawingWithRefresh,
+                          onClose: _closeEditPrompt,
+                          onSubmit: () => _submitProjectEdit(project, display),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
         ),

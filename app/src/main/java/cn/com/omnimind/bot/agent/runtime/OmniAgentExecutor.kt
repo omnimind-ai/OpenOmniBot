@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.agent
 import android.content.Context
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.bot.mcp.RemoteMcpDiscoveryRegistry
+import cn.com.omnimind.bot.workbench.WorkbenchDisplayLayoutContext
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -77,6 +78,11 @@ class OmniAgentExecutor(
             val activeWorkbenchProjectContext = runCatching {
                 WorkbenchProjectStore(context).activeProjectPromptContext()
             }.getOrNull()
+            val promptLocale = AppLocaleManager.resolvePromptLocale(context)
+            val workbenchDisplayLayoutContext = WorkbenchDisplayLayoutContext.promptSection(
+                context = context,
+                locale = promptLocale
+            )
             val skillIndexService = SkillIndexService(context, workspaceManager)
             val skillLoader = SkillLoader(workspaceManager)
             val installedSkills = skillIndexService.listInstalledSkills()
@@ -115,7 +121,9 @@ class OmniAgentExecutor(
                 skillsRootAndroidPath = workspaceManager.skillsRoot().absolutePath,
                 resolvedSkills = resolvedSkills,
                 memoryContext = promptMemoryContext,
-                activeWorkbenchProjectContext = activeWorkbenchProjectContext
+                activeWorkbenchProjectContext = activeWorkbenchProjectContext,
+                workbenchDisplayLayoutContext = workbenchDisplayLayoutContext,
+                locale = promptLocale
             )
 
             val llmClient = HttpAgentLlmClient(
@@ -189,7 +197,9 @@ class OmniAgentExecutor(
         skillsRootAndroidPath: String,
         resolvedSkills: List<ResolvedSkillContext>,
         memoryContext: WorkspaceMemoryPromptContext?,
-        activeWorkbenchProjectContext: String?
+        activeWorkbenchProjectContext: String?,
+        workbenchDisplayLayoutContext: String?,
+        locale: cn.com.omnimind.baselib.i18n.PromptLocale
     ): List<cn.com.omnimind.baselib.llm.ChatCompletionMessage> {
         val historyMessages = promptSeed.historyMessages.toMutableList()
         if (historyMessages.lastOrNull()?.role == "user") {
@@ -204,7 +214,8 @@ class OmniAgentExecutor(
             resolvedSkills = resolvedSkills,
             memoryContext = memoryContext,
             activeWorkbenchProjectContext = activeWorkbenchProjectContext,
-            locale = AppLocaleManager.resolvePromptLocale(context)
+            workbenchDisplayLayoutContext = workbenchDisplayLayoutContext,
+            locale = locale
         )
         messages.add(
             cn.com.omnimind.baselib.llm.ChatCompletionMessage(

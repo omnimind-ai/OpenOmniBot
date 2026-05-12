@@ -120,12 +120,12 @@ Pass files through `htmlFiles` in `workbench_project_create` or `workbench_proje
 
 **Target runtime: phone portrait Workspace WebView.**
 
-Generated HTML is normally shown inside the right-side OOB Workspace on a real phone. Assume both the phone width and usable screen length: a narrow portrait viewport, roughly 360-430dp wide and 640-820dp tall after app chrome, with vertical scrolling. The first viewport must be compact and useful: show the title, current state/summary, and the primary controls or top findings within one visible screen. Do not generate desktop landing heroes, oversized banners, full-screen decorative sections, large card stacks, or wide tables that require horizontal scrolling.
+Generated HTML is normally shown inside the right-side OOB Workspace on a real phone. Use the runtime Workbench layout profile injected by the app, especially `viewportWidthDp` and `viewportHeightDp`, instead of hard-coding phone dimensions. The first viewport must be compact and useful: show the title, current state/summary, and the primary controls or top findings within the measured visible height. Do not generate desktop landing heroes, oversized banners, full-screen decorative sections, large card stacks, or wide tables that require horizontal scrolling.
 
 **Viewport and layout profiles:**
 
-- Mobile interaction UI (lists, forms, dashboards): `<meta name="viewport" content="width=device-width, initial-scale=1">`. Use one-column layouts, `width: 100%`, `max-width: 430px`, compact spacing, sticky/visible primary actions, and touch targets at least 44px tall. Avoid panels taller than one visible screen unless they are scrollable content areas.
-- Portrait report/document: also use `<meta name="viewport" content="width=device-width, initial-scale=1">`. Render as a phone-width article sized for vertical reading: executive summary in the first 640-720dp, section anchors, short sections, responsive charts that fit within about 280-360dp height, stacked comparison rows, and readable 14-16px body text. Convert wide tables into cards, definition lists, or horizontally summarized sections.
+- Mobile interaction UI (lists, forms, dashboards): `<meta name="viewport" content="width=device-width, initial-scale=1">`. Use one-column layouts, `width: 100%`, compact spacing, sticky/visible primary actions, and touch targets at least 44px tall. Avoid panels taller than the measured `viewportHeightDp` unless they are scrollable content areas.
+- Portrait report/document: also use `<meta name="viewport" content="width=device-width, initial-scale=1">`. Render as a phone-width article sized for vertical reading: executive summary in the first measured viewport, section anchors, short sections, responsive charts sized relative to the measured visible height, stacked comparison rows, and readable 14-16px body text. Convert wide tables into cards, definition lists, or horizontally summarized sections.
 - Wide report, slide deck, or landscape comparison: use `<meta name="viewport" content="width=1280">` only when the user explicitly needs a wide fixed canvas. OOB scales it down to fit, so this is not the default for phone reports.
 
 If no viewport tag is present, OOB defaults to `width=device-width`, but generated HTML should declare the intended profile explicitly.
@@ -231,12 +231,12 @@ This section documents constraints for human authors who deliberately write `flu
 
 When the user says “change this”, update the same Project.
 
-1. Call `workbench_project_hot_update` with `projectId`, prompt, and `frontendContext` when available.
+1. Call `workbench_project_hot_update` with `projectId`, prompt, and `frontendContext` when available. Preserve `frontendContext.workbenchLayout` / `visibleState.workbenchLayout`; it is the App-measured Workspace/WebView size.
 2. If it returns `requiresAgentRegeneration=true` and `frontendHtml.sources` exists, edit the smallest affected HTML/CSS/JS file.
 3. Call `workbench_project_update` with `htmlFiles`.
 4. Keep Project Tool ids stable unless the user asks to change the backend contract.
 
-For selected HTML elements, prefer `frontendContext.selectedElement`, `data-oob-id`, nearby DOM text, and current `project.frontendHtml.sources`.
+For selected HTML elements, prefer `frontendContext.selectedElement`, `frontendContext.workbenchLayout`, `data-oob-id`, nearby DOM text, and current `project.frontendHtml.sources`.
 
 ## Display Quality Rules
 
