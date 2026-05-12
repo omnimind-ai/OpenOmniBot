@@ -1863,6 +1863,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
       taskId: group.taskId,
       visibleMessagesNewestFirst: refresh(group.visibleMessagesNewestFirst),
       processMessagesNewestFirst: refresh(group.processMessagesNewestFirst),
+      isActiveRun: group.isActiveRun,
     );
   }
 
@@ -2084,7 +2085,8 @@ class _ChatTimelineListRow extends StatelessWidget {
       padding: padding,
       child: AgentRunGroupMessage(
         group: group,
-        expanded: expandedAgentRunTaskIds.contains(group.taskId),
+        expanded:
+            group.isActiveRun || expandedAgentRunTaskIds.contains(group.taskId),
         onToggleExpanded: () => onToggleAgentRunGroup(group.taskId),
         onBeforeTaskExecute: onBeforeTaskExecute,
         onCancelTask: onCancelTask,

@@ -43,24 +43,83 @@ void main() {
     );
   });
 
-  test('keeps in-flight task ungrouped while task is active', () {
+  test('groups in-flight process messages while task is active', () {
     final entries = buildAgentRunTimelineEntries(
       _buildCompletedRunMessages(isFinal: false),
       activeTaskIds: const <String>{'task-1'},
     );
 
-    expect(entries, hasLength(4));
-    expect(entries.where((entry) => entry.group != null), isEmpty);
+    expect(entries, hasLength(2));
+    final group = entries.first.group;
+    expect(group, isNotNull);
+    expect(group?.taskId, 'task-1');
+    expect(group?.isActiveRun, isTrue);
+    expect(group?.visibleMessagesNewestFirst.single.id, 'task-1-text');
+    expect(group?.processMessagesNewestFirst.map((message) => message.id), [
+      'task-1-tool',
+      'task-1-thinking',
+    ]);
   });
 
-  test('keeps final text snapshot ungrouped until task becomes inactive', () {
+  test('keeps active final snapshot inside the same running group', () {
     final entries = buildAgentRunTimelineEntries(
       _buildCompletedRunMessages(isFinal: true),
       activeTaskIds: const <String>{'task-1'},
     );
 
-    expect(entries, hasLength(4));
-    expect(entries.where((entry) => entry.group != null), isEmpty);
+    expect(entries, hasLength(2));
+    expect(entries.first.group?.isActiveRun, isTrue);
+    expect(
+      entries.first.group?.visibleMessagesNewestFirst.single.id,
+      'task-1-text',
+    );
+  });
+
+  test('groups active thinking-only task into one running entry', () {
+    final messages = <ChatMessageModel>[
+      _thinkingCard(id: 'task-5-thinking', taskId: 'task-5', seq: 10),
+      ChatMessageModel.userMessage('用户问题', id: 'user-5'),
+    ];
+
+    final entries = buildAgentRunTimelineEntries(
+      messages,
+      activeTaskIds: const <String>{'task-5'},
+    );
+
+    expect(entries, hasLength(2));
+    final group = entries.first.group;
+    expect(group?.isActiveRun, isTrue);
+    expect(group?.visibleMessagesNewestFirst, isEmpty);
+    expect(group?.processMessagesNewestFirst.single.id, 'task-5-thinking');
+  });
+
+  test('keeps only latest thinking card for a running task', () {
+    final messages = <ChatMessageModel>[
+      _cardMessage(
+        id: 'task-6-tool',
+        taskId: 'task-6',
+        kind: 'tool_started',
+        seq: 30,
+        cardData: <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'status': 'running',
+          'toolType': 'workspace',
+        },
+      ),
+      _thinkingCard(id: 'task-6-thinking-2', taskId: 'task-6', seq: 20),
+      _thinkingCard(id: 'task-6-thinking', taskId: 'task-6', seq: 10),
+      ChatMessageModel.userMessage('用户问题', id: 'user-6'),
+    ];
+
+    final entries = buildAgentRunTimelineEntries(
+      messages,
+      activeTaskIds: const <String>{'task-6'},
+    );
+
+    final processIds = entries.first.group?.processMessagesNewestFirst.map(
+      (message) => message.id,
+    );
+    expect(processIds, ['task-6-tool', 'task-6-thinking-2']);
   });
 
   test(

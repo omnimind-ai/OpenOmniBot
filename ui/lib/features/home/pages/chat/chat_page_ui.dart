@@ -638,16 +638,7 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     required ChatPageMode mode,
     required AgentToolActivitySnapshot snapshot,
   }) {
-    if (mode != _activeMode ||
-        !_isInputAreaVisible ||
-        _showSlashCommandPanel ||
-        _openClawPanelExpanded) {
-      return false;
-    }
-    return shouldShowAgentToolActivitySnapshot(
-      snapshot,
-      expandedTaskIds: _expandedAgentRunTaskIdsForMode(mode),
-    );
+    return false;
   }
 
   void _handleInputAreaHeightChanged(double height) {

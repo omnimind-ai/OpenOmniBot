@@ -2306,7 +2306,9 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
             child: AgentRunGroupMessage(
               key: ValueKey('overlay-agent-run-${group.taskId}'),
               group: group,
-              expanded: _expandedAgentRunTaskIds.contains(group.taskId),
+              expanded:
+                  group.isActiveRun ||
+                  _expandedAgentRunTaskIds.contains(group.taskId),
               onToggleExpanded: () => _toggleAgentRunGroup(group.taskId),
               onBeforeTaskExecute: _handleBeforeTaskExecute,
               onCancelTask: _onCancelTaskFromCard,

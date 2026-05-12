@@ -137,6 +137,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
         _AgentRunSummaryHeader(
           key: ValueKey('agent-run-summary-${widget.group.taskId}'),
           taskId: widget.group.taskId,
+          isActiveRun: widget.group.isActiveRun,
           expanded: widget.expanded,
           onTap: widget.onToggleExpanded,
         ),
@@ -191,7 +192,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
                 onBeforeTaskExecute: widget.onBeforeTaskExecute,
                 onCancelTask: widget.onCancelTask,
                 enableThinkingCollapse: true,
-                thinkingAutoCollapseOnComplete: false,
+                thinkingAutoCollapseOnComplete: true,
                 showThinkingAvatarOverride: hideAvatar ? false : null,
                 parentScrollController: widget.parentScrollController,
                 onParentScrollHandoff: widget.onParentScrollHandoff,
@@ -241,11 +242,13 @@ class _AgentRunSummaryHeader extends StatelessWidget {
   const _AgentRunSummaryHeader({
     super.key,
     required this.taskId,
+    required this.isActiveRun,
     required this.expanded,
     required this.onTap,
   });
 
   final String taskId;
+  final bool isActiveRun;
   final bool expanded;
   final VoidCallback onTap;
 
@@ -254,7 +257,9 @@ class _AgentRunSummaryHeader extends StatelessWidget {
     final isEnglish =
         Localizations.maybeLocaleOf(context)?.languageCode == 'en';
     final palette = context.omniPalette;
-    final label = isEnglish ? 'Run trace' : '已思考';
+    final label = isActiveRun
+        ? (isEnglish ? 'Running' : '运行中')
+        : (isEnglish ? 'Run trace' : '已思考');
     final labelColor = expanded ? palette.textSecondary : palette.textTertiary;
     final lineColor = expanded
         ? palette.textSecondary.withValues(

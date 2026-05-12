@@ -10,12 +10,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
+import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
 import 'package:ui/l10n/generated/app_localizations.dart';
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/services/agent_stream_meta.dart';
 import 'package:ui/webchat/web_backends.dart';
 
 enum _ShellSection { chat, workspace, browser }
@@ -62,6 +64,94 @@ class _WorkspaceBreadcrumbSegment {
   final String label;
   final String path;
   final bool isCurrent;
+}
+
+class _WebAgentToolEventData {
+  const _WebAgentToolEventData({
+    required this.toolName,
+    required this.displayName,
+    required this.toolType,
+    this.cardId = '',
+    this.toolTitle = '',
+    this.serverName,
+    this.status = '',
+    this.argsJson = '',
+    this.progress = '',
+    this.summary = '',
+    this.resultPreviewJson = '',
+    this.rawResultJson = '',
+    this.terminalOutput = '',
+    this.terminalOutputDelta = '',
+    this.terminalSessionId,
+    this.terminalStreamState = '',
+    this.workspaceId,
+    this.interruptedBy,
+    this.interruptionReason,
+    this.artifacts = const [],
+    this.actions = const [],
+    this.success = true,
+  });
+
+  final String cardId;
+  final String toolName;
+  final String displayName;
+  final String toolTitle;
+  final String toolType;
+  final String? serverName;
+  final String status;
+  final String argsJson;
+  final String progress;
+  final String summary;
+  final String resultPreviewJson;
+  final String rawResultJson;
+  final String terminalOutput;
+  final String terminalOutputDelta;
+  final String? terminalSessionId;
+  final String terminalStreamState;
+  final String? workspaceId;
+  final String? interruptedBy;
+  final String? interruptionReason;
+  final List<Map<String, dynamic>> artifacts;
+  final List<Map<String, dynamic>> actions;
+  final bool success;
+
+  factory _WebAgentToolEventData.fromMap(Map<dynamic, dynamic>? map) {
+    final raw = map ?? const {};
+    return _WebAgentToolEventData(
+      cardId: (raw['cardId'] ?? '').toString(),
+      toolName: (raw['toolName'] ?? '').toString(),
+      displayName: (raw['displayName'] ?? raw['toolName'] ?? '').toString(),
+      toolTitle: (raw['toolTitle'] ?? '').toString(),
+      toolType: (raw['toolType'] ?? 'builtin').toString(),
+      serverName: raw['serverName']?.toString(),
+      status: (raw['status'] ?? '').toString(),
+      argsJson: (raw['argsJson'] ?? raw['args'] ?? '').toString(),
+      progress: (raw['progress'] ?? '').toString(),
+      summary: (raw['summary'] ?? '').toString(),
+      resultPreviewJson: (raw['resultPreviewJson'] ?? '').toString(),
+      rawResultJson: (raw['rawResultJson'] ?? '').toString(),
+      terminalOutput: (raw['terminalOutput'] ?? '').toString(),
+      terminalOutputDelta: (raw['terminalOutputDelta'] ?? '').toString(),
+      terminalSessionId: raw['terminalSessionId']?.toString(),
+      terminalStreamState: (raw['terminalStreamState'] ?? '').toString(),
+      workspaceId: raw['workspaceId']?.toString(),
+      interruptedBy: raw['interruptedBy']?.toString(),
+      interruptionReason: raw['interruptionReason']?.toString(),
+      artifacts: ((raw['artifacts'] as List?) ?? const [])
+          .whereType<Map>()
+          .map(
+            (item) => item.map((key, value) => MapEntry(key.toString(), value)),
+          )
+          .toList(),
+      actions: ((raw['actions'] as List?) ?? const [])
+          .whereType<Map>()
+          .map(
+            (item) => item.map((key, value) => MapEntry(key.toString(), value)),
+          )
+          .toList(),
+      success: raw['success'] != false,
+    );
+  }
 }
 
 class WebChatApp extends StatelessWidget {
@@ -165,6 +255,8 @@ class _WebChatHomeState extends State<_WebChatHome> {
   ConversationModel? _selectedConversation;
   List<ChatMessageModel> _messages = <ChatMessageModel>[];
   final List<_PendingAttachment> _pendingAttachments = <_PendingAttachment>[];
+  final Set<String> _expandedAgentRunTaskIds = <String>{};
+  final Set<String> _activeAgentRunTaskIds = <String>{};
   List<Map<String, dynamic>> _workspaceItems = <Map<String, dynamic>>[];
   Map<String, dynamic>? _workspaceInfo;
   Map<String, dynamic>? _browserSnapshot;
@@ -352,6 +444,8 @@ class _WebChatHomeState extends State<_WebChatHome> {
     } else {
       setState(() {
         _messages = <ChatMessageModel>[];
+        _expandedAgentRunTaskIds.clear();
+        _activeAgentRunTaskIds.clear();
       });
     }
   }
@@ -363,6 +457,14 @@ class _WebChatHomeState extends State<_WebChatHome> {
     );
     if (!mounted) return;
     setState(() {
+      final isSwitchingConversation =
+          _selectedConversation == null ||
+          _selectedConversation!.id != conversation.id ||
+          _selectedConversation!.mode != conversation.mode;
+      if (isSwitchingConversation) {
+        _expandedAgentRunTaskIds.clear();
+        _activeAgentRunTaskIds.clear();
+      }
       _selectedConversation = conversation;
       _messages = messages;
     });
@@ -822,6 +924,11 @@ class _WebChatHomeState extends State<_WebChatHome> {
       return;
     }
 
+    final didApplyStreamUpdate = _applyAgentStreamEventToMessages(event);
+    _updateActiveAgentRunTask(event);
+    if (didApplyStreamUpdate) {
+      _scrollChatToBottom();
+    }
     switch (event.kind) {
       case AgentStreamEventKind.toolCompleted:
         if ((event.raw['toolType'] ?? '').toString().trim() == 'browser') {
@@ -849,6 +956,350 @@ class _WebChatHomeState extends State<_WebChatHome> {
       case AgentStreamEventKind.permissionRequired:
         break;
     }
+  }
+
+  bool _applyAgentStreamEventToMessages(AgentStreamEvent event) {
+    if (!_isAgentStreamEventForSelectedConversation(event)) {
+      return false;
+    }
+
+    var didChange = false;
+    setState(() {
+      switch (event.kind) {
+        case AgentStreamEventKind.thinkingStarted:
+        case AgentStreamEventKind.thinkingSnapshot:
+          _upsertWebThinkingCard(event);
+          didChange = true;
+          break;
+        case AgentStreamEventKind.textSnapshot:
+          didChange = _upsertWebAssistantMessage(
+            event,
+            text: event.text,
+            isFinal: event.isFinal,
+          );
+          break;
+        case AgentStreamEventKind.toolStarted:
+        case AgentStreamEventKind.toolProgress:
+        case AgentStreamEventKind.toolCompleted:
+          _upsertWebToolCard(event);
+          didChange = true;
+          break;
+        case AgentStreamEventKind.clarifyRequired:
+          didChange = _upsertWebAssistantMessage(
+            event,
+            text: event.question.trim().isNotEmpty
+                ? event.question
+                : event.text,
+            isFinal: true,
+          );
+          break;
+        case AgentStreamEventKind.permissionRequired:
+          didChange = _upsertWebAssistantMessage(
+            event,
+            text: event.text,
+            isFinal: true,
+          );
+          break;
+        case AgentStreamEventKind.error:
+          didChange = _upsertWebAssistantMessage(
+            event,
+            text: event.text.trim().isNotEmpty
+                ? event.text
+                : event.errorMessage,
+            isFinal: true,
+            isError: true,
+          );
+          break;
+        case AgentStreamEventKind.completed:
+          _finalizeWebThinkingCards(event.taskId);
+          didChange = true;
+          break;
+      }
+    });
+    return didChange;
+  }
+
+  bool _isAgentStreamEventForSelectedConversation(AgentStreamEvent event) {
+    final conversation = _selectedConversation;
+    if (conversation == null) {
+      return false;
+    }
+    final eventConversationKey = _conversationKeyFromPayload(event.raw);
+    return eventConversationKey == null ||
+        eventConversationKey == _conversationKey(conversation);
+  }
+
+  void _upsertWebThinkingCard(AgentStreamEvent event) {
+    final cardId = (event.entryId ?? '').trim().isNotEmpty
+        ? event.entryId!.trim()
+        : '${event.taskId}-thinking';
+    _messages.removeWhere(
+      (message) =>
+          message.id != cardId &&
+          _isWebThinkingCardForTask(message, event.taskId),
+    );
+    final index = _messages.indexWhere((message) => message.id == cardId);
+    final existing = index == -1 ? null : _messages[index];
+    final existingCardData = Map<String, dynamic>.from(
+      existing?.cardData ?? const <String, dynamic>{},
+    );
+    final nextThinking = event.thinking.trim().isNotEmpty
+        ? event.thinking
+        : (existingCardData['thinkingContent'] ?? '').toString();
+    final startTime =
+        _asInt(existingCardData['startTime']) ?? event.createdAtMs;
+    final cardData = <String, dynamic>{
+      ...existingCardData,
+      'type': 'deep_thinking',
+      'isLoading': true,
+      'thinkingContent': nextThinking,
+      'stage': event.stage <= 0 ? 1 : event.stage,
+      'taskID': event.taskId,
+      'cardId': cardId,
+      'startTime': startTime,
+      'endTime': null,
+      'isCollapsible': true,
+    };
+    final message = ChatMessageModel.cardMessage(
+      cardData,
+      id: cardId,
+      streamMeta: buildAgentStreamMetaFromEvent(event),
+    ).copyWith(createAt: _eventCreatedAt(event));
+    if (index == -1) {
+      _messages.add(message);
+    } else {
+      _messages[index] = existing!.copyWith(
+        content: {'cardData': cardData, 'id': cardId},
+        streamMeta: buildAgentStreamMetaFromEvent(event),
+      );
+    }
+  }
+
+  bool _upsertWebAssistantMessage(
+    AgentStreamEvent event, {
+    required String text,
+    required bool isFinal,
+    bool isError = false,
+  }) {
+    final messageId = (event.entryId ?? '').trim();
+    final normalizedText = text.trim();
+    if (messageId.isEmpty || normalizedText.isEmpty) {
+      return false;
+    }
+    _finalizeWebThinkingCards(event.taskId);
+    final streamMeta = ensureAgentStreamMessageMeta(
+      buildAgentStreamMetaFromEvent(event),
+      entryId: messageId,
+      isFinal: isFinal,
+    );
+    final index = _messages.indexWhere((message) => message.id == messageId);
+    final content = <String, dynamic>{
+      'text': normalizedText,
+      'id': messageId,
+      'renderMarkdown': true,
+      if (isFinal && event.prefillTokensPerSecond != null)
+        'prefillTokensPerSecond': event.prefillTokensPerSecond,
+      if (isFinal && event.decodeTokensPerSecond != null)
+        'decodeTokensPerSecond': event.decodeTokensPerSecond,
+    };
+    if (index == -1) {
+      _messages.add(
+        ChatMessageModel(
+          id: messageId,
+          type: 1,
+          user: 2,
+          content: content,
+          isError: isError,
+          streamMeta: streamMeta,
+          createAt: _eventCreatedAt(event),
+        ),
+      );
+      return true;
+    }
+    _messages[index] = _messages[index].copyWith(
+      content: content,
+      isError: isError,
+      streamMeta: streamMeta,
+    );
+    return true;
+  }
+
+  void _upsertWebToolCard(AgentStreamEvent event) {
+    final cardId = (event.entryId ?? '').trim();
+    if (cardId.isEmpty) {
+      return;
+    }
+    _finalizeWebThinkingCards(event.taskId);
+    final toolEvent = _WebAgentToolEventData.fromMap(event.raw);
+    final index = _messages.indexWhere((message) => message.id == cardId);
+    final existingCardData = Map<String, dynamic>.from(
+      index == -1
+          ? const <String, dynamic>{}
+          : _messages[index].cardData ?? const <String, dynamic>{},
+    );
+    final status = event.kind == AgentStreamEventKind.toolCompleted
+        ? _resolveWebToolStatus(toolEvent)
+        : 'running';
+    final cardData = <String, dynamic>{
+      ...existingCardData,
+      'type': 'agent_tool_summary',
+      'taskId': event.taskId,
+      'toolName': toolEvent.toolName,
+      'displayName': toolEvent.displayName,
+      'toolTitle': toolEvent.toolTitle.isNotEmpty
+          ? toolEvent.toolTitle
+          : (existingCardData['toolTitle'] ?? '').toString(),
+      'cardId': toolEvent.cardId.isNotEmpty ? toolEvent.cardId : cardId,
+      'toolType': toolEvent.toolType,
+      'serverName': toolEvent.serverName,
+      'status': status,
+      'summary': toolEvent.summary.isNotEmpty
+          ? toolEvent.summary
+          : (existingCardData['summary'] ?? '').toString(),
+      'progress': toolEvent.progress.isNotEmpty
+          ? toolEvent.progress
+          : (existingCardData['progress'] ?? '').toString(),
+      'argsJson': toolEvent.argsJson.isNotEmpty
+          ? toolEvent.argsJson
+          : (existingCardData['argsJson'] ?? '').toString(),
+      'resultPreviewJson': toolEvent.resultPreviewJson.isNotEmpty
+          ? toolEvent.resultPreviewJson
+          : (existingCardData['resultPreviewJson'] ?? '').toString(),
+      'rawResultJson': toolEvent.rawResultJson.isNotEmpty
+          ? toolEvent.rawResultJson
+          : (existingCardData['rawResultJson'] ?? '').toString(),
+      'terminalOutput': toolEvent.terminalOutput.isNotEmpty
+          ? toolEvent.terminalOutput
+          : (existingCardData['terminalOutput'] ?? '').toString(),
+      'terminalOutputDelta': toolEvent.terminalOutputDelta,
+      'terminalSessionId':
+          toolEvent.terminalSessionId ?? existingCardData['terminalSessionId'],
+      'terminalStreamState': toolEvent.terminalStreamState.isNotEmpty
+          ? toolEvent.terminalStreamState
+          : (existingCardData['terminalStreamState'] ?? '').toString(),
+      'workspaceId': toolEvent.workspaceId ?? existingCardData['workspaceId'],
+      'interruptedBy':
+          toolEvent.interruptedBy ?? existingCardData['interruptedBy'],
+      'interruptionReason':
+          toolEvent.interruptionReason ??
+          existingCardData['interruptionReason'],
+      'artifacts': toolEvent.artifacts.isNotEmpty
+          ? toolEvent.artifacts
+          : (existingCardData['artifacts'] ?? const []),
+      'actions': toolEvent.actions.isNotEmpty
+          ? toolEvent.actions
+          : (existingCardData['actions'] ?? const []),
+      'success': toolEvent.success,
+      'showTerminalOutput': toolEvent.toolType == 'terminal',
+      'showRawResult': toolEvent.rawResultJson.isNotEmpty,
+      'showArtifactAction': toolEvent.artifacts.isNotEmpty,
+      'showScheduleAction': toolEvent.toolType == 'schedule',
+      'showAlarmAction': toolEvent.toolType == 'alarm',
+    };
+    final streamMeta = ensureAgentStreamMessageMeta(
+      buildAgentStreamMetaFromEvent(event),
+      entryId: cardId,
+    );
+    if (index == -1) {
+      _messages.add(
+        ChatMessageModel.cardMessage(
+          cardData,
+          id: cardId,
+          streamMeta: streamMeta,
+        ).copyWith(createAt: _eventCreatedAt(event)),
+      );
+    } else {
+      _messages[index] = _messages[index].copyWith(
+        content: {'cardData': cardData, 'id': cardId},
+        streamMeta: streamMeta,
+      );
+    }
+  }
+
+  void _finalizeWebThinkingCards(String taskId) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (var index = 0; index < _messages.length; index++) {
+      final message = _messages[index];
+      if (!_isWebThinkingCardForTask(message, taskId)) {
+        continue;
+      }
+      final cardData = Map<String, dynamic>.from(message.cardData ?? const {});
+      cardData['isLoading'] = false;
+      cardData['stage'] = 4;
+      cardData['endTime'] ??= now;
+      _messages[index] = message.copyWith(
+        content: {'cardData': cardData, 'id': message.id},
+      );
+    }
+  }
+
+  bool _isWebThinkingCardForTask(ChatMessageModel message, String taskId) {
+    final cardData = message.cardData;
+    if (message.type != 2 ||
+        (cardData?['type'] ?? '').toString() != 'deep_thinking') {
+      return false;
+    }
+    final fromCard = (cardData?['taskID'] ?? '').toString().trim();
+    if (fromCard == taskId) {
+      return true;
+    }
+    return (message.streamMeta?['parentTaskId'] ?? '').toString().trim() ==
+        taskId;
+  }
+
+  String _resolveWebToolStatus(_WebAgentToolEventData event) {
+    final normalized = event.status.trim().toLowerCase();
+    if (normalized.isNotEmpty) {
+      return normalized;
+    }
+    return event.success ? 'success' : 'error';
+  }
+
+  DateTime _eventCreatedAt(AgentStreamEvent event) {
+    return DateTime.fromMillisecondsSinceEpoch(event.createdAtMs);
+  }
+
+  int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value.trim());
+    return null;
+  }
+
+  void _updateActiveAgentRunTask(AgentStreamEvent event) {
+    final taskId = event.taskId.trim();
+    if (taskId.isEmpty) {
+      return;
+    }
+    final conversation = _selectedConversation;
+    final eventConversationKey = _conversationKeyFromPayload(event.raw);
+    if (conversation != null &&
+        eventConversationKey != null &&
+        eventConversationKey != _conversationKey(conversation)) {
+      return;
+    }
+    final shouldTrack = switch (event.kind) {
+      AgentStreamEventKind.thinkingStarted ||
+      AgentStreamEventKind.thinkingSnapshot ||
+      AgentStreamEventKind.textSnapshot ||
+      AgentStreamEventKind.toolStarted ||
+      AgentStreamEventKind.toolProgress ||
+      AgentStreamEventKind.toolCompleted => true,
+      AgentStreamEventKind.completed ||
+      AgentStreamEventKind.error ||
+      AgentStreamEventKind.clarifyRequired ||
+      AgentStreamEventKind.permissionRequired => false,
+    };
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      if (shouldTrack) {
+        _activeAgentRunTaskIds.add(taskId);
+      } else {
+        _activeAgentRunTaskIds.remove(taskId);
+      }
+    });
   }
 
   String? _conversationKeyFromPayload(Map<String, dynamic> payload) {
@@ -891,6 +1342,162 @@ class _WebChatHomeState extends State<_WebChatHome> {
     final merged = <ChatMessageModel>[..._messages];
     merged.sort((a, b) => a.createAt.compareTo(b.createAt));
     return merged;
+  }
+
+  List<AgentRunTimelineEntry> _displayTimelineEntries() {
+    final newestFirstMessages = _displayMessages.reversed.toList(
+      growable: false,
+    );
+    final newestFirstEntries = buildAgentRunTimelineEntries(
+      newestFirstMessages,
+      activeTaskIds: _activeAgentRunTaskIds,
+    );
+    return newestFirstEntries.reversed.toList(growable: false);
+  }
+
+  void _toggleAgentRunGroup(String taskId) {
+    final normalizedTaskId = taskId.trim();
+    if (normalizedTaskId.isEmpty) {
+      return;
+    }
+    setState(() {
+      if (_expandedAgentRunTaskIds.contains(normalizedTaskId)) {
+        _expandedAgentRunTaskIds.remove(normalizedTaskId);
+      } else {
+        _expandedAgentRunTaskIds.add(normalizedTaskId);
+      }
+    });
+  }
+
+  Widget _buildTimelineList(BuildContext context) {
+    final entries = _displayTimelineEntries();
+    return ListView.builder(
+      controller: _chatScrollController,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      itemCount: entries.length,
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        final isOldestEntry = index == 0;
+        final needTopPadding = isOldestEntry && !entry.isUserMessage;
+        return Padding(
+          padding: EdgeInsets.only(
+            top: needTopPadding ? 24 : 0,
+            bottom: index == entries.length - 1 ? 10 : 0,
+          ),
+          child: entry.group == null
+              ? _buildMessageBubble(context, entry.message!)
+              : _buildAgentRunGroup(context, entry.group!),
+        );
+      },
+    );
+  }
+
+  Widget _buildAgentRunGroup(
+    BuildContext context,
+    AgentRunTimelineGroup group,
+  ) {
+    final expanded =
+        group.isActiveRun || _expandedAgentRunTaskIds.contains(group.taskId);
+    final label = group.isActiveRun
+        ? (LegacyTextLocalizer.isEnglish ? 'Running' : '运行中')
+        : (LegacyTextLocalizer.isEnglish ? 'Run trace' : '已思考');
+    final summary = _agentRunGroupSummary(group);
+    final processMessages = group.processMessagesOldestFirst;
+    final visibleMessages = group.visibleMessagesOldestFirst;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _toggleAgentRunGroup(group.taskId),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(2, 8, 2, 6),
+              child: Row(
+                children: [
+                  Icon(
+                    group.isActiveRun
+                        ? Icons.bolt_rounded
+                        : Icons.psychology_alt_outlined,
+                    size: 16,
+                    color: group.isActiveRun ? _kAccentBlue : _kSubtleText,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: _kSecondaryText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (summary.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        summary,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _kSubtleText,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Divider(height: 1, color: _kPanelBorder),
+                  ),
+                  const SizedBox(width: 4),
+                  AnimatedRotation(
+                    turns: expanded ? 0 : -0.25,
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    child: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 18,
+                      color: _kSubtleText,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (expanded)
+          ...processMessages.map(
+            (message) => _buildMessageBubble(context, message),
+          ),
+        ...visibleMessages.map(
+          (message) => _buildMessageBubble(context, message),
+        ),
+      ],
+    );
+  }
+
+  String _agentRunGroupSummary(AgentRunTimelineGroup group) {
+    final parts = <String>[];
+    if (group.thinkingCount > 0) {
+      parts.add(
+        LegacyTextLocalizer.isEnglish
+            ? '${group.thinkingCount} thinking'
+            : '${group.thinkingCount} 个思考',
+      );
+    }
+    if (group.toolCount > 0) {
+      parts.add(
+        LegacyTextLocalizer.isEnglish
+            ? '${group.toolCount} tools'
+            : '${group.toolCount} 个工具',
+      );
+    }
+    if (group.visibleMessagesNewestFirst.isEmpty) {
+      parts.add(LegacyTextLocalizer.isEnglish ? 'waiting for reply' : '等待回复');
+    }
+    return parts.join(' · ');
   }
 
   @override
@@ -1497,23 +2104,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
                     ),
                   ),
                 )
-              : ListView.builder(
-                  controller: _chatScrollController,
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                  itemCount: _displayMessages.length,
-                  itemBuilder: (context, index) {
-                    final message = _displayMessages[index];
-                    final isOldestMessage = index == 0;
-                    final needTopPadding = isOldestMessage && message.user != 1;
-                    return Padding(
-                      padding: EdgeInsets.only(
-                        top: needTopPadding ? 24 : 0,
-                        bottom: index == _displayMessages.length - 1 ? 10 : 0,
-                      ),
-                      child: _buildMessageBubble(context, message),
-                    );
-                  },
-                ),
+              : _buildTimelineList(context),
         ),
         if (_activeClarifyTaskId != null)
           Container(

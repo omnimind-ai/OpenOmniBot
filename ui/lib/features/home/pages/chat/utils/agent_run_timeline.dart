@@ -20,11 +20,13 @@ class AgentRunTimelineGroup {
     required this.taskId,
     required this.visibleMessagesNewestFirst,
     required this.processMessagesNewestFirst,
+    this.isActiveRun = false,
   });
 
   final String taskId;
   final List<ChatMessageModel> visibleMessagesNewestFirst;
   final List<ChatMessageModel> processMessagesNewestFirst;
+  final bool isActiveRun;
 
   List<ChatMessageModel> get visibleMessagesOldestFirst =>
       visibleMessagesNewestFirst.reversed.toList(growable: false);
@@ -126,7 +128,7 @@ AgentRunTimelineGroup? _buildTimelineGroup(
       .where((message) => agentRunParentTaskId(message) == taskId)
       .where(_isAgentRunCandidateMessage)
       .toList(growable: false);
-  if (taskMessages.length < 2) {
+  if (taskMessages.isEmpty || (!isActive && taskMessages.length < 2)) {
     return null;
   }
 
@@ -135,7 +137,15 @@ AgentRunTimelineGroup? _buildTimelineGroup(
     isActive: isActive,
   );
   if (primaryVisibleMessage == null) {
-    return null;
+    if (!isActive) {
+      return null;
+    }
+    return AgentRunTimelineGroup(
+      taskId: taskId,
+      visibleMessagesNewestFirst: const <ChatMessageModel>[],
+      processMessagesNewestFirst: _compactProcessMessages(taskMessages),
+      isActiveRun: true,
+    );
   }
 
   final visibleMessages = _resolveVisibleMessages(
@@ -146,15 +156,34 @@ AgentRunTimelineGroup? _buildTimelineGroup(
   final processMessages = taskMessages
       .where((message) => !visibleIds.contains(message.id))
       .toList(growable: false);
-  if (processMessages.isEmpty) {
+  final compactProcessMessages = _compactProcessMessages(processMessages);
+  if (compactProcessMessages.isEmpty) {
     return null;
   }
 
   return AgentRunTimelineGroup(
     taskId: taskId,
     visibleMessagesNewestFirst: visibleMessages,
-    processMessagesNewestFirst: processMessages,
+    processMessagesNewestFirst: compactProcessMessages,
+    isActiveRun: isActive,
   );
+}
+
+List<ChatMessageModel> _compactProcessMessages(
+  List<ChatMessageModel> processMessages,
+) {
+  var hasEmittedThinking = false;
+  final compacted = <ChatMessageModel>[];
+  for (final message in processMessages) {
+    if (_cardType(message) == 'deep_thinking') {
+      if (hasEmittedThinking) {
+        continue;
+      }
+      hasEmittedThinking = true;
+    }
+    compacted.add(message);
+  }
+  return compacted;
 }
 
 bool _isAgentRunCandidateMessage(ChatMessageModel message) {
@@ -185,6 +214,18 @@ ChatMessageModel? _resolvePrimaryVisibleMessage(
   }
 
   if (isActive) {
+    final activeTextSnapshots = aiTextMessages
+        .where((message) => agentRunKind(message) == 'text_snapshot')
+        .toList(growable: false);
+    if (activeTextSnapshots.isNotEmpty) {
+      return _newestBySequence(activeTextSnapshots);
+    }
+    final terminalMatches = aiTextMessages
+        .where(_isTerminalVisibleTextMessage)
+        .toList(growable: false);
+    if (terminalMatches.isNotEmpty) {
+      return _newestBySequence(terminalMatches);
+    }
     return null;
   }
 
