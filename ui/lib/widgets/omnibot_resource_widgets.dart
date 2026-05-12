@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:ui/services/office_preview_service.dart';
@@ -1275,11 +1274,6 @@ class _OmnibotInlineHtmlCard extends StatefulWidget {
 }
 
 class _OmnibotInlineHtmlCardState extends State<_OmnibotInlineHtmlCard> {
-  static final Set<Factory<OneSequenceGestureRecognizer>>
-  _webViewGestureRecognizers = <Factory<OneSequenceGestureRecognizer>>{
-    Factory<EagerGestureRecognizer>(() => EagerGestureRecognizer()),
-  };
-
   late final WebViewController _controller;
   bool _isLoading = true;
   String? _errorMessage;
@@ -1482,7 +1476,6 @@ class _OmnibotInlineHtmlCardState extends State<_OmnibotInlineHtmlCard> {
                     child: WebViewWidget(
                       key: ValueKey(widget.metadata.path),
                       controller: _controller,
-                      gestureRecognizers: _webViewGestureRecognizers,
                     ),
                   ),
                 )

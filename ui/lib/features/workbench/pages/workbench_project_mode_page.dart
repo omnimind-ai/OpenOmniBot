@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ui/core/router/go_router_manager.dart';
@@ -150,6 +152,15 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
         : _activateProject(project);
   }
 
+  void _openProjectDetail(WorkbenchProject project) {
+    setState(() {
+      _selectedProjectId = project.projectId;
+      _detailProjectId = project.projectId;
+      _lastExportResult = null;
+    });
+    unawaited(_service.loadProjectDetails(project.projectId));
+  }
+
   Future<void> _editProjectLabels(WorkbenchProject project) async {
     final l10n = context.l10n;
     final nameController = TextEditingController(
@@ -275,6 +286,9 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     final encodedProjectId = Uri.encodeQueryComponent(project.projectId);
     if (project.frontendHtml.isNotEmpty) {
       return '/workbench/html?projectId=$encodedProjectId';
+    }
+    if (project.frontendMarkdown.isNotEmpty) {
+      return '/workbench/markdown?projectId=$encodedProjectId';
     }
     if (project.frontendFlutter.isNotEmpty) {
       return '/workbench/flutter_eval?projectId=$encodedProjectId';
@@ -417,7 +431,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
                         _buildInlineStatus(
                           icon: Icons.error_outline_rounded,
                           label: context.l10n.workbenchProjectModeLoadFailed,
-                          color: const Color(0xFFDC2626),
+                          color: _dangerColor(context),
                         ),
                       ],
                     ] else
@@ -447,7 +461,11 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.auto_awesome_rounded, size: 15, color: palette.accentPrimary),
+            Icon(
+              Icons.auto_awesome_rounded,
+              size: 15,
+              color: palette.accentPrimary,
+            ),
             const SizedBox(width: 6),
             Text(
               context.l10n.workbenchPhilosophyBadge,
@@ -458,7 +476,11 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
               ),
             ),
             const SizedBox(width: 4),
-            Icon(Icons.chevron_right_rounded, size: 15, color: palette.accentPrimary),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 15,
+              color: palette.accentPrimary,
+            ),
           ],
         ),
       ),
@@ -564,13 +586,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
     final active = _isActiveProject(project);
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () {
-        setState(() {
-          _selectedProjectId = project.projectId;
-          _detailProjectId = project.projectId;
-          _lastExportResult = null;
-        });
-      },
+      onTap: () => _openProjectDetail(project),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -709,7 +725,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
             _buildInlineStatus(
               icon: Icons.error_outline_rounded,
               label: context.l10n.workbenchProjectModeLoadFailed,
-              color: const Color(0xFFDC2626),
+              color: _dangerColor(context),
             ),
           ],
         ],
@@ -1022,7 +1038,7 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
           child: _buildProjectMenuItem(
             Icons.delete_outline_rounded,
             context.l10n.workbenchDeleteProject,
-            const Color(0xFFDC2626),
+            _dangerColor(context),
           ),
         ),
       ],
@@ -1242,6 +1258,12 @@ class _WorkbenchProjectModePageState extends State<WorkbenchProjectModePage> {
   }
 }
 
+Color _dangerColor(BuildContext context) {
+  return context.isDarkTheme
+      ? const Color(0xFFFF7A7A)
+      : const Color(0xFFDC2626);
+}
+
 class _WorkbenchPhilosophySheet extends StatelessWidget {
   const _WorkbenchPhilosophySheet({required this.palette});
 
@@ -1306,7 +1328,11 @@ class _WorkbenchPhilosophySheet extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(Icons.auto_awesome_rounded, color: palette.accentPrimary, size: 22),
+            Icon(
+              Icons.auto_awesome_rounded,
+              color: palette.accentPrimary,
+              size: 22,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -1502,7 +1528,10 @@ class _WorkbenchPhilosophySheet extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: palette.surfaceSecondary,
                         borderRadius: BorderRadius.circular(6),
@@ -1567,12 +1596,23 @@ class _WorkbenchPhilosophySheet extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: _buildStepCard(context, label: step.label, desc: step.desc, icon: step.icon)),
+                Expanded(
+                  child: _buildStepCard(
+                    context,
+                    label: step.label,
+                    desc: step.desc,
+                    icon: step.icon,
+                  ),
+                ),
                 if (!isLast) ...[
                   const SizedBox(width: 4),
                   Padding(
                     padding: const EdgeInsets.only(top: 22),
-                    child: Icon(Icons.arrow_forward_rounded, size: 14, color: palette.textTertiary),
+                    child: Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 14,
+                      color: palette.textTertiary,
+                    ),
                   ),
                   const SizedBox(width: 4),
                 ],
@@ -1635,7 +1675,11 @@ class _WorkbenchPhilosophySheet extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.lightbulb_outline_rounded, size: 16, color: palette.accentPrimary),
+          Icon(
+            Icons.lightbulb_outline_rounded,
+            size: 16,
+            color: palette.accentPrimary,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

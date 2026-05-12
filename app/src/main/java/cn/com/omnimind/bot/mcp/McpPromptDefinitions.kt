@@ -16,6 +16,7 @@ object McpPromptDefinitions {
             - Provide htmlFiles with at least frontend/html/index.html content.
             - Target the real-phone right-side Workspace WebView by default using the app-injected Workbench Display layout profile; do not hard-code phone width or height.
             - Use viewport width=device-width for mobile UI and portrait reports. Use a phone-width article layout for portrait reports, with the executive summary in the first measured viewport.
+            - Keep search boxes, filters, input fields, and primary actions visible at the narrow right-side WebView width; wrap or stack them instead of hiding them behind desktop breakpoints.
             - Use viewport width=1280 only for explicitly wide reports, slide decks, or landscape comparison canvases.
             - Use window.oob.callApi(apiId, inputs) for all Project Tool calls.
             - Register only Project Tools that the displayed UI needs.
@@ -23,11 +24,24 @@ object McpPromptDefinitions {
             - Open the HTML Display when ready.
             - Keep Workbench control tools out of the Project Tool list.
         """.trimIndent(),
+        "create_markdown_project" to """
+            Create an OOB Workbench Project with a Markdown Display.
+
+            Requirements:
+            - Choose a stable oob-workbench-* projectId.
+            - Provide markdownFiles with at least frontend/markdown/index.md content.
+            - Use Markdown only when the user explicitly asks for Markdown, editable documents, or plain-text long-form output.
+            - Register only Project Tools that the document workflow needs.
+            - Activate the Project after creation.
+            - Open the Markdown Display when ready.
+            - Keep Workbench control tools out of the Project Tool list.
+        """.trimIndent(),
         "create_project_display" to """
             Create an OOB Workbench Project from the user's domain.
 
             Requirements:
             - Choose a stable oob-workbench-* projectId.
+            - Default to htmlFiles for visible output; choose markdownFiles only for explicitly requested Markdown/editable documents/plain-text long-form output, or the default Project Display for simple structured data.
             - Register only Project Tools such as <entity>.create and <entity>.archive.
             - Activate the Project.
             - Seed initial data through workbench_api_call or the corresponding MCP Toolbox tool.

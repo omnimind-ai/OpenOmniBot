@@ -609,6 +609,25 @@ object AgentToolDefinitions {
         }
     }
 
+    val notificationSendTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "notification_send")
+            put("displayName", "发送通知")
+            put("toolType", "builtin")
+            put("description", "在手机状态栏显示一条本地通知。用于提醒用户某件事完成或需要关注。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("title") { put("type", "string"); put("description", "通知标题") }
+                    putJsonObject("body") { put("type", "string"); put("description", "通知正文") }
+                    putJsonObject("channel") { put("type", "string"); put("description", "通知渠道 ID，默认 oob_agent_notify") }
+                }
+                putJsonArray("required") { add("title"); add("body") }
+            }
+        }
+    }
+
     val terminalExecuteTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -1480,7 +1499,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_create")
             put("displayName", "创建 Workbench Project")
             put("toolType", "workbench")
-            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是审慎控制面能力，只有用户明确要求创建/新建 Project 时才调用，不会出现在 Project 自己的工具列表里。OOB Workbench 是 AI 产品输出展示层：AI 提供 projectId、Project Tools、持久化初始数据和可显示的 HTML/Flutter/page spec 资产，右侧 Flutter Workspace Host 负责优雅展示与交互。报告、图表、富文本、对比或快速局部视觉编辑优先通过 htmlFiles 创建内嵌 WebView renderer；默认按 App 运行时注入的 Workbench Display layout profile 设计，使用实测 viewportWidthDp/viewportHeightDp 作为右侧 Workspace/WebView 的宽度和可见高度，首屏必须紧凑。竖屏报告也应使用手机宽文章布局，首屏给摘要，图表高度按实测可见高度响应式控制；只有明确宽屏报告/PPT/横向对比时才用 1280 固定画布。结构化数据操作通过 Project Tools 和默认 Project Display 呈现；flutterFiles 只作为受限 flutter_eval 补充路径。不要直接写 registry 文件。Display 只展示业务工作流，不展示 Project id、工具数量、executor、Toolbox、Workspace 或日志路径等控制面摘要。")
+            put("description", "调用 OOB 内置 Workbench Project 创建接口。Project 创建是审慎控制面能力，只有用户明确要求创建/新建 Project 时才调用，不会出现在 Project 自己的工具列表里。OOB Workbench 是 AI 产品输出展示层：AI 提供 projectId、Project Tools、持久化初始数据和可显示的 HTML/Flutter/Markdown/page spec 资产，右侧 Flutter Workspace Host 负责优雅展示与交互。默认通过 htmlFiles 创建内嵌 WebView renderer，覆盖报告、图表、富文本、对比、表单、仪表盘和快速局部视觉编辑；只有用户明确要求 Markdown、可编辑文档、纯文本长文，或当前 Project 已经是 Markdown Display 时，才用 markdownFiles 创建 Markdown renderer。默认按 App 运行时注入的 Workbench Display layout profile 设计，使用实测 viewportWidthDp/viewportHeightDp 作为右侧 Workspace/WebView 的宽度和可见高度，首屏必须紧凑。竖屏报告也应使用手机宽文章布局，首屏给摘要，图表高度按实测可见高度响应式控制；只有明确宽屏报告/PPT/横向对比时才用 1280 固定画布。结构化数据操作通过 Project Tools 和默认 Project Display 呈现；flutterFiles 只作为受限 flutter_eval 补充路径。不要直接写 registry 文件。Display 只展示业务工作流，不展示 Project id、工具数量、executor、Toolbox、Workspace 或日志路径等控制面摘要。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1514,11 +1533,15 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("htmlFiles") {
                         put("type", "array")
-                        put("description", "可选。创建可即时运行的 HTML Display，路径限定在 frontend/html/ 内。每项包含 path 和 content，建议至少包含 {path:\"index.html\", content:\"...\"}。HTML 由右侧 Flutter Host 的内嵌 WebView renderer 承载，可用 window.oob.callApi(apiId, inputs) 调 Project Tool。默认按系统提示中的 Workbench Display layout profile 生成：viewport=device-width、单列、以实测 viewportWidthDp/viewportHeightDp 为目标、首屏紧凑；竖屏报告用手机宽文章布局，首屏放摘要，图表按实测可见高度响应式控制。只有明确宽屏报告/PPT 时才使用 viewport width=1280。")
+                        put("description", "可选，且是默认前端路径。创建可即时运行的 HTML Display，路径限定在 frontend/html/ 内。每项包含 path 和 content，建议至少包含 {path:\"index.html\", content:\"...\"}。默认优先单页/hash 路由；确需拆页时可包含多个本地 HTML 文件并使用相对链接（如 detail.html?id=1#summary），仅支持 Project 内页面替换，不提供浏览器返回栈或外部跳转。HTML 由右侧 Flutter Host 的内嵌 WebView renderer 承载，可用 window.oob.callApi(apiId, inputs) 调 Project Tool。默认按系统提示中的 Workbench Display layout profile 生成：viewport=device-width、单列、以实测 viewportWidthDp/viewportHeightDp 为目标、首屏紧凑；竖屏报告用手机宽文章布局，首屏放摘要，图表按实测可见高度响应式控制。只有明确宽屏报告/PPT 时才使用 viewport width=1280。")
                     }
                     putJsonObject("flutterFiles") {
                         put("type", "array")
                         put("description", "可选。创建受限 flutter_eval Display 源码资产，路径限定在 frontend/flutter/ 内。仅在默认 Project Display 和 HTML 都不适合时使用。源码必须暴露 OobProjectWidget(dynamic _, {super.key}) Widget 入口，禁止 void main()/runApp()/普通 Flutter App 入口；Project Tool 调用使用 cn.com.omnimind.bot/AssistCoreEvent 的 workbenchApiCall，并带 projectId/apiId/inputs。")
+                    }
+                    putJsonObject("markdownFiles") {
+                        put("type", "array")
+                        put("description", "可选专项路径，不是默认 UI。创建可实时编辑和预览的 Markdown Display，路径限定在 frontend/markdown/ 内。每项包含 path 和 content，建议至少包含 {path:\"index.md\", content:\"...\"}。仅在用户明确要求 Markdown、可编辑文档、纯文本长文，或当前 Project 已经是 Markdown Display 时使用。")
                     }
                 }
                 putJsonArray("required") {
@@ -1589,7 +1612,7 @@ object AgentToolDefinitions {
             put("name", "workbench_project_update")
             put("displayName", "更新 Workbench Project")
             put("toolType", "workbench")
-            put("description", "在同一个 OOB Workbench Project 内追加或更新用户可见名称、Display 页面、Project Tools、Project-owned HTML 和 Flutter 源码资产。用于 Project 迭代，不应为了加功能重新创建 Project。它会合并 frontend/page_spec.json、backend/api_spec.json 和工具 registry，安全写入 frontend/html/ 与 frontend/flutter/，并写入 logs/hot_updates.jsonl。HTML 可通过右侧 Flutter Host 内的 /workbench/html WebView renderer 即时运行并调用 window.oob.callApi；Flutter 源码仍是受限 flutter_eval 补充路径。")
+            put("description", "在同一个 OOB Workbench Project 内追加或更新用户可见名称、Display 页面、Project Tools、Project-owned HTML、Flutter 和 Markdown 源码资产。用于 Project 迭代，不应为了加功能重新创建 Project。它会合并 frontend/page_spec.json、backend/api_spec.json 和工具 registry，安全写入 frontend/html/、frontend/flutter/ 与 frontend/markdown/，并写入 logs/hot_updates.jsonl。HTML 可通过右侧 Flutter Host 内的 /workbench/html WebView renderer 即时运行并调用 window.oob.callApi；Markdown 会进入可实时编辑/预览的 Project renderer；Flutter 源码仍是受限 flutter_eval 补充路径。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -1623,7 +1646,25 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("htmlFiles") {
                         put("type", "array")
-                        put("description", "可选。写入 Project 自有 HTML/CSS/JS 源码资产，路径限定在 frontend/html/ 内。每项包含 path 和 content。HTML Display 可被右侧 Flutter Host 的 WebView renderer 即时加载，使用 window.oob.callApi 调 Project Tool。更新时保持与 App 实测 Workbench Display layout profile 匹配；竖屏报告使用 phone-width article，首屏放摘要，避免宽表格、满屏装饰区和桌面 hero；仅明确宽屏报告/PPT 时使用 1280 固定画布。")
+                        put("description", "可选。写入 Project 自有 HTML/CSS/JS 源码资产，路径限定在 frontend/html/ 内。每项包含 path 和 content。默认优先单页/hash 路由；确需拆页时可包含多个本地 HTML 文件并使用相对链接（如 detail.html?id=1#summary），仅支持 Project 内页面替换，不提供浏览器返回栈或外部跳转。HTML Display 可被右侧 Flutter Host 的 WebView renderer 即时加载，使用 window.oob.callApi 调 Project Tool。更新时保持与 App 实测 Workbench Display layout profile 匹配；竖屏报告使用 phone-width article，首屏放摘要，避免宽表格、满屏装饰区和桌面 hero；仅明确宽屏报告/PPT 时使用 1280 固定画布。")
+                    }
+                    putJsonObject("markdownFiles") {
+                        put("type", "array")
+                        put("description", "可选专项路径，不是默认 UI。写入 Project 自有 Markdown 文档资产，路径限定在 frontend/markdown/ 内。每项包含 path 和 content。Markdown Display 会在右侧 Project 区支持预览、编辑、分屏实时预览和手动保存。仅在用户明确要求 Markdown、可编辑文档、纯文本长文，或当前 Project 已经是 Markdown Display 时使用。")
+                    }
+                    putJsonObject("htmlPatches") {
+                        put("type", "array")
+                        put(
+                            "description",
+                            "强烈优先于 htmlFiles（全量重写）。对已有 HTML 文件做外科手术式文本替换，token 消耗减少 95%。每项包含 path（相对 frontend/html/）、oldText（文件中唯一可定位的原始文本）、newText（替换后文本）、replaceAll（默认 false）。" +
+                            "适用于几乎所有改动：CSS/样式修改（font-size、color、padding）；文字/属性修改；" +
+                            "新增元素——把锚点（如父元素闭合标签 </div>）包进 oldText，newText 里放锚点 + 新内容；" +
+                            "删除元素——newText 置空；多处修改——传多条 patch。" +
+                            "只有 >50% 结构大量重构时才退回 htmlFiles。" +
+                            "示例 CSS: [{\"path\":\"index.html\",\"oldText\":\"font-size: 14px\",\"newText\":\"font-size: 18px\"}]。" +
+                            "示例新增: [{\"path\":\"index.html\",\"oldText\":\"</body>\",\"newText\":\"<p>新段落</p>\\n</body>\"}]。" +
+                            "示例删除: [{\"path\":\"index.html\",\"oldText\":\"<div class=\\\"old\\\">旧内容</div>\",\"newText\":\"\"}]"
+                        )
                     }
                     putJsonObject("prompt") {
                         put("type", "string")
@@ -2490,6 +2531,7 @@ object AgentToolDefinitions {
         contextTimeNowTool,
         vlmTaskTool,
         imagePickerTool,
+        notificationSendTool,
         terminalExecuteTool,
         terminalSessionStartTool,
         terminalSessionExecTool,

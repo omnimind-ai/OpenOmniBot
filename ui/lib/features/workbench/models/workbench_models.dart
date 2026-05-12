@@ -262,6 +262,7 @@ class WorkbenchProject {
     this.pageSpec = const {},
     this.frontendHtml = const {},
     this.frontendFlutter = const {},
+    this.frontendMarkdown = const {},
   });
 
   final String projectId;
@@ -277,6 +278,7 @@ class WorkbenchProject {
   final Map<String, Object?> pageSpec;
   final Map<String, Object?> frontendHtml;
   final Map<String, Object?> frontendFlutter;
+  final Map<String, Object?> frontendMarkdown;
 
   List<WorkbenchProjectItem> get activeItems =>
       items.where((item) => !item.isArchived).toList(growable: false);
@@ -301,13 +303,18 @@ class WorkbenchProject {
     final route = (map['route'] ?? '').toString();
     final pageIds = map['pageIds'];
     final displays = map['displays'] ?? map['frontends'];
-    final tools = map['tools'] ?? map['apis'];
+    final toolsPayload = map['tools'];
+    final apisPayload = map['apis'];
+    final tools = toolsPayload is List && toolsPayload.isNotEmpty
+        ? toolsPayload
+        : apisPayload ?? toolsPayload;
     final flows = map['flows'];
     final androidAssets = map['androidAssets'];
     final items = map['items'];
     final pageSpec = map['pageSpec'];
     final frontendHtml = map['frontendHtml'];
     final frontendFlutter = map['frontendFlutter'];
+    final frontendMarkdown = map['frontendMarkdown'];
     final parsedDisplays = displays is List
         ? displays
               .whereType<Map<dynamic, dynamic>>()
@@ -359,6 +366,9 @@ class WorkbenchProject {
       frontendFlutter: frontendFlutter is Map
           ? Map<String, Object?>.from(frontendFlutter)
           : const {},
+      frontendMarkdown: frontendMarkdown is Map
+          ? Map<String, Object?>.from(frontendMarkdown)
+          : const {},
     );
   }
 
@@ -376,6 +386,7 @@ class WorkbenchProject {
     Map<String, Object?>? pageSpec,
     Map<String, Object?>? frontendHtml,
     Map<String, Object?>? frontendFlutter,
+    Map<String, Object?>? frontendMarkdown,
   }) {
     return WorkbenchProject(
       projectId: projectId ?? this.projectId,
@@ -391,6 +402,7 @@ class WorkbenchProject {
       pageSpec: pageSpec ?? this.pageSpec,
       frontendHtml: frontendHtml ?? this.frontendHtml,
       frontendFlutter: frontendFlutter ?? this.frontendFlutter,
+      frontendMarkdown: frontendMarkdown ?? this.frontendMarkdown,
     );
   }
 }

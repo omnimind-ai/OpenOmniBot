@@ -1,7 +1,7 @@
-import 'dart:ui';
-
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart';
+import 'package:ui/l10n/generated/app_localizations.dart';
 
 void main() {
   test('computes bounds for a red annotation stroke', () {
@@ -53,5 +53,45 @@ void main() {
     expect(context['analysisOwner'], 'vlm');
     expect(context['annotationMeta'], isA<Map>());
     expect(context['selectedRegion'], isA<Map>());
+  });
+
+  testWidgets('records pointer strokes and submits annotation payload', (
+    tester,
+  ) async {
+    WorkbenchAnnotationPayload? submittedPayload;
+    String? submittedPrompt;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: SizedBox(
+            width: 360,
+            height: 420,
+            child: WorkbenchAnnotationOverlay(
+              onSubmit: (payload, prompt) async {
+                submittedPayload = payload;
+                submittedPrompt = prompt;
+                return true;
+              },
+              child: const ColoredBox(color: Colors.white),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.dragFrom(const Offset(48, 48), const Offset(96, 72));
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.auto_fix_high_rounded));
+    await tester.pump();
+
+    expect(submittedPayload, isNotNull);
+    expect(submittedPayload!.strokes, hasLength(1));
+    expect(submittedPayload!.strokes.single.points.length, greaterThan(1));
+    expect(submittedPayload!.canvasSize, const Size(360, 420));
+    expect(submittedPrompt, isNotEmpty);
   });
 }

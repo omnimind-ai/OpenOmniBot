@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 import 'package:ui/features/workbench/pages/workbench_flutter_eval_page.dart';
 import 'package:ui/features/workbench/pages/workbench_html_display_page.dart';
+import 'package:ui/features/workbench/pages/workbench_markdown_display_page.dart';
 import 'package:ui/features/workbench/pages/workbench_project_display_page.dart';
 import 'package:ui/features/workbench/pages/workbench_project_mode_page.dart';
 
@@ -52,6 +53,19 @@ List<GoRoute> workbenchRoutes = [
       key: state.pageKey,
       name: 'workbench/flutter_eval',
       child: WorkbenchFlutterEvalPage(
+        projectId: state.uri.queryParameters['projectId'],
+        displayId: state.uri.queryParameters['displayId'],
+        returnTo: state.uri.queryParameters['returnTo'],
+      ),
+    ),
+  ),
+  GoRoute(
+    path: '/workbench/markdown',
+    name: 'workbench/markdown',
+    pageBuilder: (context, state) => NoTransitionPage(
+      key: state.pageKey,
+      name: 'workbench/markdown',
+      child: WorkbenchMarkdownDisplayPage(
         projectId: state.uri.queryParameters['projectId'],
         displayId: state.uri.queryParameters['displayId'],
         returnTo: state.uri.queryParameters['returnTo'],

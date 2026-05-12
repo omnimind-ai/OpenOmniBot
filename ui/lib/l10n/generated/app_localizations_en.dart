@@ -3625,89 +3625,89 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workbenchPhilosophyClose => 'Close';
 
   @override
-  String get workbenchPhilosophyTitle => 'Mobile-Native AI Workbench';
+  String get workbenchPhilosophyTitle => 'AI Product Display Workbench';
 
   @override
   String get workbenchPhilosophyTagline =>
-      'Create your own app in one sentence';
+      'Turn AI results into interfaces users can see, tap, and keep changing';
 
   @override
   String get workbenchPhilosophySubtitle =>
-      'Your phone is already the most powerful backend. OOB puts all native capabilities into the Workbench, assembles them with natural language, and runs them directly on your device — no cloud, ready the moment it is generated.';
+      'Workbench is not a template generator. It is the display and runtime layer for AI products. Agent reports, data, state, and actions land in a Project, render through HTML, Markdown, or Flutter, and connect to phone capabilities and persisted data through Project APIs.';
 
   @override
-  String get workbenchPhilosophyPillarsTitle => 'Three layers';
+  String get workbenchPhilosophyPillarsTitle => 'Current loop';
 
   @override
-  String get workbenchPhilosophyComposable => 'Composable';
+  String get workbenchPhilosophyComposable => 'Display';
 
   @override
   String get workbenchPhilosophyComposableDesc =>
-      'Tools / executors / UI / data / Skills assembled freely';
+      'HTML / Markdown / Flutter are Project Displays for presenting AI output';
 
   @override
-  String get workbenchPhilosophyAIDriven => 'AI-driven';
+  String get workbenchPhilosophyAIDriven => 'Interaction';
 
   @override
   String get workbenchPhilosophyAIDrivenDesc =>
-      'Describe your need; AI assembles it';
+      'User clicks, form input, and selections call Project APIs to trigger the next Agent or tool step';
 
   @override
-  String get workbenchPhilosophyMobileNative => 'Mobile-native';
+  String get workbenchPhilosophyMobileNative => 'Capabilities';
 
   @override
   String get workbenchPhilosophyMobileNativeDesc =>
-      'Generated apps call real phone system capabilities';
+      'Screen control, reading UI, files, and scripts go through OOB native capabilities only when needed';
 
   @override
-  String get workbenchPhilosophyStrengthsTitle => 'Three strengths';
+  String get workbenchPhilosophyStrengthsTitle => 'Three essentials';
 
   @override
-  String get workbenchPhilosophyBackendTitle => 'Backend';
+  String get workbenchPhilosophyBackendTitle => 'Project API';
 
   @override
   String get workbenchPhilosophyBackendDesc =>
-      'All OOB native tools (VLM / Alpine / Accessibility / Files / Planning), Omniflow executable memory, on-device inference';
+      'Whitelisted tools, persisted data, run logs, and phone capabilities are mounted on the Project';
 
   @override
-  String get workbenchPhilosophyFrontendTitle => 'Frontend';
+  String get workbenchPhilosophyFrontendTitle => 'Display';
 
   @override
   String get workbenchPhilosophyFrontendDesc =>
-      'Flutter native rendering (default), natural-language hot update, no APK reinstall; HTML path planned';
+      'Normal interactive UI defaults to HTML; reports use Markdown / HTML; Flutter stays as the container and constrained supplement';
 
   @override
-  String get workbenchPhilosophyRuntimeTitle => 'Runtime';
+  String get workbenchPhilosophyRuntimeTitle => 'Hot update';
 
   @override
   String get workbenchPhilosophyRuntimeDesc =>
-      'Project container links frontend UI, Project APIs, persistent data, and logs into one evolvable on-device app instance, survives sessions, one-tap export';
+      'After one sentence or one annotated selection, AI edits only the necessary frontend files or APIs and the right side refreshes';
 
   @override
-  String get workbenchPhilosophyHowToTitle => 'How to use';
+  String get workbenchPhilosophyHowToTitle => 'Flow';
 
   @override
-  String get workbenchPhilosophyStep1Label => 'Say';
+  String get workbenchPhilosophyStep1Label => 'Generate';
 
   @override
   String get workbenchPhilosophyStep1Desc =>
-      'Describe the app you want in the Home input';
+      'The Agent creates a Project and writes APIs plus display files';
 
   @override
-  String get workbenchPhilosophyStep2Label => 'See';
+  String get workbenchPhilosophyStep2Label => 'View';
 
   @override
   String get workbenchPhilosophyStep2Desc =>
-      'OOB creates the Project; Flutter UI appears immediately';
+      'The right Workspace previews HTML / Markdown / Flutter directly';
 
   @override
-  String get workbenchPhilosophyStep3Label => 'Edit';
+  String get workbenchPhilosophyStep3Label => 'Update';
 
   @override
   String get workbenchPhilosophyStep3Desc =>
-      'Keep describing changes; AI hot-updates the UI without recreating';
+      'Use the floating input or annotation to request a Project hot update';
 
   @override
   String get workbenchPhilosophyActivateHint =>
-      'Activate a Project in the list; its UI appears live on the right side of the Workspace while you keep editing with the left-side input.';
+      'After activation, the right Workspace shows the Project Display. Further input or annotations are passed as context to hot update.';
 }

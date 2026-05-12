@@ -13,9 +13,15 @@ abstract class WorkbenchProjectBackend {
     List<Map<String, Object?>>? apis,
     List<Map<String, Object?>>? htmlFiles,
     List<Map<String, Object?>>? flutterFiles,
+    List<Map<String, Object?>>? markdownFiles,
   });
 
-  Future<WorkbenchProject> getProject(String projectId);
+  Future<WorkbenchProject> getProject(
+    String projectId, {
+    bool includeSources = true,
+    bool includeRuntimeState = true,
+    bool includeFrontendPayloads = true,
+  });
 
   Future<WorkbenchProject> updateProjectMetadata({
     required String projectId,
@@ -26,6 +32,7 @@ abstract class WorkbenchProjectBackend {
     List<Map<String, Object?>>? apis,
     List<Map<String, Object?>>? htmlFiles,
     List<Map<String, Object?>>? flutterFiles,
+    List<Map<String, Object?>>? markdownFiles,
     String? prompt,
   });
 
@@ -92,6 +99,7 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
     List<Map<String, Object?>>? apis,
     List<Map<String, Object?>>? htmlFiles,
     List<Map<String, Object?>>? flutterFiles,
+    List<Map<String, Object?>>? markdownFiles,
   }) async {
     final result = await _channel
         .invokeMethod<Map<dynamic, dynamic>>('workbenchProjectCreate', {
@@ -108,16 +116,26 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
           if (htmlFiles != null && htmlFiles.isNotEmpty) 'htmlFiles': htmlFiles,
           if (flutterFiles != null && flutterFiles.isNotEmpty)
             'flutterFiles': flutterFiles,
+          if (markdownFiles != null && markdownFiles.isNotEmpty)
+            'markdownFiles': markdownFiles,
         });
     return WorkbenchProject.fromMap(result ?? const {});
   }
 
   @override
-  Future<WorkbenchProject> getProject(String projectId) async {
-    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'workbenchProjectGet',
-      {'projectId': projectId},
-    );
+  Future<WorkbenchProject> getProject(
+    String projectId, {
+    bool includeSources = true,
+    bool includeRuntimeState = true,
+    bool includeFrontendPayloads = true,
+  }) async {
+    final result = await _channel
+        .invokeMethod<Map<dynamic, dynamic>>('workbenchProjectGet', {
+          'projectId': projectId,
+          'includeSources': includeSources,
+          'includeRuntimeState': includeRuntimeState,
+          'includeFrontendPayloads': includeFrontendPayloads,
+        });
     return WorkbenchProject.fromMap(result ?? const {});
   }
 
@@ -131,6 +149,7 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
     List<Map<String, Object?>>? apis,
     List<Map<String, Object?>>? htmlFiles,
     List<Map<String, Object?>>? flutterFiles,
+    List<Map<String, Object?>>? markdownFiles,
     String? prompt,
   }) async {
     final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
@@ -147,6 +166,8 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
         if (htmlFiles != null && htmlFiles.isNotEmpty) 'htmlFiles': htmlFiles,
         if (flutterFiles != null && flutterFiles.isNotEmpty)
           'flutterFiles': flutterFiles,
+        if (markdownFiles != null && markdownFiles.isNotEmpty)
+          'markdownFiles': markdownFiles,
         if (prompt != null && prompt.trim().isNotEmpty) 'prompt': prompt.trim(),
       },
     );
@@ -183,6 +204,7 @@ class NativeWorkbenchProjectBackend implements WorkbenchProjectBackend {
   Future<WorkbenchProject?> getActiveProject() async {
     final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
       'workbenchProjectActiveGet',
+      {'compact': true},
     );
     final project = result?['project'];
     return project is Map<dynamic, dynamic>
@@ -348,8 +370,7 @@ class WorkbenchProjectService extends ChangeNotifier {
     notifyListeners();
     try {
       final project = await _loadOrCreateProject();
-      final apis = await _backend.listApis(project.projectId);
-      _project = project.copyWith(tools: apis);
+      _project = await _projectWithLegacyToolFallback(project);
     } catch (error) {
       _errorMessage = error.toString();
     } finally {
@@ -370,9 +391,7 @@ class WorkbenchProjectService extends ChangeNotifier {
         rethrow;
       }
     }
-    return _backend.createProject(
-      projectId: _projectId,
-    );
+    return _backend.createProject(projectId: _projectId);
   }
 
   Future<void> refresh() async {
@@ -383,12 +402,66 @@ class WorkbenchProjectService extends ChangeNotifier {
     }
     try {
       final latest = await _backend.getProject(current.projectId);
-      final apis = await _backend.listApis(latest.projectId);
-      _project = latest.copyWith(tools: apis);
+      _project = await _projectWithLegacyToolFallback(latest);
       _errorMessage = null;
       notifyListeners();
     } catch (error) {
       _errorMessage = error.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<WorkbenchProject?> updateProjectMetadata(
+    WorkbenchProject project, {
+    String? name,
+    String? shortName,
+    String? description,
+    List<Map<String, Object?>>? displays,
+    List<Map<String, Object?>>? apis,
+    List<Map<String, Object?>>? htmlFiles,
+    List<Map<String, Object?>>? flutterFiles,
+    List<Map<String, Object?>>? markdownFiles,
+    String? prompt,
+  }) async {
+    final normalizedName = name?.trim();
+    final normalizedShortName = shortName?.trim();
+    final normalizedDescription = description?.trim();
+    final normalizedPrompt = prompt?.trim();
+    if ((normalizedName == null || normalizedName.isEmpty) &&
+        (normalizedShortName == null || normalizedShortName.isEmpty) &&
+        (normalizedDescription == null || normalizedDescription.isEmpty) &&
+        (normalizedPrompt == null || normalizedPrompt.isEmpty) &&
+        (displays == null || displays.isEmpty) &&
+        (apis == null || apis.isEmpty) &&
+        (htmlFiles == null || htmlFiles.isEmpty) &&
+        (flutterFiles == null || flutterFiles.isEmpty) &&
+        (markdownFiles == null || markdownFiles.isEmpty)) {
+      return null;
+    }
+    _loading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final updated = await _backend.updateProjectMetadata(
+        projectId: project.projectId,
+        name: normalizedName,
+        shortName: normalizedShortName,
+        description: normalizedDescription,
+        displays: displays,
+        apis: apis,
+        htmlFiles: htmlFiles,
+        flutterFiles: flutterFiles,
+        markdownFiles: markdownFiles,
+        prompt: normalizedPrompt,
+      );
+      _project = await _projectWithLegacyToolFallback(updated);
+      _errorMessage = null;
+      return _project;
+    } catch (error) {
+      _errorMessage = error.toString();
+      return null;
+    } finally {
+      _loading = false;
       notifyListeners();
     }
   }
@@ -450,11 +523,23 @@ class WorkbenchProjectService extends ChangeNotifier {
     notifyListeners();
     return result;
   }
+
+  Future<WorkbenchProject> _projectWithLegacyToolFallback(
+    WorkbenchProject project,
+  ) async {
+    if (project.tools.isNotEmpty || project.projectId.trim().isEmpty) {
+      return project;
+    }
+    final apis = await _backend.listApis(project.projectId);
+    return apis.isEmpty ? project : project.copyWith(tools: apis);
+  }
 }
 
 class WorkbenchProjectModeService extends ChangeNotifier {
   WorkbenchProjectModeService({required WorkbenchProjectBackend backend})
-    : _backend = backend;
+    : _backend = backend,
+      _projects = _cachedProjects,
+      _activeProject = _cachedActiveProject;
 
   factory WorkbenchProjectModeService.native() {
     return WorkbenchProjectModeService(
@@ -463,7 +548,10 @@ class WorkbenchProjectModeService extends ChangeNotifier {
   }
 
   final WorkbenchProjectBackend _backend;
-  List<WorkbenchProject> _projects = const [];
+  static List<WorkbenchProject> _cachedProjects = const [];
+  static WorkbenchProject? _cachedActiveProject;
+
+  List<WorkbenchProject> _projects;
   WorkbenchProject? _activeProject;
   bool _loading = false;
   String? _errorMessage;
@@ -474,18 +562,69 @@ class WorkbenchProjectModeService extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
 
   Future<void> refresh() async {
-    _loading = true;
+    final showLoading = _projects.isEmpty && _activeProject == null;
+    _loading = showLoading;
     _errorMessage = null;
-    notifyListeners();
+    if (showLoading) {
+      notifyListeners();
+    }
     try {
-      _projects = await _backend.listProjects();
-      _activeProject = await _backend.getActiveProject();
+      final results = await Future.wait<Object?>([
+        _backend.listProjects(),
+        _backend.getActiveProject(),
+      ]);
+      _projects = _mergeProjectIndexes(results[0] as List<WorkbenchProject>);
+      _activeProject = _mergeProjectIndex(results[1] as WorkbenchProject?);
+      _rememberSnapshot();
     } catch (error) {
-      _errorMessage = error.toString();
+      // Only surface the error when there is no existing data to show.
+      // Transient native failures (binder timeout, partial init) must not flash
+      // a red card over an otherwise-working workspace.
+      if (_projects.isEmpty && _activeProject == null) {
+        _errorMessage = error.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  Future<WorkbenchProject?> loadProjectDetails(String projectId) async {
+    final normalizedProjectId = projectId.trim();
+    if (normalizedProjectId.isEmpty) return null;
+    _errorMessage = null;
+    try {
+      final project = await _backend.getProject(
+        normalizedProjectId,
+        includeSources: false,
+        includeRuntimeState: false,
+        includeFrontendPayloads: false,
+      );
+      _upsertProject(project);
+      if (_activeProject?.projectId == project.projectId) {
+        _activeProject = project;
+      }
+      _rememberSnapshot();
+      return project;
+    } catch (error) {
+      _errorMessage = error.toString();
+      return null;
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  // Lightweight refresh: only updates the active project, skips full list reload.
+  // Used for data-only events (api_call) to avoid constant list rebuilds.
+  Future<void> refreshActiveProject() async {
+    try {
+      final updated = await _backend.getActiveProject();
+      if (updated?.projectId == _activeProject?.projectId) {
+        _activeProject = _mergeProjectIndex(updated);
+        _rememberSnapshot();
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   Future<WorkbenchProject?> activateProject(WorkbenchProject project) async {
@@ -494,7 +633,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     notifyListeners();
     try {
       final active = await _backend.activateProject(project.projectId);
-      _activeProject = active ?? project;
+      _activeProject = _mergeProjectIndex(active ?? project);
       _projects = _projects
           .map(
             (item) => item.projectId == _activeProject!.projectId
@@ -502,6 +641,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
                 : item,
           )
           .toList(growable: false);
+      _rememberSnapshot();
       return _activeProject;
     } catch (error) {
       _errorMessage = error.toString();
@@ -521,6 +661,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     List<Map<String, Object?>>? apis,
     List<Map<String, Object?>>? htmlFiles,
     List<Map<String, Object?>>? flutterFiles,
+    List<Map<String, Object?>>? markdownFiles,
     String? prompt,
   }) async {
     final normalizedName = name?.trim();
@@ -534,7 +675,8 @@ class WorkbenchProjectModeService extends ChangeNotifier {
         (displays == null || displays.isEmpty) &&
         (apis == null || apis.isEmpty) &&
         (htmlFiles == null || htmlFiles.isEmpty) &&
-        (flutterFiles == null || flutterFiles.isEmpty)) {
+        (flutterFiles == null || flutterFiles.isEmpty) &&
+        (markdownFiles == null || markdownFiles.isEmpty)) {
       return null;
     }
     _loading = true;
@@ -550,6 +692,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
         apis: apis,
         htmlFiles: htmlFiles,
         flutterFiles: flutterFiles,
+        markdownFiles: markdownFiles,
         prompt: normalizedPrompt,
       );
       _projects = _projects
@@ -558,6 +701,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       if (_activeProject?.projectId == updated.projectId) {
         _activeProject = updated;
       }
+      _rememberSnapshot();
       return updated;
     } catch (error) {
       _errorMessage = error.toString();
@@ -570,7 +714,8 @@ class WorkbenchProjectModeService extends ChangeNotifier {
 
   Future<WorkbenchProject?> getActiveProject() async {
     try {
-      _activeProject = await _backend.getActiveProject();
+      _activeProject = _mergeProjectIndex(await _backend.getActiveProject());
+      _rememberSnapshot();
       notifyListeners();
       return _activeProject;
     } catch (error) {
@@ -587,6 +732,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     try {
       await _backend.deactivateProject();
       _activeProject = null;
+      _rememberSnapshot();
       return true;
     } catch (error) {
       _errorMessage = error.toString();
@@ -613,6 +759,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     List<Map<String, Object?>> apis = const [],
     List<Map<String, Object?>> htmlFiles = const [],
     List<Map<String, Object?>> flutterFiles = const [],
+    List<Map<String, Object?>> markdownFiles = const [],
   }) async {
     final normalizedPrompt = prompt.trim();
     final normalizedProjectId = projectId.trim();
@@ -634,8 +781,11 @@ class WorkbenchProjectModeService extends ChangeNotifier {
         apis: apis,
         htmlFiles: htmlFiles,
         flutterFiles: flutterFiles,
+        markdownFiles: markdownFiles,
       );
-      _projects = await _backend.listProjects();
+      _projects = _mergeProjectIndexes(await _backend.listProjects());
+      _upsertProject(project);
+      _rememberSnapshot();
       return project;
     } catch (error) {
       _errorMessage = error.toString();
@@ -657,17 +807,12 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       inputs: inputs,
     );
     if (result.project != null) {
-      _projects = _projects
-          .map(
-            (item) => item.projectId == result.project!.projectId
-                ? result.project!
-                : item,
-          )
-          .toList(growable: false);
+      _upsertProject(result.project!);
     } else if (result.success) {
-      _projects = await _backend.listProjects();
+      _projects = _mergeProjectIndexes(await _backend.listProjects());
     }
     _errorMessage = result.success ? null : result.errorMessage;
+    _rememberSnapshot();
     notifyListeners();
     return result;
   }
@@ -698,8 +843,9 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     try {
       final result = await _backend.deleteProject(project.projectId);
       if (result.success) {
-        _projects = await _backend.listProjects();
-        _activeProject = await _backend.getActiveProject();
+        _projects = _mergeProjectIndexes(await _backend.listProjects());
+        _activeProject = _mergeProjectIndex(await _backend.getActiveProject());
+        _rememberSnapshot();
       }
       return result;
     } catch (error) {
@@ -731,16 +877,11 @@ class WorkbenchProjectModeService extends ChangeNotifier {
         frontendContext: frontendContext,
       );
       if (result.project != null) {
-        _projects = _projects
-            .map(
-              (item) => item.projectId == result.project!.projectId
-                  ? result.project!
-                  : item,
-            )
-            .toList(growable: false);
+        _upsertProject(result.project!);
       } else if (result.success) {
-        _projects = await _backend.listProjects();
+        _projects = _mergeProjectIndexes(await _backend.listProjects());
       }
+      _rememberSnapshot();
       return result;
     } catch (error) {
       _errorMessage = error.toString();
@@ -776,16 +917,11 @@ class WorkbenchProjectModeService extends ChangeNotifier {
         displayName: displayName,
       );
       if (result.project != null) {
-        _projects = _projects
-            .map(
-              (item) => item.projectId == result.project!.projectId
-                  ? result.project!
-                  : item,
-            )
-            .toList(growable: false);
+        _upsertProject(result.project!);
       } else if (result.success) {
-        _projects = await _backend.listProjects();
+        _projects = _mergeProjectIndexes(await _backend.listProjects());
       }
+      _rememberSnapshot();
       return result;
     } catch (error) {
       _errorMessage = error.toString();
@@ -794,6 +930,64 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  void _upsertProject(WorkbenchProject project) {
+    var replaced = false;
+    _projects = _projects
+        .map((item) {
+          if (item.projectId != project.projectId) return item;
+          replaced = true;
+          return project;
+        })
+        .toList(growable: false);
+    if (!replaced) {
+      _projects = [project, ..._projects];
+    }
+    if (_activeProject?.projectId == project.projectId) {
+      _activeProject = project;
+    }
+  }
+
+  List<WorkbenchProject> _mergeProjectIndexes(List<WorkbenchProject> indexes) {
+    return indexes
+        .map(_mergeProjectIndex)
+        .whereType<WorkbenchProject>()
+        .toList(growable: false);
+  }
+
+  WorkbenchProject? _mergeProjectIndex(WorkbenchProject? index) {
+    if (index == null) return null;
+    final known = _knownProject(index.projectId);
+    if (known == null) return index;
+    return known.copyWith(
+      name: index.name,
+      route: index.route,
+      spacePath: index.spacePath,
+      pageIds: index.pageIds.isNotEmpty ? index.pageIds : known.pageIds,
+      displays: index.displays.isNotEmpty ? index.displays : known.displays,
+      tools: index.tools.isNotEmpty ? index.tools : known.tools,
+      pageSpec: index.pageSpec.isNotEmpty ? index.pageSpec : known.pageSpec,
+    );
+  }
+
+  WorkbenchProject? _knownProject(String projectId) {
+    for (final project in _projects) {
+      if (project.projectId == projectId) return project;
+    }
+    for (final project in _cachedProjects) {
+      if (project.projectId == projectId) return project;
+    }
+    if (_activeProject?.projectId == projectId) return _activeProject;
+    if (_cachedActiveProject?.projectId == projectId) {
+      return _cachedActiveProject;
+    }
+    return null;
+  }
+
+  void _rememberSnapshot() {
+    _cachedProjects = _projects;
+    _cachedActiveProject = _activeProject;
   }
 }
 

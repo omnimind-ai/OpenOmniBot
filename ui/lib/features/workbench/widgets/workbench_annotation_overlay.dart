@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -141,6 +142,7 @@ class WorkbenchAnnotationOverlay extends StatefulWidget {
     this.initialDrawingEnabled = true,
     this.toolbarBottomInset = 12,
     this.onClose,
+    this.onPayloadPreview,
   });
 
   final Widget child;
@@ -149,6 +151,9 @@ class WorkbenchAnnotationOverlay extends StatefulWidget {
   final bool initialDrawingEnabled;
   final double toolbarBottomInset;
   final VoidCallback? onClose;
+  /// Called after every stroke, undo, or clear so the caller can pre-compute
+  /// shape recognition while the user types their prompt.
+  final void Function(WorkbenchAnnotationPayload previewPayload)? onPayloadPreview;
 
   @override
   State<WorkbenchAnnotationOverlay> createState() =>
@@ -164,6 +169,7 @@ class _WorkbenchAnnotationOverlayState
   bool _submitting = false;
   Size _canvasSize = Size.zero;
   int _nextStrokeId = 0;
+  int? _activePointer;
 
   static const Color _strokeColor = Color(0xFFE13D56);
   static const double _strokeWidth = 4;
@@ -180,23 +186,31 @@ class _WorkbenchAnnotationOverlayState
     super.dispose();
   }
 
-  void _startStroke(DragStartDetails details) {
+  void _startStroke(PointerDownEvent event) {
     if (_submitting) return;
+    if (_activePointer != null) return;
     setState(() {
+      _activePointer = event.pointer;
       _currentPoints
         ..clear()
-        ..add(details.localPosition);
+        ..add(event.localPosition);
     });
   }
 
-  void _appendStrokePoint(DragUpdateDetails details) {
-    if (_submitting || _currentPoints.isEmpty) return;
+  void _appendStrokePoint(PointerMoveEvent event) {
+    if (_submitting ||
+        _activePointer != event.pointer ||
+        _currentPoints.isEmpty) {
+      return;
+    }
     setState(() {
-      _currentPoints.add(details.localPosition);
+      _currentPoints.add(event.localPosition);
     });
   }
 
-  void _finishStroke([DragEndDetails? _]) {
+  void _finishStroke([PointerEvent? event]) {
+    if (event != null && _activePointer != event.pointer) return;
+    _activePointer = null;
     if (_submitting || _currentPoints.length < 2) {
       setState(_currentPoints.clear);
       return;
@@ -213,6 +227,7 @@ class _WorkbenchAnnotationOverlayState
       );
       _currentPoints.clear();
     });
+    _notifyPayloadPreview();
   }
 
   void _undo() {
@@ -220,14 +235,29 @@ class _WorkbenchAnnotationOverlayState
     setState(() {
       _strokes.removeLast();
     });
+    _notifyPayloadPreview();
   }
 
   void _clear() {
     if (_submitting || (_strokes.isEmpty && _currentPoints.isEmpty)) return;
     setState(() {
+      _activePointer = null;
       _strokes.clear();
       _currentPoints.clear();
     });
+    _notifyPayloadPreview();
+  }
+
+  void _notifyPayloadPreview() {
+    final preview = widget.onPayloadPreview;
+    if (preview == null || _strokes.isEmpty) return;
+    preview(
+      WorkbenchAnnotationPayload(
+        strokes: List<WorkbenchAnnotationStroke>.unmodifiable(_strokes),
+        canvasSize: _canvasSize,
+        prompt: '',
+      ),
+    );
   }
 
   Future<void> _submit() async {
@@ -276,21 +306,30 @@ class _WorkbenchAnnotationOverlayState
             Positioned.fill(
               child: IgnorePointer(
                 ignoring: !_drawingEnabled || _submitting,
-                child: GestureDetector(
+                child: RawGestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onPanStart: _startStroke,
-                  onPanUpdate: _appendStrokePoint,
-                  onPanEnd: _finishStroke,
-                  onPanCancel: () => _finishStroke(),
-                  child: CustomPaint(
-                    painter: WorkbenchAnnotationPainter(
-                      strokes: _strokes,
-                      currentPoints: _currentPoints,
-                      currentColor: _strokeColor,
-                      currentStrokeWidth: _strokeWidth,
-                      drawingEnabled: _drawingEnabled,
+                  gestures: {
+                    EagerGestureRecognizer:
+                        GestureRecognizerFactoryWithHandlers<
+                          EagerGestureRecognizer
+                        >(EagerGestureRecognizer.new, (_) {}),
+                  },
+                  child: Listener(
+                    behavior: HitTestBehavior.translucent,
+                    onPointerDown: _startStroke,
+                    onPointerMove: _appendStrokePoint,
+                    onPointerUp: _finishStroke,
+                    onPointerCancel: _finishStroke,
+                    child: CustomPaint(
+                      painter: WorkbenchAnnotationPainter(
+                        strokes: _strokes,
+                        currentPoints: _currentPoints,
+                        currentColor: _strokeColor,
+                        currentStrokeWidth: _strokeWidth,
+                        drawingEnabled: _drawingEnabled,
+                      ),
+                      child: const SizedBox.expand(),
                     ),
-                    child: const SizedBox.expand(),
                   ),
                 ),
               ),
@@ -298,7 +337,8 @@ class _WorkbenchAnnotationOverlayState
             Positioned(
               left: 12,
               right: 12,
-              bottom: widget.toolbarBottomInset,
+              bottom: widget.toolbarBottomInset +
+                  MediaQuery.of(context).viewInsets.bottom,
               child: _buildToolbar(),
             ),
           ],
@@ -346,49 +386,85 @@ class _WorkbenchAnnotationOverlayState
                     ),
                   ),
                 ),
-                _buildAnnotationBadge(shapeCount),
-                const SizedBox(width: 6),
-                IconButton(
-                  tooltip: _drawingEnabled
-                      ? context.l10n.workbenchAnnotationBrowseMode
-                      : context.l10n.workbenchAnnotationDrawMode,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: _submitting
-                      ? null
-                      : () => setState(() {
-                          _drawingEnabled = !_drawingEnabled;
-                        }),
-                  icon: Icon(
-                    _drawingEnabled
-                        ? Icons.pan_tool_alt_outlined
-                        : Icons.edit_outlined,
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _buildAnnotationBadge(shapeCount),
                   ),
                 ),
-                IconButton(
-                  tooltip: context.l10n.workbenchAnnotationUndo,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: _strokes.isEmpty || _submitting ? null : _undo,
-                  icon: const Icon(Icons.undo_rounded),
+                const SizedBox(width: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: _drawingEnabled
+                          ? context.l10n.workbenchAnnotationBrowseMode
+                          : context.l10n.workbenchAnnotationDrawMode,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 34,
+                        height: 34,
+                      ),
+                      padding: EdgeInsets.zero,
+                      onPressed: _submitting
+                          ? null
+                          : () => setState(() {
+                              _drawingEnabled = !_drawingEnabled;
+                            }),
+                      icon: Icon(
+                        _drawingEnabled
+                            ? Icons.pan_tool_alt_outlined
+                            : Icons.edit_outlined,
+                        size: 20,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: context.l10n.workbenchAnnotationUndo,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 34,
+                        height: 34,
+                      ),
+                      padding: EdgeInsets.zero,
+                      onPressed: _strokes.isEmpty || _submitting ? null : _undo,
+                      icon: const Icon(Icons.undo_rounded, size: 20),
+                    ),
+                    IconButton(
+                      tooltip: context.l10n.workbenchAnnotationClear,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 34,
+                        height: 34,
+                      ),
+                      padding: EdgeInsets.zero,
+                      onPressed:
+                          (_strokes.isEmpty && _currentPoints.isEmpty) ||
+                              _submitting
+                          ? null
+                          : _clear,
+                      icon: const Icon(Icons.delete_sweep_outlined, size: 20),
+                    ),
+                    if (widget.onClose != null)
+                      IconButton(
+                        tooltip: MaterialLocalizations.of(
+                          context,
+                        ).closeButtonTooltip,
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 34,
+                          height: 34,
+                        ),
+                        padding: EdgeInsets.zero,
+                        onPressed: _submitting ? null : widget.onClose,
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                      ),
+                  ],
                 ),
-                IconButton(
-                  tooltip: context.l10n.workbenchAnnotationClear,
-                  visualDensity: VisualDensity.compact,
-                  onPressed:
-                      (_strokes.isEmpty && _currentPoints.isEmpty) ||
-                          _submitting
-                      ? null
-                      : _clear,
-                  icon: const Icon(Icons.delete_sweep_outlined),
-                ),
-                if (widget.onClose != null)
-                  IconButton(
-                    tooltip: MaterialLocalizations.of(
-                      context,
-                    ).closeButtonTooltip,
-                    visualDensity: VisualDensity.compact,
-                    onPressed: _submitting ? null : widget.onClose,
-                    icon: const Icon(Icons.close_rounded),
-                  ),
               ],
             ),
             const SizedBox(height: 8),
@@ -454,6 +530,8 @@ class _WorkbenchAnnotationOverlayState
         strokeCount == 0
             ? context.l10n.workbenchAnnotationNoShape
             : context.l10n.workbenchAnnotationShapeCount(strokeCount),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: palette.textSecondary,
           fontSize: 11,

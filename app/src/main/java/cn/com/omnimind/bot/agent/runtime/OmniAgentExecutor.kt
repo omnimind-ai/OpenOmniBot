@@ -90,17 +90,28 @@ class OmniAgentExecutor(
                 installedSkills = installedSkills,
                 skillLoader = skillLoader
             )
-            val resolvedSkills = SkillTriggerMatcher.resolveMatches(
+            val keywordMatched = SkillTriggerMatcher.resolveMatches(
                 userMessage = userMessage,
                 entries = installedSkills
             ).mapNotNull { match ->
                 val compatibility = SkillCompatibilityChecker.evaluate(match.entry)
-                if (!compatibility.available) {
-                    null
-                } else {
-                    skillLoader.load(match.entry, match.triggerReason)
-                }
+                if (!compatibility.available) null
+                else skillLoader.load(match.entry, match.triggerReason)
             }
+            // Force-load oob-native-workbench when a Project is active, regardless of
+            // user message keywords. Hot-update edits like "放大字体" never mention
+            // "workbench" but still need the full htmlPatches/targeting rules.
+            val workbenchForced = if (
+                activeWorkbenchProjectContext != null &&
+                keywordMatched.none { it.skillId == "oob-native-workbench" }
+            ) {
+                installedSkills.find { it.id == "oob-native-workbench" }
+                    ?.takeIf { SkillCompatibilityChecker.evaluate(it).available }
+                    ?.let { skillLoader.load(it, "active_project_force_load") }
+                    ?.let { listOf(it) }
+                    ?: emptyList()
+            } else emptyList()
+            val resolvedSkills = keywordMatched + workbenchForced
             val discoveredServers = RemoteMcpDiscoveryRegistry.discoverEnabledServers()
             val toolRegistry = AgentToolRegistry(
                 context = context,

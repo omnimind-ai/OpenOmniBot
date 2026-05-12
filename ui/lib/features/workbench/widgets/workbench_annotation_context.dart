@@ -68,6 +68,8 @@ Map<String, Object?> _visibleStateForProject(
     'displayTitle': display.label,
     'displayKind': display.kind,
     'displayRoute': display.route,
+    'hasMarkdown': project.frontendMarkdown.isNotEmpty,
+    'markdownEntryFile': project.frontendMarkdown['entryFile']?.toString(),
     'apiIds': project.tools.map((tool) => tool.id).toList(growable: false),
   };
   return {

@@ -52,7 +52,7 @@ object WorkbenchDisplayLayoutContext {
                 - viewportDp: $width x $height（宽 x 可见高）
                 - screenDp: $screenWidth x $screenHeight
                 - orientation: $orientation
-                HTML 生成必须以 viewportDp 作为右侧 Workspace/WebView 的目标尺寸；首屏内容应控制在当前 viewportHeightDp 内，普通交互 UI 和竖屏报告默认 `width=device-width`，不要使用桌面 hero、满屏装饰区或横向宽表格。只有用户明确要求宽屏报告/PPT/横向画布时才使用固定宽画布。
+                HTML 生成必须以 viewportDp 作为右侧 Workspace/WebView 的目标尺寸；首屏内容应控制在当前 viewportHeightDp 内，普通交互 UI 和竖屏报告默认 `width=device-width`，不要使用桌面 hero、满屏装饰区或横向宽表格。搜索框、筛选、录入框和主操作在右侧窄宽度下也必须可见可用；窄屏时换行/堆叠，不要用桌面断点隐藏。只有用户明确要求宽屏报告/PPT/横向画布时才使用固定宽画布。
             """.trimIndent()
             PromptLocale.EN_US -> """
                 Current Workbench Display layout (runtime app measurement, not hard-coded defaults):
@@ -61,7 +61,7 @@ object WorkbenchDisplayLayoutContext {
                 - viewportDp: $width x $height (width x visible height)
                 - screenDp: $screenWidth x $screenHeight
                 - orientation: $orientation
-                Generated HTML must target viewportDp as the right-side Workspace/WebView size. Keep the first viewport within the current viewportHeightDp. Mobile interaction UI and portrait reports default to `width=device-width`; avoid desktop heroes, full-screen decorative sections, and wide horizontal tables. Use a fixed wide canvas only when the user explicitly asks for a wide report, slide deck, or landscape canvas.
+                Generated HTML must target viewportDp as the right-side Workspace/WebView size. Keep the first viewport within the current viewportHeightDp. Mobile interaction UI and portrait reports default to `width=device-width`; avoid desktop heroes, full-screen decorative sections, and wide horizontal tables. Search boxes, filters, input fields, and primary actions must stay visible and usable at the narrow right-side width; wrap or stack them instead of hiding them behind desktop breakpoints. Use a fixed wide canvas only when the user explicitly asks for a wide report, slide deck, or landscape canvas.
             """.trimIndent()
         }
     }

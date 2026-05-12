@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/omnibot_workspace/widgets/omnibot_workspace_browser.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
 import 'package:ui/features/workbench/pages/workbench_flutter_eval_page.dart';
 import 'package:ui/features/workbench/pages/workbench_html_display_page.dart';
+import 'package:ui/features/workbench/pages/workbench_markdown_display_page.dart';
 import 'package:ui/features/workbench/pages/workbench_project_display_page.dart';
 import 'package:ui/features/workbench/services/workbench_project_service.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_context.dart';
@@ -201,16 +203,14 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
                         ],
                       ),
                       Expanded(
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          switchInCurve: Curves.easeOutCubic,
-                          switchOutCurve: Curves.easeOutCubic,
-                          child: _mode == _OmnibotWorkspaceMode.project
-                              ? OmnibotWorkspaceProjectFrontends(
-                                  key: const ValueKey('workspace-project-mode'),
-                                  translucentSurfaces: backgroundActive,
-                                )
-                              : OmnibotWorkspaceBrowser(
+                        child: IndexedStack(
+                          index: _mode == _OmnibotWorkspaceMode.project ? 1 : 0,
+                          children: [
+                            TickerMode(
+                              enabled: _mode == _OmnibotWorkspaceMode.work,
+                              child: IgnorePointer(
+                                ignoring: _mode != _OmnibotWorkspaceMode.work,
+                                child: OmnibotWorkspaceBrowser(
                                   key: _browserKey,
                                   workspacePath: widget.workspacePath,
                                   workspaceShellPath: widget.workspaceShellPath,
@@ -234,6 +234,20 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
                                     });
                                   },
                                 ),
+                              ),
+                            ),
+                            TickerMode(
+                              enabled: _mode == _OmnibotWorkspaceMode.project,
+                              child: IgnorePointer(
+                                ignoring:
+                                    _mode != _OmnibotWorkspaceMode.project,
+                                child: OmnibotWorkspaceProjectFrontends(
+                                  key: const ValueKey('workspace-project-mode'),
+                                  translucentSurfaces: backgroundActive,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -696,7 +710,8 @@ class OmnibotWorkspaceProjectFrontends extends StatefulWidget {
 }
 
 class _OmnibotWorkspaceProjectFrontendsState
-    extends State<OmnibotWorkspaceProjectFrontends> {
+    extends State<OmnibotWorkspaceProjectFrontends>
+    with AutomaticKeepAliveClientMixin {
   late final WorkbenchProjectModeService _service =
       widget._service ?? WorkbenchProjectModeService.native();
   late final bool _ownsService = widget._service == null;
@@ -711,9 +726,13 @@ class _OmnibotWorkspaceProjectFrontendsState
   Size _editCanvasSize = Size.zero;
   Map<String, Object?>? _latestLayoutProfile;
   int _nextEditStrokeId = 0;
+  int? _activeEditPointer;
 
   static const Color _editStrokeColor = Color(0xFFE13D56);
   static const double _editStrokeWidth = 4;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -745,14 +764,36 @@ class _OmnibotWorkspaceProjectFrontendsState
   void _handleWorkbenchProjectUpdated(Map<String, dynamic> event) {
     if (!mounted) return;
     final reason = event['reason']?.toString() ?? '';
-    final isActiveProjectChange =
+
+    // Structural changes: project created/deleted/activated/deactivated
+    // → refresh the full project list and close any active edit prompt.
+    final isStructuralChange =
         reason == 'project_activated' ||
         reason == 'project_deactivated' ||
-        reason == 'project_deleted';
-    if (isActiveProjectChange) {
-      _closeEditPrompt();
+        reason == 'project_deleted' ||
+        reason == 'project_updated' ||
+        reason == 'project_created';
+
+    if (isStructuralChange) {
+      if (reason == 'project_deleted' ||
+          reason == 'project_deactivated' ||
+          reason == 'project_activated') {
+        _closeEditPrompt();
+      }
+      unawaited(_service.refresh());
+      return;
     }
-    unawaited(_service.refresh());
+
+    // Data-only changes (api_call:*, html/flutter/markdown file updates):
+    // only refresh if this is the active project — and skip the heavy
+    // full-list reload, just update the active project reference.
+    final eventProjectId = event['projectId']?.toString() ?? '';
+    final activeId = _service.activeProject?.projectId ?? '';
+    if (eventProjectId.isNotEmpty &&
+        activeId.isNotEmpty &&
+        eventProjectId == activeId) {
+      unawaited(_service.refreshActiveProject());
+    }
   }
 
   Future<void> _refreshAndEnsureActive() async {
@@ -814,11 +855,7 @@ class _OmnibotWorkspaceProjectFrontendsState
         _clearEditDrawing(clearPrompt: false);
       }
     });
-    if (_editPromptVisible) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _editPromptFocusNode.requestFocus();
-      });
-    } else {
+    if (!_editPromptVisible) {
       _editPromptFocusNode.unfocus();
     }
   }
@@ -887,6 +924,7 @@ class _OmnibotWorkspaceProjectFrontendsState
         : display.renderer.trim();
     final html = project.frontendHtml;
     final flutter = project.frontendFlutter;
+    final markdown = project.frontendMarkdown;
     final baseContext = buildWorkbenchVisibleFrontendContext(
       project: project,
       display: display,
@@ -895,12 +933,15 @@ class _OmnibotWorkspaceProjectFrontendsState
         'renderer': renderer,
         'hasHtml': html.isNotEmpty,
         'hasFlutter': flutter.isNotEmpty,
+        'hasMarkdown': markdown.isNotEmpty,
         'htmlEntryFile': html['entryFile']?.toString(),
         'htmlEntryPath': html['entryPath']?.toString(),
         'htmlSourceFiles': _sourceFileKeys(html),
         'flutterEntryFile': flutter['entryFile']?.toString(),
         'flutterEntryClass': flutter['entryClass']?.toString(),
         'flutterSourceFiles': _sourceFileKeys(flutter),
+        'markdownEntryFile': markdown['entryFile']?.toString(),
+        'markdownSourceFiles': _sourceFileKeys(markdown),
         if (_latestLayoutProfile != null)
           'workbenchLayout': _latestLayoutProfile,
       },
@@ -941,7 +982,7 @@ class _OmnibotWorkspaceProjectFrontendsState
     return '''
 $prompt
 
-当前 Workbench 右侧显示区已经先调用 workbench_project_hot_update 并记录了这次编辑请求。不要再次调用 workbench_project_hot_update，不要开启新的产品生成流程；请继续读取当前 Project，并调用 workbench_project_update 只改必要的 frontend/html 或 frontend/flutter 文件。不要把 Project ID、工具数量、executor、workspace、data/log 路径等控制面信息写到可见界面。
+当前 Workbench 右侧显示区已经先调用 workbench_project_hot_update 并记录了这次编辑请求。不要再次调用 workbench_project_hot_update，不要开启新的产品生成流程；请继续读取当前 Project，并按当前 renderer 调用 workbench_project_update 只改必要的 frontend/html、frontend/markdown 或 frontend/flutter 文件。renderer 不明确时默认改 frontend/html。不要把 Project ID、工具数量、executor、workspace、data/log 路径等控制面信息写到可见界面。
 
 hot_update 返回信息：
 
@@ -1041,25 +1082,32 @@ $contextJson
     }
   }
 
-  void _startEditStroke(DragStartDetails details) {
+  void _startEditStroke(PointerDownEvent event) {
     if (_submittingEdit || !_editDrawingEnabled) return;
+    if (_activeEditPointer != null) return;
     setState(() {
+      _activeEditPointer = event.pointer;
       _editCurrentPoints
         ..clear()
-        ..add(details.localPosition);
+        ..add(event.localPosition);
     });
   }
 
-  void _appendEditStrokePoint(DragUpdateDetails details) {
-    if (_submittingEdit || !_editDrawingEnabled || _editCurrentPoints.isEmpty) {
+  void _appendEditStrokePoint(PointerMoveEvent event) {
+    if (_submittingEdit ||
+        !_editDrawingEnabled ||
+        _activeEditPointer != event.pointer ||
+        _editCurrentPoints.isEmpty) {
       return;
     }
     setState(() {
-      _editCurrentPoints.add(details.localPosition);
+      _editCurrentPoints.add(event.localPosition);
     });
   }
 
-  void _finishEditStroke([DragEndDetails? _]) {
+  void _finishEditStroke([PointerEvent? event]) {
+    if (event != null && _activeEditPointer != event.pointer) return;
+    _activeEditPointer = null;
     if (_submittingEdit || _editCurrentPoints.length < 2) {
       setState(_editCurrentPoints.clear);
       return;
@@ -1086,6 +1134,7 @@ $contextJson
   }
 
   void _clearEditDrawing({bool clearPrompt = false}) {
+    _activeEditPointer = null;
     _editStrokes.clear();
     _editCurrentPoints.clear();
     if (clearPrompt) {
@@ -1110,13 +1159,9 @@ $contextJson
   }
 
   WorkbenchProject? _currentProject(List<WorkbenchProject> projects) {
-    final activeProjectId = _service.activeProject?.projectId;
-    if (activeProjectId != null) {
-      for (final project in projects) {
-        if (project.projectId == activeProjectId) {
-          return project;
-        }
-      }
+    final activeProject = _service.activeProject;
+    if (activeProject != null) {
+      return activeProject;
     }
     return projects.isEmpty ? null : projects.first;
   }
@@ -1141,6 +1186,7 @@ $contextJson
       final value = candidate?.toString().trim() ?? '';
       if (value.isEmpty) continue;
       if (value.startsWith('Live HTML Display')) continue;
+      if (value.startsWith('Live Markdown Display')) continue;
       if (value.startsWith('Live Flutter Display')) continue;
       if (value.startsWith('Display bound to')) continue;
       return value;
@@ -1150,6 +1196,7 @@ $contextJson
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final projects = _service.projects;
     final project = _currentProject(projects);
     final display = project?.primaryDisplay;
@@ -1181,6 +1228,7 @@ $contextJson
                       borderRadius: BorderRadius.circular(8),
                       child: DecoratedBox(
                         decoration: BoxDecoration(
+                          color: context.omniPalette.surfacePrimary,
                           border: Border.all(
                             color: context.omniPalette.borderSubtle,
                           ),
@@ -1217,21 +1265,30 @@ $contextJson
                             );
                             return IgnorePointer(
                               ignoring: !_editDrawingEnabled || _submittingEdit,
-                              child: GestureDetector(
+                              child: RawGestureDetector(
                                 behavior: HitTestBehavior.translucent,
-                                onPanStart: _startEditStroke,
-                                onPanUpdate: _appendEditStrokePoint,
-                                onPanEnd: _finishEditStroke,
-                                onPanCancel: () => _finishEditStroke(),
-                                child: CustomPaint(
-                                  painter: WorkbenchAnnotationPainter(
-                                    strokes: _editStrokes,
-                                    currentPoints: _editCurrentPoints,
-                                    currentColor: _editStrokeColor,
-                                    currentStrokeWidth: _editStrokeWidth,
-                                    drawingEnabled: _editDrawingEnabled,
+                                gestures: {
+                                  EagerGestureRecognizer:
+                                      GestureRecognizerFactoryWithHandlers<
+                                        EagerGestureRecognizer
+                                      >(EagerGestureRecognizer.new, (_) {}),
+                                },
+                                child: Listener(
+                                  behavior: HitTestBehavior.translucent,
+                                  onPointerDown: _startEditStroke,
+                                  onPointerMove: _appendEditStrokePoint,
+                                  onPointerUp: _finishEditStroke,
+                                  onPointerCancel: _finishEditStroke,
+                                  child: CustomPaint(
+                                    painter: WorkbenchAnnotationPainter(
+                                      strokes: _editStrokes,
+                                      currentPoints: _editCurrentPoints,
+                                      currentColor: _editStrokeColor,
+                                      currentStrokeWidth: _editStrokeWidth,
+                                      drawingEnabled: _editDrawingEnabled,
+                                    ),
+                                    child: const SizedBox.expand(),
                                   ),
-                                  child: const SizedBox.expand(),
                                 ),
                               ),
                             );
@@ -1652,6 +1709,7 @@ class _WorkspaceProjectDisplayHost extends StatelessWidget {
         route.startsWith('/workbench/html');
     if (hostsHtmlDisplay) {
       return WorkbenchHtmlDisplayPage(
+        initialProject: project,
         projectId: project.projectId,
         displayId: display.id,
         embedded: true,
@@ -1663,6 +1721,19 @@ class _WorkspaceProjectDisplayHost extends StatelessWidget {
         route.startsWith('/workbench/flutter_eval');
     if (hostsFlutterEval) {
       return WorkbenchFlutterEvalPage(
+        projectId: project.projectId,
+        displayId: display.id,
+        embedded: true,
+      );
+    }
+    final hostsMarkdown =
+        renderer == 'markdown' ||
+        renderer == 'markdown_live' ||
+        display.id == 'markdown-main-display' ||
+        route.startsWith('/workbench/markdown');
+    if (hostsMarkdown) {
+      return WorkbenchMarkdownDisplayPage(
+        initialProject: project,
         projectId: project.projectId,
         displayId: display.id,
         embedded: true,

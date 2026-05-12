@@ -5,9 +5,11 @@ import 'package:go_router/go_router.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
 import 'package:ui/features/workbench/services/workbench_project_service.dart';
+import 'package:ui/features/workbench/services/workbench_shape_recognizer.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_context.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart';
 import 'package:ui/l10n/l10n.dart';
+import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
@@ -201,15 +203,46 @@ class _WorkbenchProjectDisplayPageState
     WorkbenchAnnotationPayload payload,
     String prompt,
   ) async {
+    // Run screenshot capture and DOM hit-test concurrently — both are fast.
+    final drawingPaths = payload.strokes
+        .map((s) => Map<String, dynamic>.from(s.toMap(payload.canvasSize)))
+        .toList();
+    final results = await Future.wait([
+      AssistsMessageService.captureWorkbenchAnnotationAttachment(
+        canvasWidth: payload.canvasSize.width,
+        canvasHeight: payload.canvasSize.height,
+        drawingPaths: drawingPaths,
+        source: 'workbench_display_annotation',
+      ),
+      resolveAnnotationTarget(payload),
+    ]);
+    final attachment = results[0] as Map<String, dynamic>?;
+    final target = results[1] as WorkbenchAnnotationTarget;
+
+    final baseFrontendContext = buildWorkbenchAnnotationFrontendContext(
+      project: project,
+      display: _selectedDisplay(project),
+      payload: payload,
+      prompt: prompt,
+      fallbackRoute: '/workbench/project',
+    );
+
+    final frontendContext = {
+      ...baseFrontendContext,
+      // Composite screenshot (HTML display + red strokes) for VLM analysis.
+      if (attachment?['path'] != null) 'annotationImagePath': attachment!['path'],
+      // DOM element at the annotation centroid/tip — use oobId for htmlPatches.
+      'selectedElement': target.toMap(),
+      'annotationDescription': target.toAnnotationDescription(),
+      'screenshotSummary': attachment == null
+          ? 'Screenshot capture failed. Use drawingPaths coordinates to locate the target.'
+          : 'Composite screenshot (display + red annotation strokes) saved at annotationImagePath. '
+              'Call vlm_task on that path to understand what the user annotated before patching HTML.',
+    };
+
     final result = await _service.applyHotUpdate(
       prompt,
-      frontendContext: buildWorkbenchAnnotationFrontendContext(
-        project: project,
-        display: _selectedDisplay(project),
-        payload: payload,
-        prompt: prompt,
-        fallbackRoute: '/workbench/project',
-      ),
+      frontendContext: frontendContext,
     );
     if (!mounted) return false;
     if (!result.success) {

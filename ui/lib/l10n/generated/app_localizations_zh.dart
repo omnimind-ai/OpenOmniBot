@@ -3464,83 +3464,86 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchPhilosophyClose => '关闭';
 
   @override
-  String get workbenchPhilosophyTitle => '端侧 AI 工作台';
+  String get workbenchPhilosophyTitle => 'AI 产品展示工作台';
 
   @override
-  String get workbenchPhilosophyTagline => '一句话，创造属于自己的应用';
+  String get workbenchPhilosophyTagline => '让 AI 的结果立刻变成可看、可点、可继续修改的界面';
 
   @override
   String get workbenchPhilosophySubtitle =>
-      '手机本身就是最强后端——OOB 把所有原生能力装进工作台，用自然语言拼装，直接跑在你的设备上，无需云端，生成即可用。';
+      'Workbench 不是模板生成器，而是 AI 产品的展示与运行层。Agent 产出的报告、数据、状态和操作会落到 Project 中，通过 HTML、Markdown 或 Flutter 显示，并通过 Project API 连接手机能力与持久化数据。';
 
   @override
-  String get workbenchPhilosophyPillarsTitle => '三层差异化';
+  String get workbenchPhilosophyPillarsTitle => '当前核心闭环';
 
   @override
-  String get workbenchPhilosophyComposable => '可组装';
+  String get workbenchPhilosophyComposable => '显示层';
 
   @override
   String get workbenchPhilosophyComposableDesc =>
-      '工具 / 执行器 / UI / 数据 / Skill 任意拼装';
+      'HTML / Markdown / Flutter 都是 Project Display，用来承载 AI 输出';
 
   @override
-  String get workbenchPhilosophyAIDriven => 'AI 驱动';
+  String get workbenchPhilosophyAIDriven => '交互层';
 
   @override
-  String get workbenchPhilosophyAIDrivenDesc => '自然语言描述需求，AI 完成组装';
+  String get workbenchPhilosophyAIDrivenDesc =>
+      '用户点击、填写、选择后，通过 Project API 触发下一步 Agent 或工具';
 
   @override
-  String get workbenchPhilosophyMobileNative => '端侧原生';
+  String get workbenchPhilosophyMobileNative => '能力层';
 
   @override
-  String get workbenchPhilosophyMobileNativeDesc => '生成的应用调用真实的手机系统能力';
+  String get workbenchPhilosophyMobileNativeDesc =>
+      '需要操控手机、读屏、文件、脚本时，再走 OOB 原生能力';
 
   @override
-  String get workbenchPhilosophyStrengthsTitle => '三大能力';
+  String get workbenchPhilosophyStrengthsTitle => '三件事';
 
   @override
-  String get workbenchPhilosophyBackendTitle => '后端';
+  String get workbenchPhilosophyBackendTitle => 'Project API';
 
   @override
   String get workbenchPhilosophyBackendDesc =>
-      'OOB 全量原生工具（VLM / Alpine / 无障碍 / 文件 / 规划）、Omniflow 可执行记忆库、端侧推理框架';
+      '白名单工具、持久化数据、运行日志和手机能力统一挂到 Project 上';
 
   @override
-  String get workbenchPhilosophyFrontendTitle => '前端';
+  String get workbenchPhilosophyFrontendTitle => 'Display';
 
   @override
   String get workbenchPhilosophyFrontendDesc =>
-      'Flutter 原生渲染（默认），自然语言热更新，无需重装 APK；HTML 路径规划中';
+      '普通交互 UI 默认 HTML；报告用 Markdown / HTML；Flutter 保留为容器和受限补充';
 
   @override
-  String get workbenchPhilosophyRuntimeTitle => '运行时';
+  String get workbenchPhilosophyRuntimeTitle => 'Hot update';
 
   @override
   String get workbenchPhilosophyRuntimeDesc =>
-      'Project 容器把前端 UI、项目 API、持久化数据、日志连成一个可演化的端侧应用实例，跨会话留存，一键导出';
+      '用户一句话或一次选区标注后，AI 只改必要的前端文件或 API，右侧立即刷新';
 
   @override
-  String get workbenchPhilosophyHowToTitle => '怎么用';
+  String get workbenchPhilosophyHowToTitle => '使用方式';
 
   @override
-  String get workbenchPhilosophyStep1Label => '说';
+  String get workbenchPhilosophyStep1Label => '生成';
 
   @override
-  String get workbenchPhilosophyStep1Desc => '在首页输入框描述你想要的应用';
+  String get workbenchPhilosophyStep1Desc => 'Agent 创建 Project，写入 API 与显示文件';
 
   @override
-  String get workbenchPhilosophyStep2Label => '看';
+  String get workbenchPhilosophyStep2Label => '查看';
 
   @override
-  String get workbenchPhilosophyStep2Desc => '小万创建项目，Flutter 界面立刻可见';
+  String get workbenchPhilosophyStep2Desc =>
+      '右侧 Workspace 直接预览 HTML / Markdown / Flutter';
 
   @override
-  String get workbenchPhilosophyStep3Label => '改';
+  String get workbenchPhilosophyStep3Label => '修改';
 
   @override
-  String get workbenchPhilosophyStep3Desc => '继续描述修改，AI 热更新 UI，无需重新创建';
+  String get workbenchPhilosophyStep3Desc => '用悬浮输入或标注提出修改，Project 热更新';
 
   @override
   String get workbenchPhilosophyActivateHint =>
-      '激活项目后，工作区右侧实时显示其界面；左侧输入框继续用自然语言编辑。';
+      '激活项目后，右侧 Workspace 显示它的 Display；继续输入或标注会作为上下文传给 hot update。';
 }

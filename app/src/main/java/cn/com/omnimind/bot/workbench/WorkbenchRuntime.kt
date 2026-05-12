@@ -30,6 +30,7 @@ const val WORKBENCH_COLLECTION_EXECUTOR_KIND = "native_project_collection"
 const val WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND = "workspace_python_script"
 const val WORKBENCH_AGENT_TASK_EXECUTOR_KIND = "agent_task"
 const val WORKBENCH_HTML_RENDERER = "html_webview"
+const val WORKBENCH_MARKDOWN_RENDERER = "markdown"
 
 data class WorkbenchProjectRecord(
     val projectId: String,
@@ -228,6 +229,9 @@ class WorkbenchProjectStore(
         val requestedHtmlFiles = normalizeFrontendHtmlFiles(
             config["htmlFiles"] ?: config["frontendHtmlFiles"]
         )
+        val requestedMarkdownFiles = normalizeFrontendMarkdownFiles(
+            config["markdownFiles"] ?: config["frontendMarkdownFiles"]
+        )
         val projectId = sanitizeProjectId(
             config["projectId"]?.toString()?.trim()
                 ?.takeIf { it.isNotEmpty() }
@@ -321,6 +325,14 @@ class WorkbenchProjectStore(
         } else {
             emptyList()
         }
+        val writtenMarkdownFiles = if (
+            requestedMarkdownFiles.isNotEmpty() &&
+            (existing == null || readFrontendMarkdownPayload(record.projectId).isEmpty())
+        ) {
+            writeFrontendMarkdownFiles(record.projectId, requestedMarkdownFiles)
+        } else {
+            emptyList()
+        }
         appendProjectProgress(
             projectId = record.projectId,
             stage = "project_workspace_ready",
@@ -332,7 +344,8 @@ class WorkbenchProjectStore(
                 "frontend" to "frontend/page_spec.json",
                 "backend" to "backend/api_spec.json",
                 "htmlFiles" to writtenHtmlFiles.map { it["path"] },
-                "flutterFiles" to writtenFlutterFiles.map { it["path"] }
+                "flutterFiles" to writtenFlutterFiles.map { it["path"] },
+                "markdownFiles" to writtenMarkdownFiles.map { it["path"] }
             )
         )
         appendProjectProgress(
@@ -345,6 +358,9 @@ class WorkbenchProjectStore(
             details = linkedMapOf("route" to record.route, "spacePath" to record.spacePath)
         )
         writeProjectJson(record, apis, creationPrompt)
+        if (existing == null) {
+            writeProjectContextFile(record, apis, creationPrompt)
+        }
         return projectPayload(record)
     }
 
@@ -355,7 +371,9 @@ class WorkbenchProjectStore(
      */
     @Synchronized
     fun listProjects(): List<Map<String, Any?>> {
-        return readProjectRegistry().map { record -> projectPayload(record) }
+        return readProjectRegistry().map { record ->
+            projectIndexPayload(record)
+        }
     }
 
     /**
@@ -365,9 +383,19 @@ class WorkbenchProjectStore(
      * @return Project payload backed by the project package on disk.
      */
     @Synchronized
-    fun getProject(projectId: String): Map<String, Any?> {
+    fun getProject(
+        projectId: String,
+        includeSources: Boolean = true,
+        includeRuntimeState: Boolean = true,
+        includeFrontendPayloads: Boolean = true
+    ): Map<String, Any?> {
         val record = findProject(projectId)
-        return projectPayload(record)
+        return projectPayload(
+            record = record,
+            includeSources = includeSources,
+            includeRuntimeState = includeRuntimeState,
+            includeFrontendPayloads = includeFrontendPayloads
+        )
     }
 
     /**
@@ -383,6 +411,8 @@ class WorkbenchProjectStore(
      * `frontend/flutter/`. Paths must be relative and stay inside that directory.
      * @param htmlFiles Optional Project-owned HTML/CSS/JS/source assets to write under
      * `frontend/html/`. Paths must be relative and stay inside that directory.
+     * @param markdownFiles Optional Project-owned Markdown source files to write under
+     * `frontend/markdown/`. Paths must be relative and stay inside that directory.
      * @param prompt Optional user iteration request written into `logs/hot_updates.jsonl`.
      * @param caller Caller label stored in progress and audit logs.
      * @return Updated Project payload for Flutter, MCP debug, or Agent callers.
@@ -397,6 +427,7 @@ class WorkbenchProjectStore(
         apis: Any? = null,
         flutterFiles: Any? = null,
         htmlFiles: Any? = null,
+        markdownFiles: Any? = null,
         prompt: String? = null,
         caller: String = "unknown"
     ): Map<String, Any?> {
@@ -409,6 +440,7 @@ class WorkbenchProjectStore(
         val newApis = explicitApiRecords(record.projectId, mapOf("apis" to apis))
         val requestedFlutterFiles = normalizeFrontendFlutterFiles(flutterFiles)
         val requestedHtmlFiles = normalizeFrontendHtmlFiles(htmlFiles)
+        val requestedMarkdownFiles = normalizeFrontendMarkdownFiles(markdownFiles)
         require(
             updatedName != null ||
                 updatedShortName != null ||
@@ -417,9 +449,10 @@ class WorkbenchProjectStore(
                 newApis.isNotEmpty() ||
                 requestedFlutterFiles.isNotEmpty() ||
                 requestedHtmlFiles.isNotEmpty() ||
+                requestedMarkdownFiles.isNotEmpty() ||
                 updatePrompt != null
         ) {
-            "Project update requires name, shortName, description, displays, apis, flutterFiles, htmlFiles, or prompt."
+            "Project update requires name, shortName, description, displays, apis, flutterFiles, htmlFiles, markdownFiles, or prompt."
         }
         val mergedApis = mergeApiRecords(projectApis(record.projectId), newApis)
         val now = nowIso()
@@ -472,26 +505,34 @@ class WorkbenchProjectStore(
                 display
             }
         }
-        val displayAdditions = if (
-            requestedHtmlFiles.isNotEmpty() &&
-            newDisplays.none { isHtmlDisplay(it) }
-        ) {
-            newDisplays + htmlWorkbenchDisplay(updatedRecord)
-        } else {
-            newDisplays
+        val displayAdditions = buildList {
+            addAll(newDisplays)
+            if (requestedHtmlFiles.isNotEmpty() && none { isHtmlDisplay(it) }) {
+                add(htmlWorkbenchDisplay(updatedRecord))
+            }
+            if (requestedMarkdownFiles.isNotEmpty() && none { isMarkdownDisplay(it) }) {
+                add(markdownWorkbenchDisplay(updatedRecord))
+            }
         }
         val existingDisplays = pageSpec["displays"] as? List<*>
-        val baseDisplays = if (requestedHtmlFiles.isNotEmpty() && existingDisplays == null) {
+        val hasSourceDisplayUpdate = requestedHtmlFiles.isNotEmpty() ||
+            requestedMarkdownFiles.isNotEmpty()
+        val baseDisplays = if (hasSourceDisplayUpdate && existingDisplays == null) {
             emptyList<Map<String, Any?>>()
         } else {
             existingDisplays ?: workbenchDisplays(record)
+        }
+        val preferredDisplayId = when {
+            requestedHtmlFiles.isNotEmpty() -> "html-main-display"
+            requestedMarkdownFiles.isNotEmpty() -> "markdown-main-display"
+            else -> null
         }
         val mergedDisplays = normalizeDefaultDisplaySelection(
             mergeDisplaySpecs(
                 base = baseDisplays,
                 additions = displayAdditions
             ),
-            preferredDisplayId = if (requestedHtmlFiles.isNotEmpty()) "html-main-display" else null
+            preferredDisplayId = preferredDisplayId
         )
         if (mergedDisplays.isNotEmpty()) {
             pageSpec["displays"] = mergedDisplays
@@ -512,6 +553,10 @@ class WorkbenchProjectStore(
             projectId = updatedRecord.projectId,
             files = requestedHtmlFiles
         )
+        val writtenMarkdownFiles = writeFrontendMarkdownFiles(
+            projectId = updatedRecord.projectId,
+            files = requestedMarkdownFiles
+        )
         pageSpec["iterationContract"] = projectIterationContract()
         if (updatePrompt != null) {
             pageSpec["lastUpdatePrompt"] = updatePrompt
@@ -523,6 +568,7 @@ class WorkbenchProjectStore(
             newApis.isNotEmpty() ||
                 writtenFlutterFiles.isNotEmpty() ||
                 writtenHtmlFiles.isNotEmpty() ||
+                writtenMarkdownFiles.isNotEmpty() ||
                 updatedDescription != null ||
                 updatePrompt != null
         ) {
@@ -551,6 +597,12 @@ class WorkbenchProjectStore(
                     "paths" to writtenHtmlFiles.map { it["path"] }
                 )
             }
+            if (writtenMarkdownFiles.isNotEmpty()) {
+                actions += linkedMapOf(
+                    "kind" to "markdown_source_updated",
+                    "paths" to writtenMarkdownFiles.map { it["path"] }
+                )
+            }
             if (updatedDescription != null) {
                 actions += linkedMapOf("kind" to "description_updated")
             }
@@ -564,7 +616,8 @@ class WorkbenchProjectStore(
                     "displayIds" to mergedDisplays.map { it["id"] ?: it["displayId"] ?: it["pageId"] },
                     "apiIds" to mergedApis.map { it.apiId },
                     "htmlFiles" to writtenHtmlFiles.map { it["path"] },
-                    "flutterFiles" to writtenFlutterFiles.map { it["path"] }
+                    "flutterFiles" to writtenFlutterFiles.map { it["path"] },
+                    "markdownFiles" to writtenMarkdownFiles.map { it["path"] }
                 )
             )
             appendProjectProgress(
@@ -578,20 +631,30 @@ class WorkbenchProjectStore(
                     "displayIds" to mergedDisplays.map { it["id"] ?: it["displayId"] ?: it["pageId"] },
                     "toolIds" to mergedApis.map { it.toolId },
                     "htmlFiles" to writtenHtmlFiles.map { it["path"] },
-                    "flutterFiles" to writtenFlutterFiles.map { it["path"] }
+                    "flutterFiles" to writtenFlutterFiles.map { it["path"] },
+                    "markdownFiles" to writtenMarkdownFiles.map { it["path"] }
                 )
             )
         }
         writeProjectJson(updatedRecord, mergedApis)
+        // Refresh PROJECT_CONTEXT.md only when APIs changed (avoid overwriting
+        // agent edits to other sections on every HTML/Markdown file update).
+        if (newApis.isNotEmpty()) {
+            writeProjectContextFile(updatedRecord, mergedApis)
+        }
         if (readActiveProjectId() == updatedRecord.projectId) {
             activeProjectFile.writeText(
                 gson.toJson(activeProjectManifest(updatedRecord, readActiveProjectActivatedAt()))
             )
         }
-        if (writtenFlutterFiles.isNotEmpty() || writtenHtmlFiles.isNotEmpty()) {
+        if (
+            writtenFlutterFiles.isNotEmpty() ||
+            writtenHtmlFiles.isNotEmpty() ||
+            writtenMarkdownFiles.isNotEmpty()
+        ) {
             FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
                 projectId = updatedRecord.projectId,
-                updatedPaths = (writtenHtmlFiles + writtenFlutterFiles).map {
+                updatedPaths = (writtenHtmlFiles + writtenFlutterFiles + writtenMarkdownFiles).map {
                     it["path"]?.toString() ?: ""
                 }
             )
@@ -607,15 +670,20 @@ class WorkbenchProjectStore(
      * Applies a map-shaped Project update request from MethodChannel, Agent tools, or MCP debug.
      *
      * @param args Update arguments. Supports `name`, `shortName`, `description`, `displays`,
-     * `apis`, `flutterFiles`, `htmlFiles`, and `prompt`; unknown fields are ignored for forward
-     * compatibility.
+     * `apis`, `flutterFiles`, `htmlFiles`, `markdownFiles`, and `prompt`; unknown fields are
+     * ignored for forward compatibility.
      * @param caller Caller label persisted into progress and hot-update logs.
      * @return Updated Project payload.
      */
     @Synchronized
     fun updateProject(args: Map<String, Any?>, caller: String = "unknown"): Map<String, Any?> {
+        val projectId = stringConfigArg(args, "projectId")
+        val htmlPatches = args["htmlPatches"]
+        if (htmlPatches != null) {
+            return applyHtmlPatches(projectId, htmlPatches, args["prompt"]?.toString(), caller)
+        }
         return updateProjectMetadata(
-            projectId = stringConfigArg(args, "projectId"),
+            projectId = projectId,
             name = args["name"]?.toString(),
             shortName = args["shortName"]?.toString(),
             description = args["description"]?.toString(),
@@ -623,9 +691,100 @@ class WorkbenchProjectStore(
             apis = args["apis"],
             flutterFiles = args["flutterFiles"] ?: args["frontendFlutterFiles"],
             htmlFiles = args["htmlFiles"] ?: args["frontendHtmlFiles"],
+            markdownFiles = args["markdownFiles"] ?: args["frontendMarkdownFiles"],
             prompt = args["prompt"]?.toString(),
             caller = caller
         )
+    }
+
+    /**
+     * Applies surgical text-replacement patches to existing HTML files without rewriting them in full.
+     * Dramatically reduces token cost for simple styling/content edits.
+     */
+    @Synchronized
+    fun applyHtmlPatches(
+        projectId: String,
+        patches: Any?,
+        prompt: String?,
+        caller: String = "unknown"
+    ): Map<String, Any?> {
+        val record = findProject(projectId)
+        val patchList = normalizePatchList(patches)
+        require(patchList.isNotEmpty()) { "htmlPatches must be a non-empty list of {path, oldText, newText}." }
+        val htmlDir = File(projectDir(projectId), "frontend/html")
+        htmlDir.mkdirs()
+        val root = htmlDir.canonicalFile
+        val rootPrefix = root.path + File.separator
+        val patchedPaths = mutableListOf<String>()
+        val errors = mutableListOf<String>()
+        for (patch in patchList) {
+            val relativePath = patch["path"]?.toString()?.trim() ?: continue
+            val oldText = patch["oldText"]?.toString() ?: continue
+            val newText = patch["newText"]?.toString() ?: ""
+            val replaceAll = booleanLike(patch["replaceAll"]) ?: false
+            val target = File(root, relativePath).canonicalFile
+            if (target.path != root.path && !target.path.startsWith(rootPrefix)) {
+                errors += "Path '$relativePath' escapes frontend/html/"
+                continue
+            }
+            if (!target.exists()) {
+                errors += "File '$relativePath' not found"
+                continue
+            }
+            val original = target.readText()
+            if (!original.contains(oldText)) {
+                errors += "oldText not found in '$relativePath'"
+                continue
+            }
+            val updated = if (replaceAll) original.replace(oldText, newText)
+                          else original.replaceFirst(oldText, newText)
+            target.writeText(updated)
+            patchedPaths += relativePath
+        }
+        if (patchedPaths.isEmpty()) {
+            require(errors.isEmpty()) { "htmlPatches failed: ${errors.joinToString("; ")}" }
+            return linkedMapOf("success" to true, "projectId" to projectId, "patchedPaths" to emptyList<String>())
+        }
+        writeFrontendHtmlManifest(projectId)
+        val appliedActions = listOf(linkedMapOf<String, Any?>(
+            "kind" to "html_source_patched",
+            "paths" to patchedPaths.map { "frontend/html/$it" }
+        ))
+        appendHotUpdate(projectId, prompt ?: "HTML patch applied.", caller, appliedActions, emptyMap())
+        appendProjectProgress(
+            projectId = projectId, stage = "html_source_patched", status = "completed",
+            message = "HTML patches applied to: ${patchedPaths.joinToString()}",
+            percent = 100, caller = caller,
+            details = linkedMapOf("patchedPaths" to patchedPaths, "errors" to errors)
+        )
+        writeProjectJson(record, projectApis(projectId))
+        if (readActiveProjectId() == projectId) {
+            activeProjectFile.writeText(
+                gson.toJson(activeProjectManifest(record, readActiveProjectActivatedAt()))
+            )
+        }
+        FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
+            projectId = projectId,
+            reason = "project_updated",
+            updatedPaths = patchedPaths.map { "frontend/html/$it" }
+        )
+        return linkedMapOf(
+            "success" to true,
+            "projectId" to projectId,
+            "patchedPaths" to patchedPaths.map { "frontend/html/$it" },
+            if (errors.isNotEmpty()) "warnings" to errors else "warnings" to emptyList<String>(),
+            "project" to getProject(projectId)
+        )
+    }
+
+    private fun normalizePatchList(value: Any?): List<Map<String, Any?>> {
+        val list = value as? List<*> ?: return emptyList()
+        return list.mapNotNull { item ->
+            @Suppress("UNCHECKED_CAST")
+            (item as? Map<*, *>)?.let { map ->
+                map.entries.associate { it.key.toString() to it.value }
+            }
+        }
     }
 
     /**
@@ -649,7 +808,7 @@ class WorkbenchProjectStore(
         return linkedMapOf(
             "success" to true,
             "activeProject" to manifest,
-            "project" to projectPayload(record)
+            "project" to projectIndexPayload(record)
         )
     }
 
@@ -660,7 +819,10 @@ class WorkbenchProjectStore(
      * inactive, so callers can safely refresh the Home input chip.
      */
     @Synchronized
-    fun getActiveProject(): Map<String, Any?> {
+    fun getActiveProject(
+        includeSources: Boolean = false,
+        includeManifest: Boolean = true
+    ): Map<String, Any?> {
         val activeProjectId = readActiveProjectId()
         if (activeProjectId.isNullOrBlank()) {
             return linkedMapOf("success" to true, "activeProject" to null, "project" to null)
@@ -672,8 +834,16 @@ class WorkbenchProjectStore(
         }
         return linkedMapOf(
             "success" to true,
-            "activeProject" to activeProjectManifest(record),
-            "project" to projectPayload(record)
+            "activeProject" to if (includeManifest) {
+                activeProjectManifest(record, includeSources = includeSources)
+            } else {
+                projectIndexPayload(record)
+            },
+            "project" to if (includeSources) {
+                projectPayload(record)
+            } else {
+                projectIndexPayload(record)
+            }
         )
     }
 
@@ -1090,7 +1260,86 @@ class WorkbenchProjectStore(
         require(request.isNotEmpty()) { "Hot update prompt is required." }
         val frontendHtml = readFrontendHtmlPayload(record.projectId)
         val htmlSources = frontendHtml["sources"] as? Map<*, *>
-        if (!htmlSources.isNullOrEmpty()) {
+        val frontendMarkdown = readFrontendMarkdownPayload(record.projectId)
+        val markdownSources = frontendMarkdown["sources"] as? Map<*, *>
+        val frontendFlutter = readFrontendFlutterPayload(record.projectId)
+        val flutterSources = frontendFlutter["sources"] as? Map<*, *>
+        val visibleState = frontendContext["visibleState"] as? Map<*, *>
+        val frontendContextText = listOfNotNull(
+            frontendContext["renderer"],
+            frontendContext["displayId"],
+            frontendContext["route"],
+            frontendContext["kind"],
+            visibleState?.get("renderer"),
+            visibleState?.get("displayId"),
+            visibleState?.get("route"),
+            visibleState?.get("kind")
+        ).joinToString(" ") { it.toString().lowercase() }
+        val selectedRenderer = when {
+            (frontendContextText.contains("markdown") ||
+                frontendContextText.contains("markdown-main-display") ||
+                frontendContextText.contains("/workbench/markdown")) &&
+                !markdownSources.isNullOrEmpty() -> "markdown"
+            (frontendContextText.contains("html") ||
+                frontendContextText.contains("html-main-display") ||
+                frontendContextText.contains("/workbench/html")) &&
+                !htmlSources.isNullOrEmpty() -> "html"
+            (frontendContextText.contains("flutter") ||
+                frontendContextText.contains("flutter-main-display") ||
+                frontendContextText.contains("/workbench/flutter_eval")) &&
+                !flutterSources.isNullOrEmpty() -> "flutter"
+            !htmlSources.isNullOrEmpty() -> "html"
+            !markdownSources.isNullOrEmpty() -> "markdown"
+            !flutterSources.isNullOrEmpty() -> "flutter"
+            else -> null
+        }
+        if (selectedRenderer == "markdown") {
+            val entryFile = frontendMarkdown["entryFile"]?.toString()?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: "index.md"
+            val appliedActions = listOf(
+                linkedMapOf<String, Any?>(
+                    "kind" to "markdown_regenerate_requested",
+                    "success" to true,
+                    "entryFile" to entryFile,
+                    "recommendedTool" to "workbench_project_update"
+                )
+            )
+            appendHotUpdate(record.projectId, request, caller, appliedActions, frontendContext)
+            appendProjectProgress(
+                projectId = record.projectId,
+                stage = "markdown_regenerate_requested",
+                status = "running",
+                message = "Markdown Display hot update requires the Agent to update frontend/markdown source files and call workbench_project_update.",
+                percent = 60,
+                caller = caller,
+                details = linkedMapOf(
+                    "entryFile" to entryFile,
+                    "sourceFiles" to markdownSources.orEmpty().keys.map { it.toString() },
+                    "frontendContext" to frontendContext
+                )
+            )
+            writeProjectJson(record, projectApis(record.projectId))
+            return linkedMapOf(
+                "success" to true,
+                "projectId" to record.projectId,
+                "prompt" to request,
+                "frontendContext" to frontendContext,
+                "appliedActions" to appliedActions,
+                "requiresAgentRegeneration" to true,
+                "recommendedTool" to "workbench_project_update",
+                "instructions" to listOf(
+                    "Read ${record.spacePath}/PROJECT_CONTEXT.md first for project API contracts and field schema.",
+                    "Read project.frontendMarkdown.sources and prefer editing the smallest affected Markdown file.",
+                    "Preserve the existing document structure, headings, links, and any user-authored text unless the request asks to change them.",
+                    "Call workbench_project_update with markdownFiles=[{path:\"$entryFile\", content:<updated Markdown>}], or include multiple markdownFiles for multi-document changes.",
+                    "Use htmlFiles only if the user asks to convert this Markdown output into interactive layout, charts, forms, or app-like behavior."
+                ),
+                "hotUpdateLogPath" to "${record.spacePath}/logs/hot_updates.jsonl",
+                "project" to getProject(record.projectId)
+            )
+        }
+        if (selectedRenderer == "html") {
             val entryFile = frontendHtml["entryFile"]?.toString()?.trim()
                 ?.takeIf { it.isNotEmpty() }
                 ?: "index.html"
@@ -1112,7 +1361,7 @@ class WorkbenchProjectStore(
                 caller = caller,
                 details = linkedMapOf(
                     "entryFile" to entryFile,
-                    "sourceFiles" to htmlSources.keys.map { it.toString() },
+                    "sourceFiles" to htmlSources.orEmpty().keys.map { it.toString() },
                     "frontendContext" to frontendContext
                 )
             )
@@ -1126,18 +1375,18 @@ class WorkbenchProjectStore(
                 "requiresAgentRegeneration" to true,
                 "recommendedTool" to "workbench_project_update",
                 "instructions" to listOf(
-                    "Read project.frontendHtml.sources and prefer editing the smallest affected HTML/CSS/JS file.",
-                    "Preserve the existing window.oob.callApi(apiId, inputs), window.oob.getProject(), and data-oob-id hooks.",
-                    "Call workbench_project_update with htmlFiles=[{path:\"$entryFile\", content:<updated HTML>}], or include multiple htmlFiles for CSS/JS changes.",
-                    "Keep native/mobile capabilities behind registered Project Tools; do not invent direct Android, filesystem, shell, or network bridge calls."
+                    "Read ${record.spacePath}/PROJECT_CONTEXT.md first — API contracts, field schema, and data-oob-id anchors for this project.",
+                    "ANNOTATION: if frontendContext.annotationImagePath is present, call vlm_task(imagePath=annotationImagePath, question='Which UI element did the user highlight with red strokes, and what change do they want?') FIRST. frontendContext.annotationDescription provides a quick DOM-based hint.",
+                    "TARGETING: if frontendContext.selectedElement.oobId exists, search for data-oob-id=\"<oobId>\" in HTML as the oldText anchor — no need to read the full file. Otherwise use file_read(lineStart/lineCount).",
+                    "ALWAYS prefer htmlPatches over htmlFiles (~50 tokens vs ~5000). Only use htmlFiles for >50% structural rewrite.",
+                    "Preserve window.oob.callApi, window.oob.getProject, and data-oob-id hooks. No direct Android/filesystem bridges.",
+                    "After adding new data-oob-id elements or changing APIs, update ${record.spacePath}/PROJECT_CONTEXT.md."
                 ),
                 "hotUpdateLogPath" to "${record.spacePath}/logs/hot_updates.jsonl",
                 "project" to getProject(record.projectId)
             )
         }
-        val frontendFlutter = readFrontendFlutterPayload(record.projectId)
-        val frontendSources = frontendFlutter["sources"] as? Map<*, *>
-        if (!frontendSources.isNullOrEmpty()) {
+        if (selectedRenderer == "flutter") {
             val entryFile = frontendFlutter["entryFile"]?.toString()?.trim()
                 ?.takeIf { it.isNotEmpty() }
                 ?: "lib/main.dart"
@@ -1164,7 +1413,7 @@ class WorkbenchProjectStore(
                 details = linkedMapOf(
                     "entryFile" to entryFile,
                     "entryClass" to entryClass,
-                    "sourceFiles" to frontendSources.keys.map { it.toString() },
+                    "sourceFiles" to flutterSources.orEmpty().keys.map { it.toString() },
                     "frontendContext" to frontendContext
                 )
             )
@@ -1639,16 +1888,34 @@ class WorkbenchProjectStore(
         )
     }
 
-    private fun projectPayload(record: WorkbenchProjectRecord): Map<String, Any?> {
+    private fun projectPayload(
+        record: WorkbenchProjectRecord,
+        includeSources: Boolean = true,
+        includeRuntimeState: Boolean = true,
+        includeFrontendPayloads: Boolean = true
+    ): Map<String, Any?> {
         val apis = projectApis(record.projectId)
         ensureProjectSourceFiles(record, apis)
-        val items = readProjectItems(record.projectId)
-        val counts = apiExecutionCounts(record.projectId)
+        val items = if (includeRuntimeState) readProjectItems(record.projectId) else emptyList()
+        val counts = if (includeRuntimeState) apiExecutionCounts(record.projectId) else emptyMap()
         val androidAssets = readAndroidAssets(record.projectId)
-        val sourceAssets = readOssSources(record.projectId)
+        val sourceAssets = if (includeRuntimeState) readOssSources(record.projectId) else emptyList()
         val displays = workbenchDisplays(record)
-        val frontendHtml = readFrontendHtmlPayload(record.projectId)
-        val frontendFlutter = readFrontendFlutterPayload(record.projectId)
+        val frontendHtml = if (includeFrontendPayloads) {
+            readFrontendHtmlPayload(record.projectId, includeSources)
+        } else {
+            emptyMap()
+        }
+        val frontendFlutter = if (includeFrontendPayloads) {
+            readFrontendFlutterPayload(record.projectId, includeSources)
+        } else {
+            emptyMap()
+        }
+        val frontendMarkdown = if (includeFrontendPayloads) {
+            readFrontendMarkdownPayload(record.projectId, includeSources)
+        } else {
+            emptyMap()
+        }
         val displayRoute = defaultDisplayRoute(record, displays)
         val toolbox = WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts)
         return linkedMapOf(
@@ -1661,6 +1928,7 @@ class WorkbenchProjectStore(
             "pageSpec" to workbenchPageSpec(record),
             "frontendHtml" to frontendHtml,
             "frontendFlutter" to frontendFlutter,
+            "frontendMarkdown" to frontendMarkdown,
             "apiIds" to record.apiIds,
             "tools" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
@@ -1669,9 +1937,79 @@ class WorkbenchProjectStore(
             "sourceAssets" to sourceAssets.map { it.toPayload() },
             "flows" to emptyList<Map<String, Any?>>(),
             "items" to items.map { it.toPayload() },
-            "lastProgress" to lastProjectProgress(record.projectId),
-            "lastError" to lastApiError(record.projectId),
+            "lastProgress" to if (includeRuntimeState) {
+                lastProjectProgress(record.projectId)
+            } else {
+                null
+            },
+            "lastError" to if (includeRuntimeState) {
+                lastApiError(record.projectId)
+            } else {
+                null
+            },
             "progressLogPath" to "${record.spacePath}/logs/project_progress.jsonl",
+            "createdAt" to record.createdAt,
+            "updatedAt" to record.updatedAt
+        )
+    }
+
+    private fun projectIndexPayload(record: WorkbenchProjectRecord): Map<String, Any?> {
+        val apis = projectApis(record.projectId)
+        val counts = apiExecutionCounts(record.projectId)
+        val toolPayloads = apis.map { it.toPayload(counts[it.apiId] ?: 0) }
+        val pageSpec = workbenchPageSpec(record)
+        val explicitDisplays = pageSpec["displays"] as? List<*>
+        val fallbackRenderer = pageSpec["renderer"]?.toString()?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: "oob_project_display"
+        val fallbackRoute = pageSpec["route"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: when (fallbackRenderer) {
+                WORKBENCH_HTML_RENDERER -> htmlRoute(record.projectId)
+                WORKBENCH_MARKDOWN_RENDERER, "markdown_live" -> markdownRoute(record.projectId)
+                "flutter_eval" -> "/workbench/flutter_eval?projectId=${record.projectId}"
+                else -> record.route
+            }
+        val displays = explicitDisplays
+            ?.mapNotNull { item ->
+                @Suppress("UNCHECKED_CAST")
+                (item as? Map<String, Any?>)?.takeIf { display ->
+                    display["route"]?.toString()?.trim()?.isNotEmpty() == true
+                }
+            }
+            ?.takeIf { it.isNotEmpty() }
+            ?: listOf(
+                linkedMapOf(
+                    "id" to (pageSpec["displayId"] ?: pageSpec["pageId"] ?: "project-main-display"),
+                    "pageId" to (pageSpec["pageId"] ?: "project-main-page"),
+                    "title" to (pageSpec["title"] ?: record.name),
+                    "shortName" to (pageSpec["shortName"] ?: "APP"),
+                    "route" to fallbackRoute,
+                    "kind" to (pageSpec["kind"] ?: fallbackRenderer),
+                    "renderer" to fallbackRenderer,
+                    "surfaceKind" to "app_display",
+                    "navigationScope" to "right_workbench_display",
+                    "isDefault" to true,
+                    "description" to (pageSpec["description"] ?: pageSpec["subtitle"] ?: "")
+                )
+            )
+        val displayRoute = defaultDisplayRoute(record, displays)
+        return linkedMapOf(
+            "projectId" to record.projectId,
+            "name" to record.name,
+            "route" to displayRoute,
+            "spacePath" to record.spacePath,
+            "pageIds" to displays.mapNotNull { it["pageId"]?.toString() ?: it["id"]?.toString() },
+            "displays" to displays,
+            "pageSpec" to pageSpec,
+            "apiIds" to record.apiIds,
+            "tools" to toolPayloads,
+            "apis" to toolPayloads,
+            "toolbox" to WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts),
+            "flows" to emptyList<Map<String, Any?>>(),
+            "items" to emptyList<Map<String, Any?>>(),
+            "androidAssets" to emptyList<Map<String, Any?>>(),
+            "sourceAssets" to emptyList<Map<String, Any?>>(),
+            "isIndexOnly" to true,
             "createdAt" to record.createdAt,
             "updatedAt" to record.updatedAt
         )
@@ -1679,13 +2017,15 @@ class WorkbenchProjectStore(
 
     private fun activeProjectManifest(
         record: WorkbenchProjectRecord,
-        activatedAt: String? = null
+        activatedAt: String? = null,
+        includeSources: Boolean = false
     ): Map<String, Any?> {
         val counts = apiExecutionCounts(record.projectId)
         val apis = projectApis(record.projectId)
         val displays = workbenchDisplays(record)
-        val frontendHtml = readFrontendHtmlPayload(record.projectId)
-        val frontendFlutter = readFrontendFlutterPayload(record.projectId)
+        val frontendHtml = readFrontendHtmlPayload(record.projectId, includeSources)
+        val frontendFlutter = readFrontendFlutterPayload(record.projectId, includeSources)
+        val frontendMarkdown = readFrontendMarkdownPayload(record.projectId, includeSources)
         val displayRoute = defaultDisplayRoute(record, displays)
         return linkedMapOf(
             "projectId" to record.projectId,
@@ -1696,6 +2036,8 @@ class WorkbenchProjectStore(
             "displays" to displays,
             "frontendHtml" to frontendHtml,
             "frontendFlutter" to frontendFlutter,
+            "frontendMarkdown" to frontendMarkdown,
+            "tools" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "toolbox" to WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts),
             "sourceAssets" to readOssSources(record.projectId).map { it.toPayload() },
@@ -1719,6 +2061,7 @@ class WorkbenchProjectStore(
         val displays = workbenchDisplays(record)
         val frontendHtml = readFrontendHtmlPayload(record.projectId)
         val frontendFlutter = readFrontendFlutterPayload(record.projectId)
+        val frontendMarkdown = readFrontendMarkdownPayload(record.projectId)
         val displayRoute = defaultDisplayRoute(record, displays)
         val toolbox = WorkbenchToolboxBuilder.toolboxPayload(record, apis, counts)
         val payload = linkedMapOf<String, Any?>(
@@ -1730,6 +2073,7 @@ class WorkbenchProjectStore(
                     "Project registry",
                     "App Display surface",
                     "Editable HTML source assets",
+                    "Editable Markdown source assets",
                     "Editable Flutter source assets",
                     "Project Tools",
                     "Persistent data and tool logs"
@@ -1750,13 +2094,16 @@ class WorkbenchProjectStore(
             "frontendSource" to linkedMapOf(
                 "instantRuntime" to "frontend/page_spec.json",
                 "editableHtmlSource" to "frontend/html/",
+                "editableMarkdownSource" to "frontend/markdown/",
                 "editableFlutterSource" to "frontend/flutter/",
                 "htmlRuntimeBoundary" to "HTML source under frontend/html/ can be loaded live by /workbench/html through WebView; native access stays behind Project Tool bridge.",
+                "markdownRuntimeBoundary" to "Markdown source under frontend/markdown/ can be rendered, edited, previewed, and saved live by /workbench/markdown.",
                 "compileBoundary" to "Flutter source under frontend/flutter/ is a Project asset loaded live by /workbench/flutter_eval through flutter_eval; no APK rebuild is required for supported Dart/Material UI."
             ),
             "displays" to displays,
             "pageSpec" to workbenchPageSpec(record),
             "frontendHtml" to frontendHtml,
+            "frontendMarkdown" to frontendMarkdown,
             "frontendFlutter" to frontendFlutter,
             "apis" to apis.map { it.toPayload(counts[it.apiId] ?: 0) },
             "toolbox" to toolbox,
@@ -1820,10 +2167,13 @@ class WorkbenchProjectStore(
                 return displays
             }
         }
-        if (readFrontendHtmlPayload(record.projectId).isNotEmpty()) {
+        if (hasFrontendFiles(record.projectId, "frontend/html")) {
             return listOf(htmlWorkbenchDisplay(record))
         }
-        if (readFrontendFlutterPayload(record.projectId).isNotEmpty()) {
+        if (hasFrontendFiles(record.projectId, "frontend/markdown")) {
+            return listOf(markdownWorkbenchDisplay(record))
+        }
+        if (hasFrontendFiles(record.projectId, "frontend/flutter")) {
             return listOf(
                 linkedMapOf(
                     "id" to "flutter-main-display",
@@ -1868,6 +2218,14 @@ class WorkbenchProjectStore(
         )
     }
 
+    private fun hasFrontendFiles(projectId: String, relativeDir: String): Boolean {
+        val dir = File(projectDir(projectId), relativeDir)
+        if (!dir.exists()) return false
+        return dir.walkTopDown().any { file ->
+            file.isFile && file.name != "manifest.json" && file.name != "README.md"
+        }
+    }
+
     private fun defaultDisplayRoute(
         record: WorkbenchProjectRecord,
         displays: List<Map<String, Any?>> = workbenchDisplays(record)
@@ -1881,6 +2239,10 @@ class WorkbenchProjectStore(
             renderer == "flutter_eval" -> display?.get("route")?.toString()?.trim()
                 ?.takeIf { it.isNotEmpty() }
                 ?: "/workbench/flutter_eval?projectId=${record.projectId}"
+            renderer == WORKBENCH_MARKDOWN_RENDERER || renderer == "markdown_live" ->
+                display?.get("route")?.toString()?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: markdownRoute(record.projectId)
             else -> record.route
         }
     }
@@ -1912,6 +2274,8 @@ class WorkbenchProjectStore(
             val route = display["route"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 ?: if (renderer == WORKBENCH_HTML_RENDERER) {
                     htmlRoute(record.projectId)
+                } else if (renderer == WORKBENCH_MARKDOWN_RENDERER || renderer == "markdown_live") {
+                    markdownRoute(record.projectId)
                 } else {
                     displayRouteWithId(record.route, id)
                 }
@@ -1931,7 +2295,11 @@ class WorkbenchProjectStore(
                 "route" to route,
                 "kind" to (
                     display["kind"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                        ?: if (renderer == WORKBENCH_HTML_RENDERER) "oob_html_webview" else "oob_flutter"
+                        ?: when (renderer) {
+                            WORKBENCH_HTML_RENDERER -> "oob_html_webview"
+                            WORKBENCH_MARKDOWN_RENDERER, "markdown_live" -> "oob_markdown"
+                            else -> "oob_flutter"
+                        }
                     ),
                 "renderer" to renderer,
                 "surfaceKind" to "app_display",
@@ -2034,6 +2402,7 @@ class WorkbenchProjectStore(
         "mutationTargets" to listOf(
             "frontend/page_spec.json",
             "frontend/html/",
+            "frontend/markdown/",
             "frontend/flutter/",
             "backend/api_spec.json",
             "data/items.json",
@@ -2072,6 +2441,22 @@ class WorkbenchProjectStore(
         "description" to "Live HTML Display bound to this Project."
     )
 
+    private fun markdownRoute(projectId: String): String = "/workbench/markdown?projectId=$projectId"
+
+    private fun markdownWorkbenchDisplay(record: WorkbenchProjectRecord): Map<String, Any?> = linkedMapOf(
+        "id" to "markdown-main-display",
+        "pageId" to "markdown-main-page",
+        "title" to record.name,
+        "shortName" to "MD",
+        "route" to markdownRoute(record.projectId),
+        "kind" to "oob_markdown",
+        "renderer" to WORKBENCH_MARKDOWN_RENDERER,
+        "surfaceKind" to "app_display",
+        "navigationScope" to "right_workbench_display",
+        "isDefault" to true,
+        "description" to "Live Markdown Display bound to this Project."
+    )
+
     private fun isHtmlDisplay(display: Map<String, Any?>): Boolean {
         val renderer = display["renderer"]?.toString()?.trim()
         val kind = display["kind"]?.toString()?.trim()
@@ -2079,6 +2464,17 @@ class WorkbenchProjectStore(
         return renderer == WORKBENCH_HTML_RENDERER ||
             kind == WORKBENCH_HTML_RENDERER ||
             route.startsWith("/workbench/html")
+    }
+
+    private fun isMarkdownDisplay(display: Map<String, Any?>): Boolean {
+        val renderer = display["renderer"]?.toString()?.trim()
+        val kind = display["kind"]?.toString()?.trim()
+        val route = display["route"]?.toString()?.trim().orEmpty()
+        return renderer == WORKBENCH_MARKDOWN_RENDERER ||
+            renderer == "markdown_live" ||
+            kind == WORKBENCH_MARKDOWN_RENDERER ||
+            kind == "oob_markdown" ||
+            route.startsWith("/workbench/markdown")
     }
 
     private fun normalizeDefaultDisplaySelection(
@@ -2097,6 +2493,195 @@ class WorkbenchProjectStore(
                 display
             }
         }
+    }
+
+    /**
+     * Normalizes Project-owned Markdown source updates into relative-path/content pairs.
+     *
+     * @param value Tool or MethodChannel payload. Supported shapes are a map of
+     * `path -> content`, a list of `{path, content}`, `{files: [...]}`, or `{content: ...}`.
+     * @return Sanitized relative file specs ready for bounded writes under `frontend/markdown/`.
+     */
+    private fun normalizeFrontendMarkdownFiles(value: Any?): List<Pair<String, String>> {
+        if (value == null) return emptyList()
+        if (value is Map<*, *>) {
+            val map = asStringKeyMap(value)
+            val directContent = map["content"] ?: map["source"] ?: map["text"] ?: map["markdown"]
+            val directPath = map["path"] ?: map["relativePath"] ?: map["filePath"] ?: "index.md"
+            if (directContent != null) {
+                return listOf(frontendMarkdownFileSpec(directPath, directContent))
+            }
+            val nested = map["files"] ?: map["items"]
+            if (nested is Iterable<*>) {
+                return normalizeFrontendMarkdownFiles(nested)
+            }
+            return map.mapNotNull { (path, content) ->
+                if (path == "files" || path == "items") {
+                    null
+                } else {
+                    frontendMarkdownFileSpec(path, content)
+                }
+            }.distinctBy { it.first }
+        }
+        val raw = value as? Iterable<*> ?: return emptyList()
+        return raw.mapNotNull { item ->
+            val map = item as? Map<*, *> ?: return@mapNotNull null
+            val file = asStringKeyMap(map)
+            val path = file["path"] ?: file["relativePath"] ?: file["filePath"] ?: "index.md"
+            val content = file["content"] ?: file["source"] ?: file["text"] ?: file["markdown"]
+                ?: return@mapNotNull null
+            frontendMarkdownFileSpec(path, content)
+        }.distinctBy { it.first }
+    }
+
+    private fun frontendMarkdownFileSpec(path: Any?, content: Any?): Pair<String, String> {
+        val normalized = cleanFrontendMarkdownPath(path?.toString().orEmpty())
+        return normalized to content?.toString().orEmpty()
+    }
+
+    private fun cleanFrontendMarkdownPath(rawPath: String): String {
+        val normalized = rawPath.replace('\\', '/')
+            .trim()
+            .removePrefix("/")
+            .removePrefix("frontend/markdown/")
+            .removePrefix("markdown/")
+            .ifBlank { "index.md" }
+        require(!normalized.contains(":")) { "Markdown source file path must be relative." }
+        val parts = normalized.split('/').filter { it.isNotBlank() }
+        require(parts.none { it == ".." }) { "Markdown source file path cannot escape frontend/markdown/." }
+        require(parts.lastOrNull() != "manifest.json") {
+            "frontend/markdown/manifest.json is generated by OOB."
+        }
+        val leaf = parts.lastOrNull().orEmpty().lowercase()
+        require(leaf.endsWith(".md") || leaf.endsWith(".markdown") || leaf.endsWith(".txt")) {
+            "Markdown Display source files must end with .md, .markdown, or .txt."
+        }
+        return parts.joinToString("/")
+    }
+
+    private fun writeFrontendMarkdownFiles(
+        projectId: String,
+        files: List<Pair<String, String>>
+    ): List<Map<String, Any?>> {
+        if (files.isEmpty()) return emptyList()
+        val markdownDir = File(projectDir(projectId), "frontend/markdown")
+        markdownDir.mkdirs()
+        val root = markdownDir.canonicalFile
+        val rootPrefix = root.path + File.separator
+        val writtenAt = nowIso()
+        val written = files.map { (relativePath, content) ->
+            val target = File(root, relativePath).canonicalFile
+            require(target.path == root.path || target.path.startsWith(rootPrefix)) {
+                "Markdown source file path cannot escape frontend/markdown/."
+            }
+            target.parentFile?.mkdirs()
+            target.writeText(content)
+            linkedMapOf<String, Any?>(
+                "path" to "frontend/markdown/$relativePath",
+                "bytes" to content.toByteArray(Charsets.UTF_8).size,
+                "updatedAt" to writtenAt
+            )
+        }
+        writeFrontendMarkdownManifest(projectId)
+        return written
+    }
+
+    private fun readFrontendMarkdownPayload(
+        projectId: String,
+        includeSources: Boolean = true
+    ): Map<String, Any?> {
+        val markdownDir = File(projectDir(projectId), "frontend/markdown")
+        if (!markdownDir.exists()) return emptyMap()
+        val root = markdownDir.canonicalFile
+        val sources = linkedMapOf<String, String>()
+        val files = mutableListOf<Map<String, Any?>>()
+        markdownDir.walkTopDown()
+            .filter { it.isFile && it.name != "manifest.json" && it.name != "README.md" }
+            .sortedBy { it.absolutePath }
+            .forEach { file ->
+                val relative = root.toPath()
+                    .relativize(file.canonicalFile.toPath())
+                    .toString()
+                    .replace(File.separatorChar, '/')
+                files += linkedMapOf<String, Any?>(
+                    "path" to "frontend/markdown/$relative",
+                    "relativePath" to relative,
+                    "bytes" to file.length(),
+                    "updatedAt" to Instant.ofEpochMilli(file.lastModified()).toString(),
+                    "kind" to "source"
+                )
+                if (includeSources) {
+                    sources[relative] = file.readText()
+                }
+            }
+        if (files.isEmpty()) return emptyMap()
+        val manifestFile = File(markdownDir, "manifest.json")
+        val manifest = if (manifestFile.exists()) {
+            runCatching {
+                gson.fromJson<Map<String, Any?>>(manifestFile.readText(), mapType)
+            }.getOrNull().orEmpty()
+        } else {
+            emptyMap()
+        }
+        val relativePaths = files.mapNotNull { it["relativePath"]?.toString() }
+        val entryFile = manifest["entryFile"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: when {
+                relativePaths.contains("index.md") -> "index.md"
+                relativePaths.any { it.endsWith(".md") } -> relativePaths.first { it.endsWith(".md") }
+                else -> relativePaths.firstOrNull().orEmpty()
+            }
+        val payload = linkedMapOf<String, Any?>(
+            "runtime" to WORKBENCH_MARKDOWN_RENDERER,
+            "renderer" to WORKBENCH_MARKDOWN_RENDERER,
+            "entryFile" to entryFile,
+            "files" to files,
+            "manifest" to manifest
+        )
+        if (includeSources) {
+            payload["sources"] = sources
+        } else {
+            payload["sourceCount"] = files.size
+        }
+        return payload
+    }
+
+    private fun writeFrontendMarkdownManifest(projectId: String): List<Map<String, Any?>> {
+        val markdownDir = File(projectDir(projectId), "frontend/markdown")
+        markdownDir.mkdirs()
+        val root = markdownDir.canonicalFile
+        val files = markdownDir.walkTopDown()
+            .filter { it.isFile && it.name != "manifest.json" }
+            .map { file ->
+                val relative = root.toPath()
+                    .relativize(file.canonicalFile.toPath())
+                    .toString()
+                    .replace(File.separatorChar, '/')
+                linkedMapOf<String, Any?>(
+                    "path" to "frontend/markdown/$relative",
+                    "relativePath" to relative,
+                    "bytes" to file.length(),
+                    "updatedAt" to Instant.ofEpochMilli(file.lastModified()).toString(),
+                    "kind" to "source"
+                )
+            }
+            .sortedBy { it["path"]?.toString().orEmpty() }
+            .toList()
+        val entryFile = files.firstOrNull { it["relativePath"] == "index.md" }?.get("relativePath")
+            ?: files.firstOrNull {
+                it["relativePath"]?.toString()?.endsWith(".md") == true
+            }?.get("relativePath")
+            ?: files.firstOrNull()?.get("relativePath")
+        File(markdownDir, "manifest.json").writeText(
+            gson.toJson(
+                linkedMapOf(
+                    "generatedAt" to nowIso(),
+                    "runtimeBoundary" to "markdown_live_runtime",
+                    "entryFile" to entryFile,
+                    "files" to files
+                )
+            )
+        )
+        return files
     }
 
     /**
@@ -2177,7 +2762,10 @@ class WorkbenchProjectStore(
         return written
     }
 
-    private fun readFrontendHtmlPayload(projectId: String): Map<String, Any?> {
+    private fun readFrontendHtmlPayload(
+        projectId: String,
+        includeSources: Boolean = true
+    ): Map<String, Any?> {
         val htmlDir = File(projectDir(projectId), "frontend/html")
         if (!htmlDir.exists()) return emptyMap()
         val root = htmlDir.canonicalFile
@@ -2198,13 +2786,15 @@ class WorkbenchProjectStore(
                     "updatedAt" to Instant.ofEpochMilli(file.lastModified()).toString()
                 )
                 if (isTextFrontendHtmlFile(file)) {
-                    sources[relative] = file.readText()
+                    if (includeSources) {
+                        sources[relative] = file.readText()
+                    }
                     assets += payload + ("kind" to "source")
                 } else {
                     assets += payload + ("kind" to "asset")
                 }
             }
-        if (sources.isEmpty() && assets.isEmpty()) return emptyMap()
+        if (assets.isEmpty()) return emptyMap()
         val manifestFile = File(htmlDir, "manifest.json")
         val manifest = if (manifestFile.exists()) {
             runCatching {
@@ -2213,26 +2803,34 @@ class WorkbenchProjectStore(
         } else {
             emptyMap()
         }
+        val sourcePaths = assets
+            .filter { it["kind"] == "source" }
+            .mapNotNull { it["relativePath"]?.toString() }
         val entryFile = manifest["entryFile"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
             ?: when {
-                sources.containsKey("index.html") -> "index.html"
-                sources.keys.any { it.endsWith(".html") } -> sources.keys.first { it.endsWith(".html") }
-                else -> sources.keys.firstOrNull().orEmpty()
+                sourcePaths.contains("index.html") -> "index.html"
+                sourcePaths.any { it.endsWith(".html") } -> sourcePaths.first { it.endsWith(".html") }
+                else -> sourcePaths.firstOrNull().orEmpty()
             }
         val entry = entryFile.takeIf { it.isNotEmpty() }?.let { File(root, it).canonicalFile }
         val entryPath = entry?.takeIf { file ->
             val rootPrefix = root.path + File.separator
             file.path == root.path || file.path.startsWith(rootPrefix)
         }?.absolutePath.orEmpty()
-        return linkedMapOf(
+        val payload = linkedMapOf<String, Any?>(
             "runtime" to WORKBENCH_HTML_RENDERER,
             "renderer" to WORKBENCH_HTML_RENDERER,
             "entryFile" to entryFile,
             "entryPath" to entryPath,
-            "sources" to sources,
             "assets" to assets,
             "manifest" to manifest
         )
+        if (includeSources) {
+            payload["sources"] = sources
+        } else {
+            payload["sourceCount"] = sourcePaths.size
+        }
+        return payload
     }
 
     private fun writeFrontendHtmlManifest(projectId: String): List<Map<String, Any?>> {
@@ -2404,11 +3002,15 @@ class WorkbenchProjectStore(
      * @return JSON-safe payload with entry metadata and relative-path source text. Empty means
      * the Project has no live Flutter sources yet.
      */
-    private fun readFrontendFlutterPayload(projectId: String): Map<String, Any?> {
+    private fun readFrontendFlutterPayload(
+        projectId: String,
+        includeSources: Boolean = true
+    ): Map<String, Any?> {
         val flutterDir = File(projectDir(projectId), "frontend/flutter")
         if (!flutterDir.exists()) return emptyMap()
         val root = flutterDir.canonicalFile
         val sources = linkedMapOf<String, String>()
+        val files = mutableListOf<Map<String, Any?>>()
         flutterDir.walkTopDown()
             .filter { it.isFile && it.name != "manifest.json" && it.name != "README.md" }
             .sortedBy { it.absolutePath }
@@ -2417,9 +3019,18 @@ class WorkbenchProjectStore(
                     .relativize(file.canonicalFile.toPath())
                     .toString()
                     .replace(File.separatorChar, '/')
-                sources[relative] = file.readText()
+                files += linkedMapOf<String, Any?>(
+                    "path" to "frontend/flutter/$relative",
+                    "relativePath" to relative,
+                    "bytes" to file.length(),
+                    "updatedAt" to Instant.ofEpochMilli(file.lastModified()).toString(),
+                    "kind" to "source"
+                )
+                if (includeSources) {
+                    sources[relative] = file.readText()
+                }
             }
-        if (sources.isEmpty()) return emptyMap()
+        if (files.isEmpty()) return emptyMap()
         val manifestFile = File(flutterDir, "manifest.json")
         val manifest = if (manifestFile.exists()) {
             runCatching {
@@ -2428,23 +3039,30 @@ class WorkbenchProjectStore(
         } else {
             emptyMap()
         }
+        val relativePaths = files.mapNotNull { it["relativePath"]?.toString() }
         val entryFile = manifest["entryFile"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
             ?: when {
-                sources.containsKey("lib/main.dart") -> "lib/main.dart"
-                sources.containsKey("main.dart") -> "main.dart"
-                sources.containsKey("frontend/flutter/lib/main.dart") -> "frontend/flutter/lib/main.dart"
-                sources.keys.any { it.endsWith("/main.dart") } -> sources.keys.first { it.endsWith("/main.dart") }
-                else -> sources.keys.firstOrNull().orEmpty()
+                relativePaths.contains("lib/main.dart") -> "lib/main.dart"
+                relativePaths.contains("main.dart") -> "main.dart"
+                relativePaths.contains("frontend/flutter/lib/main.dart") -> "frontend/flutter/lib/main.dart"
+                relativePaths.any { it.endsWith("/main.dart") } -> relativePaths.first { it.endsWith("/main.dart") }
+                else -> relativePaths.firstOrNull().orEmpty()
             }
         val entryClass = manifest["entryClass"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
             ?: "OobProjectWidget"
-        return linkedMapOf(
+        val payload = linkedMapOf<String, Any?>(
             "runtime" to "flutter_eval",
             "entryFile" to entryFile,
             "entryClass" to entryClass,
-            "sources" to sources,
+            "files" to files,
             "manifest" to manifest
         )
+        if (includeSources) {
+            payload["sources"] = sources
+        } else {
+            payload["sourceCount"] = files.size
+        }
+        return payload
     }
 
     /**
@@ -2529,6 +3147,12 @@ class WorkbenchProjectStore(
                 |right-side Workbench WebView Display and bridge `window.oob.callApi()` to
                 |Project Tools.
                 |
+                |HTML under `frontend/html/` is the default generated frontend path. Only when
+                |the user explicitly asks for Markdown, editable documents, or plain-text
+                |long-form output should the Project use Markdown source under
+                |`frontend/markdown/`. OOB renders it with the `/workbench/markdown` Display,
+                |including live preview and manual save.
+                |
                 |If the Project needs custom Flutter, generate or edit source under
                 |`frontend/flutter/` from the Alpine workspace. The supported runtime subset is
                 |loaded by `/workbench/flutter_eval`; unsupported native/package code still needs
@@ -2583,6 +3207,27 @@ class WorkbenchProjectStore(
                 |
                 |Prefer local vendored JS/CSS assets for production displays. CDN dependencies
                 |are acceptable for demos and iteration, but they reduce offline reliability.
+                |
+                """.trimMargin()
+            )
+        }
+        val markdownDir = File(frontendDir, "markdown")
+        markdownDir.mkdirs()
+        val markdownReadme = File(markdownDir, "README.md")
+        if (!markdownReadme.exists()) {
+            markdownReadme.writeText(
+                """
+                |# Markdown Display Source
+                |
+                |This directory stores Project-owned Markdown documents generated or edited from
+                |the Agent workspace.
+                |
+                |Runtime boundary:
+                |- `frontend/markdown/index.md` can be rendered by `/workbench/markdown`.
+                |- The installed app provides preview, edit, split live preview, and manual save.
+                |- Markdown is optional. Use it only when the user explicitly asks for Markdown,
+                |  editable documents, plain-text long-form output, or when this Project is
+                |  already a Markdown Display.
                 |
                 """.trimMargin()
             )
@@ -2695,6 +3340,8 @@ class WorkbenchProjectStore(
                             "frontendHtmlManifest" to "frontend/html/manifest.json",
                             "frontendFlutterSource" to "frontend/flutter/",
                             "frontendFlutterManifest" to "frontend/flutter/manifest.json",
+                            "frontendMarkdownSource" to "frontend/markdown/",
+                            "frontendMarkdownManifest" to "frontend/markdown/manifest.json",
                             "progressLog" to "logs/project_progress.jsonl",
                             "sourceManifest" to "source/manifest.json",
                             "androidManifest" to "android/manifest.json",
@@ -2789,7 +3436,9 @@ class WorkbenchProjectStore(
                 "instantSurface" to "frontend/page_spec.json",
                 "editableHtmlSource" to "frontend/html/",
                 "editableFlutterSource" to "frontend/flutter/",
+                "editableMarkdownSource" to "frontend/markdown/",
                 "htmlRuntimeBoundary" to "HTML source is generated and edited in the Project workspace and can be loaded live by /workbench/html through WebView.",
+                "markdownRuntimeBoundary" to "Markdown source is optional and used only for explicit Markdown/editable-document output; it can be rendered live by /workbench/markdown.",
                 "compileBoundary" to "Flutter source is generated and edited in the Project workspace; it is loaded by /workbench/flutter_eval for the supported runtime subset."
             ),
             "fields" to listOf(
@@ -2864,6 +3513,7 @@ class WorkbenchProjectStore(
         return linkedMapOf(
             "frontend" to "frontend/page_spec.json",
             "html" to "frontend/html/",
+            "markdown" to "frontend/markdown/",
             "data" to "data/items.json",
             "logs" to "logs/api_calls.jsonl",
             "hotUpdates" to "logs/hot_updates.jsonl",
@@ -3785,10 +4435,34 @@ class WorkbenchProjectStore(
             Inputs JSON:
             ${logGson.toJson(inputs)}
 
+            Available OOB Agent Tools (call these by name in your tool chain):
+            - image_picker(source: gallery|camera, multiple?: bool, limit?: int)
+                → Let the user pick photos from gallery or take a new one with camera. Returns local path(s). Use before vlm_task when you need a photo.
+            - vlm_task(goal: string, packageName?: string)
+                → Visually understand the current screen or a specific app's screen. Describe what you see, extract text, locate UI elements, read receipts/labels/documents from screenshots.
+            - notification_send(title: string, body: string)
+                → Push a local phone notification to the user. Use to alert them when a long-running task finishes (e.g. "Analysis complete, 3 items found").
+            - calendar_event_create(title: string, startTime: string, endTime: string, description?: string)
+                → Create a calendar event on the user's phone. startTime/endTime in ISO 8601 format.
+            - terminal_execute(command: string)
+                → Run any shell command or Python script in the Project workspace. Use this to: run Python data-processing scripts, compute statistics, call CLI tools, transform files, parse CSV/JSON, make HTTP requests, do math. Write scripts to workspace with file_write first, then execute them.
+            - browser_use(goal: string)
+                → Open a real browser and navigate to any URL, search on any search engine (Chinese/English), fill forms, extract page content, take screenshots of web pages, scrape structured data. Best for real-time info, pricing, news, any web lookup.
+            - file_read(path: string, maxChars?: int, lineStart?: int, lineCount?: int)
+                → Read any file in the Project workspace. Use to check existing data files, read scripts, inspect logs, or load content before processing.
+            - file_write(path: string, content: string, append?: bool)
+                → Create or overwrite a file in the workspace. Use to save results, write Python scripts before running them, export data as CSV/JSON, or persist intermediate results.
+            - file_list(path?: string)
+                → List files and directories in the workspace. Use to check what data files exist before reading them.
+            - subagent_dispatch(tasks: string[], concurrency?: int, mergeInstruction?: string)
+                → Fan out multiple independent sub-tasks in parallel (up to 6 concurrent). Each task is a natural-language instruction string. Use when you need to process multiple items simultaneously (e.g. analyze 10 photos at once, fetch 5 URLs in parallel). mergeInstruction tells the agent how to combine sub-results.
+            - workbench_api_call(projectId: string, apiId: string, inputs: object)
+                → Call any registered Project Tool to read or write Project data. Use to save computed results back to the Project, or to chain into another registered tool.
+
             Rules:
             - Use "current data" above as the live Project state — no need to call list first.
-            - If run.use starts with oob. or mcp., use the matching OOB/MCP capability through the normal Agent tool chain.
-            - To write results back, call workbench_api_call with this projectId and the appropriate toolId.
+            - Only call workbench_api_call if this tool is a write/create/update operation and the task produced a result to store. Do NOT call it for read-only, query, or list tasks.
+            - Use image_picker before vlm_task when you need the user to provide a photo.
             - Do not recreate this Project or write registry files directly.
         """.trimIndent()
     }
@@ -4729,4 +5403,110 @@ class WorkbenchProjectStore(
     }
 
     private fun nowIso(): String = Instant.now().toString()
+
+    // ── Project Context File ──────────────────────────────────────────────────
+
+    /**
+     * Writes (or overwrites) PROJECT_CONTEXT.md in the project workspace.
+     *
+     * This file is the agent's living reference for the project's API contract,
+     * item field schema, and key HTML element IDs. It is readable and writable
+     * by the agent via file_read / file_write. The agent should update it after
+     * changing APIs, field definitions, or data-oob-id elements.
+     */
+    internal fun writeProjectContextFile(
+        record: WorkbenchProjectRecord,
+        apis: List<WorkbenchApiRecord>,
+        creationPrompt: String? = null
+    ) {
+        val md = buildProjectContextMarkdown(record, apis, creationPrompt)
+        val dir = projectDir(record.projectId)
+        dir.mkdirs()
+        File(dir, "PROJECT_CONTEXT.md").writeText(md, Charsets.UTF_8)
+    }
+
+    private fun buildProjectContextMarkdown(
+        record: WorkbenchProjectRecord,
+        apis: List<WorkbenchApiRecord>,
+        creationPrompt: String?
+    ): String {
+        val sb = StringBuilder()
+        sb.appendLine("# ${record.name} — Project Context")
+        sb.appendLine()
+        sb.appendLine("> Auto-generated by OOB Workbench on creation. Keep this file up to date as")
+        sb.appendLine("> the project evolves. The agent reads it before every hot update to understand")
+        sb.appendLine("> API contracts, field schemas, and element IDs before touching source files.")
+        sb.appendLine()
+
+        // API Contract
+        sb.appendLine("## API Contract")
+        sb.appendLine()
+        if (apis.isEmpty()) {
+            sb.appendLine("No Project Tools registered yet.")
+        } else {
+            sb.appendLine("| Tool ID | Executor | Inputs | Description |")
+            sb.appendLine("|---|---|---|---|")
+            for (api in apis) {
+                val inputs = api.inputSchema.entries
+                    .joinToString(", ") { (k, v) -> "$k: $v" }
+                    .ifBlank { "—" }
+                val executor = api.run?.get("use")?.toString() ?: api.executorKind
+                sb.appendLine("| `${api.toolId}` | $executor | $inputs | ${api.description.trim().take(80)} |")
+            }
+        }
+        sb.appendLine()
+
+        // Item Fields Schema
+        sb.appendLine("## Item Fields Schema")
+        sb.appendLine()
+        sb.appendLine("Domain fields stored under `item.fields` for each persisted item.")
+        sb.appendLine("Update this section when you add or change business fields.")
+        sb.appendLine()
+
+        // Derive known fields from APIs' input schemas (heuristic)
+        val knownFields = apis
+            .filter { it.executorKind.contains("collection") || it.run?.get("use")?.toString()?.contains("collection") == true }
+            .flatMap { it.inputSchema.keys }
+            .filter { it != "item_id" && it != "projectId" }
+            .toSortedSet()
+
+        if (knownFields.isEmpty()) {
+            sb.appendLine("| Field | Type | Notes |")
+            sb.appendLine("|---|---|---|")
+            sb.appendLine("| title | string | Item title / primary label |")
+            sb.appendLine("| (add fields here) | | |")
+        } else {
+            sb.appendLine("| Field | Type | Notes |")
+            sb.appendLine("|---|---|---|")
+            sb.appendLine("| title | string | Item title / primary label |")
+            for (field in knownFields) {
+                sb.appendLine("| $field | string | |")
+            }
+        }
+        sb.appendLine()
+
+        // HTML Element Inventory
+        sb.appendLine("## HTML Element Inventory (`data-oob-id`)")
+        sb.appendLine()
+        sb.appendLine("Key anchors in the frontend HTML. Update when you add or remove elements")
+        sb.appendLine("that you want to reference by `oobId` during hot updates.")
+        sb.appendLine()
+        sb.appendLine("| oob-id | Element | Purpose |")
+        sb.appendLine("|---|---|---|")
+        sb.appendLine("| (populate as elements are added to the HTML) | | |")
+        sb.appendLine()
+
+        // Design Notes
+        sb.appendLine("## Design Notes")
+        sb.appendLine()
+        sb.appendLine("- Project ID: `${record.projectId}`")
+        sb.appendLine("- API IDs: ${record.apiIds.joinToString(", ") { "`$it`" }.ifBlank { "none" }}")
+        if (!creationPrompt.isNullOrBlank()) {
+            sb.appendLine("- Creation intent: ${creationPrompt.trim().take(300)}")
+        }
+        sb.appendLine()
+        sb.appendLine("<!-- Agent: update this file after changes. Do not delete sections. -->")
+
+        return sb.toString()
+    }
 }

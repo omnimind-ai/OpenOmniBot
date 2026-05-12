@@ -6521,151 +6521,151 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchPhilosophyTitle.
   ///
   /// In zh, this message translates to:
-  /// **'端侧 AI 工作台'**
+  /// **'AI 产品展示工作台'**
   String get workbenchPhilosophyTitle;
 
   /// No description provided for @workbenchPhilosophyTagline.
   ///
   /// In zh, this message translates to:
-  /// **'一句话，创造属于自己的应用'**
+  /// **'让 AI 的结果立刻变成可看、可点、可继续修改的界面'**
   String get workbenchPhilosophyTagline;
 
   /// No description provided for @workbenchPhilosophySubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'手机本身就是最强后端——OOB 把所有原生能力装进工作台，用自然语言拼装，直接跑在你的设备上，无需云端，生成即可用。'**
+  /// **'Workbench 不是模板生成器，而是 AI 产品的展示与运行层。Agent 产出的报告、数据、状态和操作会落到 Project 中，通过 HTML、Markdown 或 Flutter 显示，并通过 Project API 连接手机能力与持久化数据。'**
   String get workbenchPhilosophySubtitle;
 
   /// No description provided for @workbenchPhilosophyPillarsTitle.
   ///
   /// In zh, this message translates to:
-  /// **'三层差异化'**
+  /// **'当前核心闭环'**
   String get workbenchPhilosophyPillarsTitle;
 
   /// No description provided for @workbenchPhilosophyComposable.
   ///
   /// In zh, this message translates to:
-  /// **'可组装'**
+  /// **'显示层'**
   String get workbenchPhilosophyComposable;
 
   /// No description provided for @workbenchPhilosophyComposableDesc.
   ///
   /// In zh, this message translates to:
-  /// **'工具 / 执行器 / UI / 数据 / Skill 任意拼装'**
+  /// **'HTML / Markdown / Flutter 都是 Project Display，用来承载 AI 输出'**
   String get workbenchPhilosophyComposableDesc;
 
   /// No description provided for @workbenchPhilosophyAIDriven.
   ///
   /// In zh, this message translates to:
-  /// **'AI 驱动'**
+  /// **'交互层'**
   String get workbenchPhilosophyAIDriven;
 
   /// No description provided for @workbenchPhilosophyAIDrivenDesc.
   ///
   /// In zh, this message translates to:
-  /// **'自然语言描述需求，AI 完成组装'**
+  /// **'用户点击、填写、选择后，通过 Project API 触发下一步 Agent 或工具'**
   String get workbenchPhilosophyAIDrivenDesc;
 
   /// No description provided for @workbenchPhilosophyMobileNative.
   ///
   /// In zh, this message translates to:
-  /// **'端侧原生'**
+  /// **'能力层'**
   String get workbenchPhilosophyMobileNative;
 
   /// No description provided for @workbenchPhilosophyMobileNativeDesc.
   ///
   /// In zh, this message translates to:
-  /// **'生成的应用调用真实的手机系统能力'**
+  /// **'需要操控手机、读屏、文件、脚本时，再走 OOB 原生能力'**
   String get workbenchPhilosophyMobileNativeDesc;
 
   /// No description provided for @workbenchPhilosophyStrengthsTitle.
   ///
   /// In zh, this message translates to:
-  /// **'三大能力'**
+  /// **'三件事'**
   String get workbenchPhilosophyStrengthsTitle;
 
   /// No description provided for @workbenchPhilosophyBackendTitle.
   ///
   /// In zh, this message translates to:
-  /// **'后端'**
+  /// **'Project API'**
   String get workbenchPhilosophyBackendTitle;
 
   /// No description provided for @workbenchPhilosophyBackendDesc.
   ///
   /// In zh, this message translates to:
-  /// **'OOB 全量原生工具（VLM / Alpine / 无障碍 / 文件 / 规划）、Omniflow 可执行记忆库、端侧推理框架'**
+  /// **'白名单工具、持久化数据、运行日志和手机能力统一挂到 Project 上'**
   String get workbenchPhilosophyBackendDesc;
 
   /// No description provided for @workbenchPhilosophyFrontendTitle.
   ///
   /// In zh, this message translates to:
-  /// **'前端'**
+  /// **'Display'**
   String get workbenchPhilosophyFrontendTitle;
 
   /// No description provided for @workbenchPhilosophyFrontendDesc.
   ///
   /// In zh, this message translates to:
-  /// **'Flutter 原生渲染（默认），自然语言热更新，无需重装 APK；HTML 路径规划中'**
+  /// **'普通交互 UI 默认 HTML；报告用 Markdown / HTML；Flutter 保留为容器和受限补充'**
   String get workbenchPhilosophyFrontendDesc;
 
   /// No description provided for @workbenchPhilosophyRuntimeTitle.
   ///
   /// In zh, this message translates to:
-  /// **'运行时'**
+  /// **'Hot update'**
   String get workbenchPhilosophyRuntimeTitle;
 
   /// No description provided for @workbenchPhilosophyRuntimeDesc.
   ///
   /// In zh, this message translates to:
-  /// **'Project 容器把前端 UI、项目 API、持久化数据、日志连成一个可演化的端侧应用实例，跨会话留存，一键导出'**
+  /// **'用户一句话或一次选区标注后，AI 只改必要的前端文件或 API，右侧立即刷新'**
   String get workbenchPhilosophyRuntimeDesc;
 
   /// No description provided for @workbenchPhilosophyHowToTitle.
   ///
   /// In zh, this message translates to:
-  /// **'怎么用'**
+  /// **'使用方式'**
   String get workbenchPhilosophyHowToTitle;
 
   /// No description provided for @workbenchPhilosophyStep1Label.
   ///
   /// In zh, this message translates to:
-  /// **'说'**
+  /// **'生成'**
   String get workbenchPhilosophyStep1Label;
 
   /// No description provided for @workbenchPhilosophyStep1Desc.
   ///
   /// In zh, this message translates to:
-  /// **'在首页输入框描述你想要的应用'**
+  /// **'Agent 创建 Project，写入 API 与显示文件'**
   String get workbenchPhilosophyStep1Desc;
 
   /// No description provided for @workbenchPhilosophyStep2Label.
   ///
   /// In zh, this message translates to:
-  /// **'看'**
+  /// **'查看'**
   String get workbenchPhilosophyStep2Label;
 
   /// No description provided for @workbenchPhilosophyStep2Desc.
   ///
   /// In zh, this message translates to:
-  /// **'小万创建项目，Flutter 界面立刻可见'**
+  /// **'右侧 Workspace 直接预览 HTML / Markdown / Flutter'**
   String get workbenchPhilosophyStep2Desc;
 
   /// No description provided for @workbenchPhilosophyStep3Label.
   ///
   /// In zh, this message translates to:
-  /// **'改'**
+  /// **'修改'**
   String get workbenchPhilosophyStep3Label;
 
   /// No description provided for @workbenchPhilosophyStep3Desc.
   ///
   /// In zh, this message translates to:
-  /// **'继续描述修改，AI 热更新 UI，无需重新创建'**
+  /// **'用悬浮输入或标注提出修改，Project 热更新'**
   String get workbenchPhilosophyStep3Desc;
 
   /// No description provided for @workbenchPhilosophyActivateHint.
   ///
   /// In zh, this message translates to:
-  /// **'激活项目后，工作区右侧实时显示其界面；左侧输入框继续用自然语言编辑。'**
+  /// **'激活项目后，右侧 Workspace 显示它的 Display；继续输入或标注会作为上下文传给 hot update。'**
   String get workbenchPhilosophyActivateHint;
 }
 

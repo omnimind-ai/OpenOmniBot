@@ -49,6 +49,12 @@ class AssistsCoreChannel {
                 "createAgentTask" -> {
                     assistsCoreManager!!.createAgentTask( call, result)
                 }
+                "getInternalRunLogs" -> {
+                    assistsCoreManager!!.getInternalRunLogs(call, result)
+                }
+                "getInternalRunLogTimeline" -> {
+                    assistsCoreManager!!.getInternalRunLogTimeline(call, result)
+                }
                 "agentRunList" -> {
                     assistsCoreManager!!.agentRunList(call, result)
                 }
