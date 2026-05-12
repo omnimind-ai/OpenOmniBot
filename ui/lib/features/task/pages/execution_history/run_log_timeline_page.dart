@@ -52,10 +52,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       if (!mounted) return;
       setState(() {
         _payload = payload;
-        final raw = payload['cards'];
-        _cards = raw is List
-            ? raw.map(_asStringKeyMap).where((card) => card.isNotEmpty).toList()
-            : [];
+        _cards = _extractTimelineCards(payload);
         _isLoading = false;
       });
     } catch (e) {

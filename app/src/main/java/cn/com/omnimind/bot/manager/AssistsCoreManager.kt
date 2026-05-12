@@ -4667,6 +4667,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         "roundIndex" to roundIndex,
                         "kind" to kind,
                         "parentTaskId" to taskId,
+                        "runLogId" to taskId,
+                        "run_id" to taskId,
                         "entryId" to entryId,
                         "isFinal" to isFinal
                     )
