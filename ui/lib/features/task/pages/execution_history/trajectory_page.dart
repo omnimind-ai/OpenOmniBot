@@ -33,15 +33,11 @@ class TrajectoryPage extends StatefulWidget {
   const TrajectoryPage({super.key});
 
   @override
-  State<TrajectoryPage> createState() =>
-      _TrajectoryPageState();
+  State<TrajectoryPage> createState() => _TrajectoryPageState();
 }
 
-class _TrajectoryPageState
-    extends State<TrajectoryPage>
-    with
-        WidgetsBindingObserver,
-        PageLifecycleMixin<TrajectoryPage> {
+class _TrajectoryPageState extends State<TrajectoryPage>
+    with WidgetsBindingObserver, PageLifecycleMixin<TrajectoryPage> {
   List<AppTag> executionTags = [];
 
   List<TaskExecutionInfo> taskExecutionInfos = [];
@@ -415,7 +411,14 @@ class _TrajectoryPageState
   ) async {
     final goal = (suggestionData['goal'] as String?)?.trim() ?? '';
     if (goal.isEmpty) {
-      showToast('Current record does not support execution', type: ToastType.error);
+      showToast(
+        _text(
+          context,
+          '当前记录不支持执行',
+          'Current record does not support execution',
+        ),
+        type: ToastType.error,
+      );
       return;
     }
 
@@ -425,15 +428,28 @@ class _TrajectoryPageState
     );
     if (!mounted) return;
     if (success) {
-      showToast('Task started', type: ToastType.success);
+      showToast(
+        _text(context, '任务已开始', 'Task started'),
+        type: ToastType.success,
+      );
     } else {
-      showToast('Task execution failed', type: ToastType.error);
+      showToast(
+        _text(context, '任务执行失败', 'Task execution failed'),
+        type: ToastType.error,
+      );
     }
   }
 
   Future<void> _onSchedulePressed(ExecutionRecordListItemData record) async {
     if (record.suggestionData == null) {
-      showToast('Current record does not support scheduling', type: ToastType.error);
+      showToast(
+        _text(
+          context,
+          '当前记录不支持定时执行',
+          'Current record does not support scheduling',
+        ),
+        type: ToastType.error,
+      );
       return;
     }
 
@@ -464,7 +480,10 @@ class _TrajectoryPageState
     ScheduledTaskSchedulerService.scheduleTask(result);
     await _loadScheduledTaskKeys();
     if (mounted) {
-      showToast('Scheduled task set', type: ToastType.success);
+      showToast(
+        _text(context, '定时任务已设置', 'Scheduled task set'),
+        type: ToastType.success,
+      );
     }
   }
 
@@ -617,8 +636,10 @@ class _TrajectoryPageState
     final result = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) =>
-          BatchDeleteConfirmSheet(count: count, unit: ' ${context.l10n.trajectoryTaskRecords}'),
+      builder: (context) => BatchDeleteConfirmSheet(
+        count: count,
+        unit: ' ${context.l10n.trajectoryTaskRecords}',
+      ),
     );
 
     if (result == true) {
@@ -644,7 +665,6 @@ class _TrajectoryPageState
 
       // 重新加载标签统计
       await _loadExecutionTags();
-
 
       // 显示删除结果
       if (successCount > 0) {
@@ -713,7 +733,6 @@ class _TrajectoryPageState
 
       // 重新加载标签统计
       await _loadExecutionTags();
-
     } catch (e) {
       print('Error deleting card: $e');
       showToast(context.l10n.skillDeleteFailed, type: ToastType.error);
@@ -738,7 +757,12 @@ class _TrajectoryPageState
           : AppColors.background,
       appBar: _isSelectionMode
           ? _buildSelectionAppBar(filterRecords)
-          : CommonAppBar(title: context.l10n.trajectoryTitle, showAiBadge: false, primary: true),
+          : CommonAppBar(
+              title: context.l10n.trajectoryTitle,
+              showAiBadge: false,
+              primary: true,
+              actions: [_buildRunLogAction()],
+            ),
       body: SafeArea(
         top: false,
         child: Column(
@@ -820,6 +844,17 @@ class _TrajectoryPageState
     );
   }
 
+  Widget _buildRunLogAction() {
+    return Tooltip(
+      message: _text(context, '查看 RunLog', 'View RunLog'),
+      child: IconButton(
+        icon: const Icon(Icons.route_rounded),
+        color: context.omniPalette.textPrimary,
+        onPressed: () => GoRouterManager.push('/task/run_logs'),
+      ),
+    );
+  }
+
   // 选择模式下的 AppBar
   PreferredSizeWidget _buildSelectionAppBar(
     List<ExecutionRecordListItemData> filterRecords,
@@ -855,7 +890,9 @@ class _TrajectoryPageState
           child: TextButton(
             onPressed: () => _toggleSelectAll(filterRecords),
             child: Text(
-              isAllSelected ? context.l10n.memoryDeselectAll : context.trLegacy('全选'),
+              isAllSelected
+                  ? context.l10n.memoryDeselectAll
+                  : context.trLegacy('全选'),
               style: TextStyle(
                 color: palette.accentPrimary,
                 fontSize: 14,
@@ -886,7 +923,7 @@ class _TrajectoryPageState
             ),
           ),
           const SizedBox(height: 12),
-          
+
           Text(
             context.l10n.trajectoryNoRecordsDesc,
             textAlign: TextAlign.center,
@@ -954,4 +991,8 @@ class _TrajectoryPageState
       ),
     );
   }
+}
+
+String _text(BuildContext context, String zh, String en) {
+  return Localizations.localeOf(context).languageCode == 'zh' ? zh : en;
 }

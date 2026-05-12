@@ -256,14 +256,18 @@ class TaskManager(
     ) {
         finishDoingTask()
         pauseCompanionTaskRunning()
-        runningTask = VLMOperationTask(
+        val vlmTask = VLMOperationTask(
             assistsEventApi?.getExecutionEventImpl(),
             taskChangeListener,
             params.onMessagePushListener,
             params.needSummary
             ,this
         )
-        (runningTask as VLMOperationTask).start(
+        params.taskId?.trim()?.takeIf { it.isNotEmpty() }?.let { taskId ->
+            vlmTask.id = taskId
+        }
+        runningTask = vlmTask
+        vlmTask.start(
             context,
             params.goal,
             params.model,

@@ -199,7 +199,8 @@ class AssistsUtil {
             onMessagePushListener: OnMessagePushListener,
             needSummary: Boolean = false,
             skipGoHome: Boolean = false,  // 是否跳过回到主页，从当前页面开始执行
-            stepSkillGuidance: String = ""
+            stepSkillGuidance: String = "",
+            taskId: String? = null
         ) {
 
             if (!AssistsCore.isAccessibilityServiceEnabled()) {
@@ -229,7 +230,8 @@ class AssistsUtil {
                     needSummary,
                     onMessagePushListener,
                     skipGoHome,
-                    stepSkillGuidance
+                    stepSkillGuidance,
+                    taskId
                 )
             )
         }

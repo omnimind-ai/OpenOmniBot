@@ -48,6 +48,7 @@ import cn.com.omnimind.baselib.llm.SceneModelOverrideEntry
 import cn.com.omnimind.baselib.llm.SceneModelOverrideStore
 import cn.com.omnimind.baselib.llm.SceneVoiceConfig
 import cn.com.omnimind.baselib.llm.SceneVoiceConfigStore
+import cn.com.omnimind.baselib.runlog.InternalRunLogStore
 import cn.com.omnimind.baselib.util.APPPackageUtil
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.baselib.util.RuntimeLogStore
@@ -83,7 +84,6 @@ import cn.com.omnimind.bot.agent.ToolExecutionResult
 import cn.com.omnimind.bot.agent.WorkspaceMemoryRollupScheduler
 import cn.com.omnimind.bot.agent.WorkspaceMemoryService
 import cn.com.omnimind.bot.agent.WorkspaceScheduledTaskScheduler
-import cn.com.omnimind.bot.agent.resolveToolExecutionStatus
 import cn.com.omnimind.bot.localmodel.LocalModelFeature
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
@@ -1393,7 +1393,11 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 previewJson = result.previewJson
                 rawResultJson = result.rawResultJson
                 success = result.success
-                status = resolveToolExecutionStatus(result)
+                status = when {
+                    result.timedOut -> AgentConversationHistoryRepository.STATUS_TIMEOUT
+                    result.success -> AgentConversationHistoryRepository.STATUS_SUCCESS
+                    else -> AgentConversationHistoryRepository.STATUS_ERROR
+                }
             }
             is ToolExecutionResult.Interrupted -> {
                 summary = result.summaryText
@@ -1457,6 +1461,86 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             payload["actions"] = result.actions.map { it.toPayload() }
         }
         return payload
+    }
+
+    private fun buildAgentToolRunLogCard(
+        entryId: String,
+        toolName: String,
+        argsJson: String,
+        payload: Map<String, Any?>,
+        status: String,
+        startedAtMillis: Long,
+        finishedAtMillis: Long? = null
+    ): Map<String, Any?> {
+        val meta = resolveAgentToolMeta(toolName)
+        val durationMs = finishedAtMillis?.let { (it - startedAtMillis).coerceAtLeast(0L) }
+        val success = when (val raw = payload["success"]) {
+            is Boolean -> raw
+            is String -> raw.equals("true", ignoreCase = true)
+            else -> when (status) {
+                AgentConversationHistoryRepository.STATUS_SUCCESS, "success", "running" -> true
+                else -> false
+            }
+        }
+        val title = listOf(
+            payload["toolTitle"],
+            payload["summary"],
+            payload["displayName"],
+            meta.displayName,
+            toolName
+        ).firstNotNullOfOrNull { raw ->
+            raw?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        }.orEmpty()
+        val resultValue = payload["resultPreviewJson"]
+            ?: payload["rawResultJson"]
+            ?: payload["progress"]?.let { progress ->
+                JSONObject(
+                    mapOf(
+                        "status" to status,
+                        "progress" to progress.toString()
+                    )
+                ).toString()
+            }
+            ?: JSONObject(mapOf("status" to status)).toString()
+        val stepIndex = entryId.substringAfterLast('-')
+            .toIntOrNull()
+            ?.minus(1)
+            ?.coerceAtLeast(0)
+            ?: 0
+        val header = linkedMapOf<String, Any?>(
+            "step_index" to stepIndex,
+            "title" to title,
+            "tool_name" to toolName,
+            "status" to status,
+            "success" to success
+        )
+        durationMs?.let { header["duration_ms"] = it }
+        return linkedMapOf(
+            "card_id" to entryId,
+            "tool_call_id" to entryId,
+            "header" to header,
+            "title" to title,
+            "summary" to payload["summary"],
+            "tool_name" to toolName,
+            "toolName" to toolName,
+            "tool_type" to meta.toolType,
+            "server_name" to meta.serverName,
+            "status" to status,
+            "success" to success,
+            "duration_ms" to durationMs,
+            "started_at_ms" to startedAtMillis,
+            "finished_at_ms" to finishedAtMillis,
+            "tool_call" to linkedMapOf(
+                "id" to entryId,
+                "name" to toolName,
+                "arguments" to argsJson
+            ),
+            "params" to argsJson,
+            "arguments" to argsJson,
+            "result" to resultValue,
+            "raw_result_json" to payload["rawResultJson"],
+            "compile_kind" to "agent_tool"
+        )
     }
 
     private fun conversationHistoryRepository(): AgentConversationHistoryRepository {
@@ -2127,7 +2211,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     call.argument<String>("packageName"),
                     vlmListener,
                     needSummary,
-                    skipGoHome
+                    skipGoHome,
+                    call.argument<String>("stepSkillGuidance").orEmpty(),
+                    taskId.takeIf { it.isNotBlank() }
                 )
                 withContext(Dispatchers.Main) {
                     result.success("SUCCESS")
@@ -2143,6 +2229,26 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             }
         }
 
+    }
+
+    fun getInternalRunLogs(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val limit = call.argument<Number>("limit")?.toInt() ?: 50
+            val payload = InternalRunLogStore.listRuns(context, limit)
+            withContext(Dispatchers.Main) {
+                result.success(payload)
+            }
+        }
+    }
+
+    fun getInternalRunLogTimeline(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val runId = call.argument<String>("runId")?.trim().orEmpty()
+            val payload = InternalRunLogStore.timelinePayload(context, runId)
+            withContext(Dispatchers.Main) {
+                result.success(payload)
+            }
+        }
     }
 
     /**
@@ -3852,7 +3958,17 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         workJob.launch {
             runCatching {
                 val projectId = call.argument<String>("projectId")?.trim().orEmpty()
-                workbenchProjectStore.getProject(projectId)
+                val includeSources = call.argument<Boolean>("includeSources") ?: true
+                val includeRuntimeState =
+                    call.argument<Boolean>("includeRuntimeState") ?: true
+                val includeFrontendPayloads =
+                    call.argument<Boolean>("includeFrontendPayloads") ?: true
+                workbenchProjectStore.getProject(
+                    projectId = projectId,
+                    includeSources = includeSources,
+                    includeRuntimeState = includeRuntimeState,
+                    includeFrontendPayloads = includeFrontendPayloads
+                )
             }.onSuccess { payload ->
                 withContext(Dispatchers.Main) { result.success(payload) }
             }.onFailure { error ->
@@ -3929,7 +4045,12 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     fun workbenchProjectActiveGet(call: MethodCall, result: MethodChannel.Result) {
         workJob.launch {
             runCatching {
-                workbenchProjectStore.getActiveProject()
+                val includeSources = call.argument<Boolean>("includeSources") ?: false
+                val compact = call.argument<Boolean>("compact") ?: false
+                workbenchProjectStore.getActiveProject(
+                    includeSources = includeSources,
+                    includeManifest = !compact
+                )
             }.onSuccess { payload ->
                 withContext(Dispatchers.Main) { result.success(payload) }
             }.onFailure { error ->
@@ -4353,6 +4474,18 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 "Ignoring legacy conversationHistory for createAgentTask taskId=$taskId size=${legacyConversationHistory.size}"
             )
         }
+        runCatching {
+            InternalRunLogStore.beginRun(
+                context = context,
+                runId = taskId,
+                goal = userMessage,
+                source = "agent",
+                toolName = "agent",
+                operationDescription = userMessage
+            )
+        }.onFailure {
+            OmniLog.w(TAG, "begin internal agent run log failed: ${it.message}")
+        }
         val agentRunJob = SupervisorJob()
         val agentRunScope = CoroutineScope(agentRunJob + Dispatchers.Default)
         val agentRunContext = ActiveAgentRunContext(
@@ -4404,6 +4537,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 val executor = OmniAgentExecutor(context, agentRunScope, scheduleBridge)
                 val activeToolArgs = mutableMapOf<String, ArrayDeque<String>>()
                 val activeToolEntryIds = mutableMapOf<String, ArrayDeque<String>>()
+                val activeToolStartTimes = mutableMapOf<String, Long>()
                 val thinkingCardStartTimes = mutableMapOf<String, Long>()
                 val entryCreatedAtTimes = mutableMapOf<String, Long>()
                 val entryOrderSeqs = mutableMapOf<String, Long>()
@@ -4417,6 +4551,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 var assistantRound = 0
                 var latestThinkingContent = ""
                 var latestAssistantVisibleText = ""
+                var shouldStartNewThinkingSegment = false
                 var shouldStartNewAssistantRound = false
 
                 fun pushToolValue(
@@ -4498,11 +4633,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 }
 
                 fun resolveThinkingEntryId(round: Int): String {
-                    return if (round <= 1) {
-                        "$taskId-thinking"
-                    } else {
-                        "$taskId-thinking-$round"
-                    }
+                    return if (round <= 1) "$taskId-thinking" else "$taskId-thinking-$round"
                 }
 
                 fun resolveAssistantEntryId(round: Int): String {
@@ -4528,13 +4659,16 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 fun streamMeta(
                     entryId: String,
                     roundIndex: Int,
-                    kind: String
+                    kind: String,
+                    isFinal: Boolean = false
                 ): Map<String, Any?> {
                     return linkedMapOf(
                         "seq" to resolveEntryOrderSeq(entryId),
                         "roundIndex" to roundIndex,
                         "kind" to kind,
-                        "parentTaskId" to taskId
+                        "parentTaskId" to taskId,
+                        "entryId" to entryId,
+                        "isFinal" to isFinal
                     )
                 }
 
@@ -4654,6 +4788,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     roundIndex: Int,
                     text: String,
                     isError: Boolean,
+                    isFinal: Boolean = false,
                     streamKind: String = "text_snapshot"
                 ) {
                     val normalizedConversationId = conversationId ?: return
@@ -4672,7 +4807,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             streamMeta = streamMeta(
                                 entryId = entryId,
                                 roundIndex = roundIndex,
-                                kind = streamKind
+                                kind = streamKind,
+                                isFinal = isFinal
                             ),
                             createdAt = createdAt
                         )
@@ -4700,7 +4836,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             streamMeta = streamMeta(
                                 entryId = entryId,
                                 roundIndex = roundIndex,
-                                kind = "clarify_required"
+                                kind = "clarify_required",
+                                isFinal = true
                             ),
                             createdAt = createdAt
                         )
@@ -4740,7 +4877,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             streamMeta = streamMeta(
                                 entryId = textEntryId,
                                 roundIndex = roundIndex,
-                                kind = "permission_required"
+                                kind = "permission_required",
+                                isFinal = true
                             ),
                             createdAt = entryCreatedAtTimes.getOrPut(textEntryId) {
                                 System.currentTimeMillis()
@@ -4756,7 +4894,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                                 streamMeta = streamMeta(
                                     entryId = "$taskId-permission",
                                     roundIndex = roundIndex,
-                                    kind = "permission_required"
+                                    kind = "permission_required",
+                                    isFinal = true
                                 ),
                                 createdAt = entryCreatedAtTimes.getOrPut("$taskId-permission") {
                                     System.currentTimeMillis()
@@ -4855,7 +4994,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                                 "streamMeta" to streamMeta(
                                     entryId = resolvedEntryId,
                                     roundIndex = roundIndex,
-                                    kind = kind
+                                    kind = kind,
+                                    isFinal = isFinal
                                 )
                             )
                         } ?: basePayload
@@ -4884,52 +5024,62 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 // 3. 创建回调
                 val callback = object : AgentCallback {
                     override suspend fun onThinkingStart() {
-                        finalizeThinkingCardIfNeeded(publish = false)
-                        thinkingRound += 1
+                        val startsNewSegment =
+                            activeThinkingEntryId == null || shouldStartNewThinkingSegment
+                        if (startsNewSegment) {
+                            finalizeThinkingCardIfNeeded(publish = false)
+                            thinkingRound = (thinkingRound + 1).coerceAtLeast(1)
+                            activeThinkingEntryId = resolveThinkingEntryId(thinkingRound)
+                            latestThinkingContent = ""
+                            shouldStartNewThinkingSegment = false
+                        } else if (thinkingRound <= 0) {
+                            thinkingRound = 1
+                        }
                         val entryId = resolveThinkingEntryId(thinkingRound)
                         val startTime = System.currentTimeMillis()
                         activeThinkingEntryId = entryId
-                        latestThinkingContent = ""
                         thinkingCardStartTimes.putIfAbsent(entryId, startTime)
                         markAssistantRoundBoundary()
                         upsertThinkingCard(
                             entryId = entryId,
                             roundIndex = thinkingRound,
-                            thinkingContent = "",
+                            thinkingContent = if (startsNewSegment) "" else latestThinkingContent,
                             isLoading = true,
                             stage = 1,
                             createdAt = startTime,
                             streamKind = "thinking_started",
                             publish = false
                         )
-                        sendStreamEvent(
-                            kind = "thinking_started",
-                            entryId = entryId,
-                            roundIndex = thinkingRound,
-                            thinking = "",
-                            stage = 1
-                        )
+                        if (startsNewSegment) {
+                            sendStreamEvent(
+                                kind = "thinking_started",
+                                entryId = entryId,
+                                roundIndex = thinkingRound,
+                                thinking = "",
+                                stage = 1
+                            )
+                        }
                     }
 
                     override suspend fun onThinkingUpdate(thinking: String) {
                         val normalizedThinking = AgentTextSanitizer.sanitizeUtf16(thinking).trim()
+                        if (activeThinkingEntryId == null || shouldStartNewThinkingSegment) {
+                            thinkingRound = (thinkingRound + 1).coerceAtLeast(1)
+                            val generated = resolveThinkingEntryId(thinkingRound)
+                            activeThinkingEntryId = generated
+                            latestThinkingContent = ""
+                            shouldStartNewThinkingSegment = false
+                            thinkingCardStartTimes.putIfAbsent(
+                                generated,
+                                System.currentTimeMillis()
+                            )
+                        }
                         if (shouldIgnoreRegressiveSnapshot(latestThinkingContent, normalizedThinking)) {
                             OmniLog.d(
                                 TAG,
                                 "ignore stale thinking snapshot: incoming=${normalizedThinking.length}, current=${latestThinkingContent.length}"
                             )
                             return
-                        }
-                        if (activeThinkingEntryId == null) {
-                            if (thinkingRound <= 0) {
-                                thinkingRound = 1
-                            }
-                            val generated = resolveThinkingEntryId(thinkingRound)
-                            activeThinkingEntryId = generated
-                            thinkingCardStartTimes.putIfAbsent(
-                                generated,
-                                System.currentTimeMillis()
-                            )
                         }
                         val entryId = activeThinkingEntryId
                         latestThinkingContent = normalizedThinking
@@ -4949,6 +5099,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         val argsJson = arguments.toString()
                         pushToolValue(activeToolArgs, toolName, argsJson)
                         val entryId = "$taskId-tool-${++toolSequence}"
+                        val startedAtMillis = System.currentTimeMillis()
+                        activeToolStartTimes[entryId] = startedAtMillis
                         val roundIndex = currentToolRoundIndex()
                         pushToolValue(activeToolEntryIds, toolName, entryId)
                         agentRunContext.bindActiveToolCardId(entryId)
@@ -4963,9 +5115,27 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                                 publish = false
                             )
                         }
+                        shouldStartNewThinkingSegment = true
                         markAssistantRoundBoundary()
                         val payload = buildToolStartPayload(toolName, argsJson).toMutableMap().apply {
                             put("cardId", entryId)
+                        }
+                        runCatching {
+                            InternalRunLogStore.upsertCard(
+                                context = context,
+                                runId = taskId,
+                                cardId = entryId,
+                                card = buildAgentToolRunLogCard(
+                                    entryId = entryId,
+                                    toolName = toolName,
+                                    argsJson = argsJson,
+                                    payload = payload,
+                                    status = AgentConversationHistoryRepository.STATUS_RUNNING,
+                                    startedAtMillis = startedAtMillis
+                                )
+                            )
+                        }.onFailure {
+                            OmniLog.w(TAG, "upsert agent tool run log start failed: ${it.message}")
                         }
                         upsertToolEvent(
                             entryId = entryId,
@@ -5000,6 +5170,27 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         ).toMutableMap().apply {
                             if (entryId.isNotBlank()) {
                                 put("cardId", entryId)
+                            }
+                        }
+                        if (entryId.isNotBlank()) {
+                            val startedAtMillis = activeToolStartTimes[entryId]
+                                ?: System.currentTimeMillis()
+                            runCatching {
+                                InternalRunLogStore.upsertCard(
+                                    context = context,
+                                    runId = taskId,
+                                    cardId = entryId,
+                                    card = buildAgentToolRunLogCard(
+                                        entryId = entryId,
+                                        toolName = toolName,
+                                        argsJson = peekToolValue(activeToolArgs, toolName),
+                                        payload = payload,
+                                        status = AgentConversationHistoryRepository.STATUS_RUNNING,
+                                        startedAtMillis = startedAtMillis
+                                    )
+                                )
+                            }.onFailure {
+                                OmniLog.w(TAG, "upsert agent tool run log progress failed: ${it.message}")
                             }
                         }
                         upsertToolEvent(
@@ -5046,6 +5237,32 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                                 put("cardId", entryId)
                             }
                         val success = payload["success"] != false
+                        val finishedAtMillis = System.currentTimeMillis()
+                        val startedAtMillis = activeToolStartTimes.remove(entryId)
+                            ?: finishedAtMillis
+                        runCatching {
+                            InternalRunLogStore.upsertCard(
+                                context = context,
+                                runId = taskId,
+                                cardId = entryId,
+                                card = buildAgentToolRunLogCard(
+                                    entryId = entryId,
+                                    toolName = toolName,
+                                    argsJson = argsJson,
+                                    payload = payload,
+                                    status = payload["status"]?.toString()
+                                        ?: if (success) {
+                                            AgentConversationHistoryRepository.STATUS_SUCCESS
+                                        } else {
+                                            AgentConversationHistoryRepository.STATUS_ERROR
+                                        },
+                                    startedAtMillis = startedAtMillis,
+                                    finishedAtMillis = finishedAtMillis
+                                )
+                            )
+                        }.onFailure {
+                            OmniLog.w(TAG, "upsert agent tool run log complete failed: ${it.message}")
+                        }
                         upsertToolEvent(
                             entryId = entryId,
                             roundIndex = roundIndex,
@@ -5153,6 +5370,16 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
                     override suspend fun onComplete(result: AgentResult) {
                         val isSuccess = result is AgentResult.Success
+                        runCatching {
+                            InternalRunLogStore.finishRun(
+                                context = context,
+                                runId = taskId,
+                                success = isSuccess,
+                                doneReason = if (isSuccess) "finished" else "error"
+                            )
+                        }.onFailure {
+                            OmniLog.w(TAG, "finish internal agent run log failed: ${it.message}")
+                        }
                         val outputKind = (result as? AgentResult.Success)?.outputKind ?: "none"
                         val hasUserVisibleOutput =
                             (result as? AgentResult.Success)?.hasUserVisibleOutput == true
@@ -5198,6 +5425,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                                     roundIndex = roundIndex,
                                     text = finalText,
                                     isError = !isSuccess,
+                                    isFinal = true,
                                     streamKind = "text_snapshot"
                                 )
                                 sendStreamEvent(
@@ -5240,6 +5468,17 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     }
 
                     override suspend fun onError(error: String) {
+                        runCatching {
+                            InternalRunLogStore.finishRun(
+                                context = context,
+                                runId = taskId,
+                                success = false,
+                                doneReason = "error",
+                                errorMessage = error
+                            )
+                        }.onFailure {
+                            OmniLog.w(TAG, "finish internal agent error run log failed: ${it.message}")
+                        }
                         val resolution = resolveAgentFinalErrorResolution(
                             streamed = scheduledAssistantBuffer.toString().ifBlank {
                                 latestAssistantVisibleText
@@ -5271,6 +5510,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                                     roundIndex = roundIndex,
                                     text = finalText,
                                     isError = resolution.persistAsError,
+                                    isFinal = true,
                                     streamKind = "text_snapshot"
                                 )
                                 sendStreamEvent(
@@ -5361,6 +5601,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                                 roundIndex = roundIndex,
                                 text = normalizedMessage,
                                 isError = false,
+                                isFinal = isFinal,
                                 streamKind = "text_snapshot"
                             )
                         }
@@ -5447,8 +5688,30 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 )
             } catch (e: CancellationException) {
                 OmniLog.i(TAG, "createAgentTask cancelled: ${e.message}")
+                runCatching {
+                    InternalRunLogStore.finishRun(
+                        context = context,
+                        runId = taskId,
+                        success = false,
+                        doneReason = "cancelled",
+                        errorMessage = e.message
+                    )
+                }.onFailure {
+                    OmniLog.w(TAG, "finish internal agent cancelled run log failed: ${it.message}")
+                }
             } catch (e: Exception) {
                 OmniLog.e(TAG, "createAgentTask error: ${e.message}")
+                runCatching {
+                    InternalRunLogStore.finishRun(
+                        context = context,
+                        runId = taskId,
+                        success = false,
+                        doneReason = "error",
+                        errorMessage = e.message
+                    )
+                }.onFailure {
+                    OmniLog.w(TAG, "finish internal agent exception run log failed: ${it.message}")
+                }
                 val errorMessage = e.message?.trim()?.takeIf { it.isNotEmpty() }?.let {
                     "Agent execution failed: $it"
                 } ?: "Agent execution failed"

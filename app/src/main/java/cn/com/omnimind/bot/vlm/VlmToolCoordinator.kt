@@ -355,6 +355,7 @@ object VlmToolCoordinator {
                         needSummary = payload.needSummary ?: false,
                         skipGoHome = payload.skipGoHome,
                         stepSkillGuidance = payload.stepSkillGuidance,
+                        taskId = taskId,
                     )
                     deferred.complete(Result.success(Unit))
                 } catch (e: Exception) {

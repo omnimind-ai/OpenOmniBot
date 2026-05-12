@@ -1912,6 +1912,40 @@ class AssistsMessageService {
     return UtgRunLogsSnapshot.fromMap(decoded);
   }
 
+  static Future<UtgRunLogsSnapshot> getInternalRunLogs({int limit = 50}) async {
+    final result = await assistCore.invokeMethod('getInternalRunLogs', {
+      'limit': limit,
+    });
+    if (result is! Map) {
+      throw Exception('内部 RunLog 响应格式错误');
+    }
+    return UtgRunLogsSnapshot.fromMap(Map<String, dynamic>.from(result));
+  }
+
+  static Future<UtgRunLogsSnapshot> getRunLogsPreferInternal({
+    String? baseUrl,
+    int limit = 50,
+  }) async {
+    UtgRunLogsSnapshot? internalSnapshot;
+    try {
+      internalSnapshot = await getInternalRunLogs(limit: limit);
+      if (internalSnapshot.runs.isNotEmpty) {
+        return internalSnapshot;
+      }
+    } catch (_) {
+      internalSnapshot = null;
+    }
+
+    try {
+      return await getUtgRunLogs(baseUrl: baseUrl, limit: limit);
+    } catch (_) {
+      if (internalSnapshot != null) {
+        return internalSnapshot;
+      }
+      rethrow;
+    }
+  }
+
   static Future<UtgRunLogDetail> getUtgRunLogDetail({
     required String runId,
     String? baseUrl,
@@ -1973,6 +2007,33 @@ class AssistsMessageService {
       baseUrl: baseUrl,
     );
     return Map<String, dynamic>.from(decoded);
+  }
+
+  static Future<Map<String, dynamic>> getInternalRunLogTimeline({
+    required String runId,
+  }) async {
+    final result = await assistCore.invokeMethod('getInternalRunLogTimeline', {
+      'runId': runId.trim(),
+    });
+    if (result is! Map) {
+      throw Exception('内部 RunLog 响应格式错误');
+    }
+    return Map<String, dynamic>.from(result);
+  }
+
+  static Future<Map<String, dynamic>> getRunLogTimelinePreferInternal({
+    required String runId,
+    String? baseUrl,
+  }) async {
+    try {
+      final internal = await getInternalRunLogTimeline(runId: runId);
+      if (internal['success'] == true) {
+        return internal;
+      }
+    } catch (_) {
+      // Fall back to OmniFlow provider below.
+    }
+    return getRunLogTimeline(runId: runId, baseUrl: baseUrl);
   }
 
   /// 将当前 OOB 模型 provider 的 API Key 推送到 OmniFlow（best-effort）。
