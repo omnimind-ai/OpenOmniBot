@@ -23,7 +23,6 @@ A Workbench Project is a persistent container with:
 - `apis`: Project Tools that both AI and UI can call
 - `initialItems`: optional persisted state in `data/items.json`
 - `htmlFiles`: optional HTML/CSS/JS display files under `frontend/html/`
-- `flutterFiles`: optional limited `flutter_eval` files under `frontend/flutter/`
 - logs for API calls, hot updates, and progress
 
 Do not ask for or invent preset app names. Do not create a replacement Project for a feature update unless the user explicitly asks for a new Project.
@@ -202,7 +201,9 @@ Use `entityName`, `initialItems`, and Project Tools to make this fallback useful
 
 ## Flutter Eval Display
 
-`flutterFiles` are supplemental. Use them only when HTML and the default Project Display are insufficient and the limited `flutter_eval` runtime is acceptable.
+`flutterFiles` is a platform feature for hand-written Dart widgets only. **Do not generate `flutterFiles` automatically.** AI-generated Dart code routinely uses `GlobalKey`, `Form`, `showDialog`, and third-party packages that are not bridged in the `flutter_eval` runtime and will silently fail to compile. Use `htmlFiles` instead for all AI-generated display output.
+
+This section documents constraints for human authors who deliberately write `flutterFiles`:
 
 - Entry file defaults to `lib/main.dart`.
 - Entry class defaults to `OobProjectWidget`.
@@ -221,26 +222,13 @@ Use `entityName`, `initialItems`, and Project Tools to make this fallback useful
 - 第三方包不会自动可用。只有 OOB 预置、编译进 App、并提供 eval bridge/权限白名单的包才能用。
 - `dart:io`、`dart:isolate`、`dart:mirrors` 不属于 Project UI 安全子集。文件、网络、进程、并发和反射能力必须通过 Project Tool / HTML bridge / OOB native API 暴露，不能直接从 eval UI 访问。
 
-**推荐的替代写法：**
-```dart
-// ❌ 不行
-final _key = GlobalKey<FormState>();
-Form(key: _key, child: ...)
-_key.currentState!.validate()
-
-// ✅ 改成
-final _controller = TextEditingController();
-bool _hasError = false;
-// 提交时手动检查：if (_controller.text.trim().isEmpty) setState(() => _hasError = true);
-```
-
 ## Hot Update
 
 When the user says “change this”, update the same Project.
 
 1. Call `workbench_project_hot_update` with `projectId`, prompt, and `frontendContext` when available.
 2. If it returns `requiresAgentRegeneration=true` and `frontendHtml.sources` exists, edit the smallest affected HTML/CSS/JS file.
-3. Call `workbench_project_update` with `htmlFiles` or `flutterFiles`.
+3. Call `workbench_project_update` with `htmlFiles`.
 4. Keep Project Tool ids stable unless the user asks to change the backend contract.
 
 For selected HTML elements, prefer `frontendContext.selectedElement`, `data-oob-id`, nearby DOM text, and current `project.frontendHtml.sources`.
