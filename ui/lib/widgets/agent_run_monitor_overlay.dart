@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/floating_overlay_service.dart';
@@ -140,8 +140,14 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
   Future<void> _showRuns() async {
     await _refresh();
     if (!mounted) return;
+    final sheetContext = GoRouterManager.rootNavigatorKey.currentContext;
+    if (sheetContext == null || !sheetContext.mounted) {
+      _showSnack('无法打开 Agent 管理面板');
+      return;
+    }
     await showModalBottomSheet<void>(
-      context: context,
+      context: sheetContext,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _AgentRunMonitorSheet(
@@ -164,7 +170,7 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
     final conversationId = run.conversationId;
     if (conversationId == null || conversationId.isEmpty) return;
     final requestKey = DateTime.now().microsecondsSinceEpoch.toString();
-    context.go(
+    GoRouterManager.go(
       Uri(
         path: '/home/chat',
         queryParameters: {
@@ -316,21 +322,21 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
                     child: SizedBox(
                       width: capsuleSize.width,
                       height: capsuleSize.height,
-                      child: Center(
-                        child: _capsuleCollapsed
-                            ? _AgentRunMiniCapsule(
+                      child: _capsuleCollapsed
+                          ? Center(
+                              child: _AgentRunMiniCapsule(
                                 count: _runs.length,
                                 dragging: _dragging,
-                              )
-                            : _AgentRunExpandedCapsule(
-                                runs: _runs,
-                                latestEvents: _latestEvents,
-                                dragging: _dragging,
-                                onCollapse: () => _setCapsuleCollapsed(true),
-                                onDisable: () =>
-                                    unawaited(_disableFloatingOverlay()),
                               ),
-                      ),
+                            )
+                          : _AgentRunExpandedCapsule(
+                              runs: _runs,
+                              latestEvents: _latestEvents,
+                              dragging: _dragging,
+                              onCollapse: () => _setCapsuleCollapsed(true),
+                              onDisable: () =>
+                                  unawaited(_disableFloatingOverlay()),
+                            ),
                     ),
                   ),
                 ),
@@ -424,8 +430,6 @@ class _AgentRunExpandedCapsule extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         curve: Curves.easeOutCubic,
-        width: double.infinity,
-        height: double.infinity,
         padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
         decoration: BoxDecoration(
           color: palette.surfacePrimary.withValues(alpha: 0.97),
@@ -471,8 +475,9 @@ class _AgentRunExpandedCapsule extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                Tooltip(
-                  message: '隐藏悬浮球',
+                Semantics(
+                  button: true,
+                  label: '隐藏悬浮球',
                   child: IconButton(
                     visualDensity: VisualDensity.compact,
                     padding: EdgeInsets.zero,
@@ -488,8 +493,9 @@ class _AgentRunExpandedCapsule extends StatelessWidget {
                     ),
                   ),
                 ),
-                Tooltip(
-                  message: '收起',
+                Semantics(
+                  button: true,
+                  label: '收起',
                   child: IconButton(
                     visualDensity: VisualDensity.compact,
                     padding: EdgeInsets.zero,

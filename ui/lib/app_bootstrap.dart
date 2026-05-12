@@ -155,6 +155,7 @@ class _MyAppState extends ConsumerState<MyApp> {
     final resolvedLocale = ref.watch(appResolvedLocaleProvider);
     LegacyTextLocalizer.setResolvedLocale(resolvedLocale.locale);
     final widget = MaterialApp.router(
+      debugShowCheckedModeBanner: false,
       onGenerateTitle: (context) =>
           AppLocalizations.of(context)?.appName ?? 'Omnibot',
       theme: AppTheme.lightTheme,
@@ -166,7 +167,7 @@ class _MyAppState extends ConsumerState<MyApp> {
       locale: resolvedLocale.locale,
       builder: (context, child) {
         final brightness = Theme.of(context).brightness;
-        return AnnotatedRegion<SystemUiOverlayStyle>(
+        final content = AnnotatedRegion<SystemUiOverlayStyle>(
           value: AppTheme.overlayStyleForBrightness(brightness),
           child: Stack(
             fit: StackFit.expand,
@@ -176,6 +177,16 @@ class _MyAppState extends ConsumerState<MyApp> {
               if (!GoRouterManager.isSubEngine) const AgentRunMonitorOverlay(),
             ],
           ),
+        );
+        final mediaQuery = MediaQuery.maybeOf(context);
+        if (mediaQuery == null) {
+          return content;
+        }
+        return MediaQuery(
+          data: mediaQuery.copyWith(
+            textScaler: mediaQuery.textScaler.clamp(maxScaleFactor: 1.2),
+          ),
+          child: content,
         );
       },
       localizationsDelegates: AppLocalizations.localizationsDelegates,
