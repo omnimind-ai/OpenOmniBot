@@ -745,6 +745,7 @@ class AgentOrchestratorTest {
         override val runControl: AgentRunControl = NoOpAgentRunControl
     ) : AgentExecutionEnvironment {
         override val agentRunId: String = "test-run"
+        override val attachments: List<Map<String, Any?>> = emptyList()
         override val currentPackageName: String? = null
         override val runtimeContextRepository: AgentRuntimeContextRepository
             get() = throw UnsupportedOperationException("unused in test")

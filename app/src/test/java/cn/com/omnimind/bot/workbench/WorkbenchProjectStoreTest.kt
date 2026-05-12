@@ -78,7 +78,8 @@ class WorkbenchProjectStoreTest {
             caller = "test"
         )
         assertTrue(createResult["success"] == true)
-        val created = createResult["item"] as Map<*, *>
+        val createOutputs = createResult["outputs"] as Map<*, *>
+        val created = createOutputs["item"] as Map<*, *>
         assertEquals("Reusable display idea", created["title"])
 
         val archiveResult = store.callApi(
@@ -88,7 +89,8 @@ class WorkbenchProjectStoreTest {
             caller = "test"
         )
         assertTrue(archiveResult["success"] == true)
-        val archived = archiveResult["item"] as Map<*, *>
+        val archiveOutputs = archiveResult["outputs"] as Map<*, *>
+        val archived = archiveOutputs["item"] as Map<*, *>
         assertEquals("archived", archived["status"])
     }
 

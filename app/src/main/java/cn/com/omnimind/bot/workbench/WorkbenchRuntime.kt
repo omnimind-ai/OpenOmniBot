@@ -480,9 +480,15 @@ class WorkbenchProjectStore(
         } else {
             newDisplays
         }
+        val existingDisplays = pageSpec["displays"] as? List<*>
+        val baseDisplays = if (requestedHtmlFiles.isNotEmpty() && existingDisplays == null) {
+            emptyList<Map<String, Any?>>()
+        } else {
+            existingDisplays ?: workbenchDisplays(record)
+        }
         val mergedDisplays = normalizeDefaultDisplaySelection(
             mergeDisplaySpecs(
-                base = (pageSpec["displays"] as? List<*>) ?: workbenchDisplays(record),
+                base = baseDisplays,
                 additions = displayAdditions
             ),
             preferredDisplayId = if (requestedHtmlFiles.isNotEmpty()) "html-main-display" else null
@@ -1997,6 +2003,7 @@ class WorkbenchProjectStore(
         "scope" to "same_project",
         "mutationTargets" to listOf(
             "frontend/page_spec.json",
+            "frontend/html/",
             "frontend/flutter/",
             "backend/api_spec.json",
             "data/items.json",
