@@ -4,7 +4,10 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/models/conversation_model.dart';
 import 'package:ui/services/assists_core_service.dart';
+import 'package:ui/services/app_state_service.dart';
+import 'package:ui/services/conversation_service.dart';
 import 'package:ui/services/image_prewarm_cache_service.dart';
 import 'package:ui/services/screen_dialog_service.dart';
 import 'package:ui/services/storage_service.dart';
@@ -49,6 +52,14 @@ class _CommandOverlayState extends State<CommandOverlay> {
   String _openClawUserId = '';
   bool _showSlashCommandPanel = false;
   bool _openClawPanelExpanded = false;
+  bool _isChatSheetVisible = false;
+  bool _conversationPanelExpanded = false;
+  bool _conversationSummariesLoading = false;
+  bool _conversationSummariesLoaded = false;
+  String? _conversationPanelError;
+  List<ConversationModel> _recentConversations = const [];
+  StreamSubscription<Map<String, dynamic>>?
+  _conversationListChangedSubscription;
   bool _annotationMode = false;
   final TextEditingController _openClawBaseUrlController =
       TextEditingController();
@@ -65,6 +76,16 @@ class _CommandOverlayState extends State<CommandOverlay> {
     _messageController.addListener(_handleSlashCommandInput);
     _onGetScheduleTaskInfo();
     _loadOpenClawConfig();
+    _conversationListChangedSubscription = AssistsMessageService
+        .conversationListChangedStream
+        .listen((_) {
+          if (!mounted) return;
+          if (_conversationPanelExpanded) {
+            unawaited(_loadConversationSummaries(force: true));
+          } else {
+            _conversationSummariesLoaded = false;
+          }
+        });
 
     // 预热 Suggestion 图标到内存缓存
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -383,6 +404,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
     _openClawBaseUrlController.dispose();
     _openClawTokenController.dispose();
     _openClawUserIdController.dispose();
+    _conversationListChangedSubscription?.cancel();
     super.dispose();
   }
 
@@ -391,6 +413,83 @@ class _CommandOverlayState extends State<CommandOverlay> {
   void _closePage() {
     _inputFocusNode.unfocus();
     ScreenDialogService.closeChatBotDialog();
+  }
+
+  Future<void> _toggleConversationPanel() async {
+    final shouldExpand = !_conversationPanelExpanded;
+    setState(() {
+      _conversationPanelExpanded = shouldExpand;
+    });
+    if (shouldExpand) {
+      await _loadConversationSummaries();
+    }
+  }
+
+  Future<void> _loadConversationSummaries({bool force = false}) async {
+    if (_conversationSummariesLoading) return;
+    if (_conversationSummariesLoaded && !force) return;
+    setState(() {
+      _conversationSummariesLoading = true;
+      _conversationPanelError = null;
+    });
+    try {
+      final conversations = await ConversationService.getAllConversations();
+      if (!mounted) return;
+      setState(() {
+        _recentConversations = conversations.take(5).toList(growable: false);
+        _conversationSummariesLoaded = true;
+        _conversationSummariesLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _conversationPanelError = LegacyTextLocalizer.isEnglish
+            ? 'Failed to load conversations'
+            : '对话加载失败';
+        _conversationSummariesLoading = false;
+      });
+      debugPrint('加载悬浮窗对话摘要失败: $error');
+    }
+  }
+
+  Future<void> _manageConversation(ConversationModel conversation) async {
+    _inputFocusNode.unfocus();
+    final opened = await AppStateService.navigateBackToChat(
+      conversationId: conversation.id,
+      mode: conversation.mode,
+    );
+    if (!opened) {
+      AppToast.show(
+        LegacyTextLocalizer.isEnglish
+            ? 'Failed to open conversation'
+            : '无法打开对话',
+      );
+    }
+  }
+
+  String _conversationTitle(ConversationModel conversation) {
+    final title = conversation.title.trim();
+    if (title.isNotEmpty) return title;
+    return LegacyTextLocalizer.isEnglish ? 'New conversation' : '新对话';
+  }
+
+  String _conversationSummary(ConversationModel conversation) {
+    final summary = conversation.summary?.trim();
+    if (summary != null && summary.isNotEmpty) return summary;
+    final contextSummary = conversation.contextSummary?.trim();
+    if (contextSummary != null && contextSummary.isNotEmpty) {
+      return contextSummary;
+    }
+    final lastMessage = conversation.lastMessage?.trim();
+    if (lastMessage != null && lastMessage.isNotEmpty) return lastMessage;
+    return LegacyTextLocalizer.isEnglish ? 'No summary yet' : '暂无摘要';
+  }
+
+  String _conversationMeta(ConversationModel conversation) {
+    final count = LegacyTextLocalizer.isEnglish
+        ? '${conversation.messageCount} messages'
+        : '${conversation.messageCount} 条消息';
+    return '${conversation.mode.displayLabel} · ${conversation.timeDisplay} · $count';
   }
 
   Future<void> _sendMessage() async {
@@ -420,6 +519,9 @@ class _CommandOverlayState extends State<CommandOverlay> {
     String? initialDisplayMessage,
     List<Map<String, dynamic>> initialAttachments = const [],
   }) {
+    if (mounted) {
+      setState(() => _isChatSheetVisible = true);
+    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -436,6 +538,14 @@ class _CommandOverlayState extends State<CommandOverlay> {
         openClawEnabled: _openClawEnabled,
       ),
     ).then((_) {
+      if (mounted) {
+        setState(() => _isChatSheetVisible = false);
+        if (_conversationPanelExpanded) {
+          unawaited(_loadConversationSummaries(force: true));
+        } else {
+          _conversationSummariesLoaded = false;
+        }
+      }
       ScreenDialogService.closeChatBotDialog();
     });
   }
@@ -758,6 +868,305 @@ $contextJson
     );
   }
 
+  Widget _buildConversationOverlayPanel() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final topInset = MediaQuery.of(context).padding.top;
+    final maxPanelWidth = (screenWidth - 32).clamp(280.0, 420.0).toDouble();
+    return Positioned(
+      top: topInset + 12,
+      right: 16,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxPanelWidth),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            child: Material(
+              color: Colors.transparent,
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topRight,
+                child: _conversationPanelExpanded
+                    ? _buildExpandedConversationPanel(maxPanelWidth)
+                    : _buildCollapsedConversationPanel(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPanelIconButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+        padding: EdgeInsets.zero,
+        icon: Icon(icon, size: 18, color: Colors.white),
+        onPressed: onPressed,
+      ),
+    );
+  }
+
+  Widget _buildCollapsedConversationPanel() {
+    return Container(
+      padding: const EdgeInsets.only(left: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xCC273142),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.16),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.forum_outlined, size: 16, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            LegacyTextLocalizer.isEnglish ? 'Conversations' : '对话',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          _buildPanelIconButton(
+            icon: Icons.expand_more,
+            tooltip: LegacyTextLocalizer.isEnglish ? 'Show summary' : '展开摘要',
+            onPressed: () => unawaited(_toggleConversationPanel()),
+          ),
+          _buildPanelIconButton(
+            icon: Icons.close,
+            tooltip: LegacyTextLocalizer.isEnglish ? 'Close' : '关闭',
+            onPressed: _closePage,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExpandedConversationPanel(double width) {
+    return Container(
+      width: width,
+      padding: const EdgeInsets.fromLTRB(14, 10, 10, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xE62A3142),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.forum_outlined, size: 17, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  LegacyTextLocalizer.isEnglish
+                      ? 'Conversation summaries'
+                      : '对话摘要',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              _buildPanelIconButton(
+                icon: Icons.refresh,
+                tooltip: LegacyTextLocalizer.isEnglish ? 'Refresh' : '刷新',
+                onPressed: () =>
+                    unawaited(_loadConversationSummaries(force: true)),
+              ),
+              _buildPanelIconButton(
+                icon: Icons.expand_less,
+                tooltip: LegacyTextLocalizer.isEnglish ? 'Collapse' : '收起',
+                onPressed: () => setState(() {
+                  _conversationPanelExpanded = false;
+                }),
+              ),
+              _buildPanelIconButton(
+                icon: Icons.close,
+                tooltip: LegacyTextLocalizer.isEnglish ? 'Close' : '关闭',
+                onPressed: _closePage,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _buildConversationPanelBody(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConversationPanelBody() {
+    if (_conversationSummariesLoading) {
+      return const SizedBox(
+        height: 88,
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final error = _conversationPanelError;
+    if (error != null) {
+      return _buildConversationPanelMessage(error);
+    }
+
+    if (_recentConversations.isEmpty) {
+      return _buildConversationPanelMessage(
+        LegacyTextLocalizer.isEnglish ? 'No conversations yet' : '暂无对话',
+      );
+    }
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 280),
+      child: ListView.separated(
+        padding: EdgeInsets.zero,
+        shrinkWrap: true,
+        physics: const ClampingScrollPhysics(),
+        itemCount: _recentConversations.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
+        itemBuilder: (context, index) {
+          return _buildConversationSummaryItem(_recentConversations[index]);
+        },
+      ),
+    );
+  }
+
+  Widget _buildConversationPanelMessage(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.82),
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConversationSummaryItem(ConversationModel conversation) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => unawaited(_manageConversation(conversation)),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _conversationTitle(conversation),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  conversation.timeDisplay,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.58),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _conversationSummary(conversation),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.78),
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _conversationMeta(conversation),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.52),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => unawaited(_manageConversation(conversation)),
+                  icon: const Icon(Icons.open_in_new, size: 14),
+                  label: Text(LegacyTextLocalizer.isEnglish ? 'Manage' : '管理'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
@@ -817,6 +1226,8 @@ $contextJson
           bottom: bottomPadding + _chatInputAreaHeight + inputHeaderOffset,
           child: _buildSlashCommandPanel(),
         ),
+        if (!_annotationMode && !_isChatSheetVisible)
+          _buildConversationOverlayPanel(),
         // 底部输入框区域
         Positioned(
           left: 0,
@@ -890,6 +1301,9 @@ $contextJson
   /// 点击预约气泡后显示预约卡片
   void _showScheduleSheet() {
     final wasFailedOnEnter = _scheduleInfo?['scheduleStatus'] == 'FAILED';
+    if (mounted) {
+      setState(() => _isChatSheetVisible = true);
+    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -902,6 +1316,9 @@ $contextJson
         openClawEnabled: _openClawEnabled,
       ),
     ).then((_) {
+      if (mounted) {
+        setState(() => _isChatSheetVisible = false);
+      }
       ScreenDialogService.closeChatBotDialog();
       if (wasFailedOnEnter) {
         AssistsMessageService.clearScheduleTask();

@@ -11,6 +11,7 @@ import 'widgets/chat_input_area.dart';
 import 'package:ui/utils/data_parser.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/agent_stream_meta.dart';
+import 'package:ui/services/app_state_service.dart';
 import 'package:ui/features/home/pages/command_overlay/services/chat_service.dart';
 import 'package:ui/features/home/pages/command_overlay/constants/messages.dart';
 import 'package:ui/features/home/pages/command_overlay/utils/deep_thinking_parser.dart';
@@ -903,6 +904,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     AssistsMessageService.removeOnAgentStreamEventCallback(
       _handleIncomingAgentStreamEvent,
     );
+    ScreenDialogService.setOnBeforeCloseChatBotDialog(null);
     super.dispose();
   }
 
@@ -1985,6 +1987,111 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     });
   }
 
+  Future<void> _openCurrentConversationInMain() async {
+    if (_messages.isEmpty && _currentConversationId == null) {
+      _showSnackBar(
+        LegacyTextLocalizer.isEnglish ? 'No conversation to open' : '暂无可管理的对话',
+      );
+      return;
+    }
+
+    await _saveConversationToDb(generateSummary: true);
+    final conversationId = _currentConversationId;
+    if (conversationId == null) {
+      _showSnackBar(
+        LegacyTextLocalizer.isEnglish
+            ? 'Conversation is not ready yet'
+            : '对话尚未准备好',
+      );
+      return;
+    }
+
+    final opened = await AppStateService.navigateBackToChat(
+      conversationId: conversationId,
+      mode: _currentConversation?.mode ?? ConversationMode.normal,
+    );
+    if (!opened) {
+      _showSnackBar(
+        LegacyTextLocalizer.isEnglish
+            ? 'Failed to open conversation'
+            : '无法打开对话',
+      );
+    }
+  }
+
+  void _closeFloatingWindow() {
+    _inputFocusNode.unfocus();
+    ScreenDialogService.closeChatBotDialog();
+  }
+
+  Widget _buildSheetHeader(double screenHeight) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onVerticalDragUpdate: (details) {
+            final delta = details.primaryDelta ?? 0;
+            final currentSize = _sheetController.size;
+            final newSize = currentSize - (delta / screenHeight);
+            _sheetController.jumpTo(newSize.clamp(0.4, 0.95));
+          },
+          child: SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 100,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCCCCCC),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                Positioned(
+                  left: 10,
+                  child: Tooltip(
+                    message: LegacyTextLocalizer.isEnglish
+                        ? 'Open conversation'
+                        : '管理对话',
+                    child: IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(
+                        Icons.open_in_new,
+                        size: 20,
+                        color: Color(0xFF353E53),
+                      ),
+                      onPressed: () =>
+                          unawaited(_openCurrentConversationInMain()),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 10,
+                  child: Tooltip(
+                    message: LegacyTextLocalizer.isEnglish ? 'Close' : '关闭',
+                    child: IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(
+                        Icons.close,
+                        size: 22,
+                        color: Color(0xFF353E53),
+                      ),
+                      onPressed: _closeFloatingWindow,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const Align(alignment: Alignment.center, child: AiGeneratedBadge()),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
@@ -2032,39 +2139,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                 ),
                 child: Column(
                   children: [
-                    // 拖动指示条 - 仅用于拖动整个 sheet 高度
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onVerticalDragUpdate: (details) {
-                        final delta = details.primaryDelta ?? 0;
-                        final currentSize = _sheetController.size;
-                        // 向上拖动(delta<0)增大size，向下拖动(delta>0)减小size
-                        final newSize = currentSize - (delta / screenHeight);
-                        _sheetController.jumpTo(newSize.clamp(0.4, 0.95));
-                      },
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
-                        child: Center(
-                          child: Container(
-                            width: 100,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFCCCCCC), // #CCCCCC
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    // AI 生成标识
-                    const Padding(
-                      padding: EdgeInsets.only(top: 4),
-                      child: Align(
-                        alignment: Alignment.center,
-                        child: AiGeneratedBadge(),
-                      ),
-                    ),
+                    _buildSheetHeader(screenHeight),
                     // 消息列表 - 使用 NotificationListener 阻止滚动事件影响 sheet
                     Expanded(
                       child: NotificationListener<ScrollNotification>(

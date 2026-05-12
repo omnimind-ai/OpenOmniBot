@@ -724,6 +724,17 @@ class WorkbenchProjectStore(
         val sources = readOssSources(record.projectId).joinToString("\n") { source ->
             "- ${source.sourceId}: ${source.displayName}; stack=${source.detectedStack}; entry=${source.entryPath}"
         }.ifBlank { "- none" }
+        val activeItems = readProjectItems(record.projectId).filter { it.status == "active" }
+        val itemsSummary = if (activeItems.isEmpty()) {
+            "- (no active items)"
+        } else {
+            activeItems.take(20).joinToString("\n") { item ->
+                val fieldStr = if (item.fields.isEmpty()) "" else " | ${item.fields.entries.joinToString(", ") { "${it.key}=${it.value}" }}"
+                "- [${item.id}] ${item.title}$fieldStr"
+            }.let { text ->
+                if (activeItems.size > 20) "$text\n- ... (${activeItems.size - 20} more active items)" else text
+            }
+        }
         return """
             Active OOB Workbench Project:
             - projectId: ${record.projectId}
@@ -734,9 +745,11 @@ class WorkbenchProjectStore(
             $displays
             - project tools:
             $tools
+            - current data (${activeItems.size} active items):
+            $itemsSummary
             - imported source assets:
             $sources
-            Rules: treat these tools as the active Project toolbox. To use them, call `workbench_api_call` with this projectId and the toolId. Most new work should be handled as an Agent task with Project context; add a Project Tool only for stable reusable UI/AI actions. To create, export, delete, open, or hot-update the Project, use the `workbench_project_*` control tools instead of writing registry files.
+            Rules: treat these tools as the active Project toolbox. To use them, call `workbench_api_call` with this projectId and the toolId. "current data" above is the live Project state — act on it directly without calling list first. To create, export, delete, open, or hot-update the Project, use the `workbench_project_*` control tools instead of writing registry files.
         """.trimIndent()
     }
 
@@ -998,7 +1011,7 @@ class WorkbenchProjectStore(
             )
             appendApiCall(record.projectId, missingApi, inputs, caller, result, startedAt)
             writeProjectJson(record, projectApis(record.projectId))
-            return result + ("project" to getProject(record.projectId))
+            return result + ("project" to apiResultProjectPayload(record.projectId))
         }
         val validationError = validateApiInputs(api, inputs)
         val result = if (validationError != null) {
@@ -1035,8 +1048,23 @@ class WorkbenchProjectStore(
                 items = currentItems
             )
         }
-        return result + ("project" to getProject(record.projectId))
+        return result + ("project" to apiResultProjectPayload(record.projectId))
     }
+
+    private fun apiResultProjectPayload(projectId: String): Map<String, Any?> {
+        val record = runCatching { findProject(projectId) }.getOrNull() ?: return emptyMap()
+        val apis = projectApis(projectId)
+        val counts = apiExecutionCounts(projectId)
+        val items = readProjectItems(projectId)
+        return linkedMapOf(
+            "projectId" to record.projectId,
+            "name" to record.name,
+            "route" to record.route,
+            "items" to items.map { it.toPayload() },
+            "tools" to apis.map { it.toPayload(counts[it.apiId] ?: 0) }
+        )
+    }
+
 
     /**
      * Applies a prompt-driven hot update to a registered Workbench project.
@@ -3726,29 +3754,44 @@ class WorkbenchProjectStore(
         run: Map<String, Any?>,
         inputs: Map<String, Any?>,
         caller: String
-    ): String = """
-        Execute this OOB Project Tool as an async Agent task.
+    ): String {
+        val activeItems = readProjectItems(record.projectId).filter { it.status == "active" }
+        val itemsSummary = if (activeItems.isEmpty()) {
+            "(no active items)"
+        } else {
+            activeItems.take(20).joinToString("\n") { item ->
+                val fieldStr = if (item.fields.isEmpty()) "" else " | ${item.fields.entries.joinToString(", ") { "${it.key}=${it.value}" }}"
+                "- [${item.id}] ${item.title}$fieldStr"
+            }.let { if (activeItems.size > 20) it + "\n- ... (${activeItems.size - 20} more)" else it }
+        }
+        return """
+            Execute this OOB Project Tool as an async Agent task.
 
-        Project:
-        - projectId: ${record.projectId}
-        - name: ${record.name}
-        - workspace: ${record.spacePath}
+            Project:
+            - projectId: ${record.projectId}
+            - name: ${record.name}
+            - workspace: ${record.spacePath}
 
-        Tool:
-        - toolId: ${api.toolId}
-        - displayName: ${api.displayName}
-        - description: ${api.description}
-        - run: ${logGson.toJson(run)}
-        - caller: ${caller.ifBlank { "unknown" }}
+            Current data (${activeItems.size} active items):
+            $itemsSummary
 
-        Inputs JSON:
-        ${logGson.toJson(inputs)}
+            Tool:
+            - toolId: ${api.toolId}
+            - displayName: ${api.displayName}
+            - description: ${api.description}
+            - run: ${logGson.toJson(run)}
+            - caller: ${caller.ifBlank { "unknown" }}
 
-        Rules:
-        - Simple native Project data actions should use the registered Project Tools, not a new runtime.
-        - If run.use starts with oob. or mcp., use the matching OOB/MCP capability through the normal Agent tool chain.
-        - Do not recreate this Project. If data must be saved, call an existing Project Tool or Workbench control tool explicitly.
-    """.trimIndent()
+            Inputs JSON:
+            ${logGson.toJson(inputs)}
+
+            Rules:
+            - Use "current data" above as the live Project state — no need to call list first.
+            - If run.use starts with oob. or mcp., use the matching OOB/MCP capability through the normal Agent tool chain.
+            - To write results back, call workbench_api_call with this projectId and the appropriate toolId.
+            - Do not recreate this Project or write registry files directly.
+        """.trimIndent()
+    }
 
     private fun createProjectItem(
         projectId: String,

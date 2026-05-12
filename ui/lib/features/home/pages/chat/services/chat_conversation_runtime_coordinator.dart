@@ -1125,9 +1125,11 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
   bool _flushAgentReplyBatch(
     ChatConversationRuntimeState runtime,
     String taskId, {
+    String? messageId,
     bool isFinal = false,
     bool emitVoiceEvent = false,
     bool schedulePersistence = false,
+    Map<String, dynamic>? streamMeta,
     double? prefillTokensPerSecond,
     double? decodeTokensPerSecond,
   }) {
@@ -1136,30 +1138,35 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       taskId,
       _StreamingTextStreamKind.agentReply,
     );
-    final messageId =
+    final requestedMessageId = messageId?.trim() ?? '';
+    final resolvedMessageId =
+        (requestedMessageId.isNotEmpty ? requestedMessageId : null) ??
         _resolvePendingAgentTextMessageId(runtime, taskId) ??
         _latestAgentTextMessageId(runtime, taskId) ??
         _nextAgentTextMessageId(runtime, taskId);
     final text =
         batch?.latestText ??
-        _visibleAgentReplyText(runtime, taskId, messageId: messageId);
+        runtime.currentAiMessages[taskId] ??
+        _visibleAgentReplyText(runtime, taskId, messageId: resolvedMessageId);
     final hasPendingFlush = batch?.hasPendingFlush ?? false;
     final hasPerformanceMetrics =
         prefillTokensPerSecond != null || decodeTokensPerSecond != null;
     final hasExistingMessage = runtime.messages.any(
-      (message) => message.id == messageId,
+      (message) => message.id == resolvedMessageId,
     );
     final shouldWrite =
         hasPendingFlush ||
         (text.isNotEmpty && !hasExistingMessage) ||
-        (hasPerformanceMetrics && hasExistingMessage);
+        (hasPerformanceMetrics && hasExistingMessage) ||
+        (isFinal && hasExistingMessage);
     if (shouldWrite) {
       _upsertAgentReplyMessage(
         runtime,
-        messageId,
+        resolvedMessageId,
         text,
         renderMarkdown: true,
         isFinal: isFinal,
+        streamMeta: streamMeta,
         prefillTokensPerSecond: prefillTokensPerSecond,
         decodeTokensPerSecond: decodeTokensPerSecond,
       );
@@ -1172,7 +1179,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         (hasPendingFlush || isFinal)) {
       unawaited(
         VoicePlaybackCoordinator.instance.onAssistantMessageUpdated(
-          messageId: messageId,
+          messageId: resolvedMessageId,
           text: text,
           isFinal: isFinal,
         ),
@@ -1230,6 +1237,61 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       );
     }
     return thinking.isNotEmpty;
+  }
+
+  bool _flushAgentThinkingBatchToCard(
+    ChatConversationRuntimeState runtime,
+    String taskId, {
+    String? cardId,
+    Map<String, dynamic>? streamMeta,
+  }) {
+    final batch = _streamingTextBatchFor(
+      runtime,
+      taskId,
+      _StreamingTextStreamKind.agentThinking,
+    );
+    final thinking =
+        runtime.currentThinkingMessages[taskId] ??
+        batch?.latestText ??
+        runtime.deepThinkingContent;
+    if (thinking.trim().isEmpty) {
+      return false;
+    }
+
+    final requestedCardId = cardId?.trim() ?? '';
+    final thinkingCardId =
+        (requestedCardId.isNotEmpty ? requestedCardId : null) ??
+        _resolveThinkingCardId(runtime, taskId);
+    if (thinkingCardId == null || thinkingCardId.trim().isEmpty) {
+      return false;
+    }
+
+    final index = runtime.messages.indexWhere(
+      (message) => message.id == thinkingCardId,
+    );
+    if (index == -1) {
+      return false;
+    }
+    final visibleThinking =
+        (runtime.messages[index].cardData?['thinkingContent'] ?? '').toString();
+    final shouldWrite =
+        (batch?.hasPendingFlush ?? false) || visibleThinking != thinking;
+    if (!shouldWrite) {
+      return false;
+    }
+
+    _updateThinkingCard(
+      runtime,
+      taskId,
+      cardId: thinkingCardId,
+      thinkingContent: thinking,
+      isLoading: true,
+      stage: runtime.currentThinkingStage,
+      streamMeta: streamMeta,
+      lockCompleted: false,
+    );
+    batch?.markFlushed();
+    return true;
   }
 
   void _handleChatTaskMessage(String taskId, String content, String? type) {
@@ -1577,38 +1639,78 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     }
 
     runtime.isAiResponding = true;
+    final streamMeta = _streamMetaFromEvent(event);
+    final previousThinking =
+        runtime.currentThinkingMessages[event.taskId] ?? '';
+    var nextThinking = previousThinking;
     if (event.thinking.isNotEmpty) {
-      runtime.currentThinkingMessages[event.taskId] = event.thinking;
-      runtime.deepThinkingContent = event.thinking;
+      nextThinking = mergeAgentTextSnapshot(previousThinking, event.thinking);
+      runtime.currentThinkingMessages[event.taskId] = nextThinking;
+      runtime.deepThinkingContent = nextThinking;
     }
     _finalizeThinkingCard(
       runtime,
       event.taskId,
       cardId: completedThinkingCardId,
     );
-    final streamMeta = _streamMetaFromEvent(event);
     final exists = runtime.messages.any((message) => message.id == cardId);
+    var didUpdateVisibleCard = false;
     if (exists) {
-      _updateThinkingCard(
-        runtime,
-        event.taskId,
-        cardId: cardId,
-        thinkingContent: event.thinking.isNotEmpty ? event.thinking : null,
-        isLoading: true,
-        stage: event.stage <= 0 ? ThinkingStage.thinking.value : event.stage,
-        streamMeta: streamMeta,
-        lockCompleted: false,
-      );
+      if (nextThinking.trim().isEmpty) {
+        _updateThinkingCard(
+          runtime,
+          event.taskId,
+          cardId: cardId,
+          isLoading: true,
+          stage: event.stage <= 0 ? ThinkingStage.thinking.value : event.stage,
+          streamMeta: streamMeta,
+          lockCompleted: false,
+        );
+        didUpdateVisibleCard = true;
+      } else {
+        final visibleThinking = _visibleThinkingText(runtime, event.taskId);
+        final shouldFlush =
+            visibleThinking.trim().isEmpty ||
+            _stageStreamingTextBatch(
+              runtime,
+              event.taskId,
+              _StreamingTextStreamKind.agentThinking,
+              nextText: nextThinking,
+              initialLatestText: previousThinking.isNotEmpty
+                  ? previousThinking
+                  : visibleThinking,
+              initialFlushedText: visibleThinking,
+            );
+        if (shouldFlush) {
+          didUpdateVisibleCard = _flushAgentThinkingBatchToCard(
+            runtime,
+            event.taskId,
+            cardId: cardId,
+            streamMeta: streamMeta,
+          );
+        }
+      }
     } else {
       _createThinkingCard(
         runtime,
         event.taskId,
         cardId: cardId,
-        thinkingContent: event.thinking,
+        thinkingContent: nextThinking,
         isLoading: true,
         stage: event.stage <= 0 ? ThinkingStage.thinking.value : event.stage,
         streamMeta: streamMeta,
       );
+      didUpdateVisibleCard = true;
+      if (nextThinking.trim().isNotEmpty) {
+        _streamingTextBatchFor(
+          runtime,
+          event.taskId,
+          _StreamingTextStreamKind.agentThinking,
+        )?.markFlushed();
+      }
+    }
+    if (!didUpdateVisibleCard) {
+      return;
     }
     notifyListeners();
     schedulePersistRuntimeConversation(
@@ -1630,32 +1732,56 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     }
 
     runtime.isAiResponding = true;
-    runtime.currentAiMessages[event.taskId] = text;
+    final previousText = runtime.currentAiMessages[event.taskId] ?? '';
+    final nextText = mergeAgentTextSnapshot(previousText, text);
+    runtime.currentAiMessages[event.taskId] = nextText;
+    _flushAgentThinkingBatchToCard(
+      runtime,
+      event.taskId,
+      cardId: completedThinkingCardId,
+    );
     _finalizeThinkingCard(
       runtime,
       event.taskId,
       cardId: completedThinkingCardId,
     );
-    _upsertAgentReplyMessage(
+    final visibleText = _visibleAgentReplyText(
       runtime,
-      messageId,
-      text,
-      renderMarkdown: true,
-      isFinal: event.isFinal,
-      streamMeta: _streamMetaFromEvent(event),
-      prefillTokensPerSecond: event.prefillTokensPerSecond,
-      decodeTokensPerSecond: event.decodeTokensPerSecond,
+      event.taskId,
+      messageId: messageId,
     );
+    final shouldFlush =
+        visibleText.trim().isEmpty ||
+        event.isFinal ||
+        _stageStreamingTextBatch(
+          runtime,
+          event.taskId,
+          _StreamingTextStreamKind.agentReply,
+          nextText: nextText,
+          initialLatestText: previousText.isNotEmpty
+              ? previousText
+              : visibleText,
+          initialFlushedText: visibleText,
+        );
+    var didUpdateVisibleMessage = false;
+    if (shouldFlush) {
+      didUpdateVisibleMessage = _flushAgentReplyBatch(
+        runtime,
+        event.taskId,
+        messageId: messageId,
+        isFinal: event.isFinal,
+        emitVoiceEvent: true,
+        streamMeta: _streamMetaFromEvent(event),
+        prefillTokensPerSecond: event.prefillTokensPerSecond,
+        decodeTokensPerSecond: event.decodeTokensPerSecond,
+      );
+    }
     if (event.isFinal) {
       _syncMessageLinkPreviews(runtime, messageId);
     }
-    unawaited(
-      VoicePlaybackCoordinator.instance.onAssistantMessageUpdated(
-        messageId: messageId,
-        text: text,
-        isFinal: event.isFinal,
-      ),
-    );
+    if (!didUpdateVisibleMessage) {
+      return;
+    }
     notifyListeners();
     schedulePersistRuntimeConversation(
       conversationId: binding.conversationId,
@@ -1677,6 +1803,11 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     final toolEvent = AgentToolEventData.fromMap(event.raw);
     runtime.isAiResponding = true;
     _updateToolLayerState(runtime, toolEvent);
+    _flushAgentThinkingBatchToCard(
+      runtime,
+      event.taskId,
+      cardId: completedThinkingCardId,
+    );
     _finalizeThinkingCard(
       runtime,
       event.taskId,
@@ -1731,6 +1862,11 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         streamMeta: _streamMetaFromEvent(event),
       );
     }
+    _flushAgentThinkingBatchToCard(
+      runtime,
+      event.taskId,
+      cardId: completedThinkingCardId,
+    );
     _finalizeThinkingCard(
       runtime,
       event.taskId,
@@ -1764,6 +1900,21 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     AgentStreamEvent event, {
     String? completedThinkingCardId,
   }) {
+    _flushAgentThinkingBatchToCard(
+      runtime,
+      event.taskId,
+      cardId: completedThinkingCardId,
+    );
+    _flushAgentReplyBatch(
+      runtime,
+      event.taskId,
+      messageId: event.entryId,
+      isFinal: true,
+      emitVoiceEvent: true,
+      streamMeta: _streamMetaFromEvent(event),
+      prefillTokensPerSecond: event.prefillTokensPerSecond,
+      decodeTokensPerSecond: event.decodeTokensPerSecond,
+    );
     _finalizeThinkingCard(
       runtime,
       event.taskId,
@@ -1809,6 +1960,19 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         );
       }
     }
+    _flushAgentThinkingBatchToCard(
+      runtime,
+      event.taskId,
+      cardId: completedThinkingCardId,
+    );
+    _flushAgentReplyBatch(
+      runtime,
+      event.taskId,
+      messageId: entryId,
+      isFinal: true,
+      emitVoiceEvent: true,
+      streamMeta: _streamMetaFromEvent(event),
+    );
     _finalizeThinkingCard(
       runtime,
       event.taskId,
@@ -1854,6 +2018,11 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         streamMeta: _streamMetaFromEvent(event),
       );
     }
+    _flushAgentThinkingBatchToCard(
+      runtime,
+      event.taskId,
+      cardId: completedThinkingCardId,
+    );
     _finalizeThinkingCard(
       runtime,
       event.taskId,

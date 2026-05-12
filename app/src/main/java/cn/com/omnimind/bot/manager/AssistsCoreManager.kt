@@ -4896,7 +4896,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             isLoading = true,
                             stage = 1,
                             createdAt = startTime,
-                            streamKind = "thinking_started"
+                            streamKind = "thinking_started",
+                            publish = false
                         )
                         sendStreamEvent(
                             kind = "thinking_started",
@@ -4927,16 +4928,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                                 System.currentTimeMillis()
                             )
                         }
-                        val entryId = activeThinkingEntryId ?: return
+                        val entryId = activeThinkingEntryId
                         latestThinkingContent = normalizedThinking
-                        upsertThinkingCard(
-                            entryId = entryId,
-                            roundIndex = thinkingRound.coerceAtLeast(1),
-                            thinkingContent = normalizedThinking,
-                            isLoading = true,
-                            stage = 1,
-                            streamKind = "thinking_snapshot"
-                        )
                         sendStreamEvent(
                             kind = "thinking_snapshot",
                             entryId = entryId,

@@ -108,6 +108,8 @@ Do not expose arbitrary Android, filesystem, shell, or network access to HTML. N
 
 ## HTML Display
 
+HTML is the user's only window into the Project state. The user does most things through a single backend conversation — they tell the AI to add, change, or analyze something — and the HTML must reflect every change in detail. A vague or static display breaks the whole loop.
+
 HTML is the fastest first-class display path. Use it for reports, charts, rich documents, comparisons, dashboards, custom interaction, and fast local visual edits.
 
 Route:
@@ -130,28 +132,35 @@ Generated HTML is normally shown inside the right-side OOB Workspace on a real p
 
 If no viewport tag is present, OOB defaults to `width=device-width`, but generated HTML should declare the intended profile explicitly.
 
+**Data contract: `project.items` is the real persistent state, not mock data.**
+
+Every item written by `callApi` is stored in the Project's `data/items.json` and survives app restarts. The HTML must read and render from `project.items` — never hardcode sample data arrays. On page load, call `window.oob.getProject()` to get the current real state.
+
 HTML bridge:
 
 ```js
-// Synchronous actions (CRUD tools) — result returned immediately
-const result = await window.oob.callApi('meal.create', { date: '2026-05-12', calories: 450 });
-
-// Read current project state
-const project = await window.oob.getProject();
-const items = project.items; // array of project records
-
-// Async workflows (agent_task tools: VLM, camera, web, etc.)
-// callApi returns {status:"pending"} immediately; result arrives via onProjectUpdated
-const pending = await window.oob.callApi('meal.analyze', { date: '2026-05-12' });
-// pending = { status: "pending", taskId: "..." }
-
-// Subscribe to project updates — fires when any agent_task writes back to project data
-window.oob.onProjectUpdated(function(project) {
-  renderItems(project.items);
-  hideLoading();
+// ── Page load: read real data, never hardcode ──────────────────────────────
+window.addEventListener('load', async function() {
+  const project = await window.oob.getProject();
+  renderItems(project.items); // project.items = real persisted records
 });
 
-// Inspect mode: report selected element for hot-update context
+// ── Synchronous CRUD: result.project.items is the updated state ───────────
+async function addEntry(amount, note) {
+  const result = await window.oob.callApi('entry.create', { amount, note });
+  renderItems(result.project.items); // re-render immediately from result
+}
+
+// ── Async agent_task: result arrives via onProjectUpdated ─────────────────
+// callApi returns {status:"pending"} immediately
+await window.oob.callApi('meal.analyze', { date: '2026-05-12' });
+
+window.oob.onProjectUpdated(function(project) {
+  if (project._taskError) { showError(project.errorMessage); return; }
+  renderItems(project.items);
+});
+
+// ── Inspect mode ──────────────────────────────────────────────────────────
 window.oob.selectElement({ elementId: 'submit-btn', label: 'Submit' });
 ```
 
@@ -189,14 +198,24 @@ Corresponding Project Tool definition:
 Rules:
 
 1. Use `window.oob.callApi(apiId, inputs)` for every backend action.
-2. Use `window.oob.getProject()` to read current state synchronously after CRUD operations.
-3. Use `window.oob.onProjectUpdated(callback)` when a tool uses `run.use: "agent"` — the result arrives asynchronously after the agent writes back to project data.
+2. **On page load, call `window.oob.getProject()` and render from `project.items`. Never hardcode data arrays — `project.items` is the real persistent state.**
+3. For sync CRUD (`native.collection.create/update/archive`): re-render from `result.project.items` returned by `callApi`. No need to call `getProject()` again.
+4. Use `window.oob.getProject()` only when you need full project state outside of a callApi flow.
+5. Use `window.oob.onProjectUpdated(callback)` when a tool uses `run.use: "agent"` — the result arrives asynchronously after the agent writes back to project data.
    - **Do not read `result.project` from `callApi` to get agent_task results** — that snapshot is captured before the agent runs. Read state only inside the `onProjectUpdated` callback.
    - Show a loading state between the `callApi` call and the `onProjectUpdated` callback.
-4. Use `data-oob-id` on important elements so inspect/edit can target small changes.
-5. Show domain labels to users, not tool ids, Project ids, executor names, paths, logs, or implementation badges.
-6. Handle loading, empty, success, and error states inside the HTML.
-7. Prefer local assets for production. CDN is acceptable for demos and iteration, especially charts.
+   - Check `project._taskError` in the callback: if true, the agent task timed out or failed. Show an error message and hide the loading state.
+   ```js
+   window.oob.onProjectUpdated(function(project) {
+     hideLoading();
+     if (project._taskError) { showError(project.errorMessage); return; }
+     renderItems(project.items);
+   });
+   ```
+6. Use `data-oob-id` on important elements so inspect/edit can target small changes.
+7. Show domain labels to users, not tool ids, Project ids, executor names, paths, logs, or implementation badges.
+8. Handle loading, empty, success, and error states inside the HTML.
+9. Prefer local assets for production. CDN is acceptable for demos and iteration, especially charts.
 
 ## Default Project Display
 

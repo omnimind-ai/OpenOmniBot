@@ -86,7 +86,10 @@ class AppStateChannel {
                 OmniLog.d(TAG, "Received navigateBackToChat call from Flutter")
                 val context = this.context
                 if (context != null) {
-                    TaskCompletionNavigator.navigateBackToChat(context, null, null)
+                    val args = call.arguments as? Map<*, *>
+                    val conversationId = parseLong(args?.get("conversationId"))
+                    val mode = args?.get("mode")?.toString()
+                    TaskCompletionNavigator.navigateBackToChat(context, conversationId, mode)
                     result.success(true)
                 } else {
                     OmniLog.e(TAG, "Context unavailable, cannot navigate back to chat")
@@ -130,5 +133,15 @@ class AppStateChannel {
     fun clear() {
         methodChannel?.setMethodCallHandler(null)
         methodChannel = null
+    }
+
+    private fun parseLong(value: Any?): Long? {
+        return when (value) {
+            is Int -> value.toLong()
+            is Long -> value
+            is Number -> value.toLong()
+            is String -> value.toLongOrNull()
+            else -> null
+        }?.takeIf { it > 0 }
     }
 }

@@ -63,10 +63,26 @@ const String _kBridgeScript = '''
       }, { once: true });
     });
   }
+  var _pendingTasks = {};
   window.oob = {
     __installed: true,
     callApi: function(apiId, inputs) {
-      return _callNative('oobCallApi', [apiId, inputs || {}]);
+      return _callNative('oobCallApi', [apiId, inputs || {}]).then(function(result) {
+        if (result && result.status === 'pending' && result.taskId) {
+          var taskId = result.taskId;
+          var timer = setTimeout(function() {
+            delete _pendingTasks[taskId];
+            _updateCallbacks.forEach(function(cb) {
+              try {
+                cb({ _taskError: true, taskId: taskId, apiId: apiId,
+                     errorMessage: 'Task timed out after 120s.' });
+              } catch(e) {}
+            });
+          }, 120000);
+          _pendingTasks[taskId] = timer;
+        }
+        return result;
+      });
     },
     getProject: function() {
       return _callNative('oobGetProject', []);
@@ -78,6 +94,11 @@ const String _kBridgeScript = '''
       if (typeof callback === 'function') _updateCallbacks.push(callback);
     },
     __dispatchUpdate: function(project) {
+      // Clear pending task timers when an update arrives.
+      Object.keys(_pendingTasks).forEach(function(id) {
+        clearTimeout(_pendingTasks[id]);
+        delete _pendingTasks[id];
+      });
       _updateCallbacks.forEach(function(cb) {
         try { cb(project); } catch(e) {}
       });
@@ -167,6 +188,7 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
 
   bool _webViewLoading = false;
   String? _errorMessage;
+  double? _pendingScrollRestore;
 
   @override
   void initState() {
@@ -199,15 +221,9 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
     );
 
     if (isHtmlChange) {
-      // HTML source changed — full reload required.
       _refreshDebounce?.cancel();
       _refreshDebounce = Timer(const Duration(milliseconds: 100), () {
-        unawaited(
-          _loader.refresh().then((_) {
-            if (!mounted) return;
-            unawaited(_loadHtml());
-          }),
-        );
+        unawaited(_reloadHtmlPreservingScroll());
       });
       return;
     }
@@ -287,6 +303,18 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
     );
 
     unawaited(_loadHtml());
+  }
+
+  Future<void> _reloadHtmlPreservingScroll() async {
+    if (!mounted) return;
+    final scrollY = await _webController?.evaluateJavascript(
+      source: 'window.scrollY || 0',
+    );
+    _pendingScrollRestore = scrollY != null
+        ? double.tryParse(scrollY.toString())
+        : null;
+    await _loader.refresh();
+    if (mounted) unawaited(_loadHtml());
   }
 
   Future<void> _loadHtml() async {
@@ -585,6 +613,13 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage> {
         await controller.evaluateJavascript(source: _kBridgeScript);
         await controller.evaluateJavascript(source: _kViewportScript);
         await controller.evaluateJavascript(source: _kInspectScript);
+        final restore = _pendingScrollRestore;
+        if (restore != null && restore > 0) {
+          _pendingScrollRestore = null;
+          await controller.evaluateJavascript(
+            source: 'window.scrollTo(0, $restore)',
+          );
+        }
         if (mounted) setState(() => _webViewLoading = false);
       },
       onReceivedError: (_, __, error) {
