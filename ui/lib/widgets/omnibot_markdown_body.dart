@@ -386,9 +386,8 @@ class OmnibotMathBlockSyntax extends md.BlockSyntax {
     if (firstLineTrimmed.startsWith(r'$$') &&
         firstLineTrimmed.endsWith(r'$$') &&
         firstLineTrimmed.length > 4) {
-      final inlineExpression = firstLineTrimmed
-          .substring(2, firstLineTrimmed.length - 2)
-          .trim();
+      final inlineExpression =
+          firstLineTrimmed.substring(2, firstLineTrimmed.length - 2).trim();
       parser.advance();
       return _buildMathElement(inlineExpression);
     }
@@ -520,9 +519,10 @@ class OmnibotTableBuilder extends MarkdownElementBuilder {
               baseStyle;
           final textAlign = _resolveCellTextAlign(
             cell.align,
-            fallback: isHeader
-                ? (styleSheet.tableHeadAlign ?? TextAlign.center)
-                : TextAlign.left,
+            fallback:
+                isHeader
+                    ? (styleSheet.tableHeadAlign ?? TextAlign.center)
+                    : TextAlign.left,
           );
           final alignment = _alignmentForTextAlign(textAlign);
           return DecoratedBox(
@@ -573,12 +573,13 @@ class _OmnibotTableRowSpec {
 
   factory _OmnibotTableRowSpec.fromJson(Map<String, dynamic> json) {
     final rawCells = json['cells'];
-    final cells = rawCells is List
-        ? rawCells
-              .whereType<Map<String, dynamic>>()
-              .map(_OmnibotTableCellSpec.fromJson)
-              .toList(growable: false)
-        : const <_OmnibotTableCellSpec>[];
+    final cells =
+        rawCells is List
+            ? rawCells
+                .whereType<Map<String, dynamic>>()
+                .map(_OmnibotTableCellSpec.fromJson)
+                .toList(growable: false)
+            : const <_OmnibotTableCellSpec>[];
     return _OmnibotTableRowSpec(
       isHeader: json['isHeader'] == true,
       cells: cells,
@@ -682,7 +683,7 @@ class _OmnibotMarkdownTableCell extends StatelessWidget {
       style: baseStyle,
       textAlign: textAlign,
       child: OmnibotMarkdownBody(
-        data: data,
+        data: _tableCellInlineMarkdown(data),
         baseStyle: baseStyle,
         selectable: selectable,
         inlineResourcePlainStyle: inlineResourcePlainStyle,
@@ -691,6 +692,58 @@ class _OmnibotMarkdownTableCell extends StatelessWidget {
     );
   }
 }
+
+// Markdown table cells are inline content. Keep leading markers like "-" from
+// becoming block widgets that cannot be measured by an intrinsic-width table.
+String _tableCellInlineMarkdown(String source) {
+  if (source.isEmpty) {
+    return source;
+  }
+
+  return _escapeLeadingMathBlockMarker(
+    _escapeLeadingOrderedListMarker(_escapeLeadingBlockMarker(source)),
+  );
+}
+
+String _escapeLeadingBlockMarker(String source) {
+  return source
+      .replaceFirstMapped(
+        RegExp(
+          r'^([ \t]{0,3})(#{1,6}(?=[ \t]|$)|[-+*](?=[ \t]+|$)|>{1}|`{3,}|~{3,}|\[[^\]\n]+]:)',
+        ),
+        (match) {
+          final marker = match[2]!;
+          return '${match[1]}${_htmlEntityForCodeUnit(marker.codeUnitAt(0))}'
+              '${marker.substring(1)}';
+        },
+      )
+      .replaceFirstMapped(
+        RegExp(
+          r'^([ \t]{0,3})((?:-[ \t]*){3,}|(?:_[ \t]*){3,}|(?:\*[ \t]*){3,})$',
+        ),
+        (match) {
+          final marker = match[2]!;
+          return '${match[1]}${_htmlEntityForCodeUnit(marker.codeUnitAt(0))}'
+              '${marker.substring(1)}';
+        },
+      );
+}
+
+String _escapeLeadingOrderedListMarker(String source) {
+  return source.replaceFirstMapped(
+    RegExp(r'^([ \t]{0,3}\d{1,9})([.)])(?=[ \t]+)'),
+    (match) => '${match[1]}${_htmlEntityForCodeUnit(match[2]!.codeUnitAt(0))}',
+  );
+}
+
+String _escapeLeadingMathBlockMarker(String source) {
+  return source.replaceFirstMapped(
+    RegExp(r'^([ \t]*)(\$\$)'),
+    (match) => '${match[1]}&#36;${match[2]!.substring(1)}',
+  );
+}
+
+String _htmlEntityForCodeUnit(int codeUnit) => '&#$codeUnit;';
 
 class OmnibotInlineMathSyntax extends md.InlineSyntax {
   OmnibotInlineMathSyntax() : super(_pattern);
@@ -882,8 +935,8 @@ class OmnibotInlineMathBuilder extends MarkdownElementBuilder {
                     expression,
                     mathStyle: MathStyle.text,
                     textStyle: style,
-                    onErrorFallback: (error) =>
-                        Text('\$$expression\$', style: style),
+                    onErrorFallback:
+                        (error) => Text('\$$expression\$', style: style),
                   ),
                 ),
               );
@@ -930,8 +983,8 @@ class OmnibotBlockMathBuilder extends MarkdownElementBuilder {
             expression,
             mathStyle: MathStyle.display,
             textStyle: style,
-            onErrorFallback: (error) =>
-                Text('\$\$$expression\$\$', style: style),
+            onErrorFallback:
+                (error) => Text('\$\$$expression\$\$', style: style),
           ),
         ),
       ),
@@ -956,17 +1009,18 @@ class OmnibotInlineLinkBuilder extends MarkdownElementBuilder {
     TextStyle? parentStyle,
   ) {
     final href = element.attributes['href'];
-    final metadata = href == null
-        ? null
-        : OmnibotResourceService.resolveUri(href);
+    final metadata =
+        href == null ? null : OmnibotResourceService.resolveUri(href);
     if (metadata == null) {
       return Text.rich(
         WidgetSpan(
           alignment: PlaceholderAlignment.middle,
           child: InkWell(
-            onTap: href == null
-                ? null
-                : () => _handleMarkdownLinkTap(context, href, onResourceOpen),
+            onTap:
+                href == null
+                    ? null
+                    : () =>
+                        _handleMarkdownLinkTap(context, href, onResourceOpen),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Text(
@@ -1066,9 +1120,10 @@ String _linkifyBareOmnibotUris(String input) {
         !trimmed.contains('[') &&
         !trimmed.contains(']')) {
       final parsed = Uri.tryParse(trimmed);
-      final label = parsed?.pathSegments.isNotEmpty == true
-          ? parsed!.pathSegments.last
-          : (LegacyTextLocalizer.isEnglish ? 'Resource' : '资源');
+      final label =
+          parsed?.pathSegments.isNotEmpty == true
+              ? parsed!.pathSegments.last
+              : (LegacyTextLocalizer.isEnglish ? 'Resource' : '资源');
       buffer.write('[$label]($trimmed)');
     } else {
       buffer.write(line);

@@ -39,17 +39,17 @@ $$
       wrap(
         useSelectionArea
             ? SelectionArea(
-                child: OmnibotMarkdownBody(
-                  data: data,
-                  baseStyle: const TextStyle(fontSize: 14),
-                  selectable: selectable,
-                ),
-              )
-            : OmnibotMarkdownBody(
+              child: OmnibotMarkdownBody(
                 data: data,
                 baseStyle: const TextStyle(fontSize: 14),
                 selectable: selectable,
               ),
+            )
+            : OmnibotMarkdownBody(
+              data: data,
+              baseStyle: const TextStyle(fontSize: 14),
+              selectable: selectable,
+            ),
       ),
     );
     await tester.pump();
@@ -129,5 +129,35 @@ $$
     expect(styleSheet.h6?.color, customColor);
     expect(styleSheet.tableHead?.color, customColor);
     expect(styleSheet.tableBody?.color, customColor);
+  });
+
+  testWidgets('renders table cells with block markers as literal text', (
+    tester,
+  ) async {
+    const tableWithMarkers = '''
+| 项目 | 值 |
+| --- | --- |
+| 空值 | - |
+| 分隔符 | --- |
+| 标题符号 | # 一级 |
+| 序号 | 1. 第一项 |
+''';
+
+    await tester.pumpWidget(
+      wrap(
+        const OmnibotMarkdownBody(
+          data: tableWithMarkers,
+          baseStyle: TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(Table), findsOneWidget);
+    expect(find.text('-'), findsOneWidget);
+    expect(find.text('---'), findsOneWidget);
+    expect(find.text('# 一级'), findsOneWidget);
+    expect(find.text('1. 第一项'), findsOneWidget);
   });
 }
