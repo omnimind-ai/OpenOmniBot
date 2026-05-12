@@ -580,6 +580,35 @@ object AgentToolDefinitions {
         }
     }
 
+    val imagePickerTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "image_picker")
+            put("displayName", "选择图片")
+            put("toolType", "builtin")
+            put("description", "打开手机相册或相机，让用户选择一张或多张图片，返回图片的本地路径。选单张时返回 {path, name}；选多张时返回 {paths: [...], count}。取到路径后可传给 vlm_task 或 file_read 进行后续处理。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("source") {
+                        put("type", "string")
+                        putJsonArray("enum") { add("gallery"); add("camera") }
+                        put("description", "图片来源：gallery（相册，默认）或 camera（拍照）。")
+                    }
+                    putJsonObject("multiple") {
+                        put("type", "boolean")
+                        put("description", "是否允许多选，默认 false。")
+                    }
+                    putJsonObject("limit") {
+                        put("type", "integer")
+                        put("description", "多选时最大张数，默认 9。")
+                    }
+                }
+                putJsonArray("required") {}
+            }
+        }
+    }
+
     val terminalExecuteTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -2460,6 +2489,7 @@ object AgentToolDefinitions {
         contextAppsQueryTool,
         contextTimeNowTool,
         vlmTaskTool,
+        imagePickerTool,
         terminalExecuteTool,
         terminalSessionStartTool,
         terminalSessionExecTool,

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/services/agent_schedule_bridge_service.dart';
 import 'package:ui/services/app_state_service.dart';
@@ -1521,6 +1522,31 @@ class AssistsMessageService {
           );
           _onScheduledTaskExecuteNowCallBack?.call(data['taskId'] ?? '');
           break;
+        case 'agentImagePick':
+          final args = call.arguments is Map
+              ? Map<String, dynamic>.from(call.arguments as Map)
+              : <String, dynamic>{};
+          final sourceStr = args['source']?.toString() ?? 'gallery';
+          final source = sourceStr == 'camera'
+              ? ImageSource.camera
+              : ImageSource.gallery;
+          final XFile? file = await ImagePicker().pickImage(
+            source: source,
+            imageQuality: 85,
+          );
+          return file == null ? null : {'path': file.path, 'name': file.name};
+
+        case 'agentImagePickMultiple':
+          final multiArgs = call.arguments is Map
+              ? Map<String, dynamic>.from(call.arguments as Map)
+              : <String, dynamic>{};
+          final limit = (multiArgs['limit'] as num?)?.toInt() ?? 9;
+          final files = await ImagePicker().pickMultiImage(
+            imageQuality: 85,
+            limit: limit,
+          );
+          return files.map((f) => {'path': f.path, 'name': f.name}).toList();
+
         case 'agentScheduleCreate':
           return await AgentScheduleBridgeService.createTask(
             Map<String, dynamic>.from(call.arguments as Map),

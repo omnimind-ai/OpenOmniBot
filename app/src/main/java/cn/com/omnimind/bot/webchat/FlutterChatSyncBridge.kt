@@ -4,6 +4,11 @@ import android.os.Handler
 import android.os.Looper
 import cn.com.omnimind.baselib.util.OmniLog
 import io.flutter.plugin.common.MethodChannel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 object FlutterChatSyncBridge {
     private const val TAG = "[FlutterChatSyncBridge]"
@@ -70,6 +75,30 @@ object FlutterChatSyncBridge {
         )
         if (items != null) args["items"] = items
         dispatch(method = "workbenchProjectUpdated", arguments = args)
+    }
+
+    suspend fun invokeForResult(method: String, arguments: Map<String, Any?> = emptyMap()): Any? {
+        val channel = mainChannel ?: currentChannel
+            ?: throw IllegalStateException("Flutter channel unavailable for $method")
+        return withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine { cont ->
+                channel.invokeMethod(method, arguments, object : MethodChannel.Result {
+                    override fun success(result: Any?) {
+                        if (!cont.isCompleted) cont.resume(result)
+                    }
+                    override fun error(code: String, msg: String?, details: Any?) {
+                        if (!cont.isCompleted) cont.resumeWithException(
+                            IllegalStateException("$code: ${msg ?: "Flutter error"}")
+                        )
+                    }
+                    override fun notImplemented() {
+                        if (!cont.isCompleted) cont.resumeWithException(
+                            UnsupportedOperationException("$method not implemented in Flutter")
+                        )
+                    }
+                })
+            }
+        }
     }
 
     private fun dispatch(method: String, arguments: Any?) {

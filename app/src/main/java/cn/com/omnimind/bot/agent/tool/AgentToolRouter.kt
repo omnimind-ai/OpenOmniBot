@@ -4,6 +4,7 @@ import android.content.Context
 import cn.com.omnimind.bot.agent.tool.handlers.BrowserToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.ContextToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.FileToolHandler
+import cn.com.omnimind.bot.agent.tool.handlers.ImagePickerToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.McpToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.MemoryToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.PrivilegedToolHandler
@@ -41,6 +42,7 @@ class AgentToolRouter(
     private val orderedHandlers: List<ToolHandler> = listOf(
         ContextToolHandler(helper),
         VlmToolHandler(helper, scope),
+        ImagePickerToolHandler(helper),
         privilegedHandler,
         terminalHandler,
         BrowserToolHandler(helper, workspaceManager),
