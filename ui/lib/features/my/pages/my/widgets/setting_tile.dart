@@ -33,7 +33,7 @@ class SettingTile extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                context.trLegacy(title),
+                context.trText(title),
                 style: TextStyle(
                   fontSize: AppTextStyles.fontSizeMain,
                   fontWeight: FontWeight.w300,

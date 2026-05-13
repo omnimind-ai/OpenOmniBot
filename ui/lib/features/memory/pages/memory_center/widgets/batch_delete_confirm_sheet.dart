@@ -79,7 +79,7 @@ class BatchDeleteConfirmSheet extends StatelessWidget {
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          context.trLegacy('取消'),
+                          context.trText('取消'),
                           style: TextStyle(
                             color: AppColors.buttonPrimary,
                             fontSize: 12,

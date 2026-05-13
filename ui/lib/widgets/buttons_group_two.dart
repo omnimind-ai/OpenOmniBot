@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import '../models/block_models.dart';
 
 class ButtonsGroupTwo extends StatelessWidget {
@@ -19,6 +20,9 @@ class ButtonsGroupTwo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final locale = Localizations.localeOf(context);
+    final defaultCancelText = AppTextLocalizer.text('取消', locale: locale);
+    final defaultConfirmText = AppTextLocalizer.text('确认', locale: locale);
     return Row(
       children: [
         Expanded(
@@ -35,14 +39,8 @@ class ButtonsGroupTwo extends StatelessWidget {
               ),
             ),
             child: Text(
-              leftButton?.text ??
-                  (Localizations.localeOf(context).languageCode == 'en'
-                      ? 'Cancel'
-                      : '取消'),
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.black87,
-              ),
+              leftButton?.text ?? defaultCancelText,
+              style: const TextStyle(fontSize: 16, color: Colors.black87),
             ),
           ),
         ),
@@ -52,11 +50,7 @@ class ButtonsGroupTwo extends StatelessWidget {
               ? AnimatedBuilder(
                   animation: countdownAnimation!,
                   builder: (context, child) {
-                    final label =
-                        rightButton?.text ??
-                        (Localizations.localeOf(context).languageCode == 'en'
-                            ? 'Confirm'
-                            : '确认');
+                    final label = rightButton?.text ?? defaultConfirmText;
                     final text = isExecuting
                         ? '$label${countdownAnimation!.value}s'
                         : label;
@@ -97,14 +91,8 @@ class ButtonsGroupTwo extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    rightButton?.text ??
-                        (Localizations.localeOf(context).languageCode == 'en'
-                            ? 'Confirm'
-                            : '确认'),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: Colors.white,
-                    ),
+                    rightButton?.text ?? defaultConfirmText,
+                    style: const TextStyle(fontSize: 16, color: Colors.white),
                   ),
                 ),
         ),

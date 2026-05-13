@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/authorize/authorize_page_args.dart';
 import 'package:ui/features/home/pages/authorize/widgets/permission_section.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/device_service.dart';
 import 'package:ui/services/permission_registry.dart';
 import 'package:ui/services/special_permission.dart';
@@ -18,36 +18,24 @@ class PermissionService {
         iconPath: 'assets/welcome/permission_installed_apps.svg',
         iconWidth: 32,
         iconHeight: 32,
-        name: LegacyTextLocalizer.isEnglish
-            ? 'Built-in workspace'
-            : '内置 workspace',
-        description: LegacyTextLocalizer.isEnglish
-            ? 'Omnibot maintains `/workspace` internally; public storage permission is usually unnecessary'
-            : 'Omnibot 会在应用内部维护 `/workspace`，通常无需再单独授予公共存储权限',
+        name: AppTextLocalizer.choose(en: 'Built-in workspace', zh: '内置 workspace'),
+        description: AppTextLocalizer.choose(en: 'Omnibot maintains `/workspace` internally; public storage permission is usually unnecessary', zh: 'Omnibot 会在应用内部维护 `/workspace`，通常无需再单独授予公共存储权限'),
       ),
       kPublicStoragePermissionId => _PermissionDisplaySpec(
         id: kPublicStoragePermissionId,
         iconPath: 'assets/welcome/permission_installed_apps.svg',
         iconWidth: 32,
         iconHeight: 32,
-        name: LegacyTextLocalizer.isEnglish
-            ? 'Public Storage Access'
-            : '公共文件访问',
-        description: LegacyTextLocalizer.isEnglish
-            ? 'Allow agent to read/write files in public storage'
-            : '允许 agent 读取和操作安卓公共存储中的文件与文件夹',
+        name: AppTextLocalizer.choose(en: 'Public Storage Access', zh: '公共文件访问'),
+        description: AppTextLocalizer.choose(en: 'Allow agent to read/write files in public storage', zh: '允许 agent 读取和操作安卓公共存储中的文件与文件夹'),
       ),
       kShizukuPermissionId => _PermissionDisplaySpec(
         id: kShizukuPermissionId,
         iconPath: 'assets/welcome/permission_installed_apps.svg',
         iconWidth: 32,
         iconHeight: 32,
-        name: LegacyTextLocalizer.isEnglish
-            ? 'Shizuku Permission'
-            : 'Shizuku 权限',
-        description: LegacyTextLocalizer.isEnglish
-            ? 'Optional advanced system actions for the agent'
-            : '可选的高级系统能力，用于扩展 agent 的系统级操作边界',
+        name: AppTextLocalizer.choose(en: 'Shizuku Permission', zh: 'Shizuku 权限'),
+        description: AppTextLocalizer.choose(en: 'Optional advanced system actions for the agent', zh: '可选的高级系统能力，用于扩展 agent 的系统级操作边界'),
       ),
       _ => null,
     };
@@ -284,12 +272,8 @@ class PermissionService {
               iconPath: 'assets/welcome/permission_overlay.svg',
               iconWidth: 32,
               iconHeight: 32,
-              name: LegacyTextLocalizer.isEnglish
-                  ? 'Overlay Permission'
-                  : '悬浮窗权限',
-              description: LegacyTextLocalizer.isEnglish
-                  ? 'Desktop overlay for quick access'
-                  : '桌面悬浮显示，快速唤起小万',
+              name: AppTextLocalizer.choose(en: 'Overlay Permission', zh: '悬浮窗权限'),
+              description: AppTextLocalizer.choose(en: 'Desktop overlay for quick access', zh: '桌面悬浮显示，快速唤起小万'),
               onAuthorize: () async {},
               checkAuthorization: () async => false,
             ),
@@ -298,10 +282,8 @@ class PermissionService {
               iconPath: 'assets/welcome/permission_accessibility.svg',
               iconWidth: 30,
               iconHeight: 30,
-              name: LegacyTextLocalizer.isEnglish ? 'Accessibility' : '无障碍辅助权限',
-              description: LegacyTextLocalizer.isEnglish
-                  ? 'Persistent automation for complex tasks'
-                  : '持久化自动操作，轻松完成复杂任务',
+              name: AppTextLocalizer.choose(en: 'Accessibility', zh: '无障碍辅助权限'),
+              description: AppTextLocalizer.choose(en: 'Persistent automation for complex tasks', zh: '持久化自动操作，轻松完成复杂任务'),
               onAuthorize: () async {},
               checkAuthorization: () async => false,
             ),
@@ -310,12 +292,8 @@ class PermissionService {
               iconPath: 'assets/welcome/permission_installed_apps.svg',
               iconWidth: 32,
               iconHeight: 32,
-              name: LegacyTextLocalizer.isEnglish
-                  ? 'Installed Apps Access'
-                  : '应用列表读取',
-              description: LegacyTextLocalizer.isEnglish
-                  ? 'Enable cross-app automation'
-                  : '支持跨应用自动操作',
+              name: AppTextLocalizer.choose(en: 'Installed Apps Access', zh: '应用列表读取'),
+              description: AppTextLocalizer.choose(en: 'Enable cross-app automation', zh: '支持跨应用自动操作'),
               onAuthorize: () async {},
               checkAuthorization: () async => false,
             ),
@@ -324,12 +302,8 @@ class PermissionService {
               iconPath: 'assets/welcome/permission_installed_apps.svg',
               iconWidth: 32,
               iconHeight: 32,
-              name: LegacyTextLocalizer.isEnglish
-                  ? 'Shizuku Permission'
-                  : 'Shizuku 权限',
-              description: LegacyTextLocalizer.isEnglish
-                  ? 'Optional advanced system actions for the agent'
-                  : '可选的高级系统能力，用于扩展 agent 的系统级操作边界',
+              name: AppTextLocalizer.choose(en: 'Shizuku Permission', zh: 'Shizuku 权限'),
+              description: AppTextLocalizer.choose(en: 'Optional advanced system actions for the agent', zh: '可选的高级系统能力，用于扩展 agent 的系统级操作边界'),
               onAuthorize: () async {},
               checkAuthorization: () async => false,
             ),

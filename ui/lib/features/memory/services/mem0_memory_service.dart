@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:ui/features/memory/models/mem0_memory_item.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/workspace_memory_service.dart';
 
 class Mem0MemoryService {
@@ -20,9 +20,7 @@ class Mem0MemoryService {
         fromCache: false,
         isStale: false,
         infoMessage: items.isEmpty
-            ? (LegacyTextLocalizer.isEnglish
-                ? 'Workspace long-term memory is empty'
-                : 'workspace 长期记忆为空')
+            ? (AppTextLocalizer.choose(en: 'Workspace long-term memory is empty', zh: 'workspace 长期记忆为空'))
             : null,
       );
     } catch (e) {
@@ -40,9 +38,7 @@ class Mem0MemoryService {
   }) async {
     final trimmed = memory.trim();
     if (trimmed.isEmpty) {
-      throw Exception(LegacyTextLocalizer.isEnglish
-          ? 'Memory content cannot be empty'
-          : '记忆内容不能为空');
+      throw Exception(AppTextLocalizer.choose(en: 'Memory content cannot be empty', zh: '记忆内容不能为空'));
     }
     final content = await WorkspaceMemoryService.getLongMemory();
     final lines = content.split('\n');
@@ -58,16 +54,12 @@ class Mem0MemoryService {
   }) async {
     final trimmed = memory.trim();
     if (trimmed.isEmpty) {
-      throw Exception(LegacyTextLocalizer.isEnglish
-          ? 'Memory content cannot be empty'
-          : '记忆内容不能为空');
+      throw Exception(AppTextLocalizer.choose(en: 'Memory content cannot be empty', zh: '记忆内容不能为空'));
     }
     final content = await WorkspaceMemoryService.getLongMemory();
     final updated = _replaceById(content, memoryId, trimmed);
     if (updated == null) {
-      throw Exception(LegacyTextLocalizer.isEnglish
-          ? 'Memory not found'
-          : '未找到对应记忆');
+      throw Exception(AppTextLocalizer.choose(en: 'Memory not found', zh: '未找到对应记忆'));
     }
     await WorkspaceMemoryService.saveLongMemory(updated);
   }
@@ -76,9 +68,7 @@ class Mem0MemoryService {
     final content = await WorkspaceMemoryService.getLongMemory();
     final deleted = _deleteById(content, memoryId);
     if (deleted == null) {
-      throw Exception(LegacyTextLocalizer.isEnglish
-          ? 'Memory not found'
-          : '未找到对应记忆');
+      throw Exception(AppTextLocalizer.choose(en: 'Memory not found', zh: '未找到对应记忆'));
     }
     await WorkspaceMemoryService.saveLongMemory(deleted);
   }

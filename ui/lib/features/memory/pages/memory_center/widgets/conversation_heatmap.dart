@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/conversation_service.dart';
 import 'package:ui/theme/omni_theme_palette.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -242,7 +242,7 @@ class _ConversationHeatmapState extends State<ConversationHeatmap>
           child: _buildStatPill(
             icon: Icons.chat_bubble_outline_rounded,
             value: '$_totalConversations',
-            label: LegacyTextLocalizer.localize('次对话'),
+            label: AppTextLocalizer.text('次对话'),
             palette: palette,
             isDark: isDark,
           ),
@@ -252,7 +252,7 @@ class _ConversationHeatmapState extends State<ConversationHeatmap>
           child: _buildStatPill(
             icon: Icons.local_fire_department_rounded,
             value: '$_currentStreak',
-            label: LegacyTextLocalizer.localize('天连续'),
+            label: AppTextLocalizer.text('天连续'),
             palette: palette,
             isDark: isDark,
             highlight: _currentStreak >= 3,
@@ -440,10 +440,10 @@ class _ConversationHeatmapState extends State<ConversationHeatmap>
 
                         return Tooltip(
                           message: count > 0
-                              ? LegacyTextLocalizer.localize(
+                              ? AppTextLocalizer.text(
                                   '$count 次对话 · ${cellDate.month}/${cellDate.day}',
                                 )
-                              : LegacyTextLocalizer.localize(
+                              : AppTextLocalizer.text(
                                   '无对话 · ${cellDate.month}/${cellDate.day}',
                                 ),
                           preferBelow: false,
@@ -484,7 +484,7 @@ class _ConversationHeatmapState extends State<ConversationHeatmap>
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
         Text(
-          LegacyTextLocalizer.isEnglish ? 'Less' : '少',
+          AppTextLocalizer.choose(en: 'Less', zh: '少'),
           style: TextStyle(
             fontSize: 9,
             color: palette.textTertiary,
@@ -504,7 +504,7 @@ class _ConversationHeatmapState extends State<ConversationHeatmap>
         ],
         const SizedBox(width: 4),
         Text(
-          LegacyTextLocalizer.isEnglish ? 'More' : '多',
+          AppTextLocalizer.choose(en: 'More', zh: '多'),
           style: TextStyle(
             fontSize: 9,
             color: palette.textTertiary,
@@ -515,38 +515,21 @@ class _ConversationHeatmapState extends State<ConversationHeatmap>
   }
 
   String _monthName(int month) {
-    if (LegacyTextLocalizer.isEnglish) {
-      const names = [
-        '',
-        'Jan',
-        'Feb',
-        'Mar',
-        'Apr',
-        'May',
-        'Jun',
-        'Jul',
-        'Aug',
-        'Sep',
-        'Oct',
-        'Nov',
-        'Dec',
-      ];
-      return names[month];
-    }
-    const names = [
-      '', '1月', '2月', '3月', '4月', '5月', '6月',
-      '7月', '8月', '9月', '10月', '11月', '12月',
-    ];
+    final names = AppTextLocalizer.chooseList(
+      en: ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep',
+        'Oct', 'Nov', 'Dec'],
+      zh: ['', '1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月',
+        '10月', '11月', '12月'],
+    );
     return names[month];
   }
 
   String _dayLabel(int dayIndex) {
     // dayIndex 0=Mon, 2=Wed, 4=Fri, 6=Sun
-    if (LegacyTextLocalizer.isEnglish) {
-      const labels = ['Mon', '', 'Wed', '', 'Fri', '', 'Sun'];
-      return labels[dayIndex];
-    }
-    const labels = ['一', '', '三', '', '五', '', '日'];
+    final labels = AppTextLocalizer.chooseList(
+      en: ['Mon', '', 'Wed', '', 'Fri', '', 'Sun'],
+      zh: ['一', '', '三', '', '五', '', '日'],
+    );
     return labels[dayIndex];
   }
 }

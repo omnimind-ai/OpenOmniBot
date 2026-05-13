@@ -27,7 +27,7 @@ class SettingsSectionTitle extends StatelessWidget {
           Row(
             children: [
               Text(
-                context.trLegacy(label),
+                context.trText(label),
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
@@ -50,7 +50,7 @@ class SettingsSectionTitle extends StatelessWidget {
           if (subtitle != null) ...[
             const SizedBox(height: 6),
             Text(
-              context.trLegacy(subtitle!),
+              context.trText(subtitle!),
               style: TextStyle(
                 fontSize: 12,
                 height: 1.5,

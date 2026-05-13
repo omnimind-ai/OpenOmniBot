@@ -3,7 +3,7 @@ import 'dart:async';
 import 'dart:ui' show ImageFilter;
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:ui/core/router/go_router_manager.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/theme/omni_theme_palette.dart';
 import 'package:ui/theme/theme_context.dart';
 
@@ -37,7 +37,7 @@ class Loading {
       builder: (_) =>
           Center(
             child: _CustomLoadingWidget(
-              message: LegacyTextLocalizer.localize(message ?? '加载中'),
+              message: AppTextLocalizer.text(message ?? '加载中'),
             ),
           ),
     );
@@ -122,7 +122,7 @@ class AppToast {
     final alignment = _alignmentFor(position);
     final EdgeInsets margin = _marginFor(position);
 
-    final localizedMessage = LegacyTextLocalizer.localize(message);
+    final localizedMessage = AppTextLocalizer.text(message);
 
     _activeToken = token;
     _entry = OverlayEntry(
@@ -525,8 +525,8 @@ class AppDialog {
         title: title,
         content: content,
         type: DialogType.confirm,
-        cancelText: LegacyTextLocalizer.localize(cancelText),
-        confirmText: LegacyTextLocalizer.localize(confirmText),
+        cancelText: AppTextLocalizer.text(cancelText),
+        confirmText: AppTextLocalizer.text(confirmText),
         confirmButtonColor: confirmButtonColor,
         buttonTextSize: buttonTextSize,
       ),
@@ -575,8 +575,8 @@ class AppDialog {
         title: title,
         content: content,
         type: DialogType.input,
-        cancelText: LegacyTextLocalizer.localize(cancelText),
-        confirmText: LegacyTextLocalizer.localize(confirmText),
+        cancelText: AppTextLocalizer.text(cancelText),
+        confirmText: AppTextLocalizer.text(confirmText),
         hintText: hintText,
         initialValue: initialValue,
         maxLines: maxLines,
@@ -611,7 +611,7 @@ class AppDialog {
   /// 加载对话框 - 显示loading状态
   static void loading(
     BuildContext context, {
-    String title = '加载中', // Will be localized via LegacyTextLocalizer.localize in widget
+    String title = '加载中', // Will be localized via AppTextLocalizer.text in widget
     dynamic content,
     bool barrierDismissible = false,
   }) {
@@ -894,7 +894,7 @@ class _AppDialogWidgetState extends State<_AppDialogWidget> {
               ),
               SizedBox(width: 12),
               Text(
-                LegacyTextLocalizer.localize('请稍候...'),
+                AppTextLocalizer.text('请稍候...'),
                 style: TextStyle(
                   color: palette.textSecondary,
                   fontSize: 14,
@@ -932,7 +932,7 @@ class _AppDialogWidgetState extends State<_AppDialogWidget> {
                 ),
                 child: Center(
                   child: Text(
-                    LegacyTextLocalizer.localize(widget.confirmText ?? '确定'),
+                    AppTextLocalizer.text(widget.confirmText ?? '确定'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: confirmColor,
@@ -967,7 +967,7 @@ class _AppDialogWidgetState extends State<_AppDialogWidget> {
               ),
               child: Center(
                 child: Text(
-                  LegacyTextLocalizer.localize(widget.cancelText ?? '取消'),
+                  AppTextLocalizer.text(widget.cancelText ?? '取消'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: confirmColor,
@@ -1010,7 +1010,7 @@ class _AppDialogWidgetState extends State<_AppDialogWidget> {
               ),
               child: Center(
                 child: Text(
-                  LegacyTextLocalizer.localize(widget.confirmText ?? '确认'),
+                  AppTextLocalizer.text(widget.confirmText ?? '确认'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white,

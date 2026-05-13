@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:simple_gradient_text/simple_gradient_text.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/core/mixins/page_lifecycle_mixin.dart';
 import 'package:ui/features/memory/models/mem0_memory_item.dart';
@@ -708,7 +708,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       tagListWithApp.add(
         AppTag(
           id: 'all',
-          label: LegacyTextLocalizer.localize('全部'),
+          label: AppTextLocalizer.text('全部'),
           count: totalCount,
           svgPath: 'assets/common/all_icon.svg',
           iconBgColor: Colors.black,
@@ -755,7 +755,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
         );
 
         if (systemConfig.id.isNotEmpty) {
-          label = LegacyTextLocalizer.localize(systemConfig.displayName);
+          label = AppTextLocalizer.text(systemConfig.displayName);
           svgPath = systemConfig.svgIcon;
           iconProvider = null;
         } else {
@@ -794,8 +794,8 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       context,
       title: context.l10n.memoryDeleteConfirmTitle,
       content: context.l10n.memoryDeleteWarning,
-      cancelText: context.trLegacy('取消'),
-      confirmText: context.trLegacy('删除'),
+      cancelText: context.trText('取消'),
+      confirmText: context.trText('删除'),
       confirmButtonColor: AppColors.alertRed,
     ).then((result) async {
       if (result == true) {
@@ -835,7 +835,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       return true;
     } catch (e) {
       print('Error deleting card: $e');
-      showToast(context.trLegacy('删除失败'), type: ToastType.error);
+      showToast(context.trText('删除失败'), type: ToastType.error);
       return false;
     }
   }
@@ -886,7 +886,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
     }
 
     if (!success) {
-      showToast(context.trLegacy('修改失败'), type: ToastType.error);
+      showToast(context.trText('修改失败'), type: ToastType.error);
     } else {
       // 更新本地状态
       _safeSetState(() {
@@ -895,7 +895,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
           favoritesCards[idx] = favoritesCards[idx].copyWith(title: text);
       });
 
-      showToast(context.trLegacy('修改成功'), type: ToastType.success);
+      showToast(context.trText('修改成功'), type: ToastType.success);
     }
     return success;
   }
@@ -1204,7 +1204,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       leading: TextButton(
         onPressed: _exitSelectionMode,
         child: Text(
-          context.trLegacy('取消'),
+          context.trText('取消'),
           style: TextStyle(
             color: palette.accentPrimary,
             fontSize: 14,
@@ -1220,7 +1220,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
             child: Text(
               isAllSelected
                   ? context.l10n.memoryDeselectAll
-                  : context.trLegacy('全选'),
+                  : context.trText('全选'),
               style: TextStyle(
                 color: palette.accentPrimary,
                 fontSize: 14,
@@ -1315,11 +1315,11 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
             Row(
               children: [
                 _buildMemoryTabButton(
-                  label: LegacyTextLocalizer.localize('短期记忆'),
+                  label: AppTextLocalizer.text('短期记忆'),
                   tabIndex: _localMemoryTab,
                 ),
                 _buildMemoryTabButton(
-                  label: LegacyTextLocalizer.localize('长期记忆'),
+                  label: AppTextLocalizer.text('长期记忆'),
                   tabIndex: _cloudMemoryTab,
                 ),
               ],
@@ -1378,7 +1378,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
               child: Row(
                 children: [
                   Text(
-                    LegacyTextLocalizer.localize('短期记忆'),
+                    AppTextLocalizer.text('短期记忆'),
                     style: TextStyle(
                       color: context.omniPalette.textPrimary,
                       fontSize: AppTextStyles.fontSizeMain,
@@ -1665,7 +1665,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        LegacyTextLocalizer.localize('长期记忆'),
+                        AppTextLocalizer.text('长期记忆'),
                         style: TextStyle(
                           color: palette.accentPrimary,
                           fontSize: AppTextStyles.fontSizeSmall,
@@ -1729,7 +1729,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
                               ),
                             ),
                             icon: const Icon(Icons.delete_outline, size: 16),
-                            label: Text(context.trLegacy('删除')),
+                            label: Text(context.trText('删除')),
                           ),
                         ],
                       ),
@@ -1878,7 +1878,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       title: context.l10n.memoryDeleteLongTermConfirm,
       content:
           '${context.l10n.memoryDeleteWarning}:\n${_clipMem0Memory(item.memory)}',
-      confirmText: context.trLegacy('删除'),
+      confirmText: context.trText('删除'),
       confirmButtonColor: AppColors.alertRed,
     );
     if (confirmed != true) {

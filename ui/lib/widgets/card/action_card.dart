@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import '../bot_status.dart';
 import '../buttons_group_two.dart';
 import '../normal_choices_group.dart';
 import '../../models/block_models.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 
 class ActionCard extends StatefulWidget {
   final ActionStepsBlock block;
@@ -119,7 +119,7 @@ class _ActionCardState extends State<ActionCard>
     for (int taskIdx = 0; taskIdx < widget.block.steps.length; taskIdx++) {
       // 多任务时插入任务头部标识
       if (widget.block.steps.length > 1) {
-        _rendered.add(ActionStep(description: LegacyTextLocalizer.isEnglish ? 'Task ${taskIdx + 1}' : '任务${taskIdx + 1}', isHeader: true));
+        _rendered.add(ActionStep(description: AppTextLocalizer.choose(en: 'Task ${taskIdx + 1}', zh: '任务${taskIdx + 1}'), isHeader: true));
       }
       // 插入任务步骤
       for (int i = 0; i < widget.block.steps[taskIdx].length; i++) {
@@ -147,7 +147,7 @@ class _ActionCardState extends State<ActionCard>
       }
       // 多任务时插入任务头部标识
       if (widget.block.steps.length > 1) {
-        _rendered.add(ActionStep(description: LegacyTextLocalizer.isEnglish ? 'Task ${taskIdx + 1}' : '任务${taskIdx + 1}', isHeader: true));
+        _rendered.add(ActionStep(description: AppTextLocalizer.choose(en: 'Task ${taskIdx + 1}', zh: '任务${taskIdx + 1}'), isHeader: true));
         _stepListKey.currentState?.insertItem(_rendered.length - 1, duration: const Duration(milliseconds: 250));
         await Future.delayed(const Duration(milliseconds: 180));
       }
@@ -184,7 +184,7 @@ class _ActionCardState extends State<ActionCard>
 
     return Column(
       children: [
-        BotStatus(status: BotStatusType.hint, hintText: LegacyTextLocalizer.localize('好，我来帮你完成')),
+        BotStatus(status: BotStatusType.hint, hintText: AppTextLocalizer.text('好，我来帮你完成')),
         SizedBox(height: 8),
         Container(
           margin: const EdgeInsets.only(left: 16),
@@ -350,7 +350,7 @@ class _StepChip extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    LegacyTextLocalizer.localize('用户操作'),
+                    AppTextLocalizer.text('用户操作'),
                     style: TextStyle(
                       fontSize: 10,
                       color: Colors.orange,

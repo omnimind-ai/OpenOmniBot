@@ -128,6 +128,8 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
   String? _editingThreadKey;
   StreamSubscription<Map<String, dynamic>>?
   _conversationListChangedSubscription;
+  String _runtimeConversationStatusSignature = '';
+  bool _runtimeConversationStatusRefreshScheduled = false;
 
   Map<String, String> _getGreetingByTime() {
     final hour = DateTime.now().hour;
@@ -299,9 +301,42 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
   }
 
   void _handleConversationRuntimeChanged() {
-    if (mounted) {
-      setState(() {});
+    if (!mounted) {
+      return;
     }
+    final nextSignature = _buildRuntimeConversationStatusSignature();
+    if (nextSignature == _runtimeConversationStatusSignature) {
+      return;
+    }
+    _runtimeConversationStatusSignature = nextSignature;
+    if (_runtimeConversationStatusRefreshScheduled) {
+      return;
+    }
+    _runtimeConversationStatusRefreshScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _runtimeConversationStatusRefreshScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      setState(() {});
+    });
+  }
+
+  String _buildRuntimeConversationStatusSignature() {
+    if (_allConversations.isEmpty) {
+      return '';
+    }
+    return _allConversations
+        .map((conversation) {
+          final runtime = _runtimeCoordinator.runtimeFor(
+            conversationId: conversation.id,
+            mode: conversation.mode.storageValue,
+          );
+          final isRunning =
+              runtime?.hasInFlightTask == true || conversation.isActive;
+          return '${conversation.threadKey}:${isRunning ? 1 : 0}';
+        })
+        .join('|');
   }
 
   bool get _isSearchActive => _searchQuery.isNotEmpty;
@@ -345,6 +380,8 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
         );
         isLoadingConversations = false;
       });
+      _runtimeConversationStatusSignature =
+          _buildRuntimeConversationStatusSignature();
       if (_isSearchActive) {
         _scheduleConversationSearch(immediate: true);
       }
@@ -1485,7 +1522,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       setState(() {
         _replaceConversationInState(conversation);
       });
-      showToast(context.trLegacy('重命名失败'), type: ToastType.error);
+      showToast(context.trText('重命名失败'), type: ToastType.error);
     }
   }
 
@@ -1544,7 +1581,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     });
 
     showToast(
-      deleted ? context.trLegacy('已删除') : context.trLegacy('删除失败'),
+      deleted ? context.trText('已删除') : context.trText('删除失败'),
       type: deleted ? ToastType.success : ToastType.error,
     );
   }
@@ -1586,7 +1623,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     });
 
     showToast(
-      archived ? context.trLegacy('已归档') : context.trLegacy('归档失败'),
+      archived ? context.trText('已归档') : context.trText('归档失败'),
       type: archived ? ToastType.success : ToastType.error,
     );
   }
@@ -1628,7 +1665,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     });
 
     showToast(
-      restored ? context.trLegacy('已取消归档') : context.trLegacy('取消归档失败'),
+      restored ? context.trText('已取消归档') : context.trText('取消归档失败'),
       type: restored ? ToastType.success : ToastType.error,
     );
   }
@@ -1688,7 +1725,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       return title;
     }
     final summary = (conversation.summary ?? '').trim();
-    return summary.isNotEmpty ? summary : context.trLegacy('未命名对话');
+    return summary.isNotEmpty ? summary : context.trText('未命名对话');
   }
 
   bool _isConversationRunning(ConversationModel conversation) {
@@ -1840,7 +1877,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
           Icon(Icons.archive_outlined, size: 11, color: palette.textSecondary),
           const SizedBox(width: 4),
           Text(
-            context.trLegacy('已归档'),
+            context.trText('已归档'),
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w600,

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:ui/core/router/go_router_manager.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/runtime_log_service.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/app_text_styles.dart';
@@ -68,7 +68,7 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
       if (!mounted) return;
       if (logs.isEmpty) {
         showToast(
-          LegacyTextLocalizer.localize('暂无运行日志'),
+          AppTextLocalizer.text('暂无运行日志'),
           type: ToastType.warning,
         );
         return;
@@ -76,13 +76,13 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
       await Clipboard.setData(ClipboardData(text: _buildExportText(logs)));
       if (!mounted) return;
       showToast(
-        LegacyTextLocalizer.localize('已复制全部运行日志'),
+        AppTextLocalizer.text('已复制全部运行日志'),
         type: ToastType.success,
       );
     } catch (_) {
       if (!mounted) return;
       showToast(
-        LegacyTextLocalizer.localize('导出运行日志失败'),
+        AppTextLocalizer.text('导出运行日志失败'),
         type: ToastType.error,
       );
     }
@@ -92,18 +92,18 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(LegacyTextLocalizer.localize('确定删除吗？')),
+        title: Text(AppTextLocalizer.text('确定删除吗？')),
         content: Text(
-          LegacyTextLocalizer.localize('删除后该内容将不可找回'),
+          AppTextLocalizer.text('删除后该内容将不可找回'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: Text(LegacyTextLocalizer.localize('取消')),
+            child: Text(AppTextLocalizer.text('取消')),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: Text(LegacyTextLocalizer.localize('确认')),
+            child: Text(AppTextLocalizer.text('确认')),
           ),
         ],
       ),
@@ -114,14 +114,14 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
       await RuntimeLogService.clear();
       if (!mounted) return;
       showToast(
-        LegacyTextLocalizer.localize('已删除'),
+        AppTextLocalizer.text('已删除'),
         type: ToastType.success,
       );
       _loadLogs();
     } catch (e) {
       if (!mounted) return;
       showToast(
-        LegacyTextLocalizer.localize('删除失败'),
+        AppTextLocalizer.text('删除失败'),
         type: ToastType.error,
       );
     }
@@ -131,7 +131,7 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
     showToast(
-      LegacyTextLocalizer.localize('已复制'),
+      AppTextLocalizer.text('已复制'),
       type: ToastType.success,
     );
   }
@@ -196,15 +196,15 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SettingsSectionTitle(
-          label: LegacyTextLocalizer.localize('概览'),
-          subtitle: LegacyTextLocalizer.localize('最近 200 条错误和崩溃日志，按时间倒序展示。'),
+          label: AppTextLocalizer.text('概览'),
+          subtitle: AppTextLocalizer.text('最近 200 条错误和崩溃日志，按时间倒序展示。'),
         ),
         Row(
           children: [
             Expanded(
               child: _buildOverviewMetric(
                 context,
-                label: LegacyTextLocalizer.localize('总数'),
+                label: AppTextLocalizer.text('总数'),
                 value: _logs.length.toString(),
               ),
             ),
@@ -212,7 +212,7 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
             Expanded(
               child: _buildOverviewMetric(
                 context,
-                label: LegacyTextLocalizer.localize('崩溃'),
+                label: AppTextLocalizer.text('崩溃'),
                 value: _crashCount.toString(),
                 valueColor: const Color(0xFFD93025),
               ),
@@ -221,7 +221,7 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
             Expanded(
               child: _buildOverviewMetric(
                 context,
-                label: LegacyTextLocalizer.localize('最近一条'),
+                label: AppTextLocalizer.text('最近一条'),
                 value: _logs.isEmpty ? '-' : _formatDateTime(_logs.first.createdAt).substring(5, 10),
                 alignEnd: true,
               ),
@@ -287,7 +287,7 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
     return Padding(
       padding: const EdgeInsets.only(top: 24, bottom: 8),
       child: Text(
-        LegacyTextLocalizer.localize('暂无运行日志'),
+        AppTextLocalizer.text('暂无运行日志'),
         style: TextStyle(
           fontFamily: AppTextStyles.fontFamily,
           fontSize: 14,
@@ -306,7 +306,7 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            LegacyTextLocalizer.localize('加载运行日志失败'),
+            AppTextLocalizer.text('加载运行日志失败'),
             style: TextStyle(
               fontFamily: AppTextStyles.fontFamily,
               fontSize: 16,
@@ -329,7 +329,7 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
           const SizedBox(height: 16),
           OutlinedButton(
             onPressed: _loadLogs,
-            child: Text(LegacyTextLocalizer.localize('重试')),
+            child: Text(AppTextLocalizer.text('重试')),
           ),
         ],
       ),
@@ -523,7 +523,7 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
                                     visualDensity: VisualDensity.compact,
                                   ),
                                   child: Text(
-                                    LegacyTextLocalizer.localize('复制'),
+                                    AppTextLocalizer.text('复制'),
                                   ),
                                 ),
                               ],
@@ -604,9 +604,9 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
             const SizedBox(height: 24),
           ],
           SettingsSectionTitle(
-            label: LegacyTextLocalizer.localize('最近记录'),
+            label: AppTextLocalizer.text('最近记录'),
             subtitle: _hasExpandableLogs
-                ? LegacyTextLocalizer.localize('含堆栈的条目可展开查看。')
+                ? AppTextLocalizer.text('含堆栈的条目可展开查看。')
                 : null,
           ),
           if (_errorMessage.isNotEmpty && _logs.isEmpty)
@@ -648,7 +648,7 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
         IconButton(
           onPressed: _exportLogs,
           icon: const Icon(Icons.content_copy_rounded),
-          tooltip: LegacyTextLocalizer.localize('导出运行日志'),
+          tooltip: AppTextLocalizer.text('导出运行日志'),
           color: palette.textPrimary,
           iconSize: 18,
           padding: EdgeInsets.zero,
@@ -665,7 +665,7 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
     return Scaffold(
       backgroundColor: palette.pageBackground,
       appBar: CommonAppBar(
-        title: LegacyTextLocalizer.localize('运行日志'),
+        title: AppTextLocalizer.text('运行日志'),
         leading: _buildAppBarLeading(context),
         leadingWidth: 96,
         primary: true,
@@ -673,13 +673,13 @@ class _RuntimeLogsPageState extends State<RuntimeLogsPage> {
           IconButton(
             onPressed: _loadLogs,
             icon: const Icon(Icons.refresh),
-            tooltip: LegacyTextLocalizer.localize('刷新'),
+            tooltip: AppTextLocalizer.text('刷新'),
           ),
           if (_logs.isNotEmpty)
             IconButton(
               onPressed: _clearLogs,
               icon: const Icon(Icons.delete_outline),
-              tooltip: LegacyTextLocalizer.localize('清除'),
+              tooltip: AppTextLocalizer.text('清除'),
             ),
         ],
       ),

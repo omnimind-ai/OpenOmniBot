@@ -4,7 +4,7 @@ import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/l10n.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/app_background_service.dart';
 import 'package:ui/theme/theme_context.dart';
 
@@ -217,7 +217,7 @@ class _AppBackgroundPreviewState extends State<AppBackgroundPreview> {
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
-                          LegacyTextLocalizer.isEnglish ? 'Drag or pinch to zoom' : '拖动与双指缩放图片',
+                          AppTextLocalizer.choose(en: 'Drag or pinch to zoom', zh: '拖动与双指缩放图片'),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 11,
@@ -551,7 +551,7 @@ class _BackgroundLoadFailurePlaceholder extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(
-          LegacyTextLocalizer.isEnglish ? 'Image load failed' : '图片加载失败',
+          AppTextLocalizer.choose(en: 'Image load failed', zh: '图片加载失败'),
           style: const TextStyle(
             color: Colors.white,
             fontSize: 12,

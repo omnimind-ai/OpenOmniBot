@@ -132,7 +132,7 @@ class CommonAppBar extends StatelessWidget implements PreferredSizeWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      context.trLegacy(title!),
+                      context.trText(title!),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style:

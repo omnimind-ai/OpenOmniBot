@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/utils/ui.dart';
 
 // The channel name must match the one in MainActivity.kt
@@ -529,52 +529,34 @@ class ShizukuStatusSnapshot {
   String get localizedStatusLabel {
     switch (status) {
       case 'GRANTED_ROOT':
-        return LegacyTextLocalizer.isEnglish ? 'Granted (root)' : '已授权（root）';
+        return AppTextLocalizer.choose(en: 'Granted (root)', zh: '已授权（root）');
       case 'GRANTED_ADB':
-        return LegacyTextLocalizer.isEnglish ? 'Granted (adb)' : '已授权（adb）';
+        return AppTextLocalizer.choose(en: 'Granted (adb)', zh: '已授权（adb）');
       case 'PERMISSION_DENIED':
-        return LegacyTextLocalizer.isEnglish
-            ? 'Running, permission not granted'
-            : '已启动，尚未授权';
+        return AppTextLocalizer.choose(en: 'Running, permission not granted', zh: '已启动，尚未授权');
       case 'NOT_RUNNING':
-        return LegacyTextLocalizer.isEnglish
-            ? 'Installed, not running'
-            : '已安装，未启动';
+        return AppTextLocalizer.choose(en: 'Installed, not running', zh: '已安装，未启动');
       case 'BINDER_DEAD':
-        return LegacyTextLocalizer.isEnglish
-            ? 'Binder lost, restart required'
-            : '连接已断开，需要重新启动';
+        return AppTextLocalizer.choose(en: 'Binder lost, restart required', zh: '连接已断开，需要重新启动');
       default:
-        return LegacyTextLocalizer.isEnglish ? 'Not installed' : '未安装';
+        return AppTextLocalizer.choose(en: 'Not installed', zh: '未安装');
     }
   }
 
   String get localizedGuide {
     switch (status) {
       case 'GRANTED_ROOT':
-        return LegacyTextLocalizer.isEnglish
-            ? 'Shizuku is ready through root/Sui. Agent privileged tools are enabled, including arbitrary shell and persistent shell sessions. Every raw shell and privileged session command still requires confirmation.'
-            : 'Shizuku 已通过 root/Sui 就绪。Agent 高权限工具已启用，支持任意 shell 和持久高权限会话；每次 raw shell 与高权限会话命令仍需用户确认。';
+        return AppTextLocalizer.choose(en: 'Shizuku is ready through root/Sui. Agent privileged tools are enabled, including arbitrary shell and persistent shell sessions. Every raw shell and privileged session command still requires confirmation.', zh: 'Shizuku 已通过 root/Sui 就绪。Agent 高权限工具已启用，支持任意 shell 和持久高权限会话；每次 raw shell 与高权限会话命令仍需用户确认。');
       case 'GRANTED_ADB':
-        return LegacyTextLocalizer.isEnglish
-            ? 'Shizuku is ready through adb shell. Agent privileged tools are enabled, including arbitrary shell and persistent shell sessions. Commands still follow adb-shell capability limits, and every raw shell and privileged session command requires confirmation.'
-            : 'Shizuku 已通过 adb shell 就绪。Agent 高权限工具已启用，支持任意 shell 和持久高权限会话，但能力仍受 adb shell 后端限制；每次 raw shell 与高权限会话命令都需要用户确认。';
+        return AppTextLocalizer.choose(en: 'Shizuku is ready through adb shell. Agent privileged tools are enabled, including arbitrary shell and persistent shell sessions. Commands still follow adb-shell capability limits, and every raw shell and privileged session command requires confirmation.', zh: 'Shizuku 已通过 adb shell 就绪。Agent 高权限工具已启用，支持任意 shell 和持久高权限会话，但能力仍受 adb shell 后端限制；每次 raw shell 与高权限会话命令都需要用户确认。');
       case 'PERMISSION_DENIED':
-        return LegacyTextLocalizer.isEnglish
-            ? 'Open Shizuku and grant Omnibot permission.'
-            : '请打开 Shizuku 并授予 Omnibot 权限。';
+        return AppTextLocalizer.choose(en: 'Open Shizuku and grant Omnibot permission.', zh: '请打开 Shizuku 并授予 Omnibot 权限。');
       case 'NOT_RUNNING':
-        return LegacyTextLocalizer.isEnglish
-            ? 'Open Shizuku and start it. On Android 11+, non-root devices usually start it from Wireless debugging. You need to restart Shizuku after each reboot.'
-            : '请打开 Shizuku 并启动它。Android 11+ 非 root 设备通常需要从无线调试启动，并且每次重启后都需要重新启动 Shizuku。';
+        return AppTextLocalizer.choose(en: 'Open Shizuku and start it. On Android 11+, non-root devices usually start it from Wireless debugging. You need to restart Shizuku after each reboot.', zh: '请打开 Shizuku 并启动它。Android 11+ 非 root 设备通常需要从无线调试启动，并且每次重启后都需要重新启动 Shizuku。');
       case 'BINDER_DEAD':
-        return LegacyTextLocalizer.isEnglish
-            ? 'Shizuku was restarted or disconnected. Open it again to reconnect.'
-            : 'Shizuku 已重启或断开，请重新打开并启动。';
+        return AppTextLocalizer.choose(en: 'Shizuku was restarted or disconnected. Open it again to reconnect.', zh: 'Shizuku 已重启或断开，请重新打开并启动。');
       default:
-        return LegacyTextLocalizer.isEnglish
-            ? 'Install Shizuku first, then start it and grant Omnibot permission.'
-            : '请先安装 Shizuku，然后启动它并授予 Omnibot 权限。';
+        return AppTextLocalizer.choose(en: 'Install Shizuku first, then start it and grant Omnibot permission.', zh: '请先安装 Shizuku，然后启动它并授予 Omnibot 权限。');
     }
   }
 }
@@ -715,12 +697,13 @@ Future<bool> ensureShizukuPermission(BuildContext context) async {
   }
   final confirmed = await AppDialog.confirm(
     context,
-    title: LegacyTextLocalizer.isEnglish ? 'Shizuku Permission' : 'Shizuku 权限',
+    title: AppTextLocalizer.choose(en: 'Shizuku Permission', zh: 'Shizuku 权限'),
     content: status.localizedGuide,
-    cancelText: LegacyTextLocalizer.isEnglish ? 'Cancel' : '取消',
-    confirmText: LegacyTextLocalizer.isEnglish
-        ? (status.installed ? 'Open Shizuku' : 'Install Shizuku')
-        : (status.installed ? '打开 Shizuku' : '安装 Shizuku'),
+    cancelText: AppTextLocalizer.choose(en: 'Cancel', zh: '取消'),
+    confirmText: AppTextLocalizer.choose(
+      en: status.installed ? 'Open Shizuku' : 'Install Shizuku',
+      zh: status.installed ? '打开 Shizuku' : '安装 Shizuku',
+    ),
   );
   if (confirmed != true) {
     return false;
@@ -750,12 +733,10 @@ Future<bool> checkAccessibilityPermission(BuildContext context) async {
     // 没有权限，弹出对话框
     final result = await AppDialog.confirm(
       context,
-      title: LegacyTextLocalizer.isEnglish ? 'Accessibility' : '无障碍权限',
-      content: LegacyTextLocalizer.isEnglish
-          ? 'Accessibility permission needs to be re-granted each time the app starts for your security.'
-          : '每次开启App需重新授权无障碍的权限，这也是为了你的安全～',
-      cancelText: LegacyTextLocalizer.isEnglish ? 'Cancel' : '取消',
-      confirmText: LegacyTextLocalizer.isEnglish ? 'Authorize' : '去授权',
+      title: AppTextLocalizer.choose(en: 'Accessibility', zh: '无障碍权限'),
+      content: AppTextLocalizer.choose(en: 'Accessibility permission needs to be re-granted each time the app starts for your security.', zh: '每次开启App需重新授权无障碍的权限，这也是为了你的安全～'),
+      cancelText: AppTextLocalizer.choose(en: 'Cancel', zh: '取消'),
+      confirmText: AppTextLocalizer.choose(en: 'Authorize', zh: '去授权'),
     );
 
     if (!context.mounted) {

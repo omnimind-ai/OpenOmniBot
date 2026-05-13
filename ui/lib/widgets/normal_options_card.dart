@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 
 class NormalOptionsCard extends StatefulWidget {
   final String title;
@@ -87,9 +87,7 @@ class _NormalOptionsCardState extends State<NormalOptionsCard> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      (LegacyTextLocalizer.isEnglish
-                          ? '${widget.options.length} charge items'
-                          : '有${widget.options.length}个扣费项'),
+                      (AppTextLocalizer.choose(en: '${widget.options.length} charge items', zh: '有${widget.options.length}个扣费项')),
                       style: TextStyle(
                         color: Colors.grey.shade700,
                         fontSize: 12,
@@ -100,8 +98,8 @@ class _NormalOptionsCardState extends State<NormalOptionsCard> {
                         onTap: _toggleAll,
                         child: Text(
                           _allSelected
-                              ? (LegacyTextLocalizer.isEnglish ? 'Deselect all' : '取消全选')
-                              : (LegacyTextLocalizer.isEnglish ? 'Select all' : '全选'),
+                              ? (AppTextLocalizer.choose(en: 'Deselect all', zh: '取消全选'))
+                              : (AppTextLocalizer.choose(en: 'Select all', zh: '全选')),
                           style: TextStyle(
                             color: Theme.of(context).primaryColor,
                             fontSize: 12,
@@ -210,28 +208,28 @@ class NormalOptionsCardExample extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return NormalOptionsCard(
-      title: LegacyTextLocalizer.isEnglish ? 'Auto-renewal / Password-free payment' : '自动续费/免密支付',
-      subtitle: LegacyTextLocalizer.isEnglish ? 'These auto-charge items exist, which ones do you want to disable?' : '目前有这些自动扣费项目，你想关闭哪些？',
+      title: AppTextLocalizer.choose(en: 'Auto-renewal / Password-free payment', zh: '自动续费/免密支付'),
+      subtitle: AppTextLocalizer.choose(en: 'These auto-charge items exist, which ones do you want to disable?', zh: '目前有这些自动扣费项目，你想关闭哪些？'),
       options: [
         OptionItem(
-          title: LegacyTextLocalizer.isEnglish ? 'Ninebot auto-renewal' : '九号自动续费',
+          title: AppTextLocalizer.choose(en: 'Ninebot auto-renewal', zh: '九号自动续费'),
           icon: const Text('9', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           isSelected: true,
         ),
         OptionItem(
-          title: LegacyTextLocalizer.isEnglish ? 'Apple services' : 'Apple服务',
+          title: AppTextLocalizer.choose(en: 'Apple services', zh: 'Apple服务'),
           icon: const Icon(Icons.apple, color: Colors.black, size: 18),
         ),
         OptionItem(
-          title: LegacyTextLocalizer.isEnglish ? 'Credit borrowing service' : '信用借还服务商',
+          title: AppTextLocalizer.choose(en: 'Credit borrowing service', zh: '信用借还服务商'),
           icon: const Icon(Icons.credit_card, color: Colors.green, size: 18),
         ),
         OptionItem(
-          title: LegacyTextLocalizer.isEnglish ? '88VIP membership auto-renewal' : '88VIP会员自动续费服务',
+          title: AppTextLocalizer.choose(en: '88VIP membership auto-renewal', zh: '88VIP会员自动续费服务'),
           icon: const Icon(Icons.card_membership, color: Colors.orange, size: 18),
         ),
         OptionItem(
-          title: LegacyTextLocalizer.isEnglish ? 'Meituan charge password-free' : '美团充电免密支付',
+          title: AppTextLocalizer.choose(en: 'Meituan charge password-free', zh: '美团充电免密支付'),
           icon: const Icon(Icons.delivery_dining, color: Colors.amber, size: 18),
         ),
       ],

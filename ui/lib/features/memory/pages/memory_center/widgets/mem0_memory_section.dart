@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:ui/features/memory/models/mem0_memory_item.dart';
 import 'package:ui/features/memory/pages/memory_center/widgets/tag_chip.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/app_text_styles.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -93,8 +93,8 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
           else if (!widget.snapshot.configured)
             _buildPlaceholder(
               icon: Icons.cloud_off_outlined,
-              title: LegacyTextLocalizer.localize('长期记忆未就绪'),
-              subtitle: LegacyTextLocalizer.localize(
+              title: AppTextLocalizer.text('长期记忆未就绪'),
+              subtitle: AppTextLocalizer.text(
                 '完成记忆初始化后，这里会展示跨会话沉淀的偏好与事实。',
               ),
             )
@@ -102,14 +102,14 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
               !widget.snapshot.hasData)
             _buildPlaceholder(
               icon: Icons.error_outline_rounded,
-              title: LegacyTextLocalizer.localize('长期记忆暂时不可用'),
+              title: AppTextLocalizer.text('长期记忆暂时不可用'),
               subtitle: widget.snapshot.errorMessage!,
             )
           else if (filteredItems.isEmpty)
             _buildPlaceholder(
               icon: Icons.auto_awesome_outlined,
-              title: LegacyTextLocalizer.localize('长期记忆还是空的'),
-              subtitle: LegacyTextLocalizer.localize(
+              title: AppTextLocalizer.text('长期记忆还是空的'),
+              subtitle: AppTextLocalizer.text(
                 '当 Agent 主动写入长期偏好后，这里会逐渐丰富起来。',
               ),
             )
@@ -135,7 +135,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
     return Row(
       children: [
         Text(
-          LegacyTextLocalizer.localize('长期记忆'),
+          AppTextLocalizer.text('长期记忆'),
           style: TextStyle(
             color: palette.textPrimary,
             fontSize: AppTextStyles.fontSizeMain,
@@ -166,7 +166,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
             splashRadius: 18,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            tooltip: LegacyTextLocalizer.localize('新增长期记忆'),
+            tooltip: AppTextLocalizer.text('新增长期记忆'),
           ),
         if (widget.snapshot.configured || widget.snapshot.hasData)
           IconButton(
@@ -183,7 +183,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
             splashRadius: 18,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            tooltip: LegacyTextLocalizer.localize('刷新长期记忆'),
+            tooltip: AppTextLocalizer.text('刷新长期记忆'),
           ),
       ],
     );
@@ -346,7 +346,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
                       ...item.categories.take(2).map(_buildMetaPill),
                       if (item.score != null)
                         _buildMetaPill(
-                          LegacyTextLocalizer.localize(
+                          AppTextLocalizer.text(
                             '匹配 ${(item.score! * 100).round()}%',
                           ),
                         ),
@@ -400,7 +400,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
       ..sort((a, b) => b.value.compareTo(a.value));
 
     return <(String, int, String)>[
-      (_allCategory, 0, LegacyTextLocalizer.localize('全部')),
+      (_allCategory, 0, AppTextLocalizer.text('全部')),
       ...categories.take(6).map((entry) => (entry.key, entry.value, entry.key)),
     ];
   }
@@ -416,21 +416,21 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
 
   String _formatTime(DateTime? dateTime) {
     if (dateTime == null) {
-      return LegacyTextLocalizer.localize('长期记忆');
+      return AppTextLocalizer.text('长期记忆');
     }
     final now = DateTime.now();
     final diff = now.difference(dateTime);
     if (diff.inMinutes < 1) {
-      return LegacyTextLocalizer.localize('刚刚');
+      return AppTextLocalizer.text('刚刚');
     }
     if (diff.inHours < 1) {
-      return LegacyTextLocalizer.localize('${diff.inMinutes} 分钟前');
+      return AppTextLocalizer.text('${diff.inMinutes} 分钟前');
     }
     if (diff.inDays < 1) {
-      return LegacyTextLocalizer.localize('${diff.inHours} 小时前');
+      return AppTextLocalizer.text('${diff.inHours} 小时前');
     }
     if (diff.inDays < 7) {
-      return LegacyTextLocalizer.localize('${diff.inDays} 天前');
+      return AppTextLocalizer.text('${diff.inDays} 天前');
     }
     return DateFormat('MM/dd').format(dateTime);
   }
