@@ -27,6 +27,7 @@ class AgentSystemPromptTest {
             resolvedSkills = emptyList(),
             memoryContext = null,
             activeWorkbenchProjectContext = null,
+            workbenchDisplayLayoutContext = null,
             locale = PromptLocale.ZH_CN
         )
 
@@ -71,6 +72,7 @@ class AgentSystemPromptTest {
             resolvedSkills = emptyList(),
             memoryContext = null,
             activeWorkbenchProjectContext = null,
+            workbenchDisplayLayoutContext = null,
             locale = PromptLocale.EN_US
         )
 
@@ -100,12 +102,59 @@ class AgentSystemPromptTest {
             resolvedSkills = emptyList(),
             memoryContext = null,
             activeWorkbenchProjectContext = "projectId: oob-workbench-todo-log\napi: todo.add",
+            workbenchDisplayLayoutContext = null,
             locale = PromptLocale.ZH_CN
         )
 
         assertTrue(prompt.contains("当前激活的 OOB Workbench Project"))
         assertTrue(prompt.contains("oob-workbench-todo-log"))
         assertTrue(prompt.contains("todo.add"))
+    }
+
+    @Test
+    fun buildExplainsInstalledSkillsInIndex() {
+        val prompt = AgentSystemPrompt.build(
+            workspace = AgentWorkspaceDescriptor(
+                id = "conversation-1",
+                rootPath = "/workspace",
+                androidRootPath = "/data/user/0/cn.com.omnimind.bot/workspace",
+                uriRoot = "omnibot://workspace",
+                currentCwd = "/workspace/demo",
+                androidCurrentCwd = "/data/user/0/cn.com.omnimind.bot/workspace/demo",
+                shellRootPath = "/workspace",
+                retentionPolicy = "shared_root"
+            ),
+            installedSkills = listOf(
+                SkillIndexEntry(
+                    id = "oob-prompt-runtime",
+                    name = "oob-prompt-runtime",
+                    description = "Use for 系统提示词 and prompt dump debugging.",
+                    rootPath = "/android/.omnibot/skills/oob-prompt-runtime",
+                    shellRootPath = "/workspace/.omnibot/skills/oob-prompt-runtime",
+                    skillFilePath = "/android/.omnibot/skills/oob-prompt-runtime/SKILL.md",
+                    shellSkillFilePath = "/workspace/.omnibot/skills/oob-prompt-runtime/SKILL.md",
+                    hasScripts = false,
+                    hasReferences = true,
+                    hasAssets = false,
+                    hasEvals = false
+                )
+            ),
+            skillsRootShellPath = "/workspace/.omnibot/skills",
+            skillsRootAndroidPath = "/android/.omnibot/skills",
+            resolvedSkills = emptyList(),
+            memoryContext = null,
+            activeWorkbenchProjectContext = null,
+            workbenchDisplayLayoutContext = null,
+            locale = PromptLocale.ZH_CN
+        )
+
+        assertTrue(prompt.contains("每项含简短讲解"))
+        assertTrue(prompt.contains("讲解: Use for 系统提示词 and prompt dump debugging."))
+        assertTrue(prompt.contains("样例: 系统提示词怎么拆分"))
+        assertTrue(prompt.contains("把 Project 上下文注入成 project_context"))
+        assertTrue(prompt.contains("能力目录: references"))
+        assertTrue(prompt.contains("何时读正文: 准备执行该类任务、需要 references"))
+        assertTrue(prompt.contains("读取正文: skills_read(skillId=\"oob-prompt-runtime\")"))
     }
 
     @Test
@@ -127,17 +176,16 @@ class AgentSystemPromptTest {
             resolvedSkills = emptyList(),
             memoryContext = null,
             activeWorkbenchProjectContext = null,
+            workbenchDisplayLayoutContext = null,
             locale = PromptLocale.ZH_CN
         )
 
-        assertTrue(prompt.contains("Home 大输入框是 Project 创建"))
-        assertTrue(prompt.contains("workbench_project_create"))
-        assertTrue(prompt.contains("workbench_project_activate"))
-        assertTrue(prompt.contains("workbench_project_active_get"))
-        assertTrue(prompt.contains("workbench_project_delete"))
-        assertTrue(prompt.contains("workbench_api_list"))
+        assertTrue(prompt.contains("OOB Workbench"))
         assertTrue(prompt.contains("workbench_api_call"))
-        assertTrue(prompt.contains("frontendContext"))
-        assertTrue(prompt.contains("drawingPaths"))
+        assertTrue(prompt.contains("workbench_project_hot_update"))
+        assertTrue(prompt.contains("htmlPatches"))
+        assertTrue(prompt.contains("frontendContext.selectedElement.oobId"))
+        assertTrue(prompt.contains("data-oob-id"))
+        assertTrue(prompt.contains("file_read(lineStart/lineCount)"))
     }
 }

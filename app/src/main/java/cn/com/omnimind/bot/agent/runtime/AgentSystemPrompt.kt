@@ -30,8 +30,8 @@ object AgentSystemPrompt {
             buildString {
                 appendLine(
                     LocalizedText(
-                        zhCN = "已安装 skills 索引：",
-                        enUS = "Installed skills index:"
+                        zhCN = "已安装 skills 索引（每项含简短讲解；完整正文需命中注入或调用 `skills_read`）：",
+                        enUS = "Installed skills index (each item includes a short explanation; full bodies require matching injection or `skills_read`):"
                     ).resolve(locale)
                 )
                 visibleInstalledSkills.forEach { skill ->
@@ -53,9 +53,33 @@ object AgentSystemPrompt {
                         if (skill.hasAssets) add("assets")
                         if (skill.hasEvals) add("evals")
                     }.joinToString(", ").ifBlank { "metadata-only" }
-                    appendLine(
-                        "- id=${skill.id} | name=${skill.name} | path=${skill.shellSkillFilePath} | capabilities=$capabilities | description=$description"
+                    val examples = skillExamples(skill, locale).joinToString(
+                        separator = when (locale) {
+                            PromptLocale.ZH_CN -> "；"
+                            PromptLocale.EN_US -> "; "
+                        }
                     )
+                    val readGuidance = skillReadGuidance(skill, locale)
+                    when (locale) {
+                        PromptLocale.ZH_CN -> {
+                            appendLine("- ${skill.name} (`${skill.id}`)")
+                            appendLine("  - 讲解: $description")
+                            appendLine("  - 样例: $examples")
+                            appendLine("  - 能力目录: $capabilities")
+                            appendLine("  - 何时读正文: $readGuidance")
+                            appendLine("  - SKILL.md: ${skill.shellSkillFilePath}")
+                            appendLine("  - 读取正文: skills_read(skillId=\"${skill.id}\")")
+                        }
+                        PromptLocale.EN_US -> {
+                            appendLine("- ${skill.name} (`${skill.id}`)")
+                            appendLine("  - Explanation: $description")
+                            appendLine("  - Examples: $examples")
+                            appendLine("  - Capability dirs: $capabilities")
+                            appendLine("  - When to read body: $readGuidance")
+                            appendLine("  - SKILL.md: ${skill.shellSkillFilePath}")
+                            appendLine("  - Read body: skills_read(skillId=\"${skill.id}\")")
+                        }
+                    }
                 }
             }.trim()
         }
@@ -311,6 +335,136 @@ object AgentSystemPrompt {
                 $workbenchLayoutSection
                 $workbenchProjectOperationRules
             """.trimIndent()
+        }
+    }
+
+    private fun skillExamples(
+        skill: SkillIndexEntry,
+        locale: PromptLocale
+    ): List<String> {
+        val builtin = when (locale) {
+            PromptLocale.ZH_CN -> mapOf(
+                "self-improving-agent" to listOf(
+                    "记录一次工具失败的复盘",
+                    "把用户纠正沉淀成规则",
+                    "把稳定经验提升到长期记忆"
+                ),
+                "skill-creator" to listOf(
+                    "创建一个处理发票的 skill",
+                    "更新已有 skill 的触发描述",
+                    "把脚本或参考资料放进 skill"
+                ),
+                "oob-prompt-runtime" to listOf(
+                    "系统提示词怎么拆分",
+                    "给 prompt dump 加脱敏",
+                    "把 Project 上下文注入成 project_context"
+                ),
+                "oob-native-workbench" to listOf(
+                    "把 agent 结果做成可交互项目界面",
+                    "热更新 Workbench HTML",
+                    "检查 project.items 数据绑定"
+                ),
+                "oob-project-designer" to listOf(
+                    "帮我做一个支出记录工具",
+                    "创建一个健身打卡 tracker",
+                    "设计 Project API 和前端合同"
+                ),
+                "find-install-skills" to listOf(
+                    "找个处理 PDF 的 skill",
+                    "有没有网页自动化 skill",
+                    "安装一个研究整理 skill"
+                )
+            )
+            PromptLocale.EN_US -> mapOf(
+                "self-improving-agent" to listOf(
+                    "record a tool failure learning",
+                    "turn a user correction into a rule",
+                    "promote stable guidance to memory"
+                ),
+                "skill-creator" to listOf(
+                    "create an invoice-processing skill",
+                    "tighten an existing skill trigger",
+                    "package scripts or references into a skill"
+                ),
+                "oob-prompt-runtime" to listOf(
+                    "split a giant system prompt",
+                    "add redacted prompt dumps",
+                    "inject Project context as project_context"
+                ),
+                "oob-native-workbench" to listOf(
+                    "turn an agent result into an interactive Project UI",
+                    "hot-update Workbench HTML",
+                    "check project.items data binding"
+                ),
+                "oob-project-designer" to listOf(
+                    "build an expense tracker",
+                    "create a workout logging tracker",
+                    "design Project APIs and frontend contracts"
+                ),
+                "find-install-skills" to listOf(
+                    "find a PDF handling skill",
+                    "check whether a browser automation skill exists",
+                    "install a research workflow skill"
+                )
+            )
+        }
+        builtin[skill.id]?.let { return it }
+
+        val quoted = Regex("[\"“”'‘’]([^\"“”'‘’]{2,40})[\"“”'‘’]")
+            .findAll(skill.description)
+            .map { it.groupValues[1].trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .take(3)
+            .toList()
+        if (quoted.isNotEmpty()) {
+            return quoted.map { phrase ->
+                when (locale) {
+                    PromptLocale.ZH_CN -> "用户说“$phrase”"
+                    PromptLocale.EN_US -> "user says \"$phrase\""
+                }
+            }
+        }
+
+        return when (locale) {
+            PromptLocale.ZH_CN -> listOf(
+                "用户请求与 ${skill.name} 讲解相符",
+                "需要该 skill 的 references/scripts/assets",
+                "索引信息不足以安全执行"
+            )
+            PromptLocale.EN_US -> listOf(
+                "the user request matches ${skill.name}",
+                "the task needs this skill's references/scripts/assets",
+                "the index is not enough to proceed safely"
+            )
+        }
+    }
+
+    private fun skillReadGuidance(
+        skill: SkillIndexEntry,
+        locale: PromptLocale
+    ): String {
+        val capabilityReason = buildList {
+            if (skill.hasReferences) add("references")
+            if (skill.hasScripts) add("scripts")
+            if (skill.hasAssets) add("assets")
+            if (skill.hasEvals) add("evals")
+        }.joinToString(", ")
+        return when (locale) {
+            PromptLocale.ZH_CN -> {
+                if (capabilityReason.isBlank()) {
+                    "准备执行该类任务，或索引讲解不足时。"
+                } else {
+                    "准备执行该类任务、需要 $capabilityReason，或索引讲解不足时。"
+                }
+            }
+            PromptLocale.EN_US -> {
+                if (capabilityReason.isBlank()) {
+                    "Before executing this kind of task, or when the index explanation is not enough."
+                } else {
+                    "Before executing this kind of task, when $capabilityReason are needed, or when the index explanation is not enough."
+                }
+            }
         }
     }
 }

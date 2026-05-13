@@ -21,6 +21,16 @@
       "hasEvals": false
     },
     {
+      "id": "oob-prompt-runtime",
+      "name": "oob-prompt-runtime",
+      "description": "Design, implement, or review OOB Prompt Runtime. Use for \"系统提示词\", \"提示词运行时\", \"提示词组装\", \"prompt dump\", \"项目上下文注入\", \"上下文预算\", \"初始输入契约\", static core, dynamic environment, device state, current app, memory, locale, tool instructions, task prompts, or prompt debugging.",
+      "assetPath": "builtin_skills/oob-prompt-runtime",
+      "hasScripts": false,
+      "hasReferences": true,
+      "hasAssets": false,
+      "hasEvals": false
+    },
+    {
       "id": "oob-native-workbench",
       "name": "oob-native-workbench",
       "description": "Build OOB-native Workbench projects that bind Skill-driven workflows, Project Tools, Workspace files, and Flutter frontend displays.",
@@ -28,6 +38,16 @@
       "hasScripts": false,
       "hasReferences": false,
       "hasAssets": false,
+      "hasEvals": false
+    },
+    {
+      "id": "oob-project-designer",
+      "name": "oob-project-designer",
+      "description": "Design and create an OOB Workbench Project from a user's natural-language description of a personal tool, tracker, or recurring workflow. Use when the user says \"帮我做一个\", \"我想创建一个\", \"build me a\", \"make a [X] tracker/tool/app\", or expresses intent to build a new persistent personal tool from scratch. Also use for: designing API sets, choosing executors, reviewing frontend-backend contracts.",
+      "assetPath": "builtin_skills/oob-project-designer",
+      "hasScripts": true,
+      "hasReferences": true,
+      "hasAssets": true,
       "hasEvals": false
     },
     {
