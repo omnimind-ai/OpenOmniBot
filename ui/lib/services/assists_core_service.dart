@@ -1318,6 +1318,19 @@ class AssistsMessageService {
     }
   }
 
+  static Future<Map<String, dynamic>?> syncOfficialAgentSkills() async {
+    try {
+      final result = await assistCore.invokeMethod<Map<dynamic, dynamic>>(
+        'agentSkillSyncOfficialRepository',
+      );
+      if (result == null) return null;
+      return result.map((k, v) => MapEntry(k.toString(), v));
+    } on PlatformException catch (e) {
+      print('同步官方 Agent skills 失败: ${e.message}');
+      return null;
+    }
+  }
+
   /// 检测自定义 VLM 模型可用性（OpenAI-compatible）
   static Future<ModelAvailabilityCheckResult> checkVlmModelAvailability({
     required String model,

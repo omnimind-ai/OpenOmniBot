@@ -64,6 +64,9 @@ class AssistsCoreChannel {
                 "agentSkillInstallBuiltin" -> {
                     assistsCoreManager!!.agentSkillInstallBuiltin(call, result)
                 }
+                "agentSkillSyncOfficialRepository" -> {
+                    assistsCoreManager!!.agentSkillSyncOfficialRepository(call, result)
+                }
                 "getModelProviderConfig" -> {
                     assistsCoreManager!!.getModelProviderConfig(call, result)
                 }

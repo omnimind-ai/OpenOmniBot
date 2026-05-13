@@ -597,6 +597,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get skillBuiltin => 'Built-in';
 
   @override
+  String get skillOfficial => 'Official';
+
+  @override
   String get skillUser => 'User';
 
   @override
@@ -661,6 +664,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get skillToggleFailed => 'Failed to toggle';
+
+  @override
+  String get skillSyncOfficialTooltip => 'Install/update official skills';
+
+  @override
+  String skillSyncOfficialSuccess(Object count) {
+    return 'Official skills synced ($count)';
+  }
+
+  @override
+  String get skillSyncOfficialFailed => 'Failed to sync official skills';
 
   @override
   String get skillLoadFailed => 'Failed to load skills';

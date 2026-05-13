@@ -180,6 +180,7 @@
 
   "skillStoreTitle": "技能仓库",
   "skillBuiltin": "内置",
+  "skillOfficial": "官方",
   "skillUser": "用户",
   "skillInstalled": "已安装",
   "skillNotInstalled": "未安装",
@@ -199,6 +200,9 @@
   "skillEnabledMsg": "已启用 {name}",
   "skillDisabledMsg": "已禁用 {name}",
   "skillToggleFailed": "切换失败",
+  "skillSyncOfficialTooltip": "安装/更新官方 Skills",
+  "skillSyncOfficialSuccess": "官方 Skills 已同步（{count} 个）",
+  "skillSyncOfficialFailed": "同步官方 Skills 失败",
   "skillLoadFailed": "加载技能仓库失败",
 
   "trajectoryTitle": "轨迹",

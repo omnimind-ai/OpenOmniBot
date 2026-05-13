@@ -1160,6 +1160,12 @@ abstract class AppLocalizations {
   /// **'内置'**
   String get skillBuiltin;
 
+  /// No description provided for @skillOfficial.
+  ///
+  /// In zh, this message translates to:
+  /// **'官方'**
+  String get skillOfficial;
+
   /// No description provided for @skillUser.
   ///
   /// In zh, this message translates to:
@@ -1273,6 +1279,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'切换失败'**
   String get skillToggleFailed;
+
+  /// No description provided for @skillSyncOfficialTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装/更新官方 Skills'**
+  String get skillSyncOfficialTooltip;
+
+  /// No description provided for @skillSyncOfficialSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'官方 Skills 已同步（{count} 个）'**
+  String skillSyncOfficialSuccess(Object count);
+
+  /// No description provided for @skillSyncOfficialFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步官方 Skills 失败'**
+  String get skillSyncOfficialFailed;
 
   /// No description provided for @skillLoadFailed.
   ///

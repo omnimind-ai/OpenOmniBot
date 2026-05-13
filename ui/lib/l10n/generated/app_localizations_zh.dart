@@ -557,6 +557,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get skillBuiltin => '内置';
 
   @override
+  String get skillOfficial => '官方';
+
+  @override
   String get skillUser => '用户';
 
   @override
@@ -620,6 +623,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get skillToggleFailed => '切换失败';
+
+  @override
+  String get skillSyncOfficialTooltip => '安装/更新官方 Skills';
+
+  @override
+  String skillSyncOfficialSuccess(Object count) {
+    return '官方 Skills 已同步（$count 个）';
+  }
+
+  @override
+  String get skillSyncOfficialFailed => '同步官方 Skills 失败';
 
   @override
   String get skillLoadFailed => '加载技能仓库失败';

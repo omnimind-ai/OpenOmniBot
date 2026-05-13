@@ -5242,6 +5242,57 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
+    fun agentSkillSyncOfficialRepository(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            try {
+                if (!WorkspaceStorageAccess.isGranted(context)) {
+                    withContext(Dispatchers.Main) {
+                        result.error(
+                            "WORKSPACE_STORAGE_PERMISSION_REQUIRED",
+                            WorkspaceStorageAccess.REQUIRED_PERMISSION_NAME,
+                            null
+                        )
+                    }
+                    return@launch
+                }
+                val workspaceManager = AgentWorkspaceManager(context)
+                val skillIndexService = SkillIndexService(context, workspaceManager)
+                val syncResult = skillIndexService.syncOfficialSkillsRepository()
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        mapOf(
+                            "action" to syncResult.action,
+                            "repositoryUrl" to syncResult.repositoryUrl,
+                            "rootPath" to syncResult.rootPath,
+                            "shellRootPath" to syncResult.shellRootPath,
+                            "skillCount" to syncResult.skillCount,
+                            "skills" to syncResult.skills.map(::skillEntryPayload),
+                            "output" to syncResult.output
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    val isWorkspacePermissionError =
+                        WorkspaceStorageAccess.looksLikePermissionError(e)
+                    result.error(
+                        if (isWorkspacePermissionError) {
+                            "WORKSPACE_STORAGE_PERMISSION_REQUIRED"
+                        } else {
+                            "AGENT_SKILL_SYNC_OFFICIAL_ERROR"
+                        },
+                        if (isWorkspacePermissionError) {
+                            WorkspaceStorageAccess.REQUIRED_PERMISSION_NAME
+                        } else {
+                            e.message
+                        },
+                        null
+                    )
+                }
+            }
+        }
+    }
+
     fun getTokenUsageRecords(call: MethodCall, result: MethodChannel.Result) {
         val sinceMs = call.argument<Number>("since")?.toLong() ?: 0L
         workJob.launch {

@@ -2,6 +2,10 @@ package cn.com.omnimind.bot.agent
 
 import android.content.Context
 import android.content.res.AssetManager
+import cn.com.omnimind.bot.terminal.EmbeddedTerminalRuntime
+import cn.com.omnimind.bot.termux.TermuxCommandBuilder
+import cn.com.omnimind.bot.update.ApkDownloadSource
+import cn.com.omnimind.bot.update.AppUpdateManager
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.io.File
@@ -9,10 +13,14 @@ import kotlin.math.min
 
 private const val BUILTIN_SKILL_MANIFEST_ASSET = "builtin_skills/manifest.json"
 private const val BUILTIN_SOURCE = "builtin"
+private const val OFFICIAL_SOURCE = "official"
 private const val USER_SOURCE = "user"
 private const val INSTALL_STATE_INSTALLED = "installed"
 private const val INSTALL_STATE_REMOVED_BUILTIN = "removed_builtin"
 private const val SKILL_REGISTRY_FILE_NAME = ".skill_registry.json"
+private const val OFFICIAL_SKILLS_GITHUB_REPOSITORY_URL = "https://github.com/omnimind-ai/OmniBotSkills"
+private const val OFFICIAL_SKILLS_CNB_REPOSITORY_URL = "https://cnb.cool/o.a/OmniBotSkills"
+private const val OFFICIAL_SKILLS_DIRECTORY_NAME = "OmniBotSkills"
 
 private data class BuiltinSkillManifest(
     val skills: List<BuiltinSkillAsset> = emptyList()
@@ -33,6 +41,16 @@ private data class SkillRegistryEntry(
     val enabled: Boolean = true,
     val source: String = USER_SOURCE,
     val installState: String = INSTALL_STATE_INSTALLED
+)
+
+data class OfficialSkillsSyncResult(
+    val action: String,
+    val repositoryUrl: String,
+    val rootPath: String,
+    val shellRootPath: String,
+    val skillCount: Int,
+    val skills: List<SkillIndexEntry>,
+    val output: String
 )
 
 private class SkillRegistryStore(
@@ -222,7 +240,7 @@ class SkillIndexService(
 
         return (installedEntries + removedBuiltinEntries).sortedWith(
             compareByDescending<SkillIndexEntry> { it.installed }
-                .thenBy { if (it.source == BUILTIN_SOURCE) 0 else 1 }
+                .thenBy { sourceRank(it.source) }
                 .thenBy { it.name.lowercase() }
         )
     }
@@ -322,11 +340,60 @@ class SkillIndexService(
             ?: throw IllegalStateException("安装内置 skill 后索引失败：$skillId")
     }
 
+    suspend fun syncOfficialSkillsRepository(): OfficialSkillsSyncResult {
+        val targetDir = File(workspaceManager.skillsRoot(), OFFICIAL_SKILLS_DIRECTORY_NAME)
+        val shellTargetPath = workspaceManager.shellPathForAndroid(targetDir)
+            ?: "${AgentWorkspaceManager.SHELL_ROOT_PATH}/.omnibot/skills/$OFFICIAL_SKILLS_DIRECTORY_NAME"
+        val wasInstalled = File(targetDir, ".git").isDirectory
+        val repositoryUrl = resolveOfficialSkillsRepositoryUrl()
+        val commandResult = EmbeddedTerminalRuntime.executeCommand(
+            context = context.applicationContext,
+            command = buildOfficialSkillsSyncCommand(repositoryUrl, shellTargetPath),
+            workingDirectory = AgentWorkspaceManager.SHELL_ROOT_PATH,
+            timeoutSeconds = 15 * 60
+        )
+        if (!commandResult.success) {
+            val message = commandResult.errorMessage
+                ?: commandResult.output.takeLast(1200).ifBlank { "同步官方 skills 失败" }
+            throw IllegalStateException(message)
+        }
+
+        val officialEntries = markOfficialRepositorySkills(targetDir)
+        val allSkills = listSkillsForManagement()
+        return OfficialSkillsSyncResult(
+            action = if (wasInstalled) "updated" else "installed",
+            repositoryUrl = repositoryUrl,
+            rootPath = targetDir.absolutePath,
+            shellRootPath = shellTargetPath,
+            skillCount = officialEntries.size,
+            skills = allSkills,
+            output = commandResult.output
+        )
+    }
+
+    private fun resolveOfficialSkillsRepositoryUrl(): String {
+        return when (AppUpdateManager.getApkDownloadSource(context.applicationContext)) {
+            ApkDownloadSource.CNB -> OFFICIAL_SKILLS_CNB_REPOSITORY_URL
+            ApkDownloadSource.GITHUB -> OFFICIAL_SKILLS_GITHUB_REPOSITORY_URL
+        }
+    }
+
     private fun scanInstalledEntries(
         registry: Map<String, SkillRegistryEntry>,
         builtinAssets: Map<String, BuiltinSkillAsset>
     ): List<SkillIndexEntry> {
-        val root = workspaceManager.skillsRoot()
+        return scanInstalledEntries(
+            root = workspaceManager.skillsRoot(),
+            registry = registry,
+            builtinAssets = builtinAssets
+        )
+    }
+
+    private fun scanInstalledEntries(
+        root: File,
+        registry: Map<String, SkillRegistryEntry>,
+        builtinAssets: Map<String, BuiltinSkillAsset>
+    ): List<SkillIndexEntry> {
         if (!root.exists()) return emptyList()
         return root.walkTopDown()
             .onEnter { directory -> directory.name != ".git" }
@@ -340,6 +407,64 @@ class SkillIndexService(
             }
             .distinctBy { it.rootPath }
             .toList()
+    }
+
+    private fun markOfficialRepositorySkills(repositoryDir: File): List<SkillIndexEntry> {
+        val registryStore = registryStore()
+        val registry = registryStore.read()
+        val builtinAssets = builtinStore().listBuiltins().associateBy { it.id }
+        val scannedEntries = scanInstalledEntries(
+            root = repositoryDir,
+            registry = registry,
+            builtinAssets = builtinAssets
+        )
+        val officialIds = scannedEntries.mapTo(mutableSetOf()) { it.id }
+        val updatedRegistry = linkedMapOf<String, SkillRegistryEntry>()
+        registry.forEach { (skillId, entry) ->
+            if (entry.source != OFFICIAL_SOURCE || skillId in officialIds) {
+                updatedRegistry[skillId] = entry
+            }
+        }
+        scannedEntries.forEach { entry ->
+            val current = registry[entry.id]
+            updatedRegistry[entry.id] = SkillRegistryEntry(
+                enabled = current?.enabled ?: true,
+                source = OFFICIAL_SOURCE,
+                installState = INSTALL_STATE_INSTALLED
+            )
+        }
+        registryStore.write(updatedRegistry)
+        return scanInstalledEntries(
+            root = repositoryDir,
+            registry = updatedRegistry,
+            builtinAssets = builtinAssets
+        )
+    }
+
+    private fun buildOfficialSkillsSyncCommand(repositoryUrl: String, shellTargetPath: String): String {
+        val quotedRepo = TermuxCommandBuilder.quoteForShell(repositoryUrl)
+        val quotedTarget = TermuxCommandBuilder.quoteForShell(shellTargetPath)
+        return """
+            set -eu
+            REPO=$quotedRepo
+            TARGET=$quotedTarget
+            mkdir -p "${'$'}(dirname "${'$'}TARGET")"
+            if ! command -v git >/dev/null 2>&1; then
+              apk update
+              apk add --no-cache git ca-certificates
+            fi
+            if [ -d "${'$'}TARGET/.git" ]; then
+              git -C "${'$'}TARGET" remote set-url origin "${'$'}REPO" || true
+              git -C "${'$'}TARGET" fetch --prune origin
+              git -C "${'$'}TARGET" pull --ff-only --autostash
+            elif [ -e "${'$'}TARGET" ]; then
+              echo "官方 skills 目录已存在但不是 git 仓库：${'$'}TARGET" >&2
+              exit 2
+            else
+              git clone "${'$'}REPO" "${'$'}TARGET"
+            fi
+            find "${'$'}TARGET" -name SKILL.md -type f | wc -l
+        """.trimIndent()
     }
 
     private fun buildInstalledEntry(
@@ -437,6 +562,14 @@ class SkillIndexService(
             .removeSuffix("/skill.md")
             .removeSuffix("/")
             .replace(Regex("\\s+"), "")
+    }
+
+    private fun sourceRank(source: String): Int {
+        return when (source) {
+            BUILTIN_SOURCE -> 0
+            OFFICIAL_SOURCE -> 1
+            else -> 2
+        }
     }
 }
 

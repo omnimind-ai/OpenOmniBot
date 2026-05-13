@@ -180,6 +180,7 @@
 
   "skillStoreTitle": "Skill Store",
   "skillBuiltin": "Built-in",
+  "skillOfficial": "Official",
   "skillUser": "User",
   "skillInstalled": "Installed",
   "skillNotInstalled": "Not installed",
@@ -199,6 +200,9 @@
   "skillEnabledMsg": "Enabled {name}",
   "skillDisabledMsg": "Disabled {name}",
   "skillToggleFailed": "Failed to toggle",
+  "skillSyncOfficialTooltip": "Install/update official skills",
+  "skillSyncOfficialSuccess": "Official skills synced ({count})",
+  "skillSyncOfficialFailed": "Failed to sync official skills",
   "skillLoadFailed": "Failed to load skills",
 
   "trajectoryTitle": "Trajectory",
