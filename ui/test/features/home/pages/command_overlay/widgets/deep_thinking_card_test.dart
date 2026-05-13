@@ -3,35 +3,40 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/command_overlay/services/tool_card_detail_gesture_gate.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/card_widget_factory.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/deep_thinking_card.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/widgets/agent_avatar.dart';
+
+Widget _wrapWithZhApp(Widget child) {
+  return const MaterialApp(
+    locale: Locale('zh'),
+    home: Scaffold(),
+  );
+}
 
 void main() {
   setUp(() {
-    LegacyTextLocalizer.setResolvedLocale(const Locale('zh'));
+    AppTextLocalizer.setResolvedLocale(const Locale('zh'));
   });
 
   tearDown(() {
-    LegacyTextLocalizer.clearResolvedLocale();
+    AppTextLocalizer.clearResolvedLocale();
   });
 
   testWidgets(
     'historical completed thinking card stays visible after restore',
     (tester) async {
       await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: DeepThinkingCard(
-              thinkingText: '历史思考内容',
-              stage: 4,
-              isCollapsible: true,
-            ),
+        _wrapWithZhApp(
+          const DeepThinkingCard(
+            thinkingText: '历史思考内容',
+            stage: 4,
+            isCollapsible: true,
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('思考完成'), findsOneWidget);
+      expect(find.text('完成思考'), findsOneWidget);
       expect(find.byType(DeepThinkingCard), findsOneWidget);
     },
   );
@@ -40,13 +45,11 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: DeepThinkingCard(
-            thinkingText: '第一行\n第二行',
-            stage: 4,
-            isCollapsible: true,
-          ),
+      _wrapWithZhApp(
+        const DeepThinkingCard(
+          thinkingText: '第一行\n第二行',
+          stage: 4,
+          isCollapsible: true,
         ),
       ),
     );
@@ -66,26 +69,24 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: CardWidgetFactory.createCard(<String, dynamic>{
-            'type': 'deep_thinking',
-            'thinkingContent': '恢复后的思考内容',
-            'stage': 4.0,
-            'startTime': 1711711711000.0,
-            'endTime': 1711711719000.0,
-            'isLoading': false,
-            'isExecutable': false,
-            'isCollapsible': true,
-            'taskID': 'agent-task-1',
-          }, enableThinkingCollapse: true),
-        ),
+      _wrapWithZhApp(
+        CardWidgetFactory.createCard(<String, dynamic>{
+          'type': 'deep_thinking',
+          'thinkingContent': '恢复后的思考内容',
+          'stage': 4.0,
+          'startTime': 1711711711000.0,
+          'endTime': 1711711719000.0,
+          'isLoading': false,
+          'isExecutable': false,
+          'isCollapsible': true,
+          'taskID': 'agent-task-1',
+        }, enableThinkingCollapse: true),
       ),
     );
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('思考完成'), findsOneWidget);
+    expect(find.text('完成思考'), findsOneWidget);
     expect(find.byType(DeepThinkingCard), findsOneWidget);
   });
 
@@ -93,14 +94,12 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: CardWidgetFactory.createCard(<String, dynamic>{
-            'type': 'history_omitted_card',
-            'originalType': 'ui_card',
-            'summary': '历史过程卡片已折叠',
-          }),
-        ),
+      _wrapWithZhApp(
+        CardWidgetFactory.createCard(<String, dynamic>{
+          'type': 'history_omitted_card',
+          'originalType': 'ui_card',
+          'summary': '历史过程卡片已折叠',
+        }),
       ),
     );
 
@@ -113,27 +112,23 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: DeepThinkingCard(
-            thinkingText: '流式思考内容',
-            stage: 3,
-            isLoading: true,
-            isCollapsible: false,
-          ),
+      _wrapWithZhApp(
+        const DeepThinkingCard(
+          thinkingText: '流式思考内容',
+          stage: 3,
+          isLoading: true,
+          isCollapsible: false,
         ),
       ),
     );
 
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: DeepThinkingCard(
-            thinkingText: '流式思考内容',
-            stage: 4,
-            isLoading: true,
-            isCollapsible: false,
-          ),
+      _wrapWithZhApp(
+        const DeepThinkingCard(
+          thinkingText: '流式思考内容',
+          stage: 4,
+          isLoading: true,
+          isCollapsible: false,
         ),
       ),
     );
@@ -142,20 +137,18 @@ void main() {
     expect(find.textContaining('流式思考内容'), findsOneWidget);
 
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: DeepThinkingCard(
-            thinkingText: '流式思考内容',
-            stage: 4,
-            isLoading: false,
-            isCollapsible: true,
-          ),
+      _wrapWithZhApp(
+        const DeepThinkingCard(
+          thinkingText: '流式思考内容',
+          stage: 4,
+          isLoading: false,
+          isCollapsible: true,
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('思考完成'), findsOneWidget);
+    expect(find.text('完成思考'), findsOneWidget);
     expect(find.textContaining('流式思考内容'), findsNothing);
   });
 
@@ -163,21 +156,19 @@ void main() {
     'completed thinking stays expanded when auto collapse is disabled',
     (tester) async {
       await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: DeepThinkingCard(
-              thinkingText: '完成后仍保持展开的思考内容',
-              stage: 4,
-              isLoading: false,
-              isCollapsible: true,
-              autoCollapseOnComplete: false,
-            ),
+        _wrapWithZhApp(
+          const DeepThinkingCard(
+            thinkingText: '完成后仍保持展开的思考内容',
+            stage: 4,
+            isLoading: false,
+            isCollapsible: true,
+            autoCollapseOnComplete: false,
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('思考完成'), findsOneWidget);
+      expect(find.text('完成思考'), findsOneWidget);
       expect(find.text('完成后仍保持展开的思考内容'), findsOneWidget);
     },
   );
@@ -575,7 +566,7 @@ void main() {
 
     expect(find.byType(AgentAvatarButton), findsOneWidget);
     expect(find.text('任务已取消'), findsOneWidget);
-    expect(find.text('思考完成'), findsOneWidget);
+    expect(find.text('完成思考'), findsOneWidget);
   });
 }
 

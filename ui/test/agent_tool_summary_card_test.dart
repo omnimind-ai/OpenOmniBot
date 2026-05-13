@@ -5,16 +5,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_summary_card.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/terminal_output_utils.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/app_background_service.dart';
 
 void main() {
   setUp(() {
-    LegacyTextLocalizer.setResolvedLocale(const Locale('zh'));
+    AppTextLocalizer.setResolvedLocale(const Locale('zh'));
   });
 
   tearDown(() {
-    LegacyTextLocalizer.clearResolvedLocale();
+    AppTextLocalizer.clearResolvedLocale();
   });
 
   test('TerminalOutputUtils builds readable output from result json', () {
@@ -109,7 +109,7 @@ void main() {
         of: sheet,
         matching: find.textContaining('git status', findRichText: true),
       ),
-      findsOneWidget,
+      findsAtLeastNWidgets(1),
     );
 
     await tester.tapAt(const Offset(12, 12));

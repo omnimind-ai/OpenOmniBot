@@ -414,7 +414,7 @@ void main() {
     );
     runtime.messages.insert(0, ChatMessageModel.userMessage('第一句标题应该保留'));
 
-    await coordinator.applyCodexEvent(
+    coordinator.applyCodexEvent(
       conversationId: conversationId,
       event: {
         'message': {
@@ -1675,6 +1675,65 @@ void main() {
     expect(snapshot?.title, 'Sign In');
     expect(snapshot?.userAgentProfile, 'desktop_safari');
   });
+
+  test(
+    'does not mark a completed tool card as interrupted on cancel',
+    () async {
+      const conversationId = 6401;
+      const taskId = 'agent-completed-tool-task';
+      const cardId = 'agent-completed-tool-task-tool-1';
+
+      final runtime = coordinator.ensureRuntime(
+        conversationId: conversationId,
+        mode: kChatRuntimeModeNormal,
+      );
+      runtime.currentDispatchTaskId = taskId;
+      coordinator.registerTask(
+        taskId: taskId,
+        conversationId: conversationId,
+        mode: kChatRuntimeModeNormal,
+      );
+
+      await emitPlatformEvent('onAgentToolCallStart', <String, dynamic>{
+        'taskId': taskId,
+        'cardId': cardId,
+        'toolName': 'terminal_execute',
+        'displayName': 'terminal_execute',
+        'toolType': 'terminal',
+        'summary': '检查仓库状态',
+      });
+
+      await emitPlatformEvent('onAgentToolCallComplete', <String, dynamic>{
+        'taskId': taskId,
+        'cardId': cardId,
+        'toolName': 'terminal_execute',
+        'displayName': 'terminal_execute',
+        'toolType': 'terminal',
+        'summary': '仓库状态已返回',
+        'success': true,
+      });
+
+      var toolMessage = runtime.messages.firstWhere(
+        (message) => message.id == cardId,
+      );
+      expect(toolMessage.cardData?['status'], 'success');
+      expect(runtime.activeToolCardId, isNull);
+
+      runtime.activeToolCardId = cardId;
+      coordinator.interruptActiveToolCard(
+        conversationId: conversationId,
+        mode: kChatRuntimeModeNormal,
+        summary: '用户停止',
+      );
+
+      toolMessage = runtime.messages.firstWhere(
+        (message) => message.id == cardId,
+      );
+      expect(toolMessage.cardData?['status'], 'success');
+      expect(toolMessage.cardData?['summary'], '仓库状态已返回');
+      expect(runtime.activeToolCardId, isNull);
+    },
+  );
 
   test(
     'uses cardId from tool events when completing interrupted tools',

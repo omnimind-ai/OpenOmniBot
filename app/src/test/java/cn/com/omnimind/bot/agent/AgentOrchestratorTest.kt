@@ -587,7 +587,8 @@ class AgentOrchestratorTest {
         override suspend fun streamTurn(
             request: ChatCompletionRequest,
             onReasoningUpdate: (suspend (String) -> Unit)?,
-            onContentUpdate: (suspend (String) -> Unit)?
+            onContentUpdate: (suspend (String) -> Unit)?,
+            onToolCallUpdate: (suspend (StreamingToolCallSnapshot) -> Unit)?
         ): ChatCompletionTurn {
             requests += request
             val reasoningQueue = if (queuedReasoningUpdates.isEmpty()) {
@@ -662,7 +663,7 @@ class AgentOrchestratorTest {
 
         override suspend fun onThinkingUpdate(thinking: String) = Unit
 
-        open override suspend fun onToolCallStart(toolName: String, arguments: JsonObject) = Unit
+        open override suspend fun onToolCallStart(toolName: String, toolCallId: String, arguments: JsonObject) = Unit
 
         override suspend fun onToolCallProgress(
             toolName: String,
@@ -733,7 +734,7 @@ class AgentOrchestratorTest {
         private val runControl: TrackingRunControl,
         private val cardId: String
     ) : RecordingCallback() {
-        override suspend fun onToolCallStart(toolName: String, arguments: JsonObject) {
+        override suspend fun onToolCallStart(toolName: String, toolCallId: String, arguments: JsonObject) {
             runControl.bindCurrentCardId(cardId)
         }
     }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/app_background_service.dart';
 import 'package:ui/services/storage_service.dart';
 
@@ -11,12 +11,12 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await StorageService.init();
-    LegacyTextLocalizer.setResolvedLocale(const Locale('zh'));
+    AppTextLocalizer.setResolvedLocale(const Locale('zh'));
     AppBackgroundService.notifier.value = AppBackgroundConfig.defaults;
   });
 
   tearDown(() async {
-    LegacyTextLocalizer.clearResolvedLocale();
+    AppTextLocalizer.clearResolvedLocale();
     AppBackgroundService.notifier.value = AppBackgroundConfig.defaults;
   });
 

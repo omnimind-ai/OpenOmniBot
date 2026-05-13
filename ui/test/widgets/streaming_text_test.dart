@@ -139,4 +139,31 @@ void main() {
       expect(markdownBody.data, '**新内容** 😀');
     },
   );
+
+  testWidgets(
+    'StreamingText renders full markdown text during batched streaming',
+    (tester) async {
+      const text = '第一段内容\n\n第二段内容会继续往下展开\n\n- 列表一\n- 列表二';
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: StreamingText(
+              enableMarkdown: true,
+              fullText: text,
+              markdownRenderedLength: 4,
+              style: TextStyle(fontSize: 14),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      final markdownBody = tester.widget<OmnibotMarkdownBody>(
+        find.byType(OmnibotMarkdownBody),
+      );
+      expect(markdownBody.data, text);
+    },
+  );
 }

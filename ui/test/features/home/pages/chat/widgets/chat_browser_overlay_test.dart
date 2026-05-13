@@ -3,13 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/chat/chat_page_models.dart';
 import 'package:ui/features/home/pages/chat/widgets/chat_browser_overlay.dart';
 import 'package:ui/l10n/generated/app_localizations.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 
 void main() {
-  tearDown(LegacyTextLocalizer.clearResolvedLocale);
+  tearDown(AppTextLocalizer.clearResolvedLocale);
 
   testWidgets('renders unsupported fallback and rich prompts', (tester) async {
-    LegacyTextLocalizer.setResolvedLocale(const Locale('zh'));
+    AppTextLocalizer.setResolvedLocale(const Locale('zh'));
 
     await tester.pumpWidget(
       MaterialApp(

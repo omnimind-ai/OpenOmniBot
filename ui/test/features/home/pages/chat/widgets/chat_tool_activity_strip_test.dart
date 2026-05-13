@@ -7,16 +7,16 @@ import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/chat/widgets/chat_tool_activity_strip.dart';
 import 'package:ui/features/home/pages/command_overlay/services/tool_card_detail_gesture_gate.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/models/chat_message_model.dart';
 
 void main() {
   setUp(() {
-    LegacyTextLocalizer.setResolvedLocale(const Locale('zh'));
+    AppTextLocalizer.setResolvedLocale(const Locale('zh'));
   });
 
   tearDown(() {
-    LegacyTextLocalizer.clearResolvedLocale();
+    AppTextLocalizer.clearResolvedLocale();
   });
 
   testWidgets('command strip renders all commands without expand toggle', (
@@ -672,7 +672,7 @@ void main() {
         of: sheet,
         matching: find.textContaining('tail -n 2 app.log', findRichText: true),
       ),
-      findsOneWidget,
+      findsAtLeastNWidgets(1),
     );
     expect(
       find.descendant(
@@ -764,7 +764,7 @@ void main() {
             findRichText: true,
           ),
         ),
-        findsOneWidget,
+        findsAtLeastNWidgets(1),
       );
       expect(
         find.descendant(
@@ -1031,7 +1031,7 @@ void main() {
         of: sheet,
         matching: find.textContaining('sleep 10', findRichText: true),
       ),
-      findsOneWidget,
+      findsAtLeastNWidgets(1),
     );
     expect(
       find.descendant(

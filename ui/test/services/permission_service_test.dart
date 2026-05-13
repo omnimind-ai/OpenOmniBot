@@ -1,21 +1,21 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/authorize/authorize_page_args.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/permission_registry.dart';
 import 'package:ui/services/permission_service.dart';
 
 void main() {
-  tearDown(LegacyTextLocalizer.clearResolvedLocale);
+  tearDown(AppTextLocalizer.clearResolvedLocale);
 
   test('rebuilds special permission labels from current locale', () {
-    LegacyTextLocalizer.setResolvedLocale(const Locale('zh'));
+    AppTextLocalizer.setResolvedLocale(const Locale('zh'));
     final zhPermission = PermissionService.buildDisplayPermissionsForIds(const [
       kWorkspaceStoragePermissionId,
     ]).single;
     expect(zhPermission.name, '内置 workspace');
 
-    LegacyTextLocalizer.setResolvedLocale(const Locale('en'));
+    AppTextLocalizer.setResolvedLocale(const Locale('en'));
     final enPermission = PermissionService.buildDisplayPermissionsForIds(const [
       kWorkspaceStoragePermissionId,
     ]).single;
@@ -23,13 +23,13 @@ void main() {
   });
 
   test('builds shizuku display permission from current locale', () {
-    LegacyTextLocalizer.setResolvedLocale(const Locale('zh'));
+    AppTextLocalizer.setResolvedLocale(const Locale('zh'));
     final zhPermission = PermissionService.buildDisplayPermissionsForIds(const [
       kShizukuPermissionId,
     ]).single;
     expect(zhPermission.name, 'Shizuku 权限');
 
-    LegacyTextLocalizer.setResolvedLocale(const Locale('en'));
+    AppTextLocalizer.setResolvedLocale(const Locale('en'));
     final enPermission = PermissionService.buildDisplayPermissionsForIds(const [
       kShizukuPermissionId,
     ]).single;

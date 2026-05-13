@@ -1,9 +1,12 @@
 package cn.com.omnimind.bot.workbench
 
+import cn.com.omnimind.bot.workbench.executor.WorkbenchExecutor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class WorkbenchProjectStoreTest {
     private fun store(): WorkbenchProjectStore {
@@ -59,6 +62,16 @@ class WorkbenchProjectStoreTest {
         assertTrue(root.resolve("projects/oob-workbench-research-brief/frontend/html/index.html").exists())
         assertTrue(root.resolve("projects/oob-workbench-research-brief/frontend/html/manifest.json").exists())
         assertTrue(project.containsKey("frontendHtml"))
+        val pageSpec = root
+            .resolve("projects/oob-workbench-research-brief/frontend/page_spec.json")
+            .readText()
+        assertTrue(pageSpec.contains("\"renderer\""))
+        assertTrue(pageSpec.contains("\"html_webview\""))
+        val listed = store.listProjects().first { it["projectId"] == "oob-workbench-research-brief" }
+        assertEquals("/workbench/html?projectId=oob-workbench-research-brief", listed["route"])
+        val displays = listed["displays"] as List<*>
+        val display = displays.first() as Map<*, *>
+        assertEquals(WORKBENCH_HTML_RENDERER, display["renderer"])
     }
 
     @Test
@@ -92,6 +105,100 @@ class WorkbenchProjectStoreTest {
         val archiveOutputs = archiveResult["outputs"] as Map<*, *>
         val archived = archiveOutputs["item"] as Map<*, *>
         assertEquals("archived", archived["status"])
+    }
+
+    @Test
+    fun projectApiExecutionCountsUseIncrementalSidecar() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        store.createProject(
+            mapOf(
+                "projectId" to "oob-workbench-counts",
+                "entityName" to "Note"
+            )
+        )
+
+        val first = store.callApi(
+            projectId = "oob-workbench-counts",
+            apiId = "note.create",
+            inputs = mapOf("title" to "First note"),
+            caller = "test"
+        )
+        assertEquals(1, executionCount(first, "note.create"))
+
+        val second = store.callApi(
+            projectId = "oob-workbench-counts",
+            apiId = "note.create",
+            inputs = mapOf("title" to "Second note"),
+            caller = "test"
+        )
+        assertEquals(2, executionCount(second, "note.create"))
+        assertTrue(
+            root.resolve("projects/oob-workbench-counts/logs/api_call_counts.json").exists()
+        )
+    }
+
+    @Test
+    fun longExecutorDoesNotHoldStoreMonitor() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        store.createProject(
+            mapOf(
+                "projectId" to "oob-workbench-slow",
+                "apis" to listOf(
+                    mapOf(
+                        "toolId" to "slow.run",
+                        "displayName" to "Slow run",
+                        "inputSchema" to emptyMap<String, Any?>(),
+                        "outputSchema" to mapOf("done" to "boolean"),
+                        "executorKind" to "slow_test_executor"
+                    )
+                )
+            )
+        )
+
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        store.executorRegistry.register("slow_test_executor", object : WorkbenchExecutor {
+            override suspend fun execute(
+                projectId: String,
+                api: WorkbenchApiRecord,
+                inputs: Map<String, Any?>
+            ): Map<String, Any?> {
+                entered.countDown()
+                assertTrue(release.await(5, TimeUnit.SECONDS))
+                return linkedMapOf(
+                    "success" to true,
+                    "apiId" to api.apiId,
+                    "toolId" to api.toolId,
+                    "outputs" to mapOf("done" to true)
+                )
+            }
+        })
+
+        var workerError: Throwable? = null
+        val worker = Thread {
+            runCatching {
+                store.callApi(
+                    projectId = "oob-workbench-slow",
+                    apiId = "slow.run",
+                    inputs = emptyMap(),
+                    caller = "test"
+                )
+            }.onFailure { workerError = it }
+        }.apply { start() }
+
+        assertTrue(entered.await(5, TimeUnit.SECONDS))
+        val startedAt = System.nanoTime()
+        val projects = store.listProjects()
+        val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+        assertTrue(projects.isNotEmpty())
+        assertTrue("listProjects blocked for ${elapsedMs}ms", elapsedMs < 500)
+
+        release.countDown()
+        worker.join(5_000)
+        assertTrue("worker did not finish", !worker.isAlive)
+        workerError?.let { throw AssertionError(it) }
     }
 
     @Test
@@ -169,5 +276,16 @@ class WorkbenchProjectStoreTest {
         val displays = project["displays"] as List<*>
         val display = displays.first() as Map<*, *>
         assertEquals(WORKBENCH_HTML_RENDERER, display["renderer"])
+    }
+
+    private fun executionCount(result: Map<String, Any?>, toolId: String): Int {
+        val project = result["project"] as Map<*, *>
+        val tools = project["tools"] as List<*>
+        val tool = tools
+            .filterIsInstance<Map<*, *>>()
+            .first { item ->
+                item["toolId"] == toolId || item["apiId"] == toolId || item["id"] == toolId
+            }
+        return (tool["executionCount"] as Number).toInt()
     }
 }
