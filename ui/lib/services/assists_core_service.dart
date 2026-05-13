@@ -1510,6 +1510,19 @@ class AssistsMessageService {
             callback(event);
           }
           break;
+        case 'onAgentStreamEventBatch':
+          final rawBatch = call.arguments;
+          if (rawBatch is List) {
+            for (final rawEvent in rawBatch) {
+              try {
+                final event = AgentStreamEvent.fromMap(rawEvent as Map?);
+                for (final callback in _onAgentStreamEventCallbacks) {
+                  callback(event);
+                }
+              } catch (_) {}
+            }
+          }
+          break;
         case 'onScheduledTaskCancelled':
           final Map<String, dynamic> data = Map<String, dynamic>.from(
             call.arguments,
@@ -2338,6 +2351,98 @@ class AssistsMessageService {
       },
     );
     return UtgManualRunResult.fromMap(decoded);
+  }
+
+  static Future<UtgFunctionMutationResult> registerOobReusableFunction({
+    required Map<String, dynamic> functionSpec,
+  }) async {
+    final spec = _jsonSafeMap(functionSpec);
+    final functionId = (spec['function_id'] ?? '').toString().trim();
+    if (functionId.isEmpty) {
+      throw Exception('function_id 为空，无法注册为 OOB API');
+    }
+
+    final result = await assistCore.invokeMethod(
+      'registerOobReusableFunction',
+      {'functionSpec': spec},
+    );
+    return UtgFunctionMutationResult.fromMap(_jsonSafeDynamicMap(result));
+  }
+
+  static Future<Map<String, dynamic>?> getOobReusableFunction(
+    String functionId,
+  ) async {
+    final normalized = functionId.trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    final result = await assistCore.invokeMethod('getOobReusableFunction', {
+      'functionId': normalized,
+    });
+    if (result is! Map) {
+      return null;
+    }
+    return _jsonSafeDynamicMap(result);
+  }
+
+  static Future<UtgManualRunResult> runOobReusableFunction({
+    required String functionId,
+    Map<String, dynamic> arguments = const {},
+    int? conversationId,
+    String? conversationMode,
+  }) async {
+    final args = <String, dynamic>{
+      'functionId': functionId.trim(),
+      'arguments': _jsonSafeMap(arguments),
+    };
+    if (conversationId != null && conversationId > 0) {
+      args['conversationId'] = conversationId;
+    }
+    if (conversationMode != null && conversationMode.trim().isNotEmpty) {
+      args['conversationMode'] = conversationMode.trim();
+    }
+    final result = await assistCore.invokeMethod('runOobReusableFunction', {
+      ...args,
+    });
+    return UtgManualRunResult.fromMap(_jsonSafeDynamicMap(result));
+  }
+
+  static Map<String, dynamic> _jsonSafeMap(Map<String, dynamic> value) {
+    final safe = _jsonSafeValue(value);
+    if (safe is Map<String, dynamic>) {
+      return safe;
+    }
+    if (safe is Map) {
+      return safe.map((key, item) => MapEntry(key.toString(), item));
+    }
+    return <String, dynamic>{};
+  }
+
+  static Map<String, dynamic> _jsonSafeDynamicMap(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return _jsonSafeMap(value);
+    }
+    if (value is Map) {
+      return _jsonSafeMap(
+        value.map((key, item) => MapEntry(key.toString(), item)),
+      );
+    }
+    return <String, dynamic>{};
+  }
+
+  static dynamic _jsonSafeValue(dynamic value) {
+    if (value == null || value is String || value is num || value is bool) {
+      return value;
+    }
+    if (value is Map) {
+      return value.map(
+        (key, item) => MapEntry(key.toString(), _jsonSafeValue(item)),
+      );
+    }
+    if (value is Iterable) {
+      return value.map(_jsonSafeValue).toList();
+    }
+    return value.toString();
   }
 
   static Future<bool> copyToClipboard(String text) async {

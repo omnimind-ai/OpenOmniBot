@@ -256,8 +256,14 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.28),
-      builder: (sheetContext) =>
-          _StepDetailSheet(card: card, fallbackIndex: index),
+      builder: (sheetContext) => _StepDetailSheet(
+        card: card,
+        fallbackIndex: index,
+        runId: widget.runId,
+        title: widget.title,
+        payload: _payload,
+        baseUrl: widget.baseUrl,
+      ),
     );
   }
 
@@ -471,19 +477,37 @@ class _StepCard extends StatelessWidget {
   }
 }
 
-class _StepDetailSheet extends StatelessWidget {
-  const _StepDetailSheet({required this.card, required this.fallbackIndex});
+class _StepDetailSheet extends StatefulWidget {
+  const _StepDetailSheet({
+    required this.card,
+    required this.fallbackIndex,
+    required this.runId,
+    required this.title,
+    required this.payload,
+    this.baseUrl,
+  });
 
   final Map<String, dynamic> card;
   final int fallbackIndex;
+  final String runId;
+  final String title;
+  final Map<String, dynamic> payload;
+  final String? baseUrl;
+
+  @override
+  State<_StepDetailSheet> createState() => _StepDetailSheetState();
+}
+
+class _StepDetailSheetState extends State<_StepDetailSheet> {
+  bool _isConvertingStep = false;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
     final isDark = context.isDarkTheme;
     final snapshot = _RunLogStepSnapshot.fromCard(
-      card,
-      fallbackIndex: fallbackIndex,
+      widget.card,
+      fallbackIndex: widget.fallbackIndex,
     );
     final success = snapshot.success ?? true;
     final statusColor = success ? _successColor(context) : _errorColor(context);
@@ -566,6 +590,25 @@ class _StepDetailSheet extends StatelessWidget {
                               ),
                             ),
                           ],
+                        ),
+                      ),
+                      Tooltip(
+                        message: _text(context, 'AI 转此步', 'Convert this step'),
+                        child: IconButton(
+                          icon: _isConvertingStep
+                              ? SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: palette.textSecondary,
+                                  ),
+                                )
+                              : const Icon(Icons.auto_awesome_rounded),
+                          color: palette.textSecondary,
+                          onPressed: _isConvertingStep
+                              ? null
+                              : () => _convertThisStep(snapshot),
                         ),
                       ),
                       Tooltip(
@@ -659,8 +702,8 @@ class _StepDetailSheet extends StatelessWidget {
                         const SizedBox(height: 12),
                         _DetailSection(
                           title: _text(context, '原始 JSON', 'Raw JSON'),
-                          copyValue: _prettyJson(card),
-                          child: _JsonBlock(value: card),
+                          copyValue: _prettyJson(widget.card),
+                          child: _JsonBlock(value: widget.card),
                         ),
                       ],
                     ),
@@ -672,6 +715,73 @@ class _StepDetailSheet extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _convertThisStep(_RunLogStepSnapshot snapshot) async {
+    if (_isConvertingStep) return;
+    setState(() {
+      _isConvertingStep = true;
+    });
+    showToast(
+      _text(context, '正在用 AI 转换此步...', 'Converting this step with AI...'),
+      type: ToastType.info,
+    );
+    final stepRunId = '${widget.runId}-step-${snapshot.stepNumber}';
+    final stepTitle = snapshot.title.isNotEmpty
+        ? snapshot.title
+        : (snapshot.toolName.isNotEmpty
+              ? snapshot.toolName
+              : 'Step ${snapshot.stepNumber}');
+    try {
+      final spec = await RunLogReusableFunctionConverter.convert(
+        runId: stepRunId,
+        title: stepTitle,
+        payload: {
+          ...widget.payload,
+          'goal': stepTitle,
+          'operation_description': stepTitle,
+          'source_run_id': widget.runId,
+          'source_step_number': snapshot.stepNumber,
+        },
+        cards: [widget.card],
+        useEnglish: _isEnglish(context),
+      );
+      if (!mounted) return;
+      setState(() {
+        _isConvertingStep = false;
+      });
+      if (spec.warning != null && spec.warning!.trim().isNotEmpty) {
+        showToast(spec.warning!, type: ToastType.warning);
+      } else {
+        showToast(
+          spec.aiEnhanced
+              ? _text(context, '此步功能结构已生成', 'Step function generated')
+              : _text(context, '此步本地功能结构已生成', 'Local step function generated'),
+          type: ToastType.success,
+        );
+      }
+      await showModalBottomSheet<void>(
+        context: context,
+        useRootNavigator: true,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        barrierColor: Colors.black.withValues(alpha: 0.28),
+        builder: (_) => _ReusableFunctionSpecSheet(
+          spec: spec,
+          runId: stepRunId,
+          baseUrl: widget.baseUrl,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isConvertingStep = false;
+      });
+      showToast(
+        '${_text(context, '转换失败', 'Conversion failed')}: $e',
+        type: ToastType.error,
+      );
+    }
   }
 
   void _copyText(BuildContext context, String text, String successMessage) {
@@ -880,7 +990,11 @@ class _ReusableFunctionSpecSheetState
                                 label: _isImporting
                                     ? _text(context, '注册中', 'Registering')
                                     : _registeredFunctionId.isEmpty
-                                    ? _text(context, '注册为 API', 'Register API')
+                                    ? _text(
+                                        context,
+                                        '注册为 OOB API',
+                                        'Register OOB API',
+                                      )
                                     : _text(context, '重新注册', 'Re-register'),
                                 onTap: _isImporting ? null : _registerFunction,
                               ),
@@ -891,7 +1005,11 @@ class _ReusableFunctionSpecSheetState
                                 icon: Icons.play_arrow_rounded,
                                 label: _isExecuting
                                     ? _text(context, '执行中', 'Running')
-                                    : _text(context, '执行 API', 'Run API'),
+                                    : _text(
+                                        context,
+                                        '执行 OOB API',
+                                        'Run OOB API',
+                                      ),
                                 onTap: _isImporting || _isExecuting
                                     ? null
                                     : _executeRegisteredFunction,
@@ -1032,18 +1150,25 @@ class _ReusableFunctionSpecSheetState
       _apiError = null;
     });
     try {
-      final result = await AssistsMessageService.importUtgRunLog(
-        runId: widget.runId,
-        baseUrl: widget.baseUrl,
+      final result = await AssistsMessageService.registerOobReusableFunction(
+        functionSpec: spec.json,
       );
       if (!mounted) return;
       setState(() {
-        _importResult = result;
+        _importResult = UtgRunLogImportResult.fromMap({
+          'success': result.success,
+          'run_id': widget.runId,
+          'function_id': result.createdFunctionId,
+          'created_function_id': result.createdFunctionId,
+          'functions_created': result.alreadyExists ? 0 : 1,
+          'asset_kind': result.assetKind,
+          'asset_state': result.assetState,
+        });
         _isImporting = false;
       });
       if (result.success) {
         showToast(
-          _text(context, '已注册为可执行 API', 'Registered executable API'),
+          _text(context, '已注册为 OOB API', 'Registered OOB API'),
           type: ToastType.success,
         );
       } else {
@@ -1086,10 +1211,9 @@ class _ReusableFunctionSpecSheetState
       _apiError = null;
     });
     try {
-      final result = await AssistsMessageService.runUtgFunction(
+      final result = await AssistsMessageService.runOobReusableFunction(
         functionId: functionId,
         arguments: _defaultArguments,
-        baseUrl: widget.baseUrl,
       );
       if (!mounted) return;
       setState(() {
@@ -1143,19 +1267,19 @@ class _ReusableFunctionSpecSheetState
     return '';
   }
 
-  Map<String, String> get _defaultArguments {
+  Map<String, dynamic> get _defaultArguments {
     final rawParameters = spec.json['parameters'];
     if (rawParameters is! List) {
       return const {};
     }
-    final arguments = <String, String>{};
+    final arguments = <String, dynamic>{};
     for (final item in rawParameters) {
       if (item is! Map) continue;
       final name = (item['name'] ?? '').toString().trim();
       if (name.isEmpty) continue;
       final defaultValue = item['default'];
       if (defaultValue == null) continue;
-      arguments[name] = defaultValue.toString();
+      arguments[name] = defaultValue;
     }
     return arguments;
   }
@@ -1166,13 +1290,12 @@ class _ReusableFunctionSpecSheetState
       return '';
     }
     return const JsonEncoder.withIndent('  ').convert({
-      'method': 'POST',
-      'path': '/functions/execute',
+      'api': 'AssistsMessageService.runOobReusableFunction',
       'body': {
         'function_id': functionId,
         'arguments': _defaultArguments,
         'context': {
-          'source': 'run_log_reusable_function',
+          'source': 'oob_reusable_function',
           'source_run_id': widget.runId,
         },
       },

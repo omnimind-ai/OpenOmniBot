@@ -55,6 +55,18 @@ class AssistsCoreChannel {
                 "getInternalRunLogTimeline" -> {
                     assistsCoreManager!!.getInternalRunLogTimeline(call, result)
                 }
+                "registerOobReusableFunction" -> {
+                    assistsCoreManager!!.registerOobReusableFunction(call, result)
+                }
+                "getOobReusableFunction" -> {
+                    assistsCoreManager!!.getOobReusableFunction(call, result)
+                }
+                "listOobReusableFunctions" -> {
+                    assistsCoreManager!!.listOobReusableFunctions(call, result)
+                }
+                "runOobReusableFunction" -> {
+                    assistsCoreManager!!.runOobReusableFunction(call, result)
+                }
                 "agentRunList" -> {
                     assistsCoreManager!!.agentRunList(call, result)
                 }

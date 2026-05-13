@@ -49,6 +49,7 @@ import cn.com.omnimind.baselib.llm.SceneModelOverrideStore
 import cn.com.omnimind.baselib.llm.SceneVoiceConfig
 import cn.com.omnimind.baselib.llm.SceneVoiceConfigStore
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
+import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
 import cn.com.omnimind.baselib.util.APPPackageUtil
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.baselib.util.RuntimeLogStore
@@ -81,6 +82,7 @@ import cn.com.omnimind.bot.agent.OmniAgentExecutor
 import cn.com.omnimind.bot.agent.SkillIndexEntry
 import cn.com.omnimind.bot.agent.SkillIndexService
 import cn.com.omnimind.bot.agent.ToolExecutionResult
+import cn.com.omnimind.bot.agent.UserDialog
 import cn.com.omnimind.bot.agent.WorkspaceMemoryRollupScheduler
 import cn.com.omnimind.bot.agent.WorkspaceMemoryService
 import cn.com.omnimind.bot.agent.WorkspaceScheduledTaskScheduler
@@ -468,6 +470,15 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             return taskId.startsWith(SUMMARY_TASK_PREFIX_VLM) ||
                 taskId.startsWith(SUMMARY_TASK_PREFIX_TASK)
         }
+    }
+
+    /**
+     * Coalesces agent stream events into per-frame batches so the Flutter side
+     * receives at most one MethodChannel call per vsync (~60/sec) instead of
+     * one per LLM token (~100+/sec).
+     */
+    private val agentStreamEventBatcher = AgentStreamEventBatcher { batch ->
+        invokeFlutterEventSafely("onAgentStreamEventBatch", batch)
     }
 
     init {
@@ -2251,6 +2262,201 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
+    fun registerOobReusableFunction(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val args = normalizeMethodCallMap(call.arguments)
+            val directSpec = normalizeMethodCallMap(args["functionSpec"])
+            val legacySpec = normalizeMethodCallMap(args["spec"])
+            val functionSpec = when {
+                directSpec.isNotEmpty() -> directSpec
+                legacySpec.isNotEmpty() -> legacySpec
+                args.containsKey("function_id") -> args
+                else -> emptyMap()
+            }
+            val payload = runCatching {
+                OobReusableFunctionStore.register(context, functionSpec)
+            }.getOrElse { error ->
+                linkedMapOf(
+                    "success" to false,
+                    "error_code" to "OOB_FUNCTION_REGISTER_FAILED",
+                    "error_message" to error.message.orEmpty(),
+                    "function_kind" to "oob_reusable_function",
+                    "asset_state" to "native_local"
+                )
+            }
+            withContext(Dispatchers.Main) {
+                result.success(payload)
+            }
+        }
+    }
+
+    fun getOobReusableFunction(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val args = normalizeMethodCallMap(call.arguments)
+            val functionId = (
+                args["functionId"] ?: args["function_id"] ?: call.argument<String>("functionId")
+            )?.toString()?.trim().orEmpty()
+            val payload = OobReusableFunctionStore.get(context, functionId)
+            withContext(Dispatchers.Main) {
+                result.success(payload)
+            }
+        }
+    }
+
+    fun listOobReusableFunctions(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val limit = call.argument<Number>("limit")?.toInt() ?: 100
+            val payload = OobReusableFunctionStore.list(context, limit)
+            withContext(Dispatchers.Main) {
+                result.success(payload)
+            }
+        }
+    }
+
+    fun runOobReusableFunction(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val args = normalizeMethodCallMap(call.arguments)
+            val functionId = (
+                args["functionId"] ?: args["function_id"] ?: call.argument<String>("functionId")
+            )?.toString()?.trim().orEmpty()
+            if (functionId.isEmpty()) {
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        linkedMapOf(
+                            "success" to false,
+                            "goal" to "oob_reusable_function_run",
+                            "function_id" to functionId,
+                            "error_code" to "OOB_FUNCTION_ID_EMPTY",
+                            "error_message" to "functionId is empty",
+                            "terminal_state" to mapOf("status" to "error")
+                        )
+                    )
+                }
+                return@launch
+            }
+
+            val spec = OobReusableFunctionStore.get(context, functionId)
+            if (spec == null) {
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        linkedMapOf(
+                            "success" to false,
+                            "goal" to "oob_reusable_function_run:$functionId",
+                            "function_id" to functionId,
+                            "error_code" to "OOB_FUNCTION_NOT_FOUND",
+                            "error_message" to "OOB reusable function not found: $functionId",
+                            "terminal_state" to mapOf("status" to "error")
+                        )
+                    )
+                }
+                return@launch
+            }
+
+            val callArguments = normalizeCallArgumentMap(args["arguments"])
+            val missingRequired = OobReusableFunctionStore.missingRequiredArguments(
+                functionSpec = spec,
+                arguments = callArguments
+            )
+            if (missingRequired.isNotEmpty()) {
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        linkedMapOf(
+                            "success" to false,
+                            "goal" to "oob_reusable_function_run:$functionId",
+                            "function_id" to functionId,
+                            "error_code" to "OOB_FUNCTION_ARGUMENTS_MISSING",
+                            "error_message" to "Missing required arguments: ${missingRequired.joinToString(", ")}",
+                            "terminal_state" to mapOf(
+                                "status" to "error",
+                                "runner" to "oob_agent_reusable_function"
+                            ),
+                            "context" to mapOf(
+                                "source" to "oob_reusable_function",
+                                "function_id" to functionId,
+                                "missing_required_arguments" to missingRequired
+                            )
+                        )
+                    )
+                }
+                return@launch
+            }
+            val materializedSpec = OobReusableFunctionStore.materialize(spec, callArguments)
+            val taskId = args["taskId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "${System.currentTimeMillis()}-ai"
+            val conversationId = when (val raw = args["conversationId"]) {
+                is Number -> raw.toLong().takeIf { it > 0L }
+                is String -> raw.trim().toLongOrNull()?.takeIf { it > 0L }
+                else -> null
+            }
+            val conversationMode = args["conversationMode"]
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+            val prompt = buildOobReusableFunctionRunPrompt(
+                functionId = functionId,
+                functionSpec = materializedSpec,
+                arguments = callArguments
+            )
+
+            val createArgs = linkedMapOf<String, Any?>(
+                "taskId" to taskId,
+                "userMessage" to prompt,
+                "reasoningEffort" to "low"
+            ).apply {
+                conversationId?.let { put("conversationId", it) }
+                conversationMode?.let { put("conversationMode", it) }
+            }
+            var startResult: Any? = null
+            var startErrorCode: String? = null
+            var startErrorMessage: String? = null
+            createAgentTask(
+                MethodCall("createAgentTask", createArgs),
+                object : MethodChannel.Result {
+                    override fun success(result: Any?) {
+                        startResult = result
+                    }
+
+                    override fun error(
+                        errorCode: String,
+                        errorMessage: String?,
+                        errorDetails: Any?
+                    ) {
+                        startErrorCode = errorCode
+                        startErrorMessage = errorMessage
+                    }
+
+                    override fun notImplemented() {
+                        startErrorCode = "NOT_IMPLEMENTED"
+                        startErrorMessage = "createAgentTask not implemented"
+                    }
+                }
+            )
+            val started = startErrorCode == null && startResult == "SUCCESS"
+            withContext(Dispatchers.Main) {
+                result.success(
+                    linkedMapOf(
+                        "success" to started,
+                        "goal" to "oob_reusable_function_run:$functionId",
+                        "function_id" to functionId,
+                        "error_code" to startErrorCode,
+                        "error_message" to startErrorMessage,
+                        "terminal_state" to linkedMapOf(
+                            "status" to if (started) "started" else "error",
+                            "taskId" to taskId,
+                            "runner" to "oob_agent_reusable_function",
+                            "arguments_applied" to true
+                        ),
+                        "context" to linkedMapOf(
+                            "source" to "oob_reusable_function",
+                            "function_id" to functionId,
+                            "argument_count" to callArguments.size
+                        )
+                    )
+                )
+            }
+        }
+    }
+
     /**
      * 获取已安装应用（包名与应用名）
      */
@@ -4015,7 +4221,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             runCatching {
                 val projectId = call.argument<String>("projectId")?.trim().orEmpty()
                 val route = workbenchProjectStore.routeForProject(projectId)
-                TaskCompletionNavigator.navigateToMainRoute(context, route, needClear = false)
+                withContext(Dispatchers.Main) {
+                    TaskCompletionNavigator.navigateToMainRoute(context, route, needClear = false)
+                }
                 mapOf("success" to true, "projectId" to projectId, "route" to route)
             }.onSuccess { payload ->
                 withContext(Dispatchers.Main) { result.success(payload) }
@@ -4271,6 +4479,37 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             is List<*> -> value.map(::normalizeMethodCallValue)
             else -> value
         }
+    }
+
+    private fun normalizeCallArgumentMap(value: Any?): Map<String, Any?> {
+        return normalizeMethodCallMap(value)
+    }
+
+    private fun buildOobReusableFunctionRunPrompt(
+        functionId: String,
+        functionSpec: Map<String, Any?>,
+        arguments: Map<String, Any?>
+    ): String {
+        val prettySpec = OobReusableFunctionStore.prettyJson(functionSpec)
+        val prettyArgs = OobReusableFunctionStore.prettyJson(arguments)
+        return listOf(
+            "请执行这个 OOB 可复用 function。",
+            "",
+            "Function ID: $functionId",
+            "",
+            "调用参数 JSON:",
+            prettyArgs,
+            "",
+            "执行规则:",
+            "1. Function JSON 已由 native 按 parameters.bindings 完成参数物化，优先读取 runtime.resolved_arguments 和 execution.steps[*].args。",
+            "2. 按 execution.steps 顺序执行；executor=tool 时优先调用 step.callable_tool（没有则用 step.tool）并传入已物化 step.args。",
+            "3. executor=agent 或 validation/before_state/constraints 不匹配时，不要盲目重放坐标；使用 step.agent_call 或 fallback，以同一目标从当前屏幕重规划。",
+            "4. 如果 step.tool 对应现有 OOB/agent 工具，直接调用该工具并使用已物化后的 step.args；如果 callable_tool=oob.agent.run，则按 agent_call.args.prompt 执行。",
+            "5. 执行完成后给出简洁结果，并说明是否发生过 agent re-plan。",
+            "",
+            "Function JSON:",
+            prettySpec
+        ).joinToString("\n")
     }
 
     private fun parseScheduledSubagentRunMeta(
@@ -4547,12 +4786,16 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 var entrySequence = 0L
                 var activeThinkingEntryId: String? = null
                 var activeAssistantEntryId: String? = null
-                var thinkingRound = 0
+                var thinkingSequence = 0
                 var assistantRound = 0
                 var latestThinkingContent = ""
                 var latestAssistantVisibleText = ""
                 var shouldStartNewThinkingSegment = false
                 var shouldStartNewAssistantRound = false
+                // toolCallId (LLM-assigned, e.g. "toolu_01xxx") → our stable entryId.
+                // Populated by onToolCallPreview during streaming; consumed by onToolCallStart
+                // so both phases write to the same Flutter card.
+                val previewEntryIdByToolCallId = mutableMapOf<String, String>()
 
                 fun pushToolValue(
                     store: MutableMap<String, ArrayDeque<String>>,
@@ -4632,9 +4875,6 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     }
                 }
 
-                fun resolveThinkingEntryId(round: Int): String {
-                    return if (round <= 1) "$taskId-thinking" else "$taskId-thinking-$round"
-                }
 
                 fun resolveAssistantEntryId(round: Int): String {
                     return if (round <= 1) {
@@ -4695,7 +4935,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 }
 
                 fun currentToolRoundIndex(): Int {
-                    return maxOf(thinkingRound, assistantRound, 1)
+                    return maxOf(thinkingSequence, assistantRound, 1)
                 }
 
                 fun buildDeepThinkingCardData(
@@ -4776,7 +5016,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     if (latestThinkingContent.isBlank()) return
                     upsertThinkingCard(
                         entryId = entryId,
-                        roundIndex = thinkingRound.coerceAtLeast(1),
+                        roundIndex = thinkingSequence.coerceAtLeast(1),
                         thinkingContent = latestThinkingContent,
                         isLoading = false,
                         stage = 4,
@@ -5004,9 +5244,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         } ?: basePayload
                     )
                     RealtimeHub.publish("agent_stream_event", payload)
-                    withContext(Dispatchers.Main) {
-                        invokeFlutterEventSafely("onAgentStreamEvent", payload)
-                    }
+                    // Route through the per-frame batcher: coalesces up to ~60 calls/sec
+                    // regardless of LLM token rate, eliminating IPC overhead spikes.
+                    agentStreamEventBatcher.enqueue(payload)
                 }
 
                 conversationId?.let { normalizedConversationId ->
@@ -5026,28 +5266,64 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
                 // 3. 创建回调
                 val callback = object : AgentCallback {
+                    override suspend fun onToolCallPreview(
+                        toolName: String,
+                        argumentsJson: String,
+                        toolCallId: String?,
+                        toolCallIndex: Int
+                    ) {
+                        if (toolName.isBlank()) return
+                        val resolvedId = toolCallId?.takeIf { it.isNotBlank() } ?: return
+                        // Each toolCallId is unique within a turn — fire only once per ID.
+                        if (previewEntryIdByToolCallId.containsKey(resolvedId)) return
+
+                        // Allocate the entry ID now; onToolCallStart will reuse it via the map.
+                        val entryId = "$taskId-tool-${toolSequence + previewEntryIdByToolCallId.size + 1}"
+                        previewEntryIdByToolCallId[resolvedId] = entryId
+
+                        val roundIndex = currentToolRoundIndex()
+                        val earlyPayload = buildToolStartPayload(toolName, "{}").toMutableMap().apply {
+                            put("cardId", entryId)
+                        }
+                        upsertToolEvent(
+                            entryId = entryId,
+                            roundIndex = roundIndex,
+                            payload = earlyPayload,
+                            streamKind = "tool_started",
+                            fallbackStatus = AgentConversationHistoryRepository.STATUS_RUNNING,
+                            fallbackSummary = t("正在准备工具调用...", "Preparing tool call...")
+                        )
+                        sendStreamEvent(
+                            kind = "tool_started",
+                            entryId = entryId,
+                            roundIndex = roundIndex,
+                            extras = earlyPayload
+                        )
+                    }
+
                     override suspend fun onThinkingStart() {
                         val startsNewSegment =
                             activeThinkingEntryId == null || shouldStartNewThinkingSegment
                         if (startsNewSegment) {
                             finalizeThinkingCardIfNeeded(publish = false)
-                            thinkingRound = (thinkingRound + 1).coerceAtLeast(1)
-                            activeThinkingEntryId = resolveThinkingEntryId(thinkingRound)
+                            thinkingSequence += 1
+                            activeThinkingEntryId = "$taskId-thinking-$thinkingSequence"
                             latestThinkingContent = ""
                             shouldStartNewThinkingSegment = false
-                        } else if (thinkingRound <= 0) {
-                            thinkingRound = 1
+                        } else if (thinkingSequence <= 0) {
+                            thinkingSequence = 1
+                            activeThinkingEntryId = "$taskId-thinking-$thinkingSequence"
                         }
-                        val entryId = resolveThinkingEntryId(thinkingRound)
+                        val entryId = activeThinkingEntryId
+                            ?: run { thinkingSequence += 1; "$taskId-thinking-$thinkingSequence".also { activeThinkingEntryId = it } }
                         val startTime = System.currentTimeMillis()
-                        activeThinkingEntryId = entryId
                         thinkingCardStartTimes.putIfAbsent(entryId, startTime)
                         markAssistantRoundBoundary()
                         if (startsNewSegment) {
                             sendStreamEvent(
                                 kind = "thinking_started",
                                 entryId = entryId,
-                                roundIndex = thinkingRound,
+                                roundIndex = thinkingSequence,
                                 thinking = "",
                                 stage = 1
                             )
@@ -5058,8 +5334,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         val normalizedThinking = AgentTextSanitizer.sanitizeUtf16(thinking).trim()
                         if (normalizedThinking.isBlank()) return
                         if (activeThinkingEntryId == null || shouldStartNewThinkingSegment) {
-                            thinkingRound = (thinkingRound + 1).coerceAtLeast(1)
-                            val generated = resolveThinkingEntryId(thinkingRound)
+                            thinkingSequence += 1
+                            val generated = "$taskId-thinking-$thinkingSequence"
                             activeThinkingEntryId = generated
                             latestThinkingContent = ""
                             shouldStartNewThinkingSegment = false
@@ -5080,7 +5356,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         entryId?.let { thinkingEntryId ->
                             upsertThinkingCard(
                                 entryId = thinkingEntryId,
-                                roundIndex = thinkingRound.coerceAtLeast(1),
+                                roundIndex = thinkingSequence.coerceAtLeast(1),
                                 thinkingContent = normalizedThinking,
                                 isLoading = true,
                                 stage = 1,
@@ -5091,7 +5367,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         sendStreamEvent(
                             kind = "thinking_snapshot",
                             entryId = entryId,
-                            roundIndex = thinkingRound.coerceAtLeast(1),
+                            roundIndex = thinkingSequence.coerceAtLeast(1),
                             thinking = normalizedThinking,
                             stage = 1
                         )
@@ -5099,11 +5375,22 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
                     override suspend fun onToolCallStart(
                         toolName: String,
+                        toolCallId: String,
                         arguments: JsonObject
                     ) {
                         val argsJson = arguments.toString()
                         pushToolValue(activeToolArgs, toolName, argsJson)
-                        val entryId = "$taskId-tool-${++toolSequence}"
+                        // Look up the entry ID allocated during onToolCallPreview using the
+                        // LLM-assigned toolCallId as the stable key. This guarantees the
+                        // confirmed event lands on the same Flutter card as the preview,
+                        // regardless of execution order.
+                        val previewEntryId = previewEntryIdByToolCallId.remove(toolCallId)
+                        val entryId = if (previewEntryId != null) {
+                            ++toolSequence   // keep the counter in sync
+                            previewEntryId
+                        } else {
+                            "$taskId-tool-${++toolSequence}"
+                        }
                         val startedAtMillis = System.currentTimeMillis()
                         activeToolStartTimes[entryId] = startedAtMillis
                         val roundIndex = currentToolRoundIndex()
@@ -5112,7 +5399,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         activeThinkingEntryId?.takeIf { latestThinkingContent.isNotBlank() }?.let { thinkingEntryId ->
                             upsertThinkingCard(
                                 entryId = thinkingEntryId,
-                                roundIndex = thinkingRound.coerceAtLeast(roundIndex),
+                                roundIndex = thinkingSequence.coerceAtLeast(roundIndex),
                                 thinkingContent = latestThinkingContent,
                                 isLoading = true,
                                 stage = 2,
@@ -5228,7 +5515,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         activeThinkingEntryId?.takeIf { latestThinkingContent.isNotBlank() }?.let { thinkingEntryId ->
                             upsertThinkingCard(
                                 entryId = thinkingEntryId,
-                                roundIndex = thinkingRound.coerceAtLeast(roundIndex),
+                                roundIndex = thinkingSequence.coerceAtLeast(roundIndex),
                                 thinkingContent = latestThinkingContent,
                                 isLoading = true,
                                 stage = 2,
@@ -5348,7 +5635,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
                     override suspend fun onClarifyRequired(
                         question: String,
-                        missingFields: List<String>?
+                        missingFields: List<String>?,
+                        dialog: UserDialog?
                     ) {
                         finalizeThinkingCardIfNeeded()
                         val normalizedQuestion = AgentTextSanitizer.sanitizeUtf16(question).trim()
@@ -5369,7 +5657,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             roundIndex = roundIndex,
                             text = normalizedQuestion,
                             question = normalizedQuestion,
-                            missingFields = missingFields
+                            missingFields = missingFields,
+                            extras = if (dialog != null) mapOf("dialog" to dialog.toPayload()) else emptyMap()
                         )
                     }
 
