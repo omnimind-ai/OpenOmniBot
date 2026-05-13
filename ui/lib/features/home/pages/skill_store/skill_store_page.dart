@@ -10,7 +10,8 @@ import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 
-const String _kOfficialSkillsDownloadAsset = 'assets/home/hard_drive_download.svg';
+const String _kOfficialSkillsDownloadAsset =
+    'assets/home/hard_drive_download.svg';
 
 const String _kBuiltinSkillBadgeCheckSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
@@ -501,9 +502,12 @@ class _SkillStorePageState extends State<SkillStorePage> {
       fontFamily: 'PingFang SC',
     );
 
-    if (!item.isBuiltin) {
+    if (!item.isBuiltin && !item.isOfficial) {
       return Text(item.name, style: titleStyle);
     }
+    final badgeLabel = item.isBuiltin
+        ? context.l10n.skillBuiltin
+        : context.l10n.skillOfficial;
 
     return Text.rich(
       TextSpan(
@@ -514,7 +518,7 @@ class _SkillStorePageState extends State<SkillStorePage> {
             child: Padding(
               padding: const EdgeInsets.only(left: 6),
               child: Tooltip(
-                message: context.l10n.skillBuiltin,
+                message: badgeLabel,
                 child: SvgPicture.string(
                   _kBuiltinSkillBadgeCheckSvg,
                   width: 16,
