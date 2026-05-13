@@ -38,6 +38,79 @@ enum AgentStreamPhase {
   permissionRequired,
 }
 
+class UserDialogChoice {
+  const UserDialogChoice({
+    required this.label,
+    required this.value,
+    this.hint,
+  });
+
+  final String label;
+  final String value;
+  final String? hint;
+
+  static UserDialogChoice? tryParse(dynamic raw) {
+    if (raw is! Map) return null;
+    final label = raw['label']?.toString() ?? '';
+    final value = raw['value']?.toString() ?? '';
+    if (label.isEmpty || value.isEmpty) return null;
+    return UserDialogChoice(
+      label: label,
+      value: value,
+      hint: raw['hint']?.toString(),
+    );
+  }
+}
+
+class UserDialog {
+  const UserDialog({
+    required this.type,
+    required this.message,
+    this.title,
+    this.confirmLabel,
+    this.cancelLabel,
+    this.danger = false,
+    this.choices = const [],
+    this.placeholder,
+    this.inputType,
+  });
+
+  final String type; // confirm | choices | input
+  final String message;
+  final String? title;
+  final String? confirmLabel;
+  final String? cancelLabel;
+  final bool danger;
+  final List<UserDialogChoice> choices;
+  final String? placeholder;
+  final String? inputType;
+
+  static UserDialog? tryParse(dynamic raw) {
+    if (raw is! Map) return null;
+    final type = raw['type']?.toString() ?? '';
+    final message = raw['message']?.toString() ?? '';
+    if (type.isEmpty || message.isEmpty) return null;
+    final choicesRaw = raw['choices'];
+    final choices = choicesRaw is List
+        ? choicesRaw
+            .map(UserDialogChoice.tryParse)
+            .whereType<UserDialogChoice>()
+            .toList()
+        : <UserDialogChoice>[];
+    return UserDialog(
+      type: type,
+      message: message,
+      title: raw['title']?.toString(),
+      confirmLabel: raw['confirmLabel']?.toString(),
+      cancelLabel: raw['cancelLabel']?.toString(),
+      danger: raw['danger'] == true,
+      choices: choices,
+      placeholder: raw['placeholder']?.toString(),
+      inputType: raw['inputType']?.toString(),
+    );
+  }
+}
+
 class AgentStreamEvent {
   const AgentStreamEvent({
     required this.taskId,
@@ -61,6 +134,7 @@ class AgentStreamEvent {
     this.question = '',
     this.missingFields = const <String>[],
     this.missingPermissions = const <String>[],
+    this.dialog,
     this.browserSnapshot,
     this.raw = const <String, dynamic>{},
   });
@@ -86,6 +160,7 @@ class AgentStreamEvent {
   final String question;
   final List<String> missingFields;
   final List<String> missingPermissions;
+  final UserDialog? dialog;
   final ChatBrowserSessionSnapshot? browserSnapshot;
   final Map<String, dynamic> raw;
 
@@ -148,6 +223,7 @@ class AgentStreamEvent {
               ?.map((item) => item.toString())
               .toList(growable: false) ??
           const <String>[],
+      dialog: UserDialog.tryParse(raw['dialog']),
       browserSnapshot: browserSnapshot,
       raw: raw,
     );

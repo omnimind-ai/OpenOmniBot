@@ -2,11 +2,13 @@ import 'dart:convert';
 
 import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/terminal_output_utils.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/models/chat_message_model.dart';
 
 const String kAgentToolSummaryCardType = 'agent_tool_summary';
 const String kAgentToolTitleField = 'toolTitle';
+const int _kToolCardTitleMaxChars = 80;
+const int _kToolCardPreviewMaxChars = 160;
 
 class AgentToolActivitySnapshot {
   const AgentToolActivitySnapshot({
@@ -335,30 +337,47 @@ class _CompletedAgentToolRun {
 String resolveAgentToolTitle(Map<String, dynamic> cardData) {
   final explicit = (cardData[kAgentToolTitleField] ?? '').toString().trim();
   if (explicit.isNotEmpty) {
-    return LegacyTextLocalizer.localize(explicit);
+    return AppTextLocalizer.text(
+      _compactToolText(explicit, maxChars: _kToolCardTitleMaxChars),
+    );
   }
 
   final fromArgs = _extractToolTitleFromArgs(
     (cardData['argsJson'] ?? '').toString(),
   );
   if (fromArgs.isNotEmpty) {
-    return LegacyTextLocalizer.localize(fromArgs);
+    return AppTextLocalizer.text(
+      _compactToolText(fromArgs, maxChars: _kToolCardTitleMaxChars),
+    );
+  }
+
+  final prettifiedDisplayName = _prettifyToolName(
+    (cardData['displayName'] ?? '').toString(),
+  );
+  final prettifiedToolName = _prettifyToolName(
+    (cardData['toolName'] ?? '').toString(),
+  );
+  final baseTitle = prettifiedDisplayName.isNotEmpty
+      ? prettifiedDisplayName
+      : prettifiedToolName;
+  if (baseTitle.isNotEmpty) {
+    final serverName = (cardData['serverName'] ?? '').toString().trim();
+    if ((cardData['toolType'] ?? '').toString() == 'mcp' &&
+        serverName.isNotEmpty) {
+      return '${AppTextLocalizer.text(_compactToolText(baseTitle, maxChars: _kToolCardTitleMaxChars))} · $serverName';
+    }
+    return AppTextLocalizer.text(
+      _compactToolText(baseTitle, maxChars: _kToolCardTitleMaxChars),
+    );
   }
 
   final summary = (cardData['summary'] ?? '').toString().trim();
   if (summary.isNotEmpty) {
-    return LegacyTextLocalizer.localize(summary);
+    return AppTextLocalizer.text(
+      _compactToolText(summary, maxChars: _kToolCardTitleMaxChars),
+    );
   }
-
-  final displayName = (cardData['displayName'] ?? '工具调用').toString().trim();
-  final serverName = (cardData['serverName'] ?? '').toString().trim();
-  if ((cardData['toolType'] ?? '').toString() == 'mcp' &&
-      serverName.isNotEmpty) {
-    return '${LegacyTextLocalizer.localize(displayName)} · $serverName';
-  }
-  return LegacyTextLocalizer.localize(
-    displayName.isEmpty ? '工具调用' : displayName,
-  );
+  return AppTextLocalizer.text('工具调用');
 }
 
 String resolveAgentToolTerminalOutput(Map<String, dynamic> cardData) {
@@ -380,9 +399,12 @@ String resolveAgentToolPreview(Map<String, dynamic> cardData) {
           .where((line) => line.trim().isNotEmpty)
           .toList(growable: false);
       if (nonEmptyLines.isNotEmpty) {
-        return nonEmptyLines.last;
+        return _compactToolText(
+          nonEmptyLines.last,
+          maxChars: _kToolCardPreviewMaxChars,
+        );
       }
-      return output;
+      return _compactToolText(output, maxChars: _kToolCardPreviewMaxChars);
     }
   }
 
@@ -390,10 +412,14 @@ String resolveAgentToolPreview(Map<String, dynamic> cardData) {
   final summary = (cardData['summary'] ?? '').toString().trim();
   final title = resolveAgentToolTitle(cardData);
   if (progress.isNotEmpty && progress != title) {
-    return LegacyTextLocalizer.localize(progress);
+    return AppTextLocalizer.text(
+      _compactToolText(progress, maxChars: _kToolCardPreviewMaxChars),
+    );
   }
   if (summary.isNotEmpty && summary != title) {
-    return LegacyTextLocalizer.localize(summary);
+    return AppTextLocalizer.text(
+      _compactToolText(summary, maxChars: _kToolCardPreviewMaxChars),
+    );
   }
   return resolveAgentToolStatusLabel(cardData);
 }
@@ -401,58 +427,63 @@ String resolveAgentToolPreview(Map<String, dynamic> cardData) {
 String resolveAgentToolStatusLabel(Map<String, dynamic> cardData) {
   final explicitStatusLabel = (cardData['statusLabel'] ?? '').toString().trim();
   if (explicitStatusLabel.isNotEmpty) {
-    return LegacyTextLocalizer.localize(explicitStatusLabel);
+    return AppTextLocalizer.text(explicitStatusLabel);
   }
   final status = (cardData['status'] ?? 'running').toString();
   final toolType = (cardData['toolType'] ?? 'builtin').toString();
   if (status == 'timeout') {
-    return LegacyTextLocalizer.localize('超时');
+    return AppTextLocalizer.text('超时');
   }
   if (status == 'interrupted') {
-    return LegacyTextLocalizer.localize('中断');
+    return AppTextLocalizer.text('中断');
   }
   switch (status) {
     case 'success':
-      return LegacyTextLocalizer.localize('成功');
+      return AppTextLocalizer.text('成功');
     case 'error':
-      return LegacyTextLocalizer.localize('失败');
+      return AppTextLocalizer.text('失败');
     default:
-      if (toolType == 'terminal') return LegacyTextLocalizer.localize('运行中');
-      if (toolType == 'browser') return LegacyTextLocalizer.localize('浏览中');
-      if (toolType == 'mcp') return LegacyTextLocalizer.localize('响应中');
-      if (toolType == 'memory') return LegacyTextLocalizer.localize('处理中');
-      return LegacyTextLocalizer.localize('执行中');
+      if (toolType == 'terminal') return AppTextLocalizer.text('运行中');
+      if (toolType == 'browser') return AppTextLocalizer.text('浏览中');
+      if (toolType == 'workbench') {
+        return AppTextLocalizer.choose(en: 'Updating', zh: '处理中');
+      }
+      if (toolType == 'mcp') return AppTextLocalizer.text('响应中');
+      if (toolType == 'memory') return AppTextLocalizer.text('处理中');
+      return AppTextLocalizer.text('执行中');
   }
 }
 
 String resolveAgentToolTypeLabel(Map<String, dynamic> cardData) {
   final explicitTypeLabel = (cardData['toolTypeLabel'] ?? '').toString().trim();
   if (explicitTypeLabel.isNotEmpty) {
-    return LegacyTextLocalizer.localize(explicitTypeLabel);
+    return AppTextLocalizer.text(explicitTypeLabel);
   }
   switch ((cardData['toolType'] ?? '').toString()) {
     case 'terminal':
-      return LegacyTextLocalizer.localize('终端');
+      return AppTextLocalizer.text('终端');
     case 'browser':
-      return LegacyTextLocalizer.localize('浏览器');
+      return AppTextLocalizer.text('浏览器');
     case 'workspace':
-      return LegacyTextLocalizer.localize('工作区');
+      return AppTextLocalizer.text('工作区');
+    case 'workbench':
+      return AppTextLocalizer.choose(en: 'Workbench', zh: '工作台');
     case 'schedule':
-      return LegacyTextLocalizer.localize('定时');
+      return AppTextLocalizer.text('定时');
     case 'alarm':
-      return LegacyTextLocalizer.localize('提醒');
+      return AppTextLocalizer.text('提醒');
     case 'calendar':
-      return LegacyTextLocalizer.localize('日历');
+      return AppTextLocalizer.text('日历');
     case 'memory':
-      return LegacyTextLocalizer.localize('记忆');
+      return AppTextLocalizer.text('记忆');
     case 'skill':
       return 'Skill';
     case 'subagent':
-      return LegacyTextLocalizer.localize('子任务');
+      return AppTextLocalizer.text('子任务');
     case 'mcp':
       return 'MCP';
     default:
-      return LegacyTextLocalizer.localize('工具');
+      return AppTextLocalizer.text('工具');
   }
 }
 
@@ -498,7 +529,7 @@ String buildAgentToolTranscript(
     final lines = normalized.split('\n');
     if (lines.length > maxTotalLines) {
       normalized = [
-        LegacyTextLocalizer.localize('[更早记录已省略]'),
+        AppTextLocalizer.text('[更早记录已省略]'),
         ...lines.sublist(lines.length - maxTotalLines),
       ].join('\n');
     }
@@ -520,4 +551,43 @@ String _extractToolTitleFromArgs(String argsJson) {
   } catch (_) {
     return '';
   }
+}
+
+String _compactToolText(String value, {required int maxChars}) {
+  final normalized = value
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n')
+      .split('\n')
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .join(' · ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+  return '${normalized.substring(0, maxChars - 1).trimRight()}…';
+}
+
+String _prettifyToolName(String raw) {
+  final text = raw.trim();
+  if (text.isEmpty) {
+    return '';
+  }
+  final normalized = text
+      .replaceAll(RegExp(r'[_\-]+'), ' ')
+      .replaceAllMapped(
+        RegExp(r'([a-z0-9])([A-Z])'),
+        (match) => '${match.group(1)} ${match.group(2)}',
+      )
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  if (normalized.isEmpty) {
+    return '';
+  }
+  final lower = normalized.toLowerCase();
+  if (lower == 'calltool' || lower == 'call tool') {
+    return AppTextLocalizer.choose(en: 'Tool Call', zh: '工具调用');
+  }
+  return normalized;
 }

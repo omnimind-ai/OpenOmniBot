@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
+import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
 import 'package:ui/services/app_background_service.dart';
 import 'package:ui/theme/theme_context.dart';
 
@@ -83,9 +83,36 @@ class AgentToolSummaryCard extends StatelessWidget {
                   border: Border.all(color: cardBorderColor),
                 ),
                 child: InkWell(
-                  onTap: () => unawaited(
-                    showAgentToolDetailSheet(context, cardData: cardData),
-                  ),
+                  onTap: () {
+                    final cardId = _firstNonBlank([
+                      cardData['cardId'],
+                      cardData['card_id'],
+                      cardData['toolCallId'],
+                      cardData['tool_call_id'],
+                    ]);
+                    if (runLogId.isNotEmpty && cardId.isNotEmpty) {
+                      unawaited(
+                        showRunLogStepDetailSheet(
+                          context,
+                          runId: runLogId,
+                          cardId: cardId,
+                          title: resolveAgentToolTitle(cardData),
+                        ),
+                      );
+                    } else if (runLogId.isNotEmpty) {
+                      unawaited(
+                        showRunLogTimelineSheet(
+                          context,
+                          runId: runLogId,
+                          title: resolveAgentToolTitle(cardData),
+                        ),
+                      );
+                    } else {
+                      unawaited(
+                        showAgentToolDetailSheet(context, cardData: cardData),
+                      );
+                    }
+                  },
                   borderRadius: BorderRadius.circular(999),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
@@ -130,21 +157,6 @@ class AgentToolSummaryCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (runLogId.isNotEmpty) ...[
-                          const SizedBox(width: 6),
-                          Tooltip(
-                            message: _text(context, '查看 RunLog', 'View RunLog'),
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () => _openRunLog(runLogId),
-                              child: Icon(
-                                Icons.route_rounded,
-                                size: 15,
-                                color: statusTagTextColor,
-                              ),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),
@@ -158,24 +170,17 @@ class AgentToolSummaryCard extends StatelessWidget {
   }
 }
 
-void _openRunLog(String runLogId) {
-  GoRouterManager.push(
-    '/task/run_log_timeline',
-    extra: {'runId': runLogId, 'title': 'RunLog'},
-  );
-}
-
 String _resolveRunLogId(Map<String, dynamic> cardData) {
   return _firstNonBlank([
     cardData['runLogId'],
     cardData['run_log_id'],
     cardData['runId'],
     cardData['run_id'],
-    _runLogIdFromJsonString(cardData['resultPreviewJson']),
-    _runLogIdFromJsonString(cardData['rawResultJson']),
     cardData['toolTaskId'],
     cardData['taskId'],
     cardData['taskID'],
+    _runLogIdFromJsonString(cardData['resultPreviewJson']),
+    _runLogIdFromJsonString(cardData['rawResultJson']),
   ]);
 }
 
@@ -206,10 +211,6 @@ String _firstNonBlank(Iterable<Object?> values) {
     }
   }
   return '';
-}
-
-String _text(BuildContext context, String zh, String en) {
-  return Localizations.localeOf(context).languageCode == 'zh' ? zh : en;
 }
 
 class _StatusIcon extends StatelessWidget {

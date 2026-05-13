@@ -1,4 +1,4 @@
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 
 enum ExecutionRecordType {
   system,
@@ -24,13 +24,13 @@ extension ExecutionRecordTypeX on ExecutionRecordType {
   String get label {
     switch (this) {
       case ExecutionRecordType.system:
-        return LegacyTextLocalizer.localize('系统');
+        return AppTextLocalizer.text('系统');
       case ExecutionRecordType.vlm:
         return 'VLM';
       case ExecutionRecordType.summary:
-        return LegacyTextLocalizer.localize('总结');
+        return AppTextLocalizer.text('总结');
       case ExecutionRecordType.unknown:
-        return LegacyTextLocalizer.localize('未知');
+        return AppTextLocalizer.text('未知');
     }
   }
 
@@ -88,17 +88,17 @@ extension ExecutionStatusX on ExecutionStatus {
   String get displayName {
     switch (this) {
       case ExecutionStatus.running:
-        return LegacyTextLocalizer.localize('执行中');
+        return AppTextLocalizer.text('执行中');
       case ExecutionStatus.success:
-        return LegacyTextLocalizer.localize('执行成功');
+        return AppTextLocalizer.text('执行成功');
       case ExecutionStatus.failed:
-        return LegacyTextLocalizer.localize('执行失败');
+        return AppTextLocalizer.text('执行失败');
       case ExecutionStatus.cancelled:
-        return LegacyTextLocalizer.localize('已取消');
+        return AppTextLocalizer.text('已取消');
       case ExecutionStatus.waiting:
-        return LegacyTextLocalizer.localize('等待执行');
+        return AppTextLocalizer.text('等待执行');
       case ExecutionStatus.paused:
-        return LegacyTextLocalizer.localize('已暂停');
+        return AppTextLocalizer.text('已暂停');
     }
   }
 

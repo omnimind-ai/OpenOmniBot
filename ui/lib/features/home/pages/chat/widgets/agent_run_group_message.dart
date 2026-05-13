@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/card_widget_factory.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/message_bubble.dart';
+import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/agent_avatar_service.dart';
 import 'package:ui/services/app_background_service.dart';
@@ -258,12 +259,11 @@ class _AgentRunSummaryHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isEnglish =
-        Localizations.maybeLocaleOf(context)?.languageCode == 'en';
+    final locale = Localizations.localeOf(context);
     final palette = context.omniPalette;
     final label = isActiveRun
-        ? (isEnglish ? 'Running' : '运行中')
-        : (isEnglish ? 'Run trace' : '已思考');
+        ? AppTextLocalizer.choose(zh: '运行中', en: 'Running', locale: locale)
+        : AppTextLocalizer.choose(zh: '已思考', en: 'Run trace', locale: locale);
     final labelColor = expanded ? palette.textSecondary : palette.textTertiary;
     final lineColor = expanded
         ? palette.textSecondary.withValues(
@@ -312,15 +312,20 @@ class _AgentRunSummaryHeader extends StatelessWidget {
                 Expanded(child: Container(height: 1, color: lineColor)),
                 const SizedBox(width: 6),
                 Tooltip(
-                  message: isEnglish ? 'View RunLog' : '查看 RunLog',
+                  message: AppTextLocalizer.choose(
+                    zh: '查看 RunLog',
+                    en: 'View RunLog',
+                    locale: locale,
+                  ),
                   child: InkResponse(
                     onTap: () {
                       final resolvedRunLogId = runLogId.trim().isEmpty
                           ? taskId
                           : runLogId.trim();
-                      GoRouterManager.push(
-                        '/task/run_log_timeline',
-                        extra: {'runId': resolvedRunLogId, 'title': 'RunLog'},
+                      showRunLogTimelineSheet(
+                        context,
+                        runId: resolvedRunLogId,
+                        title: 'RunLog',
                       );
                     },
                     radius: 18,

@@ -127,6 +127,10 @@ class RunLogReusableFunctionConverter {
       final stepId = 'step_${index + 1}';
       final executor = _executorForToolName(snapshot.toolName, snapshot.route);
       final scriptable = executor == 'tool';
+      final omniflowReplay = _buildOmniflowReplayMetadata(
+        snapshot: snapshot,
+        args: args,
+      );
       final fallbackPrompt = _stepFallbackPrompt(
         title: snapshot.title,
         toolName: snapshot.toolName,
@@ -144,6 +148,7 @@ class RunLogReusableFunctionConverter {
             : snapshot.toolName,
         'executor': executor,
         'scriptable': scriptable,
+        if (omniflowReplay != null) ...omniflowReplay,
         'args': args,
         'tool_binding': {
           'kind': executor == 'agent' ? 'agent_replan' : 'oob_agent_tool',
@@ -221,6 +226,7 @@ class RunLogReusableFunctionConverter {
       'function_id': 'runlog_${_compactId(runId)}',
       'name': name,
       'description': goal.isNotEmpty ? goal : name,
+      'tags': const ['omniflow', 'oob_reusable_function'],
       'source': {
         'kind': 'run_log',
         'run_id': runId,
@@ -455,6 +461,13 @@ $compact
       _asStringKeyMap(fallback['source']),
       _asStringKeyMap(normalized['source']),
     );
+    normalized['tags'] = _normalizeStringList(
+      normalized['tags'],
+      fallback: _normalizeStringList(
+        fallback['tags'],
+        fallback: const ['omniflow', 'oob_reusable_function'],
+      ),
+    );
     normalized['runtime_targets'] = _normalizeStringList(
       normalized['runtime_targets'],
       fallback: const ['agent', 'script'],
@@ -530,6 +543,7 @@ class _RunLogActionSnapshot {
     required this.packageName,
     required this.beforeSummary,
     required this.afterSummary,
+    required this.beforeXml,
   });
 
   final String title;
@@ -542,6 +556,7 @@ class _RunLogActionSnapshot {
   final String packageName;
   final String beforeSummary;
   final String afterSummary;
+  final String beforeXml;
 
   factory _RunLogActionSnapshot.fromCard(
     Map<String, dynamic> card, {
@@ -605,6 +620,10 @@ class _RunLogActionSnapshot {
       ]),
       beforeSummary: _stateSummary(before),
       afterSummary: _stateSummary(after),
+      beforeXml: _firstNonBlank([
+        before['observation_xml'],
+        before['observationXml'],
+      ]),
     );
   }
 }
@@ -881,6 +900,70 @@ String _stepFallbackPrompt({
     '原始参数：',
     argsText,
   ].join('\n');
+}
+
+Map<String, dynamic>? _buildOmniflowReplayMetadata({
+  required _RunLogActionSnapshot snapshot,
+  required dynamic args,
+}) {
+  if (!_isOmniflowReplayableAction(snapshot.toolName)) {
+    return null;
+  }
+  final argsMap = _asStringKeyMap(args);
+  final sourceAction = <String, dynamic>{
+    'tool': snapshot.toolName,
+    if (_firstNonBlank([
+      argsMap['target_description'],
+      argsMap['targetDescription'],
+    ]).isNotEmpty)
+      'target_description': _firstNonBlank([
+        argsMap['target_description'],
+        argsMap['targetDescription'],
+      ]),
+  };
+  for (final key in const [
+    'x',
+    'y',
+    'x1',
+    'y1',
+    'x2',
+    'y2',
+    'duration',
+    'duration_ms',
+    'durationMs',
+  ]) {
+    if (argsMap.containsKey(key) && argsMap[key] != null) {
+      sourceAction[key] = argsMap[key];
+    }
+  }
+
+  return {
+    'omniflow': true,
+    'replay_engine': 'omniflow_utg',
+    'replay_policy': {
+      'mode': 'coordinate_remap',
+      'coordinate_transform': true,
+      'source_context_required': true,
+    },
+    'source_context': {
+      'src_ctx': {
+        'page': snapshot.beforeXml,
+        'require_unique_action_signature': false,
+      },
+      'action': sourceAction,
+    },
+  };
+}
+
+bool _isOmniflowReplayableAction(String toolName) {
+  switch (toolName.trim().toLowerCase()) {
+    case 'click':
+    case 'long_press':
+    case 'scroll':
+      return true;
+    default:
+      return false;
+  }
 }
 
 String _parameterBaseName(String key, String toolName) {
@@ -1166,6 +1249,29 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
         _asStringKeyMap(fallbackStep['tool_binding']),
         _asStringKeyMap(merged['tool_binding']),
       ),
+      if (_asBool(merged['omniflow']) == true ||
+          _asBool(fallbackStep['omniflow']) == true)
+        'omniflow': true,
+      if (_firstNonBlank([
+        merged['replay_engine'],
+        fallbackStep['replay_engine'],
+      ]).isNotEmpty)
+        'replay_engine': _firstNonBlank([
+          merged['replay_engine'],
+          fallbackStep['replay_engine'],
+        ]),
+      if (_asStringKeyMap(merged['replay_policy']).isNotEmpty ||
+          _asStringKeyMap(fallbackStep['replay_policy']).isNotEmpty)
+        'replay_policy': _mergeMaps(
+          _asStringKeyMap(fallbackStep['replay_policy']),
+          _asStringKeyMap(merged['replay_policy']),
+        ),
+      if (_asStringKeyMap(merged['source_context']).isNotEmpty ||
+          _asStringKeyMap(fallbackStep['source_context']).isNotEmpty)
+        'source_context': _mergeMaps(
+          _asStringKeyMap(fallbackStep['source_context']),
+          _asStringKeyMap(merged['source_context']),
+        ),
       'validation': _mergeMaps(
         _asStringKeyMap(fallbackStep['validation']),
         _asStringKeyMap(merged['validation']),

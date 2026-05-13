@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 
 class TaskData {
   final String id;
@@ -87,7 +87,7 @@ enum RepeatOption {
   final String label;
   final String value;
 
-  String get displayLabel => LegacyTextLocalizer.localize(label);
+  String get displayLabel => AppTextLocalizer.text(label);
 
   static RepeatOption fromNum(int num) {
     return RepeatOption.values.firstWhere(

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
 import 'package:ui/features/workbench/services/workbench_project_service.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
@@ -356,7 +357,11 @@ class _WorkbenchMarkdownDisplayPageState
   }
 
   String _t(String zh, String en) {
-    return Localizations.localeOf(context).languageCode == 'en' ? en : zh;
+    return AppTextLocalizer.choose(
+      zh: zh,
+      en: en,
+      locale: Localizations.localeOf(context),
+    );
   }
 }
 

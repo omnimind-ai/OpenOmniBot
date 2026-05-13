@@ -12,10 +12,13 @@ import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
 import 'package:ui/features/workbench/services/workbench_project_service.dart';
 import 'package:ui/features/workbench/services/workbench_shape_recognizer.dart';
+import 'package:ui/features/workbench/widgets/workbench_annotation_context.dart';
+import 'package:ui/features/workbench/widgets/workbench_layout_profile.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
+import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/widgets/chat_drawer_gesture_guard.dart';
-import 'package:ui/widgets/common_app_bar.dart';
 
 // Bridge script injected at AT_DOCUMENT_START — window.oob is available
 // before any page script runs, eliminating race conditions.
@@ -167,13 +170,18 @@ InAppWebViewSettings _htmlWebViewSettings(bool wideCanvas) {
     builtInZoomControls: wideCanvas,
     displayZoomControls: false,
     textZoom: 100,
-    useWideViewPort: wideCanvas,
-    loadWithOverviewMode: wideCanvas,
-    initialScale: wideCanvas ? 0 : 100,
+    // useWideViewPort must stay true so Android applies the page's own viewport
+    // meta tag. loadWithOverviewMode is intentionally OFF for both modes:
+    // overview-zoom shrinks wide-canvas pages to ~30 % on a phone, making them
+    // appear tiny and unreadable. Wide-canvas pages instead stay at 100 % and
+    // expose horizontal scrolling so the user can pan / pinch-zoom.
+    useWideViewPort: true,
+    loadWithOverviewMode: false,
+    initialScale: 0,
     disableVerticalScroll: false,
     verticalScrollBarEnabled: true,
-    disableHorizontalScroll: true,
-    horizontalScrollBarEnabled: false,
+    disableHorizontalScroll: !wideCanvas,
+    horizontalScrollBarEnabled: wideCanvas,
     userAgent:
         'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 '
         '(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36 OOBWorkbench/1.0',
@@ -284,9 +292,15 @@ class WorkbenchHtmlDisplayPage extends StatefulWidget {
 class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
     with AutomaticKeepAliveClientMixin {
   late final _HtmlProjectLoader _loader;
+  final TextEditingController _floatingPromptController =
+      TextEditingController();
+  final FocusNode _floatingPromptFocusNode = FocusNode();
   InAppWebViewController? _webController;
   StreamSubscription<Map<String, dynamic>>? _updateSub;
+  StreamSubscription<Map<String, dynamic>>? _agentRunStateSub;
   Timer? _refreshDebounce;
+  Timer? _clearFloatingStatusTimer;
+  final Set<String> _floatingTaskIds = <String>{};
 
   bool _webViewLoading = false;
   String? _errorMessage;
@@ -295,6 +309,10 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
   String? _currentHtmlFile;
   Uri? _currentHtmlUri;
   bool? _wideCanvasSettingsApplied;
+  bool _floatingPromptExpanded = false;
+  bool _submittingFloatingPrompt = false;
+  Map<String, Object?>? _latestLayoutProfile;
+  _HtmlFloatingPromptStatus? _floatingStatus;
 
   @override
   bool get wantKeepAlive => true;
@@ -310,6 +328,12 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
     unawaited(_initialize());
     _updateSub = AssistsMessageService.workbenchProjectUpdatedStream.listen(
       _onProjectUpdated,
+    );
+    _agentRunStateSub = AssistsMessageService.agentRunStateChangedStream.listen(
+      (_) => unawaited(_refreshFloatingAgentRuns()),
+    );
+    AssistsMessageService.setOnAgentStreamEventCallback(
+      _handleFloatingAgentEvent,
     );
     WorkbenchHtmlHitTestBridge.register(_hitTestAtPoint);
   }
@@ -358,6 +382,14 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
       _refreshDebounce = Timer(const Duration(milliseconds: 100), () {
         unawaited(_reloadHtmlPreservingScroll());
       });
+      if (_floatingTaskIds.isNotEmpty) {
+        _setFloatingStatus(
+          _HtmlFloatingPromptStatus.done(
+            _t('页面已更新', 'Page updated'),
+            Icons.check_circle_outline_rounded,
+          ),
+        );
+      }
       return;
     }
 
@@ -365,12 +397,10 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
     final rawItems = event['items'];
     if (rawItems is List) {
       _refreshDebounce?.cancel();
-      _refreshDebounce = Timer(const Duration(milliseconds: 100), () {
-        if (!mounted) return;
-        _loader.applyItems(rawItems.cast<Map>());
-        final payload = _bridgeUpdatePayload(_loader.project);
-        unawaited(_dispatchProjectUpdate(payload: payload));
-      });
+      if (!mounted) return;
+      _loader.applyItems(rawItems.cast<Map>());
+      final payload = _bridgeUpdatePayload(_loader.project);
+      unawaited(_dispatchProjectUpdate(payload: payload));
       return;
     }
 
@@ -391,7 +421,14 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
   void dispose() {
     WorkbenchHtmlHitTestBridge.unregister();
     _refreshDebounce?.cancel();
+    _clearFloatingStatusTimer?.cancel();
     _updateSub?.cancel();
+    _agentRunStateSub?.cancel();
+    AssistsMessageService.removeOnAgentStreamEventCallback(
+      _handleFloatingAgentEvent,
+    );
+    _floatingPromptController.dispose();
+    _floatingPromptFocusNode.dispose();
     _loader.dispose();
     super.dispose();
   }
@@ -955,6 +992,244 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
     });
   }
 
+  WorkbenchDisplaySpec _currentDisplay(WorkbenchProject project) {
+    final displayId = widget._displayId?.trim();
+    if (displayId != null && displayId.isNotEmpty) {
+      for (final display in project.displays) {
+        if (display.id == displayId) return display;
+      }
+    }
+    return project.primaryDisplay;
+  }
+
+  Map<String, Object?> _buildFloatingPromptFrontendContext(
+    WorkbenchProject project,
+  ) {
+    final display = _currentDisplay(project);
+    final html = project.frontendHtml;
+    final base = buildWorkbenchVisibleFrontendContext(
+      project: project,
+      display: display,
+      source: 'workbench_html_floating_input',
+      fallbackRoute: '/workbench/html',
+      extraVisibleState: {
+        'renderer': 'html_webview',
+        'mode': 'html_webview',
+        'embedded': widget._embedded,
+        'htmlEntryFile': html['entryFile']?.toString(),
+        'htmlEntryPath': html['entryPath']?.toString(),
+        'currentHtmlFile': _currentHtmlFile,
+        'currentHtmlUri': _currentHtmlUri?.toString(),
+        if (_latestLayoutProfile != null)
+          'workbenchLayout': _latestLayoutProfile,
+      },
+    );
+    return {
+      ...base,
+      'renderer': 'html_webview',
+      'mode': 'html_webview',
+      'frontendContextKind': 'floating_input',
+      if (_latestLayoutProfile != null) 'workbenchLayout': _latestLayoutProfile,
+    };
+  }
+
+  String _buildFloatingPromptAgentContinuationMessage(
+    String prompt,
+    Map<String, Object?> frontendContext,
+    WorkbenchProjectHotUpdateResult hotUpdateResult,
+  ) {
+    const encoder = JsonEncoder.withIndent('  ');
+    final contextJson = encoder.convert(frontendContext);
+    final instructionsJson = encoder.convert(hotUpdateResult.instructions);
+    return '''
+$prompt
+
+当前 Workbench 全屏 HTML 悬浮输入已经先调用 workbench_project_hot_update 并记录了这次编辑请求。不要再次调用 workbench_project_hot_update，不要开启新的产品生成流程；请继续读取当前 Project，并调用 workbench_project_update 只改必要的 frontend/html 文件。不要把 Project ID、工具数量、executor、workspace、data/log 路径等控制面信息写到可见界面。
+
+hot_update 返回信息：
+
+```json
+{
+  "projectId": "${hotUpdateResult.projectId}",
+  "requiresAgentRegeneration": ${hotUpdateResult.requiresAgentRegeneration},
+  "recommendedTool": "${hotUpdateResult.recommendedTool}",
+  "instructions": $instructionsJson
+}
+```
+
+当前前端上下文：
+
+```json
+$contextJson
+```
+''';
+  }
+
+  Future<void> _submitFloatingPrompt() async {
+    if (_submittingFloatingPrompt) return;
+    final project = _loader.project;
+    final prompt = _floatingPromptController.text.trim();
+    if (prompt.isEmpty) {
+      _showSnack(_t('请输入要修改的内容', 'Enter what to change'));
+      return;
+    }
+    if (project == null) {
+      _showSnack(_t('没有可编辑的 Project', 'No editable Project'));
+      return;
+    }
+
+    setState(() {
+      _submittingFloatingPrompt = true;
+      _floatingStatus = _HtmlFloatingPromptStatus.active(
+        _t('正在提交修改要求', 'Sending edit request'),
+        Icons.sync_rounded,
+      );
+    });
+    _clearFloatingStatusTimer?.cancel();
+    final frontendContext = _buildFloatingPromptFrontendContext(project);
+    final backend = _loader.backend;
+    if (backend is NativeWorkbenchProjectBackend) {
+      await backend.setActiveFrontendContext(frontendContext);
+    }
+
+    var success = false;
+    var needsAgent = false;
+    WorkbenchProjectHotUpdateResult? hotUpdateResult;
+    try {
+      hotUpdateResult = await backend.hotUpdateProject(
+        projectId: project.projectId,
+        prompt: prompt,
+        frontendContext: frontendContext,
+      );
+      success = hotUpdateResult.success;
+      needsAgent = hotUpdateResult.requiresAgentRegeneration;
+      if (hotUpdateResult.project != null) {
+        _loader.setProject(hotUpdateResult.project!);
+        unawaited(_loadHtml(force: true));
+      } else if (success && !needsAgent) {
+        await _loader.refresh();
+        unawaited(_loadHtml(force: true));
+      }
+      if (success && needsAgent) {
+        final taskId =
+            'workbench-html-floating-edit-${DateTime.now().millisecondsSinceEpoch}';
+        _floatingTaskIds.add(taskId);
+        success = await AssistsMessageService.createAgentTask(
+          taskId: taskId,
+          userMessage: _buildFloatingPromptAgentContinuationMessage(
+            prompt,
+            frontendContext,
+            hotUpdateResult,
+          ),
+          conversationMode: 'subagent',
+        );
+        if (!success) {
+          _floatingTaskIds.remove(taskId);
+        }
+      }
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Workbench HTML floating prompt failed: $error');
+      }
+      success = false;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _submittingFloatingPrompt = false;
+      if (success) {
+        _floatingPromptController.clear();
+        _floatingPromptExpanded = false;
+        _floatingStatus = needsAgent
+            ? _HtmlFloatingPromptStatus.active(
+                _t('正在调整当前页面', 'Updating this page'),
+                Icons.auto_fix_high_rounded,
+              )
+            : _HtmlFloatingPromptStatus.done(
+                _t('已应用到当前页面', 'Applied to this page'),
+                Icons.check_circle_outline_rounded,
+              );
+      } else {
+        _floatingStatus = _HtmlFloatingPromptStatus.error(
+          _t('提交失败，请稍后重试', 'Submit failed. Try again later'),
+          Icons.error_outline_rounded,
+        );
+      }
+    });
+    final submittedStatus = _floatingStatus;
+    if (submittedStatus != null && !submittedStatus.active) {
+      _clearFloatingStatusTimer?.cancel();
+      _clearFloatingStatusTimer = Timer(const Duration(seconds: 7), () {
+        if (mounted) setState(() => _floatingStatus = null);
+      });
+    }
+    if (success) {
+      _floatingPromptFocusNode.unfocus();
+      _showSnack(
+        needsAgent
+            ? _t('已开始调整当前页面', 'Started updating this page')
+            : _t('已应用到当前页面', 'Applied to this page'),
+      );
+    } else {
+      _showSnack(_t('提交失败，请稍后重试', 'Submit failed. Try again later'));
+    }
+  }
+
+  Future<void> _refreshFloatingAgentRuns() async {
+    if (_floatingTaskIds.isEmpty) return;
+    final runs = await AssistsMessageService.listActiveAgentRuns();
+    if (!mounted) return;
+    final activeTaskIds = runs
+        .map((run) => (run['taskId'] ?? '').toString())
+        .where((taskId) => taskId.isNotEmpty)
+        .toSet();
+    final hasActiveFloatingTask = _floatingTaskIds.any(activeTaskIds.contains);
+    final status = _floatingStatus;
+    if (!hasActiveFloatingTask && status?.active == true) {
+      _floatingTaskIds.removeWhere((taskId) => !activeTaskIds.contains(taskId));
+      _setFloatingStatus(
+        _HtmlFloatingPromptStatus.done(
+          _t('页面调整已完成', 'Page update finished'),
+          Icons.done_all_rounded,
+        ),
+      );
+    }
+  }
+
+  void _handleFloatingAgentEvent(AgentStreamEvent event) {
+    if (!_floatingTaskIds.contains(event.taskId)) return;
+    if (!mounted) return;
+    _setFloatingStatus(_HtmlFloatingPromptStatus.fromEvent(event, _t));
+    if (event.kind == AgentStreamEventKind.completed ||
+        event.kind == AgentStreamEventKind.error) {
+      _floatingTaskIds.remove(event.taskId);
+    }
+  }
+
+  void _setFloatingStatus(_HtmlFloatingPromptStatus status) {
+    _clearFloatingStatusTimer?.cancel();
+    if (!mounted) {
+      _floatingStatus = status;
+      return;
+    }
+    setState(() => _floatingStatus = status);
+    if (!status.active) {
+      _clearFloatingStatusTimer = Timer(const Duration(seconds: 7), () {
+        if (mounted) setState(() => _floatingStatus = null);
+      });
+    }
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   Map<String, Object?> _bridgeProjectPayload(WorkbenchProject? project) {
     if (project == null) return const {};
     return {
@@ -1035,23 +1310,83 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
         final hasHtml = project?.frontendHtml.isNotEmpty == true;
         return Material(
           color: palette.pageBackground,
-          child: Column(
-            children: [
-              if (_loader.loading || _webViewLoading)
-                const LinearProgressIndicator(minHeight: 2),
-              Expanded(
-                child: !hasHtml || _errorMessage != null
-                    ? _buildStatus(
-                        icon: _errorMessage == null
-                            ? Icons.language_outlined
-                            : Icons.error_outline_rounded,
-                        label:
-                            _errorMessage ??
-                            _t('没有可展示的 HTML 产物', 'No HTML output to display'),
-                      )
-                    : ChatDrawerGestureGuard(child: _buildWebView()),
-              ),
-            ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final display = project == null ? null : _currentDisplay(project);
+              _latestLayoutProfile = buildWorkbenchLayoutProfile(
+                context: context,
+                constraints: constraints,
+                source: widget._embedded
+                    ? 'workbench_html_embedded'
+                    : 'workbench_html_fullscreen',
+                project: project,
+                display: display,
+                route: project == null
+                    ? null
+                    : '/workbench/html?projectId=${project.projectId}',
+              );
+              final content = Column(
+                children: [
+                  if (_loader.loading || _webViewLoading)
+                    const LinearProgressIndicator(minHeight: 2),
+                  Expanded(
+                    child: !hasHtml || _errorMessage != null
+                        ? _buildStatus(
+                            icon: _errorMessage == null
+                                ? Icons.language_outlined
+                                : Icons.error_outline_rounded,
+                            label:
+                                _errorMessage ??
+                                _t(
+                                  '没有可展示的 HTML 产物',
+                                  'No HTML output to display',
+                                ),
+                          )
+                        : ChatDrawerGestureGuard(child: _buildWebView()),
+                  ),
+                ],
+              );
+              if (widget._embedded || !hasHtml || project == null) {
+                return content;
+              }
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  content,
+                  Positioned(
+                    left: 8 + MediaQuery.viewPaddingOf(context).left,
+                    top: 6 + MediaQuery.viewPaddingOf(context).top,
+                    child: _HtmlFullscreenChrome(onBack: _handleBack),
+                  ),
+                  Positioned(
+                    left: 12 + MediaQuery.viewPaddingOf(context).left,
+                    right: 12 + MediaQuery.viewPaddingOf(context).right,
+                    bottom:
+                        12 +
+                        MediaQuery.viewPaddingOf(context).bottom +
+                        MediaQuery.viewInsetsOf(context).bottom,
+                    child: _HtmlFloatingPromptCard(
+                      expanded: _floatingPromptExpanded,
+                      controller: _floatingPromptController,
+                      focusNode: _floatingPromptFocusNode,
+                      submitting: _submittingFloatingPrompt,
+                      status: _floatingStatus,
+                      onExpand: () {
+                        setState(() => _floatingPromptExpanded = true);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) _floatingPromptFocusNode.requestFocus();
+                        });
+                      },
+                      onCollapse: () {
+                        setState(() => _floatingPromptExpanded = false);
+                        _floatingPromptFocusNode.unfocus();
+                      },
+                      onSubmit: _submitFloatingPrompt,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         );
       },
@@ -1062,20 +1397,7 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _handleBack();
       },
-      child: AnimatedBuilder(
-        animation: _loader,
-        builder: (context, _) => Scaffold(
-          backgroundColor: palette.pageBackground,
-          appBar: CommonAppBar(
-            title: _loader.project?.name.trim().isNotEmpty == true
-                ? _loader.project!.name
-                : _t('HTML 展示', 'HTML display'),
-            primary: true,
-            onBackPressed: _handleBack,
-          ),
-          body: SafeArea(child: body),
-        ),
-      ),
+      child: Scaffold(backgroundColor: palette.pageBackground, body: body),
     );
   }
 
@@ -1100,9 +1422,8 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
           ),
         ]),
         gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-          Factory<VerticalDragGestureRecognizer>(
-            () => VerticalDragGestureRecognizer(),
-          ),
+          Factory<PanGestureRecognizer>(() => PanGestureRecognizer()),
+          Factory<ScaleGestureRecognizer>(() => ScaleGestureRecognizer()),
         },
         onWebViewCreated: _onWebViewCreated,
         onLoadStart: (_, __) {
@@ -1179,7 +1500,474 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
   }
 
   String _t(String zh, String en) {
-    return Localizations.localeOf(context).languageCode == 'zh' ? zh : en;
+    return AppTextLocalizer.choose(
+      zh: zh,
+      en: en,
+      locale: Localizations.localeOf(context),
+    );
+  }
+}
+
+class _HtmlFullscreenChrome extends StatelessWidget {
+  const _HtmlFullscreenChrome({required this.onBack});
+
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final background = palette.surfacePrimary.withValues(alpha: 0.9);
+    final borderColor = palette.borderSubtle.withValues(alpha: 0.72);
+    return _HtmlChromeIconButton(
+      tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+      icon: Icons.arrow_back_rounded,
+      background: background,
+      borderColor: borderColor,
+      iconColor: palette.textPrimary,
+      onPressed: onBack,
+    );
+  }
+}
+
+class _HtmlChromeIconButton extends StatelessWidget {
+  const _HtmlChromeIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.background,
+    required this.borderColor,
+    required this.iconColor,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final Color background;
+  final Color borderColor;
+  final Color iconColor;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(8),
+        child: Tooltip(
+          message: tooltip,
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: borderColor),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Icon(icon, size: 17, color: iconColor),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HtmlFloatingPromptStatus {
+  const _HtmlFloatingPromptStatus({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.error,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool active;
+  final bool error;
+
+  factory _HtmlFloatingPromptStatus.active(String label, IconData icon) =>
+      _HtmlFloatingPromptStatus(
+        label: label,
+        icon: icon,
+        active: true,
+        error: false,
+      );
+
+  factory _HtmlFloatingPromptStatus.done(String label, IconData icon) =>
+      _HtmlFloatingPromptStatus(
+        label: label,
+        icon: icon,
+        active: false,
+        error: false,
+      );
+
+  factory _HtmlFloatingPromptStatus.error(String label, IconData icon) =>
+      _HtmlFloatingPromptStatus(
+        label: label,
+        icon: icon,
+        active: false,
+        error: true,
+      );
+
+  factory _HtmlFloatingPromptStatus.fromEvent(
+    AgentStreamEvent event,
+    String Function(String zh, String en) t,
+  ) {
+    final message = _firstNonEmpty([
+      event.errorMessage,
+      event.text,
+      event.thinking,
+      event.question,
+      (event.raw['summary'] ?? '').toString(),
+      (event.raw['message'] ?? '').toString(),
+      (event.raw['inputPreview'] ?? '').toString(),
+      (event.raw['resultPreview'] ?? '').toString(),
+    ]);
+    final toolName = (event.raw['toolName'] ?? event.raw['name'] ?? '')
+        .toString()
+        .trim();
+    return switch (event.kind) {
+      AgentStreamEventKind.thinkingStarted => _HtmlFloatingPromptStatus.active(
+        t('正在思考修改方案', 'Thinking through the edit'),
+        Icons.psychology_alt_outlined,
+      ),
+      AgentStreamEventKind.thinkingSnapshot => _HtmlFloatingPromptStatus.active(
+        message.isEmpty ? t('正在整理修改方案', 'Preparing the edit') : message,
+        Icons.psychology_alt_outlined,
+      ),
+      AgentStreamEventKind.textSnapshot => _HtmlFloatingPromptStatus.active(
+        message.isEmpty ? t('正在输出修改说明', 'Writing update notes') : message,
+        Icons.notes_rounded,
+      ),
+      AgentStreamEventKind.toolStarted => _HtmlFloatingPromptStatus.active(
+        toolName.isEmpty
+            ? t('开始更新页面', 'Starting page update')
+            : t('调用 $toolName', 'Running $toolName'),
+        Icons.build_circle_outlined,
+      ),
+      AgentStreamEventKind.toolProgress => _HtmlFloatingPromptStatus.active(
+        message.isEmpty
+            ? (toolName.isEmpty
+                  ? t('正在更新页面', 'Updating page')
+                  : t('$toolName 执行中', '$toolName running'))
+            : message,
+        Icons.sync_rounded,
+      ),
+      AgentStreamEventKind.toolCompleted => _HtmlFloatingPromptStatus.active(
+        toolName.isEmpty
+            ? t('工具完成，等待页面刷新', 'Tool finished, waiting for refresh')
+            : t('$toolName 完成', '$toolName finished'),
+        Icons.check_circle_outline_rounded,
+      ),
+      AgentStreamEventKind.permissionRequired =>
+        _HtmlFloatingPromptStatus.active(
+          t('等待权限确认', 'Waiting for permission'),
+          Icons.verified_user_outlined,
+        ),
+      AgentStreamEventKind.clarifyRequired => _HtmlFloatingPromptStatus.active(
+        event.question.isEmpty
+            ? t('等待补充信息', 'Waiting for more detail')
+            : event.question,
+        Icons.help_outline_rounded,
+      ),
+      AgentStreamEventKind.error => _HtmlFloatingPromptStatus.error(
+        message.isEmpty ? t('页面调整失败', 'Page update failed') : message,
+        Icons.error_outline_rounded,
+      ),
+      AgentStreamEventKind.completed => _HtmlFloatingPromptStatus.done(
+        t('页面调整已完成', 'Page update finished'),
+        Icons.done_all_rounded,
+      ),
+    };
+  }
+
+  static String _firstNonEmpty(List<String> values) {
+    for (final value in values) {
+      final trimmed = value.trim();
+      if (trimmed.isNotEmpty) {
+        return trimmed.replaceAll(RegExp(r'\s+'), ' ');
+      }
+    }
+    return '';
+  }
+}
+
+class _HtmlFloatingPromptCard extends StatelessWidget {
+  const _HtmlFloatingPromptCard({
+    required this.expanded,
+    required this.controller,
+    required this.focusNode,
+    required this.submitting,
+    required this.status,
+    required this.onExpand,
+    required this.onCollapse,
+    required this.onSubmit,
+  });
+
+  final bool expanded;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool submitting;
+  final _HtmlFloatingPromptStatus? status;
+  final VoidCallback onExpand;
+  final VoidCallback onCollapse;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final collapsedLabel = AppTextLocalizer.choose(
+      zh: '让小万修改这个页面',
+      en: 'Ask Omnibot to edit this page',
+      locale: Localizations.localeOf(context),
+    );
+    final promptHint = AppTextLocalizer.choose(
+      zh: '直接输入：把搜索框放到顶部、按钮更明显...',
+      en: 'Type a change: move search to the top, make buttons clearer...',
+      locale: Localizations.localeOf(context),
+    );
+    final sendTooltip = AppTextLocalizer.choose(
+      zh: '发送修改要求',
+      en: 'Send edit request',
+      locale: Localizations.localeOf(context),
+    );
+    final background = palette.surfacePrimary.withValues(alpha: 0.97);
+    final activeStatus = status;
+    final statusColor = activeStatus == null
+        ? palette.accentPrimary
+        : activeStatus.error
+        ? Theme.of(context).colorScheme.error
+        : activeStatus.active
+        ? palette.accentPrimary
+        : const Color(0xFF2F8F4E);
+    final border = Border.all(
+      color: palette.accentPrimary.withValues(alpha: expanded ? 0.34 : 0.24),
+    );
+    if (!expanded) {
+      return Align(
+        alignment: Alignment.bottomRight,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: submitting ? null : onExpand,
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: background,
+                  borderRadius: BorderRadius.circular(999),
+                  border: border,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.14),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      activeStatus?.icon ?? Icons.auto_fix_high_rounded,
+                      size: 18,
+                      color: statusColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        activeStatus?.label ?? collapsedLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: palette.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Material(
+          color: Colors.transparent,
+          elevation: 12,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(8),
+              border: border,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.16),
+                  blurRadius: 22,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (activeStatus != null) ...[
+                  _HtmlFloatingStatusLine(
+                    status: activeStatus,
+                    color: statusColor,
+                  ),
+                  const SizedBox(height: 7),
+                ],
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        enabled: !submitting,
+                        minLines: 1,
+                        maxLines: 4,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) {
+                          if (!submitting) onSubmit();
+                        },
+                        decoration: InputDecoration(
+                          hintText: promptHint,
+                          isDense: true,
+                          filled: true,
+                          fillColor: palette.surfaceSecondary.withValues(
+                            alpha: 0.72,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: palette.borderSubtle),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: palette.borderSubtle),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: palette.accentPrimary,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 9,
+                          ),
+                        ),
+                        style: TextStyle(
+                          color: palette.textPrimary,
+                          fontSize: 13,
+                          height: 1.25,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    IconButton(
+                      tooltip: MaterialLocalizations.of(
+                        context,
+                      ).closeButtonTooltip,
+                      onPressed: submitting ? null : onCollapse,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 34,
+                        height: 34,
+                      ),
+                      padding: EdgeInsets.zero,
+                      icon: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 20,
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: sendTooltip,
+                      onPressed: submitting ? null : onSubmit,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 36,
+                        height: 36,
+                      ),
+                      padding: EdgeInsets.zero,
+                      icon: submitting
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: palette.accentPrimary,
+                              ),
+                            )
+                          : Icon(
+                              Icons.arrow_upward_rounded,
+                              size: 20,
+                              color: palette.accentPrimary,
+                            ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HtmlFloatingStatusLine extends StatelessWidget {
+  const _HtmlFloatingStatusLine({required this.status, required this.color});
+
+  final _HtmlFloatingPromptStatus status;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    return Row(
+      children: [
+        status.active
+            ? SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2, color: color),
+              )
+            : Icon(status.icon, size: 16, color: color),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Text(
+            status.label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: status.error ? color : palette.textSecondary,
+              fontSize: 12,
+              height: 1.2,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -1205,6 +1993,7 @@ class _HtmlProjectLoader extends ChangeNotifier {
   final String? _projectId;
   WorkbenchProject? _project;
   bool _loading = false;
+  bool _disposed = false;
   // True when _project was served from cache (background refresh still pending).
   bool _servedFromCache = false;
 
@@ -1216,17 +2005,33 @@ class _HtmlProjectLoader extends ChangeNotifier {
     final id = _projectId;
     if (id == null || id.isEmpty) return;
 
-    // Cache hit: return immediately, caller can start rendering at once.
+    // Static cache hit — merge with any lightweight initialProject data so the
+    // richer of the two is used. The `_project == null` guard that existed here
+    // before was a bug: it caused the cache to be skipped whenever initialProject
+    // was provided, forcing a redundant getProject() call on every load.
     final cached = _cache[id];
-    if (cached != null && _project == null) {
-      _project = cached;
+    if (cached != null) {
+      _project = _preferProjectWithDisplayData(
+        current: _project,
+        incoming: cached,
+      );
       _servedFromCache = true;
       return;
     }
-    _servedFromCache = false;
 
+    // No cache entry yet. If initialProject already carries frontendHtml data
+    // (e.g. returned by activateProject()), use it immediately and trigger a
+    // background refresh for items / runtime state — same stale-while-revalidate
+    // path that the cache hit takes.
+    if (_project != null && _project!.frontendHtml.isNotEmpty) {
+      _cache[id] = _project!;
+      _servedFromCache = true;
+      return;
+    }
+
+    _servedFromCache = false;
     _loading = true;
-    notifyListeners();
+    _notify();
     try {
       final fresh = await backend.getProject(
         id,
@@ -1242,7 +2047,7 @@ class _HtmlProjectLoader extends ChangeNotifier {
       if (kDebugMode) debugPrint('Workbench HTML project load failed: $error');
     } finally {
       _loading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -1268,7 +2073,8 @@ class _HtmlProjectLoader extends ChangeNotifier {
           _extractHtmlSources(_project) != _extractHtmlSources(fresh);
       _project = fresh;
       _cache[id] = fresh;
-      notifyListeners();
+      if (_disposed) return;
+      _notify();
       onProjectChanged();
       if (htmlChanged) {
         onHtmlChanged();
@@ -1295,7 +2101,7 @@ class _HtmlProjectLoader extends ChangeNotifier {
       if (_project != null) {
         _cache[id] = _project!;
       }
-      notifyListeners();
+      _notify();
     } catch (error) {
       if (kDebugMode) {
         debugPrint('Workbench HTML project refresh failed: $error');
@@ -1313,7 +2119,7 @@ class _HtmlProjectLoader extends ChangeNotifier {
       current: _project,
       incoming: project,
     );
-    notifyListeners();
+    _notify();
   }
 
   // Apply an inline items list from a dispatch event without a disk round-trip.
@@ -1348,5 +2154,15 @@ class _HtmlProjectLoader extends ChangeNotifier {
           ? incoming.frontendMarkdown
           : current.frontendMarkdown,
     );
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

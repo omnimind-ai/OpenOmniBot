@@ -170,9 +170,10 @@ class ObservableChatMessageList extends ChangeNotifier
   void insert(int index, ChatMessageModel element) {
     _messages.insert(index, element);
     _messageNotifiers.insert(index, ChatMessageListItemNotifier(element));
-    _recordStructureMutation(
-      affectsPageChrome: _messageAffectsPageChrome(element),
-    );
+    // Any structural insert shifts notifier indices, breaking per-message
+    // notifier subscriptions for existing widgets. Force a full setState()
+    // so ListView rebuilds and widgets re-subscribe to the correct notifiers.
+    _recordStructureMutation(affectsPageChrome: true);
     notifyListeners();
   }
 
@@ -187,9 +188,9 @@ class ObservableChatMessageList extends ChangeNotifier
       index,
       nextMessages.map(ChatMessageListItemNotifier.new),
     );
-    _recordStructureMutation(
-      affectsPageChrome: _batchAffectsPageChrome(nextMessages),
-    );
+    // Structural insert shifts notifier indices — force setState() so widgets
+    // re-subscribe to the correct notifiers after the rebuild.
+    _recordStructureMutation(affectsPageChrome: true);
     notifyListeners();
   }
 
@@ -198,9 +199,8 @@ class ObservableChatMessageList extends ChangeNotifier
     final removedMessage = _messages.removeAt(index);
     final removedNotifier = _messageNotifiers.removeAt(index);
     removedNotifier.dispose();
-    _recordStructureMutation(
-      affectsPageChrome: _messageAffectsPageChrome(removedMessage),
-    );
+    // Structural remove shifts notifier indices — same reason as insert.
+    _recordStructureMutation(affectsPageChrome: true);
     notifyListeners();
     return removedMessage;
   }
@@ -215,9 +215,7 @@ class ObservableChatMessageList extends ChangeNotifier
     _messages.removeRange(start, end);
     _messageNotifiers.removeRange(start, end);
     _disposeMessageNotifiers(removedNotifiers);
-    _recordStructureMutation(
-      affectsPageChrome: _batchAffectsPageChrome(removedMessages),
-    );
+    _recordStructureMutation(affectsPageChrome: true);
     notifyListeners();
   }
 
@@ -239,9 +237,7 @@ class ObservableChatMessageList extends ChangeNotifier
       return;
     }
     _disposeMessageNotifiers(removedNotifiers);
-    _recordStructureMutation(
-      affectsPageChrome: _batchAffectsPageChrome(removedMessages),
-    );
+    _recordStructureMutation(affectsPageChrome: true);
     notifyListeners();
   }
 

@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/omnibot_workspace/widgets/omnibot_workspace_browser.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
@@ -15,6 +16,7 @@ import 'package:ui/features/workbench/services/workbench_project_service.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_context.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart';
 import 'package:ui/features/workbench/widgets/workbench_layout_profile.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/app_background_service.dart';
 import 'package:ui/services/assists_core_service.dart';
@@ -29,6 +31,15 @@ enum _OmnibotWorkspaceMode { work, project }
 const String _workspaceCachedModeKey = 'omnibot_workspace_cached_mode_v1';
 const String _workspaceCachedDirectoryKey =
     'omnibot_workspace_cached_directory_v1';
+const String _workspaceProjectManagerIconSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+    'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round">'
+    '<rect width="7" height="9" x="3" y="3" rx="1"/>'
+    '<rect width="7" height="5" x="14" y="3" rx="1"/>'
+    '<rect width="7" height="9" x="14" y="12" rx="1"/>'
+    '<rect width="7" height="5" x="3" y="16" rx="1"/>'
+    '</svg>';
 
 class OmnibotWorkspacePage extends StatefulWidget {
   final String workspacePath;
@@ -53,6 +64,7 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
       GlobalKey<OmnibotWorkspaceBrowserState>();
   bool _browserCanGoUp = false;
   late _OmnibotWorkspaceMode _mode;
+  WorkbenchProject? _activeWorkbenchProject;
 
   @override
   void initState() {
@@ -96,6 +108,27 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
     );
   }
 
+  void _setWorkspaceMode(_OmnibotWorkspaceMode mode) {
+    if (_mode == mode) return;
+    setState(() => _mode = mode);
+    _persistWorkspaceMode(mode);
+  }
+
+  void _toggleWorkspaceMode() {
+    _setWorkspaceMode(
+      _mode == _OmnibotWorkspaceMode.project
+          ? _OmnibotWorkspaceMode.work
+          : _OmnibotWorkspaceMode.project,
+    );
+  }
+
+  void _handleActiveProjectChanged(WorkbenchProject? project) {
+    final currentId = _activeWorkbenchProject?.projectId;
+    final nextId = project?.projectId;
+    if (currentId == nextId) return;
+    setState(() => _activeWorkbenchProject = project);
+  }
+
   String _normalizeWorkspacePath(String path) {
     final trimmed = path.trim();
     if (trimmed.length > 1 && trimmed.endsWith('/')) {
@@ -113,17 +146,6 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
     } else {
       GoRouterManager.pop();
     }
-  }
-
-  void _showWorkbenchGuide(bool backgroundActive) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return OmnibotWorkbenchGuideSheet(translucent: backgroundActive);
-      },
-    );
   }
 
   void _openWorkbenchConsole() {
@@ -159,18 +181,10 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
                   child: Column(
                     children: [
                       CommonAppBar(
-                        titleWidget: Text(
-                          _mode == _OmnibotWorkspaceMode.project
-                              ? context.l10n.workbenchWorkspaceProjectMode
-                              : context.l10n.workbenchWorkspaceTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
-                            color: palette.textPrimary,
-                            fontFamily: 'SF Pro',
-                          ),
+                        titleWidget: _WorkspaceModeTitleBar(
+                          projectModeEnabled:
+                              _mode == _OmnibotWorkspaceMode.project,
+                          onToggleMode: _toggleWorkspaceMode,
                         ),
                         primary: false,
                         backgroundColor: backgroundSurfaceColor(
@@ -180,24 +194,11 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
                         ),
                         onBackPressed: _handleBackPressed,
                         actions: [
-                          IconButton(
-                            tooltip: context
-                                .l10n
-                                .workbenchWorkspaceOpenProjectConsole,
-                            onPressed: _openWorkbenchConsole,
-                            icon: Icon(
-                              Icons.tune_rounded,
-                              color: palette.textSecondary,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip:
-                                context.l10n.workbenchWorkspaceGuideTooltip,
-                            onPressed: () =>
-                                _showWorkbenchGuide(backgroundActive),
-                            icon: Icon(
-                              Icons.info_outline_rounded,
-                              color: palette.textSecondary,
+                          Padding(
+                            padding: const EdgeInsets.only(right: 10),
+                            child: _WorkspaceProjectManagerChip(
+                              activeProject: _activeWorkbenchProject,
+                              onPressed: _openWorkbenchConsole,
                             ),
                           ),
                         ],
@@ -244,6 +245,8 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
                                 child: OmnibotWorkspaceProjectFrontends(
                                   key: const ValueKey('workspace-project-mode'),
                                   translucentSurfaces: backgroundActive,
+                                  onActiveProjectChanged:
+                                      _handleActiveProjectChanged,
                                 ),
                               ),
                             ),
@@ -258,6 +261,86 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
           ),
         );
       },
+    );
+  }
+}
+
+class _WorkspaceModeTitleBar extends StatelessWidget {
+  const _WorkspaceModeTitleBar({
+    required this.projectModeEnabled,
+    required this.onToggleMode,
+  });
+
+  final bool projectModeEnabled;
+  final VoidCallback onToggleMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: Center(
+        child: OmnibotWorkspaceModeButton(
+          projectModeEnabled: projectModeEnabled,
+          onTap: onToggleMode,
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceProjectManagerChip extends StatelessWidget {
+  const _WorkspaceProjectManagerChip({
+    required this.activeProject,
+    required this.onPressed,
+  });
+
+  final WorkbenchProject? activeProject;
+  final VoidCallback onPressed;
+
+  String _projectName(WorkbenchProject project) {
+    final name = project.name.trim();
+    return name.isEmpty ? project.projectId : name;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final projectName = activeProject == null
+        ? null
+        : _projectName(activeProject!);
+    return Tooltip(
+      message: projectName == null
+          ? context.l10n.workbenchWorkspaceOpenProjectConsole
+          : context.l10n.workbenchActiveProjectChip(projectName),
+      child: Material(
+        color: palette.accentPrimary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onPressed,
+          child: Container(
+            width: 32,
+            height: 32,
+            padding: const EdgeInsets.all(7),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: palette.accentPrimary.withValues(alpha: 0.36),
+              ),
+            ),
+            child: SvgPicture.string(
+              _workspaceProjectManagerIconSvg,
+              width: 18,
+              height: 18,
+              colorFilter: ColorFilter.mode(
+                palette.accentPrimary,
+                BlendMode.srcIn,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -698,10 +781,12 @@ class OmnibotWorkspaceProjectFrontends extends StatefulWidget {
   const OmnibotWorkspaceProjectFrontends({
     super.key,
     this.translucentSurfaces = false,
+    this.onActiveProjectChanged,
     WorkbenchProjectModeService? service,
   }) : _service = service;
 
   final bool translucentSurfaces;
+  final ValueChanged<WorkbenchProject?>? onActiveProjectChanged;
   final WorkbenchProjectModeService? _service;
 
   @override
@@ -759,6 +844,10 @@ class _OmnibotWorkspaceProjectFrontendsState
     if (mounted) {
       setState(() {});
     }
+    widget.onActiveProjectChanged?.call(
+      _service.activeProject ??
+          (_service.projects.isEmpty ? null : _service.projects.first),
+    );
   }
 
   void _handleWorkbenchProjectUpdated(Map<String, dynamic> event) {
@@ -801,62 +890,12 @@ class _OmnibotWorkspaceProjectFrontendsState
     if (!mounted ||
         _service.activeProject != null ||
         _service.projects.isEmpty) {
+      widget.onActiveProjectChanged?.call(_service.activeProject);
       return;
     }
     await _service.activateProject(_service.projects.first);
-  }
-
-  String _displayRoute(WorkbenchProject project, WorkbenchDisplaySpec display) {
-    final rawRoute = display.route.trim().isEmpty
-        ? project.route.trim()
-        : display.route.trim();
-    final resolvedRoute = rawRoute.isEmpty
-        ? '/workbench/project?projectId=${Uri.encodeQueryComponent(project.projectId)}'
-        : rawRoute;
-    final uri = Uri.parse(resolvedRoute);
-    return uri
-        .replace(
-          queryParameters: {
-            ...uri.queryParameters,
-            'projectId': project.projectId,
-            'displayId': display.id,
-          },
-        )
-        .toString();
-  }
-
-  void _openDisplayRoute(
-    WorkbenchProject project,
-    WorkbenchDisplaySpec display,
-  ) {
-    GoRouterManager.push(_displayRoute(project, display));
-  }
-
-  void _openProjectManager(WorkbenchProject? project) {
-    GoRouterManager.push(
-      '/workbench/projects',
-      queryParams: project == null ? null : {'projectId': project.projectId},
-    );
-  }
-
-  void _toggleEditPrompt(WorkbenchProject? project) {
-    if (project == null) {
-      showToast(
-        context.l10n.workbenchAssistantNoProject,
-        type: ToastType.warning,
-      );
-      return;
-    }
-    setState(() {
-      _editPromptVisible = !_editPromptVisible;
-      if (_editPromptVisible) {
-        _editDrawingEnabled = true;
-      } else {
-        _clearEditDrawing(clearPrompt: false);
-      }
-    });
-    if (!_editPromptVisible) {
-      _editPromptFocusNode.unfocus();
+    if (mounted) {
+      widget.onActiveProjectChanged?.call(_service.activeProject);
     }
   }
 
@@ -1073,7 +1112,16 @@ $contextJson
     });
     if (success) {
       _editPromptFocusNode.unfocus();
-      showToast(needsAgent ? '已开始调整当前项目' : '已应用到当前项目', type: ToastType.success);
+      showToast(
+        AppTextLocalizer.choose(
+          zh: needsAgent ? '已开始调整当前项目' : '已应用到当前项目',
+          en: needsAgent
+              ? 'Started updating current project'
+              : 'Applied to current project',
+          locale: Localizations.localeOf(context),
+        ),
+        type: ToastType.success,
+      );
     } else {
       showToast(
         context.l10n.workbenchAssistantHotUpdateFailed,
@@ -1166,34 +1214,6 @@ $contextJson
     return projects.isEmpty ? null : projects.first;
   }
 
-  String? _projectDisplayName(WorkbenchProject? project) {
-    if (project == null) return null;
-    final name = project.name.trim();
-    return name.isEmpty ? project.projectId : name;
-  }
-
-  String? _projectDescription(
-    WorkbenchProject? project,
-    WorkbenchDisplaySpec? display,
-  ) {
-    if (project == null) return null;
-    final candidates = [
-      project.pageSpec['description'],
-      project.pageSpec['subtitle'],
-      display?.description,
-    ];
-    for (final candidate in candidates) {
-      final value = candidate?.toString().trim() ?? '';
-      if (value.isEmpty) continue;
-      if (value.startsWith('Live HTML Display')) continue;
-      if (value.startsWith('Live Markdown Display')) continue;
-      if (value.startsWith('Live Flutter Display')) continue;
-      if (value.startsWith('Display bound to')) continue;
-      return value;
-    }
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -1203,21 +1223,9 @@ $contextJson
     return Column(
       children: [
         if (_service.loading) const LinearProgressIndicator(minHeight: 2),
-        _WorkspaceProjectMiniBar(
-          projectName: _projectDisplayName(project),
-          projectDescription: _projectDescription(project, display),
-          translucent: widget.translucentSurfaces,
-          onOpenProjectManager: () => _openProjectManager(project),
-          onRefresh: _refreshAndEnsureActive,
-          onEdit: project == null ? null : () => _toggleEditPrompt(project),
-          editing: _editPromptVisible,
-          onOpenDisplay: project == null || display == null
-              ? null
-              : () => _openDisplayRoute(project, display),
-        ),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
             child: LayoutBuilder(
               builder: (context, constraints) {
                 _reportWorkbenchLayout(context, constraints, project, display);
@@ -1335,124 +1343,6 @@ $contextJson
             ),
           ),
       ],
-    );
-  }
-}
-
-class _WorkspaceProjectMiniBar extends StatelessWidget {
-  const _WorkspaceProjectMiniBar({
-    required this.projectName,
-    required this.projectDescription,
-    required this.translucent,
-    required this.onOpenProjectManager,
-    required this.onRefresh,
-    required this.onEdit,
-    required this.editing,
-    required this.onOpenDisplay,
-  });
-
-  final String? projectName;
-  final String? projectDescription;
-  final bool translucent;
-  final VoidCallback onOpenProjectManager;
-  final Future<void> Function() onRefresh;
-  final VoidCallback? onEdit;
-  final bool editing;
-  final VoidCallback? onOpenDisplay;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final background = backgroundSurfaceColor(
-      translucent: translucent,
-      baseColor: palette.surfacePrimary,
-      opacity: 0.74,
-    );
-    final title = projectName?.trim() ?? '';
-    final subtitle = projectDescription?.trim() ?? '';
-    return Container(
-      height: 54,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: background,
-        border: Border(bottom: BorderSide(color: palette.borderSubtle)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: title.isEmpty
-                ? const SizedBox.shrink()
-                : Column(
-                    mainAxisAlignment: subtitle.isEmpty
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: palette.textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      if (subtitle.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: palette.textTertiary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-          ),
-          const SizedBox(width: 8),
-          Tooltip(
-            message: context.l10n.workbenchProjectEditAction,
-            child: IconButton(
-              onPressed: onEdit,
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-              padding: EdgeInsets.zero,
-              icon: Icon(
-                Icons.edit_outlined,
-                color: editing ? palette.accentPrimary : palette.textSecondary,
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: context.l10n.workbenchWorkspaceOpenProjectConsole,
-            onPressed: onOpenProjectManager,
-            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-            padding: EdgeInsets.zero,
-            icon: Icon(
-              Icons.dashboard_customize_outlined,
-              color: palette.textSecondary,
-            ),
-          ),
-          IconButton(
-            tooltip: context.l10n.workbenchOpenDisplay,
-            onPressed: onOpenDisplay,
-            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-            padding: EdgeInsets.zero,
-            icon: Icon(Icons.open_in_new_rounded, color: palette.textSecondary),
-          ),
-          IconButton(
-            tooltip: context.l10n.omniflowRefresh,
-            onPressed: () => unawaited(onRefresh()),
-            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-            padding: EdgeInsets.zero,
-            icon: Icon(Icons.refresh_rounded, color: palette.textSecondary),
-          ),
-        ],
-      ),
     );
   }
 }

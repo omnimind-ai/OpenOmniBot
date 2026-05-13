@@ -1,4 +1,4 @@
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 
 /// 定时任务类型
 enum ScheduledTaskType {
@@ -252,23 +252,35 @@ class ScheduledTask {
 
   /// 获取下次执行时间的显示文本
   String getNextExecutionTimeText() {
-    final en = LegacyTextLocalizer.isEnglish;
-    if (nextExecutionTime == null) return en ? 'Not set' : '未设置';
+    if (nextExecutionTime == null) {
+      return AppTextLocalizer.choose(en: 'Not set', zh: '未设置');
+    }
 
     final nextTime = DateTime.fromMillisecondsSinceEpoch(nextExecutionTime!);
     final now = DateTime.now();
     final diff = nextTime.difference(now);
 
-    if (diff.isNegative) return en ? 'Expired' : '已过期';
+    if (diff.isNegative) {
+      return AppTextLocalizer.choose(en: 'Expired', zh: '已过期');
+    }
 
     if (diff.inDays > 0) {
-      return en ? '${diff.inDays}d later' : '${diff.inDays}天后';
+      return AppTextLocalizer.choose(
+        en: '${diff.inDays}d later',
+        zh: '${diff.inDays}天后',
+      );
     } else if (diff.inHours > 0) {
-      return en ? '${diff.inHours}h later' : '${diff.inHours}小时后';
+      return AppTextLocalizer.choose(
+        en: '${diff.inHours}h later',
+        zh: '${diff.inHours}小时后',
+      );
     } else if (diff.inMinutes > 0) {
-      return en ? '${diff.inMinutes}m later' : '${diff.inMinutes}分钟后';
+      return AppTextLocalizer.choose(
+        en: '${diff.inMinutes}m later',
+        zh: '${diff.inMinutes}分钟后',
+      );
     } else {
-      return en ? 'Starting soon' : '即将执行';
+      return AppTextLocalizer.choose(en: 'Starting soon', zh: '即将执行');
     }
   }
 

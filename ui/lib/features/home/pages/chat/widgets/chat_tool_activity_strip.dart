@@ -2,13 +2,13 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart'
     hide buildAgentToolTranscript;
 import 'package:ui/features/home/pages/command_overlay/services/tool_card_detail_gesture_gate.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/terminal_output_utils.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -344,7 +344,7 @@ class _ChatToolActivityStripState extends State<ChatToolActivityStrip> {
       }
     });
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(LegacyTextLocalizer.localize('停止工具调用失败，请稍后重试'))),
+      SnackBar(content: Text(AppTextLocalizer.text('停止工具调用失败，请稍后重试'))),
     );
   }
 
@@ -811,7 +811,7 @@ class _ToolStopButton extends StatelessWidget {
         : Colors.white.withValues(alpha: enabled ? 0.9 : 0.72);
 
     return Tooltip(
-      message: LegacyTextLocalizer.localize(enabled ? '停止工具' : '正在停止工具'),
+      message: AppTextLocalizer.text(enabled ? '停止工具' : '正在停止工具'),
       child: GestureDetector(
         key: kChatToolActivityStopKey,
         behavior: HitTestBehavior.opaque,
@@ -1051,10 +1051,8 @@ class _RunLogActivityButton extends StatelessWidget {
       message: _text(context, '查看 RunLog', 'View RunLog'),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => GoRouterManager.push(
-          '/task/run_log_timeline',
-          extra: {'runId': runLogId, 'title': 'RunLog'},
-        ),
+        onTap: () =>
+            showRunLogTimelineSheet(context, runId: runLogId, title: 'RunLog'),
         child: Center(
           child: Icon(Icons.description_outlined, size: 14, color: color),
         ),
@@ -1069,11 +1067,11 @@ String _resolveRunLogId(Map<String, dynamic> cardData) {
     cardData['run_log_id'],
     cardData['runId'],
     cardData['run_id'],
-    _runLogIdFromJsonString(cardData['resultPreviewJson']),
-    _runLogIdFromJsonString(cardData['rawResultJson']),
     cardData['toolTaskId'],
     cardData['taskId'],
     cardData['taskID'],
+    _runLogIdFromJsonString(cardData['resultPreviewJson']),
+    _runLogIdFromJsonString(cardData['rawResultJson']),
   ]);
 }
 
@@ -1107,7 +1105,11 @@ String _firstNonBlank(Iterable<Object?> values) {
 }
 
 String _text(BuildContext context, String zh, String en) {
-  return Localizations.localeOf(context).languageCode == 'zh' ? zh : en;
+  return AppTextLocalizer.choose(
+    zh: zh,
+    en: en,
+    locale: Localizations.localeOf(context),
+  );
 }
 
 class _StatusDot extends StatelessWidget {

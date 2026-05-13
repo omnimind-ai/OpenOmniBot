@@ -2385,6 +2385,21 @@ class AssistsMessageService {
     return _jsonSafeDynamicMap(result);
   }
 
+  static Future<Map<String, dynamic>> getAgentToolFeatures() async {
+    final result = await assistCore.invokeMethod<Map>('getAgentToolFeatures');
+    return _jsonSafeDynamicMap(result);
+  }
+
+  static Future<Map<String, dynamic>> setAgentToolFeatures({
+    bool? oobFunctionAsToolEnabled,
+  }) async {
+    final result = await assistCore.invokeMethod<Map>('setAgentToolFeatures', {
+      if (oobFunctionAsToolEnabled != null)
+        'oobFunctionAsToolEnabled': oobFunctionAsToolEnabled,
+    });
+    return _jsonSafeDynamicMap(result);
+  }
+
   static Future<UtgManualRunResult> runOobReusableFunction({
     required String functionId,
     Map<String, dynamic> arguments = const {},

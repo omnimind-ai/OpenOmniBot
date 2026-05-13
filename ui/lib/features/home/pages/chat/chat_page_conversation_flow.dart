@@ -137,7 +137,9 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     }
 
     final startTime = DateTime.now().millisecondsSinceEpoch;
-    final thinkingCardId = cardId ?? '$taskID-thinking';
+    // Use -1 suffix to match Kotlin's first thinkingSequence, so the first
+    // thinkingSnapshot updates this card in-place rather than inserting a new one.
+    final thinkingCardId = cardId ?? '$taskID-thinking-1';
     final cardData = {
       'type': 'deep_thinking',
       'isLoading': isLoading ?? _isDeepThinking,
@@ -389,7 +391,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     if (_isOmniInferLocalModelSelected &&
         activeConversationModeValue != ConversationMode.chatOnly) {
       showToast(
-        LegacyTextLocalizer.localize('本地模型仅支持纯聊天模式，请开启新的纯聊天对话后再使用本地模型'),
+        AppTextLocalizer.text('本地模型仅支持纯聊天模式，请开启新的纯聊天对话后再使用本地模型'),
         type: ToastType.warning,
       );
       return;

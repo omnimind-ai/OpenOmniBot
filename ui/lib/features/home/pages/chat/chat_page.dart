@@ -51,7 +51,7 @@ import 'package:ui/services/special_permission.dart';
 import 'package:ui/utils/popup_menu_anchor_position.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/utils/ui.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/features/home/pages/chat/utils/agent_runtime_attachment_payload.dart';
 import 'package:ui/features/home/pages/chat/utils/agent_thinking_card_locator.dart';
 import 'package:ui/features/home/pages/chat/utils/codex_slash_commands.dart';
@@ -71,6 +71,7 @@ import 'tool_activity_utils.dart';
 import 'widgets/chat_widgets.dart';
 import 'widgets/chat_browser_overlay.dart';
 import 'widgets/chat_tool_activity_strip.dart';
+import 'widgets/user_dialog_registry.dart';
 import 'package:ui/widgets/app_update_dialog.dart';
 import 'package:ui/widgets/app_background_widgets.dart';
 
@@ -748,7 +749,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
 
   void _showLocalModelPureChatLockToast() {
     showToast(
-      LegacyTextLocalizer.localize('当前已选择本地模型，请开启新对话后再切换到其他模式'),
+      AppTextLocalizer.text('当前已选择本地模型，请开启新对话后再切换到其他模式'),
       type: ToastType.warning,
     );
   }
@@ -1618,7 +1619,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     final waitingCardId = _openClawWaitingCardId(taskId);
     final cardData = {
       'type': 'stage_hint',
-      'hint': LegacyTextLocalizer.localize(_openClawWaitingHint),
+      'hint': AppTextLocalizer.text(_openClawWaitingHint),
       'statusKey': _openClawWaitingStatusKey,
       'taskID': taskId,
       'startTime': DateTime.now().millisecondsSinceEpoch,
@@ -1664,9 +1665,11 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     _runtimeChromeSignatureByMode[mode] = nextChromeSignature;
     _runtimeMessageMutationRevisionByMode[mode] = nextMutationRevision;
 
-    if (hasChromeChange ||
-        (hasMessageMutation &&
-            runtime.messages.lastMutationAffectsPageChrome)) {
+    // Trigger setState on any message mutation, not just "chrome-affecting" ones.
+    // Per-message notifiers exist but widgets don't subscribe to them, so
+    // in-place content updates (streaming text, thinking tokens) need setState
+    // to become visible. The 5-chunk batch threshold keeps rebuild frequency low.
+    if (hasChromeChange || hasMessageMutation) {
       setState(() {});
     }
   }

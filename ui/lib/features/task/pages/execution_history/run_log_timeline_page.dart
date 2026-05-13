@@ -1,13 +1,179 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ui/features/task/pages/execution_history/run_log_reusable_function_converter.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
+
+Future<void> showRunLogTimelineSheet(
+  BuildContext context, {
+  required String runId,
+  String title = 'RunLog',
+  String? baseUrl,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.28),
+    builder: (_) =>
+        _RunLogTimelineSheetFrame(runId: runId, title: title, baseUrl: baseUrl),
+  );
+}
+
+/// 通过 runId + cardId 直接跳到单步 detail sheet。
+/// 找不到匹配的 card 时 fallback 到完整 timeline。
+Future<void> showRunLogStepDetailSheet(
+  BuildContext context, {
+  required String runId,
+  required String cardId,
+  String title = 'RunLog',
+  String? baseUrl,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.28),
+    builder: (_) => _StepDetailLoader(
+      runId: runId,
+      cardId: cardId,
+      title: title,
+      baseUrl: baseUrl,
+    ),
+  );
+}
+
+/// 内部 widget：先拉 payload，再定位到目标 card 并展示单步 detail。
+class _StepDetailLoader extends StatefulWidget {
+  const _StepDetailLoader({
+    required this.runId,
+    required this.cardId,
+    required this.title,
+    this.baseUrl,
+  });
+
+  final String runId;
+  final String cardId;
+  final String title;
+  final String? baseUrl;
+
+  @override
+  State<_StepDetailLoader> createState() => _StepDetailLoaderState();
+}
+
+class _StepDetailLoaderState extends State<_StepDetailLoader> {
+  bool _loading = true;
+  Map<String, dynamic>? _card;
+  int _cardIndex = 0;
+  Map<String, dynamic> _payload = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final payload =
+          await AssistsMessageService.getRunLogTimelinePreferInternal(
+        runId: widget.runId,
+        baseUrl: widget.baseUrl,
+      );
+      if (!mounted) return;
+      final cards = _extractTimelineCards(payload);
+      // 找匹配的 card：先匹配 cardId/tool_call_id，再匹配 toolName
+      final targetId = widget.cardId.trim().toLowerCase();
+      Map<String, dynamic>? matched;
+      int matchedIndex = 0;
+      for (int i = 0; i < cards.length; i++) {
+        final c = cards[i];
+        final ids = [
+          c['cardId']?.toString() ?? '',
+          c['card_id']?.toString() ?? '',
+          c['tool_call_id']?.toString() ?? '',
+          c['toolCallId']?.toString() ?? '',
+          _asStringKeyMap(c['tool_call'])['id']?.toString() ?? '',
+        ];
+        if (ids.any((id) => id.isNotEmpty && id.toLowerCase() == targetId)) {
+          matched = c;
+          matchedIndex = i;
+          break;
+        }
+      }
+      setState(() {
+        _payload = payload;
+        _card = matched ?? (cards.isNotEmpty ? cards.first : null);
+        _cardIndex = matched != null ? matchedIndex : 0;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      final palette = context.omniPalette;
+      return GestureDetector(
+        onTap: () => Navigator.of(context, rootNavigator: true).maybePop(),
+        behavior: HitTestBehavior.opaque,
+        child: SafeArea(
+          top: false,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: GestureDetector(
+              onTap: () {},
+              child: Container(
+                height: 180,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: palette.pageBackground,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(22),
+                  ),
+                ),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    color: palette.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    final card = _card;
+    if (card == null) {
+      // 没找到任何 card，fallback 到完整 timeline
+      return _RunLogTimelineSheetFrame(
+        runId: widget.runId,
+        title: widget.title,
+        baseUrl: widget.baseUrl,
+      );
+    }
+    return _StepDetailSheet(
+      card: card,
+      fallbackIndex: _cardIndex,
+      runId: widget.runId,
+      title: widget.title,
+      payload: _payload,
+      baseUrl: widget.baseUrl,
+    );
+  }
+}
 
 class RunLogTimelinePage extends StatefulWidget {
   const RunLogTimelinePage({
@@ -15,11 +181,13 @@ class RunLogTimelinePage extends StatefulWidget {
     required this.runId,
     required this.title,
     this.baseUrl,
+    this.embedded = false,
   });
 
   final String runId;
   final String title;
   final String? baseUrl;
+  final bool embedded;
 
   @override
   State<RunLogTimelinePage> createState() => _RunLogTimelinePageState();
@@ -72,43 +240,54 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
     final subtitle = stepCount > 0
         ? l10n.runLogTimelineStepCount(stepCount)
         : null;
+    final title = subtitle != null
+        ? '${l10n.runLogTimelineTitle}  $subtitle'
+        : l10n.runLogTimelineTitle;
+    final List<Widget> actions = <Widget>[
+      Tooltip(
+        message: _text(context, 'AI 转功能', 'Convert to function'),
+        child: IconButton(
+          icon: _isConvertingFunction
+              ? SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: palette.textPrimary,
+                  ),
+                )
+              : const Icon(Icons.auto_awesome_rounded),
+          color: palette.textPrimary,
+          onPressed: _cards.isEmpty || _isConvertingFunction
+              ? null
+              : _convertToReusableFunction,
+        ),
+      ),
+      Tooltip(
+        message: _text(context, '复制全部文本', 'Copy all text'),
+        child: IconButton(
+          icon: const Icon(Icons.copy_all_rounded),
+          color: palette.textPrimary,
+          onPressed: _cards.isEmpty ? null : _copyAllText,
+        ),
+      ),
+    ];
+
+    if (widget.embedded) {
+      return ColoredBox(
+        color: palette.pageBackground,
+        child: Column(
+          children: [
+            _RunLogTimelineSheetHeader(title: title, actions: actions),
+            Expanded(child: _buildBody(context)),
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: palette.pageBackground,
-      appBar: CommonAppBar(
-        title: subtitle != null
-            ? '${l10n.runLogTimelineTitle}  $subtitle'
-            : l10n.runLogTimelineTitle,
-        actions: [
-          Tooltip(
-            message: _text(context, 'AI 转功能', 'Convert to function'),
-            child: IconButton(
-              icon: _isConvertingFunction
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: palette.textPrimary,
-                      ),
-                    )
-                  : const Icon(Icons.auto_awesome_rounded),
-              color: palette.textPrimary,
-              onPressed: _cards.isEmpty || _isConvertingFunction
-                  ? null
-                  : _convertToReusableFunction,
-            ),
-          ),
-          Tooltip(
-            message: _text(context, '复制全部文本', 'Copy all text'),
-            child: IconButton(
-              icon: const Icon(Icons.copy_all_rounded),
-              color: palette.textPrimary,
-              onPressed: _cards.isEmpty ? null : _copyAllText,
-            ),
-          ),
-        ],
-      ),
+      appBar: CommonAppBar(title: title, actions: actions),
       body: _buildBody(context),
     );
   }
@@ -181,7 +360,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
         title: widget.title,
         payload: _payload,
         cards: _cards,
-        useEnglish: _isEnglish(context),
+        useEnglish: _localeValue(context, zh: false, en: true),
       );
       if (!mounted) return;
       setState(() {
@@ -283,6 +462,171 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
   }
 }
 
+class _RunLogTimelineSheetFrame extends StatefulWidget {
+  const _RunLogTimelineSheetFrame({
+    required this.runId,
+    required this.title,
+    this.baseUrl,
+  });
+
+  final String runId;
+  final String title;
+  final String? baseUrl;
+
+  @override
+  State<_RunLogTimelineSheetFrame> createState() =>
+      _RunLogTimelineSheetFrameState();
+}
+
+class _RunLogTimelineSheetFrameState extends State<_RunLogTimelineSheetFrame> {
+  static const double _minHeightFactor = 0.36;
+  static const double _maxHeightFactor = 0.94;
+
+  double? _heightFactor;
+
+  double _initialHeightFactor(double viewportHeight) {
+    return viewportHeight < 720 ? 0.72 : 0.62;
+  }
+
+  void _handleDragUpdate(DragUpdateDetails details, double availableHeight) {
+    if (availableHeight <= 0) {
+      return;
+    }
+    final delta = details.primaryDelta ?? details.delta.dy;
+    setState(() {
+      final current =
+          _heightFactor ??
+          _initialHeightFactor(MediaQuery.sizeOf(context).height);
+      _heightFactor = (current - delta / availableHeight).clamp(
+        _minHeightFactor,
+        _maxHeightFactor,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final palette = context.omniPalette;
+    final availableHeight = math.max(
+      320.0,
+      mediaQuery.size.height -
+          mediaQuery.padding.top -
+          mediaQuery.viewInsets.bottom,
+    );
+    final heightFactor =
+        _heightFactor ?? _initialHeightFactor(mediaQuery.size.height);
+    const borderRadius = BorderRadius.vertical(top: Radius.circular(24));
+
+    return SafeArea(
+      top: false,
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+        child: SizedBox(
+          height: availableHeight * heightFactor,
+          width: double.infinity,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: palette.pageBackground,
+              borderRadius: borderRadius,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 32,
+                  offset: const Offset(0, -8),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: borderRadius,
+              child: Material(
+                color: palette.pageBackground,
+                child: Column(
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragUpdate: (details) =>
+                          _handleDragUpdate(details, availableHeight),
+                      child: SizedBox(
+                        height: 22,
+                        width: double.infinity,
+                        child: Center(
+                          child: Container(
+                            width: 42,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: palette.textPrimary.withValues(
+                                alpha: 0.18,
+                              ),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: RunLogTimelinePage(
+                        runId: widget.runId,
+                        title: widget.title,
+                        baseUrl: widget.baseUrl,
+                        embedded: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RunLogTimelineSheetHeader extends StatelessWidget {
+  const _RunLogTimelineSheetHeader({
+    required this.title,
+    required this.actions,
+  });
+
+  final String title;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.only(left: 18, right: 4),
+      decoration: BoxDecoration(
+        color: palette.pageBackground,
+        border: Border(
+          bottom: BorderSide(color: palette.borderSubtle, width: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: palette.textPrimary,
+              ),
+            ),
+          ),
+          ...actions,
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Step card with left-side timeline connector ──────────────────────────────
 
 class _StepCard extends StatelessWidget {
@@ -310,12 +654,25 @@ class _StepCard extends StatelessWidget {
     );
     final success = snapshot.success ?? true;
     final compileKind = snapshot.compileKind;
+    final modelFree = _isModelFreeReplayStep(snapshot);
 
     final isHit = compileKind == 'hit';
     final dotColor = success
-        ? (isHit ? _successColor(context) : _routeColor(context))
+        ? (modelFree
+              ? _modelFreeColor(context)
+              : (isHit ? _successColor(context) : _routeColor(context)))
         : _errorColor(context);
     final lineColor = isDark ? palette.borderSubtle : Colors.grey.shade200;
+    final baseCardColor = isDark ? palette.surfaceSecondary : Colors.white;
+    final cardColor = modelFree
+        ? Color.alphaBlend(
+            _modelFreeColor(context).withValues(alpha: isDark ? 0.16 : 0.08),
+            baseCardColor,
+          )
+        : baseCardColor;
+    final borderColor = modelFree
+        ? _modelFreeColor(context).withValues(alpha: isDark ? 0.38 : 0.26)
+        : (isDark ? palette.borderSubtle : Colors.grey.shade100);
     final preview = snapshot.previewText;
 
     return IntrinsicHeight(
@@ -357,11 +714,9 @@ class _StepCard extends StatelessWidget {
             child: Container(
               margin: EdgeInsets.only(bottom: isLast ? 0 : 10),
               decoration: BoxDecoration(
-                color: isDark ? palette.surfaceSecondary : Colors.white,
+                color: cardColor,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isDark ? palette.borderSubtle : Colors.grey.shade100,
-                ),
+                border: Border.all(color: borderColor),
               ),
               child: Material(
                 color: Colors.transparent,
@@ -387,6 +742,10 @@ class _StepCard extends StatelessWidget {
                             ),
                             const SizedBox(width: 6),
                             _RouteBadge(compileKind: compileKind, l10n: l10n),
+                            if (modelFree) ...[
+                              const SizedBox(width: 6),
+                              const _ModelFreeBadge(),
+                            ],
                             const Spacer(),
                             if (snapshot.durationMs != null)
                               Text(
@@ -511,15 +870,21 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
     );
     final success = snapshot.success ?? true;
     final statusColor = success ? _successColor(context) : _errorColor(context);
-    final maxHeight = MediaQuery.of(context).size.height * 0.9;
+    final sheetHeight = MediaQuery.of(context).size.height * 0.55;
 
-    return SafeArea(
-      top: false,
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: maxHeight),
-          child: Container(
+    return GestureDetector(
+      onTap: () => Navigator.of(context, rootNavigator: true).maybePop(),
+      behavior: HitTestBehavior.opaque,
+      child: SafeArea(
+        top: false,
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: GestureDetector(
+            onTap: () {},
+            child: SizedBox(
+      height: sheetHeight,
+      width: double.infinity,
+      child: Container(
             decoration: BoxDecoration(
               color: isDark ? palette.surfacePrimary : Colors.white,
               borderRadius: const BorderRadius.vertical(
@@ -634,61 +999,143 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                 Divider(height: 1, color: palette.borderSubtle),
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _SummaryGrid(snapshot: snapshot),
-                        const SizedBox(height: 14),
-                        _DetailSection(
-                          title: _text(context, '工具调用', 'Tool call'),
-                          copyValue: snapshot.toolCallForCopy,
-                          child: _KeyValueBlock(
-                            values: {
+                        // Tool name chip + call ID inline (no card)
+                        if (snapshot.toolName.isNotEmpty ||
+                            snapshot.toolCallId.isNotEmpty)
+                          Row(
+                            children: [
                               if (snapshot.toolName.isNotEmpty)
-                                _text(context, '工具', 'Tool'): snapshot.toolName,
-                              if (snapshot.toolCallId.isNotEmpty)
-                                _text(context, '调用 ID', 'Call ID'):
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _routeColor(context).withValues(
+                                      alpha: isDark ? 0.15 : 0.09,
+                                    ),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: _routeColor(context).withValues(
+                                        alpha: isDark ? 0.30 : 0.18,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    snapshot.toolName,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontFamily: 'monospace',
+                                      fontWeight: FontWeight.w600,
+                                      color: _routeColor(context),
+                                    ),
+                                  ),
+                                ),
+                              if (snapshot.toolCallId.isNotEmpty) ...[
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
                                     snapshot.toolCallId,
-                            },
-                            fallback: _prettyJson(snapshot.toolCall),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontFamily: 'monospace',
+                                      color: palette.textTertiary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
-                        ),
+                        const SizedBox(height: 10),
+                        // Status / route / duration pills
+                        _SummaryGrid(snapshot: snapshot),
+                        // Key param highlight row
+                        if (snapshot.previewText.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(
+                                alpha: isDark ? 0.09 : 0.06,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: statusColor.withValues(
+                                  alpha: isDark ? 0.22 : 0.15,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              snapshot.previewText,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: palette.textSecondary,
+                                height: 1.3,
+                              ),
+                            ),
+                          ),
+                        ],
+                        // Arguments — expanded by default
                         if (!_isEmptyJsonValue(snapshot.params)) ...[
                           const SizedBox(height: 12),
-                          _DetailSection(
+                          _CollapsibleSection(
                             title: _text(context, '参数', 'Arguments'),
                             copyValue: _prettyJson(snapshot.params),
+                            initiallyExpanded: true,
                             child: _JsonBlock(value: snapshot.params),
                           ),
                         ],
+                        // Result — expanded by default
                         if (!_isEmptyJsonValue(snapshot.result)) ...[
-                          const SizedBox(height: 12),
-                          _DetailSection(
+                          const SizedBox(height: 8),
+                          _CollapsibleSection(
                             title: _text(context, '结果', 'Result'),
                             copyValue: _prettyJson(snapshot.result),
+                            initiallyExpanded: true,
                             child: _JsonBlock(value: snapshot.result),
                           ),
                         ],
+                        // Route result — collapsed by default
                         if (!_isEmptyJsonValue(snapshot.compileResult)) ...[
-                          const SizedBox(height: 12),
-                          _DetailSection(
-                            title: _text(context, '路由/编译结果', 'Route result'),
+                          const SizedBox(height: 8),
+                          _CollapsibleSection(
+                            title: _text(
+                              context,
+                              '路由/编译结果',
+                              'Route result',
+                            ),
                             copyValue: _prettyJson(snapshot.compileResult),
+                            initiallyExpanded: false,
                             child: _JsonBlock(value: snapshot.compileResult),
                           ),
                         ],
+                        // Before / after — collapsed by default
                         if (snapshot.before.isNotEmpty ||
                             snapshot.after.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          _DetailSection(
-                            title: _text(context, '前后状态', 'Before / after'),
+                          const SizedBox(height: 8),
+                          _CollapsibleSection(
+                            title: _text(
+                              context,
+                              '前后状态',
+                              'Before / after',
+                            ),
                             copyValue: _prettyJson({
                               if (snapshot.before.isNotEmpty)
                                 'before': snapshot.before,
                               if (snapshot.after.isNotEmpty)
                                 'after': snapshot.after,
                             }),
+                            initiallyExpanded: false,
                             child: _JsonBlock(
                               value: {
                                 if (snapshot.before.isNotEmpty)
@@ -699,10 +1146,12 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                             ),
                           ),
                         ],
-                        const SizedBox(height: 12),
-                        _DetailSection(
+                        // Raw JSON — collapsed by default
+                        const SizedBox(height: 8),
+                        _CollapsibleSection(
                           title: _text(context, '原始 JSON', 'Raw JSON'),
                           copyValue: _prettyJson(widget.card),
+                          initiallyExpanded: false,
                           child: _JsonBlock(value: widget.card),
                         ),
                       ],
@@ -712,6 +1161,8 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
               ],
             ),
           ),
+        ),
+      ),
         ),
       ),
     );
@@ -744,7 +1195,7 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
           'source_step_number': snapshot.stepNumber,
         },
         cards: [widget.card],
-        useEnglish: _isEnglish(context),
+        useEnglish: _localeValue(context, zh: false, en: true),
       );
       if (!mounted) return;
       setState(() {
@@ -820,15 +1271,21 @@ class _ReusableFunctionSpecSheetState
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
     final isDark = context.isDarkTheme;
-    final maxHeight = MediaQuery.of(context).size.height * 0.9;
+    final sheetHeight = MediaQuery.of(context).size.height * 0.55;
     final scriptCall = _scriptCallJson;
 
-    return SafeArea(
-      top: false,
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: maxHeight),
+    return GestureDetector(
+      onTap: () => Navigator.of(context, rootNavigator: true).maybePop(),
+      behavior: HitTestBehavior.opaque,
+      child: SafeArea(
+        top: false,
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: GestureDetector(
+            onTap: () {},
+            child: SizedBox(
+          height: sheetHeight,
+          width: double.infinity,
           child: Container(
             decoration: BoxDecoration(
               color: isDark ? palette.surfacePrimary : Colors.white,
@@ -1138,6 +1595,8 @@ class _ReusableFunctionSpecSheetState
               ],
             ),
           ),
+        ),
+      ),
         ),
       ),
     );
@@ -1478,6 +1937,12 @@ class _SummaryGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = <MapEntry<String, String>>[
       MapEntry(_text(context, '状态', 'Status'), snapshot.statusLabel(context)),
+      MapEntry(
+        _text(context, '执行方式', 'Execution'),
+        _isModelFreeReplayStep(snapshot)
+            ? _text(context, '脚本，无模型', 'Script, no model')
+            : _text(context, '需要模型', 'Needs model'),
+      ),
       if (snapshot.compileKind.isNotEmpty)
         MapEntry(_text(context, '路由', 'Route'), snapshot.routeLabel(context)),
       if (snapshot.durationMs != null)
@@ -1606,6 +2071,116 @@ class _DetailSection extends StatelessWidget {
   }
 }
 
+class _CollapsibleSection extends StatefulWidget {
+  const _CollapsibleSection({
+    required this.title,
+    required this.child,
+    this.copyValue,
+    this.initiallyExpanded = true,
+  });
+
+  final String title;
+  final Widget child;
+  final String? copyValue;
+  final bool initiallyExpanded;
+
+  @override
+  State<_CollapsibleSection> createState() => _CollapsibleSectionState();
+}
+
+class _CollapsibleSectionState extends State<_CollapsibleSection> {
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.initiallyExpanded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: isDark ? palette.surfaceSecondary : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Material(
+            color: Colors.transparent,
+            borderRadius: _expanded
+                ? const BorderRadius.vertical(top: Radius.circular(12))
+                : BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.title,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: palette.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (_expanded &&
+                        widget.copyValue != null &&
+                        widget.copyValue!.trim().isNotEmpty)
+                      Tooltip(
+                        message: _text(context, '复制', 'Copy'),
+                        child: IconButton(
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(
+                            Icons.content_copy_rounded,
+                            size: 16,
+                          ),
+                          color: palette.textSecondary,
+                          onPressed: () {
+                            Clipboard.setData(
+                              ClipboardData(text: widget.copyValue!),
+                            );
+                            showToast(
+                              _text(context, '已复制', 'Copied'),
+                              type: ToastType.success,
+                            );
+                          },
+                        ),
+                      ),
+                    Icon(
+                      _expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      size: 20,
+                      color: palette.textSecondary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_expanded) ...[
+            Divider(height: 1, color: palette.borderSubtle),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: widget.child,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _KeyValueBlock extends StatelessWidget {
   const _KeyValueBlock({required this.values, required this.fallback});
 
@@ -1725,6 +2300,32 @@ class _RouteBadge extends StatelessWidget {
         style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w600,
+          color: color,
+          height: 1,
+        ),
+      ),
+    );
+  }
+}
+
+class _ModelFreeBadge extends StatelessWidget {
+  const _ModelFreeBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _modelFreeColor(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: context.isDarkTheme ? 0.18 : 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.26)),
+      ),
+      child: Text(
+        _text(context, '脚本', 'Script'),
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
           color: color,
           height: 1,
         ),
@@ -2027,12 +2628,19 @@ String _formatMs(int ms) {
 }
 
 String _text(BuildContext context, String zh, String en) {
-  final languageCode = Localizations.maybeLocaleOf(context)?.languageCode;
-  return languageCode == 'en' ? en : zh;
+  return AppTextLocalizer.choose(
+    zh: zh,
+    en: en,
+    locale: Localizations.localeOf(context),
+  );
 }
 
-bool _isEnglish(BuildContext context) {
-  return Localizations.maybeLocaleOf(context)?.languageCode == 'en';
+T _localeValue<T>(BuildContext context, {required T zh, required T en}) {
+  return AppTextLocalizer.chooseValue(
+    zh: zh,
+    en: en,
+    locale: Localizations.maybeLocaleOf(context),
+  );
 }
 
 Color _successColor(BuildContext context) {
@@ -2053,10 +2661,47 @@ Color _routeColor(BuildContext context) {
       : const Color(0xFF3B82F6);
 }
 
+Color _modelFreeColor(BuildContext context) {
+  return context.isDarkTheme
+      ? const Color(0xFF4DD6C9)
+      : const Color(0xFF0F9F8F);
+}
+
 Color _warningColor(BuildContext context) {
   return context.isDarkTheme
       ? const Color(0xFFFFD166)
       : const Color(0xFFFFC04D);
+}
+
+bool _isModelFreeReplayStep(_RunLogStepSnapshot snapshot) {
+  final toolName = snapshot.toolName.trim().toLowerCase();
+  if (toolName.isEmpty || toolName == 'unknown_tool') {
+    return false;
+  }
+  if (toolName.contains('agent') ||
+      toolName.contains('llm') ||
+      toolName.contains('vlm')) {
+    return false;
+  }
+  const modelFreeTools = {
+    'click',
+    'long_press',
+    'scroll',
+    'type',
+    'open_app',
+    'press_home',
+    'press_back',
+    'hot_key',
+    'wait',
+    'finished',
+    'feedback',
+    'abort',
+    'record',
+    'info',
+    'require_user_choice',
+    'require_user_confirmation',
+  };
+  return modelFreeTools.contains(toolName);
 }
 
 List<Map<String, dynamic>> _extractTimelineCards(Map<String, dynamic> payload) {

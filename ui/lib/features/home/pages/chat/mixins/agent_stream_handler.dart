@@ -30,6 +30,10 @@ enum ThinkingStage {
 mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
   static const int _maxTerminalOutputChars = 64 * 1024;
   static const int _maxTerminalOutputLines = 600;
+  static const int _maxToolSummaryChars = 240;
+  static const int _maxToolProgressChars = 240;
+  static const int _maxToolPreviewJsonChars = 8 * 1024;
+  static const int _maxToolRawResultJsonChars = 24 * 1024;
   static const Map<String, String> _executionPermissionNameToId =
       <String, String>{
         '无障碍权限': kAccessibilityPermissionId,
@@ -139,6 +143,12 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     _agentStreamStates[event.taskId] = reduceResult.nextState;
     _lastAgentTaskId = event.taskId;
     _activeThinkingCardId = reduceResult.nextState.activeThinkingEntryId;
+    final activeToolIds = reduceResult.nextState.activeToolEntryIds;
+    if (activeToolIds.isNotEmpty) {
+      _activeToolCardId = activeToolIds.last;
+    } else if (event.kind == AgentStreamEventKind.toolCompleted) {
+      _activeToolCardId = null;
+    }
     currentThinkingStage = reduceResult.nextState.thinkingStage;
     isDeepThinking = reduceResult.nextState.isDeepThinking;
     _pendingAgentTextTaskId =
@@ -248,6 +258,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
 
     setState(() {
       _finalizeThinkingCardInMessages(event.taskId, completedThinkingCardId);
+      _finalizeRunningToolCardsForTask(event.taskId);
       final index = messages.indexWhere((msg) => msg.id == messageId);
       if (index == -1) {
         messages.insert(
@@ -304,9 +315,6 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     if (cardId.isEmpty) return;
 
     final toolEvent = AgentToolEventData.fromMap(event.raw);
-    _activeToolCardId = event.kind == AgentStreamEventKind.toolCompleted
-        ? null
-        : cardId;
     setState(() {
       isAiResponding = true;
       _finalizeThinkingCardInMessages(taskId, completedThinkingCardId);
@@ -325,6 +333,11 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         rawResultJson: toolEvent.rawResultJson,
         streamMeta: _streamMetaFromEvent(event),
       );
+      if (event.kind == AgentStreamEventKind.toolCompleted &&
+          (toolEvent.toolType == 'workbench' ||
+              toolEvent.toolName.startsWith('workbench_'))) {
+        _finalizeRunningToolCardsForTask(taskId);
+      }
     });
     _persistAgentConversationSafely();
   }
@@ -346,6 +359,14 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       currentThinkingStage = ThinkingStage.complete.value;
       isDeepThinking = false;
       _finalizeThinkingCardInMessages(event.taskId, completedThinkingCardId);
+      _finalizeRunningToolCardsForTask(
+        event.taskId,
+        status: 'interrupted',
+        summary: AppTextLocalizer.choose(
+          en: 'Waiting for more detail',
+          zh: '等待补充信息',
+        ),
+      );
       if (messageId.isNotEmpty && text.isNotEmpty) {
         final index = messages.indexWhere((msg) => msg.id == messageId);
         if (index == -1) {
@@ -381,6 +402,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       currentThinkingStage = ThinkingStage.complete.value;
       isDeepThinking = false;
       _finalizeThinkingCardInMessages(event.taskId, completedThinkingCardId);
+      _finalizeRunningToolCardsForTask(event.taskId);
       isAiResponding = false;
     });
     clearAgentStreamSessionState(taskId: event.taskId);
@@ -398,6 +420,16 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       currentThinkingStage = ThinkingStage.complete.value;
       isDeepThinking = false;
       _finalizeThinkingCardInMessages(event.taskId, completedThinkingCardId);
+      _finalizeRunningToolCardsForTask(
+        event.taskId,
+        status: 'error',
+        summary: event.errorMessage.trim().isEmpty
+            ? AppTextLocalizer.choose(
+                en: 'Workbench step failed',
+                zh: '工作台步骤失败',
+              )
+            : event.errorMessage.trim(),
+      );
       if (shouldMarkError && entryId.isNotEmpty) {
         final index = messages.indexWhere((msg) => msg.id == entryId);
         if (index != -1) {
@@ -437,6 +469,14 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       currentThinkingStage = ThinkingStage.complete.value;
       isDeepThinking = false;
       _finalizeThinkingCardInMessages(taskId, completedThinkingCardId);
+      _finalizeRunningToolCardsForTask(
+        taskId,
+        status: 'interrupted',
+        summary: AppTextLocalizer.choose(
+          en: 'Waiting for permission',
+          zh: '等待权限确认',
+        ),
+      );
       if (messageId.isNotEmpty && text.isNotEmpty) {
         final index = messages.indexWhere((msg) => msg.id == messageId);
         if (index == -1) {
@@ -527,8 +567,14 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         : (messages[index].content?['text'] as String? ?? '');
     final preservedText = existingText.trim();
     final fallbackMessage = error.trim().isEmpty
-        ? (AppTextLocalizer.choose(en: "I can't generate a reply right now. Please try again.", zh: '暂时无法生成回复，请重试。'))
-        : (AppTextLocalizer.choose(en: "I can't generate a reply right now. Please try again. ${error.trim()}", zh: '暂时无法生成回复，请重试。${error.trim()}'));
+        ? (AppTextLocalizer.choose(
+            en: "I can't generate a reply right now. Please try again.",
+            zh: '暂时无法生成回复，请重试。',
+          ))
+        : (AppTextLocalizer.choose(
+            en: "I can't generate a reply right now. Please try again. ${error.trim()}",
+            zh: '暂时无法生成回复，请重试。${error.trim()}',
+          ));
     setState(() {
       if (index == -1) {
         messages.insert(
@@ -729,6 +775,10 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       final existingCardData = Map<String, dynamic>.from(
         messages[index].cardData ?? const {},
       );
+      if ((existingCardData['status'] ?? '').toString() != 'running') {
+        _activeToolCardId = null;
+        return;
+      }
       existingCardData['status'] = 'interrupted';
       existingCardData['success'] = false;
       if (summary != null && summary.trim().isNotEmpty) {
@@ -741,6 +791,85 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     });
 
     _activeToolCardId = null;
+  }
+
+  void _finalizeRunningToolCardsForTask(
+    String taskId, {
+    String status = 'success',
+    String? summary,
+  }) {
+    final normalizedTaskId = taskId.trim();
+    if (normalizedTaskId.isEmpty) return;
+
+    final finalizedCardIds = <String>{};
+    final isSuccess = status == 'success';
+    for (var index = 0; index < messages.length; index++) {
+      final message = messages[index];
+      final rawCardData = message.cardData;
+      if (rawCardData == null ||
+          (rawCardData['type'] ?? '').toString() != 'agent_tool_summary') {
+        continue;
+      }
+      final cardTaskId = _firstNonEmpty([
+        rawCardData['taskId'],
+        message.streamMeta?['parentTaskId'],
+      ]);
+      if (cardTaskId != normalizedTaskId) {
+        continue;
+      }
+      if ((rawCardData['status'] ?? '').toString() != 'running') {
+        continue;
+      }
+      // Terminal and browser tools manage their own streaming lifecycle;
+      // skip them here so their stream state is not prematurely closed.
+      final toolType = (rawCardData['toolType'] ?? '').toString();
+      if (toolType == 'terminal' || toolType == 'browser') {
+        continue;
+      }
+
+      final cardData = Map<String, dynamic>.from(rawCardData);
+      cardData['status'] = status;
+      cardData['success'] = isSuccess;
+      final normalizedSummary = summary?.trim() ?? '';
+      if (normalizedSummary.isNotEmpty &&
+          (cardData['summary'] ?? '').toString().trim().isEmpty) {
+        cardData['summary'] = normalizedSummary;
+      }
+      final cardId = _firstNonEmpty([cardData['cardId'], message.id]);
+      if (cardId.isNotEmpty) {
+        finalizedCardIds.add(cardId);
+      }
+      messages[index] = message.copyWith(
+        content: {'cardData': cardData, 'id': message.id},
+      );
+    }
+
+    if (finalizedCardIds.isNotEmpty) {
+      final state = _agentStreamStates[normalizedTaskId];
+      if (state != null) {
+        final activeToolEntryIds = Set<String>.from(state.activeToolEntryIds)
+          ..removeWhere(finalizedCardIds.contains);
+        if (activeToolEntryIds.length != state.activeToolEntryIds.length) {
+          _agentStreamStates[normalizedTaskId] = state.copyWith(
+            activeToolEntryIds: activeToolEntryIds,
+          );
+        }
+        _activeToolCardId = activeToolEntryIds.isEmpty
+            ? null
+            : activeToolEntryIds.last;
+      }
+      if (finalizedCardIds.contains(_activeToolCardId)) {
+        _activeToolCardId = null;
+      }
+    }
+  }
+
+  String _firstNonEmpty(Iterable<Object?> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty) return text;
+    }
+    return '';
   }
 
   void _persistAgentConversationSafely() {
@@ -777,9 +906,38 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
               event: event,
             )
           : '';
+      final runLogId = event.taskId.isNotEmpty
+          ? event.taskId
+          : (existingCardData['runLogId'] ?? '').toString();
+      final normalizedSummary = _compactToolField(
+        summary.isNotEmpty
+            ? summary
+            : (existingCardData['summary'] ?? '').toString(),
+        maxChars: _maxToolSummaryChars,
+      );
+      final normalizedProgress = _compactToolField(
+        progress.isNotEmpty
+            ? progress
+            : (existingCardData['progress'] ?? '').toString(),
+        maxChars: _maxToolProgressChars,
+      );
+      final normalizedResultPreviewJson = _compactToolJsonField(
+        resultPreviewJson.isNotEmpty
+            ? resultPreviewJson
+            : (existingCardData['resultPreviewJson'] ?? '').toString(),
+        maxChars: _maxToolPreviewJsonChars,
+      );
+      final normalizedRawResultJson = _compactToolJsonField(
+        rawResultJson.isNotEmpty
+            ? rawResultJson
+            : (existingCardData['rawResultJson'] ?? '').toString(),
+        maxChars: _maxToolRawResultJsonChars,
+      );
       final cardData = {
         'type': 'agent_tool_summary',
         'taskId': taskId,
+        'runLogId': runLogId,
+        'run_id': runLogId,
         'toolTaskId': event.taskId.isNotEmpty
             ? event.taskId
             : (existingCardData['toolTaskId'] ?? '').toString(),
@@ -792,21 +950,13 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         'toolType': event.toolType,
         'serverName': event.serverName,
         'status': status,
-        'summary': summary.isNotEmpty
-            ? summary
-            : (existingCardData['summary'] ?? '').toString(),
-        'progress': progress.isNotEmpty
-            ? progress
-            : (existingCardData['progress'] ?? '').toString(),
+        'summary': normalizedSummary,
+        'progress': normalizedProgress,
         'argsJson': event.argsJson.isNotEmpty
             ? event.argsJson
             : (existingCardData['argsJson'] ?? '').toString(),
-        'resultPreviewJson': resultPreviewJson.isNotEmpty
-            ? resultPreviewJson
-            : (existingCardData['resultPreviewJson'] ?? '').toString(),
-        'rawResultJson': rawResultJson.isNotEmpty
-            ? rawResultJson
-            : (existingCardData['rawResultJson'] ?? '').toString(),
+        'resultPreviewJson': normalizedResultPreviewJson,
+        'rawResultJson': normalizedRawResultJson,
         'terminalOutput': terminalOutput,
         'terminalOutputDelta': event.terminalOutputDelta,
         'terminalSessionId':
@@ -901,5 +1051,21 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         : candidate;
     final remaining = _maxTerminalOutputChars - notice.length;
     return '$notice${body.substring(body.length > remaining ? body.length - remaining : 0)}';
+  }
+
+  String _compactToolField(String value, {required int maxChars}) {
+    final normalized = value.trim();
+    if (normalized.length <= maxChars) {
+      return normalized;
+    }
+    return '${normalized.substring(0, maxChars - 1).trimRight()}…';
+  }
+
+  String _compactToolJsonField(String value, {required int maxChars}) {
+    final normalized = value.trim();
+    if (normalized.length <= maxChars) {
+      return normalized;
+    }
+    return normalized.substring(0, maxChars);
   }
 }

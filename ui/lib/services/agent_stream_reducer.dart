@@ -8,6 +8,7 @@ class AgentStreamTaskState {
     this.thinkingRounds = const <String, int>{},
     this.assistantSegments = const <String, int>{},
     this.toolCards = const <String, int>{},
+    this.activeToolEntryIds = const <String>{},
     this.activeThinkingEntryId,
     this.activeAssistantEntryId,
     this.phase = AgentStreamPhase.idle,
@@ -21,6 +22,7 @@ class AgentStreamTaskState {
   final Map<String, int> thinkingRounds;
   final Map<String, int> assistantSegments;
   final Map<String, int> toolCards;
+  final Set<String> activeToolEntryIds;
   final String? activeThinkingEntryId;
   final String? activeAssistantEntryId;
   final AgentStreamPhase phase;
@@ -33,6 +35,7 @@ class AgentStreamTaskState {
     Map<String, int>? thinkingRounds,
     Map<String, int>? assistantSegments,
     Map<String, int>? toolCards,
+    Set<String>? activeToolEntryIds,
     String? activeThinkingEntryId,
     bool clearActiveThinkingEntryId = false,
     String? activeAssistantEntryId,
@@ -49,6 +52,7 @@ class AgentStreamTaskState {
       thinkingRounds: thinkingRounds ?? this.thinkingRounds,
       assistantSegments: assistantSegments ?? this.assistantSegments,
       toolCards: toolCards ?? this.toolCards,
+      activeToolEntryIds: activeToolEntryIds ?? this.activeToolEntryIds,
       activeThinkingEntryId: clearActiveThinkingEntryId
           ? null
           : (activeThinkingEntryId ?? this.activeThinkingEntryId),
@@ -110,6 +114,9 @@ class AgentStreamReducer {
       previousState.assistantSegments,
     );
     final toolCards = Map<String, int>.from(previousState.toolCards);
+    final activeToolEntryIds = Set<String>.from(
+      previousState.activeToolEntryIds,
+    );
 
     var phase = previousState.phase;
     var thinkingStage = previousState.thinkingStage;
@@ -159,8 +166,14 @@ class AgentStreamReducer {
         isDeepThinking = false;
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
-        if (event.entryId != null && event.entryId!.trim().isNotEmpty) {
-          toolCards[event.entryId!.trim()] = event.roundIndex;
+        final entryId = event.entryId?.trim() ?? '';
+        if (entryId.isNotEmpty) {
+          toolCards[entryId] = event.roundIndex;
+          if (event.kind == AgentStreamEventKind.toolCompleted) {
+            activeToolEntryIds.remove(entryId);
+          } else {
+            activeToolEntryIds.add(entryId);
+          }
         }
         browserSnapshot = event.browserSnapshot ?? browserSnapshot;
         break;
@@ -170,6 +183,7 @@ class AgentStreamReducer {
         isDeepThinking = false;
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
+        activeToolEntryIds.clear();
         break;
       case AgentStreamEventKind.error:
         phase = AgentStreamPhase.error;
@@ -177,6 +191,7 @@ class AgentStreamReducer {
         isDeepThinking = false;
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
+        activeToolEntryIds.clear();
         break;
       case AgentStreamEventKind.clarifyRequired:
         phase = AgentStreamPhase.clarify;
@@ -184,6 +199,7 @@ class AgentStreamReducer {
         isDeepThinking = false;
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
+        activeToolEntryIds.clear();
         break;
       case AgentStreamEventKind.permissionRequired:
         phase = AgentStreamPhase.permissionRequired;
@@ -191,6 +207,7 @@ class AgentStreamReducer {
         isDeepThinking = false;
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
+        activeToolEntryIds.clear();
         break;
     }
 
@@ -199,6 +216,7 @@ class AgentStreamReducer {
       thinkingRounds: thinkingRounds,
       assistantSegments: assistantSegments,
       toolCards: toolCards,
+      activeToolEntryIds: activeToolEntryIds,
       activeThinkingEntryId: activeThinkingEntryId,
       clearActiveThinkingEntryId: clearActiveThinkingEntryId,
       activeAssistantEntryId: activeAssistantEntryId,

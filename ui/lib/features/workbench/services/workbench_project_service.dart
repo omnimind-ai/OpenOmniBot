@@ -555,6 +555,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
   WorkbenchProject? _activeProject;
   bool _loading = false;
   String? _errorMessage;
+  bool _disposed = false;
 
   List<WorkbenchProject> get projects => _projects;
   WorkbenchProject? get activeProject => _activeProject;
@@ -566,7 +567,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     _loading = showLoading;
     _errorMessage = null;
     if (showLoading) {
-      notifyListeners();
+      _notify();
     }
     try {
       final results = await Future.wait<Object?>([
@@ -585,7 +586,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       }
     } finally {
       _loading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -610,7 +611,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       _errorMessage = error.toString();
       return null;
     } finally {
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -622,7 +623,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       if (updated?.projectId == _activeProject?.projectId) {
         _activeProject = _mergeProjectIndex(updated);
         _rememberSnapshot();
-        notifyListeners();
+        _notify();
       }
     } catch (_) {}
   }
@@ -630,7 +631,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
   Future<WorkbenchProject?> activateProject(WorkbenchProject project) async {
     _loading = true;
     _errorMessage = null;
-    notifyListeners();
+    _notify();
     try {
       final active = await _backend.activateProject(project.projectId);
       _activeProject = _mergeProjectIndex(active ?? project);
@@ -648,7 +649,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       return null;
     } finally {
       _loading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -681,7 +682,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     }
     _loading = true;
     _errorMessage = null;
-    notifyListeners();
+    _notify();
     try {
       final updated = await _backend.updateProjectMetadata(
         projectId: project.projectId,
@@ -708,7 +709,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       return null;
     } finally {
       _loading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -716,11 +717,11 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     try {
       _activeProject = _mergeProjectIndex(await _backend.getActiveProject());
       _rememberSnapshot();
-      notifyListeners();
+      _notify();
       return _activeProject;
     } catch (error) {
       _errorMessage = error.toString();
-      notifyListeners();
+      _notify();
       return null;
     }
   }
@@ -728,7 +729,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
   Future<bool> deactivateProject() async {
     _loading = true;
     _errorMessage = null;
-    notifyListeners();
+    _notify();
     try {
       await _backend.deactivateProject();
       _activeProject = null;
@@ -739,7 +740,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       return false;
     } finally {
       _loading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -769,7 +770,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     }
     _loading = true;
     _errorMessage = null;
-    notifyListeners();
+    _notify();
     try {
       final project = await _backend.createProject(
         projectId: normalizedProjectId,
@@ -783,7 +784,6 @@ class WorkbenchProjectModeService extends ChangeNotifier {
         flutterFiles: flutterFiles,
         markdownFiles: markdownFiles,
       );
-      _projects = _mergeProjectIndexes(await _backend.listProjects());
       _upsertProject(project);
       _rememberSnapshot();
       return project;
@@ -792,7 +792,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       return null;
     } finally {
       _loading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -813,7 +813,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     }
     _errorMessage = result.success ? null : result.errorMessage;
     _rememberSnapshot();
-    notifyListeners();
+    _notify();
     return result;
   }
 
@@ -822,7 +822,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
   ) async {
     _loading = true;
     _errorMessage = null;
-    notifyListeners();
+    _notify();
     try {
       return await _backend.exportProject(project.projectId);
     } catch (error) {
@@ -830,7 +830,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       return null;
     } finally {
       _loading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -839,7 +839,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
   ) async {
     _loading = true;
     _errorMessage = null;
-    notifyListeners();
+    _notify();
     try {
       final result = await _backend.deleteProject(project.projectId);
       if (result.success) {
@@ -853,7 +853,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       return null;
     } finally {
       _loading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -869,7 +869,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
   }) async {
     _loading = true;
     _errorMessage = null;
-    notifyListeners();
+    _notify();
     try {
       final result = await _backend.hotUpdateProject(
         projectId: project.projectId,
@@ -888,7 +888,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       return null;
     } finally {
       _loading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -908,7 +908,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     }
     _loading = true;
     _errorMessage = null;
-    notifyListeners();
+    _notify();
     try {
       final result = await _backend.ingestAndroidAsset(
         projectId: project.projectId,
@@ -928,7 +928,7 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       return null;
     } finally {
       _loading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -960,6 +960,10 @@ class WorkbenchProjectModeService extends ChangeNotifier {
     if (index == null) return null;
     final known = _knownProject(index.projectId);
     if (known == null) return index;
+    // Frontend payload fields were previously dropped here because copyWith()
+    // inherited them from `known` (the existing lightweight entry). When the
+    // backend returns full payload data (e.g. from activateProject()), we must
+    // forward it so callers can skip the subsequent getProject() call.
     return known.copyWith(
       name: index.name,
       route: index.route,
@@ -968,6 +972,15 @@ class WorkbenchProjectModeService extends ChangeNotifier {
       displays: index.displays.isNotEmpty ? index.displays : known.displays,
       tools: index.tools.isNotEmpty ? index.tools : known.tools,
       pageSpec: index.pageSpec.isNotEmpty ? index.pageSpec : known.pageSpec,
+      frontendHtml: index.frontendHtml.isNotEmpty
+          ? index.frontendHtml
+          : known.frontendHtml,
+      frontendFlutter: index.frontendFlutter.isNotEmpty
+          ? index.frontendFlutter
+          : known.frontendFlutter,
+      frontendMarkdown: index.frontendMarkdown.isNotEmpty
+          ? index.frontendMarkdown
+          : known.frontendMarkdown,
     );
   }
 
@@ -988,6 +1001,16 @@ class WorkbenchProjectModeService extends ChangeNotifier {
   void _rememberSnapshot() {
     _cachedProjects = _projects;
     _cachedActiveProject = _activeProject;
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }
 

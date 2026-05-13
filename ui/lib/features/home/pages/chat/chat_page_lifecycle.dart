@@ -18,6 +18,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   void initState() {
     super.initState();
 
+    UserDialogRegistry.register((text) => _sendMessage(text: text));
     WidgetsBinding.instance.addObserver(this);
     _loadHdPadPanePreferences();
     _checkCompanionTaskState();
@@ -571,6 +572,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
 
   @override
   void dispose() {
+    UserDialogRegistry.clear();
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_runtimeCoordinator.flushAllPendingPersistence());
     _cancelNormalSurfaceModelReveal();

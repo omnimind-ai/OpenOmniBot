@@ -4,7 +4,7 @@ import 'package:ui/services/token_usage_service.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/omni_theme_palette.dart';
 import 'package:ui/theme/theme_context.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 
 // ---------------------------------------------------------------------------
 //  Weekly token bucket
@@ -358,7 +358,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
         _buildStatPill(
           Icons.chat_bubble_outline_rounded,
           '$_totalConversations',
-          LegacyTextLocalizer.localize('次对话'),
+          AppTextLocalizer.text('次对话'),
           accentBlue,
           palette,
         ),
@@ -367,7 +367,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
         _buildStatPill(
           Icons.local_fire_department_rounded,
           '$_currentStreak',
-          LegacyTextLocalizer.localize('天连续'),
+          AppTextLocalizer.text('天连续'),
           streakColor,
           palette,
         ),
@@ -393,7 +393,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
                   _buildStatPill(
                     Icons.cached_rounded,
                     _formatTokenCount(_totalCached),
-                    LegacyTextLocalizer.localize('缓存'),
+                    AppTextLocalizer.text('缓存'),
                     _cachedColor(isDark),
                     palette,
                   ),
@@ -523,7 +523,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
               Row(
                 children: [
                   _buildTabButton(
-                    label: LegacyTextLocalizer.isEnglish ? 'Chat' : '对话',
+                    label: AppTextLocalizer.choose(en: 'Chat', zh: '对话'),
                     tabIndex: _convTab,
                   ),
                   _buildTabButton(
@@ -670,10 +670,10 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
                       final count = _activityMap[_dateKey(cellDate)] ?? 0;
                       return Tooltip(
                         message: count > 0
-                            ? LegacyTextLocalizer.localize(
+                            ? AppTextLocalizer.text(
                                 '$count 次对话 · ${cellDate.month}/${cellDate.day}',
                               )
-                            : LegacyTextLocalizer.localize(
+                            : AppTextLocalizer.text(
                                 '无对话 · ${cellDate.month}/${cellDate.day}',
                               ),
                         preferBelow: false,
@@ -694,48 +694,20 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
   }
 
   String _monthName(int m) {
-    if (LegacyTextLocalizer.isEnglish) {
-      const names = [
-        '',
-        'Jan',
-        'Feb',
-        'Mar',
-        'Apr',
-        'May',
-        'Jun',
-        'Jul',
-        'Aug',
-        'Sep',
-        'Oct',
-        'Nov',
-        'Dec',
-      ];
-      return names[m];
-    }
-    const names = [
-      '',
-      '1月',
-      '2月',
-      '3月',
-      '4月',
-      '5月',
-      '6月',
-      '7月',
-      '8月',
-      '9月',
-      '10月',
-      '11月',
-      '12月',
-    ];
+    final names = AppTextLocalizer.chooseList(
+      en: ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep',
+        'Oct', 'Nov', 'Dec'],
+      zh: ['', '1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月',
+        '10月', '11月', '12月'],
+    );
     return names[m];
   }
 
   String _dayLabel(int i) {
-    if (LegacyTextLocalizer.isEnglish) {
-      const labels = ['Mon', '', 'Wed', '', 'Fri', '', 'Sun'];
-      return labels[i];
-    }
-    const labels = ['一', '', '三', '', '五', '', '日'];
+    final labels = AppTextLocalizer.chooseList(
+      en: ['Mon', '', 'Wed', '', 'Fri', '', 'Sun'],
+      zh: ['一', '', '三', '', '五', '', '日'],
+    );
     return labels[i];
   }
 
@@ -752,7 +724,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
         height: 70,
         child: Center(
           child: Text(
-            LegacyTextLocalizer.localize('暂无 Token 消耗数据'),
+            AppTextLocalizer.text('暂无 Token 消耗数据'),
             style: TextStyle(fontSize: 11, color: palette.textTertiary),
           ),
         ),
@@ -766,7 +738,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
           children: [
             if (_totalLocal > 0)
               _buildPropPill(
-                LegacyTextLocalizer.localize(
+                AppTextLocalizer.text(
                   '本地 ${_percentOf(_totalLocal, _totalTokens)}%',
                 ),
                 _localPillBg(isDark),
@@ -776,7 +748,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
             if (_totalLocal > 0 && _totalCloud > 0) const SizedBox(width: 6),
             if (_totalCloud > 0)
               _buildPropPill(
-                LegacyTextLocalizer.localize(
+                AppTextLocalizer.text(
                   '云端 ${_percentOf(_totalCloud, _totalTokens)}%',
                 ),
                 _cloudPillBg(isDark),
@@ -830,10 +802,10 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
               padding: EdgeInsets.only(right: index < _weeklyData.length - 1 ? barGap : 0),
               child: Tooltip(
                 message: week.totalTokens > 0
-                    ? LegacyTextLocalizer.localize(
+                    ? AppTextLocalizer.text(
                         '本地 ${_formatTokenCount(week.localTokens)} · 云端 ${_formatTokenCount(week.cloudTokens)} · 缓存 ${_formatTokenCount(week.cachedTokens)}',
                       )
-                    : LegacyTextLocalizer.localize('无消耗'),
+                    : AppTextLocalizer.text('无消耗'),
                 preferBelow: false, verticalOffset: 12,
                 decoration: BoxDecoration(color: isDark ? const Color(0xFF2D3032) : const Color(0xFF353E53), borderRadius: BorderRadius.circular(6)),
                 textStyle: const TextStyle(fontSize: 11, color: Colors.white),

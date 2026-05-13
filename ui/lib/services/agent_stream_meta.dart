@@ -7,11 +7,19 @@ Map<String, dynamic> buildAgentStreamMetaFromEvent(AgentStreamEvent event) {
       : null;
   return ensureAgentStreamMessageMeta(
         existing,
-        seq: _asInt(event.raw['seq']) ?? event.seq,
-        roundIndex: _asInt(event.raw['roundIndex']) ?? event.roundIndex,
-        kind: event.kind.value,
-        parentTaskId: event.taskId,
-        entryId: event.entryId,
+        seq: existing?.containsKey('seq') == true
+            ? null
+            : (_asInt(event.raw['seq']) ?? event.seq),
+        roundIndex: existing?.containsKey('roundIndex') == true
+            ? null
+            : (_asInt(event.raw['roundIndex']) ?? event.roundIndex),
+        kind: existing?.containsKey('kind') == true ? null : event.kind.value,
+        parentTaskId: existing?.containsKey('parentTaskId') == true
+            ? null
+            : event.taskId,
+        entryId: existing?.containsKey('entryId') == true
+            ? null
+            : event.entryId,
         isFinal: event.isFinal,
       ) ??
       <String, dynamic>{};

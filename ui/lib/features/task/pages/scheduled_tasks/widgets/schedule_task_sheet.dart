@@ -3,7 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:ui/models/scheduled_task.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:uuid/uuid.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 
 /// 定时任务配置底部弹窗
 class ScheduleTaskSheet extends StatefulWidget {
@@ -155,7 +155,7 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      LegacyTextLocalizer.isEnglish ? 'Set scheduled task' : '设置定时任务',
+                      AppTextLocalizer.choose(en: 'Set scheduled task', zh: '设置定时任务'),
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
@@ -233,7 +233,7 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
                 child: Row(
                   children: [
                     Text(
-                      LegacyTextLocalizer.isEnglish ? 'Repeat daily' : '每日重复执行',
+                      AppTextLocalizer.choose(en: 'Repeat daily', zh: '每日重复执行'),
                       style: TextStyle(fontSize: 14, color: AppColors.text),
                     ),
                     const Spacer(),
@@ -269,7 +269,7 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
                     elevation: 0,
                   ),
                   child: Text(
-                    LegacyTextLocalizer.localize('确认'),
+                    AppTextLocalizer.text('确认'),
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                   ),
                 ),

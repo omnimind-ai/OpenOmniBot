@@ -158,6 +158,9 @@ IconData resolveAgentToolStatusIcon(String status, String toolType) {
   if (toolType == 'workspace') {
     return Icons.folder_outlined;
   }
+  if (toolType == 'workbench') {
+    return Icons.dashboard_customize_outlined;
+  }
   if (toolType == 'subagent') {
     return Icons.hub_outlined;
   }

@@ -3,8 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:ui/l10n/l10n.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:ui/theme/theme_context.dart';
 import '../../../../../models/chat_message_model.dart';
@@ -27,7 +26,7 @@ const String _kChatAppBarModeMenuOpenIconAsset =
 const String _kChatAppBarPureChatIconAsset = 'assets/home/chat/pure_chat.svg';
 const String _kChatAppBarWorkspaceIconAsset =
     'assets/home/workspace_folder_icon.svg';
-const String _kChatAppBarWorkbenchIconSvg =
+const String _kChatAppBarProjectIconSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
     'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
     'stroke-linecap="round" stroke-linejoin="round">'
@@ -333,11 +332,8 @@ class ChatAppBar extends StatelessWidget {
                             width: _kChatAppBarRightActionSlotWidth,
                             height: _kChatAppBarRightActionSlotWidth,
                             child: Center(
-                              child: _ChatAppBarProjectSurfaceButton(
+                              child: _ChatAppBarProjectButton(
                                 iconTint: iconTint,
-                                selectedColor: context.isDarkTheme
-                                    ? palette.accentPrimary
-                                    : const Color(0xFF1930D9),
                                 isSelected: isProjectSurfaceSelected,
                                 onTap: onProjectSurfaceTap!,
                               ),
@@ -438,7 +434,7 @@ class _ChatAppBarWorkspaceButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: LegacyTextLocalizer.isEnglish ? 'Show workspace' : '显示工作区',
+      message: AppTextLocalizer.choose(en: 'Show workspace', zh: '显示工作区'),
       child: GestureDetector(
         key: const ValueKey('chat-app-bar-workspace-pane-button'),
         onTap: onTap,
@@ -460,24 +456,23 @@ class _ChatAppBarWorkspaceButton extends StatelessWidget {
   }
 }
 
-class _ChatAppBarProjectSurfaceButton extends StatelessWidget {
-  const _ChatAppBarProjectSurfaceButton({
+class _ChatAppBarProjectButton extends StatelessWidget {
+  const _ChatAppBarProjectButton({
     required this.iconTint,
-    required this.selectedColor,
     required this.isSelected,
     required this.onTap,
   });
 
   final Color iconTint;
-  final Color selectedColor;
   final bool isSelected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final color = isSelected ? selectedColor : iconTint;
+    final palette = context.omniPalette;
+    final color = isSelected ? palette.accentPrimary : iconTint;
     return Tooltip(
-      message: context.l10n.workbenchWorkspaceProjectMode,
+      message: AppTextLocalizer.choose(en: 'Manage projects', zh: '项目管理'),
       child: GestureDetector(
         key: const ValueKey('chat-app-bar-project-surface-button'),
         onTap: onTap,
@@ -487,10 +482,9 @@ class _ChatAppBarProjectSurfaceButton extends StatelessWidget {
           height: _kChatAppBarAccessoryButtonSize,
           child: Center(
             child: SvgPicture.string(
-              _kChatAppBarWorkbenchIconSvg,
-              key: const ValueKey('chat-app-bar-project-surface-icon'),
-              width: 21,
-              height: 21,
+              _kChatAppBarProjectIconSvg,
+              width: 20,
+              height: 20,
               colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
             ),
           ),
@@ -592,7 +586,7 @@ class _ChatAppBarModeShortcutButtonState
   ) {
     final palette = context.omniPalette;
     final selectedColor = palette.accentPrimary;
-    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
+    final locale = Localizations.localeOf(context);
     final canSelectPureChat =
         widget.isCodexSelected ||
         (!widget.isPureChatToggleLocked && widget.onPureChatToggleTap != null);
@@ -605,7 +599,11 @@ class _ChatAppBarModeShortcutButtonState
         padding: EdgeInsets.zero,
         child: _ChatAppBarModeShortcutMenuIcon(
           iconAsset: _kChatAppBarAgentIconAsset,
-          tooltip: isEnglish ? 'Agent mode' : 'Agent 模式',
+          tooltip: AppTextLocalizer.choose(
+            zh: 'Agent 模式',
+            en: 'Agent mode',
+            locale: locale,
+          ),
           selected: widget.isAgentSelected,
           selectedColor: selectedColor,
           iconTint: widget.iconTint,
@@ -619,7 +617,11 @@ class _ChatAppBarModeShortcutButtonState
         padding: EdgeInsets.zero,
         child: _ChatAppBarModeShortcutMenuIcon(
           iconAsset: _kChatAppBarCodexIconAsset,
-          tooltip: isEnglish ? 'Codex mode' : 'Codex 模式',
+          tooltip: AppTextLocalizer.choose(
+            zh: 'Codex 模式',
+            en: 'Codex mode',
+            locale: locale,
+          ),
           selected: widget.isCodexSelected,
           selectedColor: selectedColor,
           iconTint: widget.iconTint,
@@ -633,7 +635,11 @@ class _ChatAppBarModeShortcutButtonState
         padding: EdgeInsets.zero,
         child: _ChatAppBarModeShortcutMenuIcon(
           iconAsset: _kChatAppBarPureChatIconAsset,
-          tooltip: isEnglish ? 'Pure chat' : '纯聊天模式',
+          tooltip: AppTextLocalizer.choose(
+            zh: '纯聊天模式',
+            en: 'Pure chat',
+            locale: locale,
+          ),
           selected: widget.isPureChatSelected,
           selectedColor: selectedColor,
           iconSize: 18,
@@ -698,11 +704,19 @@ class _ChatAppBarModeShortcutButtonState
     final effectiveIconColor = _isOpen || hasSelectedMode
         ? selectedColor
         : widget.iconTint;
-    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
+    final locale = Localizations.localeOf(context);
     return Tooltip(
       message: _isOpen
-          ? (isEnglish ? 'Close mode menu' : '收起模式菜单')
-          : (isEnglish ? 'Switch chat mode' : '切换聊天模式'),
+          ? AppTextLocalizer.choose(
+              zh: '收起模式菜单',
+              en: 'Close mode menu',
+              locale: locale,
+            )
+          : AppTextLocalizer.choose(
+              zh: '切换聊天模式',
+              en: 'Switch chat mode',
+              locale: locale,
+            ),
       child: GestureDetector(
         onTap: _openMenu,
         behavior: HitTestBehavior.opaque,
@@ -829,7 +843,7 @@ class _ChatModeModelSwitcherState extends State<_ChatModeModelSwitcher> {
   String get _modelLabel {
     final text = (widget.activeModelId ?? '').trim();
     if (text.isEmpty) {
-      return LegacyTextLocalizer.isEnglish ? 'No model set' : '未设置模型';
+      return AppTextLocalizer.choose(en: 'No model set', zh: '未设置模型');
     }
     return text;
   }
@@ -1152,9 +1166,10 @@ class _ChatToolSlider extends StatelessWidget {
                     key: const ValueKey('chat-island-terminal-button'),
                     isSelected: _isTerminalActive,
                     isEnabled: true,
-                    tooltip: LegacyTextLocalizer.isEnglish
-                        ? 'Open terminal'
-                        : '打开终端',
+                    tooltip: AppTextLocalizer.choose(
+                      en: 'Open terminal',
+                      zh: '打开终端',
+                    ),
                     onTap: onTerminalTap,
                     child: SvgPicture.asset(
                       terminalIconAsset,
@@ -1170,12 +1185,14 @@ class _ChatToolSlider extends StatelessWidget {
                     isSelected: _isBrowserActive,
                     isEnabled: isBrowserEnabled,
                     tooltip: isBrowserEnabled
-                        ? (LegacyTextLocalizer.isEnglish
-                              ? 'Open browser for current session'
-                              : '打开当前会话浏览器')
-                        : (LegacyTextLocalizer.isEnglish
-                              ? 'No browser session available'
-                              : '当前会话还没有可用的浏览器会话'),
+                        ? (AppTextLocalizer.choose(
+                            en: 'Open browser for current session',
+                            zh: '打开当前会话浏览器',
+                          ))
+                        : (AppTextLocalizer.choose(
+                            en: 'No browser session available',
+                            zh: '当前会话还没有可用的浏览器会话',
+                          )),
                     onTap: onBrowserTap,
                     child: SvgPicture.asset(
                       browserIconAsset,
@@ -1199,9 +1216,10 @@ class _ChatToolSlider extends StatelessWidget {
     return Builder(
       builder: (anchorContext) {
         return Tooltip(
-          message: LegacyTextLocalizer.isEnglish
-              ? 'Manage terminal environment variables'
-              : '管理终端环境变量',
+          message: AppTextLocalizer.choose(
+            en: 'Manage terminal environment variables',
+            zh: '管理终端环境变量',
+          ),
           child: InkWell(
             key: const ValueKey('chat-island-terminal-env-button'),
             onTap: () {
@@ -1983,9 +2001,11 @@ class _ChatMessageListState extends State<ChatMessageList> {
         behavior: HitTestBehavior.opaque,
         child: Center(
           child: Text(
-            Localizations.localeOf(context).languageCode == 'en'
-                ? 'How can I help you?'
-                : '有什么可以帮助你的？',
+            AppTextLocalizer.choose(
+              zh: '有什么可以帮助你的？',
+              en: 'How can I help you?',
+              locale: Localizations.localeOf(context),
+            ),
             style: TextStyle(
               color:
                   !widget.appearanceConfig.isActive &&
@@ -2194,9 +2214,11 @@ class VlmInfoPrompt extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            Localizations.localeOf(context).languageCode == 'en'
-                ? 'Need your confirmation'
-                : '需要你的确认',
+            AppTextLocalizer.choose(
+              zh: '需要你的确认',
+              en: 'Need your confirmation',
+              locale: Localizations.localeOf(context),
+            ),
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -2213,9 +2235,11 @@ class VlmInfoPrompt extends StatelessWidget {
             controller: controller,
             maxLines: 2,
             decoration: InputDecoration(
-              hintText: Localizations.localeOf(context).languageCode == 'en'
-                  ? 'Optional: add details. Default sends: Completed action, continue execution'
-                  : '可选：补充你的操作说明，默认发送"已完成操作，继续执行"',
+              hintText: AppTextLocalizer.choose(
+                zh: '可选：补充你的操作说明，默认发送"已完成操作，继续执行"',
+                en: 'Optional: add details. Default sends: Completed action, continue execution',
+                locale: Localizations.localeOf(context),
+              ),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
@@ -2231,9 +2255,11 @@ class VlmInfoPrompt extends StatelessWidget {
                 child: OutlinedButton(
                   onPressed: isSubmitting ? null : onDismiss,
                   child: Text(
-                    Localizations.localeOf(context).languageCode == 'en'
-                        ? 'Later'
-                        : '稍后再说',
+                    AppTextLocalizer.choose(
+                      zh: '稍后再说',
+                      en: 'Later',
+                      locale: Localizations.localeOf(context),
+                    ),
                   ),
                 ),
               ),
@@ -2243,12 +2269,16 @@ class VlmInfoPrompt extends StatelessWidget {
                   onPressed: isSubmitting ? null : onSubmit,
                   child: Text(
                     isSubmitting
-                        ? (Localizations.localeOf(context).languageCode == 'en'
-                              ? 'Sending...'
-                              : '发送中...')
-                        : (Localizations.localeOf(context).languageCode == 'en'
-                              ? 'Continue'
-                              : '继续执行'),
+                        ? AppTextLocalizer.choose(
+                            zh: '发送中...',
+                            en: 'Sending...',
+                            locale: Localizations.localeOf(context),
+                          )
+                        : AppTextLocalizer.choose(
+                            zh: '继续执行',
+                            en: 'Continue',
+                            locale: Localizations.localeOf(context),
+                          ),
                   ),
                 ),
               ),

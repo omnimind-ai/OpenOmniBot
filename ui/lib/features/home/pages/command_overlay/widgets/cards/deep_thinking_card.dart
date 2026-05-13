@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/command_overlay/services/tool_card_detail_gesture_gate.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/theme_context.dart';
 import './bot_status.dart';
@@ -55,7 +55,7 @@ class DeepThinkingCard extends StatefulWidget {
     super.key,
     required this.thinkingText,
     this.isLoading = true,
-    this.maxHeight = 210.0,
+    this.maxHeight = 320.0,
     this.stage = 1,
     this.startTime,
     this.endTime,
@@ -96,6 +96,14 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
   late Animation<double> _collapseSizeFactor;
   late Animation<double> _collapseOpacity;
   static const double _bottomTolerance = 1.0;
+
+  // Cache for _buildText: avoids O(n) split+localize on every rebuild.
+  String? _cachedBuildTextInput;
+  String? _cachedLocalizedText;
+
+  // Cache for _buildCollapsedSummary: avoids scanning the full text for the first line.
+  String? _cachedSummaryInput;
+  String? _cachedSummaryFirstLine;
 
   @override
   void initState() {
@@ -422,22 +430,26 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
 
   String _formatTime(int seconds) {
     if (seconds < 60) {
-      return LegacyTextLocalizer.localize('$seconds 秒');
+      return AppTextLocalizer.text('$seconds 秒');
     } else {
       final minutes = seconds ~/ 60;
       final remainingSeconds = seconds % 60;
-      return LegacyTextLocalizer.localize('$minutes 分 $remainingSeconds 秒');
+      return AppTextLocalizer.text('$minutes 分 $remainingSeconds 秒');
     }
   }
 
   /// 构建文本显示
   Widget _buildCollapsedSummary(String thinkingText, Color textColor) {
-    final firstLine = thinkingText
-        .split('\n')
-        .map((l) => l.trim())
-        .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+    if (_cachedSummaryInput != thinkingText) {
+      _cachedSummaryInput = thinkingText;
+      _cachedSummaryFirstLine = thinkingText
+          .split('\n')
+          .map((l) => l.trim())
+          .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+    }
+    final firstLine = _cachedSummaryFirstLine!;
     if (firstLine.isEmpty) return const SizedBox.shrink();
-    final localizedLine = LegacyTextLocalizer.localize(firstLine);
+    final localizedLine = AppTextLocalizer.text(firstLine);
     final summary = localizedLine.length > 80
         ? '${localizedLine.substring(0, 80)}…'
         : localizedLine;
@@ -459,12 +471,15 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
   }
 
   Widget _buildText(String text, Color textColor) {
-    final localizedText = text
-        .split('\n')
-        .map(LegacyTextLocalizer.localize)
-        .join('\n');
+    if (_cachedBuildTextInput != text) {
+      _cachedBuildTextInput = text;
+      _cachedLocalizedText = text
+          .split('\n')
+          .map(AppTextLocalizer.text)
+          .join('\n');
+    }
     return Text(
-      localizedText,
+      _cachedLocalizedText!,
       style: TextStyle(
         color: textColor,
         fontSize: 12 * widget.textScale,
@@ -478,6 +493,10 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
 
   @override
   Widget build(BuildContext context) {
+    // Empty completed thinking cards are placeholder artifacts — don't render.
+    if (widget.thinkingText.isEmpty && _isCompletedStage(widget.stage)) {
+      return const SizedBox.shrink();
+    }
     final palette = context.omniPalette;
     final parentScrollPosition = _resolveParentScrollPosition(context);
     final resolvedTextColor = context.isDarkTheme
@@ -493,20 +512,20 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
     String hintText;
     switch (widget.stage) {
       case 1:
-        hintText = LegacyTextLocalizer.localize('正在思考');
+        hintText = AppTextLocalizer.text('正在思考');
         break;
       case 2:
-        hintText = LegacyTextLocalizer.localize('正在调用工具');
+        hintText = AppTextLocalizer.text('正在调用工具');
         break;
       case 3:
-        hintText = LegacyTextLocalizer.localize('执行中');
+        hintText = AppTextLocalizer.text('执行中');
         break;
       case 4:
       case 5:
-        hintText = LegacyTextLocalizer.localize('完成思考');
+        hintText = AppTextLocalizer.text('完成思考');
         break;
       default:
-        hintText = LegacyTextLocalizer.localize('正在思考');
+        hintText = AppTextLocalizer.text('正在思考');
     }
 
     final collapsedSummary =
@@ -689,7 +708,7 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
               );
             },
           )
-        : contentChild;
+        : RepaintBoundary(child: contentChild);
     final footer = widget.stage == 4 && widget.isExecutable
         ? Padding(
             padding: const EdgeInsets.only(top: 8),
@@ -697,7 +716,7 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  LegacyTextLocalizer.localize('准备执行任务...'),
+                  AppTextLocalizer.text('准备执行任务...'),
                   style: TextStyle(
                     color: secondaryTextColor,
                     fontSize: 12 * widget.textScale,
@@ -711,7 +730,7 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
                       ? () => widget.onCancelTask!(widget.taskId!)
                       : null,
                   child: Text(
-                    LegacyTextLocalizer.localize('取消任务'),
+                    AppTextLocalizer.text('取消任务'),
                     style: TextStyle(
                       color: context.isDarkTheme
                           ? palette.accentPrimary
@@ -730,7 +749,7 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
         ? Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              LegacyTextLocalizer.localize('任务已取消'),
+              AppTextLocalizer.text('任务已取消'),
               style: TextStyle(
                 color: secondaryTextColor,
                 fontSize: 12 * widget.textScale,

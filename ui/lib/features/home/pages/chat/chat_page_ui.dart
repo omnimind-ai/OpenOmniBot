@@ -110,21 +110,42 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               'toolTitle': effort,
               'displayName': effort,
               'toolType': 'command',
-              'toolTypeLabel': AppTextLocalizer.choose(en: 'Thinking', zh: '思考'),
+              'toolTypeLabel': AppTextLocalizer.choose(
+                en: 'Thinking',
+                zh: '思考',
+              ),
               'status': isSelected ? 'success' : 'running',
               'statusLabel': isSelected
                   ? (AppTextLocalizer.choose(en: 'Selected', zh: '已选'))
                   : (AppTextLocalizer.choose(en: 'Available', zh: '可选')),
               'summary': effort == 'no'
                   ? (isSelected
-                        ? (AppTextLocalizer.choose(en: 'Thinking disabled', zh: '已关闭思考'))
-                        : (AppTextLocalizer.choose(en: 'Disable thinking', zh: '关闭思考')))
+                        ? (AppTextLocalizer.choose(
+                            en: 'Thinking disabled',
+                            zh: '已关闭思考',
+                          ))
+                        : (AppTextLocalizer.choose(
+                            en: 'Disable thinking',
+                            zh: '关闭思考',
+                          )))
                   : (isSelected
-                        ? (AppTextLocalizer.choose(en: 'Current effort: $effort', zh: '当前思考强度：$effort'))
-                        : (AppTextLocalizer.choose(en: 'Switch reasoning effort to $effort', zh: '将思考强度切换为 $effort'))),
+                        ? (AppTextLocalizer.choose(
+                            en: 'Current effort: $effort',
+                            zh: '当前思考强度：$effort',
+                          ))
+                        : (AppTextLocalizer.choose(
+                            en: 'Switch reasoning effort to $effort',
+                            zh: '将思考强度切换为 $effort',
+                          ))),
               'progress': effort == 'no'
-                  ? (AppTextLocalizer.choose(en: 'enable_thinking=false for subsequent requests', zh: '后续请求将设置 enable_thinking=false'))
-                  : (AppTextLocalizer.choose(en: 'reasoning_effort parameter for subsequent requests', zh: '用于后续请求的 reasoning_effort 参数')),
+                  ? (AppTextLocalizer.choose(
+                      en: 'enable_thinking=false for subsequent requests',
+                      zh: '后续请求将设置 enable_thinking=false',
+                    ))
+                  : (AppTextLocalizer.choose(
+                      en: 'reasoning_effort parameter for subsequent requests',
+                      zh: '用于后续请求的 reasoning_effort 参数',
+                    )),
             };
           })
           .toList(growable: false);
@@ -141,8 +162,14 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         'toolTypeLabel': AppTextLocalizer.choose(en: 'Context', zh: '上下文'),
         'status': 'running',
         'statusLabel': AppTextLocalizer.choose(en: 'Command', zh: '命令'),
-        'summary': AppTextLocalizer.choose(en: 'Manually compress conversation context', zh: '手动压缩当前对话上下文'),
-        'progress': AppTextLocalizer.choose(en: 'Compress current session history into a replacement summary', zh: '把当前会话历史压缩成 replacement summary'),
+        'summary': AppTextLocalizer.choose(
+          en: 'Manually compress conversation context',
+          zh: '手动压缩当前对话上下文',
+        ),
+        'progress': AppTextLocalizer.choose(
+          en: 'Compress current session history into a replacement summary',
+          zh: '把当前会话历史压缩成 replacement summary',
+        ),
       });
     }
     if (_supportsReasoningEffortCommand) {
@@ -158,9 +185,18 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         'statusLabel':
             activeEffort ?? (AppTextLocalizer.choose(en: 'Command', zh: '命令')),
         'summary': activeEffort == null
-            ? (AppTextLocalizer.choose(en: 'Set reasoning effort for this session', zh: '设置当前会话的思考强度'))
-            : (AppTextLocalizer.choose(en: 'Current effort: $activeEffort', zh: '当前思考强度：$activeEffort')),
-        'progress': AppTextLocalizer.choose(en: 'Choose no, low or high', zh: '点击后选择 no、low 或 high'),
+            ? (AppTextLocalizer.choose(
+                en: 'Set reasoning effort for this session',
+                zh: '设置当前会话的思考强度',
+              ))
+            : (AppTextLocalizer.choose(
+                en: 'Current effort: $activeEffort',
+                zh: '当前思考强度：$activeEffort',
+              )),
+        'progress': AppTextLocalizer.choose(
+          en: 'Choose no, low or high',
+          zh: '点击后选择 no、low 或 high',
+        ),
       });
     }
     if (_isOpenClawSurface) {
@@ -173,8 +209,14 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         'toolTypeLabel': AppTextLocalizer.choose(en: 'Gateway', zh: '网关'),
         'status': 'running',
         'statusLabel': AppTextLocalizer.choose(en: 'Command', zh: '命令'),
-        'summary': AppTextLocalizer.choose(en: 'Manually configure a remote or custom OpenClaw gateway', zh: '手动配置远端或自定义 OpenClaw 网关'),
-        'progress': AppTextLocalizer.choose(en: 'Enter Base URL, Token, and User ID', zh: '填写 Base URL、Token 与 User ID'),
+        'summary': AppTextLocalizer.choose(
+          en: 'Manually configure a remote or custom OpenClaw gateway',
+          zh: '手动配置远端或自定义 OpenClaw 网关',
+        ),
+        'progress': AppTextLocalizer.choose(
+          en: 'Enter Base URL, Token, and User ID',
+          zh: '填写 Base URL、Token 与 User ID',
+        ),
       });
     }
     return commands;
@@ -202,14 +244,23 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
             ? (AppTextLocalizer.choose(en: 'Select', zh: '选择'))
             : (_activeCodexModelId!),
         summary: _activeCodexModelId == null
-            ? (AppTextLocalizer.choose(en: 'Choose a Codex model', zh: '选择 Codex 模型'))
-            : (AppTextLocalizer.choose(en: 'Current model: $_activeCodexModelId', zh: '当前模型：$_activeCodexModelId')),
+            ? (AppTextLocalizer.choose(
+                en: 'Choose a Codex model',
+                zh: '选择 Codex 模型',
+              ))
+            : (AppTextLocalizer.choose(
+                en: 'Current model: $_activeCodexModelId',
+                zh: '当前模型：$_activeCodexModelId',
+              )),
         progress: _codexModelListError != null
             ? _codexModelListError!
             : _isCodexModelListLoading
             ? (AppTextLocalizer.choose(en: 'Loading models', zh: '加载模型中'))
             : (_codexModelOptions.isEmpty
-                  ? (AppTextLocalizer.choose(en: 'Tap to load models', zh: '点击加载模型'))
+                  ? (AppTextLocalizer.choose(
+                      en: 'Tap to load models',
+                      zh: '点击加载模型',
+                    ))
                   : (_codexModelOptions.length == 1
                         ? '1 model'
                         : '${_codexModelOptions.length} models')),
@@ -221,8 +272,14 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         toolTypeLabel: AppTextLocalizer.choose(en: 'Review', zh: '审查'),
         status: 'running',
         statusLabel: AppTextLocalizer.choose(en: 'Command', zh: '命令'),
-        summary: AppTextLocalizer.choose(en: 'Review changes in the current workspace', zh: '审查当前工作区改动'),
-        progress: AppTextLocalizer.choose(en: 'Runs Codex review on the active thread', zh: '在当前线程中启动 Codex review'),
+        summary: AppTextLocalizer.choose(
+          en: 'Review changes in the current workspace',
+          zh: '审查当前工作区改动',
+        ),
+        progress: AppTextLocalizer.choose(
+          en: 'Runs Codex review on the active thread',
+          zh: '在当前线程中启动 Codex review',
+        ),
       ),
       _buildCodexCommandCard(
         cardId: 'slash-command-codex-init',
@@ -231,8 +288,14 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         toolTypeLabel: AppTextLocalizer.choose(en: 'Init', zh: '初始化'),
         status: 'running',
         statusLabel: AppTextLocalizer.choose(en: 'Command', zh: '命令'),
-        summary: AppTextLocalizer.choose(en: 'Generate or update AGENTS.md', zh: '生成或更新 AGENTS.md'),
-        progress: AppTextLocalizer.choose(en: 'Creates Codex initialization guidance', zh: '生成 Codex 初始化指引'),
+        summary: AppTextLocalizer.choose(
+          en: 'Generate or update AGENTS.md',
+          zh: '生成或更新 AGENTS.md',
+        ),
+        progress: AppTextLocalizer.choose(
+          en: 'Creates Codex initialization guidance',
+          zh: '生成 Codex 初始化指引',
+        ),
       ),
       _buildCodexCommandCard(
         cardId: 'slash-command-codex-plan',
@@ -246,14 +309,23 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
             ? (AppTextLocalizer.choose(en: 'Selected', zh: '已选'))
             : (AppTextLocalizer.choose(en: 'Command', zh: '命令')),
         summary: _isCodexPlanMode(_activeCodexCollaborationMode)
-            ? (AppTextLocalizer.choose(en: 'Plan mode is active', zh: '当前已启用 Plan 模式'))
-            : (AppTextLocalizer.choose(en: 'Switch Codex to plan mode', zh: '切换 Codex 到 Plan 模式')),
+            ? (AppTextLocalizer.choose(
+                en: 'Plan mode is active',
+                zh: '当前已启用 Plan 模式',
+              ))
+            : (AppTextLocalizer.choose(
+                en: 'Switch Codex to plan mode',
+                zh: '切换 Codex 到 Plan 模式',
+              )),
         progress: _codexCollaborationModeListError != null
             ? _codexCollaborationModeListError!
             : _isCodexCollaborationModeListLoading
             ? (AppTextLocalizer.choose(en: 'Loading modes', zh: '加载模式中'))
             : (_codexCollaborationModes.isEmpty
-                  ? (AppTextLocalizer.choose(en: 'Tap to load modes', zh: '点击加载模式'))
+                  ? (AppTextLocalizer.choose(
+                      en: 'Tap to load modes',
+                      zh: '点击加载模式',
+                    ))
                   : (_codexCollaborationModes.length == 1
                         ? '1 mode'
                         : '${_codexCollaborationModes.length} modes')),
@@ -310,8 +382,14 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
           summary:
               _codexModelListError ??
               (_isCodexModelListLoading
-                  ? (AppTextLocalizer.choose(en: 'Loading available models', zh: '正在加载可用模型'))
-                  : (AppTextLocalizer.choose(en: 'Open /model to load Codex models', zh: '输入 /model 加载 Codex 模型'))),
+                  ? (AppTextLocalizer.choose(
+                      en: 'Loading available models',
+                      zh: '正在加载可用模型',
+                    ))
+                  : (AppTextLocalizer.choose(
+                      en: 'Open /model to load Codex models',
+                      zh: '输入 /model 加载 Codex 模型',
+                    ))),
           progress: query.isEmpty ? '/model' : query,
         ),
       ];
@@ -329,7 +407,10 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                 : (AppTextLocalizer.choose(en: 'Available', zh: '可选')),
             summary: modelId == selectedModel
                 ? (AppTextLocalizer.choose(en: 'Current model', zh: '当前模型'))
-                : (AppTextLocalizer.choose(en: 'Switch to $modelId', zh: '切换到 $modelId')),
+                : (AppTextLocalizer.choose(
+                    en: 'Switch to $modelId',
+                    zh: '切换到 $modelId',
+                  )),
             progress: modelId,
           ),
         )
@@ -687,7 +768,10 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    AppTextLocalizer.choose(en: 'OpenClaw Configuration', zh: 'OpenClaw 配置'),
+                                    AppTextLocalizer.choose(
+                                      en: 'OpenClaw Configuration',
+                                      zh: 'OpenClaw 配置',
+                                    ),
                                     style: TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
@@ -707,8 +791,14 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                                   TextField(
                                     controller: _openClawTokenController,
                                     decoration: InputDecoration(
-                                      labelText: AppTextLocalizer.choose(en: 'Token (optional)', zh: 'Token（可选）'),
-                                      hintText: AppTextLocalizer.choose(en: 'Leave empty if no token needed', zh: '为空表示无需 token'),
+                                      labelText: AppTextLocalizer.choose(
+                                        en: 'Token (optional)',
+                                        zh: 'Token（可选）',
+                                      ),
+                                      hintText: AppTextLocalizer.choose(
+                                        en: 'Leave empty if no token needed',
+                                        zh: '为空表示无需 token',
+                                      ),
                                       isDense: true,
                                     ),
                                   ),
@@ -716,7 +806,10 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                                   TextField(
                                     controller: _openClawUserIdController,
                                     decoration: InputDecoration(
-                                      labelText: AppTextLocalizer.choose(en: 'User ID (optional)', zh: 'User ID（可选）'),
+                                      labelText: AppTextLocalizer.choose(
+                                        en: 'User ID (optional)',
+                                        zh: 'User ID（可选）',
+                                      ),
                                       isDense: true,
                                     ),
                                   ),
@@ -819,10 +912,7 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                     ),
                     _EdgeSwipeToChatZone(
                       onSwipedRight: () => unawaited(
-                        _switchChatMode(
-                          ChatSurfaceMode.normal,
-                          syncPage: true,
-                        ),
+                        _switchChatMode(ChatSurfaceMode.normal, syncPage: true),
                       ),
                     ),
                   ],
@@ -981,7 +1071,10 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         AppUpdateService.shouldShowBanner(_appUpdateStatus);
     final appUpdateTooltip = _appUpdateStatus == null
         ? (AppTextLocalizer.choose(en: 'New version available', zh: '发现新版本'))
-        : (AppTextLocalizer.choose(en: 'New version ${_appUpdateStatus!.latestVersionLabel} available', zh: '发现新版本 ${_appUpdateStatus!.latestVersionLabel}'));
+        : (AppTextLocalizer.choose(
+            en: 'New version ${_appUpdateStatus!.latestVersionLabel} available',
+            zh: '发现新版本 ${_appUpdateStatus!.latestVersionLabel}',
+          ));
     final appBarMode = showSurfaceSwitcher
         ? (_activeSurfaceMode == ChatSurfaceMode.project
               ? ChatSurfaceMode.workspace
@@ -1084,27 +1177,12 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               isPureChatToggleLocked: _isPureChatToggleLocked,
               showWorkspacePaneButton: showWorkspacePaneButton,
               onWorkspacePaneTap: onWorkspacePaneTap,
-              showProjectSurfaceButton: showSurfaceSwitcher,
+              showProjectSurfaceButton: true,
               isProjectSurfaceSelected:
                   _activeSurfaceMode == ChatSurfaceMode.workspace &&
                   _workspaceProjectModeEnabled,
-              onProjectSurfaceTap: () {
-                final projectSurfaceSelected =
-                    _activeSurfaceMode == ChatSurfaceMode.workspace &&
-                    _workspaceProjectModeEnabled;
-                if (projectSurfaceSelected) {
-                  _persistWorkspaceProjectModeEnabled(false);
-                }
-                unawaited(
-                  _switchChatMode(
-                    projectSurfaceSelected
-                        ? ChatSurfaceMode.workspace
-                        : ChatSurfaceMode.project,
-                    syncPage: true,
-                    preferCachedWorkspaceMode: !projectSurfaceSelected,
-                  ),
-                );
-              },
+              onProjectSurfaceTap: () =>
+                  GoRouterManager.push('/workbench/projects'),
             ),
             Expanded(child: conversationBody),
           ],
@@ -1763,11 +1841,17 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
       return null;
     }
     if (conversation.promptTokenThreshold <= 0) {
-      return AppTextLocalizer.choose(en: 'No context threshold set for this conversation', zh: '当前对话还没有可用的上下文阈值');
+      return AppTextLocalizer.choose(
+        en: 'No context threshold set for this conversation',
+        zh: '当前对话还没有可用的上下文阈值',
+      );
     }
     if (conversation.latestPromptTokensUpdatedAt <= 0 &&
         conversation.latestPromptTokens <= 0) {
-      return AppTextLocalizer.choose(en: 'No context token statistics yet\nLong press to adjust threshold', zh: '当前对话还没有上下文 token 统计\n长按可调整阈值');
+      return AppTextLocalizer.choose(
+        en: 'No context token statistics yet\nLong press to adjust threshold',
+        zh: '当前对话还没有上下文 token 统计\n长按可调整阈值',
+      );
     }
 
     final usedTokens = conversation.latestPromptTokens;
@@ -1781,7 +1865,10 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     final conversation = _currentConversation;
     if (conversation == null || conversation.id <= 0) {
       _showSnackBar(
-        AppTextLocalizer.choose(en: 'No adjustable context threshold for this conversation', zh: '当前对话还没有可调整的上下文阈值'),
+        AppTextLocalizer.choose(
+          en: 'No adjustable context threshold for this conversation',
+          zh: '当前对话还没有可调整的上下文阈值',
+        ),
       );
       return;
     }
@@ -1853,7 +1940,10 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     final hasAttachments = _extractRetryAttachments(message).isNotEmpty;
     if (text.isEmpty && !hasAttachments) {
       showToast(
-        AppTextLocalizer.choose(en: 'No actionable text in this user message', zh: '这条用户消息没有可操作的文本'),
+        AppTextLocalizer.choose(
+          en: 'No actionable text in this user message',
+          zh: '这条用户消息没有可操作的文本',
+        ),
         type: ToastType.warning,
       );
       return;
@@ -1873,7 +1963,10 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
       case _UserMessageQuickAction.copy:
         if (text.isEmpty) {
           showToast(
-            AppTextLocalizer.choose(en: 'No text to copy in this user message', zh: '这条用户消息没有可复制的文本'),
+            AppTextLocalizer.choose(
+              en: 'No text to copy in this user message',
+              zh: '这条用户消息没有可复制的文本',
+            ),
             type: ToastType.warning,
           );
           return;
@@ -2045,14 +2138,20 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     final attachments = _extractRetryAttachments(message);
     if (text.isEmpty && attachments.isEmpty) {
       showToast(
-        AppTextLocalizer.choose(en: 'No content to retry in this user message', zh: '这条用户消息没有可重试的内容'),
+        AppTextLocalizer.choose(
+          en: 'No content to retry in this user message',
+          zh: '这条用户消息没有可重试的内容',
+        ),
         type: ToastType.warning,
       );
       return;
     }
     if (!_canRetryUserMessage(message)) {
       showToast(
-        AppTextLocalizer.choose(en: 'Only the latest user message can be retried', zh: '只有最新一条用户消息支持重试'),
+        AppTextLocalizer.choose(
+          en: 'Only the latest user message can be retried',
+          zh: '只有最新一条用户消息支持重试',
+        ),
         type: ToastType.warning,
       );
       return;
@@ -2342,7 +2441,10 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
     if (raw.isEmpty) {
       if (showEmptyError) {
         setState(() {
-          _errorText = AppTextLocalizer.choose(en: 'Please enter a threshold', zh: '请输入阈值');
+          _errorText = AppTextLocalizer.choose(
+            en: 'Please enter a threshold',
+            zh: '请输入阈值',
+          );
         });
       }
       return null;
@@ -2350,14 +2452,20 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
     final parsed = int.tryParse(raw);
     if (parsed == null) {
       setState(() {
-        _errorText = AppTextLocalizer.choose(en: 'Threshold must be an integer', zh: '阈值必须是整数');
+        _errorText = AppTextLocalizer.choose(
+          en: 'Threshold must be an integer',
+          zh: '阈值必须是整数',
+        );
       });
       return null;
     }
     if (parsed < _kMinContextTokenThreshold ||
         parsed > _kMaxContextTokenThreshold) {
       setState(() {
-        _errorText = AppTextLocalizer.choose(en: 'Threshold range: $_kMinContextTokenThreshold to $_kMaxContextTokenThreshold', zh: '阈值范围为 $_kMinContextTokenThreshold 到 $_kMaxContextTokenThreshold');
+        _errorText = AppTextLocalizer.choose(
+          en: 'Threshold range: $_kMinContextTokenThreshold to $_kMaxContextTokenThreshold',
+          zh: '阈值范围为 $_kMinContextTokenThreshold 到 $_kMaxContextTokenThreshold',
+        );
       });
       return null;
     }
@@ -2414,7 +2522,10 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
       }
       setState(() {
         _isSaving = false;
-        _saveErrorText = AppTextLocalizer.choose(en: 'Auto-save failed, please try again later', zh: '自动保存失败，请稍后重试');
+        _saveErrorText = AppTextLocalizer.choose(
+          en: 'Auto-save failed, please try again later',
+          zh: '自动保存失败，请稍后重试',
+        );
       });
       break;
     }
@@ -2479,12 +2590,17 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
     final statusText = switch ((_saveErrorText, _isSaving, pendingAutoSave)) {
       (final String message?, _, _) => message,
       (_, true, _) => AppTextLocalizer.choose(en: 'Saving…', zh: '正在自动保存…'),
-      (_, false, true) =>
-        AppTextLocalizer.choose(en: 'Pending auto-save', zh: '即将自动保存'),
+      (_, false, true) => AppTextLocalizer.choose(
+        en: 'Pending auto-save',
+        zh: '即将自动保存',
+      ),
       _ =>
         draftThreshold == _lastSavedThreshold
             ? (AppTextLocalizer.choose(en: 'Auto-saved', zh: '已自动保存'))
-            : (AppTextLocalizer.choose(en: 'Auto-save on change', zh: '修改后自动保存')),
+            : (AppTextLocalizer.choose(
+                en: 'Auto-save on change',
+                zh: '修改后自动保存',
+              )),
     };
     final statusColor = _saveErrorText != null
         ? warningColor
@@ -2544,7 +2660,10 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    AppTextLocalizer.choose(en: 'Adjust Context Threshold', zh: '调整上下文阈值'),
+                    AppTextLocalizer.choose(
+                      en: 'Adjust Context Threshold',
+                      zh: '调整上下文阈值',
+                    ),
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
@@ -2553,7 +2672,10 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    AppTextLocalizer.choose(en: 'Changes are auto-saved. The new threshold takes effect immediately.', zh: '修改后自动保存，新的阈值会立刻用于当前对话。'),
+                    AppTextLocalizer.choose(
+                      en: 'Changes are auto-saved. The new threshold takes effect immediately.',
+                      zh: '修改后自动保存，新的阈值会立刻用于当前对话。',
+                    ),
                     style: TextStyle(
                       fontSize: 13,
                       height: 1.4,
@@ -2573,7 +2695,10 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
                       children: [
                         Expanded(
                           child: _ThresholdMetric(
-                            label: AppTextLocalizer.choose(en: 'Current context', zh: '当前上下文'),
+                            label: AppTextLocalizer.choose(
+                              en: 'Current context',
+                              zh: '当前上下文',
+                            ),
                             value: _formatTokenCount(widget.currentUsageTokens),
                             accent: palette.textPrimary,
                           ),
@@ -2581,7 +2706,10 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
                         Container(width: 1, height: 38, color: dividerColor),
                         Expanded(
                           child: _ThresholdMetric(
-                            label: AppTextLocalizer.choose(en: 'Target threshold', zh: '目标阈值'),
+                            label: AppTextLocalizer.choose(
+                              en: 'Target threshold',
+                              zh: '目标阈值',
+                            ),
                             value: _formatTokenCount(draftThreshold),
                             accent: accentColor,
                           ),
@@ -2589,7 +2717,10 @@ class _ContextThresholdSheetState extends State<_ContextThresholdSheet> {
                         Container(width: 1, height: 38, color: dividerColor),
                         Expanded(
                           child: _ThresholdMetric(
-                            label: AppTextLocalizer.choose(en: 'Usage', zh: '占用比例'),
+                            label: AppTextLocalizer.choose(
+                              en: 'Usage',
+                              zh: '占用比例',
+                            ),
                             value: _formatUsagePercent(usageRatio),
                             accent: usageRatio >= 1
                                 ? warningColor

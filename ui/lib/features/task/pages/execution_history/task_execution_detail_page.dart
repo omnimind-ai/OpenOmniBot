@@ -324,7 +324,7 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
     return Row(
       children: [
         Text(
-          '${context.trLegacy('最近执行')} $lastTimeLabel',
+          '${context.trText('最近执行')} $lastTimeLabel',
           style: TextStyle(
             fontSize: 10,
             color: context.isDarkTheme
@@ -374,7 +374,7 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
         padding: const EdgeInsets.all(32),
         child: Center(
           child: Text(
-            context.trLegacy('暂无总结内容'),
+            context.trText('暂无总结内容'),
             style: TextStyle(
               fontSize: AppTextStyles.fontSizeMain,
               color: context.isDarkTheme
@@ -588,7 +588,7 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
 
   /// 格式化最后执行时间
   String _formatLastExecutionTime(int timestamp) {
-    if (timestamp == 0) return context.trLegacy('未知');
+    if (timestamp == 0) return context.trText('未知');
 
     final now = DateTime.now();
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
@@ -596,11 +596,11 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
     if (date.year == now.year &&
         date.month == now.month &&
         date.day == now.day) {
-      return '${context.trLegacy('今天')} ${DateFormat('HH:mm').format(date)}';
+      return '${context.trText('今天')} ${DateFormat('HH:mm').format(date)}';
     } else if (date.year == now.year &&
         date.month == now.month &&
         date.day == now.day - 1) {
-      return '${context.trLegacy('昨天')} ${DateFormat('HH:mm').format(date)}';
+      return '${context.trText('昨天')} ${DateFormat('HH:mm').format(date)}';
     } else {
       return DateFormat('yyyy/MM/dd HH:mm').format(date);
     }
@@ -608,7 +608,7 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
 
   /// 格式化记录时间
   String _formatRecordTime(int timestamp) {
-    if (timestamp == 0) return context.trLegacy('未知');
+    if (timestamp == 0) return context.trText('未知');
 
     final now = DateTime.now();
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
@@ -616,11 +616,11 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
     if (date.year == now.year &&
         date.month == now.month &&
         date.day == now.day) {
-      return '${context.trLegacy('今天')} ${DateFormat('HH:mm').format(date)}';
+      return '${context.trText('今天')} ${DateFormat('HH:mm').format(date)}';
     } else if (date.year == now.year &&
         date.month == now.month &&
         date.day == now.day - 1) {
-      return '${context.trLegacy('昨天')} ${DateFormat('HH:mm').format(date)}';
+      return '${context.trText('昨天')} ${DateFormat('HH:mm').format(date)}';
     } else {
       return DateFormat('yyyy/MM/dd HH:mm').format(date);
     }

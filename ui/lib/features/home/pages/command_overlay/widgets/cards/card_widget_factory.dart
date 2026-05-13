@@ -10,6 +10,8 @@ import 'permission_button_card.dart';
 import 'permission_section_card.dart';
 import 'stage_hint_card.dart';
 import 'openclaw_attachment_card.dart';
+import 'user_dialog_card.dart';
+import 'workbench_project_card.dart';
 
 /// 任务执行前的回调类型
 typedef OnBeforeTaskExecute = Future<void> Function();
@@ -115,9 +117,14 @@ class CardWidgetFactory {
         return CodexRequestCard(cardData: cardData);
       case 'history_omitted_card':
         return _HistoryOmittedCard(cardData: cardData);
+      case 'user_dialog':
+        final card = UserDialogCard.tryFromCardData(cardData);
+        return card ?? const SizedBox.shrink();
       case 'artifact_card':
         final artifact = cardData['artifact'] as Map<String, dynamic>? ?? {};
         return ArtifactCard(artifact: artifact);
+      case 'workbench_project':
+        return WorkbenchProjectCard(cardData: cardData);
       default:
         return _UnknownCard(type: type);
     }

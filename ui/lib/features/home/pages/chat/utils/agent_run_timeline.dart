@@ -659,10 +659,11 @@ String _runLogIdFromMessage(ChatMessageModel message) {
     cardData?['run_log_id'],
     cardData?['runId'],
     cardData?['run_id'],
-    _runLogIdFromJsonString(cardData?['resultPreviewJson']),
-    _runLogIdFromJsonString(cardData?['rawResultJson']),
+    cardData?['toolTaskId'],
     cardData?['taskId'],
     cardData?['taskID'],
+    _runLogIdFromJsonString(cardData?['resultPreviewJson']),
+    _runLogIdFromJsonString(cardData?['rawResultJson']),
   ]);
 }
 

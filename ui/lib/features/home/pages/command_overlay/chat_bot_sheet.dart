@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/models/chat_link_preview.dart';
 import 'package:ui/models/chat_message_model.dart';
@@ -182,7 +182,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   }
 
   void _persistThinkingCardForTask(String taskID, {String? cardId}) {
-    final thinkingCardId = cardId ?? '$taskID-thinking';
+    final thinkingCardId = cardId ?? '$taskID-thinking-1';
     final index = _messages.indexWhere((msg) => msg.id == thinkingCardId);
     if (index != -1) {
       _persistDeepThinkingCardIfNeeded(_messages[index]);
@@ -403,9 +403,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   Future<void> _setOpenClawEnabled(bool enabled) async {
     if (enabled && _openClawBaseUrl.trim().isEmpty) {
       AppToast.show(
-        LegacyTextLocalizer.isEnglish
-            ? 'Please configure OpenClaw first using /openclaw'
-            : '请先使用 /openclaw 配置 OpenClaw',
+        AppTextLocalizer.choose(
+          en: 'Please configure OpenClaw first using /openclaw',
+          zh: '请先使用 /openclaw 配置 OpenClaw',
+        ),
       );
       _showOpenClawCommandPanel(expand: true);
       return;
@@ -520,9 +521,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
     if (!trimmed.startsWith('/openclaw')) {
       _showSnackBar(
-        LegacyTextLocalizer.isEnglish
-            ? 'Unknown command, please use /openclaw'
-            : '未知指令，请使用 /openclaw',
+        AppTextLocalizer.choose(
+          en: 'Unknown command, please use /openclaw',
+          zh: '未知指令，请使用 /openclaw',
+        ),
       );
       return true;
     }
@@ -530,9 +532,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     final parts = trimmed.split(RegExp(r'\\s+'));
     if (parts.length < 2) {
       _showSnackBar(
-        LegacyTextLocalizer.isEnglish
-            ? 'Format: /openclaw <baseurl> --token <token> <userid>'
-            : '格式: /openclaw <baseurl> --token <token> <userid>',
+        AppTextLocalizer.choose(
+          en: 'Format: /openclaw <baseurl> --token <token> <userid>',
+          zh: '格式: /openclaw <baseurl> --token <token> <userid>',
+        ),
       );
       return true;
     }
@@ -541,9 +544,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     final tokenIndex = parts.indexOf('--token');
     if (tokenIndex == -1) {
       _showSnackBar(
-        LegacyTextLocalizer.isEnglish
-            ? 'Please include --token explicitly in the command'
-            : '请在命令中显式包含 --token',
+        AppTextLocalizer.choose(
+          en: 'Please include --token explicitly in the command',
+          zh: '请在命令中显式包含 --token',
+        ),
       );
       return true;
     }
@@ -561,9 +565,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
     if (baseUrl.trim().isEmpty) {
       _showSnackBar(
-        LegacyTextLocalizer.isEnglish
-            ? 'OpenClaw baseurl cannot be empty'
-            : 'OpenClaw baseurl 不能为空',
+        AppTextLocalizer.choose(
+          en: 'OpenClaw baseurl cannot be empty',
+          zh: 'OpenClaw baseurl 不能为空',
+        ),
       );
       return true;
     }
@@ -578,9 +583,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     _inputFocusNode.unfocus();
     _hideSlashCommandPanel();
     _showSnackBar(
-      LegacyTextLocalizer.isEnglish
-          ? 'OpenClaw configured and enabled'
-          : 'OpenClaw 已配置并启用',
+      AppTextLocalizer.choose(
+        en: 'OpenClaw configured and enabled',
+        zh: 'OpenClaw 已配置并启用',
+      ),
     );
     return true;
   }
@@ -610,7 +616,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
         final text = message.content?['text'] as String? ?? '';
         if (text.isNotEmpty) {
           buffer.write(
-            LegacyTextLocalizer.isEnglish ? 'User: $text\n' : '用户: $text\n',
+            AppTextLocalizer.choose(en: 'User: $text\n', zh: '用户: $text\n'),
           );
         }
       }
@@ -639,12 +645,12 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       final firstUserMessage = _messages.firstWhere(
         (m) => m.user == 1,
         orElse: () => ChatMessageModel.userMessage(
-          LegacyTextLocalizer.isEnglish ? "New conversation" : "新对话",
+          AppTextLocalizer.choose(en: "New conversation", zh: "新对话"),
         ),
       );
       final userText =
           firstUserMessage.text ??
-          (LegacyTextLocalizer.isEnglish ? 'New conversation' : '新对话');
+          (AppTextLocalizer.choose(en: 'New conversation', zh: '新对话'));
       final title = userText.length > 20
           ? '${userText.substring(0, 20)}...'
           : userText;
@@ -833,9 +839,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
           type: 1, // 文本类型
           user: 2, // AI消息
           content: {
-            'text': LegacyTextLocalizer.isEnglish
-                ? 'This is your scheduled task about to be executed'
-                : '这是您即将执行的预约任务',
+            'text': AppTextLocalizer.choose(
+              en: 'This is your scheduled task about to be executed',
+              zh: '这是您即将执行的预约任务',
+            ),
             'id': textMessageId,
           },
         ),
@@ -1038,9 +1045,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   Future<void> _onSubmitVlmInfo() async {
     if (_isSubmittingVlmReply || _vlmInfoQuestion == null) return;
     final reply = _vlmAnswerController.text.trim().isEmpty
-        ? (Localizations.localeOf(context).languageCode == 'en'
-              ? 'Completed action, continue execution'
-              : '已完成操作，继续执行')
+        ? AppTextLocalizer.choose(
+            zh: '已完成操作，继续执行',
+            en: 'Completed action, continue execution',
+            locale: Localizations.localeOf(context),
+          )
         : _vlmAnswerController.text.trim();
     setState(() {
       _isSubmittingVlmReply = true;
@@ -1446,7 +1455,8 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     }
 
     final startTime = DateTime.now().millisecondsSinceEpoch;
-    final thinkingCardId = cardId ?? '$taskID-thinking';
+    // Use -1 suffix to match Kotlin's first thinkingSequence value.
+    final thinkingCardId = cardId ?? '$taskID-thinking-1';
     final cardData = {
       'type': 'deep_thinking',
       'isLoading': isLoading ?? _isDeepThinking,
@@ -1488,7 +1498,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     Map<String, dynamic>? streamMeta,
     bool lockCompleted = true,
   }) {
-    final thinkingCardId = cardId ?? '$taskID-thinking';
+    final thinkingCardId = cardId ?? '$taskID-thinking-1';
     final index = _messages.indexWhere((msg) => msg.id == thinkingCardId);
     if (index != -1) {
       setState(() {
@@ -1598,9 +1608,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
           type: 1,
           user: 2,
           content: {
-            'text': LegacyTextLocalizer.isEnglish
-                ? 'Omnibot is busy right now. Please try again in a moment.'
-                : '小万忙不过来了，等会儿再试试吧',
+            'text': AppTextLocalizer.choose(
+              en: 'Omnibot is busy right now. Please try again in a moment.',
+              zh: '小万忙不过来了，等会儿再试试吧',
+            ),
             'id': taskID,
           },
           isError: true,
@@ -1627,9 +1638,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
           type: 1,
           user: 2,
           content: {
-            'text': LegacyTextLocalizer.isEnglish
-                ? 'Unified Agent is enabled. The legacy chat dispatch has been removed. Please check your model config and try again.'
-                : '统一 Agent 已启用，旧聊天分发链路已移除，请检查模型配置后重试。',
+            'text': AppTextLocalizer.choose(
+              en: 'Unified Agent is enabled. The legacy chat dispatch has been removed. Please check your model config and try again.',
+              zh: '统一 Agent 已启用，旧聊天分发链路已移除，请检查模型配置后重试。',
+            ),
             'id': '$taskID-disabled',
           },
           isError: true,
@@ -1728,9 +1740,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
         mounted &&
         _currentDispatchTaskId == messageIds.aiMessageId) {
       handleAgentError(
-        LegacyTextLocalizer.isEnglish
-            ? 'Failed to start unified Agent. Please check model provider and scene model config.'
-            : '统一 Agent 启动失败，请检查模型提供商与场景模型配置。',
+        AppTextLocalizer.choose(
+          en: 'Failed to start unified Agent. Please check model provider and scene model config.',
+          zh: '统一 Agent 启动失败，请检查模型提供商与场景模型配置。',
+        ),
       );
     }
   }
@@ -1874,9 +1887,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   void _sendChatMessage(String aiMessageId) {
     if (!_openClawEnabled) {
       handleAgentError(
-        LegacyTextLocalizer.isEnglish
-            ? 'Unified Agent is enabled. The legacy chat path has been removed. Please check config and try again.'
-            : '统一 Agent 已启用，旧聊天链路已移除，请检查配置后重试。',
+        AppTextLocalizer.choose(
+          en: 'Unified Agent is enabled. The legacy chat path has been removed. Please check config and try again.',
+          zh: '统一 Agent 已启用，旧聊天链路已移除，请检查配置后重试。',
+        ),
       );
       return;
     }
@@ -1907,9 +1921,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
             type: 1,
             user: 2,
             content: {
-              'text': LegacyTextLocalizer.isEnglish
-                  ? 'Sorry, failed to send message: $error'
-                  : '抱歉，发送消息失败：$error',
+              'text': AppTextLocalizer.choose(
+                en: 'Sorry, failed to send message: $error',
+                zh: '抱歉，发送消息失败：$error',
+              ),
               'id': errorId,
             },
           ),
@@ -2017,7 +2032,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   Future<void> _openCurrentConversationInMain() async {
     if (_messages.isEmpty && _currentConversationId == null) {
       _showSnackBar(
-        LegacyTextLocalizer.isEnglish ? 'No conversation to open' : '暂无可管理的对话',
+        AppTextLocalizer.choose(en: 'No conversation to open', zh: '暂无可管理的对话'),
       );
       return;
     }
@@ -2026,9 +2041,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     final conversationId = _currentConversationId;
     if (conversationId == null) {
       _showSnackBar(
-        LegacyTextLocalizer.isEnglish
-            ? 'Conversation is not ready yet'
-            : '对话尚未准备好',
+        AppTextLocalizer.choose(
+          en: 'Conversation is not ready yet',
+          zh: '对话尚未准备好',
+        ),
       );
       return;
     }
@@ -2039,9 +2055,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     );
     if (!opened) {
       _showSnackBar(
-        LegacyTextLocalizer.isEnglish
-            ? 'Failed to open conversation'
-            : '无法打开对话',
+        AppTextLocalizer.choose(
+          en: 'Failed to open conversation',
+          zh: '无法打开对话',
+        ),
       );
     } else {
       await AppStateService.dismissFloatingOverlay();
@@ -2089,9 +2106,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                 Positioned(
                   left: 10,
                   child: Tooltip(
-                    message: LegacyTextLocalizer.isEnglish
-                        ? 'Open conversation'
-                        : '管理对话',
+                    message: AppTextLocalizer.choose(
+                      en: 'Open conversation',
+                      zh: '管理对话',
+                    ),
                     child: IconButton(
                       visualDensity: VisualDensity.compact,
                       icon: const Icon(
@@ -2107,7 +2125,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                 Positioned(
                   right: 10,
                   child: Tooltip(
-                    message: LegacyTextLocalizer.isEnglish ? 'Close' : '关闭',
+                    message: AppTextLocalizer.choose(en: 'Close', zh: '关闭'),
                     child: IconButton(
                       visualDensity: VisualDensity.compact,
                       icon: const Icon(
@@ -2256,9 +2274,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
           padding: EdgeInsets.only(bottom: emptyStateBottomInset),
           child: Center(
             child: Text(
-              Localizations.localeOf(context).languageCode == 'en'
-                  ? 'How can I help you?'
-                  : '有什么可以帮助你的？',
+              AppTextLocalizer.choose(
+                zh: '有什么可以帮助你的？',
+                en: 'How can I help you?',
+                locale: Localizations.localeOf(context),
+              ),
               style: const TextStyle(color: Color(0xFF999999), fontSize: 14),
             ),
           ),
@@ -2354,9 +2374,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            Localizations.localeOf(context).languageCode == 'en'
-                ? 'Need your confirmation'
-                : '需要你的确认',
+            AppTextLocalizer.choose(
+              zh: '需要你的确认',
+              en: 'Need your confirmation',
+              locale: Localizations.localeOf(context),
+            ),
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -2373,9 +2395,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
             controller: _vlmAnswerController,
             maxLines: 2,
             decoration: InputDecoration(
-              hintText: Localizations.localeOf(context).languageCode == 'en'
-                  ? 'Optional: add details. Default sends: Completed action, continue execution'
-                  : '可选：补充你的操作说明，默认发送“已完成操作，继续执行”',
+              hintText: AppTextLocalizer.choose(
+                zh: '可选：补充你的操作说明，默认发送“已完成操作，继续执行”',
+                en: 'Optional: add details. Default sends: Completed action, continue execution',
+                locale: Localizations.localeOf(context),
+              ),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
@@ -2391,9 +2415,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                 child: OutlinedButton(
                   onPressed: _isSubmittingVlmReply ? null : _dismissVlmInfo,
                   child: Text(
-                    Localizations.localeOf(context).languageCode == 'en'
-                        ? 'Later'
-                        : '稍后再说',
+                    AppTextLocalizer.choose(
+                      zh: '稍后再说',
+                      en: 'Later',
+                      locale: Localizations.localeOf(context),
+                    ),
                   ),
                 ),
               ),
@@ -2403,12 +2429,16 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                   onPressed: _isSubmittingVlmReply ? null : _onSubmitVlmInfo,
                   child: Text(
                     _isSubmittingVlmReply
-                        ? (Localizations.localeOf(context).languageCode == 'en'
-                              ? 'Sending...'
-                              : '发送中...')
-                        : (Localizations.localeOf(context).languageCode == 'en'
-                              ? 'Continue'
-                              : '继续执行'),
+                        ? AppTextLocalizer.choose(
+                            zh: '发送中...',
+                            en: 'Sending...',
+                            locale: Localizations.localeOf(context),
+                          )
+                        : AppTextLocalizer.choose(
+                            zh: '继续执行',
+                            en: 'Continue',
+                            locale: Localizations.localeOf(context),
+                          ),
                   ),
                 ),
               ),
@@ -2477,12 +2507,14 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                         TextField(
                           controller: _openClawTokenController,
                           decoration: InputDecoration(
-                            labelText: LegacyTextLocalizer.isEnglish
-                                ? 'Token (optional)'
-                                : 'Token（可选）',
-                            hintText: LegacyTextLocalizer.isEnglish
-                                ? 'Leave empty if no token required'
-                                : '为空表示无需 token',
+                            labelText: AppTextLocalizer.choose(
+                              en: 'Token (optional)',
+                              zh: 'Token（可选）',
+                            ),
+                            hintText: AppTextLocalizer.choose(
+                              en: 'Leave empty if no token required',
+                              zh: '为空表示无需 token',
+                            ),
                             isDense: true,
                           ),
                         ),
@@ -2520,7 +2552,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                             ),
                           ),
                           Text(
-                            LegacyTextLocalizer.isEnglish ? 'Config' : '配置',
+                            AppTextLocalizer.choose(en: 'Config', zh: '配置'),
                             style: const TextStyle(
                               fontSize: 12,
                               color: Color(0xFF6B7280),
@@ -2553,16 +2585,18 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   }
 
   String _getRecordingText() {
-    final en = LegacyTextLocalizer.isEnglish;
     switch (_recordingState) {
       case RecordingState.starting:
-        return en ? "Starting recording..." : "正在启动录音...";
+        return AppTextLocalizer.choose(
+          zh: "正在启动录音...",
+          en: "Starting recording...",
+        );
       case RecordingState.recording:
-        return en ? "Listening..." : "语音输入中...";
+        return AppTextLocalizer.choose(zh: "语音输入中...", en: "Listening...");
       case RecordingState.stopping:
-        return en ? "Recognizing..." : "正在识别中...";
+        return AppTextLocalizer.choose(zh: "正在识别中...", en: "Recognizing...");
       case RecordingState.waitingServerStop:
-        return en ? "Recognizing..." : "正在识别中...";
+        return AppTextLocalizer.choose(zh: "正在识别中...", en: "Recognizing...");
       case RecordingState.idle:
         return "";
     }
