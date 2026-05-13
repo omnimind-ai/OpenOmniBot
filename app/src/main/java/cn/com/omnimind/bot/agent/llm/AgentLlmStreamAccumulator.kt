@@ -225,9 +225,9 @@ class AgentLlmStreamAccumulator(
                 "finish_reason indicates tool call but no tool_calls parsed; finish_reason=${finishReason.orEmpty()}, last_chunk=$lastChunkPreview"
             )
         }
-        if (content.isBlank() && toolCalls.isEmpty()) {
+        if (content.isBlank() && toolCalls.isEmpty() && reasoning.isBlank()) {
             throw IllegalStateException(
-                "assistant turn has neither content nor tool_calls; finish_reason=${finishReason.orEmpty()}, last_chunk=$lastChunkPreview"
+                "assistant turn has neither reasoning/content/tool_calls; finish_reason=${finishReason.orEmpty()}, last_chunk=$lastChunkPreview"
             )
         }
 

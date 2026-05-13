@@ -112,6 +112,19 @@ class AgentLlmStreamAccumulatorTest {
     }
 
     @Test
+    fun `accepts reasoning only stream chunks from thinking models`() {
+        val accumulator = AgentLlmStreamAccumulator(json = json)
+
+        accumulator.consume("""{"choices":[{"delta":{"reasoning_content":"先分析任务"}}]}""")
+        accumulator.consume("[DONE]")
+
+        val turn = accumulator.buildTurn()
+
+        assertEquals("先分析任务", turn.reasoning)
+        assertEquals("", turn.message.contentText())
+    }
+
+    @Test
     fun `preserves surrogate pair split across chunks`() {
         val accumulator = AgentLlmStreamAccumulator(json = json)
 
