@@ -29,9 +29,17 @@ interface AgentLlmClient {
     suspend fun streamTurn(
         request: ChatCompletionRequest,
         onReasoningUpdate: (suspend (String) -> Unit)? = null,
-        onContentUpdate: (suspend (String) -> Unit)? = null
+        onContentUpdate: (suspend (String) -> Unit)? = null,
+        onToolCallUpdate: (suspend (StreamingToolCallSnapshot) -> Unit)? = null
     ): ChatCompletionTurn
 }
+
+data class StreamingToolCallSnapshot(
+    val index: Int,
+    val id: String?,
+    val name: String?,
+    val arguments: String
+)
 
 class HttpAgentLlmClient(
     private val scope: CoroutineScope,
@@ -68,7 +76,8 @@ class HttpAgentLlmClient(
     override suspend fun streamTurn(
         request: ChatCompletionRequest,
         onReasoningUpdate: (suspend (String) -> Unit)?,
-        onContentUpdate: (suspend (String) -> Unit)?
+        onContentUpdate: (suspend (String) -> Unit)?,
+        onToolCallUpdate: (suspend (StreamingToolCallSnapshot) -> Unit)?
     ): ChatCompletionTurn {
         val modelCandidates = buildModelCandidates(request.model)
         val variants = buildRequestVariants(request)
@@ -89,7 +98,8 @@ class HttpAgentLlmClient(
                         model = candidateModel,
                         requestJson = variant.requestJson,
                         onReasoningUpdate = onReasoningUpdate,
-                        onContentUpdate = onContentUpdate
+                        onContentUpdate = onContentUpdate,
+                        onToolCallUpdate = onToolCallUpdate
                     )
                 } catch (error: StreamRequestFailure) {
                     lastFailure = error
@@ -125,14 +135,29 @@ class HttpAgentLlmClient(
         model: String,
         requestJson: String,
         onReasoningUpdate: (suspend (String) -> Unit)?,
-        onContentUpdate: (suspend (String) -> Unit)?
+        onContentUpdate: (suspend (String) -> Unit)?,
+        onToolCallUpdate: (suspend (StreamingToolCallSnapshot) -> Unit)?
     ): ChatCompletionTurn {
         return try {
-            doStreamTurnOnce(model, requestJson, onReasoningUpdate, onContentUpdate, forceHttp1 = false)
+            doStreamTurnOnce(
+                model,
+                requestJson,
+                onReasoningUpdate,
+                onContentUpdate,
+                onToolCallUpdate,
+                forceHttp1 = false
+            )
         } catch (e: StreamRequestFailure) {
             if (isHttp2ProtocolError(e)) {
                 OmniLog.w(tag, "HTTP/2 stream PROTOCOL_ERROR, retrying with HTTP/1.1")
-                doStreamTurnOnce(model, requestJson, onReasoningUpdate, onContentUpdate, forceHttp1 = true)
+                doStreamTurnOnce(
+                    model,
+                    requestJson,
+                    onReasoningUpdate,
+                    onContentUpdate,
+                    onToolCallUpdate,
+                    forceHttp1 = true
+                )
             } else {
                 throw e
             }
@@ -149,6 +174,7 @@ class HttpAgentLlmClient(
         requestJson: String,
         onReasoningUpdate: (suspend (String) -> Unit)?,
         onContentUpdate: (suspend (String) -> Unit)?,
+        onToolCallUpdate: (suspend (StreamingToolCallSnapshot) -> Unit)?,
         forceHttp1: Boolean
     ): ChatCompletionTurn {
         val streamDone = CompletableDeferred<ChatCompletionTurn>()
@@ -176,6 +202,7 @@ class HttpAgentLlmClient(
             }
         }
         var hasPublishedReasoningForTurn = false
+        val lastToolCallSignatures = mutableMapOf<Int, String>()
 
         fun enqueueEmission(block: suspend () -> Unit) {
             if (emissionQueue.isClosedForSend) {
@@ -261,12 +288,33 @@ class HttpAgentLlmClient(
             }
         }
 
+        fun emitToolCalls() {
+            if (onToolCallUpdate == null) return
+            accumulator.currentToolCallSnapshots().forEach { snapshot ->
+                val toolName = snapshot.name?.trim().orEmpty()
+                if (toolName.isEmpty()) return@forEach
+                val signature = listOf(
+                    snapshot.id.orEmpty(),
+                    toolName,
+                    snapshot.arguments
+                ).joinToString("\u001f")
+                if (lastToolCallSignatures[snapshot.index] == signature) {
+                    return@forEach
+                }
+                lastToolCallSignatures[snapshot.index] = signature
+                enqueueEmission {
+                    onToolCallUpdate.invoke(snapshot)
+                }
+            }
+        }
+
         fun completeStream(eventSource: EventSource? = null) {
             if (!completed.compareAndSet(false, true)) return
             runCatching {
                 val turn = accumulator.buildTurn()
                 emitReasoning(force = true)
                 emitContent()
+                emitToolCalls()
                 turn
             }.onSuccess { turn ->
                 streamDone.complete(turn)
@@ -288,6 +336,7 @@ class HttpAgentLlmClient(
                     val done = accumulator.consume(data)
                     emitReasoning()
                     emitContent()
+                    emitToolCalls()
                     if (done) {
                         completeStream(eventSource)
                     }

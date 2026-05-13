@@ -55,6 +55,12 @@ class AssistsCoreChannel {
                 "getInternalRunLogTimeline" -> {
                     assistsCoreManager!!.getInternalRunLogTimeline(call, result)
                 }
+                "getAgentToolFeatures" -> {
+                    assistsCoreManager!!.getAgentToolFeatures(call, result)
+                }
+                "setAgentToolFeatures" -> {
+                    assistsCoreManager!!.setAgentToolFeatures(call, result)
+                }
                 "registerOobReusableFunction" -> {
                     assistsCoreManager!!.registerOobReusableFunction(call, result)
                 }

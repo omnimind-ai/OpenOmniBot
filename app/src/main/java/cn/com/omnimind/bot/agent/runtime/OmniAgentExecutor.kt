@@ -2,6 +2,9 @@ package cn.com.omnimind.bot.agent
 
 import android.content.Context
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
+import cn.com.omnimind.baselib.i18n.PromptLocale
+import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
+import cn.com.omnimind.bot.agent.config.AgentToolFeatureStore
 import cn.com.omnimind.bot.mcp.RemoteMcpDiscoveryRegistry
 import cn.com.omnimind.bot.workbench.WorkbenchDisplayLayoutContext
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
@@ -9,6 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -90,33 +94,27 @@ class OmniAgentExecutor(
                 installedSkills = installedSkills,
                 skillLoader = skillLoader
             )
-            val keywordMatched = SkillTriggerMatcher.resolveMatches(
-                userMessage = userMessage,
-                entries = installedSkills
-            ).mapNotNull { match ->
-                val compatibility = SkillCompatibilityChecker.evaluate(match.entry)
-                if (!compatibility.available) null
-                else skillLoader.load(match.entry, match.triggerReason)
-            }
-            // Force-load oob-native-workbench when a Project is active, regardless of
-            // user message keywords. Hot-update edits like "放大字体" never mention
-            // "workbench" but still need the full htmlPatches/targeting rules.
-            val workbenchForced = if (
-                activeWorkbenchProjectContext != null &&
-                keywordMatched.none { it.skillId == "oob-native-workbench" }
-            ) {
-                installedSkills.find { it.id == "oob-native-workbench" }
-                    ?.takeIf { SkillCompatibilityChecker.evaluate(it).available }
-                    ?.let { skillLoader.load(it, "active_project_force_load") }
-                    ?.let { listOf(it) }
-                    ?: emptyList()
-            } else emptyList()
-            val resolvedSkills = keywordMatched + workbenchForced
+            // Standard skill mode: no auto-injection. Skills are listed in the system
+            // prompt by name/description. The agent proactively calls skills_read when
+            // a skill seems relevant, receiving the full SKILL.md content (up to 64k).
+            // This matches the Anthropic/Claude Code skill pattern and avoids the
+            // 16-line truncation problem of keyword-based auto-injection.
+            val resolvedSkills = emptyList<ResolvedSkillContext>()
+            callback.onSkillsResolved(emptyList())
             val discoveredServers = RemoteMcpDiscoveryRegistry.discoverEnabledServers()
+            val oobFunctionDefinitions = if (AgentToolFeatureStore.isOobFunctionAsToolEnabled(context)) {
+                runCatching {
+                    @Suppress("UNCHECKED_CAST")
+                    val functions = (OobReusableFunctionStore.list(context, limit = 50)["functions"]
+                        as? List<Map<String, Any?>>) ?: emptyList()
+                    functions.mapNotNull { spec -> buildOobToolDefinition(spec, promptLocale) }
+                }.getOrElse { emptyList() }
+            } else emptyList()
             val toolRegistry = AgentToolRegistry(
                 context = context,
                 discoveredServers = discoveredServers,
-                conversationMode = conversationMode
+                conversationMode = conversationMode,
+                dynamicDefinitions = oobFunctionDefinitions
             )
             val initialMessages = buildInitialMessages(
                 promptSeed = historyRepository.buildPromptSeed(
@@ -326,5 +324,64 @@ class OmniAgentExecutor(
             }
         }
         return ""
+    }
+
+    private fun buildOobToolDefinition(
+        spec: Map<String, Any?>,
+        locale: PromptLocale
+    ): JsonObject? {
+        val name = spec["name"]?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val description = spec["description"]?.toString().orEmpty()
+        val parameters = spec["parameters"] as? List<*> ?: emptyList<Any?>()
+
+        return AgentToolDefinitions.decorateToolDefinition(
+            buildJsonObject {
+                put("type", JsonPrimitive("function"))
+                put("function", buildJsonObject {
+                    put("name", JsonPrimitive(name))
+                    put("displayName", JsonPrimitive(name))
+                    put("toolType", JsonPrimitive("oob_function"))
+                    put("description", JsonPrimitive(
+                        description.ifBlank { "OOB reusable function: $name" }
+                    ))
+                    put("parameters", buildJsonObject {
+                        put("type", JsonPrimitive("object"))
+                        put("properties", buildJsonObject {
+                            for (rawParam in parameters) {
+                                val param = rawParam as? Map<*, *> ?: continue
+                                val pName = param["name"]?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: continue
+                                put(pName, buildJsonObject {
+                                    put("type", JsonPrimitive(
+                                        param["type"]?.toString() ?: "string"
+                                    ))
+                                    put("description", JsonPrimitive(
+                                        param["description"]?.toString() ?: pName
+                                    ))
+                                    if (param.containsKey("default")) {
+                                        put("default", JsonPrimitive(
+                                            param["default"]?.toString() ?: ""
+                                        ))
+                                    }
+                                })
+                            }
+                        })
+                        // required: only params where required=true and no default
+                        put("required", buildJsonArray {
+                            for (rawParam in parameters) {
+                                val param = rawParam as? Map<*, *> ?: continue
+                                val pName = param["name"]?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: continue
+                                val isRequired = when (val r = param["required"]) {
+                                    is Boolean -> r
+                                    is String -> r.equals("true", ignoreCase = true)
+                                    else -> false
+                                }
+                                val hasDefault = param.containsKey("default")
+                                if (isRequired && !hasDefault) add(JsonPrimitive(pName))
+                            }
+                        })
+                    })
+                })
+            }, locale
+        )
     }
 }

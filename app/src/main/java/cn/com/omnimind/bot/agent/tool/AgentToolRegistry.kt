@@ -24,7 +24,8 @@ import kotlinx.serialization.json.jsonPrimitive
 class AgentToolRegistry(
     private val context: Context,
     discoveredServers: List<RemoteMcpDiscoveredServer>,
-    conversationMode: String = AgentConversationModePolicy.NORMAL_MODE
+    conversationMode: String = AgentConversationModePolicy.NORMAL_MODE,
+    dynamicDefinitions: List<JsonObject> = emptyList()
 ) : AgentToolCatalog {
     data class RuntimeToolDescriptor(
         val name: String,
@@ -91,6 +92,8 @@ class AgentToolRegistry(
         discoveredServers.flatMap { it.tools }.forEach { tool ->
             runtimeDefinitions.add(toDynamicMcpToolDefinition(tool, locale))
         }
+
+        runtimeDefinitions.addAll(dynamicDefinitions)
 
         val filteredDefinitions = AgentConversationModePolicy
             .filterToolDefinitionsForConversationMode(runtimeDefinitions, conversationMode)

@@ -15,6 +15,41 @@ AI produces output -> user sees it -> user says one thing -> AI updates it -> us
 
 Keep the infrastructure thin and the loop fast.
 
+## Architecture
+
+OOB Project 有三层，全部从同一个实体定义派生。
+
+```
+实体定义（Entity Schema）
+    ↓              ↓              ↓
+数据层             工具层           展示层
+item.fields.*   apis[]          index.html
+what exists     what to do      what to show
+```
+
+**数据层 — `item.fields.*`**
+实体 schema 是基础。字段名、类型、约束在这里定义，其他两层都引用它，不另起名字。
+
+**工具层 — registered `apis`**
+对实体的操作。每个 API 的 `inputSchema` 字段名必须来自实体 schema，不能单独发明。field name drift = 三层断开。
+
+**展示层 — `index.html`**
+实体的可见面。`toViewItem()` 是数据层到展示层的适配器，字段名必须和实体 schema 一致。
+
+**字段名是三层的共同语言：**
+```
+entity schema  →  fields.kcal: number
+api inputSchema →  kcal: "number"
+toViewItem()   →  kcal: Number(f.kcal || 0)
+HTML           →  ${item.kcal} 大卡
+```
+任意一层字段名不同 = 三层没有打通。
+
+**PROJECT_SOUL 纵向穿透三层。**
+PROJECT_SOUL.md 是用户意图的持久化表达——它的规则（"奶茶算娱乐"、"不记收入"）同时约束数据分类方式（工具层）、展示逻辑（展示层）、以及哪些字段存在（数据层）。不是 memo，是行为合同。任何 hot update 之前必须先读 PROJECT_SOUL.md，确保修改不违背用户的原始意图。
+
+---
+
 ## Design Principles
 
 These are non-negotiable. Every Project display must follow them.

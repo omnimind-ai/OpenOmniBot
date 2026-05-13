@@ -105,10 +105,13 @@ private class BuiltinSkillAssetStore(
         var changed = false
         listBuiltins().forEach { builtin ->
             val targetDir = targetDirFor(builtin)
-            if (targetDir.exists()) {
-                return@forEach
-            }
-            if (registry.containsKey(builtin.id)) {
+            val alreadyInstalled = targetDir.exists() && registry.containsKey(builtin.id)
+            if (alreadyInstalled) {
+                // Re-install if the bundled SKILL.md content has changed since last install.
+                if (!builtinSkillContentUnchanged(builtin, targetDir)) {
+                    installBuiltinInternal(builtin)
+                    changed = true
+                }
                 return@forEach
             }
             installBuiltinInternal(builtin)
@@ -122,6 +125,17 @@ private class BuiltinSkillAssetStore(
         if (changed) {
             registryStore.write(registry)
         }
+    }
+
+    private fun builtinSkillContentUnchanged(builtin: BuiltinSkillAsset, targetDir: File): Boolean {
+        val assetSkillPath = "${builtin.assetPath}/SKILL.md"
+        val installedSkillFile = File(targetDir, "SKILL.md")
+        if (!installedSkillFile.exists()) return false
+        return runCatching {
+            val assetContent = context.assets.open(assetSkillPath).bufferedReader().use { it.readText() }
+            val installedContent = installedSkillFile.readText()
+            assetContent == installedContent
+        }.getOrElse { false }
     }
 
     fun installBuiltin(skillId: String, registryStore: SkillRegistryStore) {

@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project 模式</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #F7F8FC;
+    --surface: #FFFFFF;
+    --surface2:#EEF0F8;
+    --border:  rgba(0,0,0,0.08);
+    --text:    #0D1117;
+    --muted:   rgba(13,17,23,0.40);
+    --dim:     rgba(13,17,23,0.64);
+    --accent:  #4F46E5;
+    --accent2: #D97706;
+    --green:   #059669;
+    --red:     #DC2626;
+    --blue:    #2563EB;
+  }
+
+  html, body {
+    width:100%; height:100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system,'PingFang SC','SF Pro Display',system-ui,sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ─── Deck ─── */
+  #deck { width:100%; height:100%; position:relative; }
+
+  .slide {
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    padding: 56px 72px;
+    opacity:0; transform:translateY(16px);
+    transition: opacity .35s cubic-bezier(.4,0,.2,1),
+                transform .35s cubic-bezier(.4,0,.2,1);
+    pointer-events:none;
+  }
+  .slide.active  { opacity:1; transform:translateY(0); pointer-events:auto; }
+  .slide.exit    { opacity:0; transform:translateY(-16px);
+                   transition: opacity .2s ease, transform .2s ease; }
+
+  .slide-inner   { max-width:960px; width:100%; }
+  .center        { text-align:center; align-items:center; }
+  .center .slide-inner { display:flex; flex-direction:column; align-items:center; }
+
+  /* ─── Type ─── */
+  .label {
+    font-size:11px; font-weight:700; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--accent);
+    margin-bottom:18px; display:block;
+  }
+  h1 { font-size:clamp(34px,5vw,56px); font-weight:800; line-height:1.1; letter-spacing:-.025em; }
+  h2 { font-size:clamp(26px,3.6vw,42px); font-weight:700; line-height:1.16; letter-spacing:-.02em; }
+  h3 { font-size:18px; font-weight:600; line-height:1.4; }
+  p  { font-size:16px; line-height:1.72; color:var(--dim); }
+  em { font-style:normal; font-weight:600; color:var(--text); }
+  .large { font-size:clamp(17px,2vw,22px); line-height:1.68; color:var(--dim); }
+  .accent  { color:var(--accent); }
+  .accent2 { color:var(--accent2); }
+  .green   { color:var(--green); }
+  .muted   { color:var(--muted); }
+  .bar { width:36px; height:3px; background:var(--accent); border-radius:2px; margin:20px 0; }
+  .center .bar { margin:20px auto; }
+
+  /* ─── Grid helpers ─── */
+  .g2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .g3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  .g5 { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+
+  /* ─── Card ─── */
+  .card {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:20px 22px;
+  }
+  .card .kicker {
+    font-size:11px; font-weight:700; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--accent);
+    margin-bottom:9px; display:block;
+  }
+  .card h3 { margin-bottom:6px; }
+  .card p  { font-size:14px; color:var(--muted); line-height:1.65; }
+  .card.hl { border-color:rgba(99,102,241,.35); background:rgba(99,102,241,.06); }
+
+  /* ─── Layer strip ─── */
+  .layer {
+    display:flex; align-items:flex-start; gap:18px;
+    padding:16px 20px;
+    background:var(--surface); border:1px solid var(--border);
+  }
+  .layer:first-child { border-radius:10px 10px 0 0; }
+  .layer:last-child  { border-radius:0 0 10px 10px; }
+  .layer + .layer    { border-top:none; }
+  .layer-icon {
+    width:36px; height:36px; border-radius:9px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:18px;
+  }
+  .layer-body h3  { font-size:15px; margin-bottom:3px; }
+  .layer-body p   { font-size:13px; color:var(--muted); line-height:1.6; }
+  .layer-tag {
+    display:inline-block; font-size:11px; font-weight:600;
+    padding:2px 9px; border-radius:99px; margin-left:8px;
+    background:rgba(99,102,241,.15); color:var(--accent);
+  }
+
+  /* ─── Lifecycle ─── */
+  .lifecycle {
+    display:flex; align-items:stretch; gap:0;
+    margin-top:28px;
+  }
+  .lc-step {
+    flex:1; padding:22px 18px;
+    background:var(--surface); border:1px solid var(--border);
+    position:relative;
+  }
+  .lc-step:not(:first-child) { border-left:none; }
+  .lc-step:first-child { border-radius:10px 0 0 10px; }
+  .lc-step:last-child  { border-radius:0 10px 10px 0; }
+  .lc-num  { font-size:11px; font-weight:700; color:var(--accent); letter-spacing:.1em; margin-bottom:10px; display:block; }
+  .lc-step h3 { font-size:15px; margin-bottom:6px; }
+  .lc-step p  { font-size:13px; color:var(--muted); line-height:1.6; }
+  .lc-arrow {
+    position:absolute; right:-1px; top:50%;
+    transform:translateY(-50%);
+    width:0; height:0;
+    border-top:8px solid transparent;
+    border-bottom:8px solid transparent;
+    border-left:10px solid var(--accent);
+    z-index:2;
+  }
+  .lc-step:last-child .lc-arrow { display:none; }
+
+  /* ─── Example ─── */
+  .ex-flow {
+    display:flex; flex-direction:column; gap:0; margin-top:24px;
+  }
+  .ex-row {
+    display:flex; gap:16px; align-items:flex-start;
+    padding:14px 18px;
+    background:var(--surface); border:1px solid var(--border);
+  }
+  .ex-row:first-child { border-radius:10px 10px 0 0; }
+  .ex-row:last-child  { border-radius:0 0 10px 10px; }
+  .ex-row + .ex-row   { border-top:none; }
+  .ex-role {
+    font-size:11px; font-weight:700; letter-spacing:.08em;
+    text-transform:uppercase; min-width:60px; padding-top:2px;
+  }
+  .role-user   { color:var(--accent2); }
+  .role-system { color:var(--accent); }
+  .role-result { color:var(--green); }
+  .ex-row p { font-size:14px; color:var(--dim); line-height:1.6; }
+
+  /* ─── Hot update ─── */
+  .hotupdate {
+    display:grid; grid-template-columns:1fr auto 1fr; gap:0;
+    align-items:center; margin-top:28px;
+  }
+  .hu-side {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:22px;
+  }
+  .hu-side .kicker { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin-bottom:10px; display:block; }
+  .hu-side h3 { font-size:15px; margin-bottom:8px; }
+  .hu-side ul { padding-left:16px; }
+  .hu-side li { font-size:14px; color:var(--dim); line-height:1.65; }
+  .hu-arrow {
+    display:flex; flex-direction:column; align-items:center;
+    padding:0 24px; gap:6px;
+  }
+  .hu-arrow .arr { font-size:28px; color:var(--accent); }
+  .hu-arrow span { font-size:11px; color:var(--muted); white-space:nowrap; }
+
+  /* ─── Omniflow ─── */
+  .omni-row {
+    display:flex; align-items:center; gap:16px;
+    padding:15px 20px;
+    background:var(--surface); border:1px solid var(--border);
+  }
+  .omni-row:first-child { border-radius:10px 10px 0 0; }
+  .omni-row:last-child  { border-radius:0 0 10px 10px; }
+  .omni-row + .omni-row { border-top:none; }
+  .omni-num  { font-size:11px; font-weight:700; color:var(--accent); min-width:60px; }
+  .omni-desc { font-size:14px; color:var(--dim); flex:1; line-height:1.5; }
+  .omni-cost {
+    font-size:12px; font-weight:600; padding:3px 11px;
+    border-radius:99px; white-space:nowrap;
+  }
+  .c-hi  { background:rgba(220,38,38,.1);  color:#B91C1C; }
+  .c-mid { background:rgba(217,119,6,.12); color:#92400E; }
+  .c-lo  { background:rgba(5,150,105,.1);  color:#065F46; }
+  .c-no  { background:rgba(5,150,105,.18); color:#065F46; font-size:13px; }
+
+  /* ─── Diff table ─── */
+  .diff { width:100%; border-collapse:collapse; margin-top:24px; font-size:14px; }
+  .diff th {
+    font-size:11px; font-weight:600; text-transform:uppercase;
+    letter-spacing:.08em; color:var(--muted);
+    padding:10px 14px; border-bottom:1px solid var(--border); text-align:left;
+  }
+  .diff td { padding:13px 14px; border-bottom:1px solid rgba(0,0,0,.05); color:var(--dim); }
+  .diff tr:last-child td { border-bottom:none; }
+  .diff .hi td { background:rgba(99,102,241,.06); color:var(--text); font-weight:500; }
+  .ck { color:var(--green); } .cx { color:var(--red); }
+
+  /* ─── Nav ─── */
+  #nav {
+    position:fixed; bottom:28px; left:50%; transform:translateX(-50%);
+    display:flex; align-items:center; gap:16px; z-index:100;
+  }
+  .nb {
+    width:38px; height:38px; border-radius:50%;
+    background:rgba(0,0,0,.07); border:1px solid rgba(0,0,0,.12);
+    color:rgba(0,0,0,.5); font-size:17px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:background .15s;
+  }
+  .nb:hover { background:rgba(0,0,0,.13); }
+  #ctr { font-size:12px; color:var(--muted); min-width:40px; text-align:center; }
+
+  /* ─── Pip progress ─── */
+  #pips {
+    position:fixed; bottom:78px; left:50%; transform:translateX(-50%);
+    display:flex; gap:6px; z-index:100;
+  }
+  .pip {
+    width:5px; height:5px; border-radius:50%;
+    background:rgba(0,0,0,.15); transition:background .25s, width .25s;
+    cursor:pointer;
+  }
+  .pip.on { background:var(--accent); width:18px; border-radius:99px; }
+</style>
+</head>
+<body>
+<div id="deck">
+
+<!-- ════════════════════════════════════════════
+     01  TITLE
+════════════════════════════════════════════ -->
+<div class="slide active center">
+  <div class="slide-inner">
+    <div class="label">内部对齐 · 产品理解</div>
+    <h1>Project 模式<br><span class="accent">是什么</span></h1>
+    <div class="bar"></div>
+    <p class="large muted" style="max-width:520px;">
+      从"一次对话"到"一个持续运行的个人工具"——<br>
+      这中间发生了什么
+    </p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     02  THE GAP
+════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-inner">
+    <div class="label">出发点</div>
+    <h2>AI 对话很强，<br>但它什么都<em class="accent2">留不下来</em></h2>
+    <div class="bar"></div>
+    <div class="g2" style="margin-top:28px;">
+      <div class="card">
+        <span class="kicker">今天的 AI 对话</span>
+        <p>你问 → AI 答 → 对话结束。<br>
+        明天同样的问题，重新问一遍。<br>
+        数据不存在，偏好不记得，<br>
+        工具不生成，什么都不剩。</p>
+      </div>
+      <div class="card hl">
+        <span class="kicker">Project 之后</span>
+        <p>你描述需求 → AI 生成工具 → <em>工具留下来</em>。<br>
+        数据持续积累，偏好记住了，<br>
+        下次打开还在，还能继续改。</p>
+      </div>
+    </div>
+    <p style="margin-top:24px; color:var(--muted); font-size:15px;">
+      Project 解决的不是"AI 够不够聪明"，而是<em>生成的东西能不能活下去</em>。
+    </p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     03  WHAT IS A PROJECT — ONE SENTENCE
+════════════════════════════════════════════ -->
+<div class="slide center">
+  <div class="slide-inner">
+    <div class="label">定义</div>
+    <h1 style="line-height:1.2;">
+      Project =<br>
+      <span class="accent">你和 AI 一起造出来的</span><br>
+      装在手机里的个人工具
+    </h1>
+    <div class="bar"></div>
+    <p class="large" style="max-width:600px;">
+      有界面、有数据、有工具调用、可跨会话。<br>
+      激活即可用，越用越懂你，可以随时改。
+    </p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     04  含金量：你以为需要的后端，小万都包了
+════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-inner">
+    <div class="label">含金量</div>
+    <h2>你以为要搭的<em class="accent2">后端</em>，<br>小万已经帮你跑起来了</h2>
+    <div class="bar"></div>
+    <p style="margin-bottom:20px; color:var(--muted);">传统 vibe 产品生成代码后，你还要解决：服务器 / 数据库 / 定时任务 / 文件存储 / API 调用 / 长期记忆……小万把这些全部内化为设备本地能力。你只需要设计<em>交互和规则</em>。</p>
+    <div class="g2" style="gap:10px;">
+      <div class="card">
+        <span class="kicker">🤖 手机上跑 Agent</span>
+        <h3>真实的多步自主执行</h3>
+        <p>不是"告诉你怎么做"——是 Agent 在你手机里实际运行：读屏幕、调工具、写结果、判断下一步。无需云端容器，无需服务器。</p>
+      </div>
+      <div class="card">
+        <span class="kicker">⚙️ 代码 / 脚本执行</span>
+        <h3>Alpine 沙盒在设备本地运行</h3>
+        <p>Python / Shell 脚本直接在手机跑。处理文件、调 API、做计算——不需要部署任何后端服务。</p>
+      </div>
+      <div class="card">
+        <span class="kicker">🧠 长期记忆</span>
+        <h3>Omniflow 持续沉淀你的习惯</h3>
+        <p>用户偏好、规则、高频操作轨迹自动压缩留存。不是对话记忆——是跨会话的行为级记忆，越用越懂你。</p>
+      </div>
+      <div class="card">
+        <span class="kicker">🗄️ 数据管理</span>
+        <h3>结构化持久存储，就在你手机里</h3>
+        <p>items + fields 跨会话留存。你的健身记录、账单、错题本——不在任何云端，完全由你持有，随时可导出。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     05  脚本执行：Alpine 沙盒
+════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-inner">
+    <div class="label">核心能力 · 脚本执行</div>
+    <h2>手机就是服务器，<br><em class="accent">代码直接在设备上跑</em></h2>
+    <div class="bar"></div>
+    <div style="margin-top:4px;">
+      <div class="layer">
+        <div class="layer-icon" style="background:rgba(16,185,129,.12);">🏔️</div>
+        <div class="layer-body">
+          <h3>Alpine Linux 沙盒 <span class="layer-tag">真实执行环境</span></h3>
+          <p>完整的 Linux 运行时，跑在用户手机本地。Python、Shell、任意脚本——不需要服务器，不需要 Docker，不需要云函数。</p>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-icon" style="background:rgba(79,70,229,.12);">🔗</div>
+        <div class="layer-body">
+          <h3>53 个原生工具 <span class="layer-tag">开箱即用</span></h3>
+          <p>文件读写、HTTP 请求、OCR、截图、日历、通知、定时任务……这些在传统产品里需要对接多个第三方服务，这里全部内置。</p>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-icon" style="background:rgba(245,158,11,.12);">📁</div>
+        <div class="layer-body">
+          <h3>/workspace 真实文件系统 <span class="layer-tag">数据不离设备</span></h3>
+          <p>生成的文件、处理的数据、沉淀的记忆——全部写在用户手机的真实路径上。没有网络也能跑，断网不丢数据。</p>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-icon" style="background:rgba(239,68,68,.1);">⚡</div>
+        <div class="layer-body">
+          <h3>对开发者意味着什么 <span class="layer-tag">架构革命</span></h3>
+          <p>传统路径：需求 → 写代码 → 搭后端 → 部署 → 维护服务器。<br>
+          小万路径：需求 → 描述规则 → <em>立即在设备上运行</em>。后端这一层直接消失。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     06  为什么大厂做不到
+════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-inner">
+    <div class="label">结构性壁垒</div>
+    <h2>大厂为什么<em class="accent2">做不到</em>这件事</h2>
+    <div class="bar"></div>
+    <table class="diff" style="margin-top:20px;">
+      <thead>
+        <tr>
+          <th>能力</th>
+          <th>云端 AI（OpenAI / 百度 / 阿里）</th>
+          <th>手机厂商 AI（小艺 / 小布）</th>
+          <th class="accent">小万</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>端侧代码执行</td>
+          <td class="cx">✕ 算力在服务器，进不了你手机</td>
+          <td class="cx">✕ 系统 AI，不开放沙盒给用户</td>
+          <td class="ck accent">✓ Alpine 沙盒本地跑</td>
+        </tr>
+        <tr>
+          <td>全局屏幕理解</td>
+          <td class="cx">✕ 看不见用户手机屏幕</td>
+          <td style="color:var(--accent2);">△ 有但不开放给第三方</td>
+          <td class="ck accent">✓ VLM 实时读取任意界面</td>
+        </tr>
+        <tr>
+          <td>跨 App 操控</td>
+          <td class="cx">✕ 没有设备权限</td>
+          <td style="color:var(--accent2);">△ 仅限自家 App 生态</td>
+          <td class="ck accent">✓ 无障碍服务读控任意 App</td>
+        </tr>
+        <tr>
+          <td>本地持久化数据</td>
+          <td class="cx">✕ 只有会话记忆，服务端存储</td>
+          <td class="cx">✕ 数据在厂商云端</td>
+          <td class="ck accent">✓ 手机本地 /data，用户持有</td>
+        </tr>
+        <tr>
+          <td>用户自造工具</td>
+          <td class="cx">✕ 生成代码，用户自己部署</td>
+          <td class="cx">✕ 固定功能，不可定制</td>
+          <td class="ck accent">✓ 描述即生成，即刻可用</td>
+        </tr>
+        <tr class="hi">
+          <td>根本原因</td>
+          <td colspan="2" style="color:var(--dim);">商业模式、生态封闭、或没有手机这个 surface——三方各有一个结构性做不到</td>
+          <td><span class="accent">唯一同时满足的产品</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="muted" style="margin-top:14px; font-size:13px;">
+      厂商 AI 有系统权限，但目标是<em>让你用系统功能</em>（订餐、导航），不是<em>让你造自己的工具</em>。这是消费者工具 vs 创作者工具的根本差异。
+    </p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     原 04  ANATOMY — 5 LAYERS
+════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-inner">
+    <div class="label">结构</div>
+    <h2>一个 Project 由<em class="accent">五层</em>组成</h2>
+    <div class="bar"></div>
+    <div style="margin-top:20px;">
+      <div class="layer">
+        <div class="layer-icon" style="background:rgba(99,102,241,.15);">🖥️</div>
+        <div class="layer-body">
+          <h3>前端 UI <span class="layer-tag">展示层</span></h3>
+          <p>AI 生成的可视化界面（HTML / Flutter / Markdown）。用户看到的、交互的部分。<br>
+          支持热更新——你圈一块 UI 说"改成这样"，它直接变。</p>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-icon" style="background:rgba(245,158,11,.12);">🗄️</div>
+        <div class="layer-body">
+          <h3>持久化数据 <span class="layer-tag">数据层</span></h3>
+          <p>items + fields，跨会话留存。你的健身记录、账单、错题本……<br>
+          不在云端，在你手机本地的 data/ 目录。</p>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-icon" style="background:rgba(59,130,246,.12);">🔧</div>
+        <div class="layer-body">
+          <h3>API / 工具 <span class="layer-tag">能力层</span></h3>
+          <p>AI 为这个 Project 定义的可调用工具：calculate_tdee、log_meal、generate_workout……<br>
+          前端调用 → 后端执行 → 结果写回数据层。</p>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-icon" style="background:rgba(16,185,129,.12);">⚙️</div>
+        <div class="layer-body">
+          <h3>后端执行 <span class="layer-tag">运行层</span></h3>
+          <p>OOB 53 个原生工具 + Alpine 沙盒 + 小万系统能力（截图、无障碍、读写文件）。<br>
+          真实在设备上运行，不是模拟。</p>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-icon" style="background:rgba(168,85,247,.12);">🧠</div>
+        <div class="layer-body">
+          <h3>Omniflow 记忆 <span class="layer-tag">学习层</span></h3>
+          <p>把高频操作轨迹压缩为离线 Function。用得越多，调用大模型越少，速度越快成本越低。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     05  LIFECYCLE
+════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-inner">
+    <div class="label">生命周期</div>
+    <h2>从一句话到<em class="accent">持续演化的工具</em></h2>
+    <div class="bar"></div>
+    <div class="lifecycle">
+      <div class="lc-step">
+        <span class="lc-num">01 · 创建</span>
+        <h3>描述需求</h3>
+        <p>用自然语言说你要什么。AI 理解意图，生成 UI + API + 初始数据结构。</p>
+        <div class="lc-arrow"></div>
+      </div>
+      <div class="lc-step">
+        <span class="lc-num">02 · 激活</span>
+        <h3>Project 上线</h3>
+        <p>前端界面可以打开了。数据为空，等待你第一次使用。</p>
+        <div class="lc-arrow"></div>
+      </div>
+      <div class="lc-step">
+        <span class="lc-num">03 · 使用</span>
+        <h3>数据积累</h3>
+        <p>每次操作写入 items。API 被调用，后端执行，结果可见。</p>
+        <div class="lc-arrow"></div>
+      </div>
+      <div class="lc-step">
+        <span class="lc-num">04 · 编辑</span>
+        <h3>随时热更新</h3>
+        <p>悬浮窗圈选 UI + 说需求 → 界面实时改变。数据不丢。</p>
+        <div class="lc-arrow"></div>
+      </div>
+      <div class="lc-step">
+        <span class="lc-num">05 · 进化</span>
+        <h3>越用越便宜</h3>
+        <p>Omniflow 把高频轨迹压缩，逐渐减少对大模型的依赖。</p>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:20px; font-size:14px;">
+      这五步构成一个正向飞轮——Project 不是一次性生成物，是一个<em>活的工具</em>。
+    </p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     06  EXAMPLE — FITNESS
+════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-inner">
+    <div class="label">实际案例 · 健身助手</div>
+    <h2>一个 Project 的<em class="accent">完整使用过程</em></h2>
+    <div class="bar"></div>
+    <div class="ex-flow">
+      <div class="ex-row">
+        <div class="ex-role role-user">用户</div>
+        <p>「我想减脂，目标 60kg，不吃花生，帮我做一个健身记录工具。」</p>
+      </div>
+      <div class="ex-row">
+        <div class="ex-role role-system">AI 生成</div>
+        <p>创建 Project：前端热量看板 + 体重趋势图，API：log_meal / calculate_tdee / generate_workout，初始数据空。</p>
+      </div>
+      <div class="ex-row">
+        <div class="ex-role role-user">第2天</div>
+        <p>拍午餐照片 → VLM 识别食物 → 热量自动写入今日记录 → 看板实时更新。</p>
+      </div>
+      <div class="ex-row">
+        <div class="ex-role role-user">第7天</div>
+        <p>悬浮窗圈选蛋白质那一栏说：「这里太少了，帮我多推荐高蛋白食物。」</p>
+      </div>
+      <div class="ex-row">
+        <div class="ex-role role-system">热更新</div>
+        <p>推荐逻辑和 UI 实时变化，历史数据保留，体重曲线不受影响。</p>
+      </div>
+      <div class="ex-row">
+        <div class="ex-role role-result">三个月后</div>
+        <p>「帮我生成一份报告给营养师看。」→ 导出含三个月饮食 + 体重数据的 PDF。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     07  EXAMPLE — FINANCE
+════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-inner">
+    <div class="label">实际案例 · 记账教练</div>
+    <h2>Project 记住了你的<em class="accent">规则</em>，不只是数据</h2>
+    <div class="bar"></div>
+    <div class="ex-flow">
+      <div class="ex-row">
+        <div class="ex-role role-user">用户</div>
+        <p>「帮我做一个记账工具，自动分类我的消费，每月复盘。」</p>
+      </div>
+      <div class="ex-row">
+        <div class="ex-role role-system">AI 生成</div>
+        <p>前端：消费分类图 + 月度趋势，API：import_bill / categorize_expense / generate_saving_plan。</p>
+      </div>
+      <div class="ex-row">
+        <div class="ex-role role-user">日常使用</div>
+        <p>截图支付宝账单 → 小万读取 → 自动解析金额和商户 → 写入今日记录。</p>
+      </div>
+      <div class="ex-row">
+        <div class="ex-role role-user">用户调整规则</div>
+        <p>「以后奶茶算娱乐，不算餐饮。」→ 分类规则更新，<em>历史数据全部重新分类</em>。</p>
+      </div>
+      <div class="ex-row">
+        <div class="ex-role role-result">月底</div>
+        <p>「上个月哪里花多了？」→ 自动分析异常支出 + 生成下月建议。</p>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:16px; font-size:14px;">
+      规则是你的，数据是你的，UI 随你改——和现成记账 App 的本质区别：<em>它按你的逻辑工作</em>。
+    </p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     08  HOT UPDATE
+════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-inner">
+    <div class="label">核心能力 · 热更新</div>
+    <h2>圈选 + 一句话，<br><em class="accent">UI 实时改变</em>，数据不丢</h2>
+    <div class="bar"></div>
+    <div class="hotupdate">
+      <div class="hu-side">
+        <span class="kicker">你做什么</span>
+        <h3>两步操作</h3>
+        <ul style="margin-top:10px;">
+          <li>用悬浮窗画笔圈出要改的区域</li>
+          <li>说出你想要的变化</li>
+          <li>「这里改成折叠图表」</li>
+          <li>「帮我加一个导出按钮」</li>
+          <li>「这个颜色太亮了换深一点」</li>
+        </ul>
+      </div>
+      <div class="hu-arrow">
+        <div class="arr">→</div>
+        <span>热更新</span>
+      </div>
+      <div class="hu-side">
+        <span class="kicker">系统做什么</span>
+        <h3>三件事同时发生</h3>
+        <ul style="margin-top:10px;">
+          <li>VLM 理解你圈的区域和意图</li>
+          <li>AI 重新生成对应的 UI 代码</li>
+          <li>前端局部更新，<em>其他数据不受影响</em></li>
+        </ul>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:20px; font-size:14px;">
+      热更新不是重新生成整个 Project——是精确地改你指出的那一块。<br>
+      你的数据、其他 UI、API 逻辑全部保持原样。
+    </p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     09  OMNIFLOW
+════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-inner">
+    <div class="label">核心能力 · Omniflow</div>
+    <h2>用得越多，<em class="accent">越快越便宜</em></h2>
+    <div class="bar"></div>
+    <p class="muted" style="margin-bottom:4px; font-size:15px;">高频操作轨迹自动压缩为本地 Function，减少对大模型的依赖</p>
+    <div style="margin-top:16px;">
+      <div class="omni-row">
+        <div class="omni-num">第1周</div>
+        <div class="omni-desc">每次请求走完整大模型推理 → 结果写入 data/</div>
+        <div class="omni-cost c-hi">云端推理 · 100%</div>
+      </div>
+      <div class="omni-row">
+        <div class="omni-num">第1月</div>
+        <div class="omni-desc">Omniflow 识别出你的高频模式 → 部分流程压缩为本地 Function</div>
+        <div class="omni-cost c-mid">推理成本 · ~60%</div>
+      </div>
+      <div class="omni-row">
+        <div class="omni-num">第3月</div>
+        <div class="omni-desc">80% 常规请求走本地 Function，VLM 辅助理解输入</div>
+        <div class="omni-cost c-lo">推理成本 · ~30%</div>
+      </div>
+      <div class="omni-row">
+        <div class="omni-num">第1年</div>
+        <div class="omni-desc">核心操作全部本地化，大模型只处理新的、复杂的请求</div>
+        <div class="omni-cost c-no">推理成本 · ≈0</div>
+      </div>
+    </div>
+    <div class="g2" style="margin-top:16px; gap:10px;">
+      <div class="card" style="padding:14px 18px;">
+        <p style="font-size:13px;"><em>对用户：</em>用得越久越顺手，响应越快，费用越低。</p>
+      </div>
+      <div class="card" style="padding:14px 18px;">
+        <p style="font-size:13px;"><em>对留存：</em>Omniflow 里存的全是你的习惯，无法迁移，离开成本极高。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     10  VS COMPARISON
+════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-inner">
+    <div class="label">定位</div>
+    <h2>Project 和现有产品<br>的<em class="accent2">本质区别</em></h2>
+    <div class="bar"></div>
+    <table class="diff">
+      <thead>
+        <tr>
+          <th>维度</th>
+          <th>AI 对话（ChatGPT / 豆包）</th>
+          <th>现成 App（记账 / 健身）</th>
+          <th class="accent">Project</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>数据持久化</td>
+          <td class="cx">✕ 会话结束即消失</td>
+          <td class="ck">✓ 保存</td>
+          <td class="ck accent">✓ 本地持久</td>
+        </tr>
+        <tr>
+          <td>规则可定制</td>
+          <td class="cx">✕ 每次重新说</td>
+          <td class="cx">✕ 固定逻辑</td>
+          <td class="ck accent">✓ 随时热更新</td>
+        </tr>
+        <tr>
+          <td>跨 App 能力</td>
+          <td class="cx">✕ 看不见其他 App</td>
+          <td class="cx">✕ 手动录入</td>
+          <td class="ck accent">✓ 截图 / 无障碍自动读取</td>
+        </tr>
+        <tr>
+          <td>工具调用</td>
+          <td class="cx">✕ 只输出文字</td>
+          <td class="cx">✕ 固定功能</td>
+          <td class="ck accent">✓ AI 定义 API，真实执行</td>
+        </tr>
+        <tr>
+          <td>创建方式</td>
+          <td>—</td>
+          <td class="cx">✕ 下载安装，凑合用</td>
+          <td class="ck accent">✓ 一句话描述即生成</td>
+        </tr>
+        <tr class="hi">
+          <td>本质</td>
+          <td>临时对话</td>
+          <td>通用工具</td>
+          <td><span class="accent">你的私人工具，按你的逻辑工作</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     11  MORE EXAMPLES
+════════════════════════════════════════════ -->
+<div class="slide">
+  <div class="slide-inner">
+    <div class="label">更多场景</div>
+    <h2>Project 能覆盖的<em class="accent">长尾需求</em></h2>
+    <div class="bar"></div>
+    <div class="g3" style="margin-top:24px;">
+      <div class="card">
+        <span class="kicker">备考教练</span>
+        <h3>错题本 + 薄弱点追踪</h3>
+        <p>拍题入库，记住你的弱点，生成专项题单。每次从上次停的地方继续。</p>
+      </div>
+      <div class="card">
+        <span class="kicker">用药管理</span>
+        <h3>指标记录 + 就诊报告</h3>
+        <p>血糖/血压截图自动录入，趋势分析，就诊前一键生成给医生的报告。</p>
+      </div>
+      <div class="card">
+        <span class="kicker">穿搭助手</span>
+        <h3>衣柜 + 场景搭配</h3>
+        <p>相册识别衣服，结合天气和日历场景推荐搭配，圈选改风格偏好。</p>
+      </div>
+      <div class="card">
+        <span class="kicker">代码助手</span>
+        <h3>GitHub 仓库上下文</h3>
+        <p>接入 repo，Omniflow 缓存常用上下文，跨会话项目知识不丢。</p>
+      </div>
+      <div class="card">
+        <span class="kicker">客户跟进</span>
+        <h3>CRM 个人版</h3>
+        <p>从微信对话提取任务，写入跟进记录，到期自动提醒。</p>
+      </div>
+      <div class="card">
+        <span class="kicker">…任意场景</span>
+        <h3>你定义，AI 生成</h3>
+        <p>只要能用自然语言描述的需求，都可以 vibe 出一个 Project 来承载。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     12  SUMMARY
+════════════════════════════════════════════ -->
+<div class="slide center">
+  <div class="slide-inner">
+    <div class="label">总结</div>
+    <h1 style="line-height:1.2;">
+      「一次对话」变成<br>
+      「一个工具」变成<br>
+      「<span class="accent">一段关系</span>」
+    </h1>
+    <div class="bar"></div>
+    <div class="g3" style="margin-top:28px; text-align:left;">
+      <div class="card">
+        <span class="kicker">一次对话</span>
+        <h3>其他产品也有</h3>
+        <p>说需求，AI 回答。<br>会话结束，一切消失。</p>
+      </div>
+      <div class="card hl">
+        <span class="kicker">一个工具</span>
+        <h3>少数产品有</h3>
+        <p>有 UI、有数据、有 API、<br>可跨会话持续运行。</p>
+      </div>
+      <div class="card" style="border-color:rgba(245,158,11,.35); background:rgba(245,158,11,.06);">
+        <span class="kicker" style="color:var(--accent2);">一段关系</span>
+        <h3>只有 OOB</h3>
+        <p>越用越懂你，越用越便宜，<br>改变越积累，离开成本越高。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /deck -->
+
+<!-- Nav -->
+<div id="pips"></div>
+<div id="nav">
+  <button class="nb" id="prev">‹</button>
+  <span id="ctr">1 / 15</span>
+  <button class="nb" id="next">›</button>
+</div>
+
+<script>
+  const slides  = Array.from(document.querySelectorAll('.slide'));
+  const ctr     = document.getElementById('ctr');
+  const pipWrap = document.getElementById('pips');
+  let cur = 0;
+
+  // Build pip dots
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'pip' + (i === 0 ? ' on' : '');
+    d.addEventListener('click', () => go(i));
+    pipWrap.appendChild(d);
+  });
+
+  const allPips = pipWrap.querySelectorAll('.pip');
+
+  function go(n) {
+    const leaving = slides[cur];           // capture before cur changes
+    leaving.classList.add('exit');
+    setTimeout(() => leaving.classList.remove('active', 'exit'), 220);
+    allPips[cur].classList.remove('on');
+    cur = (n + slides.length) % slides.length;
+    slides[cur].classList.add('active');
+    allPips[cur].classList.add('on');
+    ctr.textContent = `${cur + 1} / ${slides.length}`;
+  }
+
+  document.getElementById('next').onclick = () => go(cur + 1);
+  document.getElementById('prev').onclick = () => go(cur - 1);
+
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight', 'ArrowDown', ' '].includes(e.key)) { e.preventDefault(); go(cur + 1); }
+    if (['ArrowLeft', 'ArrowUp'].includes(e.key))         { e.preventDefault(); go(cur - 1); }
+  });
+
+  let tx = 0;
+  document.addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend',   e => {
+    const dx = e.changedTouches[0].clientX - tx;
+    if (Math.abs(dx) > 50) go(cur + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+</script>
+</body>
+</html>

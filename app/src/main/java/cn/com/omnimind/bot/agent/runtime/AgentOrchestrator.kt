@@ -10,6 +10,7 @@ import cn.com.omnimind.baselib.util.OmniLog
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.supervisorScope
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -100,13 +101,29 @@ class AgentOrchestrator(
                         }
                     },
                     onContentUpdate = { content ->
-                        if (content.isNotBlank()) {
+                        val displayContent = AgentTextSanitizer.stripTextFunctionCalls(
+                            AgentTextSanitizer.sanitizeUtf16(content)
+                        )
+                        if (displayContent.isNotBlank()) {
                             callback.onChatMessage(
                                 combineContinuationContent(
                                     prefix = assistantContentPrefix,
-                                    content = content
+                                    content = displayContent
                                 ),
                                 false
+                            )
+                        }
+                    },
+                    onToolCallUpdate = { snapshot ->
+                        val toolName = snapshot.name?.trim().orEmpty()
+                        if (toolName.isNotBlank()) {
+                            callback.onToolCallPreview(
+                                toolName = toolName,
+                                argumentsJson = AgentTextSanitizer.sanitizeUtf16(
+                                    snapshot.arguments
+                                ),
+                                toolCallId = snapshot.id,
+                                toolCallIndex = snapshot.index
                             )
                         }
                     }
@@ -175,7 +192,8 @@ class AgentOrchestrator(
                         )
                         continue@roundLoop
                     }
-                    val fallbackMessage = lastAssistantContent.ifBlank {
+                    val cleanedContent = AgentTextSanitizer.stripTextFunctionCalls(lastAssistantContent)
+                    val fallbackMessage = cleanedContent.ifBlank {
                         "我已完成思考，但暂时无法生成回复，请重试。"
                     }
                     callback.onChatMessage(
@@ -259,9 +277,9 @@ class AgentOrchestrator(
                         toolName = toolCall.function.name,
                         toolCallId = toolCall.id
                     )
-                    callback.onToolCallStart(toolCall.function.name, parsedArgs)
+                    callback.onToolCallStart(toolCall.function.name, toolCall.id, parsedArgs)
                     val result = try {
-                        coroutineScope {
+                        supervisorScope {
                             val deferred = async {
                                 toolRouter.execute(
                                     toolCall = toolCall,

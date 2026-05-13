@@ -628,6 +628,76 @@ object AgentToolDefinitions {
         }
     }
 
+    val userDialogTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "user_dialog")
+            put("displayName", "请求用户确认")
+            put("toolType", "builtin")
+            put(
+                "description",
+                "暂停执行并向用户展示一张交互卡片，等待用户做出选择后继续。仅在用户必须做决策才能继续时使用——例如：确认危险操作（confirm）、分支选择（choices）、收集必要的文本输入（input）。不要用于纯信息展示；信息直接写进对话回复即可。" +
+                "type 枚举：" +
+                "confirm — 两个按钮（确认/取消），用于不可逆操作或需要明确授权的操作；" +
+                "choices — 2-4 个选项卡片，用于流程分支，每个选项有 label(展示文字) 和 value(注入为用户消息)；" +
+                "input — 单行文本框，用于需要用户提供名称、关键词、数字等场景。" +
+                "用户操作结果会作为新的用户消息注入，下一轮从该消息继续。"
+            )
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("type") {
+                        put("type", "string")
+                        put("description", "对话类型")
+                        putJsonArray("enum") { add("confirm"); add("choices"); add("input") }
+                    }
+                    putJsonObject("message") {
+                        put("type", "string")
+                        put("description", "展示给用户的问题或说明文字，简洁明确，不超过60字")
+                    }
+                    putJsonObject("title") {
+                        put("type", "string")
+                        put("description", "可选标题，confirm 类型下通常是操作名称")
+                    }
+                    putJsonObject("confirmLabel") {
+                        put("type", "string")
+                        put("description", "confirm 类型：确认按钮文字，默认「确定」")
+                    }
+                    putJsonObject("cancelLabel") {
+                        put("type", "string")
+                        put("description", "confirm 类型：取消按钮文字，默认「取消」")
+                    }
+                    putJsonObject("danger") {
+                        put("type", "boolean")
+                        put("description", "confirm 类型：确认按钮是否显示为危险红色，用于删除/清空等破坏性操作")
+                    }
+                    putJsonObject("choices") {
+                        put("type", "array")
+                        put("description", "choices 类型：选项列表，每项含 label(展示) 和 value(注入为用户消息)，2-4 项")
+                        putJsonObject("items") {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("label") { put("type", "string") }
+                                putJsonObject("value") { put("type", "string") }
+                                putJsonObject("hint") { put("type", "string"); put("description", "可选的一行说明") }
+                            }
+                        }
+                    }
+                    putJsonObject("placeholder") {
+                        put("type", "string")
+                        put("description", "input 类型：输入框占位文字")
+                    }
+                    putJsonObject("inputType") {
+                        put("type", "string")
+                        put("description", "input 类型：输入框类型")
+                        putJsonArray("enum") { add("text"); add("number"); add("date") }
+                    }
+                }
+                putJsonArray("required") { add("type"); add("message") }
+            }
+        }
+    }
+
     val terminalExecuteTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -2532,6 +2602,7 @@ object AgentToolDefinitions {
         vlmTaskTool,
         imagePickerTool,
         notificationSendTool,
+        userDialogTool,
         terminalExecuteTool,
         terminalSessionStartTool,
         terminalSessionExecTool,

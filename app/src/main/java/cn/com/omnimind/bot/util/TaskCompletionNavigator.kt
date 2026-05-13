@@ -2,6 +2,8 @@ package cn.com.omnimind.bot.util
 
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.App
 import cn.com.omnimind.bot.activity.MainActivity
@@ -78,6 +80,21 @@ object TaskCompletionNavigator {
     }
 
     fun navigateToMainRoute(context: Context, route: String, needClear: Boolean) {
+        val appContext = context.applicationContext
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Handler(Looper.getMainLooper()).post {
+                navigateToMainRouteOnMain(appContext, route, needClear)
+            }
+            OmniLog.d(
+                TAG,
+                "主页面跳转已切换到主线程 route=${route.ifBlank { "/home/chat" }} needClear=$needClear"
+            )
+            return
+        }
+        navigateToMainRouteOnMain(appContext, route, needClear)
+    }
+
+    private fun navigateToMainRouteOnMain(context: Context, route: String, needClear: Boolean) {
         val targetRoute = route.ifBlank { "/home/chat" }
         UIKit.uiChatEvent?.closeChatBotBgInMain()
 

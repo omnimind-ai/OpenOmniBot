@@ -26,12 +26,26 @@ class AgentLlmStreamAccumulator(
         private const val TAG = "AgentLlmStreamAccumulator"
         private const val THINK_OPEN_TAG = "<think>"
         private const val THINK_CLOSE_TAG = "</think>"
+        private const val TOOL_CALL_OPEN_TAG = "<tool_call>"
+        private const val TOOL_CALL_CLOSE_TAG = "</tool_call>"
+        private const val FUNCTION_OPEN_MARKER = "<function="
+        private const val FUNCTION_CLOSE_TAG = "</function>"
         private val INLINE_THINK_TAGS = listOf(THINK_OPEN_TAG, THINK_CLOSE_TAG)
+        private val INLINE_TOOL_MARKERS = listOf(TOOL_CALL_OPEN_TAG, FUNCTION_OPEN_MARKER)
+        private val FUNCTION_BLOCK_REGEX = Regex(
+            "^<function\\s*=\\s*([A-Za-z0-9_.:-]+)\\s*>(.*)</function\\s*>$",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        private val PARAMETER_REGEX = Regex(
+            "<parameter\\s*=\\s*([A-Za-z0-9_.:-]+)\\s*>(.*?)</parameter\\s*>",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
     }
 
     private val contentBuffer = StringBuilder()
     private val reasoningBuffer = StringBuilder()
     private val inlineTextBuffer = StringBuilder()
+    private val inlineToolMarkupBuffer = StringBuilder()
     private val toolCallBuilders: SortedMap<Int, MutableToolCallBuilder> = TreeMap()
     private var finishReason: String? = null
     private var usage: ChatCompletionUsage? = null
@@ -198,11 +212,23 @@ class AgentLlmStreamAccumulator(
 
     fun currentContent(): String = AgentTextSanitizer.sanitizeUtf16(contentBuffer.toString())
 
+    fun currentToolCallSnapshots(): List<StreamingToolCallSnapshot> {
+        return toolCallBuilders.entries.map { (index, builder) ->
+            StreamingToolCallSnapshot(
+                index = index,
+                id = builder.id?.takeIf { it.isNotBlank() },
+                name = builder.name?.takeIf { it.isNotBlank() },
+                arguments = builder.arguments.toString()
+            )
+        }
+    }
+
     fun buildTurn(): ChatCompletionTurn {
         if (!seenChunk) {
             throw IllegalStateException("chat completion stream ended without chunks")
         }
         flushInlineTextBuffer(final = true)
+        flushInlineToolMarkupBuffer(final = true)
         val toolCalls = toolCallBuilders.entries.map { (index, builder) ->
             val name = builder.name?.trim().orEmpty()
             if (name.isBlank()) {
@@ -264,6 +290,11 @@ class AgentLlmStreamAccumulator(
         var type: String? = null,
         var name: String? = null,
         val arguments: StringBuilder = StringBuilder()
+    )
+
+    private data class InlineFunctionToolCall(
+        val name: String,
+        val arguments: JsonObject
     )
 
     private fun consumeChoice(choice: JsonObject): Boolean {
@@ -441,7 +472,7 @@ class AgentLlmStreamAccumulator(
             return
         }
         if (!preferInlineThinkTags) {
-            contentBuffer.append(text)
+            appendVisibleText(text)
             return
         }
         inlineTextBuffer.append(text)
@@ -542,7 +573,179 @@ class AgentLlmStreamAccumulator(
         if (text.isEmpty()) {
             return
         }
+        inlineToolMarkupBuffer.append(text)
+        flushInlineToolMarkupBuffer(final = false)
+    }
+
+    private fun appendPlainVisibleText(text: String) {
+        if (text.isEmpty()) {
+            return
+        }
         contentBuffer.append(text)
+    }
+
+    private fun flushInlineToolMarkupBuffer(final: Boolean) {
+        while (inlineToolMarkupBuffer.isNotEmpty()) {
+            val bufferText = inlineToolMarkupBuffer.toString()
+            val toolCallOpenIndex = bufferText.indexOf(TOOL_CALL_OPEN_TAG)
+            val functionOpenIndex = bufferText.indexOf(FUNCTION_OPEN_MARKER)
+            val markerIndex = firstNonNegative(toolCallOpenIndex, functionOpenIndex)
+
+            if (markerIndex < 0) {
+                val retainedLength = if (final) 0 else partialMarkerSuffixLength(
+                    bufferText,
+                    INLINE_TOOL_MARKERS
+                )
+                val safeLength = inlineToolMarkupBuffer.length - retainedLength
+                if (safeLength <= 0) {
+                    return
+                }
+                appendPlainVisibleText(bufferText.substring(0, safeLength))
+                inlineToolMarkupBuffer.delete(0, safeLength)
+                return
+            }
+
+            if (markerIndex > 0) {
+                appendPlainVisibleText(bufferText.substring(0, markerIndex))
+                inlineToolMarkupBuffer.delete(0, markerIndex)
+                continue
+            }
+
+            if (bufferText.startsWith(TOOL_CALL_OPEN_TAG)) {
+                inlineToolMarkupBuffer.delete(0, TOOL_CALL_OPEN_TAG.length)
+                deleteLeadingWhitespace()
+                continue
+            }
+
+            val closeIndex = bufferText.indexOf(FUNCTION_CLOSE_TAG)
+            if (closeIndex < 0) {
+                if (final) {
+                    appendPlainVisibleText(bufferText)
+                    inlineToolMarkupBuffer.setLength(0)
+                }
+                return
+            }
+
+            val functionEnd = closeIndex + FUNCTION_CLOSE_TAG.length
+            val block = bufferText.substring(0, functionEnd)
+            val parsed = parseInlineFunctionToolCall(block)
+            if (parsed == null) {
+                appendPlainVisibleText(block)
+            } else {
+                mergeInlineFunctionToolCall(parsed)
+                OmniLog.d(TAG, "parsed inline function tool call: ${parsed.name}")
+            }
+            inlineToolMarkupBuffer.delete(0, functionEnd)
+            deleteOptionalLeadingToolCallClose()
+        }
+    }
+
+    private fun parseInlineFunctionToolCall(block: String): InlineFunctionToolCall? {
+        val match = FUNCTION_BLOCK_REGEX.matchEntire(block.trim()) ?: return null
+        val name = xmlUnescape(match.groupValues[1]).trim()
+        if (name.isEmpty()) {
+            return null
+        }
+        val parameterMatches = PARAMETER_REGEX.findAll(match.groupValues[2]).toList()
+        // Keep pseudo/debug markup as normal assistant text. Real Qwen-style
+        // tool calls include parameter tags, which are enough to build JSON args.
+        if (parameterMatches.isEmpty()) {
+            return null
+        }
+        val arguments = linkedMapOf<String, JsonElement>()
+        parameterMatches.forEach { parameterMatch ->
+            val key = xmlUnescape(parameterMatch.groupValues[1]).trim()
+            if (key.isEmpty()) {
+                return@forEach
+            }
+            arguments[key] = inlineParameterValueToJson(parameterMatch.groupValues[2])
+        }
+        if (arguments.isEmpty()) {
+            return null
+        }
+        return InlineFunctionToolCall(name = name, arguments = JsonObject(arguments))
+    }
+
+    private fun mergeInlineFunctionToolCall(call: InlineFunctionToolCall) {
+        val nextIndex = (toolCallBuilders.keys.maxOrNull() ?: -1) + 1
+        val builder = toolCallBuilders.getOrPut(nextIndex) { MutableToolCallBuilder() }
+        builder.id = "inline_tool_call_$nextIndex"
+        builder.type = "function"
+        builder.name = call.name
+        builder.arguments.setLength(0)
+        builder.arguments.append(json.encodeToString(JsonElement.serializer(), call.arguments))
+    }
+
+    private fun inlineParameterValueToJson(raw: String): JsonElement {
+        val value = xmlUnescape(raw).trim()
+        if (value.isEmpty()) {
+            return JsonPrimitive("")
+        }
+        val shouldTryJson = value.startsWith("{") ||
+            value.startsWith("[") ||
+            value.startsWith("\"") ||
+            value == "true" ||
+            value == "false" ||
+            value == "null" ||
+            value.matches(Regex("-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?"))
+        if (shouldTryJson) {
+            runCatching { json.parseToJsonElement(value) }.getOrNull()?.let {
+                return it
+            }
+        }
+        return JsonPrimitive(value)
+    }
+
+    private fun deleteOptionalLeadingToolCallClose() {
+        deleteLeadingWhitespace()
+        if (inlineToolMarkupBuffer.startsWith(TOOL_CALL_CLOSE_TAG)) {
+            inlineToolMarkupBuffer.delete(0, TOOL_CALL_CLOSE_TAG.length)
+            deleteLeadingWhitespace()
+        }
+    }
+
+    private fun deleteLeadingWhitespace() {
+        var count = 0
+        while (
+            count < inlineToolMarkupBuffer.length &&
+            inlineToolMarkupBuffer[count].isWhitespace()
+        ) {
+            count += 1
+        }
+        if (count > 0) {
+            inlineToolMarkupBuffer.delete(0, count)
+        }
+    }
+
+    private fun firstNonNegative(left: Int, right: Int): Int {
+        return when {
+            left < 0 -> right
+            right < 0 -> left
+            else -> minOf(left, right)
+        }
+    }
+
+    private fun partialMarkerSuffixLength(text: String, markers: List<String>): Int {
+        var longest = 0
+        markers.forEach { marker ->
+            val upperBound = minOf(text.length, marker.length - 1)
+            for (candidate in upperBound downTo 1) {
+                if (text.endsWith(marker.substring(0, candidate))) {
+                    longest = maxOf(longest, candidate)
+                    break
+                }
+            }
+        }
+        return longest
+    }
+
+    private fun xmlUnescape(value: String): String {
+        return value
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+            .replace("&amp;", "&")
     }
 
     private fun appendReasoningText(text: String) {

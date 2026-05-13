@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>为什么只有小万</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0C0C0E;
+    --surface: #141416;
+    --border: rgba(255,255,255,0.07);
+    --text: #F0F0F2;
+    --muted: rgba(240,240,242,0.45);
+    --accent: #5B7FFF;
+    --accent2: #FF6B4A;
+    --green: #34D399;
+    --red: #F87171;
+    --slide-w: 100vw;
+    --slide-h: 100vh;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, 'PingFang SC', 'SF Pro Display', system-ui, sans-serif;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── Deck ── */
+  #deck {
+    width: 100%; height: 100%;
+    position: relative;
+  }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 64px 80px;
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity .38s cubic-bezier(.4,0,.2,1),
+                transform .38s cubic-bezier(.4,0,.2,1);
+    pointer-events: none;
+  }
+  .slide.active {
+    opacity: 1; transform: translateY(0);
+    pointer-events: auto;
+  }
+  .slide.exit {
+    opacity: 0; transform: translateY(-18px);
+    transition: opacity .22s ease, transform .22s ease;
+  }
+
+  .slide-inner {
+    max-width: 920px;
+    width: 100%;
+  }
+
+  /* ── Typography ── */
+  .label {
+    font-size: 11px; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 20px;
+  }
+
+  h1 {
+    font-size: clamp(36px, 5vw, 58px);
+    font-weight: 700;
+    line-height: 1.12;
+    letter-spacing: -.02em;
+  }
+
+  h2 {
+    font-size: clamp(28px, 3.8vw, 44px);
+    font-weight: 700;
+    line-height: 1.18;
+    letter-spacing: -.02em;
+  }
+
+  h3 {
+    font-size: 20px; font-weight: 600;
+    line-height: 1.4;
+  }
+
+  p, li {
+    font-size: 17px; line-height: 1.7;
+    color: rgba(240,240,242,.78);
+  }
+
+  .large {
+    font-size: clamp(18px, 2.2vw, 24px);
+    line-height: 1.65;
+    color: rgba(240,240,242,.82);
+  }
+
+  em { color: var(--text); font-style: normal; font-weight: 600; }
+
+  .accent { color: var(--accent); }
+  .accent2 { color: var(--accent2); }
+  .green { color: var(--green); }
+  .muted { color: var(--muted); }
+
+  /* ── Divider ── */
+  .div { width: 40px; height: 3px; background: var(--accent); border-radius: 2px; margin: 24px 0; }
+
+  /* ── Cards ── */
+  .card-grid {
+    display: grid;
+    gap: 14px;
+    margin-top: 32px;
+  }
+  .card-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  .card-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 24px;
+  }
+  .card .num {
+    font-size: 13px; font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 10px;
+    display: block;
+  }
+  .card h3 { margin-bottom: 6px; }
+  .card p { font-size: 14px; color: var(--muted); line-height: 1.6; }
+
+  /* ── Prereq cards ── */
+  .prereq {
+    border-left: 3px solid var(--accent);
+    padding-left: 20px;
+    margin-bottom: 28px;
+  }
+  .prereq h3 { color: var(--text); margin-bottom: 4px; }
+  .prereq .tag {
+    display: inline-block;
+    font-size: 11px; font-weight: 600;
+    letter-spacing: .08em;
+    padding: 3px 10px;
+    border-radius: 99px;
+    background: rgba(91,127,255,.15);
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+  .prereq p { font-size: 15px; }
+
+  /* ── Compare table ── */
+  .compare {
+    width: 100%; border-collapse: collapse;
+    margin-top: 28px;
+    font-size: 14px;
+  }
+  .compare th {
+    font-size: 11px; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+  }
+  .compare td {
+    padding: 13px 14px;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+    color: rgba(240,240,242,.72);
+    line-height: 1.5;
+  }
+  .compare tr:last-child td { border-bottom: none; }
+  .compare .row-highlight td {
+    background: rgba(91,127,255,.06);
+    color: var(--text);
+    font-weight: 500;
+  }
+  .check { color: var(--green); font-size: 16px; }
+  .cross { color: var(--red); font-size: 16px; }
+  .half  { color: #FBBF24; font-size: 16px; }
+
+  /* ── Big quote ── */
+  .quote {
+    border-left: 3px solid var(--accent2);
+    padding: 20px 28px;
+    background: rgba(255,107,74,.06);
+    border-radius: 0 10px 10px 0;
+    margin-top: 28px;
+  }
+  .quote p { font-size: 18px; line-height: 1.7; color: rgba(240,240,242,.9); }
+
+  /* ── Persona card ── */
+  .persona-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 28px;
+  }
+  .persona {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 24px;
+  }
+  .persona .name { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .persona .desc { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .persona .need {
+    margin-top: 12px;
+    font-size: 13px;
+    color: rgba(240,240,242,.8);
+    background: rgba(91,127,255,.1);
+    border-radius: 8px;
+    padding: 10px 12px;
+    line-height: 1.6;
+  }
+
+  /* ── Flywheel ── */
+  .flywheel {
+    display: flex; flex-direction: column; gap: 0;
+    margin-top: 28px;
+  }
+  .fw-row {
+    display: flex; align-items: center; gap: 16px;
+    padding: 16px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .fw-row:first-child { border-radius: 10px 10px 0 0; }
+  .fw-row:last-child  { border-radius: 0 0 10px 10px; }
+  .fw-row + .fw-row { border-top: none; }
+  .fw-week {
+    font-size: 11px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase;
+    color: var(--accent); min-width: 64px;
+  }
+  .fw-text { font-size: 15px; color: rgba(240,240,242,.8); line-height: 1.5; }
+  .fw-cost {
+    margin-left: auto;
+    font-size: 12px; font-weight: 600;
+    padding: 4px 12px; border-radius: 99px;
+    white-space: nowrap;
+  }
+  .cost-high  { background: rgba(248,113,113,.12); color: var(--red); }
+  .cost-med   { background: rgba(251,191,36,.12);  color: #FBBF24; }
+  .cost-low   { background: rgba(52,211,153,.12);  color: var(--green); }
+  .cost-zero  { background: rgba(52,211,153,.2);   color: var(--green); font-size: 13px; }
+
+  /* ── Nav ── */
+  #nav {
+    position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 20px;
+    z-index: 100;
+  }
+  .nav-btn {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.1);
+    color: rgba(255,255,255,.7);
+    font-size: 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .18s;
+  }
+  .nav-btn:hover { background: rgba(255,255,255,.12); }
+  #counter {
+    font-size: 12px; color: var(--muted);
+    min-width: 36px; text-align: center;
+    letter-spacing: .04em;
+  }
+
+  /* ── Slide-specific layout ── */
+  .center { text-align: center; display: flex; flex-direction: column; align-items: center; }
+  .center .div { margin: 24px auto; }
+</style>
+</head>
+<body>
+
+<div id="deck">
+
+  <!-- 01 Title -->
+  <div class="slide active" data-slide="0">
+    <div class="slide-inner center">
+      <div class="label">内部对齐 · 产品定位</div>
+      <h1>为什么只有<span class="accent">小万</span><br>能做好这件事</h1>
+      <div class="div"></div>
+      <p class="large muted">四个结构性前提 · 竞品无法进入的交叉点 · 给谁用</p>
+    </div>
+  </div>
+
+  <!-- 02 The real problem -->
+  <div class="slide" data-slide="1">
+    <div class="slide-inner">
+      <div class="label">问题</div>
+      <h2>为什么 GPT-4o 做不到这件事？</h2>
+      <div class="div"></div>
+      <div class="quote">
+        <p>「帮我把微信群里刚说的任务，<br>自动写进我的项目看板。」</p>
+      </div>
+      <p class="large" style="margin-top: 32px;">
+        不是模型不够聪明。<br>
+        是因为<em>它不在场</em>——<br>
+        它看不见微信，也不知道你有什么看板。
+      </p>
+      <p style="margin-top: 20px; color: var(--muted);">
+        小万要解决的不是智能问题，是<em>在场问题</em>。
+      </p>
+    </div>
+  </div>
+
+  <!-- 03 Nature -->
+  <div class="slide" data-slide="2">
+    <div class="slide-inner">
+      <div class="label">本质</div>
+      <h2>小万 = 永远在场的<span class="accent">系统层 Agent</span></h2>
+      <div class="div"></div>
+      <div class="card-grid cols-2" style="margin-top: 36px;">
+        <div class="card">
+          <span class="num">其他 AI App</span>
+          <h3 class="muted" style="font-weight:400;">你打开它 → 它才存在</h3>
+          <p style="margin-top:10px;">只看见自己的对话框<br>你说完话就结束了<br>不知道你手机里有什么</p>
+        </div>
+        <div class="card" style="border-color: rgba(91,127,255,.3);">
+          <span class="num">小万</span>
+          <h3>你不打开 → 它也在</h3>
+          <p style="margin-top:10px; color: rgba(240,240,242,.8);">悬浮在你所有 App 上面<br>看见你整个手机屏幕<br>记住了，下次还在</p>
+        </div>
+      </div>
+      <p class="muted" style="margin-top: 28px; font-size: 15px;">
+        这不是功能差异，是<em>存在形态</em>的差异。
+      </p>
+    </div>
+  </div>
+
+  <!-- 04 Four prerequisites overview -->
+  <div class="slide" data-slide="3">
+    <div class="slide-inner center">
+      <div class="label">结构性前提</div>
+      <h2>做好这件事<br>需要同时满足四个条件</h2>
+      <div class="div"></div>
+      <div class="card-grid cols-4" style="margin-top: 36px; text-align: left;">
+        <div class="card">
+          <span class="num">01</span>
+          <h3>悬浮窗<br>常驻</h3>
+          <p style="margin-top:8px;">环境而非工具</p>
+        </div>
+        <div class="card">
+          <span class="num">02</span>
+          <h3>无障碍<br>读 + 控</h3>
+          <p style="margin-top:8px;">代理人而非导游</p>
+        </div>
+        <div class="card">
+          <span class="num">03</span>
+          <h3>屏幕<br>理解 VLM</h3>
+          <p style="margin-top:8px;">有眼睛而非盲的</p>
+        </div>
+        <div class="card">
+          <span class="num">04</span>
+          <h3>端侧<br>执行</h3>
+          <p style="margin-top:8px;">本地而非云端等待</p>
+        </div>
+      </div>
+      <p class="muted" style="margin-top: 28px; font-size: 15px;">
+        四个同时具备的产品，当前市场上 = <em class="accent2">0</em>
+      </p>
+    </div>
+  </div>
+
+  <!-- 05 Prereqs detail -->
+  <div class="slide" data-slide="4">
+    <div class="slide-inner">
+      <div class="label">四个前提 · 逐条拆解</div>
+      <h2>每一条都是护城河</h2>
+      <div class="div"></div>
+      <div style="margin-top: 28px;">
+        <div class="prereq">
+          <span class="tag">01 · 悬浮窗常驻</span>
+          <h3>小万是环境，不是工具</h3>
+          <p>需要 SYSTEM_ALERT_WINDOW 权限——应用商店限制，大多数 App 拿不到。<br>
+          你在微信、抖音、锁屏时，小万都在。其他 AI 必须你主动打开才存在。</p>
+        </div>
+        <div class="prereq">
+          <span class="tag">02 · 无障碍读控</span>
+          <h3>帮你做事，不是告诉你怎么做</h3>
+          <p>能读取任意 App 的内容，能模拟操作任意 App。<br>
+          <em>没有无障碍</em>：「你打开健康 App，点添加，输入……」<br>
+          <em>有无障碍</em>：「好，我帮你记了。」</p>
+        </div>
+        <div class="prereq">
+          <span class="tag">03 · 屏幕理解 VLM</span>
+          <h3>有眼睛，不用你描述「这个是什么」</h3>
+          <p>你指着屏幕说「这个」，小万直接看懂。大多数 AI 助手是盲的，<br>
+          你要把信息复制出来告诉它。</p>
+        </div>
+        <div class="prereq" style="margin-bottom: 0;">
+          <span class="tag">04 · 端侧执行</span>
+          <h3>真实文件系统，数据不离开设备</h3>
+          <p>Alpine 沙盒在用户手机本地跑。OpenAI 再强，算力在服务器机房，<br>
+          永远进不来你的 /workspace。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 06 Competitive matrix -->
+  <div class="slide" data-slide="5">
+    <div class="slide-inner">
+      <div class="label">竞品分析</div>
+      <h2>谁做不到</h2>
+      <div class="div"></div>
+      <table class="compare">
+        <thead>
+          <tr>
+            <th>产品</th>
+            <th>悬浮常驻</th>
+            <th>读控 App</th>
+            <th>看屏幕</th>
+            <th>端侧执行</th>
+            <th>结论</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ChatGPT / Claude Mobile</td>
+            <td class="cross">✕</td><td class="cross">✕</td>
+            <td class="cross">✕</td><td class="cross">✕</td>
+            <td class="muted">全部缺失</td>
+          </tr>
+          <tr>
+            <td>豆包 / Kimi / 文心</td>
+            <td class="cross">✕</td><td class="cross">✕</td>
+            <td class="cross">✕</td><td class="cross">✕</td>
+            <td class="muted">沙盒内 App</td>
+          </tr>
+          <tr>
+            <td>小艺 / 小布（厂商 AI）</td>
+            <td class="half">△</td><td class="half">△</td>
+            <td class="half">△</td><td class="half">△</td>
+            <td class="muted">闭合生态，不开放造工具</td>
+          </tr>
+          <tr>
+            <td>Tasker / 自动化工具</td>
+            <td class="half">△</td><td class="check">✓</td>
+            <td class="cross">✕</td><td class="half">△</td>
+            <td class="muted">无 AI，专业门槛极高</td>
+          </tr>
+          <tr>
+            <td>Lovable / Bolt（PC Vibe）</td>
+            <td class="cross">✕</td><td class="cross">✕</td>
+            <td class="cross">✕</td><td class="cross">✕</td>
+            <td class="muted">PC 端，不在手机上</td>
+          </tr>
+          <tr class="row-highlight">
+            <td><strong>小万</strong></td>
+            <td class="check">✓</td><td class="check">✓</td>
+            <td class="check">✓</td><td class="check">✓</td>
+            <td><span class="accent">唯一全具备</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 07 Who won't do it -->
+  <div class="slide" data-slide="6">
+    <div class="slide-inner">
+      <div class="label">意图维度</div>
+      <h2>有能力的<em class="accent2">不愿意做</em>，<br>愿意做的<em class="accent2">进不来</em></h2>
+      <div class="div"></div>
+      <div class="card-grid cols-2" style="margin-top: 28px;">
+        <div class="card">
+          <span class="num">手机厂商（小米 / 华为 / OPPO）</span>
+          <p>目标是卖更多手机，不是让用户造工具。<br>
+          生态闭锁，小米的能力华为用不了。<br>
+          不会把「改造自己设备的权力」交给用户。</p>
+        </div>
+        <div class="card">
+          <span class="num">云端 AI 公司（OpenAI / Anthropic）</span>
+          <p>商业模式是按 token 收费，<br>
+          Omniflow 降成本和他们的利益对立。<br>
+          没有手机 surface，进入成本极高。</p>
+        </div>
+        <div class="card">
+          <span class="num">互联网大厂 AI（微信 / 抖音）</span>
+          <p>只在自己 App 内服务。<br>
+          不会让 AI 读取竞品 App 的内容。<br>
+          没有全局权限的动机。</p>
+        </div>
+        <div class="card" style="border-color: rgba(91,127,255,.3);">
+          <span class="num">结论</span>
+          <h3 class="accent">三方都进不来</h3>
+          <p style="margin-top: 8px;">
+            有技术能力的 → 没有动机<br>
+            有动机的 → 没有 surface<br>
+            有 surface 的 → 没有全局权限
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 08 Flywheel -->
+  <div class="slide" data-slide="7">
+    <div class="slide-inner">
+      <div class="label">护城河</div>
+      <h2>越用越懂你 · 越用越便宜</h2>
+      <div class="div"></div>
+      <p class="muted" style="margin-bottom: 0;">Omniflow 把高频行为压缩为离线函数——用得越多，调用大模型越少</p>
+      <div class="flywheel">
+        <div class="fw-row">
+          <div class="fw-week">第 1 周</div>
+          <div class="fw-text">帮你做了几件事，记住了偏好和数据</div>
+          <div class="fw-cost cost-high">云端推理 · 100%</div>
+        </div>
+        <div class="fw-row">
+          <div class="fw-week">第 1 月</div>
+          <div class="fw-text">Omniflow 识别高频模式 → 部分压缩为本地 Function</div>
+          <div class="fw-cost cost-med">推理成本 · ~60%</div>
+        </div>
+        <div class="fw-row">
+          <div class="fw-week">第 3 月</div>
+          <div class="fw-text">80% 常规请求走离线 Function，VLM 辅助</div>
+          <div class="fw-cost cost-low">推理成本 · ~30%</div>
+        </div>
+        <div class="fw-row">
+          <div class="fw-week">第 1 年</div>
+          <div class="fw-text">VLM 直接识别任务 → 调本地 Function → 近似零成本</div>
+          <div class="fw-cost cost-zero">推理成本 · ≈0</div>
+        </div>
+      </div>
+      <p class="muted" style="margin-top: 20px; font-size: 14px;">
+        Omniflow 里积累的全是<em>你的习惯</em>——这个资产不在云端，不可迁移，是真正的留存飞轮。
+      </p>
+    </div>
+  </div>
+
+  <!-- 09 Who is it for -->
+  <div class="slide" data-slide="8">
+    <div class="slide-inner">
+      <div class="label">给谁用</div>
+      <h2>不是所有人，<br>是<em class="accent">这四类</em>人</h2>
+      <div class="div"></div>
+      <div class="persona-grid">
+        <div class="persona">
+          <div class="name">📱 重度手机用户 · 有跨 App 重复需求</div>
+          <div class="desc">每天在微信、备忘录、日历、各种 App 之间反复搬运同样的信息</div>
+          <div class="need">「我不想每次都手动复制。」</div>
+        </div>
+        <div class="persona">
+          <div class="name">🛠 Builder-curious · 想造工具但不写代码</div>
+          <div class="desc">知道自己需要什么工具，但没有开发能力，也不想学</div>
+          <div class="need">「告诉 AI 需求，它帮我造出来，我直接用。」</div>
+        </div>
+        <div class="persona">
+          <div class="name">💼 个人效率玩家 · 20–35 岁</div>
+          <div class="desc">已经在用 Notion / Obsidian / 各种效率工具，但工具之间不联通</div>
+          <div class="need">「我想要一个真正懂我流程的工具，不是又一个孤岛。」</div>
+        </div>
+        <div class="persona">
+          <div class="name">🔒 隐私敏感用户</div>
+          <div class="desc">健康数据、财务数据、工作数据不愿意上传到云端</div>
+          <div class="need">「在我手机本地跑，数据不出设备。」</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10 Not for -->
+  <div class="slide" data-slide="9">
+    <div class="slide-inner">
+      <div class="label">同样重要</div>
+      <h2><em class="accent2">不是</em>给这些人用的</h2>
+      <div class="div"></div>
+      <div class="card-grid cols-2" style="margin-top: 32px;">
+        <div class="card">
+          <span class="num" style="color: var(--red);">✕ 开发者</span>
+          <p>他们有 Cursor、Lovable、Replit。<br>
+          小万不是开发工具，是<em>个人工具的生成器</em>。</p>
+        </div>
+        <div class="card">
+          <span class="num" style="color: var(--red);">✕ 偶尔用 AI 查资料的人</span>
+          <p>这类用户用豆包 / Kimi 就够了。<br>
+          小万的价值在<em>持续使用后的积累</em>，低频用户感知不到。</p>
+        </div>
+        <div class="card">
+          <span class="num" style="color: var(--red);">✕ 企业 IT / B2B 场景</span>
+          <p>小万是个人工具，不是企业系统。<br>
+          数据隔离、合规、多人协作——不是这个版本要解决的。</p>
+        </div>
+        <div class="card">
+          <span class="num" style="color: var(--red);">✕ 对 AI 有强隐患的用户</span>
+          <p>需要无障碍权限、悬浮窗——<br>
+          对权限敏感的用户会在引导页流失，不是目标人群。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 11 Summary -->
+  <div class="slide" data-slide="10">
+    <div class="slide-inner center">
+      <div class="label">一句话</div>
+      <h1 style="line-height: 1.2;">
+        其他 AI 在<span class="muted">服务器上</span><br>等你来问，
+      </h1>
+      <h1 style="line-height: 1.2; margin-top: 16px;">
+        小万在<span class="accent">你手机上</span><br>陪你生活。
+      </h1>
+      <div class="div"></div>
+      <p class="large muted" style="max-width: 560px;">
+        前者能告诉你答案，<br>
+        后者能替你做事、记住你、越来越懂你。<br>
+        <em>这不是同一个物种。</em>
+      </p>
+    </div>
+  </div>
+
+</div>
+
+<!-- Navigation -->
+<div id="nav">
+  <button class="nav-btn" id="prev">‹</button>
+  <span id="counter">1 / 11</span>
+  <button class="nav-btn" id="next">›</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const counter = document.getElementById('counter');
+  let current = 0;
+
+  function goto(n) {
+    const prev = slides[current];
+    prev.classList.add('exit');
+    setTimeout(() => prev.classList.remove('active', 'exit'), 220);
+
+    current = (n + slides.length) % slides.length;
+    slides[current].classList.add('active');
+    counter.textContent = `${current + 1} / ${slides.length}`;
+  }
+
+  document.getElementById('next').addEventListener('click', () => goto(current + 1));
+  document.getElementById('prev').addEventListener('click', () => goto(current - 1));
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+      e.preventDefault(); goto(current + 1);
+    }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault(); goto(current - 1);
+    }
+  });
+
+  // Touch swipe
+  let tx = 0;
+  document.addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, {passive:true});
+  document.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - tx;
+    if (Math.abs(dx) > 50) goto(current + (dx < 0 ? 1 : -1));
+  }, {passive:true});
+</script>
+</body>
+</html>

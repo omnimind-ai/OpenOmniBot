@@ -16,6 +16,7 @@ import cn.com.omnimind.bot.agent.tool.handlers.TerminalToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.ToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.VlmToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.WorkbenchToolHandler
+import cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -56,6 +57,12 @@ class AgentToolRouter(
 
     private val mcpFallback = McpToolHandler(helper)
 
+    private val oobFunctionHandler = OobFunctionToolHandler(context, helper)
+
+    init {
+        oobFunctionHandler.router = this
+    }
+
     private val handlerMap: Map<String, ToolHandler> = buildMap {
         for (handler in orderedHandlers) {
             for (name in handler.toolNames) {
@@ -75,6 +82,7 @@ class AgentToolRouter(
         helper.ensureRunActive()
         val toolName = toolCall.function.name
         val handler = handlerMap[toolName]
+            ?: if (oobFunctionHandler.canHandle(toolName)) oobFunctionHandler else null
         return if (handler != null) {
             handler.execute(toolCall, args, runtimeDescriptor, env, callback, toolHandle)
         } else {

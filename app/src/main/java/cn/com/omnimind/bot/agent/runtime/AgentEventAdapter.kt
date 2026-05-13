@@ -62,15 +62,16 @@ class AgentEventAdapter(
                 "message" to result.message
             )
 
-            is ToolExecutionResult.Clarify -> mapOf(
-                "toolName" to descriptor.name,
-                "displayName" to descriptor.displayName,
-                "toolType" to descriptor.toolType,
-                "success" to true,
-                "summary" to result.question,
-                "question" to result.question,
-                "missingFields" to (result.missingFields ?: emptyList<String>())
-            )
+            is ToolExecutionResult.Clarify -> buildMap {
+                put("toolName", descriptor.name)
+                put("displayName", descriptor.displayName)
+                put("toolType", descriptor.toolType)
+                put("success", true)
+                put("summary", result.question)
+                put("question", result.question)
+                put("missingFields", result.missingFields ?: emptyList<String>())
+                result.dialog?.let { put("dialog", it.toPayload()) }
+            }
 
             is ToolExecutionResult.VlmTaskStarted -> mapOf(
                 "toolName" to descriptor.name,

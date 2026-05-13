@@ -51,6 +51,56 @@
       "hasEvals": false
     },
     {
+      "id": "oob-web-research",
+      "name": "oob-web-research",
+      "description": "调研、搜索整理、收集资料、分析竞品、研究市场、小红书调研、GitHub分析、爬取内容、批量收集、信息汇总、网页提取。Use when gathering, extracting, or aggregating information from the web — search results, platform pages, repositories, or social content.",
+      "assetPath": "builtin_skills/oob-web-research",
+      "hasScripts": false,
+      "hasReferences": true,
+      "hasAssets": false,
+      "hasEvals": false
+    },
+    {
+      "id": "oob-native-html-frontend",
+      "name": "oob-native-html-frontend",
+      "description": "改HTML前端、改界面样式、改布局、加图表、前端热更新、修前端、写index.html、修改Project显示、改前端代码、优化移动端界面。Write, hot-update, or repair the HTML/CSS/vanilla JS display layer of an OOB Workbench Project. Use when the task is about frontend files — not Project design or API definition.",
+      "assetPath": "builtin_skills/oob-native-html-frontend",
+      "hasScripts": false,
+      "hasReferences": true,
+      "hasAssets": true,
+      "hasEvals": false
+    },
+    {
+      "id": "oob-project-distiller",
+      "name": "oob-project-distiller",
+      "description": "Distill an external product, GitHub repository, vibe-app share, technical document, article, pasted notes, screenshots, or product demo into an OOB Workbench Project proposal or implementation. Use when the user asks to analyze a project/link/doc and \"总结成我们的 project\", \"蒸馏能力\", \"提取核心设计\", \"生成 soul\", \"把这个 app/项目变成 OOB Project\", or preserve UI design, interaction logic, data model, backend AI workflows, and product intent without cloning proprietary assets.",
+      "assetPath": "builtin_skills/oob-project-distiller",
+      "hasScripts": false,
+      "hasReferences": true,
+      "hasAssets": false,
+      "hasEvals": false
+    },
+    {
+      "id": "oob-project-updater",
+      "name": "oob-project-updater",
+      "description": "改、加、删、修、更新、修复、优化已有 OOB Project。加字段、改界面、新增 API、修复 bug、更新规则。Use when modifying an existing project, not creating from scratch.",
+      "assetPath": "builtin_skills/oob-project-updater",
+      "hasScripts": false,
+      "hasReferences": false,
+      "hasAssets": false,
+      "hasEvals": false
+    },
+    {
+      "id": "oob-project-reviewer",
+      "name": "oob-project-reviewer",
+      "description": "Review and fix OOB Workbench Project HTML before creation or hot-update. Use after generating or modifying HTML, before workbench_project_create or workbench_project_update. Checks frontend-backend contract, mobile standards, data binding, and API alignment.",
+      "assetPath": "builtin_skills/oob-project-reviewer",
+      "hasScripts": false,
+      "hasReferences": false,
+      "hasAssets": false,
+      "hasEvals": false
+    },
+    {
       "id": "find-install-skills",
       "name": "find-install-skills",
       "description": "Find and install relevant Omnibot skills. Use when the user asks \"找个 skill\", \"有没有这个功能的 skill\", \"find a skill for X\", \"is there a skill for X\",\"install a skill for X\", or wants to extend the agent with an installable workflow.",

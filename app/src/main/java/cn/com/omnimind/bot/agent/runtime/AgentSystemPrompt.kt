@@ -30,8 +30,8 @@ object AgentSystemPrompt {
             buildString {
                 appendLine(
                     LocalizedText(
-                        zhCN = "已安装 skills 索引（每项含简短讲解；完整正文需命中注入或调用 `skills_read`）：",
-                        enUS = "Installed skills index (each item includes a short explanation; full bodies require matching injection or `skills_read`):"
+                        zhCN = "已安装 skills（发现相关任务时主动调用 `skills_read` 读取完整正文，不要只凭描述推测细节）：",
+                        enUS = "Installed skills (call `skills_read` proactively when a skill seems relevant — do not guess from the description alone):"
                     ).resolve(locale)
                 )
                 visibleInstalledSkills.forEach { skill ->
@@ -83,24 +83,12 @@ object AgentSystemPrompt {
                 }
             }.trim()
         }
-        val loadedSkillSection = if (resolvedSkills.isEmpty()) {
-            LocalizedText(
-                zhCN = "当前未命中额外 skill，因此本轮没有注入任何 skill 正文。",
-                enUS = "No additional skill matched this turn, so no skill body was injected."
-            ).resolve(locale)
-        } else {
-            buildString {
-                appendLine(
-                    LocalizedText(
-                        zhCN = "当前已加载的 skills 正文：",
-                        enUS = "Loaded skill bodies for this turn:"
-                    ).resolve(locale)
-                )
-                resolvedSkills.forEach { skill ->
-                    appendLine("- ${skill.promptSummary(1200)}")
-                }
-            }.trim()
-        }
+        // Skills are no longer auto-injected. The agent reads them on demand via
+        // skills_read. The loadedSkillSection is kept as a reminder to do so.
+        val loadedSkillSection = LocalizedText(
+            zhCN = "本轮未自动注入任何 skill 正文。若上方索引中有相关 skill，请主动调用 `skills_read(skillId=...)` 获取完整指令后再执行任务。",
+            enUS = "No skill body was auto-injected this turn. If a skill in the index above seems relevant, call `skills_read(skillId=...)` to load its full instructions before proceeding."
+        ).resolve(locale)
         val soulSection = memoryContext?.soul
             ?.takeIf { it.isNotBlank() }
             ?.let {
@@ -187,14 +175,70 @@ object AgentSystemPrompt {
 
         val workbenchProjectOperationRules = when (locale) {
             PromptLocale.ZH_CN -> """
-                OOB Workbench：详细创建/热更新/数据/交互规则已在 oob-native-workbench skill 正文中（有 active Project 时自动加载）。
+                OOB Workbench：详细创建/热更新/数据/交互规则在 oob-native-workbench skill 正文中。处理任何 Workbench 任务前，先调用 skills_read(skillId="oob-native-workbench") 读取完整规则。
                 核心：业务操作用 `workbench_api_call`；前端改动走 `workbench_project_hot_update`，优先 `htmlPatches`（~50 token）而非 `htmlFiles` 全量重写（~5000 token）。
                 标注定位：若 `frontendContext.selectedElement.oobId` 存在，直接搜 `data-oob-id="<oobId>"` 作为 `oldText` 锚点，不需要读全量 HTML；否则用 `file_read(lineStart/lineCount)` 只读相关段落。
+
+                【Project 新建强制执行序列】收到新建 Project 请求时，必须先调用 skills_read(skillId="oob-project-designer") 读取完整流程，然后严格按以下序列执行，每步都必须产出可见内容后才能进入下一步：
+
+                Step 1 — 领域调研（必须执行，不可跳过）
+                  至少调用 2 次 web_search，了解该领域现有优秀工具做对了什么、OOB 能在此基础上加什么。
+                  输出：向用户展示 3-5 条调研要点，说明 OOB 在此领域的设计主张。
+
+                Step 2 — 方案确认（必须等用户回复，不可跳过）
+                  输出完整方案：这是什么 / 功能列表 / 交互 / 亮点 / 暂不支持。
+                  末尾明确提问："这个方向对吗？有什么要改的？"
+                  收到用户明确确认前，禁止进入 Step 3。用户说"好"/"可以"/"继续" = 确认。
+
+                Step 3 — 实体蓝图（可与用户讨论，但必须输出）
+                  输出 Phase 1.8 蓝图：数据层字段 / 工具层操作 / 展示层布局 / PROJECT_SOUL 约束。
+                  这是 API 设计和 HTML 生成的统一来源，字段名三层必须一致。
+
+                Step 4 — API 设计 + HTML 生成（内部步骤，不展示给用户）
+                  每个 agent API 需先做任务调研（web_search），带领域知识写 prompt。
+
+                Step 5 — Review（必须执行）
+                  调用 skills_read(skillId="oob-project-reviewer") 执行完整审查，解决所有 FAIL 项。
+                  向用户输出 reviewer 报告摘要（通过/修复了N项）。
+
+                Step 6 — 创建
+                  所有以上 step 完成后，才可调用 workbench_project_create（apis 非空，htmlFiles 非空）。
+                  禁止跳过任何 step 直接创建。
+
+                【Project 更新强制规则】更新已有 Project 时，先调用 skills_read(skillId="oob-project-updater")，读取 PROJECT_SOUL.md 和 PROJECT_CONTEXT.md 后再动手改。
             """.trimIndent()
             PromptLocale.EN_US -> """
-                OOB Workbench: full creation/hot-update/data/interaction rules are in the oob-native-workbench skill body (auto-loaded when a Project is active).
+                OOB Workbench: full creation/hot-update/data/interaction rules are in the oob-native-workbench skill. When working on any Workbench task, call skills_read(skillId="oob-native-workbench") first.
                 Core: use `workbench_api_call` for business operations; use `workbench_project_hot_update` for frontend changes, preferring `htmlPatches` (~50 tokens) over full `htmlFiles` rewrite (~5000 tokens).
                 Targeting: if `frontendContext.selectedElement.oobId` exists, search directly for `data-oob-id="<oobId>"` as the `oldText` anchor — do NOT read the full HTML file. Otherwise use `file_read(lineStart/lineCount)` to read only the relevant section.
+
+                [Project creation mandatory sequence] When asked to create a new Project, first call skills_read(skillId="oob-project-designer"), then follow these steps in order. Each step must produce visible output before proceeding to the next:
+
+                Step 1 — Domain research (mandatory, cannot skip)
+                  Call web_search at least twice to understand what existing tools do well and what OOB can add.
+                  Output: show the user 3-5 research findings and OOB's design angle for this domain.
+
+                Step 2 — Proposal confirmation (must wait for user reply, cannot skip)
+                  Output a complete proposal: what it is / feature list / interaction / highlights / not included.
+                  End with: "Does this direction work for you? Anything to change?"
+                  Do NOT proceed to Step 3 until the user explicitly confirms. "Good"/"yes"/"continue" = confirmed.
+
+                Step 3 — Entity blueprint (discuss with user if needed, but must output)
+                  Output the Phase 1.8 blueprint: data layer fields / tool layer operations / display layer layout / PROJECT_SOUL constraints.
+                  This is the single source for API design and HTML generation — field names must be consistent across all three layers.
+
+                Step 4 — API design + HTML generation (internal, not shown to user)
+                  For each agent API, do task research first (web_search), then write prompt with domain knowledge.
+
+                Step 5 — Review (mandatory)
+                  Call skills_read(skillId="oob-project-reviewer"), resolve all FAIL items.
+                  Output reviewer summary to user (passed / fixed N items).
+
+                Step 6 — Create
+                  Only after all above steps are complete, call workbench_project_create (apis non-empty, htmlFiles non-empty).
+                  Skipping any step to go straight to creation is forbidden.
+
+                [Project update rule] When updating an existing Project, call skills_read(skillId="oob-project-updater") first, then read PROJECT_SOUL.md and PROJECT_CONTEXT.md before making any changes.
             """.trimIndent()
         }
 
@@ -256,9 +300,9 @@ object AgentSystemPrompt {
                 Skills：
                 - 已安装 skills 根目录（shell）: $skillsRootShellPath
                 - 已安装 skills 根目录（android）: $skillsRootAndroidPath
-                - 你始终知道“已安装 skills 索引”，可用来回答“当前有哪些 skills”。
-                - 只有“当前已加载的 skills 正文”代表本轮真正注入了该 skill 的详细说明、references、scripts 或 assets 路径。
-                - 如果你发现某个已安装 skill 可能相关，但它没有出现在“当前已加载的 skills 正文”里，要明确说明：你知道它已安装，但本轮只掌握索引信息，尚未拿到正文细节；此时应优先调用 `skills_read`。
+                - 你始终知道”已安装 skills 索引”，可用来回答”当前有哪些 skills”。
+                - Skills 不会自动注入正文。发现任务与某个 skill 相关时，在执行任务前先调用 `skills_read(skillId=...)` 读取完整指令——这是主流程，不是备选。
+                - 读取 skill 后，严格按照 skill 正文里的步骤执行，不要跳过或简化。
                 $installedSkillSection
                 $loadedSkillSection
                 $soulSection
@@ -325,8 +369,8 @@ object AgentSystemPrompt {
                 - Installed skills root (shell): $skillsRootShellPath
                 - Installed skills root (android): $skillsRootAndroidPath
                 - You always know the installed skills index, so you can answer questions like “what skills are installed right now?”
-                - Only the “loaded skill bodies for this turn” represent skill details that were actually injected this turn, including instructions and referenced `references`, `scripts`, or `assets` paths.
-                - If you identify an installed skill that looks relevant but it does not appear in the loaded skill bodies, state clearly that you only know its index metadata in this turn and do not yet have the full body details. In that case, prefer calling `skills_read`.
+                - Skills are NOT auto-injected. When a task seems related to an installed skill, call `skills_read(skillId=...)` to load its full instructions before proceeding — this is the primary workflow, not a fallback.
+                - After reading a skill, follow its steps exactly. Do not skip or simplify.
                 $installedSkillSection
                 $loadedSkillSection
                 $soulSection

@@ -16,6 +16,7 @@ import com.google.gson.reflect.TypeToken
 import java.io.File
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.runBlocking
@@ -84,6 +85,16 @@ data class WorkbenchProjectItemRecord(
         "archivedAt" to archivedAt
     )
 }
+
+private data class WorkbenchApiCallSnapshot(
+    val record: WorkbenchProjectRecord,
+    val api: WorkbenchApiRecord?
+)
+
+private data class WorkbenchApiCallPostState(
+    val project: Map<String, Any?>,
+    val updatedItems: List<Map<String, Any?>>?
+)
 
 data class WorkbenchAndroidAsset(
     val assetId: String,
@@ -186,6 +197,7 @@ class WorkbenchProjectStore(
         object : TypeToken<List<WorkbenchAndroidAsset>>() {}.type
     private val ossSourceAssetListType =
         object : TypeToken<List<WorkbenchOssSourceAsset>>() {}.type
+    private val apiExecutionCountsType = object : TypeToken<Map<String, Int>>() {}.type
     private val mapType = object : TypeToken<Map<String, Any?>>() {}.type
 
     private val projectsRoot: File
@@ -201,6 +213,7 @@ class WorkbenchProjectStore(
 
     // ── Executor registry ────────────────────────────────────────────────────────────────────────
     internal val executorRegistry = WorkbenchExecutorRegistry()
+    private val projectLocks = ConcurrentHashMap<String, Any>()
 
     init {
         executorRegistry.register(WORKBENCH_COLLECTION_EXECUTOR_KIND, object : WorkbenchExecutor {
@@ -332,6 +345,40 @@ class WorkbenchProjectStore(
             writeFrontendMarkdownFiles(record.projectId, requestedMarkdownFiles)
         } else {
             emptyList()
+        }
+        val defaultDisplay = when {
+            requestedHtmlFiles.isNotEmpty() ||
+                hasFrontendFiles(record.projectId, "frontend/html") -> htmlWorkbenchDisplay(record)
+            requestedMarkdownFiles.isNotEmpty() ||
+                hasFrontendFiles(record.projectId, "frontend/markdown") -> markdownWorkbenchDisplay(record)
+            requestedFlutterFiles.isNotEmpty() ||
+                hasFrontendFiles(record.projectId, "frontend/flutter") -> flutterWorkbenchDisplay(record)
+            else -> null
+        }
+        if (defaultDisplay != null) {
+            val pageSpecFile = File(projectDir(record.projectId), "frontend/page_spec.json")
+            val pageSpec = if (pageSpecFile.exists()) {
+                runCatching {
+                    gson.fromJson<Map<String, Any?>>(pageSpecFile.readText(), mapType)
+                }.getOrNull().orEmpty()
+            } else {
+                emptyMap()
+            }.toMutableMap()
+            val mergedDisplays = normalizeDefaultDisplaySelection(
+                mergeDisplaySpecs(
+                    base = (pageSpec["displays"] as? List<*>) ?: emptyList<Map<String, Any?>>(),
+                    additions = listOf(defaultDisplay)
+                ),
+                preferredDisplayId = displayKey(defaultDisplay)
+            )
+            pageSpec["displays"] = mergedDisplays
+            pageSpec["displayId"] = defaultDisplay["id"] ?: defaultDisplay["displayId"]
+            pageSpec["pageId"] = defaultDisplay["pageId"] ?: pageSpec["pageId"]
+            pageSpec["renderer"] = defaultDisplay["renderer"]
+            pageSpec["kind"] = defaultDisplay["kind"]
+            pageSpec["route"] = defaultDisplay["route"]
+            pageSpec["navigationScope"] = "right_workbench_display"
+            pageSpecFile.writeText(gson.toJson(pageSpec))
         }
         appendProjectProgress(
             projectId = record.projectId,
@@ -1151,24 +1198,29 @@ class WorkbenchProjectStore(
      * @param caller Caller label such as `ai` or `ui`, persisted in the tool call log.
      * @return Tool-style result payload plus the refreshed project state.
      */
-    @Synchronized
     fun callApi(
         projectId: String,
         apiId: String,
         inputs: Map<String, Any?>,
         caller: String
     ): Map<String, Any?> {
-        val record = findProject(projectId)
-        val api = projectApis(record.projectId).firstOrNull { candidate ->
-            candidate.apiId == apiId.trim() || candidate.toolId == apiId.trim()
+        val requestedApiId = apiId.trim()
+        val snapshot = synchronized(this) {
+            val record = findProject(projectId)
+            val api = projectApis(record.projectId).firstOrNull { candidate ->
+                candidate.apiId == requestedApiId || candidate.toolId == requestedApiId
+            }
+            WorkbenchApiCallSnapshot(record, api)
         }
+        val record = snapshot.record
+        val api = snapshot.api
         val startedAt = System.currentTimeMillis()
         if (api == null) {
             val missingApi = WorkbenchApiRecord(
-                apiId = apiId.trim().ifBlank { "unknown" },
+                apiId = requestedApiId.ifBlank { "unknown" },
                 projectId = record.projectId,
-                toolId = apiId.trim().ifBlank { "unknown" },
-                displayName = apiId.trim().ifBlank { "Unknown tool" },
+                toolId = requestedApiId.ifBlank { "unknown" },
+                displayName = requestedApiId.ifBlank { "Unknown tool" },
                 description = "Unregistered Project Tool.",
                 inputSchema = emptyMap(),
                 outputSchema = emptyMap(),
@@ -1179,46 +1231,116 @@ class WorkbenchProjectStore(
                 "TOOL_NOT_FOUND",
                 "Workbench Project Tool not found: $apiId"
             )
-            appendApiCall(record.projectId, missingApi, inputs, caller, result, startedAt)
-            writeProjectJson(record, projectApis(record.projectId))
-            return result + ("project" to apiResultProjectPayload(record.projectId))
+            val postState = synchronized(projectLock(record.projectId)) {
+                appendApiCall(record.projectId, missingApi, inputs, caller, result, startedAt)
+                WorkbenchApiCallPostState(
+                    project = apiResultProjectPayload(record.projectId),
+                    updatedItems = null
+                )
+            }
+            return result + ("project" to postState.project)
         }
         val validationError = validateApiInputs(api, inputs)
+        val effectiveKind = when {
+            shouldRunAsAgentTask(api) -> WORKBENCH_AGENT_TASK_EXECUTOR_KIND
+            else -> api.executorKind
+        }
+
+        val shouldSerializeExecutor = shouldSerializeProjectToolExecution(effectiveKind)
+        val lock = projectLock(record.projectId)
+        if (shouldSerializeExecutor) {
+            lateinit var postState: WorkbenchApiCallPostState
+            val result = synchronized(lock) {
+                val toolResult = if (validationError != null) {
+                    apiError(api, "INVALID_INPUT", validationError)
+                } else {
+                    executeProjectTool(record, api, inputs, caller, effectiveKind)
+                }
+                appendApiCall(record.projectId, api, inputs, caller, toolResult, startedAt)
+                postState = postApiCallState(record.projectId, api)
+                toolResult
+            }
+            postState.updatedItems?.let { items ->
+                dispatchProjectItemsUpdated(record.projectId, api, items)
+            }
+            return result + ("project" to postState.project)
+        }
+
         val result = if (validationError != null) {
             apiError(api, "INVALID_INPUT", validationError)
         } else {
-            runCatching {
-                val effectiveKind = when {
-                    shouldRunAsAgentTask(api) -> WORKBENCH_AGENT_TASK_EXECUTOR_KIND
-                    else -> api.executorKind
-                }
-                runBlocking {
+            executeProjectTool(record, api, inputs, caller, effectiveKind)
+        }
+        val postState = synchronized(lock) {
+            appendApiCall(record.projectId, api, inputs, caller, result, startedAt)
+            postApiCallState(record.projectId, api)
+        }
+        postState.updatedItems?.let { items ->
+            dispatchProjectItemsUpdated(record.projectId, api, items)
+        }
+        return result + ("project" to postState.project)
+    }
+
+    private fun executeProjectTool(
+        record: WorkbenchProjectRecord,
+        api: WorkbenchApiRecord,
+        inputs: Map<String, Any?>,
+        caller: String,
+        effectiveKind: String
+    ): Map<String, Any?> {
+        return runCatching {
+            when (effectiveKind) {
+                WORKBENCH_COLLECTION_EXECUTOR_KIND -> callProjectCollectionApi(record.projectId, api, inputs)
+                WORKBENCH_AGENT_TASK_EXECUTOR_KIND -> callAgentTaskApi(record, api, inputs, caller)
+                WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND -> callWorkspaceScriptApi(record.projectId, api, inputs)
+                else -> runBlocking {
                     executorRegistry.get(effectiveKind)
                         ?.execute(record.projectId, api, inputs)
-                        ?: apiError(api, "UNKNOWN_API", "No executor registered for kind: $effectiveKind")
+                        ?: apiError(
+                            api,
+                            "UNKNOWN_API",
+                            "No executor registered for kind: $effectiveKind"
+                        )
                 }
-            }.getOrElse { error ->
-                apiError(
-                    api,
-                    "EXECUTOR_ERROR",
-                    error.message ?: "Project Tool executor failed."
-                )
             }
-        }
-        appendApiCall(record.projectId, api, inputs, caller, result, startedAt)
-        writeProjectJson(record, projectApis(record.projectId))
-        val runUse = WorkbenchToolboxBuilder.runUse(api).lowercase()
-        val isReadOnly = runUse == "native.collection.list" || runUse == "native.collection.get"
-        if (!isReadOnly) {
-            val currentItems = readProjectItems(record.projectId).map { it.toPayload() }
-            FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
-                projectId = record.projectId,
-                updatedPaths = listOf("data/items.json"),
-                reason = "api_call:${api.toolId}",
-                items = currentItems
+        }.getOrElse { error ->
+            apiError(
+                api,
+                "EXECUTOR_ERROR",
+                error.message ?: "Project Tool executor failed."
             )
         }
-        return result + ("project" to apiResultProjectPayload(record.projectId))
+    }
+
+    private fun shouldSerializeProjectToolExecution(effectiveKind: String): Boolean {
+        return effectiveKind == WORKBENCH_COLLECTION_EXECUTOR_KIND
+    }
+
+    private fun postApiCallState(projectId: String, api: WorkbenchApiRecord): WorkbenchApiCallPostState {
+        val runUse = WorkbenchToolboxBuilder.runUse(api).lowercase()
+        val isReadOnly = runUse == "native.collection.list" || runUse == "native.collection.get"
+        val updatedItems = if (!isReadOnly) {
+            readProjectItems(projectId).map { it.toPayload() }
+        } else {
+            null
+        }
+        return WorkbenchApiCallPostState(
+            project = apiResultProjectPayload(projectId),
+            updatedItems = updatedItems
+        )
+    }
+
+    private fun dispatchProjectItemsUpdated(
+        projectId: String,
+        api: WorkbenchApiRecord,
+        items: List<Map<String, Any?>>
+    ) {
+        FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
+            projectId = projectId,
+            updatedPaths = listOf("data/items.json"),
+            reason = "api_call:${api.toolId}",
+            items = items
+        )
     }
 
     private fun apiResultProjectPayload(projectId: String): Map<String, Any?> {
@@ -1819,6 +1941,7 @@ class WorkbenchProjectStore(
     fun exportProject(projectId: String): Map<String, Any?> {
         val record = findProject(projectId)
         val apis = projectApis(record.projectId)
+        writeProjectJson(record, apis)
         val timestamp = nowIso().replace(Regex("[^A-Za-z0-9]+"), "-").trim('-')
         val packageName = "${record.projectId}-$timestamp.zip"
         exportsRoot.mkdirs()
@@ -1958,40 +2081,7 @@ class WorkbenchProjectStore(
         val counts = apiExecutionCounts(record.projectId)
         val toolPayloads = apis.map { it.toPayload(counts[it.apiId] ?: 0) }
         val pageSpec = workbenchPageSpec(record)
-        val explicitDisplays = pageSpec["displays"] as? List<*>
-        val fallbackRenderer = pageSpec["renderer"]?.toString()?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?: "oob_project_display"
-        val fallbackRoute = pageSpec["route"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-            ?: when (fallbackRenderer) {
-                WORKBENCH_HTML_RENDERER -> htmlRoute(record.projectId)
-                WORKBENCH_MARKDOWN_RENDERER, "markdown_live" -> markdownRoute(record.projectId)
-                "flutter_eval" -> "/workbench/flutter_eval?projectId=${record.projectId}"
-                else -> record.route
-            }
-        val displays = explicitDisplays
-            ?.mapNotNull { item ->
-                @Suppress("UNCHECKED_CAST")
-                (item as? Map<String, Any?>)?.takeIf { display ->
-                    display["route"]?.toString()?.trim()?.isNotEmpty() == true
-                }
-            }
-            ?.takeIf { it.isNotEmpty() }
-            ?: listOf(
-                linkedMapOf(
-                    "id" to (pageSpec["displayId"] ?: pageSpec["pageId"] ?: "project-main-display"),
-                    "pageId" to (pageSpec["pageId"] ?: "project-main-page"),
-                    "title" to (pageSpec["title"] ?: record.name),
-                    "shortName" to (pageSpec["shortName"] ?: "APP"),
-                    "route" to fallbackRoute,
-                    "kind" to (pageSpec["kind"] ?: fallbackRenderer),
-                    "renderer" to fallbackRenderer,
-                    "surfaceKind" to "app_display",
-                    "navigationScope" to "right_workbench_display",
-                    "isDefault" to true,
-                    "description" to (pageSpec["description"] ?: pageSpec["subtitle"] ?: "")
-                )
-            )
+        val displays = workbenchDisplays(record)
         val displayRoute = defaultDisplayRoute(record, displays)
         return linkedMapOf(
             "projectId" to record.projectId,
@@ -2164,6 +2254,22 @@ class WorkbenchProjectStore(
                 }
             }
             if (displays.isNotEmpty()) {
+                val preferredDisplay = when {
+                    hasFrontendFiles(record.projectId, "frontend/html") &&
+                        displays.none { isHtmlDisplay(it) } -> htmlWorkbenchDisplay(record)
+                    hasFrontendFiles(record.projectId, "frontend/markdown") &&
+                        displays.none { isMarkdownDisplay(it) } -> markdownWorkbenchDisplay(record)
+                    hasFrontendFiles(record.projectId, "frontend/flutter") &&
+                        displays.none { it["renderer"]?.toString()?.trim() == "flutter_eval" } ->
+                        flutterWorkbenchDisplay(record)
+                    else -> null
+                }
+                if (preferredDisplay != null) {
+                    return normalizeDefaultDisplaySelection(
+                        mergeDisplaySpecs(displays, listOf(preferredDisplay)),
+                        displayKey(preferredDisplay)
+                    )
+                }
                 return displays
             }
         }
@@ -2174,19 +2280,7 @@ class WorkbenchProjectStore(
             return listOf(markdownWorkbenchDisplay(record))
         }
         if (hasFrontendFiles(record.projectId, "frontend/flutter")) {
-            return listOf(
-                linkedMapOf(
-                    "id" to "flutter-main-display",
-                    "pageId" to "flutter-main-page",
-                    "title" to record.name,
-                    "shortName" to "APP",
-                    "route" to "/workbench/flutter_eval?projectId=${record.projectId}",
-                    "kind" to "oob_flutter_eval",
-                    "renderer" to "flutter_eval",
-                    "isDefault" to true,
-                    "description" to "Live Flutter Display bound to this Project."
-                )
-            )
+            return listOf(flutterWorkbenchDisplay(record))
         }
         if (spec.isNotEmpty() && spec["route"]?.toString()?.trim()?.isNotEmpty() == true) {
             return listOf(
@@ -2238,7 +2332,7 @@ class WorkbenchProjectStore(
                 ?: htmlRoute(record.projectId)
             renderer == "flutter_eval" -> display?.get("route")?.toString()?.trim()
                 ?.takeIf { it.isNotEmpty() }
-                ?: "/workbench/flutter_eval?projectId=${record.projectId}"
+                ?: flutterEvalRoute(record.projectId)
             renderer == WORKBENCH_MARKDOWN_RENDERER || renderer == "markdown_live" ->
                 display?.get("route")?.toString()?.trim()
                 ?.takeIf { it.isNotEmpty() }
@@ -2455,6 +2549,22 @@ class WorkbenchProjectStore(
         "navigationScope" to "right_workbench_display",
         "isDefault" to true,
         "description" to "Live Markdown Display bound to this Project."
+    )
+
+    private fun flutterEvalRoute(projectId: String): String = "/workbench/flutter_eval?projectId=$projectId"
+
+    private fun flutterWorkbenchDisplay(record: WorkbenchProjectRecord): Map<String, Any?> = linkedMapOf(
+        "id" to "flutter-main-display",
+        "pageId" to "flutter-main-page",
+        "title" to record.name,
+        "shortName" to "APP",
+        "route" to flutterEvalRoute(record.projectId),
+        "kind" to "oob_flutter_eval",
+        "renderer" to "flutter_eval",
+        "surfaceKind" to "app_display",
+        "navigationScope" to "right_workbench_display",
+        "isDefault" to true,
+        "description" to "Live Flutter Display bound to this Project."
     )
 
     private fun isHtmlDisplay(display: Map<String, Any?>): Boolean {
@@ -3624,8 +3734,28 @@ class WorkbenchProjectStore(
      * @return Number of log records per API id. Both successful and failed calls count as executions.
      */
     private fun apiExecutionCounts(projectId: String): Map<String, Int> {
+        val countsFile = apiCallCountsFile(projectId)
+        if (countsFile.exists()) {
+            val cached = runCatching {
+                gson.fromJson<Map<String, Int>>(
+                    countsFile.readText(),
+                    apiExecutionCountsType
+                )
+            }.getOrNull()?.let { counts ->
+                counts
+                    .filterKeys { it.trim().isNotEmpty() }
+                    .mapValues { (_, value) -> value.coerceAtLeast(0) }
+            }
+            if (cached != null) return cached
+        }
+        return rebuildApiExecutionCounts(projectId)
+    }
+
+    private fun rebuildApiExecutionCounts(projectId: String): Map<String, Int> {
         val file = File(projectDir(projectId), "logs/api_calls.jsonl")
-        if (!file.exists()) return emptyMap()
+        if (!file.exists()) return emptyMap<String, Int>().also {
+            writeApiExecutionCounts(projectId, it)
+        }
         val counts = linkedMapOf<String, Int>()
         Regex("\"apiId\"\\s*:\\s*\"([^\"]+)\"")
             .findAll(file.readText())
@@ -3635,7 +3765,26 @@ class WorkbenchProjectStore(
                     counts[apiId] = (counts[apiId] ?: 0) + 1
                 }
         }
+        writeApiExecutionCounts(projectId, counts)
         return counts
+    }
+
+    private fun incrementApiExecutionCount(projectId: String, apiId: String) {
+        val normalizedApiId = apiId.trim()
+        if (normalizedApiId.isEmpty()) return
+        val counts = LinkedHashMap(apiExecutionCounts(projectId))
+        counts[normalizedApiId] = (counts[normalizedApiId] ?: 0) + 1
+        writeApiExecutionCounts(projectId, counts)
+    }
+
+    private fun writeApiExecutionCounts(projectId: String, counts: Map<String, Int>) {
+        val file = apiCallCountsFile(projectId)
+        file.parentFile?.mkdirs()
+        val normalized = counts
+            .filterKeys { it.trim().isNotEmpty() }
+            .mapValues { (_, value) -> value.coerceAtLeast(0) }
+            .toSortedMap()
+        file.writeText(gson.toJson(normalized))
     }
 
     private fun apiSuccess(
@@ -3711,6 +3860,7 @@ class WorkbenchProjectStore(
     ) {
         val file = File(projectDir(projectId), "logs/api_calls.jsonl")
         file.parentFile?.mkdirs()
+        apiExecutionCounts(projectId)
         val finishedAt = System.currentTimeMillis()
         val row = linkedMapOf<String, Any?>(
             "timestamp" to nowIso(),
@@ -3727,6 +3877,7 @@ class WorkbenchProjectStore(
             "durationMs" to (finishedAt - startedAtMillis).coerceAtLeast(0)
         )
         file.appendText(logGson.toJson(row) + "\n")
+        incrementApiExecutionCount(projectId, api.apiId)
     }
 
     /**
@@ -4298,39 +4449,57 @@ class WorkbenchProjectStore(
         )
         val run = WorkbenchToolboxBuilder.runContract(api)
         val taskId = "project-tool-${System.currentTimeMillis()}-${UUID.randomUUID()}"
-        return runCatching {
-            runBlocking {
-                val conversationService = ConversationDomainService(context)
-                val conversation = conversationService.createConversation(
-                    title = "Project Tool: ${api.displayName}",
-                    mode = "normal"
-                )
-                val conversationId = (conversation["id"] as? Number)?.toLong()
-                    ?: conversation["id"]?.toString()?.toLongOrNull()
-                    ?: throw IllegalStateException("Conversation id is invalid")
-                val accepted = AgentRunService(context).startConversationRun(
-                    conversationId = conversationId,
-                    request = linkedMapOf(
-                        "taskId" to taskId,
-                        "conversationMode" to "subagent",
-                        "title" to "Project Tool: ${api.displayName}",
-                        "userMessage" to buildAgentTaskPrompt(record, api, run, inputs, caller)
+        // Run on a dedicated thread to avoid blocking the coroutine dispatcher thread pool,
+        // which causes a deadlock when startConversationRun dispatches back onto the same pool.
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var result: Map<String, Any?>? = null
+        var error: Throwable? = null
+        val thread = Thread {
+            runCatching {
+                runBlocking {
+                    val conversationService = ConversationDomainService(context)
+                    val conversation = conversationService.createConversation(
+                        title = "Project Tool: ${api.displayName}",
+                        mode = "normal"
                     )
-                )
-                apiSuccess(
-                    api,
-                    linkedMapOf(
-                        "status" to "pending",
-                        "taskId" to (accepted["taskId"] ?: taskId),
-                        "conversationId" to conversationId,
-                        "run" to run,
-                        "message" to "Project Tool submitted to the OOB Agent runtime."
+                    val conversationId = (conversation["id"] as? Number)?.toLong()
+                        ?: conversation["id"]?.toString()?.toLongOrNull()
+                        ?: throw IllegalStateException("Conversation id is invalid")
+                    val accepted = AgentRunService(context).startConversationRun(
+                        conversationId = conversationId,
+                        request = linkedMapOf(
+                            "taskId" to taskId,
+                            "conversationMode" to "subagent",
+                            "title" to "Project Tool: ${api.displayName}",
+                            "userMessage" to buildAgentTaskPrompt(record, api, run, inputs, caller)
+                        )
                     )
-                )
-            }
-        }.getOrElse { error ->
-            apiError(api, "AGENT_TASK_START_FAILED", error.message ?: "Agent task failed to start.")
+                    result = apiSuccess(
+                        api,
+                        linkedMapOf(
+                            "status" to "pending",
+                            "taskId" to (accepted["taskId"] ?: taskId),
+                            "conversationId" to conversationId,
+                            "run" to run,
+                            "message" to "Project Tool submitted to the OOB Agent runtime."
+                        )
+                    )
+                }
+            }.onFailure { error = it }
+            latch.countDown()
         }
+        thread.isDaemon = true
+        thread.start()
+        val finished = latch.await(15, java.util.concurrent.TimeUnit.SECONDS)
+        if (!finished) {
+            thread.interrupt()
+            return apiError(api, "AGENT_TASK_START_TIMEOUT", "Agent task start timed out after 15s.")
+        }
+        val err = error
+        if (err != null) {
+            return apiError(api, "AGENT_TASK_START_FAILED", err.message ?: "Agent task failed to start.")
+        }
+        return result ?: apiError(api, "AGENT_TASK_START_FAILED", "No result from agent task start.")
     }
 
     /**
@@ -5386,6 +5555,15 @@ class WorkbenchProjectStore(
 
     private fun projectProgressFile(projectId: String): File {
         return File(projectDir(projectId), "logs/project_progress.jsonl")
+    }
+
+    private fun apiCallCountsFile(projectId: String): File {
+        return File(projectDir(projectId), "logs/api_call_counts.json")
+    }
+
+    private fun projectLock(projectId: String): Any {
+        val normalizedProjectId = sanitizeProjectId(projectId)
+        return projectLocks.computeIfAbsent(normalizedProjectId) { Any() }
     }
 
     private fun projectDir(projectId: String): File {

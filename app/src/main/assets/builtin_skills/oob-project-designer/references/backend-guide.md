@@ -201,13 +201,53 @@ For any non-trivial agent API, start `run.prompt` with a tight input block befor
 
 Do not begin complex prompts directly with "1. 用 ...". The first block is the contract that lets Prompt Runtime, prompt dump, and future maintainers understand the task before tools run.
 
+#### Prompt Init 增强（设计阶段，不是运行阶段）
+
+写 `run.prompt` 前先获取领域知识，带着领域约束写 prompt，而不是事后微管每一步工具调用。
+
+**init 增强三要素：数据源锚点 + 字段约束 + 写回合约**
+
+```
+❌ 没有 init 增强（上下文空洞）：
+"搜索 inputs.topic 相关论文，整理标题和摘要，写入 Project。"
+→ sub-agent 不知道去哪搜，可能直接生成假论文
+
+✓ 有 init 增强（有领域锚点）：
+"在 arxiv.org 搜索 inputs.topic 最近 2 年的论文。
+ 每篇需要：标题、arxiv URL（以 arxiv.org/abs/ 开头）、摘要前 200 字、年份。
+ 找到 5-8 篇后逐条调 workbench_api_call(apiId='paper.create',
+ inputs={title, url, abstract, year}) 写入。完成后 notification_send 通知。"
+```
+
+第二个 prompt 没有列工具步骤，但 sub-agent 知道去 arxiv 找、URL 格式要求、要写多少条。它能自行决定用 `web_search` 还是 `browser_use`，不会造数据。
+
+**设计前调研方式：**
+
+| 领域 | 先查哪里 | 获取什么 |
+|---|---|---|
+| 搜索/抓取 | `skills_read("oob-web-research")` | 各站点 URL 模式、登录处理、反爬注意 |
+| 图片/VLM | `capability-map.md` | `vlm_task` 参数、返回 JSON 结构 |
+| 无障碍读 App | `capability-map.md` | `android_privileged_action` 动作列表 |
+| 日历/提醒 | `capability-map.md` | `calendar_event_create` 字段要求 |
+
+**常用领域的锚点写法：**
+
+| 领域 | 数据源锚点 | 字段约束示例 |
+|---|---|---|
+| 论文搜索 | `"在 arxiv.org 搜索"` | `URL 以 arxiv.org/abs/ 开头，摘要不超过 300 字` |
+| 商品价格 | `"打开京东/淘宝商品页"` | `price 为数字（人民币元），去掉货币符号` |
+| 小红书笔记 | `"搜索页 URL: xiaohongshu.com/search_result?keyword="` | `每条笔记提取 title、like_count、url` |
+| 图片识别 | `"用户从相机或相册选图"` | `VLM 返回 JSON，字段名与 item.fields 保持一致` |
+| 微信记录 | `"无障碍读取微信聊天界面"` | `仅读当前会话，不存储完整历史` |
+
 #### Prompt writing rules
 
-1. Start each step with a number + tool name: `1. 用 image_picker(...)`
-2. Name the output variable explicitly: `拿到 imagePath`
+1. Start with domain context: where the data comes from, what constraints apply
+2. Name output variables explicitly when they cross steps: `拿到 imagePath`
 3. Reference prior step outputs by variable name in later steps
 4. Always end with a `workbench_api_call` to write results back
 5. Optionally end with `notification_send` for user feedback
+6. Field names in `workbench_api_call` inputs must match the API's `inputSchema` exactly
 
 #### Complete agent task examples
 
@@ -397,4 +437,15 @@ Every new project gets this file auto-generated. Keep it updated as APIs and fie
 - Mobile-first, single column, max 430px
 - Primary intent: quick expense logging with photo import support
 - Created: 2026-05-13
+
+## API 领域知识
+
+每个 agent API 在设计前做过调研的，把关键发现记录在这里。
+热更新时先读本节，避免重复调研或与原设计冲突。
+
+### <apiId> — <任务名>
+- 数据源：<具体 API endpoint 或 URL 模式>
+- 字段映射：<外部字段名> → <item.fields 字段名>（含类型转换说明）
+- 限制：<rate limit / 需登录 / 数据时效 / 其他注意事项>
+- 调研日期：<YYYY-MM-DD>
 ```

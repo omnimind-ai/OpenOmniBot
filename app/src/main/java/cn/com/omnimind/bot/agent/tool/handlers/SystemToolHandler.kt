@@ -6,7 +6,9 @@ import cn.com.omnimind.bot.agent.AgentCallback
 import cn.com.omnimind.bot.agent.AgentExecutionEnvironment
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
 import cn.com.omnimind.bot.agent.AgentToolRegistry
+import cn.com.omnimind.bot.agent.ChoiceOption
 import cn.com.omnimind.bot.agent.ToolExecutionResult
+import cn.com.omnimind.bot.agent.UserDialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -25,7 +27,8 @@ class SystemToolHandler(
         "alarm_reminder_create", "alarm_reminder_list", "alarm_reminder_delete",
         "calendar_list", "calendar_event_create", "calendar_event_list", "calendar_event_update", "calendar_event_delete",
         "music_playback_control",
-        "notification_send"
+        "notification_send",
+        "user_dialog"
     )
 
     private val alarmToolService = AgentAlarmToolService(helper.context)
@@ -50,6 +53,7 @@ class SystemToolHandler(
                 executeCalendarTool(toolName, args, callback)
             "music_playback_control" -> executeMusicTool(args, env.workspaceDescriptor, callback)
             "notification_send" -> executeNotificationSend(args)
+            "user_dialog" -> executeUserDialog(args, callback)
             else -> ToolExecutionResult.Error(toolName, "Unknown system tool")
         }
     }
@@ -343,6 +347,52 @@ class SystemToolHandler(
             )
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { ToolExecutionResult.Error(toolName, helper.localized(e.message ?: "Music tool failed")) }
+    }
+
+    private suspend fun executeUserDialog(
+        args: JsonObject,
+        callback: AgentCallback
+    ): ToolExecutionResult {
+        val type = args["type"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+        val message = args["message"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+        if (type !in setOf("confirm", "choices", "input")) {
+            return ToolExecutionResult.Error("user_dialog", "type 必须是 confirm、choices 或 input")
+        }
+        if (message.isBlank()) {
+            return ToolExecutionResult.Error("user_dialog", "message 不能为空")
+        }
+        val choices = (args["choices"] as? JsonArray)?.mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            val label = obj["label"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            val value = obj["value"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            if (label.isBlank() || value.isBlank()) return@mapNotNull null
+            ChoiceOption(
+                label = label,
+                value = value,
+                hint = obj["hint"]?.jsonPrimitive?.contentOrNull?.trim()
+            )
+        }
+        val dialog = UserDialog(
+            type = type,
+            message = message,
+            title = args["title"]?.jsonPrimitive?.contentOrNull?.trim(),
+            confirmLabel = args["confirmLabel"]?.jsonPrimitive?.contentOrNull?.trim(),
+            cancelLabel = args["cancelLabel"]?.jsonPrimitive?.contentOrNull?.trim(),
+            danger = args["danger"]?.jsonPrimitive?.booleanOrNull ?: false,
+            choices = choices?.takeIf { it.isNotEmpty() },
+            placeholder = args["placeholder"]?.jsonPrimitive?.contentOrNull?.trim(),
+            inputType = args["inputType"]?.jsonPrimitive?.contentOrNull?.trim()
+        )
+        callback.onClarifyRequired(
+            question = message,
+            missingFields = null,
+            dialog = dialog
+        )
+        return ToolExecutionResult.Clarify(
+            question = message,
+            missingFields = null,
+            dialog = dialog
+        )
     }
 
     private suspend fun executeNotificationSend(args: JsonObject): ToolExecutionResult {

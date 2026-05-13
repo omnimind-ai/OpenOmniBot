@@ -63,6 +63,7 @@ import cn.com.omnimind.baselib.util.SchemeUtil
 import cn.com.omnimind.bot.agent.AgentCallback
 import cn.com.omnimind.bot.agent.AgentAlarmToolService
 import cn.com.omnimind.bot.agent.AgentAiCapabilityConfigSync
+import cn.com.omnimind.bot.agent.config.AgentToolFeatureStore
 import cn.com.omnimind.bot.agent.AgentConversationContextCompactor
 import cn.com.omnimind.bot.agent.AgentImageAttachmentSupport
 import cn.com.omnimind.bot.agent.AgentStreamEvent
@@ -141,6 +142,7 @@ import kotlin.coroutines.resumeWithException
 internal const val CHAT_ONLY_MODE = "chat_only"
 private const val MAX_PERSISTED_THINKING_CHARS = 16 * 1024
 private const val THINKING_TRUNCATION_NOTICE = "[Earlier reasoning omitted]\n"
+private const val IDLE_CONSOLIDATION_DELAY_MS = 2 * 60 * 1000L  // 2 min after last task finishes
 
 private val chatTaskPayloadJson = Json {
     ignoreUnknownKeys = true
@@ -733,7 +735,14 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     private var currentConversationId: Long? = null
     private var currentConversationMode: String = "normal"
 
+    // Scheduled while the system is idle (no active agent runs). Cancelled and
+    // rescheduled whenever a new task starts, so consolidation only runs when
+    // the engine has been quiet long enough for the work to be non-disruptive.
+    @Volatile private var idleConsolidationJob: Job? = null
+
     private fun registerActiveAgentRun(taskId: String, context: ActiveAgentRunContext) {
+        idleConsolidationJob?.cancel()
+        idleConsolidationJob = null
         synchronized(activeAgentLock) {
             activeAgentRuns[taskId] = context
         }
@@ -759,16 +768,59 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     }
 
     private fun clearActiveAgentJob(taskId: String, job: Job) {
-        val removed = synchronized(activeAgentLock) {
-            if (activeAgentRuns[taskId]?.job == job) {
+        val (removed, nowIdle) = synchronized(activeAgentLock) {
+            val wasRemoved = activeAgentRuns[taskId]?.job == job &&
                 activeAgentRuns.remove(taskId) != null
-            } else {
-                false
-            }
+            wasRemoved to (wasRemoved && activeAgentRuns.isEmpty())
         }
         if (removed) {
             dispatchAgentRunStateChanged("agent_run_finished")
+            if (nowIdle) scheduleIdleConsolidation()
         }
+    }
+
+    private fun scheduleIdleConsolidation() {
+        idleConsolidationJob?.cancel()
+        idleConsolidationJob = workJob.launch {
+            delay(IDLE_CONSOLIDATION_DELAY_MS)
+            val isStillIdle = synchronized(activeAgentLock) { activeAgentRuns.isEmpty() }
+            if (isStillIdle) {
+                runCatching { consolidateIdleRunLogs() }
+                    .onFailure { OmniLog.w(TAG, "idle consolidation failed: ${it.message}") }
+            }
+        }
+    }
+
+    private suspend fun consolidateIdleRunLogs() {
+        @Suppress("UNCHECKED_CAST")
+        val runs = (InternalRunLogStore.listRuns(context, limit = 50)["runs"]
+            as? List<Map<String, Any?>>) ?: return
+
+        // Seal any run that never received finishRun() — i.e. the process was killed
+        // or crashed before the finally block could execute. By the time this runs
+        // (2 min after the last active task), all runs from this session have already
+        // been closed by their own finally blocks, so any still-open run is an orphan.
+        var sealed = 0
+        for (run in runs) {
+            val finishedAt = run["finished_at"]?.toString()?.trim().orEmpty()
+            if (finishedAt.isNotEmpty()) continue                    // already finished
+            val runId = run["run_id"]?.toString()?.trim() ?: continue
+            runCatching {
+                InternalRunLogStore.finishRun(
+                    context = context,
+                    runId = runId,
+                    success = false,
+                    doneReason = "orphaned"
+                )
+                sealed++
+            }.onFailure { OmniLog.w(TAG, "seal orphan run failed runId=$runId: ${it.message}") }
+        }
+        if (sealed > 0) {
+            OmniLog.i(TAG, "idle consolidation: sealed $sealed orphaned run log(s)")
+        }
+        // TODO: when OmniFlowSimple merges, add:
+        //   OmniFlowSimpleIngest(store).ingestRunLogMap(timelinePayload)
+        //   OobReusableFunctionStore.register(context, function.toSpec())
     }
 
     private fun syncAgentAiCapabilityConfigFile() {
@@ -1261,17 +1313,52 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             "memory_upsert_longterm" -> AgentToolMeta("memory", t("沉淀长期记忆", "Upsert Long-Term Memory"))
             "memory_rollup_day" -> AgentToolMeta("memory", t("整理当日记忆", "Roll Up Daily Memory"))
             "subagent_dispatch" -> AgentToolMeta("subagent", t("分派子任务", "Dispatch Subtasks"))
+            "workbench_project_create" -> AgentToolMeta("workbench", t("创建 Project", "Create Project"))
+            "workbench_project_list" -> AgentToolMeta("workbench", t("查看 Project 列表", "List Projects"))
+            "workbench_project_get" -> AgentToolMeta("workbench", t("读取 Project", "Load Project"))
+            "workbench_project_update" -> AgentToolMeta("workbench", t("更新 Project", "Update Project"))
+            "workbench_api_list" -> AgentToolMeta("workbench", t("查看 Project Tool", "List Project Tools"))
+            "workbench_api_call" -> AgentToolMeta("workbench", t("调用 Project Tool", "Call Project Tool"))
+            "workbench_project_export" -> AgentToolMeta("workbench", t("导出 Project", "Export Project"))
+            "workbench_project_open" -> AgentToolMeta("workbench", t("打开 Project", "Open Project"))
+            "workbench_project_activate" -> AgentToolMeta("workbench", t("激活 Project", "Activate Project"))
+            "workbench_project_active_get" -> AgentToolMeta("workbench", t("查看当前 Project", "Get Active Project"))
+            "workbench_project_deactivate" -> AgentToolMeta("workbench", t("停用 Project", "Deactivate Project"))
+            "workbench_project_delete" -> AgentToolMeta("workbench", t("删除 Project", "Delete Project"))
+            "workbench_project_hot_update" -> AgentToolMeta("workbench", t("热更新 Project", "Hot Update Project"))
+            "workbench_project_ingest_android" -> AgentToolMeta("workbench", t("导入安卓资产", "Import Android Asset"))
+            "workbench_project_ingest_oss" -> AgentToolMeta("workbench", t("导入 OSS 资源", "Import OSS Asset"))
+            "workbench_project_progress_get" -> AgentToolMeta("workbench", t("查看 Project 进度", "Get Project Progress"))
             else -> {
                 val match = Regex("^mcp__(.+?)__(.+)$").find(toolName)
                 if (match != null) {
                     val serverId = match.groupValues[1]
                     val rawToolName = match.groupValues[2]
                     val serverName = RemoteMcpConfigStore.getServer(serverId)?.name
-                    AgentToolMeta("mcp", rawToolName, serverName)
+                    AgentToolMeta("mcp", prettifyToolName(rawToolName), serverName)
                 } else {
-                    AgentToolMeta("builtin", toolName)
+                    AgentToolMeta("builtin", prettifyToolName(toolName))
                 }
             }
+        }
+    }
+
+    private fun prettifyToolName(rawToolName: String): String {
+        val trimmed = rawToolName.trim()
+        if (trimmed.isBlank()) {
+            return t("工具调用", "Tool Call")
+        }
+        val normalized = trimmed
+            .replace(Regex("([a-z0-9])([A-Z])"), "$1 $2")
+            .replace(Regex("[_\\-]+"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        if (normalized.isBlank()) {
+            return t("工具调用", "Tool Call")
+        }
+        return when (normalized.lowercase()) {
+            "calltool", "call tool" -> t("工具调用", "Tool Call")
+            else -> normalized
         }
     }
 
@@ -2259,6 +2346,29 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             withContext(Dispatchers.Main) {
                 result.success(payload)
             }
+        }
+    }
+
+    fun getAgentToolFeatures(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val payload = AgentToolFeatureStore.getFeatures(context)
+            withContext(Dispatchers.Main) { result.success(payload) }
+        }
+    }
+
+    fun setAgentToolFeatures(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val args = normalizeMethodCallMap(call.arguments)
+            val oobEnabled = when (val raw = args["oobFunctionAsToolEnabled"]) {
+                is Boolean -> raw
+                is String -> raw.equals("true", ignoreCase = true)
+                else -> null
+            }
+            if (oobEnabled != null) {
+                AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, oobEnabled)
+            }
+            val payload = AgentToolFeatureStore.getFeatures(context)
+            withContext(Dispatchers.Main) { result.success(payload) }
         }
     }
 
@@ -4774,484 +4884,21 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
                 // 2. 初始化 Executor
                 val executor = OmniAgentExecutor(context, agentRunScope, scheduleBridge)
-                val activeToolArgs = mutableMapOf<String, ArrayDeque<String>>()
-                val activeToolEntryIds = mutableMapOf<String, ArrayDeque<String>>()
-                val activeToolStartTimes = mutableMapOf<String, Long>()
-                val thinkingCardStartTimes = mutableMapOf<String, Long>()
-                val entryCreatedAtTimes = mutableMapOf<String, Long>()
-                val entryOrderSeqs = mutableMapOf<String, Long>()
-                val scheduledAssistantBuffer = StringBuilder()
-                var toolSequence = 0
-                var eventSequence = 0L
-                var entrySequence = 0L
-                var activeThinkingEntryId: String? = null
-                var activeAssistantEntryId: String? = null
-                var thinkingSequence = 0
-                var assistantRound = 0
-                var latestThinkingContent = ""
-                var latestAssistantVisibleText = ""
-                var shouldStartNewThinkingSegment = false
-                var shouldStartNewAssistantRound = false
-                // toolCallId (LLM-assigned, e.g. "toolu_01xxx") → our stable entryId.
-                // Populated by onToolCallPreview during streaming; consumed by onToolCallStart
-                // so both phases write to the same Flutter card.
-                val previewEntryIdByToolCallId = mutableMapOf<String, String>()
 
-                fun pushToolValue(
-                    store: MutableMap<String, ArrayDeque<String>>,
-                    toolName: String,
-                    value: String
-                ) {
-                    store.getOrPut(toolName) { ArrayDeque() }.addLast(value)
-                }
-
-                fun peekToolValue(
-                    store: MutableMap<String, ArrayDeque<String>>,
-                    toolName: String
-                ): String {
-                    return store[toolName]?.lastOrNull().orEmpty()
-                }
-
-                fun popToolValue(
-                    store: MutableMap<String, ArrayDeque<String>>,
-                    toolName: String
-                ): String {
-                    val queue = store[toolName] ?: return ""
-                    val value = if (queue.isEmpty()) "" else queue.removeLast()
-                    if (queue.isEmpty()) {
-                        store.remove(toolName)
-                    }
-                    return value
-                }
-
-                suspend fun publishConversationMessagesSync() {
-                    val normalizedConversationId = conversationId ?: return
-                    val repository = historyRepository ?: return
-                    try {
-                        val messages = repository.listConversationMessages(
-                            conversationId = normalizedConversationId,
-                            conversationMode = resolvedConversationMode
-                        )
-                        RealtimeHub.publish(
-                            "messages_replaced",
-                            mapOf(
-                                "conversationId" to normalizedConversationId,
-                                "mode" to resolvedConversationMode,
-                                "messages" to messages
-                            )
-                        )
-                        FlutterChatSyncBridge.dispatchConversationMessagesChanged(
-                            conversationId = normalizedConversationId,
-                            mode = resolvedConversationMode,
-                            reason = "messages_replaced"
-                        )
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Exception) {
-                        OmniLog.w(
-                            TAG,
-                            "publish conversation messages failed: ${error.message}",
-                            error
-                        )
-                    }
-                }
-
-                suspend fun persistConversationMutation(
-                    description: String,
-                    publish: Boolean = true,
-                    block: suspend () -> Unit
-                ) {
-                    val persisted = try {
-                        block()
-                        true
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Exception) {
-                        OmniLog.w(TAG, "$description failed: ${error.message}", error)
-                        false
-                    }
-                    if (persisted && publish) {
-                        publishConversationMessagesSync()
-                    }
-                }
-
-
-                fun resolveAssistantEntryId(round: Int): String {
-                    return if (round <= 1) {
-                        "$taskId-text"
-                    } else {
-                        "$taskId-text-$round"
-                    }
-                }
-
-                fun nextEventSeq(): Long {
-                    eventSequence += 1
-                    return eventSequence
-                }
-
-                fun resolveEntryOrderSeq(entryId: String): Long {
-                    return entryOrderSeqs.getOrPut(entryId) {
-                        entrySequence += 1
-                        entrySequence
-                    }
-                }
-
-                fun streamMeta(
-                    entryId: String,
-                    roundIndex: Int,
-                    kind: String,
-                    isFinal: Boolean = false
-                ): Map<String, Any?> {
-                    return linkedMapOf(
-                        "seq" to resolveEntryOrderSeq(entryId),
-                        "roundIndex" to roundIndex,
-                        "kind" to kind,
-                        "parentTaskId" to taskId,
-                        "runLogId" to taskId,
-                        "run_id" to taskId,
-                        "entryId" to entryId,
-                        "isFinal" to isFinal
-                    )
-                }
-
-                fun markAssistantRoundBoundary() {
-                    if (activeAssistantEntryId != null || assistantRound > 0) {
-                        shouldStartNewAssistantRound = true
-                        activeAssistantEntryId = null
-                        scheduledAssistantBuffer.setLength(0)
-                    }
-                }
-
-                fun ensureAssistantEntry(forceNewRound: Boolean = false): Pair<Int, String> {
-                    if (activeAssistantEntryId == null || shouldStartNewAssistantRound || forceNewRound) {
-                        assistantRound = (assistantRound + 1).coerceAtLeast(1)
-                        activeAssistantEntryId = resolveAssistantEntryId(assistantRound)
-                        shouldStartNewAssistantRound = false
-                        scheduledAssistantBuffer.setLength(0)
-                    }
-                    val entryId = activeAssistantEntryId!!
-                    entryCreatedAtTimes.putIfAbsent(entryId, System.currentTimeMillis())
-                    return assistantRound to entryId
-                }
-
-                fun currentToolRoundIndex(): Int {
-                    return maxOf(thinkingSequence, assistantRound, 1)
-                }
-
-                fun buildDeepThinkingCardData(
-                    thinkingContent: String,
-                    isLoading: Boolean,
-                    stage: Int,
-                    startTime: Long,
-                    endTime: Long?
-                ): Map<String, Any?> {
-                    val sanitizedThinking = AgentTextSanitizer.sanitizeUtf16(thinkingContent)
-                    val originalLength = sanitizedThinking.length
-                    val persistedThinking = if (originalLength <= MAX_PERSISTED_THINKING_CHARS) {
-                        sanitizedThinking
-                    } else {
-                        val bodyLimit = (MAX_PERSISTED_THINKING_CHARS - THINKING_TRUNCATION_NOTICE.length)
-                            .coerceAtLeast(0)
-                        AgentTextSanitizer.sanitizeUtf16(
-                            THINKING_TRUNCATION_NOTICE + sanitizedThinking.takeLast(bodyLimit)
-                        )
-                    }
-                    val truncated = persistedThinking.length < originalLength
-                    return linkedMapOf(
-                        "type" to "deep_thinking",
-                        "isLoading" to isLoading,
-                        "thinkingContent" to persistedThinking,
-                        "thinkingContentTruncated" to truncated,
-                        "thinkingOriginalLength" to originalLength,
-                        "thinkingTruncateMode" to if (truncated) "head_omitted" else "none",
-                        "stage" to stage,
-                        "taskID" to taskId,
-                        "startTime" to startTime,
-                        "endTime" to endTime,
-                        "isCollapsible" to true
-                    )
-                }
-
-                suspend fun upsertThinkingCard(
-                    entryId: String,
-                    roundIndex: Int,
-                    thinkingContent: String,
-                    isLoading: Boolean,
-                    stage: Int,
-                    createdAt: Long = thinkingCardStartTimes[entryId] ?: System.currentTimeMillis(),
-                    streamKind: String = "thinking_snapshot",
-                    endTime: Long? = null,
-                    publish: Boolean = true
-                ) {
-                    val normalizedConversationId = conversationId ?: return
-                    if (entryId.isBlank()) return
-                    val startTime = thinkingCardStartTimes.getOrPut(entryId) { createdAt }
-                    persistConversationMutation(
-                        description = "upsert thinking card",
-                        publish = publish
-                    ) {
-                        repository.upsertUiCard(
-                            conversationId = normalizedConversationId,
-                            conversationMode = resolvedConversationMode,
-                            entryId = entryId,
-                            cardData = buildDeepThinkingCardData(
-                                thinkingContent = thinkingContent,
-                                isLoading = isLoading,
-                                stage = stage,
-                                startTime = startTime,
-                                endTime = endTime
-                            ),
-                            streamMeta = streamMeta(
-                                entryId = entryId,
-                                roundIndex = roundIndex,
-                                kind = streamKind
-                            ),
-                            createdAt = startTime
-                        )
-                    }
-                }
-
-                suspend fun finalizeThinkingCardIfNeeded(publish: Boolean = true) {
-                    val entryId = activeThinkingEntryId ?: return
-                    if (latestThinkingContent.isBlank()) return
-                    upsertThinkingCard(
-                        entryId = entryId,
-                        roundIndex = thinkingSequence.coerceAtLeast(1),
-                        thinkingContent = latestThinkingContent,
-                        isLoading = false,
-                        stage = 4,
-                        streamKind = "thinking_snapshot",
-                        endTime = System.currentTimeMillis(),
-                        publish = publish
-                    )
-                }
-
-                suspend fun upsertAssistantSnapshot(
-                    entryId: String,
-                    roundIndex: Int,
-                    text: String,
-                    isError: Boolean,
-                    isFinal: Boolean = false,
-                    streamKind: String = "text_snapshot"
-                ) {
-                    val normalizedConversationId = conversationId ?: return
-                    val normalizedText = AgentTextSanitizer.sanitizeUtf16(text).trim()
-                    if (normalizedText.isEmpty()) return
-                    val createdAt = entryCreatedAtTimes.getOrPut(entryId) {
-                        System.currentTimeMillis()
-                    }
-                    persistConversationMutation("upsert assistant snapshot") {
-                        repository.upsertAssistantMessage(
-                            conversationId = normalizedConversationId,
-                            conversationMode = resolvedConversationMode,
-                            entryId = entryId,
-                            text = normalizedText,
-                            isError = isError,
-                            streamMeta = streamMeta(
-                                entryId = entryId,
-                                roundIndex = roundIndex,
-                                kind = streamKind,
-                                isFinal = isFinal
-                            ),
-                            createdAt = createdAt
-                        )
-                    }
-                }
-
-                suspend fun upsertClarifyMessage(
-                    entryId: String,
-                    roundIndex: Int,
-                    question: String
-                ) {
-                    val normalizedConversationId = conversationId ?: return
-                    val normalizedQuestion = AgentTextSanitizer.sanitizeUtf16(question).trim()
-                    if (normalizedQuestion.isEmpty()) return
-                    val createdAt = entryCreatedAtTimes.getOrPut(entryId) {
-                        System.currentTimeMillis()
-                    }
-                    persistConversationMutation("upsert clarify message") {
-                        repository.upsertAssistantMessage(
-                            conversationId = normalizedConversationId,
-                            conversationMode = resolvedConversationMode,
-                            entryId = entryId,
-                            text = normalizedQuestion,
-                            isError = false,
-                            streamMeta = streamMeta(
-                                entryId = entryId,
-                                roundIndex = roundIndex,
-                                kind = "clarify_required",
-                                isFinal = true
-                            ),
-                            createdAt = createdAt
-                        )
-                    }
-                }
-
-                fun buildPermissionRequiredMessage(missing: List<String>): String {
-                    val names = missing.map(::localizedPermissionName).filter { it.isNotEmpty() }
-                    return if (names.isEmpty()) {
-                        t(
-                            "执行任务前需要先开启权限",
-                            "Enable the required permissions before running the task."
-                        )
-                    } else {
-                        t(
-                            "执行任务前，请先开启：${names.joinToString("、")}",
-                            "Enable these permissions before running the task: ${names.joinToString(", ")}"
-                        )
-                    }
-                }
-
-                suspend fun upsertPermissionState(
-                    textEntryId: String,
-                    roundIndex: Int,
-                    missing: List<String>
-                ) {
-                    val normalizedConversationId = conversationId ?: return
-                    val names = missing.map(::localizedPermissionName).filter { it.isNotEmpty() }
-                    val message = buildPermissionRequiredMessage(missing)
-                    persistConversationMutation("upsert permission state") {
-                        repository.upsertAssistantMessage(
-                            conversationId = normalizedConversationId,
-                            conversationMode = resolvedConversationMode,
-                            entryId = textEntryId,
-                            text = AgentTextSanitizer.sanitizeUtf16(message),
-                            isError = false,
-                            streamMeta = streamMeta(
-                                entryId = textEntryId,
-                                roundIndex = roundIndex,
-                                kind = "permission_required",
-                                isFinal = true
-                            ),
-                            createdAt = entryCreatedAtTimes.getOrPut(textEntryId) {
-                                System.currentTimeMillis()
-                            }
-                        )
-                        val permissionIds = resolveRequiredPermissionIds(names)
-                        if (permissionIds.isNotEmpty()) {
-                            repository.upsertUiCard(
-                                conversationId = normalizedConversationId,
-                                conversationMode = resolvedConversationMode,
-                                entryId = "$taskId-permission",
-                                cardData = buildPermissionCardData(permissionIds),
-                                streamMeta = streamMeta(
-                                    entryId = "$taskId-permission",
-                                    roundIndex = roundIndex,
-                                    kind = "permission_required",
-                                    isFinal = true
-                                ),
-                                createdAt = entryCreatedAtTimes.getOrPut("$taskId-permission") {
-                                    System.currentTimeMillis()
-                                }
-                            )
-                        }
-                    }
-                }
-
-                suspend fun upsertToolEvent(
-                    entryId: String,
-                    roundIndex: Int,
-                    payload: Map<String, Any?>,
-                    streamKind: String,
-                    fallbackStatus: String,
-                    fallbackSummary: String
-                ) {
-                    val normalizedConversationId = conversationId ?: return
-                    if (entryId.isBlank()) return
-                    persistConversationMutation("upsert tool event") {
-                        val sanitizedPayload = sanitizeInteropMap(
-                            linkedMapOf<String, Any?>("taskId" to taskId).apply {
-                                putAll(payload)
-                                put(
-                                    "streamMeta",
-                                    streamMeta(
-                                        entryId = entryId,
-                                        roundIndex = roundIndex,
-                                        kind = streamKind
-                                    )
-                                )
-                            }
-                        )
-                        repository.upsertToolEvent(
-                            conversationId = normalizedConversationId,
-                            conversationMode = resolvedConversationMode,
-                            entryId = entryId,
-                            payload = sanitizedPayload,
-                            fallbackStatus = fallbackStatus,
-                            fallbackSummary = AgentTextSanitizer.sanitizeUtf16(fallbackSummary)
-                        )
-                    }
-                }
-
-                suspend fun sendStreamEvent(
-                    kind: String,
-                    entryId: String? = null,
-                    roundIndex: Int = 0,
-                    isFinal: Boolean = false,
-                    text: String? = null,
-                    thinking: String? = null,
-                    stage: Int? = null,
-                    prefillTokensPerSecond: Double? = null,
-                    decodeTokensPerSecond: Double? = null,
-                    success: Boolean? = null,
-                    outputKind: String? = null,
-                    hasUserVisibleOutput: Boolean? = null,
-                    latestPromptTokens: Int? = null,
-                    promptTokenThreshold: Int? = null,
-                    error: String? = null,
-                    question: String? = null,
-                    missingFields: List<String>? = null,
-                    missing: List<String>? = null,
-                    extras: Map<String, Any?> = emptyMap()
-                ) {
-                    val basePayload = AgentStreamEvent(
-                        taskId = taskId,
-                        seq = nextEventSeq(),
-                        kind = kind,
-                        createdAt = System.currentTimeMillis(),
-                        entryId = entryId,
-                        roundIndex = roundIndex,
-                        isFinal = isFinal,
-                        text = text,
-                        thinking = thinking,
-                        stage = stage,
-                        prefillTokensPerSecond = prefillTokensPerSecond,
-                        decodeTokensPerSecond = decodeTokensPerSecond,
-                        success = success,
-                        outputKind = outputKind,
-                        hasUserVisibleOutput = hasUserVisibleOutput,
-                        latestPromptTokens = latestPromptTokens,
-                        promptTokenThreshold = promptTokenThreshold,
-                        error = error,
-                        question = question,
-                        missingFields = missingFields,
-                        missing = missing,
-                        extras = extras
-                    ).toPayload(
-                        conversationId = conversationId,
-                        conversationMode = resolvedConversationMode
-                    )
-                    val payload = sanitizeInteropMap(
-                        entryId?.takeIf { it.isNotBlank() }?.let { resolvedEntryId ->
-                            basePayload + mapOf(
-                                "streamMeta" to streamMeta(
-                                    entryId = resolvedEntryId,
-                                    roundIndex = roundIndex,
-                                    kind = kind,
-                                    isFinal = isFinal
-                                )
-                            )
-                        } ?: basePayload
-                    )
-                    RealtimeHub.publish("agent_stream_event", payload)
-                    // Route through the per-frame batcher: coalesces up to ~60 calls/sec
-                    // regardless of LLM token rate, eliminating IPC overhead spikes.
-                    agentStreamEventBatcher.enqueue(payload)
-                }
+                // 3. 创建事件桥
+                val bridge = AgentTaskEventBridge(
+                    taskId = taskId,
+                    conversationId = conversationId,
+                    resolvedConversationMode = resolvedConversationMode,
+                    scheduledSubagentMeta = scheduledSubagentMeta,
+                    historyRepository = historyRepository,
+                    repository = repository,
+                    agentRunContext = agentRunContext,
+                )
 
                 conversationId?.let { normalizedConversationId ->
                     if (userMessage.isNotBlank() || attachments.isNotEmpty()) {
-                        persistConversationMutation("upsert user message") {
+                        bridge.persistConversationMutation("upsert user message") {
                             repository.upsertUserMessage(
                                 conversationId = normalizedConversationId,
                                 conversationMode = resolvedConversationMode,
@@ -5260,707 +4907,6 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                                 attachments = attachments,
                                 createdAt = userMessageCreatedAt ?: System.currentTimeMillis()
                             )
-                        }
-                    }
-                }
-
-                // 3. 创建回调
-                val callback = object : AgentCallback {
-                    override suspend fun onToolCallPreview(
-                        toolName: String,
-                        argumentsJson: String,
-                        toolCallId: String?,
-                        toolCallIndex: Int
-                    ) {
-                        if (toolName.isBlank()) return
-                        val resolvedId = toolCallId?.takeIf { it.isNotBlank() } ?: return
-                        // Each toolCallId is unique within a turn — fire only once per ID.
-                        if (previewEntryIdByToolCallId.containsKey(resolvedId)) return
-
-                        // Allocate the entry ID now; onToolCallStart will reuse it via the map.
-                        val entryId = "$taskId-tool-${toolSequence + previewEntryIdByToolCallId.size + 1}"
-                        previewEntryIdByToolCallId[resolvedId] = entryId
-
-                        val roundIndex = currentToolRoundIndex()
-                        val earlyPayload = buildToolStartPayload(toolName, "{}").toMutableMap().apply {
-                            put("cardId", entryId)
-                        }
-                        upsertToolEvent(
-                            entryId = entryId,
-                            roundIndex = roundIndex,
-                            payload = earlyPayload,
-                            streamKind = "tool_started",
-                            fallbackStatus = AgentConversationHistoryRepository.STATUS_RUNNING,
-                            fallbackSummary = t("正在准备工具调用...", "Preparing tool call...")
-                        )
-                        sendStreamEvent(
-                            kind = "tool_started",
-                            entryId = entryId,
-                            roundIndex = roundIndex,
-                            extras = earlyPayload
-                        )
-                    }
-
-                    override suspend fun onThinkingStart() {
-                        val startsNewSegment =
-                            activeThinkingEntryId == null || shouldStartNewThinkingSegment
-                        if (startsNewSegment) {
-                            finalizeThinkingCardIfNeeded(publish = false)
-                            thinkingSequence += 1
-                            activeThinkingEntryId = "$taskId-thinking-$thinkingSequence"
-                            latestThinkingContent = ""
-                            shouldStartNewThinkingSegment = false
-                        } else if (thinkingSequence <= 0) {
-                            thinkingSequence = 1
-                            activeThinkingEntryId = "$taskId-thinking-$thinkingSequence"
-                        }
-                        val entryId = activeThinkingEntryId
-                            ?: run { thinkingSequence += 1; "$taskId-thinking-$thinkingSequence".also { activeThinkingEntryId = it } }
-                        val startTime = System.currentTimeMillis()
-                        thinkingCardStartTimes.putIfAbsent(entryId, startTime)
-                        markAssistantRoundBoundary()
-                        if (startsNewSegment) {
-                            sendStreamEvent(
-                                kind = "thinking_started",
-                                entryId = entryId,
-                                roundIndex = thinkingSequence,
-                                thinking = "",
-                                stage = 1
-                            )
-                        }
-                    }
-
-                    override suspend fun onThinkingUpdate(thinking: String) {
-                        val normalizedThinking = AgentTextSanitizer.sanitizeUtf16(thinking).trim()
-                        if (normalizedThinking.isBlank()) return
-                        if (activeThinkingEntryId == null || shouldStartNewThinkingSegment) {
-                            thinkingSequence += 1
-                            val generated = "$taskId-thinking-$thinkingSequence"
-                            activeThinkingEntryId = generated
-                            latestThinkingContent = ""
-                            shouldStartNewThinkingSegment = false
-                            thinkingCardStartTimes.putIfAbsent(
-                                generated,
-                                System.currentTimeMillis()
-                            )
-                        }
-                        if (shouldIgnoreRegressiveSnapshot(latestThinkingContent, normalizedThinking)) {
-                            OmniLog.d(
-                                TAG,
-                                "ignore stale thinking snapshot: incoming=${normalizedThinking.length}, current=${latestThinkingContent.length}"
-                            )
-                            return
-                        }
-                        val entryId = activeThinkingEntryId
-                        latestThinkingContent = normalizedThinking
-                        entryId?.let { thinkingEntryId ->
-                            upsertThinkingCard(
-                                entryId = thinkingEntryId,
-                                roundIndex = thinkingSequence.coerceAtLeast(1),
-                                thinkingContent = normalizedThinking,
-                                isLoading = true,
-                                stage = 1,
-                                streamKind = "thinking_snapshot",
-                                publish = false
-                            )
-                        }
-                        sendStreamEvent(
-                            kind = "thinking_snapshot",
-                            entryId = entryId,
-                            roundIndex = thinkingSequence.coerceAtLeast(1),
-                            thinking = normalizedThinking,
-                            stage = 1
-                        )
-                    }
-
-                    override suspend fun onToolCallStart(
-                        toolName: String,
-                        toolCallId: String,
-                        arguments: JsonObject
-                    ) {
-                        val argsJson = arguments.toString()
-                        pushToolValue(activeToolArgs, toolName, argsJson)
-                        // Look up the entry ID allocated during onToolCallPreview using the
-                        // LLM-assigned toolCallId as the stable key. This guarantees the
-                        // confirmed event lands on the same Flutter card as the preview,
-                        // regardless of execution order.
-                        val previewEntryId = previewEntryIdByToolCallId.remove(toolCallId)
-                        val entryId = if (previewEntryId != null) {
-                            ++toolSequence   // keep the counter in sync
-                            previewEntryId
-                        } else {
-                            "$taskId-tool-${++toolSequence}"
-                        }
-                        val startedAtMillis = System.currentTimeMillis()
-                        activeToolStartTimes[entryId] = startedAtMillis
-                        val roundIndex = currentToolRoundIndex()
-                        pushToolValue(activeToolEntryIds, toolName, entryId)
-                        agentRunContext.bindActiveToolCardId(entryId)
-                        activeThinkingEntryId?.takeIf { latestThinkingContent.isNotBlank() }?.let { thinkingEntryId ->
-                            upsertThinkingCard(
-                                entryId = thinkingEntryId,
-                                roundIndex = thinkingSequence.coerceAtLeast(roundIndex),
-                                thinkingContent = latestThinkingContent,
-                                isLoading = true,
-                                stage = 2,
-                                streamKind = "thinking_snapshot",
-                                publish = false
-                            )
-                        }
-                        shouldStartNewThinkingSegment = true
-                        markAssistantRoundBoundary()
-                        val payload = buildToolStartPayload(toolName, argsJson).toMutableMap().apply {
-                            put("cardId", entryId)
-                        }
-                        runCatching {
-                            InternalRunLogStore.upsertCard(
-                                context = context,
-                                runId = taskId,
-                                cardId = entryId,
-                                card = buildAgentToolRunLogCard(
-                                    entryId = entryId,
-                                    toolName = toolName,
-                                    argsJson = argsJson,
-                                    payload = payload,
-                                    status = AgentConversationHistoryRepository.STATUS_RUNNING,
-                                    startedAtMillis = startedAtMillis
-                                )
-                            )
-                        }.onFailure {
-                            OmniLog.w(TAG, "upsert agent tool run log start failed: ${it.message}")
-                        }
-                        upsertToolEvent(
-                            entryId = entryId,
-                            roundIndex = roundIndex,
-                            payload = payload,
-                            streamKind = "tool_started",
-                            fallbackStatus = AgentConversationHistoryRepository.STATUS_RUNNING,
-                            fallbackSummary = payload["summary"]?.toString()?.ifBlank {
-                                t("正在调用工具", "Calling tool")
-                            } ?: t("正在调用工具", "Calling tool")
-                        )
-                        sendStreamEvent(
-                            kind = "tool_started",
-                            entryId = entryId,
-                            roundIndex = roundIndex,
-                            extras = payload
-                        )
-                    }
-
-                    override suspend fun onToolCallProgress(
-                        toolName: String,
-                        progress: String,
-                        extras: Map<String, Any?>
-                    ) {
-                        val entryId = peekToolValue(activeToolEntryIds, toolName)
-                        val roundIndex = currentToolRoundIndex()
-                        val payload = buildToolProgressPayload(
-                            toolName,
-                            progress,
-                            peekToolValue(activeToolArgs, toolName),
-                            extras
-                        ).toMutableMap().apply {
-                            if (entryId.isNotBlank()) {
-                                put("cardId", entryId)
-                            }
-                        }
-                        if (entryId.isNotBlank()) {
-                            val startedAtMillis = activeToolStartTimes[entryId]
-                                ?: System.currentTimeMillis()
-                            runCatching {
-                                InternalRunLogStore.upsertCard(
-                                    context = context,
-                                    runId = taskId,
-                                    cardId = entryId,
-                                    card = buildAgentToolRunLogCard(
-                                        entryId = entryId,
-                                        toolName = toolName,
-                                        argsJson = peekToolValue(activeToolArgs, toolName),
-                                        payload = payload,
-                                        status = AgentConversationHistoryRepository.STATUS_RUNNING,
-                                        startedAtMillis = startedAtMillis
-                                    )
-                                )
-                            }.onFailure {
-                                OmniLog.w(TAG, "upsert agent tool run log progress failed: ${it.message}")
-                            }
-                        }
-                        upsertToolEvent(
-                            entryId = entryId,
-                            roundIndex = roundIndex,
-                            payload = payload,
-                            streamKind = "tool_progress",
-                            fallbackStatus = AgentConversationHistoryRepository.STATUS_RUNNING,
-                            fallbackSummary = payload["summary"]?.toString()?.ifBlank {
-                                t("正在调用工具", "Calling tool")
-                            } ?: t("正在调用工具", "Calling tool")
-                        )
-                        sendStreamEvent(
-                            kind = "tool_progress",
-                            entryId = entryId.takeIf { it.isNotBlank() },
-                            roundIndex = roundIndex,
-                            extras = payload
-                        )
-                    }
-
-                    override suspend fun onToolCallComplete(
-                        toolName: String,
-                        result: ToolExecutionResult
-                    ) {
-                        val argsJson = popToolValue(activeToolArgs, toolName)
-                        val entryId = popToolValue(activeToolEntryIds, toolName).ifBlank {
-                            "$taskId-tool-${++toolSequence}"
-                        }
-                        val roundIndex = currentToolRoundIndex()
-                        activeThinkingEntryId?.takeIf { latestThinkingContent.isNotBlank() }?.let { thinkingEntryId ->
-                            upsertThinkingCard(
-                                entryId = thinkingEntryId,
-                                roundIndex = thinkingSequence.coerceAtLeast(roundIndex),
-                                thinkingContent = latestThinkingContent,
-                                isLoading = true,
-                                stage = 2,
-                                streamKind = "thinking_snapshot",
-                                publish = false
-                            )
-                        }
-                        markAssistantRoundBoundary()
-                        val payload = buildToolCompletePayload(toolName, result, argsJson)
-                            .toMutableMap().apply {
-                                put("cardId", entryId)
-                            }
-                        val success = payload["success"] != false
-                        val finishedAtMillis = System.currentTimeMillis()
-                        val startedAtMillis = activeToolStartTimes.remove(entryId)
-                            ?: finishedAtMillis
-                        runCatching {
-                            InternalRunLogStore.upsertCard(
-                                context = context,
-                                runId = taskId,
-                                cardId = entryId,
-                                card = buildAgentToolRunLogCard(
-                                    entryId = entryId,
-                                    toolName = toolName,
-                                    argsJson = argsJson,
-                                    payload = payload,
-                                    status = payload["status"]?.toString()
-                                        ?: if (success) {
-                                            AgentConversationHistoryRepository.STATUS_SUCCESS
-                                        } else {
-                                            AgentConversationHistoryRepository.STATUS_ERROR
-                                        },
-                                    startedAtMillis = startedAtMillis,
-                                    finishedAtMillis = finishedAtMillis
-                                )
-                            )
-                        }.onFailure {
-                            OmniLog.w(TAG, "upsert agent tool run log complete failed: ${it.message}")
-                        }
-                        upsertToolEvent(
-                            entryId = entryId,
-                            roundIndex = roundIndex,
-                            payload = payload,
-                            streamKind = "tool_completed",
-                            fallbackStatus = if (success) {
-                                AgentConversationHistoryRepository.STATUS_SUCCESS
-                            } else {
-                                AgentConversationHistoryRepository.STATUS_ERROR
-                            },
-                            fallbackSummary = payload["summary"]?.toString().orEmpty()
-                        )
-                        sendStreamEvent(
-                            kind = "tool_completed",
-                            entryId = entryId,
-                            roundIndex = roundIndex,
-                            extras = payload
-                        )
-                        if (payload["toolType"]?.toString() == "browser") {
-                            val snapshot = LiveAgentBrowserSessionManager.currentSnapshot()
-                            RealtimeHub.publish(
-                                "browser_snapshot_updated",
-                                mapOf("snapshot" to snapshot)
-                            )
-                            FlutterChatSyncBridge.dispatchBrowserSnapshotUpdated(snapshot)
-                        }
-                    }
-
-                    override suspend fun onChatMessage(message: String) {
-                        dispatchAgentChatMessage(message, isFinal = true)
-                    }
-
-                    override suspend fun onChatMessage(message: String, isFinal: Boolean) {
-                        dispatchAgentChatMessage(message, isFinal)
-                    }
-
-                    override suspend fun onChatMessage(
-                        message: String,
-                        isFinal: Boolean,
-                        prefillTokensPerSecond: Double?,
-                        decodeTokensPerSecond: Double?
-                    ) {
-                        dispatchAgentChatMessage(
-                            message = message,
-                            isFinal = isFinal,
-                            prefillTokensPerSecond = prefillTokensPerSecond,
-                            decodeTokensPerSecond = decodeTokensPerSecond
-                        )
-                    }
-
-                    override suspend fun onPromptTokenUsageChanged(
-                        latestPromptTokens: Int,
-                        promptTokenThreshold: Int?
-                    ) {
-                        sendFlutterEvent(
-                            "onAgentPromptTokenUsageChanged",
-                            mapOf(
-                                "latestPromptTokens" to latestPromptTokens,
-                                "promptTokenThreshold" to promptTokenThreshold
-                            )
-                        )
-                    }
-
-                    override suspend fun onContextCompactionStateChanged(
-                        isCompacting: Boolean,
-                        latestPromptTokens: Int?,
-                        promptTokenThreshold: Int?
-                    ) {
-                        sendFlutterEvent(
-                            "onAgentContextCompactionStateChanged",
-                            mapOf(
-                                "isCompacting" to isCompacting,
-                                "latestPromptTokens" to latestPromptTokens,
-                                "promptTokenThreshold" to promptTokenThreshold
-                            )
-                        )
-                    }
-
-                    override suspend fun onClarifyRequired(
-                        question: String,
-                        missingFields: List<String>?,
-                        dialog: UserDialog?
-                    ) {
-                        finalizeThinkingCardIfNeeded()
-                        val normalizedQuestion = AgentTextSanitizer.sanitizeUtf16(question).trim()
-                        val (roundIndex, entryId) = ensureAssistantEntry(
-                            forceNewRound = latestAssistantVisibleText.isNotEmpty() || assistantRound > 0
-                        )
-                        latestAssistantVisibleText = normalizedQuestion
-                        if (normalizedQuestion.isNotEmpty()) {
-                            upsertClarifyMessage(
-                                entryId = entryId,
-                                roundIndex = roundIndex,
-                                question = normalizedQuestion
-                            )
-                        }
-                        sendStreamEvent(
-                            kind = "clarify_required",
-                            entryId = entryId,
-                            roundIndex = roundIndex,
-                            text = normalizedQuestion,
-                            question = normalizedQuestion,
-                            missingFields = missingFields,
-                            extras = if (dialog != null) mapOf("dialog" to dialog.toPayload()) else emptyMap()
-                        )
-                    }
-
-                    override suspend fun onComplete(result: AgentResult) {
-                        val isSuccess = result is AgentResult.Success
-                        runCatching {
-                            InternalRunLogStore.finishRun(
-                                context = context,
-                                runId = taskId,
-                                success = isSuccess,
-                                doneReason = if (isSuccess) "finished" else "error"
-                            )
-                        }.onFailure {
-                            OmniLog.w(TAG, "finish internal agent run log failed: ${it.message}")
-                        }
-                        val outputKind = (result as? AgentResult.Success)?.outputKind ?: "none"
-                        val hasUserVisibleOutput =
-                            (result as? AgentResult.Success)?.hasUserVisibleOutput == true
-                        val latestPromptTokens = (result as? AgentResult.Success)?.latestPromptTokens
-                        val promptTokenThreshold =
-                            (result as? AgentResult.Success)?.promptTokenThreshold
-                        val streamed = scheduledAssistantBuffer.toString().trim()
-                        val fallback = (result as? AgentResult.Success)
-                            ?.response
-                            ?.content
-                            ?.trim()
-                            .orEmpty()
-                        val finalText = resolveAssistantFinalText(
-                            streamed = streamed.ifEmpty { latestAssistantVisibleText },
-                            fallback = fallback
-                        ).ifEmpty {
-                            if (isSuccess && outputKind == "none" && !hasUserVisibleOutput) {
-                                t(
-                                    "暂时无法生成回复，请重试。",
-                                    "I can't generate a reply right now. Please try again."
-                                )
-                            } else {
-                                ""
-                            }
-                        }
-                        finalizeThinkingCardIfNeeded(publish = finalText.isBlank())
-                        var completedEntryId: String? = activeAssistantEntryId
-                        var completedRoundIndex = assistantRound
-                        if (finalText.isNotBlank()) {
-                            val shouldCreateAssistantEntry =
-                                activeAssistantEntryId != null || latestAssistantVisibleText.isBlank()
-                            if (shouldCreateAssistantEntry) {
-                                val (roundIndex, entryId) = if (activeAssistantEntryId != null) {
-                                    assistantRound.coerceAtLeast(1) to activeAssistantEntryId!!
-                                } else {
-                                    ensureAssistantEntry(forceNewRound = assistantRound > 0)
-                                }
-                                completedEntryId = entryId
-                                completedRoundIndex = roundIndex
-                                latestAssistantVisibleText = finalText
-                                upsertAssistantSnapshot(
-                                    entryId = entryId,
-                                    roundIndex = roundIndex,
-                                    text = finalText,
-                                    isError = !isSuccess,
-                                    isFinal = true,
-                                    streamKind = "text_snapshot"
-                                )
-                                sendStreamEvent(
-                                    kind = "text_snapshot",
-                                    entryId = entryId,
-                                    roundIndex = roundIndex,
-                                    isFinal = true,
-                                    text = finalText
-                                )
-                            }
-                        }
-                        scheduledSubagentMeta?.let { meta ->
-                            val notificationText = finalText.ifEmpty {
-                                if (isSuccess) {
-                                    t("任务已完成，点击查看详情。", "Task completed. Tap to view details.")
-                                } else {
-                                    t("任务已结束，请点击查看详情。", "Task ended. Tap to view details.")
-                                }
-                            }
-                            runCatching {
-                                notifyScheduledSubagentCompletion(meta, notificationText)
-                            }.onFailure {
-                                OmniLog.w(
-                                    TAG,
-                                    "notify scheduled subagent completion failed: ${it.message}",
-                                    it
-                                )
-                            }
-                        }
-                        sendStreamEvent(
-                            kind = "completed",
-                            entryId = completedEntryId,
-                            roundIndex = completedRoundIndex,
-                            success = isSuccess,
-                            outputKind = outputKind,
-                            hasUserVisibleOutput = hasUserVisibleOutput,
-                            latestPromptTokens = latestPromptTokens,
-                            promptTokenThreshold = promptTokenThreshold
-                        )
-                    }
-
-                    override suspend fun onError(error: String) {
-                        runCatching {
-                            InternalRunLogStore.finishRun(
-                                context = context,
-                                runId = taskId,
-                                success = false,
-                                doneReason = "error",
-                                errorMessage = error
-                            )
-                        }.onFailure {
-                            OmniLog.w(TAG, "finish internal agent error run log failed: ${it.message}")
-                        }
-                        val resolution = resolveAgentFinalErrorResolution(
-                            streamed = scheduledAssistantBuffer.toString().ifBlank {
-                                latestAssistantVisibleText
-                            },
-                            error = error,
-                            localizedFallback = t(
-                                "暂时无法生成回复，请重试。",
-                                "I can't generate a reply right now. Please try again."
-                            )
-                        )
-                        val finalText = resolution.text
-                        finalizeThinkingCardIfNeeded(publish = finalText.isBlank())
-                        var errorEntryId: String? = activeAssistantEntryId
-                        var errorRoundIndex = assistantRound
-                        if (finalText.isNotBlank()) {
-                            val shouldCreateAssistantEntry =
-                                activeAssistantEntryId != null || latestAssistantVisibleText.isBlank()
-                            if (shouldCreateAssistantEntry) {
-                                val (roundIndex, entryId) = if (activeAssistantEntryId != null) {
-                                    assistantRound.coerceAtLeast(1) to activeAssistantEntryId!!
-                                } else {
-                                    ensureAssistantEntry(forceNewRound = assistantRound > 0)
-                                }
-                                errorEntryId = entryId
-                                errorRoundIndex = roundIndex
-                                latestAssistantVisibleText = finalText
-                                upsertAssistantSnapshot(
-                                    entryId = entryId,
-                                    roundIndex = roundIndex,
-                                    text = finalText,
-                                    isError = resolution.persistAsError,
-                                    isFinal = true,
-                                    streamKind = "text_snapshot"
-                                )
-                                sendStreamEvent(
-                                    kind = "text_snapshot",
-                                    entryId = entryId,
-                                    roundIndex = roundIndex,
-                                    isFinal = true,
-                                    text = finalText
-                                )
-                            }
-                        }
-                        scheduledSubagentMeta?.let { meta ->
-                            runCatching {
-                                notifyScheduledSubagentCompletion(meta, finalText)
-                            }.onFailure {
-                                OmniLog.w(
-                                    TAG,
-                                    "notify scheduled subagent error failed: ${it.message}",
-                                    it
-                                )
-                            }
-                        }
-                        sendStreamEvent(
-                            kind = "error",
-                            entryId = errorEntryId,
-                            roundIndex = errorRoundIndex,
-                            error = error,
-                            extras = mapOf("persistAsError" to resolution.persistAsError)
-                        )
-                    }
-
-                    override suspend fun onPermissionRequired(missing: List<String>) {
-                        finalizeThinkingCardIfNeeded()
-                        val (roundIndex, entryId) = ensureAssistantEntry(
-                            forceNewRound = latestAssistantVisibleText.isNotEmpty() || assistantRound > 0
-                        )
-                        val permissionMessage = buildPermissionRequiredMessage(missing)
-                        latestAssistantVisibleText = AgentTextSanitizer.sanitizeUtf16(permissionMessage).trim()
-                        upsertPermissionState(
-                            textEntryId = entryId,
-                            roundIndex = roundIndex,
-                            missing = missing
-                        )
-                        sendStreamEvent(
-                            kind = "permission_required",
-                            entryId = entryId,
-                            roundIndex = roundIndex,
-                            text = permissionMessage,
-                            missing = missing,
-                            extras = mapOf("permissionCardId" to "$taskId-permission")
-                        )
-                    }
-
-                    override suspend fun onVlmTaskFinished() {
-                        handleVlmTaskFinished("unified_agent_listener", taskId = taskId)
-                    }
-
-                    private suspend fun dispatchAgentChatMessage(
-                        message: String,
-                        isFinal: Boolean,
-                        prefillTokensPerSecond: Double? = null,
-                        decodeTokensPerSecond: Double? = null
-                    ) {
-                        val normalizedMessage = AgentTextSanitizer.sanitizeUtf16(message).trim()
-                        var entryId: String? = activeAssistantEntryId
-                        var roundIndex = assistantRound
-                        if (normalizedMessage.isNotEmpty()) {
-                            val resolvedEntry = ensureAssistantEntry()
-                            roundIndex = resolvedEntry.first
-                            entryId = resolvedEntry.second
-                            val resolvedEntryId = resolvedEntry.second
-                            val currentSnapshot =
-                                AgentTextSanitizer.sanitizeUtf16(
-                                    scheduledAssistantBuffer.toString()
-                                ).trim()
-                            if (shouldIgnoreRegressiveSnapshot(currentSnapshot, normalizedMessage)) {
-                                OmniLog.d(
-                                    TAG,
-                                    "ignore stale agent snapshot: incoming=${normalizedMessage.length}, current=${currentSnapshot.length}, final=$isFinal"
-                                )
-                                return
-                            }
-                            scheduledAssistantBuffer.setLength(0)
-                            scheduledAssistantBuffer.append(normalizedMessage)
-                            latestAssistantVisibleText = normalizedMessage
-                            upsertAssistantSnapshot(
-                                entryId = resolvedEntryId,
-                                roundIndex = roundIndex,
-                                text = normalizedMessage,
-                                isError = false,
-                                isFinal = isFinal,
-                                streamKind = "text_snapshot"
-                            )
-                        }
-                        val snapshotText = entryId?.let {
-                            AgentTextSanitizer.sanitizeUtf16(
-                                scheduledAssistantBuffer.toString()
-                            ).trim()
-                        }.orEmpty()
-                        if (entryId != null && snapshotText.isNotEmpty()) {
-                            sendStreamEvent(
-                                kind = "text_snapshot",
-                                entryId = entryId,
-                                roundIndex = roundIndex.coerceAtLeast(1),
-                                isFinal = isFinal,
-                                text = snapshotText.ifEmpty { normalizedMessage },
-                                prefillTokensPerSecond = prefillTokensPerSecond,
-                                decodeTokensPerSecond = decodeTokensPerSecond
-                            )
-                        }
-                    }
-
-                    private fun shouldIgnoreRegressiveSnapshot(
-                        current: String,
-                        incoming: String
-                    ): Boolean {
-                        if (current.isEmpty() || incoming.isEmpty()) {
-                            return false
-                        }
-                        return incoming.length < current.length && current.startsWith(incoming)
-                    }
-
-                    private fun resolveAssistantFinalText(
-                        streamed: String,
-                        fallback: String
-                    ): String {
-                        val normalizedStreamed = AgentTextSanitizer.sanitizeUtf16(streamed).trim()
-                        val normalizedFallback = AgentTextSanitizer.sanitizeUtf16(fallback).trim()
-                        if (normalizedFallback.isEmpty()) {
-                            return normalizedStreamed
-                        }
-                        if (normalizedStreamed.isEmpty()) {
-                            return normalizedFallback
-                        }
-                        return when {
-                            normalizedFallback.length >= normalizedStreamed.length &&
-                                normalizedFallback.startsWith(normalizedStreamed) -> normalizedFallback
-                            normalizedStreamed.length > normalizedFallback.length &&
-                                normalizedStreamed.startsWith(normalizedFallback) -> normalizedStreamed
-                            else -> normalizedFallback
-                        }
-                    }
-
-                    private suspend fun sendFlutterEvent(
-                        method: String,
-                        args: Map<String, Any?>
-                    ) {
-                        val payload = sanitizeInteropMap(
-                            mapOf(
-                                "taskId" to taskId,
-                                "conversationId" to conversationId,
-                                "conversationMode" to resolvedConversationMode
-                            ) + args
-                        )
-                        withContext(Dispatchers.Main) {
-                            invokeFlutterEventSafely(method, payload)
                         }
                     }
                 }
@@ -5977,7 +4923,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     modelOverride,
                     reasoningEffort,
                     terminalEnvironment,
-                    callback,
+                    bridge,
                     runControl = agentRunContext
                 )
             } catch (e: CancellationException) {
@@ -6900,6 +5846,1334 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             } catch (e: Exception) {
                 OmniLog.e(TAG, "reopenChatBotAfterAuth failed: ${e.message}")
                 result.error("REOPEN_ERROR", e.message, null)
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Unified Execution Kernel — named class for stack traces and testability
+    // ---------------------------------------------------------------------------
+
+    /**
+     * Bridges the [OmniAgentExecutor] callback stream to the conversation
+     * repository and Flutter event channel for a single agent task run.
+     *
+     * All mutable state that was previously scattered as local variables inside
+     * the `agentRunScope.launch { }` block now lives here as named member vars,
+     * making ownership explicit and enabling future unit testing.
+     */
+    private inner class AgentTaskEventBridge(
+        val taskId: String,
+        val conversationId: Long?,
+        val resolvedConversationMode: String,
+        val scheduledSubagentMeta: ScheduledSubagentRunMeta?,
+        var historyRepository: AgentConversationHistoryRepository?,
+        val repository: AgentConversationHistoryRepository,
+        val agentRunContext: ActiveAgentRunContext,
+    ) : AgentCallback {
+
+        // -----------------------------------------------------------------------
+        // Task-local state vars
+        // -----------------------------------------------------------------------
+
+        val activeToolArgs = mutableMapOf<String, ArrayDeque<String>>()
+        val activeToolEntryIds = mutableMapOf<String, ArrayDeque<String>>()
+        val activeToolStartTimes = mutableMapOf<String, Long>()
+        val thinkingCardStartTimes = mutableMapOf<String, Long>()
+        val entryCreatedAtTimes = mutableMapOf<String, Long>()
+        val entryOrderSeqs = mutableMapOf<String, Long>()
+        val scheduledAssistantBuffer = StringBuilder()
+        var toolSequence = 0
+        var eventSequence = 0L
+        var entrySequence = 0L
+        var activeThinkingEntryId: String? = null
+        var activeAssistantEntryId: String? = null
+        var thinkingSequence = 0
+        var assistantRound = 0
+        var latestThinkingContent = ""
+        var latestAssistantVisibleText = ""
+        var shouldStartNewThinkingSegment = false
+        var shouldStartNewAssistantRound = false
+        // toolCallId (LLM-assigned, e.g. "toolu_01xxx") → our stable entryId.
+        // Populated by onToolCallPreview during streaming; consumed by onToolCallStart
+        // so both phases write to the same Flutter card.
+        val previewEntryIdByToolCallId = mutableMapOf<String, String>()
+
+        // -----------------------------------------------------------------------
+        // Helper methods
+        // -----------------------------------------------------------------------
+
+        fun pushToolValue(
+            store: MutableMap<String, ArrayDeque<String>>,
+            toolName: String,
+            value: String
+        ) {
+            store.getOrPut(toolName) { ArrayDeque() }.addLast(value)
+        }
+
+        fun peekToolValue(
+            store: MutableMap<String, ArrayDeque<String>>,
+            toolName: String
+        ): String {
+            return store[toolName]?.lastOrNull().orEmpty()
+        }
+
+        fun popToolValue(
+            store: MutableMap<String, ArrayDeque<String>>,
+            toolName: String
+        ): String {
+            val queue = store[toolName] ?: return ""
+            val value = if (queue.isEmpty()) "" else queue.removeLast()
+            if (queue.isEmpty()) {
+                store.remove(toolName)
+            }
+            return value
+        }
+
+        suspend fun publishConversationMessagesSync() {
+            val normalizedConversationId = conversationId ?: return
+            val repo = historyRepository ?: return
+            try {
+                val messages = repo.listConversationMessages(
+                    conversationId = normalizedConversationId,
+                    conversationMode = resolvedConversationMode
+                )
+                RealtimeHub.publish(
+                    "messages_replaced",
+                    mapOf(
+                        "conversationId" to normalizedConversationId,
+                        "mode" to resolvedConversationMode,
+                        "messages" to messages
+                    )
+                )
+                FlutterChatSyncBridge.dispatchConversationMessagesChanged(
+                    conversationId = normalizedConversationId,
+                    mode = resolvedConversationMode,
+                    reason = "messages_replaced"
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                OmniLog.w(
+                    TAG,
+                    "publish conversation messages failed: ${error.message}",
+                    error
+                )
+            }
+        }
+
+        suspend fun persistConversationMutation(
+            description: String,
+            publish: Boolean = true,
+            block: suspend () -> Unit
+        ) {
+            val persisted = try {
+                block()
+                true
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                OmniLog.w(TAG, "$description failed: ${error.message}", error)
+                false
+            }
+            if (persisted && publish) {
+                publishConversationMessagesSync()
+            }
+        }
+
+        fun resolveAssistantEntryId(round: Int): String {
+            return if (round <= 1) {
+                "$taskId-text"
+            } else {
+                "$taskId-text-$round"
+            }
+        }
+
+        fun nextEventSeq(): Long {
+            eventSequence += 1
+            return eventSequence
+        }
+
+        fun resolveEntryOrderSeq(entryId: String): Long {
+            return entryOrderSeqs.getOrPut(entryId) {
+                entrySequence += 1
+                entrySequence
+            }
+        }
+
+        fun streamMeta(
+            entryId: String,
+            roundIndex: Int,
+            kind: String,
+            isFinal: Boolean = false
+        ): Map<String, Any?> {
+            return linkedMapOf(
+                "seq" to resolveEntryOrderSeq(entryId),
+                "roundIndex" to roundIndex,
+                "kind" to kind,
+                "parentTaskId" to taskId,
+                "runLogId" to taskId,
+                "run_id" to taskId,
+                "entryId" to entryId,
+                "isFinal" to isFinal
+            )
+        }
+
+        fun markAssistantRoundBoundary() {
+            if (activeAssistantEntryId != null || assistantRound > 0) {
+                shouldStartNewAssistantRound = true
+                activeAssistantEntryId = null
+                scheduledAssistantBuffer.setLength(0)
+            }
+        }
+
+        fun ensureAssistantEntry(forceNewRound: Boolean = false): Pair<Int, String> {
+            if (activeAssistantEntryId == null || shouldStartNewAssistantRound || forceNewRound) {
+                assistantRound = (assistantRound + 1).coerceAtLeast(1)
+                activeAssistantEntryId = resolveAssistantEntryId(assistantRound)
+                shouldStartNewAssistantRound = false
+                scheduledAssistantBuffer.setLength(0)
+            }
+            val entryId = activeAssistantEntryId!!
+            entryCreatedAtTimes.putIfAbsent(entryId, System.currentTimeMillis())
+            return assistantRound to entryId
+        }
+
+        fun currentToolRoundIndex(): Int {
+            return maxOf(thinkingSequence, assistantRound, 1)
+        }
+
+        fun buildDeepThinkingCardData(
+            thinkingContent: String,
+            isLoading: Boolean,
+            stage: Int,
+            startTime: Long,
+            endTime: Long?
+        ): Map<String, Any?> {
+            val sanitizedThinking = AgentTextSanitizer.sanitizeUtf16(thinkingContent)
+            val originalLength = sanitizedThinking.length
+            val persistedThinking = if (originalLength <= MAX_PERSISTED_THINKING_CHARS) {
+                sanitizedThinking
+            } else {
+                val bodyLimit = (MAX_PERSISTED_THINKING_CHARS - THINKING_TRUNCATION_NOTICE.length)
+                    .coerceAtLeast(0)
+                AgentTextSanitizer.sanitizeUtf16(
+                    THINKING_TRUNCATION_NOTICE + sanitizedThinking.takeLast(bodyLimit)
+                )
+            }
+            val truncated = persistedThinking.length < originalLength
+            return linkedMapOf(
+                "type" to "deep_thinking",
+                "isLoading" to isLoading,
+                "thinkingContent" to persistedThinking,
+                "thinkingContentTruncated" to truncated,
+                "thinkingOriginalLength" to originalLength,
+                "thinkingTruncateMode" to if (truncated) "head_omitted" else "none",
+                "stage" to stage,
+                "taskID" to taskId,
+                "startTime" to startTime,
+                "endTime" to endTime,
+                "isCollapsible" to true
+            )
+        }
+
+        suspend fun upsertThinkingCard(
+            entryId: String,
+            roundIndex: Int,
+            thinkingContent: String,
+            isLoading: Boolean,
+            stage: Int,
+            createdAt: Long = thinkingCardStartTimes[entryId] ?: System.currentTimeMillis(),
+            streamKind: String = "thinking_snapshot",
+            endTime: Long? = null,
+            publish: Boolean = true
+        ) {
+            val normalizedConversationId = conversationId ?: return
+            if (entryId.isBlank()) return
+            val startTime = thinkingCardStartTimes.getOrPut(entryId) { createdAt }
+            persistConversationMutation(
+                description = "upsert thinking card",
+                publish = publish
+            ) {
+                repository.upsertUiCard(
+                    conversationId = normalizedConversationId,
+                    conversationMode = resolvedConversationMode,
+                    entryId = entryId,
+                    cardData = buildDeepThinkingCardData(
+                        thinkingContent = thinkingContent,
+                        isLoading = isLoading,
+                        stage = stage,
+                        startTime = startTime,
+                        endTime = endTime
+                    ),
+                    streamMeta = streamMeta(
+                        entryId = entryId,
+                        roundIndex = roundIndex,
+                        kind = streamKind
+                    ),
+                    createdAt = startTime
+                )
+            }
+        }
+
+        suspend fun finalizeThinkingCardIfNeeded(publish: Boolean = true) {
+            val entryId = activeThinkingEntryId ?: return
+            if (latestThinkingContent.isBlank()) return
+            upsertThinkingCard(
+                entryId = entryId,
+                roundIndex = thinkingSequence.coerceAtLeast(1),
+                thinkingContent = latestThinkingContent,
+                isLoading = false,
+                stage = 4,
+                streamKind = "thinking_snapshot",
+                endTime = System.currentTimeMillis(),
+                publish = publish
+            )
+        }
+
+        suspend fun upsertAssistantSnapshot(
+            entryId: String,
+            roundIndex: Int,
+            text: String,
+            isError: Boolean,
+            isFinal: Boolean = false,
+            streamKind: String = "text_snapshot"
+        ) {
+            val normalizedConversationId = conversationId ?: return
+            val normalizedText = AgentTextSanitizer.sanitizeUtf16(text).trim()
+            if (normalizedText.isEmpty()) return
+            val createdAt = entryCreatedAtTimes.getOrPut(entryId) {
+                System.currentTimeMillis()
+            }
+            persistConversationMutation("upsert assistant snapshot") {
+                repository.upsertAssistantMessage(
+                    conversationId = normalizedConversationId,
+                    conversationMode = resolvedConversationMode,
+                    entryId = entryId,
+                    text = normalizedText,
+                    isError = isError,
+                    streamMeta = streamMeta(
+                        entryId = entryId,
+                        roundIndex = roundIndex,
+                        kind = streamKind,
+                        isFinal = isFinal
+                    ),
+                    createdAt = createdAt
+                )
+            }
+        }
+
+        suspend fun upsertClarifyMessage(
+            entryId: String,
+            roundIndex: Int,
+            question: String
+        ) {
+            val normalizedConversationId = conversationId ?: return
+            val normalizedQuestion = AgentTextSanitizer.sanitizeUtf16(question).trim()
+            if (normalizedQuestion.isEmpty()) return
+            val createdAt = entryCreatedAtTimes.getOrPut(entryId) {
+                System.currentTimeMillis()
+            }
+            persistConversationMutation("upsert clarify message") {
+                repository.upsertAssistantMessage(
+                    conversationId = normalizedConversationId,
+                    conversationMode = resolvedConversationMode,
+                    entryId = entryId,
+                    text = normalizedQuestion,
+                    isError = false,
+                    streamMeta = streamMeta(
+                        entryId = entryId,
+                        roundIndex = roundIndex,
+                        kind = "clarify_required",
+                        isFinal = true
+                    ),
+                    createdAt = createdAt
+                )
+            }
+        }
+
+        fun buildPermissionRequiredMessage(missing: List<String>): String {
+            val names = missing.map(::localizedPermissionName).filter { it.isNotEmpty() }
+            return if (names.isEmpty()) {
+                this@AssistsCoreManager.t(
+                    "执行任务前需要先开启权限",
+                    "Enable the required permissions before running the task."
+                )
+            } else {
+                this@AssistsCoreManager.t(
+                    "执行任务前，请先开启：${names.joinToString("、")}",
+                    "Enable these permissions before running the task: ${names.joinToString(", ")}"
+                )
+            }
+        }
+
+        suspend fun upsertPermissionState(
+            textEntryId: String,
+            roundIndex: Int,
+            missing: List<String>
+        ) {
+            val normalizedConversationId = conversationId ?: return
+            val names = missing.map(::localizedPermissionName).filter { it.isNotEmpty() }
+            val message = buildPermissionRequiredMessage(missing)
+            persistConversationMutation("upsert permission state") {
+                repository.upsertAssistantMessage(
+                    conversationId = normalizedConversationId,
+                    conversationMode = resolvedConversationMode,
+                    entryId = textEntryId,
+                    text = AgentTextSanitizer.sanitizeUtf16(message),
+                    isError = false,
+                    streamMeta = streamMeta(
+                        entryId = textEntryId,
+                        roundIndex = roundIndex,
+                        kind = "permission_required",
+                        isFinal = true
+                    ),
+                    createdAt = entryCreatedAtTimes.getOrPut(textEntryId) {
+                        System.currentTimeMillis()
+                    }
+                )
+                val permissionIds = resolveRequiredPermissionIds(names)
+                if (permissionIds.isNotEmpty()) {
+                    repository.upsertUiCard(
+                        conversationId = normalizedConversationId,
+                        conversationMode = resolvedConversationMode,
+                        entryId = "$taskId-permission",
+                        cardData = buildPermissionCardData(permissionIds),
+                        streamMeta = streamMeta(
+                            entryId = "$taskId-permission",
+                            roundIndex = roundIndex,
+                            kind = "permission_required",
+                            isFinal = true
+                        ),
+                        createdAt = entryCreatedAtTimes.getOrPut("$taskId-permission") {
+                            System.currentTimeMillis()
+                        }
+                    )
+                }
+            }
+        }
+
+        suspend fun upsertToolEvent(
+            entryId: String,
+            roundIndex: Int,
+            payload: Map<String, Any?>,
+            streamKind: String,
+            fallbackStatus: String,
+            fallbackSummary: String
+        ) {
+            val normalizedConversationId = conversationId ?: return
+            if (entryId.isBlank()) return
+            persistConversationMutation("upsert tool event") {
+                val sanitizedPayload = sanitizeInteropMap(
+                    linkedMapOf<String, Any?>("taskId" to taskId).apply {
+                        putAll(payload)
+                        put(
+                            "streamMeta",
+                            streamMeta(
+                                entryId = entryId,
+                                roundIndex = roundIndex,
+                                kind = streamKind
+                            )
+                        )
+                    }
+                )
+                repository.upsertToolEvent(
+                    conversationId = normalizedConversationId,
+                    conversationMode = resolvedConversationMode,
+                    entryId = entryId,
+                    payload = sanitizedPayload,
+                    fallbackStatus = fallbackStatus,
+                    fallbackSummary = AgentTextSanitizer.sanitizeUtf16(fallbackSummary)
+                )
+            }
+        }
+
+        suspend fun sendStreamEvent(
+            kind: String,
+            entryId: String? = null,
+            roundIndex: Int = 0,
+            isFinal: Boolean = false,
+            text: String? = null,
+            thinking: String? = null,
+            stage: Int? = null,
+            prefillTokensPerSecond: Double? = null,
+            decodeTokensPerSecond: Double? = null,
+            success: Boolean? = null,
+            outputKind: String? = null,
+            hasUserVisibleOutput: Boolean? = null,
+            latestPromptTokens: Int? = null,
+            promptTokenThreshold: Int? = null,
+            error: String? = null,
+            question: String? = null,
+            missingFields: List<String>? = null,
+            missing: List<String>? = null,
+            extras: Map<String, Any?> = emptyMap()
+        ) {
+            val basePayload = AgentStreamEvent(
+                taskId = taskId,
+                seq = nextEventSeq(),
+                kind = kind,
+                createdAt = System.currentTimeMillis(),
+                entryId = entryId,
+                roundIndex = roundIndex,
+                isFinal = isFinal,
+                text = text,
+                thinking = thinking,
+                stage = stage,
+                prefillTokensPerSecond = prefillTokensPerSecond,
+                decodeTokensPerSecond = decodeTokensPerSecond,
+                success = success,
+                outputKind = outputKind,
+                hasUserVisibleOutput = hasUserVisibleOutput,
+                latestPromptTokens = latestPromptTokens,
+                promptTokenThreshold = promptTokenThreshold,
+                error = error,
+                question = question,
+                missingFields = missingFields,
+                missing = missing,
+                extras = extras
+            ).toPayload(
+                conversationId = conversationId,
+                conversationMode = resolvedConversationMode
+            )
+            val payload = sanitizeInteropMap(
+                entryId?.takeIf { it.isNotBlank() }?.let { resolvedEntryId ->
+                    basePayload + mapOf(
+                        "streamMeta" to streamMeta(
+                            entryId = resolvedEntryId,
+                            roundIndex = roundIndex,
+                            kind = kind,
+                            isFinal = isFinal
+                        )
+                    )
+                } ?: basePayload
+            )
+            RealtimeHub.publish("agent_stream_event", payload)
+            // Route through the per-frame batcher: coalesces up to ~60 calls/sec
+            // regardless of LLM token rate, eliminating IPC overhead spikes.
+            this@AssistsCoreManager.agentStreamEventBatcher.enqueue(payload)
+        }
+
+        // -----------------------------------------------------------------------
+        // AgentCallback overrides
+        // -----------------------------------------------------------------------
+
+        override suspend fun onToolCallPreview(
+            toolName: String,
+            argumentsJson: String,
+            toolCallId: String?,
+            toolCallIndex: Int
+        ) {
+            if (toolName.isBlank()) return
+            val resolvedId = toolCallId?.takeIf { it.isNotBlank() } ?: return
+            // Each toolCallId is unique within a turn — fire only once per ID.
+            if (previewEntryIdByToolCallId.containsKey(resolvedId)) return
+
+            // Allocate the entry ID now; onToolCallStart will reuse it via the map.
+            val entryId = "$taskId-tool-${toolSequence + previewEntryIdByToolCallId.size + 1}"
+            previewEntryIdByToolCallId[resolvedId] = entryId
+
+            val roundIndex = currentToolRoundIndex()
+            val earlyPayload = this@AssistsCoreManager.buildToolStartPayload(toolName, "{}").toMutableMap().apply {
+                put("cardId", entryId)
+            }
+            upsertToolEvent(
+                entryId = entryId,
+                roundIndex = roundIndex,
+                payload = earlyPayload,
+                streamKind = "tool_started",
+                fallbackStatus = AgentConversationHistoryRepository.STATUS_RUNNING,
+                fallbackSummary = this@AssistsCoreManager.t("正在准备工具调用...", "Preparing tool call...")
+            )
+            sendStreamEvent(
+                kind = "tool_started",
+                entryId = entryId,
+                roundIndex = roundIndex,
+                extras = earlyPayload
+            )
+        }
+
+        override suspend fun onThinkingStart() {
+            val startsNewSegment =
+                activeThinkingEntryId == null || shouldStartNewThinkingSegment
+            if (startsNewSegment) {
+                finalizeThinkingCardIfNeeded(publish = false)
+                thinkingSequence += 1
+                activeThinkingEntryId = "$taskId-thinking-$thinkingSequence"
+                latestThinkingContent = ""
+                shouldStartNewThinkingSegment = false
+            } else if (thinkingSequence <= 0) {
+                thinkingSequence = 1
+                activeThinkingEntryId = "$taskId-thinking-$thinkingSequence"
+            }
+            val entryId = activeThinkingEntryId
+                ?: run { thinkingSequence += 1; "$taskId-thinking-$thinkingSequence".also { activeThinkingEntryId = it } }
+            val startTime = System.currentTimeMillis()
+            thinkingCardStartTimes.putIfAbsent(entryId, startTime)
+            markAssistantRoundBoundary()
+            if (startsNewSegment) {
+                sendStreamEvent(
+                    kind = "thinking_started",
+                    entryId = entryId,
+                    roundIndex = thinkingSequence,
+                    thinking = "",
+                    stage = 1
+                )
+            }
+        }
+
+        override suspend fun onThinkingUpdate(thinking: String) {
+            val normalizedThinking = AgentTextSanitizer.sanitizeUtf16(thinking).trim()
+            if (normalizedThinking.isBlank()) return
+            if (activeThinkingEntryId == null || shouldStartNewThinkingSegment) {
+                thinkingSequence += 1
+                val generated = "$taskId-thinking-$thinkingSequence"
+                activeThinkingEntryId = generated
+                latestThinkingContent = ""
+                shouldStartNewThinkingSegment = false
+                thinkingCardStartTimes.putIfAbsent(
+                    generated,
+                    System.currentTimeMillis()
+                )
+            }
+            if (shouldIgnoreRegressiveSnapshot(latestThinkingContent, normalizedThinking)) {
+                OmniLog.d(
+                    TAG,
+                    "ignore stale thinking snapshot: incoming=${normalizedThinking.length}, current=${latestThinkingContent.length}"
+                )
+                return
+            }
+            val entryId = activeThinkingEntryId
+            latestThinkingContent = normalizedThinking
+            entryId?.let { thinkingEntryId ->
+                upsertThinkingCard(
+                    entryId = thinkingEntryId,
+                    roundIndex = thinkingSequence.coerceAtLeast(1),
+                    thinkingContent = normalizedThinking,
+                    isLoading = true,
+                    stage = 1,
+                    streamKind = "thinking_snapshot",
+                    publish = false
+                )
+            }
+            sendStreamEvent(
+                kind = "thinking_snapshot",
+                entryId = entryId,
+                roundIndex = thinkingSequence.coerceAtLeast(1),
+                thinking = normalizedThinking,
+                stage = 1
+            )
+        }
+
+        override suspend fun onToolCallStart(
+            toolName: String,
+            toolCallId: String,
+            arguments: JsonObject
+        ) {
+            val argsJson = arguments.toString()
+            pushToolValue(activeToolArgs, toolName, argsJson)
+            // Look up the entry ID allocated during onToolCallPreview using the
+            // LLM-assigned toolCallId as the stable key. This guarantees the
+            // confirmed event lands on the same Flutter card as the preview,
+            // regardless of execution order.
+            val previewEntryId = previewEntryIdByToolCallId.remove(toolCallId)
+            val entryId = if (previewEntryId != null) {
+                ++toolSequence   // keep the counter in sync
+                previewEntryId
+            } else {
+                "$taskId-tool-${++toolSequence}"
+            }
+            val startedAtMillis = System.currentTimeMillis()
+            activeToolStartTimes[entryId] = startedAtMillis
+            val roundIndex = currentToolRoundIndex()
+            pushToolValue(activeToolEntryIds, toolName, entryId)
+            agentRunContext.bindActiveToolCardId(entryId)
+            activeThinkingEntryId?.takeIf { latestThinkingContent.isNotBlank() }?.let { thinkingEntryId ->
+                upsertThinkingCard(
+                    entryId = thinkingEntryId,
+                    roundIndex = thinkingSequence.coerceAtLeast(roundIndex),
+                    thinkingContent = latestThinkingContent,
+                    isLoading = true,
+                    stage = 2,
+                    streamKind = "thinking_snapshot",
+                    publish = false
+                )
+            }
+            shouldStartNewThinkingSegment = true
+            markAssistantRoundBoundary()
+            val payload = this@AssistsCoreManager.buildToolStartPayload(toolName, argsJson).toMutableMap().apply {
+                put("cardId", entryId)
+            }
+            runCatching {
+                InternalRunLogStore.upsertCard(
+                    context = this@AssistsCoreManager.context,
+                    runId = taskId,
+                    cardId = entryId,
+                    card = buildAgentToolRunLogCard(
+                        entryId = entryId,
+                        toolName = toolName,
+                        argsJson = argsJson,
+                        payload = payload,
+                        status = AgentConversationHistoryRepository.STATUS_RUNNING,
+                        startedAtMillis = startedAtMillis
+                    )
+                )
+            }.onFailure {
+                OmniLog.w(TAG, "upsert agent tool run log start failed: ${it.message}")
+            }
+            upsertToolEvent(
+                entryId = entryId,
+                roundIndex = roundIndex,
+                payload = payload,
+                streamKind = "tool_started",
+                fallbackStatus = AgentConversationHistoryRepository.STATUS_RUNNING,
+                fallbackSummary = payload["summary"]?.toString()?.ifBlank {
+                    this@AssistsCoreManager.t("正在调用工具", "Calling tool")
+                } ?: this@AssistsCoreManager.t("正在调用工具", "Calling tool")
+            )
+            sendStreamEvent(
+                kind = "tool_started",
+                entryId = entryId,
+                roundIndex = roundIndex,
+                extras = payload
+            )
+        }
+
+        override suspend fun onToolCallProgress(
+            toolName: String,
+            progress: String,
+            extras: Map<String, Any?>
+        ) {
+            val entryId = peekToolValue(activeToolEntryIds, toolName)
+            val roundIndex = currentToolRoundIndex()
+            val payload = this@AssistsCoreManager.buildToolProgressPayload(
+                toolName,
+                progress,
+                peekToolValue(activeToolArgs, toolName),
+                extras
+            ).toMutableMap().apply {
+                if (entryId.isNotBlank()) {
+                    put("cardId", entryId)
+                }
+            }
+            if (entryId.isNotBlank()) {
+                val startedAtMillis = activeToolStartTimes[entryId]
+                    ?: System.currentTimeMillis()
+                runCatching {
+                    InternalRunLogStore.upsertCard(
+                        context = this@AssistsCoreManager.context,
+                        runId = taskId,
+                        cardId = entryId,
+                        card = buildAgentToolRunLogCard(
+                            entryId = entryId,
+                            toolName = toolName,
+                            argsJson = peekToolValue(activeToolArgs, toolName),
+                            payload = payload,
+                            status = AgentConversationHistoryRepository.STATUS_RUNNING,
+                            startedAtMillis = startedAtMillis
+                        )
+                    )
+                }.onFailure {
+                    OmniLog.w(TAG, "upsert agent tool run log progress failed: ${it.message}")
+                }
+            }
+            upsertToolEvent(
+                entryId = entryId,
+                roundIndex = roundIndex,
+                payload = payload,
+                streamKind = "tool_progress",
+                fallbackStatus = AgentConversationHistoryRepository.STATUS_RUNNING,
+                fallbackSummary = payload["summary"]?.toString()?.ifBlank {
+                    this@AssistsCoreManager.t("正在调用工具", "Calling tool")
+                } ?: this@AssistsCoreManager.t("正在调用工具", "Calling tool")
+            )
+            sendStreamEvent(
+                kind = "tool_progress",
+                entryId = entryId.takeIf { it.isNotBlank() },
+                roundIndex = roundIndex,
+                extras = payload
+            )
+        }
+
+        override suspend fun onToolCallComplete(
+            toolName: String,
+            result: ToolExecutionResult
+        ) {
+            val argsJson = popToolValue(activeToolArgs, toolName)
+            val entryId = popToolValue(activeToolEntryIds, toolName).ifBlank {
+                "$taskId-tool-${++toolSequence}"
+            }
+            val roundIndex = currentToolRoundIndex()
+            activeThinkingEntryId?.takeIf { latestThinkingContent.isNotBlank() }?.let { thinkingEntryId ->
+                upsertThinkingCard(
+                    entryId = thinkingEntryId,
+                    roundIndex = thinkingSequence.coerceAtLeast(roundIndex),
+                    thinkingContent = latestThinkingContent,
+                    isLoading = true,
+                    stage = 2,
+                    streamKind = "thinking_snapshot",
+                    publish = false
+                )
+            }
+            markAssistantRoundBoundary()
+            val payload = this@AssistsCoreManager.buildToolCompletePayload(toolName, result, argsJson)
+                .toMutableMap().apply {
+                    put("cardId", entryId)
+                }
+            val success = payload["success"] != false
+            val finishedAtMillis = System.currentTimeMillis()
+            val startedAtMillis = activeToolStartTimes.remove(entryId)
+                ?: finishedAtMillis
+            runCatching {
+                InternalRunLogStore.upsertCard(
+                    context = this@AssistsCoreManager.context,
+                    runId = taskId,
+                    cardId = entryId,
+                    card = buildAgentToolRunLogCard(
+                        entryId = entryId,
+                        toolName = toolName,
+                        argsJson = argsJson,
+                        payload = payload,
+                        status = payload["status"]?.toString()
+                            ?: if (success) {
+                                AgentConversationHistoryRepository.STATUS_SUCCESS
+                            } else {
+                                AgentConversationHistoryRepository.STATUS_ERROR
+                            },
+                        startedAtMillis = startedAtMillis,
+                        finishedAtMillis = finishedAtMillis
+                    )
+                )
+            }.onFailure {
+                OmniLog.w(TAG, "upsert agent tool run log complete failed: ${it.message}")
+            }
+            upsertToolEvent(
+                entryId = entryId,
+                roundIndex = roundIndex,
+                payload = payload,
+                streamKind = "tool_completed",
+                fallbackStatus = if (success) {
+                    AgentConversationHistoryRepository.STATUS_SUCCESS
+                } else {
+                    AgentConversationHistoryRepository.STATUS_ERROR
+                },
+                fallbackSummary = payload["summary"]?.toString().orEmpty()
+            )
+            sendStreamEvent(
+                kind = "tool_completed",
+                entryId = entryId,
+                roundIndex = roundIndex,
+                extras = payload
+            )
+            if (payload["toolType"]?.toString() == "browser") {
+                val snapshot = LiveAgentBrowserSessionManager.currentSnapshot()
+                RealtimeHub.publish(
+                    "browser_snapshot_updated",
+                    mapOf("snapshot" to snapshot)
+                )
+                FlutterChatSyncBridge.dispatchBrowserSnapshotUpdated(snapshot)
+            }
+            if (toolName == "workbench_project_create" && success) {
+                runCatching { injectWorkbenchProjectCard(entryId, roundIndex, result) }
+                    .onFailure { OmniLog.w(TAG, "workbench project card failed: ${it.message}") }
+            }
+        }
+
+        private suspend fun injectWorkbenchProjectCard(
+            toolEntryId: String,
+            roundIndex: Int,
+            result: ToolExecutionResult
+        ) {
+            val previewJson = (result as? ToolExecutionResult.ContextResult)?.previewJson ?: return
+            val root = runCatching { JSONObject(previewJson) }.getOrNull() ?: return
+            val project = root.optJSONObject("project") ?: return
+            val projectId = project.optString("projectId").trim().takeIf { it.isNotEmpty() } ?: return
+            val name = project.optString("name").trim().ifEmpty { projectId }
+            val route = project.optString("route").trim()
+            val pageSpec = project.optJSONObject("pageSpec")
+            val description = pageSpec?.optString("description")?.trim().orEmpty()
+            val displaysArray = project.optJSONArray("displays")
+            var displayRoute = ""
+            var displayId = ""
+            if (displaysArray != null) {
+                for (i in 0 until displaysArray.length()) {
+                    val display = displaysArray.optJSONObject(i) ?: continue
+                    val candidateRoute = display.optString("route").trim()
+                    if (candidateRoute.isEmpty()) continue
+                    if (display.optBoolean("isDefault") || displayRoute.isEmpty()) {
+                        displayRoute = candidateRoute
+                        displayId = display.optString("id").trim()
+                    }
+                    if (display.optBoolean("isDefault")) break
+                }
+            }
+            val apisArray = project.optJSONArray("apis")
+            val apis = mutableListOf<Map<String, Any?>>()
+            if (apisArray != null) {
+                for (i in 0 until apisArray.length()) {
+                    val api = apisArray.optJSONObject(i) ?: continue
+                    val toolId = api.optString("toolId").trim().takeIf { it.isNotEmpty() } ?: continue
+                    val displayName = api.optString("displayName").trim().ifEmpty { toolId }
+                    val inputSchema = api.optJSONObject("inputSchema")
+                    val required = inputSchema?.optJSONArray("required")
+                    val hasInputs = required != null && required.length() > 0
+                    apis += linkedMapOf("toolId" to toolId, "displayName" to displayName, "hasInputs" to hasInputs)
+                }
+            }
+            val frontendType = when {
+                (project.optJSONObject("frontendHtml")?.optJSONObject("sources")?.length() ?: 0) > 0 -> "html"
+                (project.optJSONObject("frontendMarkdown")?.optJSONObject("sources")?.length() ?: 0) > 0 -> "markdown"
+                (project.optJSONObject("frontendFlutter")?.optJSONObject("sources")?.length() ?: 0) > 0 -> "flutter"
+                else -> "default"
+            }
+            val cardEntryId = "$toolEntryId-project"
+            val cardData = linkedMapOf<String, Any?>(
+                "type" to "workbench_project",
+                "projectId" to projectId,
+                "name" to name,
+                "description" to description,
+                "route" to route.ifEmpty { displayRoute },
+                "displayRoute" to displayRoute,
+                "displayId" to displayId,
+                "frontendType" to frontendType,
+                "apis" to apis,
+                "createdAt" to System.currentTimeMillis()
+            )
+            persistConversationMutation("inject workbench project card", publish = true) {
+                repository.upsertUiCard(
+                    conversationId = conversationId ?: return@persistConversationMutation,
+                    conversationMode = resolvedConversationMode,
+                    entryId = cardEntryId,
+                    cardData = sanitizeInteropMap(cardData),
+                    streamMeta = streamMeta(
+                        entryId = cardEntryId,
+                        roundIndex = roundIndex,
+                        kind = "workbench_project_card",
+                        isFinal = true
+                    ),
+                    createdAt = System.currentTimeMillis()
+                )
+            }
+            sendStreamEvent(
+                kind = "workbench_project_card",
+                entryId = cardEntryId,
+                roundIndex = roundIndex,
+                isFinal = true,
+                extras = cardData
+            )
+        }
+
+        override suspend fun onChatMessage(message: String) {
+            dispatchAgentChatMessage(message, isFinal = true)
+        }
+
+        override suspend fun onChatMessage(message: String, isFinal: Boolean) {
+            dispatchAgentChatMessage(message, isFinal)
+        }
+
+        override suspend fun onChatMessage(
+            message: String,
+            isFinal: Boolean,
+            prefillTokensPerSecond: Double?,
+            decodeTokensPerSecond: Double?
+        ) {
+            dispatchAgentChatMessage(
+                message = message,
+                isFinal = isFinal,
+                prefillTokensPerSecond = prefillTokensPerSecond,
+                decodeTokensPerSecond = decodeTokensPerSecond
+            )
+        }
+
+        override suspend fun onPromptTokenUsageChanged(
+            latestPromptTokens: Int,
+            promptTokenThreshold: Int?
+        ) {
+            sendFlutterEvent(
+                "onAgentPromptTokenUsageChanged",
+                mapOf(
+                    "latestPromptTokens" to latestPromptTokens,
+                    "promptTokenThreshold" to promptTokenThreshold
+                )
+            )
+        }
+
+        override suspend fun onContextCompactionStateChanged(
+            isCompacting: Boolean,
+            latestPromptTokens: Int?,
+            promptTokenThreshold: Int?
+        ) {
+            sendFlutterEvent(
+                "onAgentContextCompactionStateChanged",
+                mapOf(
+                    "isCompacting" to isCompacting,
+                    "latestPromptTokens" to latestPromptTokens,
+                    "promptTokenThreshold" to promptTokenThreshold
+                )
+            )
+        }
+
+        override suspend fun onClarifyRequired(
+            question: String,
+            missingFields: List<String>?,
+            dialog: UserDialog?
+        ) {
+            finalizeThinkingCardIfNeeded()
+            val normalizedQuestion = AgentTextSanitizer.sanitizeUtf16(question).trim()
+            val (roundIndex, entryId) = ensureAssistantEntry(
+                forceNewRound = latestAssistantVisibleText.isNotEmpty() || assistantRound > 0
+            )
+            latestAssistantVisibleText = normalizedQuestion
+            if (normalizedQuestion.isNotEmpty()) {
+                upsertClarifyMessage(
+                    entryId = entryId,
+                    roundIndex = roundIndex,
+                    question = normalizedQuestion
+                )
+            }
+            sendStreamEvent(
+                kind = "clarify_required",
+                entryId = entryId,
+                roundIndex = roundIndex,
+                text = normalizedQuestion,
+                question = normalizedQuestion,
+                missingFields = missingFields,
+                extras = if (dialog != null) mapOf("dialog" to dialog.toPayload()) else emptyMap()
+            )
+        }
+
+        override suspend fun onComplete(result: AgentResult) {
+            val isSuccess = result is AgentResult.Success
+            runCatching {
+                InternalRunLogStore.finishRun(
+                    context = this@AssistsCoreManager.context,
+                    runId = taskId,
+                    success = isSuccess,
+                    doneReason = if (isSuccess) "finished" else "error"
+                )
+            }.onFailure {
+                OmniLog.w(TAG, "finish internal agent run log failed: ${it.message}")
+            }
+            val outputKind = (result as? AgentResult.Success)?.outputKind ?: "none"
+            val hasUserVisibleOutput =
+                (result as? AgentResult.Success)?.hasUserVisibleOutput == true
+            val latestPromptTokens = (result as? AgentResult.Success)?.latestPromptTokens
+            val promptTokenThreshold =
+                (result as? AgentResult.Success)?.promptTokenThreshold
+            val streamed = scheduledAssistantBuffer.toString().trim()
+            val fallback = (result as? AgentResult.Success)
+                ?.response
+                ?.content
+                ?.trim()
+                .orEmpty()
+            val finalText = resolveAssistantFinalText(
+                streamed = streamed.ifEmpty { latestAssistantVisibleText },
+                fallback = fallback
+            ).ifEmpty {
+                if (isSuccess && outputKind == "none" && !hasUserVisibleOutput) {
+                    this@AssistsCoreManager.t(
+                        "暂时无法生成回复，请重试。",
+                        "I can't generate a reply right now. Please try again."
+                    )
+                } else {
+                    ""
+                }
+            }
+            finalizeThinkingCardIfNeeded(publish = finalText.isBlank())
+            var completedEntryId: String? = activeAssistantEntryId
+            var completedRoundIndex = assistantRound
+            if (finalText.isNotBlank()) {
+                val shouldCreateAssistantEntry =
+                    activeAssistantEntryId != null || latestAssistantVisibleText.isBlank()
+                if (shouldCreateAssistantEntry) {
+                    val (roundIndex, entryId) = if (activeAssistantEntryId != null) {
+                        assistantRound.coerceAtLeast(1) to activeAssistantEntryId!!
+                    } else {
+                        ensureAssistantEntry(forceNewRound = assistantRound > 0)
+                    }
+                    completedEntryId = entryId
+                    completedRoundIndex = roundIndex
+                    latestAssistantVisibleText = finalText
+                    upsertAssistantSnapshot(
+                        entryId = entryId,
+                        roundIndex = roundIndex,
+                        text = finalText,
+                        isError = !isSuccess,
+                        isFinal = true,
+                        streamKind = "text_snapshot"
+                    )
+                    sendStreamEvent(
+                        kind = "text_snapshot",
+                        entryId = entryId,
+                        roundIndex = roundIndex,
+                        isFinal = true,
+                        text = finalText
+                    )
+                }
+            }
+            scheduledSubagentMeta?.let { meta ->
+                val notificationText = finalText.ifEmpty {
+                    if (isSuccess) {
+                        this@AssistsCoreManager.t("任务已完成，点击查看详情。", "Task completed. Tap to view details.")
+                    } else {
+                        this@AssistsCoreManager.t("任务已结束，请点击查看详情。", "Task ended. Tap to view details.")
+                    }
+                }
+                runCatching {
+                    this@AssistsCoreManager.notifyScheduledSubagentCompletion(meta, notificationText)
+                }.onFailure {
+                    OmniLog.w(
+                        TAG,
+                        "notify scheduled subagent completion failed: ${it.message}",
+                        it
+                    )
+                }
+            }
+            sendStreamEvent(
+                kind = "completed",
+                entryId = completedEntryId,
+                roundIndex = completedRoundIndex,
+                success = isSuccess,
+                outputKind = outputKind,
+                hasUserVisibleOutput = hasUserVisibleOutput,
+                latestPromptTokens = latestPromptTokens,
+                promptTokenThreshold = promptTokenThreshold
+            )
+        }
+
+        override suspend fun onError(error: String) {
+            runCatching {
+                InternalRunLogStore.finishRun(
+                    context = this@AssistsCoreManager.context,
+                    runId = taskId,
+                    success = false,
+                    doneReason = "error",
+                    errorMessage = error
+                )
+            }.onFailure {
+                OmniLog.w(TAG, "finish internal agent error run log failed: ${it.message}")
+            }
+            val resolution = resolveAgentFinalErrorResolution(
+                streamed = scheduledAssistantBuffer.toString().ifBlank {
+                    latestAssistantVisibleText
+                },
+                error = error,
+                localizedFallback = this@AssistsCoreManager.t(
+                    "暂时无法生成回复，请重试。",
+                    "I can't generate a reply right now. Please try again."
+                )
+            )
+            val finalText = resolution.text
+            finalizeThinkingCardIfNeeded(publish = finalText.isBlank())
+            var errorEntryId: String? = activeAssistantEntryId
+            var errorRoundIndex = assistantRound
+            if (finalText.isNotBlank()) {
+                val shouldCreateAssistantEntry =
+                    activeAssistantEntryId != null || latestAssistantVisibleText.isBlank()
+                if (shouldCreateAssistantEntry) {
+                    val (roundIndex, entryId) = if (activeAssistantEntryId != null) {
+                        assistantRound.coerceAtLeast(1) to activeAssistantEntryId!!
+                    } else {
+                        ensureAssistantEntry(forceNewRound = assistantRound > 0)
+                    }
+                    errorEntryId = entryId
+                    errorRoundIndex = roundIndex
+                    latestAssistantVisibleText = finalText
+                    upsertAssistantSnapshot(
+                        entryId = entryId,
+                        roundIndex = roundIndex,
+                        text = finalText,
+                        isError = resolution.persistAsError,
+                        isFinal = true,
+                        streamKind = "text_snapshot"
+                    )
+                    sendStreamEvent(
+                        kind = "text_snapshot",
+                        entryId = entryId,
+                        roundIndex = roundIndex,
+                        isFinal = true,
+                        text = finalText
+                    )
+                }
+            }
+            scheduledSubagentMeta?.let { meta ->
+                runCatching {
+                    this@AssistsCoreManager.notifyScheduledSubagentCompletion(meta, finalText)
+                }.onFailure {
+                    OmniLog.w(
+                        TAG,
+                        "notify scheduled subagent error failed: ${it.message}",
+                        it
+                    )
+                }
+            }
+            sendStreamEvent(
+                kind = "error",
+                entryId = errorEntryId,
+                roundIndex = errorRoundIndex,
+                error = error,
+                extras = mapOf("persistAsError" to resolution.persistAsError)
+            )
+        }
+
+        override suspend fun onPermissionRequired(missing: List<String>) {
+            finalizeThinkingCardIfNeeded()
+            val (roundIndex, entryId) = ensureAssistantEntry(
+                forceNewRound = latestAssistantVisibleText.isNotEmpty() || assistantRound > 0
+            )
+            val permissionMessage = buildPermissionRequiredMessage(missing)
+            latestAssistantVisibleText = AgentTextSanitizer.sanitizeUtf16(permissionMessage).trim()
+            upsertPermissionState(
+                textEntryId = entryId,
+                roundIndex = roundIndex,
+                missing = missing
+            )
+            sendStreamEvent(
+                kind = "permission_required",
+                entryId = entryId,
+                roundIndex = roundIndex,
+                text = permissionMessage,
+                missing = missing,
+                extras = mapOf("permissionCardId" to "$taskId-permission")
+            )
+        }
+
+        override suspend fun onVlmTaskFinished() {
+            handleVlmTaskFinished("unified_agent_listener", taskId = taskId)
+        }
+
+        override suspend fun onSkillsResolved(skills: List<Map<String, Any?>>) {
+            if (skills.isEmpty()) return
+            val names = skills.joinToString(", ") { it["skillId"]?.toString() ?: "" }
+            val card = linkedMapOf<String, Any?>(
+                "card_id" to "$taskId-skills",
+                "type" to "skills_loaded",
+                "title" to "Skills: $names",
+                "header" to linkedMapOf(
+                    "step_index" to 0,
+                    "title" to "Skills: $names",
+                    "tool_name" to "skills_loaded",
+                    "status" to "success",
+                    "success" to true
+                ),
+                "skills" to skills,
+                "skill_names" to names
+            )
+            runCatching {
+                InternalRunLogStore.upsertCard(
+                    context = this@AssistsCoreManager.context,
+                    runId = taskId,
+                    cardId = "$taskId-skills",
+                    card = card
+                )
+            }.onFailure {
+                OmniLog.w(TAG, "onSkillsResolved run log failed: ${it.message}")
+            }
+        }
+
+        // -----------------------------------------------------------------------
+        // Private helpers
+        // -----------------------------------------------------------------------
+
+        private suspend fun dispatchAgentChatMessage(
+            message: String,
+            isFinal: Boolean,
+            prefillTokensPerSecond: Double? = null,
+            decodeTokensPerSecond: Double? = null
+        ) {
+            val normalizedMessage = AgentTextSanitizer.sanitizeUtf16(message).trim()
+            var entryId: String? = activeAssistantEntryId
+            var roundIndex = assistantRound
+            if (normalizedMessage.isNotEmpty()) {
+                val resolvedEntry = ensureAssistantEntry()
+                roundIndex = resolvedEntry.first
+                entryId = resolvedEntry.second
+                val resolvedEntryId = resolvedEntry.second
+                val currentSnapshot =
+                    AgentTextSanitizer.sanitizeUtf16(
+                        scheduledAssistantBuffer.toString()
+                    ).trim()
+                if (shouldIgnoreRegressiveSnapshot(currentSnapshot, normalizedMessage)) {
+                    OmniLog.d(
+                        TAG,
+                        "ignore stale agent snapshot: incoming=${normalizedMessage.length}, current=${currentSnapshot.length}, final=$isFinal"
+                    )
+                    return
+                }
+                scheduledAssistantBuffer.setLength(0)
+                scheduledAssistantBuffer.append(normalizedMessage)
+                latestAssistantVisibleText = normalizedMessage
+                upsertAssistantSnapshot(
+                    entryId = resolvedEntryId,
+                    roundIndex = roundIndex,
+                    text = normalizedMessage,
+                    isError = false,
+                    isFinal = isFinal,
+                    streamKind = "text_snapshot"
+                )
+            }
+            val snapshotText = entryId?.let {
+                AgentTextSanitizer.sanitizeUtf16(
+                    scheduledAssistantBuffer.toString()
+                ).trim()
+            }.orEmpty()
+            if (entryId != null && snapshotText.isNotEmpty()) {
+                sendStreamEvent(
+                    kind = "text_snapshot",
+                    entryId = entryId,
+                    roundIndex = roundIndex.coerceAtLeast(1),
+                    isFinal = isFinal,
+                    text = snapshotText.ifEmpty { normalizedMessage },
+                    prefillTokensPerSecond = prefillTokensPerSecond,
+                    decodeTokensPerSecond = decodeTokensPerSecond
+                )
+            }
+        }
+
+        private fun shouldIgnoreRegressiveSnapshot(
+            current: String,
+            incoming: String
+        ): Boolean {
+            if (current.isEmpty() || incoming.isEmpty()) {
+                return false
+            }
+            return incoming.length < current.length && current.startsWith(incoming)
+        }
+
+        private fun resolveAssistantFinalText(
+            streamed: String,
+            fallback: String
+        ): String {
+            val normalizedStreamed = AgentTextSanitizer.sanitizeUtf16(streamed).trim()
+            val normalizedFallback = AgentTextSanitizer.sanitizeUtf16(fallback).trim()
+            if (normalizedFallback.isEmpty()) {
+                return normalizedStreamed
+            }
+            if (normalizedStreamed.isEmpty()) {
+                return normalizedFallback
+            }
+            return when {
+                normalizedFallback.length >= normalizedStreamed.length &&
+                    normalizedFallback.startsWith(normalizedStreamed) -> normalizedFallback
+                normalizedStreamed.length > normalizedFallback.length &&
+                    normalizedStreamed.startsWith(normalizedFallback) -> normalizedStreamed
+                else -> normalizedFallback
+            }
+        }
+
+        private suspend fun sendFlutterEvent(
+            method: String,
+            args: Map<String, Any?>
+        ) {
+            val payload = sanitizeInteropMap(
+                mapOf(
+                    "taskId" to taskId,
+                    "conversationId" to conversationId,
+                    "conversationMode" to resolvedConversationMode
+                ) + args
+            )
+            withContext(Dispatchers.Main) {
+                this@AssistsCoreManager.invokeFlutterEventSafely(method, payload)
             }
         }
     }

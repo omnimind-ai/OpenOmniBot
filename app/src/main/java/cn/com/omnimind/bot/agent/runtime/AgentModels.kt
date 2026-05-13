@@ -345,4 +345,10 @@ interface AgentCallback {
      * 仅供旧版异步 VLM 任务链路使用；阻塞式统一 Agent 工具不应触发该回调。
      */
     suspend fun onVlmTaskFinished() = Unit
+
+    /**
+     * Called once per run, immediately after the skill trigger phase completes.
+     * Each entry: skillId, triggerReason, name.
+     */
+    suspend fun onSkillsResolved(skills: List<Map<String, Any?>>) = Unit
 }
