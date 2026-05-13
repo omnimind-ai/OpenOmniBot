@@ -455,7 +455,7 @@ class _BackgroundSettingPageState extends State<BackgroundSettingPage> {
               Padding(
                 padding: const EdgeInsets.only(left: 4, bottom: 12),
                 child: Text(
-                  context.trLegacy(_autoSaveHint),
+                  context.trText(_autoSaveHint),
                   style: TextStyle(
                     fontSize: 12,
                     color: palette.textSecondary,
@@ -734,7 +734,7 @@ class _BackgroundSettingPageState extends State<BackgroundSettingPage> {
           Row(
             children: [
               Text(
-                context.trLegacy(label),
+                context.trText(label),
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -750,7 +750,7 @@ class _BackgroundSettingPageState extends State<BackgroundSettingPage> {
           ),
           const SizedBox(height: 2),
           Text(
-            context.trLegacy(subtitle),
+            context.trText(subtitle),
             style: TextStyle(fontSize: 12, color: palette.textSecondary),
           ),
           Slider(value: value, min: min, max: max, onChanged: onChanged),

@@ -200,6 +200,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsMcpToggleFailed => 'Failed to toggle MCP';
 
   @override
+  String get settingsOobFunctionAsToolTitle => 'OOB Functions as Tools';
+
+  @override
+  String get settingsOobFunctionAsToolSubtitle =>
+      'Let the agent call saved OOB functions as built-in tools';
+
+  @override
+  String get settingsOobFunctionAsToolToggleFailed =>
+      'Failed to update OOB function tool setting';
+
+  @override
   String get settingsCopiedAddress => 'Address copied';
 
   @override
@@ -3710,4 +3721,851 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get workbenchPhilosophyActivateHint =>
       'After activation, the right Workspace shows the Project Display. Further input or annotations are passed as context to hot update.';
+
+  @override
+  String get sourceTextf9dfa89402 => 'Omnibot Floating Window';
+
+  @override
+  String get sourceTextea6631ac86 =>
+      'Hide the desktop floating ball, half-screen input, and running capsule';
+
+  @override
+  String get sourceText60d33fd58f => 'Omnibot floating window enabled';
+
+  @override
+  String get sourceText9803e0f8d8 => 'Omnibot floating window disabled';
+
+  @override
+  String get sourceText8ed5fe74f6 => 'Failed to update floating window setting';
+
+  @override
+  String get sourceText2a4a4de806 => 'Manual';
+
+  @override
+  String get sourceText76c9741888 => 'Shizuku Permission';
+
+  @override
+  String get sourceText5e04ad1c9a =>
+      'Running a command in the embedded Alpine terminal';
+
+  @override
+  String get sourceTextc0b7ed8600 =>
+      'Executing a command in the embedded Alpine terminal';
+
+  @override
+  String get sourceText60cf09e22d => 'Updating terminal output';
+
+  @override
+  String get sourceText140c80c696 =>
+      '🎉Hi, I\'m Omnibot. I can do many things, let me show you!';
+
+  @override
+  String get sourceText82347f1be8 => 'Hi, I\'m Omnibot';
+
+  @override
+  String get sourceText5167632783 => 'Your AI assistant, always ready';
+
+  @override
+  String get sourceText63a921a287 => 'No internet needed, completely free';
+
+  @override
+  String get sourceText112e197134 =>
+      'Data stays entirely on your device and is never sent to any server. Conversations, preferences, and sensitive info always remain under your control.';
+
+  @override
+  String get sourceText8de8b69cc9 =>
+      'Run the AI assistant without any network connection. Whether on a plane, in the subway, or in a remote area — it\'s always available.';
+
+  @override
+  String get sourceTexteac537b43e =>
+      'No API costs or subscriptions. Once downloaded, use the model unlimited times with no hidden charges.';
+
+  @override
+  String get sourceTexte8b806ace2 =>
+      'On-device models are smaller with lower quality than cloud models. Complex Agent tasks are not yet supported — best for everyday chat and Q&A.';
+
+  @override
+  String get sourceText7e1cc2fc3f => 'Shuffle';
+
+  @override
+  String get sourceText63e272f624 => 'Omnibot is thinking...';
+
+  @override
+  String get sourceTextd9f594509d => 'Summarizing';
+
+  @override
+  String get sourceText9384e034e5 => 'Summary';
+
+  @override
+  String get sourceText3e44b2a933 => 'Select all';
+
+  @override
+  String get sourceText4edd1d0087 => 'Copy';
+
+  @override
+  String get sourceTextb56d9ac6c5 => 'Confirm';
+
+  @override
+  String get sourceTextf526c89937 => 'OK';
+
+  @override
+  String get sourceText4d0b3bb4e9 => 'Please wait...';
+
+  @override
+  String get sourceTextee5037d25d => 'Save & Send';
+
+  @override
+  String get sourceTextbe15d6f28c => 'No model set';
+
+  @override
+  String get sourceText01047404ef => 'New version available';
+
+  @override
+  String get sourceText1722589489 => 'Open terminal';
+
+  @override
+  String get sourceText649fc10b46 => 'Manage terminal environment variables';
+
+  @override
+  String get sourceTextd8f03e50ea => 'Open browser for current session';
+
+  @override
+  String get sourceTextc1c986937d => 'No browser session available';
+
+  @override
+  String get sourceText31b7c8d175 => 'Chat Only';
+
+  @override
+  String get sourceText7cda072d45 => 'Normal';
+
+  @override
+  String get sourceText17e83cc25e => 'Today';
+
+  @override
+  String get sourceText59c4fcb09e => 'Yesterday';
+
+  @override
+  String get sourceText1f425b6bf0 => 'Executing';
+
+  @override
+  String get sourceText6c189aad4d => 'Succeeded';
+
+  @override
+  String get sourceText9746cfc7d2 => 'Failed';
+
+  @override
+  String get sourceTextd0de773436 => 'Pending';
+
+  @override
+  String get sourceText2029839d84 => 'Summary';
+
+  @override
+  String get sourceText6c2b60f0ee => 'Image Recognition';
+
+  @override
+  String get sourceTexte9649f84f9 => 'Unknown type';
+
+  @override
+  String get sourceText756eae0324 => 'Replying...';
+
+  @override
+  String get sourceText292eea5849 => 'Never';
+
+  @override
+  String get sourceText08d65bdbc3 => 'Daily';
+
+  @override
+  String get sourceTexta93b55d8bf => 'Weekly';
+
+  @override
+  String get sourceText24aedc3608 => 'Monthly';
+
+  @override
+  String get sourceText4a9ee561f9 => 'Yearly';
+
+  @override
+  String get sourceText89b4aa6364 => 'Time';
+
+  @override
+  String get sourceTextb6fed9af83 => 'Date';
+
+  @override
+  String get sourceText6e708ba759 => 'Repeat';
+
+  @override
+  String get sourceTextc1cb3fc29f => 'Task options';
+
+  @override
+  String get sourceText39797f7a92 => 'Please select a task';
+
+  @override
+  String get sourceTexte03304491a => 'Please select a task to execute';
+
+  @override
+  String get sourceTextb4a7ea5533 => 'Please select an application';
+
+  @override
+  String get sourceText1354374f76 => 'Expired';
+
+  @override
+  String get sourceText36d2d01f31 => 'Starting soon';
+
+  @override
+  String get sourceText13794e1f43 => 'OK, I\'ll help you complete it';
+
+  @override
+  String get sourceTextbaa298fbe1 => 'User action';
+
+  @override
+  String get sourceText86e8d12a79 => 'Deleted';
+
+  @override
+  String get sourceText9abb465039 => 'Modify failed';
+
+  @override
+  String get sourceTextf8913eb433 => 'Modified successfully';
+
+  @override
+  String get sourceText65fdeb927b => 'Desktop';
+
+  @override
+  String get sourceText322eceb785 => 'Local Memory';
+
+  @override
+  String get sourceTextf90d5c751e => 'Cloud Memory';
+
+  @override
+  String get sourceText7e68eb622d => 'Saved successfully';
+
+  @override
+  String get sourceText6a6b660ba8 => 'Edit your message';
+
+  @override
+  String get sourceTextfcbd093292 => 'Create';
+
+  @override
+  String get sourceText8200c3d50b => 'Untitled conversation';
+
+  @override
+  String get sourceText229127ec8d => 'Collapse all dates';
+
+  @override
+  String get sourceTextbc51af6ffc => 'Expand all dates';
+
+  @override
+  String get sourceText72be511e05 => 'Last executed';
+
+  @override
+  String get sourceText818a1f7be3 => 'No summary content';
+
+  @override
+  String get sourceTextc76c74e809 => 'Failed to check for updates';
+
+  @override
+  String get sourceTextae4535ef13 => 'Already up to date';
+
+  @override
+  String get sourceText00f512b5e8 =>
+      'Checking GitHub Release for the latest version';
+
+  @override
+  String get sourceText9afc832d99 => 'View new version';
+
+  @override
+  String get sourceTexta6df38586d => 'Check for updates';
+
+  @override
+  String get sourceText8ff0439ff9 => 'Thinking disabled';
+
+  @override
+  String get sourceTextd9d4d4e7dd => 'Request logs';
+
+  @override
+  String get sourceTexta8ce402665 => 'Runtime logs';
+
+  @override
+  String get sourceText4c685c0454 => 'User guide';
+
+  @override
+  String get sourceText5060421d15 => 'Overview';
+
+  @override
+  String get sourceText9f14a3f4dd => 'Recent logs';
+
+  @override
+  String get sourceTextb01090a29c =>
+      'The latest 10 AI requests are shown in reverse chronological order.';
+
+  @override
+  String get sourceTextc740eb5be5 =>
+      'Tap an entry to expand the request and response payloads.';
+
+  @override
+  String get sourceTextcb80eb03ea =>
+      'The latest 200 error and crash logs are shown in reverse chronological order.';
+
+  @override
+  String get sourceText8334b58cfa =>
+      'Entries with stack traces can be expanded for details.';
+
+  @override
+  String get sourceTextfe12b789bf => 'Export runtime logs';
+
+  @override
+  String get sourceText88f6dbf1a3 => 'All runtime logs copied';
+
+  @override
+  String get sourceText8b06115d35 => 'Failed to export runtime logs';
+
+  @override
+  String get sourceTextd6c8084d07 => 'Crash';
+
+  @override
+  String get sourceText367ff5ddd2 => 'Total';
+
+  @override
+  String get sourceText71bd34d484 => 'Latest entry';
+
+  @override
+  String get sourceText41654e0268 => 'Basic info';
+
+  @override
+  String get sourceText7364999103 => 'Payloads';
+
+  @override
+  String get sourceTextd70d425039 => 'Saving...';
+
+  @override
+  String get sourceTextdbb4430dc0 => 'No file selected';
+
+  @override
+  String get sourceText1e620e20a1 => 'Remote URL';
+
+  @override
+  String get sourceTextdde21b2cec => 'Background run permission';
+
+  @override
+  String get sourceText135f1636e4 => 'Installed apps access';
+
+  @override
+  String get sourceTextf80103fee9 => 'Accessibility permission';
+
+  @override
+  String get sourceTextd78cde076b => 'Enabled';
+
+  @override
+  String get sourceText13ec170881 => 'Enable';
+
+  @override
+  String get sourceText291952a2ab => 'Clear cache';
+
+  @override
+  String get sourceText3d0c8b9d9f =>
+      'Help Omnibot better understand your preferences during companion mode';
+
+  @override
+  String get sourceText86890292b6 =>
+      'Allow Omnibot to stay active on screen and accompany you anytime';
+
+  @override
+  String get sourceTexta86909c7ea =>
+      'Let Omnibot know what it can help you with';
+
+  @override
+  String get sourceText56735a4ab7 =>
+      'Omnibot needs permission to perform actions when executing tasks';
+
+  @override
+  String get sourceText99ad612dd1 => 'Set up permissions';
+
+  @override
+  String get sourceTextaef926661d => 'You can revoke these permissions anytime';
+
+  @override
+  String get sourceText02a75489b2 =>
+      'Review and configure Accessibility, Overlay, Shizuku, and related permissions';
+
+  @override
+  String get sourceText75b40989f3 => 'Checking permissions...';
+
+  @override
+  String get sourceText2599599947 => 'Continue task';
+
+  @override
+  String get sourceText14411ce362 => 'Continue requires only';
+
+  @override
+  String get sourceTextf739c7d4a8 => 'Termux terminal capability';
+
+  @override
+  String get sourceText98bd36febc =>
+      'Optional: allow the Agent to run terminal commands via Termux';
+
+  @override
+  String get sourceText53e32830a5 => 'Optional';
+
+  @override
+  String get sourceTexte5d269502c => 'Let Omnibot walk you through one task!';
+
+  @override
+  String get sourceText1aca95f544 =>
+      'Termux capability is optional; leaving it off will not affect basic automation';
+
+  @override
+  String get sourceText3bf179d8d0 => 'Unbound';
+
+  @override
+  String get sourceText2a30881946 => 'Clear binding';
+
+  @override
+  String get sourceTexta191935bc6 => 'Restore default';
+
+  @override
+  String get sourceText8988c04935 =>
+      'After tapping the button on the right, you can search, collapse, and select models by Provider; voice tone and auto-play can be adjusted below.';
+
+  @override
+  String get sourceText2415f124bd => 'Auto-play after AI response';
+
+  @override
+  String get sourceTextc4301894a2 => 'Voice';
+
+  @override
+  String get sourceTextc0ae8ba446 =>
+      'e.g. default_zh / mimo_default / default_en';
+
+  @override
+  String get sourceTexta4ce420c69 => 'Style';
+
+  @override
+  String get sourceText6614801dcd => 'Custom note';
+
+  @override
+  String get sourceText558a2f3fd0 =>
+      'Additional style is not supported in singing mode';
+
+  @override
+  String get sourceTextfa12d9ef1b => 'e.g. softer, slower, podcast-like';
+
+  @override
+  String get sourceText2601f9e3cb => 'Collapse voice settings';
+
+  @override
+  String get sourceTextbc2c7387f0 => 'Expand voice settings';
+
+  @override
+  String get sourceText6a7d5cd91d => 'No matching models';
+
+  @override
+  String get sourceText7b0de927a6 => 'Search model ID';
+
+  @override
+  String get sourceTexte5463e3a94 =>
+      'Please configure a provider in Model Providers first';
+
+  @override
+  String get sourceText13c9595745 => 'No selectable models for this provider';
+
+  @override
+  String get sourceText90bfe72640 => 'Entered chat-only mode';
+
+  @override
+  String get sourceText9c1153036d => 'Exited chat-only mode';
+
+  @override
+  String get sourceTextd1a19c24c7 => 'Search skill name or description';
+
+  @override
+  String get sourceTextd636ae3e01 => 'No matching skills found';
+
+  @override
+  String get sourceTexte4d8c16cd2 => 'Streaming';
+
+  @override
+  String get sourceText36e8d9631f => 'Non-streaming';
+
+  @override
+  String get sourceText0e84ef42ae => 'Request URL';
+
+  @override
+  String get sourceText4d150364fe => 'Request Method';
+
+  @override
+  String get sourceTexta38a81c9d5 => 'Error';
+
+  @override
+  String get sourceText0228e74add => 'Request JSON';
+
+  @override
+  String get sourceText9f062a0dac => 'Response JSON';
+
+  @override
+  String get sourceTexte2d53a6d3a => 'Retry';
+
+  @override
+  String get sourceText661b2db84d => 'Failed to load request logs';
+
+  @override
+  String get sourceTextfa604c3dba => 'No AI request logs yet';
+
+  @override
+  String get sourceTexta22889b61d => 'Failed to load runtime logs';
+
+  @override
+  String get sourceText71a159aa14 => 'No runtime logs yet';
+
+  @override
+  String get sourceText7b15e5e8e7 => 'Clear';
+
+  @override
+  String get sourceTextfb57d700b9 => 'AI Request';
+
+  @override
+  String get sourceText7a42fe12dc => 'conversations';
+
+  @override
+  String get sourceTextadf4707731 => 'day streak';
+
+  @override
+  String get sourceText0fe8227aa4 => 'No conversations';
+
+  @override
+  String get sourceText7a54a1229e => 'No token usage data yet';
+
+  @override
+  String get sourceTexte8666c377c => 'Local';
+
+  @override
+  String get sourceText565481c9be => 'Cloud';
+
+  @override
+  String get sourceText54c727b452 => 'No usage';
+
+  @override
+  String get sourceText7fe4999970 => 'Long-term memory is not ready';
+
+  @override
+  String get sourceTextb87a8a83f5 =>
+      'After memory initialization, cross-session preferences and facts will appear here.';
+
+  @override
+  String get sourceTextb92a2068aa =>
+      'Long-term memory is temporarily unavailable';
+
+  @override
+  String get sourceTextd3a2b13fc2 => 'Long-term memory is still empty';
+
+  @override
+  String get sourceTexte8c59faf6d =>
+      'After the Agent writes long-term preferences, this section will gradually fill up.';
+
+  @override
+  String get sourceText495c0debaf => 'Add long-term memory';
+
+  @override
+  String get sourceText4398777297 => 'Refresh long-term memory';
+
+  @override
+  String get sourceText9e636642d6 => 'Just now';
+
+  @override
+  String get sourceTextedab852efe => 'Thinking complete';
+
+  @override
+  String get sourceText774d85ae0a => 'Thinking';
+
+  @override
+  String get sourceTexte4b6477e6e => 'Elapsed';
+
+  @override
+  String get sourceText15fc7643c5 => 'Preparing to execute task...';
+
+  @override
+  String get sourceTextd258a63cad => 'Cancel task';
+
+  @override
+  String get sourceText6df9b76521 => 'Task canceled';
+
+  @override
+  String get sourceText038d05ca8c => 'Stop tool';
+
+  @override
+  String get sourceText4078ac16b6 => 'Stopping tool';
+
+  @override
+  String get sourceTextcb1115d8c1 =>
+      'Failed to stop tool call. Please try again later.';
+
+  @override
+  String get sourceTexteac987a597 => 'Unable to open Agent manager';
+
+  @override
+  String get sourceTexte3f4d6bd9d => 'Failed to hide floating capsule';
+
+  @override
+  String get sourceTextf6d7e0312c =>
+      'Floating capsule hidden. You can re-enable it in Settings.';
+
+  @override
+  String get sourceText066af21f55 => 'Open';
+
+  @override
+  String get sourceText15197efe93 => 'Hide floating capsule';
+
+  @override
+  String get sourceText5d5815647c => 'Collapse';
+
+  @override
+  String get sourceText151eeabaf6 => 'Failed to stop';
+
+  @override
+  String get sourceText6ef1200428 => 'Running Agents';
+
+  @override
+  String get sourceText5bd8f4879e => 'No backend tasks running';
+
+  @override
+  String get sourceTextfaeb185030 => 'No Agents running';
+
+  @override
+  String get sourceText68685fc5c4 => 'Stop all';
+
+  @override
+  String get sourceTextf0b2cef7b0 => 'No running Agent backend tasks';
+
+  @override
+  String get sourceText65fc81e161 => 'Open';
+
+  @override
+  String get sourceText645fc8d22d => 'Stop this Agent';
+
+  @override
+  String get sourceText5e59efab1e => 'Agent backend idle. Tap to open manager.';
+
+  @override
+  String get sourceText0b961ab4d9 => 'Organizing plan';
+
+  @override
+  String get sourceText91796bb70a => 'Writing response';
+
+  @override
+  String get sourceText33fe6867a2 => 'Starting tool call';
+
+  @override
+  String get sourceText76a18aa532 => 'Tool running';
+
+  @override
+  String get sourceTextd333e5691f => 'Tool completed';
+
+  @override
+  String get sourceTextcc1f7be0b2 => 'Waiting for permission';
+
+  @override
+  String get sourceTextf7d01365f2 => 'Waiting for more information';
+
+  @override
+  String get sourceText9617084ded => 'Run failed';
+
+  @override
+  String get sourceText832451d2f4 => 'Finishing';
+
+  @override
+  String get sourceTextc6dc0ad888 => 'Agent backend task';
+
+  @override
+  String get sourceTextbdde1def59 => 'Waiting for model response';
+
+  @override
+  String get sourceText3d4d1075e7 => 'Tool call';
+
+  @override
+  String get sourceTextff06c243d7 => 'Timeout';
+
+  @override
+  String get sourceText44e681a374 => 'Interrupted';
+
+  @override
+  String get sourceText71757f8d79 => 'Browsing';
+
+  @override
+  String get sourceTextda3d2d1482 => 'Responding';
+
+  @override
+  String get sourceTextfcb979ef0b => 'Processing';
+
+  @override
+  String get sourceText7f55a26d7d => 'Terminal';
+
+  @override
+  String get sourceText88d650dd4f => 'Browser';
+
+  @override
+  String get sourceText81944e48a3 => 'Reminder';
+
+  @override
+  String get sourceText2ecbc11608 => 'Calendar';
+
+  @override
+  String get sourceText2a8ce33ff0 => 'Subtask';
+
+  @override
+  String get sourceTexta72ef18d9a => 'Tool';
+
+  @override
+  String get sourceText15ec50fe7d => '[Earlier records omitted]';
+
+  @override
+  String get sourceTexta5dda12242 => 'Waiting for OpenClaw processing';
+
+  @override
+  String get sourceText70c53b8ac3 => 'Configure Your AI Assistant';
+
+  @override
+  String get sourceTextf7f58b95a7 =>
+      'Choose a way to start using the assistant';
+
+  @override
+  String get sourceText1670225703 => 'Cloud AI Service';
+
+  @override
+  String get sourceText90f71a54c8 =>
+      'Connect to OpenAI, Anthropic, or compatible APIs';
+
+  @override
+  String get sourceTextb0253cd034 => 'Local Model';
+
+  @override
+  String get sourceText10691e242c =>
+      'Run local AI on your device, offline and private';
+
+  @override
+  String get sourceText1fc1afc5c5 => 'Continue';
+
+  @override
+  String get sourceText184913c0f3 => 'Skip, configure later in Settings';
+
+  @override
+  String get sourceText1e797c0dac => 'Cloud AI Setup';
+
+  @override
+  String get sourceText79973caeef =>
+      'Configure a cloud AI provider for more powerful models';
+
+  @override
+  String get sourceText993df7d096 => 'Protocol Type';
+
+  @override
+  String get sourceText530aafb12a => 'e.g., My OpenAI';
+
+  @override
+  String get sourceText10b7d8eccc => 'Test Connection';
+
+  @override
+  String get sourceTexteb06635875 => 'Connected';
+
+  @override
+  String get sourceText523e40a074 => 'found';
+
+  @override
+  String get sourceText674373aef1 => 'models';
+
+  @override
+  String get sourceText2c056f182f => 'Connection failed';
+
+  @override
+  String get sourceTextd15ae9ad81 => 'Run Local AI on Your Device';
+
+  @override
+  String get sourceText4bbe706f8d => 'Advantages';
+
+  @override
+  String get sourceText37dea6b39e => 'Privacy';
+
+  @override
+  String get sourceText6bcfca9d58 =>
+      'Data stays entirely on your device, never sent to any server';
+
+  @override
+  String get sourceText270d12d95b => 'Offline';
+
+  @override
+  String get sourceText97fcfbb5dd =>
+      'No internet needed, use AI assistant anytime';
+
+  @override
+  String get sourceTextdd70b93ad6 => 'Free';
+
+  @override
+  String get sourceText5d4061aac5 =>
+      'No API costs or subscriptions, no usage limits';
+
+  @override
+  String get sourceText498c2879b0 => 'Limitations';
+
+  @override
+  String get sourceTexta597376852 => 'Limited Performance';
+
+  @override
+  String get sourceTextb4d10c670a =>
+      'On-device models are smaller with limited quality vs. cloud models';
+
+  @override
+  String get sourceText390d11af9b => 'Limited Tasks';
+
+  @override
+  String get sourceText7b5c99ecb8 =>
+      'Cannot handle complex Agent tasks yet, suitable for simple chat';
+
+  @override
+  String get sourceTextea0ef2ae72 => 'Next';
+
+  @override
+  String get sourceText68e23d8fac => 'Download Local Model';
+
+  @override
+  String get sourceText405be21f38 => 'Recommended Model';
+
+  @override
+  String get sourceTextf430f6d1d1 =>
+      'A lightweight model recommended for your device';
+
+  @override
+  String get sourceText1b58744dff => 'Loading model info...';
+
+  @override
+  String get sourceText3f9550508b => 'Resume';
+
+  @override
+  String get sourceText4bbcf94739 => 'Download Complete';
+
+  @override
+  String get sourceText33246f6a5e => 'Done';
+
+  @override
+  String get sourceText11d0241540 => 'Back';
+
+  @override
+  String get sourceText85d011402f => 'Unable to fetch recommended model';
+
+  @override
+  String get sourceText1b2fe43b5e =>
+      'Check your network or download manually in Settings later';
+
+  @override
+  String get sourceText2bc19ec67e => 'Get Started';
+
+  @override
+  String get sourceTextc55627eba1 => 'API Key (optional)';
+
+  @override
+  String get sourceText90988df4ff => 'Browse Model Market';
+
+  @override
+  String get sourceText62b46f24ae => 'Recommended';
+
+  @override
+  String get sourceTextc59773a6a4 => 'Choose Method';
+
+  @override
+  String get sourceTextb62ed716e3 => 'Features';
 }

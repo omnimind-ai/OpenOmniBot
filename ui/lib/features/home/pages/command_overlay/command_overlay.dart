@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/app_state_service.dart';
@@ -149,7 +149,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
 
   Future<void> _setOpenClawEnabled(bool enabled) async {
     if (enabled && _openClawBaseUrl.trim().isEmpty) {
-      AppToast.show(LegacyTextLocalizer.localize('请先使用 /openclaw 配置 OpenClaw'));
+      AppToast.show(AppTextLocalizer.text('请先使用 /openclaw 配置 OpenClaw'));
       _showOpenClawCommandPanel(expand: true);
       return;
     }
@@ -450,9 +450,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _conversationPanelError = LegacyTextLocalizer.isEnglish
-            ? 'Failed to load conversations'
-            : '对话加载失败';
+        _conversationPanelError = AppTextLocalizer.choose(en: 'Failed to load conversations', zh: '对话加载失败');
         _conversationSummariesLoading = false;
       });
       debugPrint('加载悬浮窗对话摘要失败: $error');
@@ -467,9 +465,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
     );
     if (!opened) {
       AppToast.show(
-        LegacyTextLocalizer.isEnglish
-            ? 'Failed to open conversation'
-            : '无法打开对话',
+        AppTextLocalizer.choose(en: 'Failed to open conversation', zh: '无法打开对话'),
       );
     } else {
       unawaited(AppStateService.dismissFloatingOverlay());
@@ -479,7 +475,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
   String _conversationTitle(ConversationModel conversation) {
     final title = conversation.title.trim();
     if (title.isNotEmpty) return title;
-    return LegacyTextLocalizer.isEnglish ? 'New conversation' : '新对话';
+    return AppTextLocalizer.choose(en: 'New conversation', zh: '新对话');
   }
 
   String _conversationSummary(ConversationModel conversation) {
@@ -491,13 +487,11 @@ class _CommandOverlayState extends State<CommandOverlay> {
     }
     final lastMessage = conversation.lastMessage?.trim();
     if (lastMessage != null && lastMessage.isNotEmpty) return lastMessage;
-    return LegacyTextLocalizer.isEnglish ? 'No summary yet' : '暂无摘要';
+    return AppTextLocalizer.choose(en: 'No summary yet', zh: '暂无摘要');
   }
 
   String _conversationMeta(ConversationModel conversation) {
-    final count = LegacyTextLocalizer.isEnglish
-        ? '${conversation.messageCount} messages'
-        : '${conversation.messageCount} 条消息';
+    final count = AppTextLocalizer.choose(en: '${conversation.messageCount} messages', zh: '${conversation.messageCount} 条消息');
     return '${conversation.mode.displayLabel} · ${conversation.timeDisplay} · $count';
   }
 
@@ -753,9 +747,7 @@ $contextJson
     };
     if (annotationAttachment == null) {
       AppToast.show(
-        LegacyTextLocalizer.isEnglish
-            ? 'Screenshot capture failed; sending red strokes as fallback.'
-            : '截图合成失败，先用红线坐标兜底发送。',
+        AppTextLocalizer.choose(en: 'Screenshot capture failed; sending red strokes as fallback.', zh: '截图合成失败，先用红线坐标兜底发送。'),
       );
     }
     if (!mounted) return false;
@@ -946,7 +938,7 @@ $contextJson
           const Icon(Icons.forum_outlined, size: 16, color: Colors.white),
           const SizedBox(width: 6),
           Text(
-            LegacyTextLocalizer.isEnglish ? 'Conversations' : '对话',
+            AppTextLocalizer.choose(en: 'Conversations', zh: '对话'),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 13,
@@ -955,12 +947,12 @@ $contextJson
           ),
           _buildPanelIconButton(
             icon: Icons.expand_more,
-            tooltip: LegacyTextLocalizer.isEnglish ? 'Show summary' : '展开摘要',
+            tooltip: AppTextLocalizer.choose(en: 'Show summary', zh: '展开摘要'),
             onPressed: () => unawaited(_toggleConversationPanel()),
           ),
           _buildPanelIconButton(
             icon: Icons.close,
-            tooltip: LegacyTextLocalizer.isEnglish ? 'Close' : '关闭',
+            tooltip: AppTextLocalizer.choose(en: 'Close', zh: '关闭'),
             onPressed: _closePage,
           ),
         ],
@@ -994,9 +986,7 @@ $contextJson
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  LegacyTextLocalizer.isEnglish
-                      ? 'Conversation summaries'
-                      : '对话摘要',
+                  AppTextLocalizer.choose(en: 'Conversation summaries', zh: '对话摘要'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
@@ -1006,20 +996,20 @@ $contextJson
               ),
               _buildPanelIconButton(
                 icon: Icons.refresh,
-                tooltip: LegacyTextLocalizer.isEnglish ? 'Refresh' : '刷新',
+                tooltip: AppTextLocalizer.choose(en: 'Refresh', zh: '刷新'),
                 onPressed: () =>
                     unawaited(_loadConversationSummaries(force: true)),
               ),
               _buildPanelIconButton(
                 icon: Icons.expand_less,
-                tooltip: LegacyTextLocalizer.isEnglish ? 'Collapse' : '收起',
+                tooltip: AppTextLocalizer.choose(en: 'Collapse', zh: '收起'),
                 onPressed: () => setState(() {
                   _conversationPanelExpanded = false;
                 }),
               ),
               _buildPanelIconButton(
                 icon: Icons.close,
-                tooltip: LegacyTextLocalizer.isEnglish ? 'Close' : '关闭',
+                tooltip: AppTextLocalizer.choose(en: 'Close', zh: '关闭'),
                 onPressed: _closePage,
               ),
             ],
@@ -1055,7 +1045,7 @@ $contextJson
 
     if (_recentConversations.isEmpty) {
       return _buildConversationPanelMessage(
-        LegacyTextLocalizer.isEnglish ? 'No conversations yet' : '暂无对话',
+        AppTextLocalizer.choose(en: 'No conversations yet', zh: '暂无对话'),
       );
     }
 
@@ -1160,7 +1150,7 @@ $contextJson
                 TextButton.icon(
                   onPressed: () => unawaited(_manageConversation(conversation)),
                   icon: const Icon(Icons.open_in_new, size: 14),
-                  label: Text(LegacyTextLocalizer.isEnglish ? 'Manage' : '管理'),
+                  label: Text(AppTextLocalizer.choose(en: 'Manage', zh: '管理')),
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.white,
                     visualDensity: VisualDensity.compact,

@@ -733,9 +733,17 @@ mixin _ChatInputAreaComposerMixin
       key: const ValueKey('chat-input-annotation-button'),
       padding: EdgeInsets.zero,
       iconSize: iconSize,
-      tooltip: Localizations.localeOf(context).languageCode == 'en'
-          ? (selected ? 'Close drawing' : 'Draw on screen')
-          : (selected ? '关闭标注' : '屏幕标注'),
+      tooltip: selected
+          ? AppTextLocalizer.choose(
+              zh: '关闭标注',
+              en: 'Close drawing',
+              locale: Localizations.localeOf(context),
+            )
+          : AppTextLocalizer.choose(
+              zh: '屏幕标注',
+              en: 'Draw on screen',
+              locale: Localizations.localeOf(context),
+            ),
       icon: AnimatedContainer(
         duration: _buttonAnimationDuration,
         curve: _buttonAnimationCurve,
@@ -854,18 +862,31 @@ mixin _ChatInputAreaComposerMixin
   }
 
   String _codexPermissionTooltip() {
-    return Localizations.localeOf(context).languageCode == 'en'
-        ? 'Codex permissions'
-        : 'Codex 权限';
+    return AppTextLocalizer.choose(
+      zh: 'Codex 权限',
+      en: 'Codex permissions',
+      locale: Localizations.localeOf(context),
+    );
   }
 
   String _codexPermissionLabel(CodexPermissionMode mode) {
-    final english = Localizations.localeOf(context).languageCode == 'en';
+    final locale = Localizations.localeOf(context);
     return switch (mode) {
-      CodexPermissionMode.defaultMode =>
-        english ? 'Default permissions' : '默认权限',
-      CodexPermissionMode.autoReview => english ? 'Auto review' : '自动审查',
-      CodexPermissionMode.fullAccess => english ? 'Full access' : '完全访问权限',
+      CodexPermissionMode.defaultMode => AppTextLocalizer.choose(
+        zh: '默认权限',
+        en: 'Default permissions',
+        locale: locale,
+      ),
+      CodexPermissionMode.autoReview => AppTextLocalizer.choose(
+        zh: '自动审查',
+        en: 'Auto review',
+        locale: locale,
+      ),
+      CodexPermissionMode.fullAccess => AppTextLocalizer.choose(
+        zh: '完全访问权限',
+        en: 'Full access',
+        locale: locale,
+      ),
     };
   }
 
@@ -990,12 +1011,16 @@ mixin _ChatInputAreaComposerMixin
               TextInputContextMenu(editableTextState: editableTextState),
           decoration: InputDecoration(
             hintText: isRecording
-                ? (Localizations.localeOf(context).languageCode == 'en'
-                      ? 'Type or speak directly, I am listening'
-                      : '输入或直接说，我在听')
-                : (Localizations.localeOf(context).languageCode == 'en'
-                      ? 'Type your message'
-                      : '请输入内容'),
+                ? AppTextLocalizer.choose(
+                    zh: '输入或直接说，我在听',
+                    en: 'Type or speak directly, I am listening',
+                    locale: Localizations.localeOf(context),
+                  )
+                : AppTextLocalizer.choose(
+                    zh: '请输入内容',
+                    en: 'Type your message',
+                    locale: Localizations.localeOf(context),
+                  ),
             hintStyle: TextStyle(
               fontSize: multiline ? 15.0 : 14.0,
               color: hintColor,

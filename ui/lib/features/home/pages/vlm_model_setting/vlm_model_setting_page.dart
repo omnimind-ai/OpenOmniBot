@@ -641,7 +641,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
       title: context.l10n.modelAddProviderTitle,
       hintText: context.l10n.modelProviderNameHint,
       confirmText: context.l10n.modelAddButton,
-      cancelText: context.trLegacy('取消'),
+      cancelText: context.trText('取消'),
     ))?.trim();
     if (name == null || name.isEmpty) {
       return;
@@ -755,7 +755,7 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: Text(context.trLegacy('取消')),
+              child: Text(context.trText('取消')),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(true),
@@ -1482,10 +1482,10 @@ class _VlmModelSettingPageState extends State<VlmModelSettingPage> {
         ? palette.accentPrimary
         : palette.textSecondary;
     final tooltip = !enabled
-        ? context.trLegacy('暂无模型分组')
+        ? context.trText('暂无模型分组')
         : _areAllModelGroupsCollapsed(groups)
-        ? context.trLegacy('展开全部分组')
-        : context.trLegacy('折叠全部分组');
+        ? context.trText('展开全部分组')
+        : context.trText('折叠全部分组');
 
     return Tooltip(
       message: tooltip,
@@ -2364,7 +2364,7 @@ class _AddModelIdDialogState extends State<_AddModelIdDialog> {
         actions: [
           TextButton(
             onPressed: () => _close(),
-            child: Text(context.trLegacy('取消')),
+            child: Text(context.trText('取消')),
           ),
           TextButton(
             onPressed: () => _close(_controller.text.trim()),

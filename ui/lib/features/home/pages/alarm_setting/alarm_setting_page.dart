@@ -134,7 +134,7 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
       return;
     }
 
-    final error = (payload['message'] ?? payload['summary'] ?? context.trLegacy('保存失败'))
+    final error = (payload['message'] ?? payload['summary'] ?? context.trText('保存失败'))
         .toString();
     showToast(error, type: ToastType.error);
   }
@@ -165,7 +165,7 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
                     ],
                     if (_source == _sourceRemoteMp3) ...[
                       const SizedBox(height: 18),
-                      SettingsSectionTitle(label: context.trLegacy('远程地址')),
+                      SettingsSectionTitle(label: context.trText('远程地址')),
                       _buildRemoteUrlCard(),
                     ],
                     const Spacer(),
@@ -182,7 +182,7 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
                               : Colors.white,
                           minimumSize: const Size.fromHeight(48),
                         ),
-                        child: Text(_saving ? context.trLegacy('保存中...') : context.trLegacy('保存')),
+                        child: Text(_saving ? context.trText('保存中...') : context.trText('保存')),
                       ),
                     ),
                   ],
@@ -298,7 +298,7 @@ class _AlarmSettingPageState extends State<AlarmSettingPage> {
 
   Widget _buildLocalFileCard() {
     final palette = context.omniPalette;
-    final displayPath = _localPath.isEmpty ? context.trLegacy('未选择文件') : _localPath;
+    final displayPath = _localPath.isEmpty ? context.trText('未选择文件') : _localPath;
 
     return SizedBox(
       width: double.infinity,

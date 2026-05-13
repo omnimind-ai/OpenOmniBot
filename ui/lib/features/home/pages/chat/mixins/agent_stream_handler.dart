@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/authorize/authorize_page_args.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/agent_stream_reducer.dart';
@@ -319,7 +319,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
             : 'running',
         summary: toolEvent.summary.isNotEmpty
             ? toolEvent.summary
-            : (LegacyTextLocalizer.isEnglish ? 'Calling tool' : '正在调用工具'),
+            : (AppTextLocalizer.choose(en: 'Calling tool', zh: '正在调用工具')),
         progress: toolEvent.progress,
         resultPreviewJson: toolEvent.resultPreviewJson,
         rawResultJson: toolEvent.rawResultJson,
@@ -527,12 +527,8 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         : (messages[index].content?['text'] as String? ?? '');
     final preservedText = existingText.trim();
     final fallbackMessage = error.trim().isEmpty
-        ? (LegacyTextLocalizer.isEnglish
-              ? "I can't generate a reply right now. Please try again."
-              : '暂时无法生成回复，请重试。')
-        : (LegacyTextLocalizer.isEnglish
-              ? "I can't generate a reply right now. Please try again. ${error.trim()}"
-              : '暂时无法生成回复，请重试。${error.trim()}');
+        ? (AppTextLocalizer.choose(en: "I can't generate a reply right now. Please try again.", zh: '暂时无法生成回复，请重试。'))
+        : (AppTextLocalizer.choose(en: "I can't generate a reply right now. Please try again. ${error.trim()}", zh: '暂时无法生成回复，请重试。${error.trim()}'));
     setState(() {
       if (index == -1) {
         messages.insert(

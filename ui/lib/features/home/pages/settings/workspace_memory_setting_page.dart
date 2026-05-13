@@ -403,7 +403,7 @@ class _WorkspaceMemorySettingPageState
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : Text(context.trLegacy('保存')),
+                  : Text(context.trText('保存')),
             ),
           ),
         ],

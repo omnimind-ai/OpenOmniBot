@@ -16,7 +16,7 @@ import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/l10n/l10n.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/agent_stream_meta.dart';
 import 'package:ui/webchat/web_backends.dart';
 
@@ -169,7 +169,7 @@ class WebChatApp extends StatelessWidget {
         final resolvedLocale = languageCode == 'en'
             ? const Locale('en')
             : const Locale('zh');
-        LegacyTextLocalizer.setResolvedLocale(resolvedLocale);
+        AppTextLocalizer.setResolvedLocale(resolvedLocale);
         return resolvedLocale;
       },
       theme: ThemeData(
@@ -478,7 +478,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
 
   Future<void> _createConversation() async {
     final conversation = await _client.createConversation(
-      title: LegacyTextLocalizer.isEnglish ? 'New conversation' : '新对话',
+      title: AppTextLocalizer.choose(en: 'New conversation', zh: '新对话'),
       mode: ConversationMode.normal,
     );
     setState(() {
@@ -506,7 +506,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
       if (conversation == null) {
         conversation = await _client.createConversation(
           title: text.isEmpty
-              ? (LegacyTextLocalizer.isEnglish ? 'New conversation' : '新对话')
+              ? (AppTextLocalizer.choose(en: 'New conversation', zh: '新对话'))
               : text,
           mode: ConversationMode.normal,
         );
@@ -1417,8 +1417,8 @@ class _WebChatHomeState extends State<_WebChatHome> {
       _expandedAgentRunTaskIds,
     );
     final label = group.isActiveRun
-        ? (LegacyTextLocalizer.isEnglish ? 'Running' : '运行中')
-        : (LegacyTextLocalizer.isEnglish ? 'Run trace' : '已思考');
+        ? (AppTextLocalizer.choose(en: 'Running', zh: '运行中'))
+        : (AppTextLocalizer.choose(en: 'Run trace', zh: '已思考'));
     final summary = _agentRunGroupSummary(group);
     final processMessages = group.processMessagesOldestFirst;
     final visibleMessages = group.visibleMessagesOldestFirst;
@@ -1500,20 +1500,22 @@ class _WebChatHomeState extends State<_WebChatHome> {
     final parts = <String>[];
     if (group.thinkingCount > 0) {
       parts.add(
-        LegacyTextLocalizer.isEnglish
-            ? '${group.thinkingCount} thinking'
-            : '${group.thinkingCount} 个思考',
+        AppTextLocalizer.choose(
+          en: '${group.thinkingCount} thinking',
+          zh: '${group.thinkingCount} 个思考',
+        ),
       );
     }
     if (group.toolCount > 0) {
       parts.add(
-        LegacyTextLocalizer.isEnglish
-            ? '${group.toolCount} tools'
-            : '${group.toolCount} 个工具',
+        AppTextLocalizer.choose(
+          en: '${group.toolCount} tools',
+          zh: '${group.toolCount} 个工具',
+        ),
       );
     }
     if (group.visibleMessagesNewestFirst.isEmpty) {
-      parts.add(LegacyTextLocalizer.isEnglish ? 'waiting for reply' : '等待回复');
+      parts.add(AppTextLocalizer.choose(en: 'waiting for reply', zh: '等待回复'));
     }
     return parts.join(' · ');
   }
@@ -1560,9 +1562,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    Localizations.localeOf(context).languageCode == 'en'
-                        ? 'Enter local MCP Server Token to exchange for a Web Chat session cookie.'
-                        : '输入本机 MCP Server Token 以换取 Web Chat 会话 Cookie。',
+                    AppTextLocalizer.choose(
+                      zh: '输入本机 MCP Server Token 以换取 Web Chat 会话 Cookie。',
+                      en: 'Enter local MCP Server Token to exchange for a Web Chat session cookie.',
+                    ),
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 20),
@@ -1577,9 +1580,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
                   FilledButton(
                     onPressed: () => _bootstrap(_tokenController.text.trim()),
                     child: Text(
-                      Localizations.localeOf(context).languageCode == 'en'
-                          ? 'Connect'
-                          : '连接',
+                      AppTextLocalizer.choose(zh: '连接', en: 'Connect'),
                     ),
                   ),
                   if (_error != null) ...[
@@ -1746,21 +1747,15 @@ class _WebChatHomeState extends State<_WebChatHome> {
         destinations: [
           NavigationDestination(
             icon: const Icon(Icons.chat_bubble_outline),
-            label: Localizations.localeOf(context).languageCode == 'en'
-                ? 'Chat'
-                : '聊天',
+            label: AppTextLocalizer.choose(zh: '聊天', en: 'Chat'),
           ),
           NavigationDestination(
             icon: const Icon(Icons.folder_outlined),
-            label: Localizations.localeOf(context).languageCode == 'en'
-                ? 'Workspace'
-                : '工作区',
+            label: AppTextLocalizer.choose(zh: '工作区', en: 'Workspace'),
           ),
           NavigationDestination(
             icon: const Icon(Icons.language_outlined),
-            label: Localizations.localeOf(context).languageCode == 'en'
-                ? 'Browser'
-                : '浏览器',
+            label: AppTextLocalizer.choose(zh: '浏览器', en: 'Browser'),
           ),
         ],
       ),
@@ -1779,9 +1774,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
                 children: [
                   Expanded(
                     child: Text(
-                      Localizations.localeOf(context).languageCode == 'en'
-                          ? 'Conversations'
-                          : '聊天记录',
+                      AppTextLocalizer.choose(zh: '聊天记录', en: 'Conversations'),
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
@@ -1792,11 +1785,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
                   FilledButton.icon(
                     onPressed: _createConversation,
                     icon: const Icon(Icons.add, size: 18),
-                    label: Text(
-                      Localizations.localeOf(context).languageCode == 'en'
-                          ? 'New'
-                          : '新建',
-                    ),
+                    label: Text(AppTextLocalizer.choose(zh: '新建', en: 'New')),
                     style: FilledButton.styleFrom(
                       backgroundColor: _kAccentBlue,
                       foregroundColor: Colors.white,
@@ -1816,17 +1805,13 @@ class _WebChatHomeState extends State<_WebChatHome> {
                   ButtonSegment<bool>(
                     value: false,
                     label: Text(
-                      Localizations.localeOf(context).languageCode == 'en'
-                          ? 'Active'
-                          : '活跃',
+                      AppTextLocalizer.choose(zh: '活跃', en: 'Active'),
                     ),
                   ),
                   ButtonSegment<bool>(
                     value: true,
                     label: Text(
-                      Localizations.localeOf(context).languageCode == 'en'
-                          ? 'Archived'
-                          : '归档',
+                      AppTextLocalizer.choose(zh: '归档', en: 'Archived'),
                     ),
                   ),
                 ],
@@ -1977,29 +1962,23 @@ class _WebChatHomeState extends State<_WebChatHome> {
                                         : 'archive',
                                     child: Text(
                                       conversation.isArchived
-                                          ? (Localizations.localeOf(
-                                                      context,
-                                                    ).languageCode ==
-                                                    'en'
-                                                ? 'Unarchive'
-                                                : '取消归档')
-                                          : (Localizations.localeOf(
-                                                      context,
-                                                    ).languageCode ==
-                                                    'en'
-                                                ? 'Archive'
-                                                : '归档'),
+                                          ? AppTextLocalizer.choose(
+                                              zh: '取消归档',
+                                              en: 'Unarchive',
+                                            )
+                                          : AppTextLocalizer.choose(
+                                              zh: '归档',
+                                              en: 'Archive',
+                                            ),
                                     ),
                                   ),
                                   PopupMenuItem<String>(
                                     value: 'delete',
                                     child: Text(
-                                      Localizations.localeOf(
-                                                context,
-                                              ).languageCode ==
-                                              'en'
-                                          ? 'Delete'
-                                          : '删除',
+                                      AppTextLocalizer.choose(
+                                        zh: '删除',
+                                        en: 'Delete',
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -2041,9 +2020,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
                   children: [
                     Text(
                       _selectedConversation?.title ??
-                          (Localizations.localeOf(context).languageCode == 'en'
-                              ? 'Select a conversation to start chatting'
-                              : '选择一个对话开始聊天'),
+                          AppTextLocalizer.choose(
+                            zh: '选择一个对话开始聊天',
+                            en: 'Select a conversation to start chatting',
+                          ),
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -2054,10 +2034,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
                     const SizedBox(height: 4),
                     Text(
                       _selectedConversation == null
-                          ? (Localizations.localeOf(context).languageCode ==
-                                    'en'
-                                ? 'Full chat, tool calls, workspace and browser mirror support'
-                                : '支持完整聊天、工具调用、工作区与浏览器镜像')
+                          ? AppTextLocalizer.choose(
+                              zh: '支持完整聊天、工具调用、工作区与浏览器镜像',
+                              en: 'Full chat, tool calls, workspace and browser mirror support',
+                            )
                           : _selectedConversation!.mode.displayLabel,
                       style: const TextStyle(
                         fontSize: 12,
@@ -2070,12 +2050,8 @@ class _WebChatHomeState extends State<_WebChatHome> {
               if (_selectedConversation != null) ...[
                 IconButton(
                   tooltip: _selectedConversation!.isArchived
-                      ? (Localizations.localeOf(context).languageCode == 'en'
-                            ? 'Unarchive'
-                            : '取消归档')
-                      : (Localizations.localeOf(context).languageCode == 'en'
-                            ? 'Archive'
-                            : '归档'),
+                      ? AppTextLocalizer.choose(zh: '取消归档', en: 'Unarchive')
+                      : AppTextLocalizer.choose(zh: '归档', en: 'Archive'),
                   onPressed: () =>
                       _updateArchiveState(!_selectedConversation!.isArchived),
                   icon: Icon(
@@ -2086,9 +2062,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
                   ),
                 ),
                 IconButton(
-                  tooltip: Localizations.localeOf(context).languageCode == 'en'
-                      ? 'Delete'
-                      : '删除',
+                  tooltip: AppTextLocalizer.choose(zh: '删除', en: 'Delete'),
                   onPressed: _deleteSelectedConversation,
                   icon: const Icon(
                     Icons.delete_outline,
@@ -2113,9 +2087,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
           child: _displayMessages.isEmpty
               ? Center(
                   child: Text(
-                    Localizations.localeOf(context).languageCode == 'en'
-                        ? 'How can I help you?'
-                        : '有什么可以帮助你的？',
+                    AppTextLocalizer.choose(
+                      zh: '有什么可以帮助你的？',
+                      en: 'How can I help you?',
+                    ),
                     style: const TextStyle(
                       color: _kSecondaryText,
                       fontSize: 14,
@@ -2141,9 +2116,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      Localizations.localeOf(context).languageCode == 'en'
-                          ? 'The current Agent needs your clarification. It will continue after you send input.'
-                          : '当前 Agent 需要你的澄清回复，发送输入内容后会继续执行。',
+                      AppTextLocalizer.choose(
+                        zh: '当前 Agent 需要你的澄清回复，发送输入内容后会继续执行。',
+                        en: 'The current Agent needs your clarification. It will continue after you send input.',
+                      ),
                       style: const TextStyle(
                         fontSize: 12,
                         color: _kPrimaryText,
@@ -2206,9 +2182,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
                 height: 1.5,
               ),
               decoration: InputDecoration(
-                hintText: LegacyTextLocalizer.isEnglish
-                    ? 'Chat with the agent...'
-                    : '直接和 Agent 对话...',
+                hintText: AppTextLocalizer.choose(
+                  en: 'Chat with the agent...',
+                  zh: '直接和 Agent 对话...',
+                ),
                 hintStyle: TextStyle(color: _kSubtleText),
                 border: InputBorder.none,
                 isCollapsed: true,
@@ -2226,9 +2203,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
               IconButton(
                 onPressed: _pickAttachments,
                 icon: const Icon(Icons.add_rounded, color: _kSecondaryText),
-                tooltip: LegacyTextLocalizer.isEnglish
-                    ? 'Add attachment'
-                    : '添加附件',
+                tooltip: AppTextLocalizer.choose(
+                  en: 'Add attachment',
+                  zh: '添加附件',
+                ),
               ),
               const Spacer(),
               AnimatedOpacity(
@@ -2390,8 +2368,12 @@ class _WebChatHomeState extends State<_WebChatHome> {
             color: Colors.white,
             child: TabBar(
               tabs: [
-                Tab(text: LegacyTextLocalizer.isEnglish ? 'Workspace' : '工作区'),
-                Tab(text: LegacyTextLocalizer.isEnglish ? 'Browser' : '浏览器'),
+                Tab(
+                  text: AppTextLocalizer.choose(en: 'Workspace', zh: '工作区'),
+                ),
+                Tab(
+                  text: AppTextLocalizer.choose(en: 'Browser', zh: '浏览器'),
+                ),
               ],
             ),
           ),
@@ -2426,7 +2408,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      LegacyTextLocalizer.isEnglish ? 'Workspace' : '工作区',
+                      AppTextLocalizer.choose(en: 'Workspace', zh: '工作区'),
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -2436,9 +2418,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
                     const SizedBox(height: 6),
                     breadcrumbs.isEmpty
                         ? Text(
-                            LegacyTextLocalizer.isEnglish
-                                ? 'Loading workspace...'
-                                : '加载工作区中...',
+                            AppTextLocalizer.choose(
+                              en: 'Loading workspace...',
+                              zh: '加载工作区中...',
+                            ),
                             style: TextStyle(color: _kSecondaryText),
                           )
                         : Wrap(
@@ -2476,14 +2459,14 @@ class _WebChatHomeState extends State<_WebChatHome> {
                     ? null
                     : () => _reloadWorkspace(),
                 icon: const Icon(Icons.refresh),
-                tooltip: LegacyTextLocalizer.isEnglish ? 'Refresh now' : '立即刷新',
+                tooltip: AppTextLocalizer.choose(en: 'Refresh now', zh: '立即刷新'),
               ),
               if (_workspaceSelectedFilePath != null)
                 FilledButton(
                   onPressed: _workspaceBusy || !_workspaceDirty
                       ? null
                       : _saveWorkspaceFile,
-                  child: Text(LegacyTextLocalizer.isEnglish ? 'Save' : '保存'),
+                  child: Text(AppTextLocalizer.choose(en: 'Save', zh: '保存')),
                 ),
             ],
           ),
@@ -2524,9 +2507,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
                 child: _workspaceSelectedFilePath == null
                     ? Center(
                         child: Text(
-                          LegacyTextLocalizer.isEnglish
-                              ? 'Select a file to view or edit'
-                              : '选择一个文件开始查看或编辑',
+                          AppTextLocalizer.choose(
+                            en: 'Select a file to view or edit',
+                            zh: '选择一个文件开始查看或编辑',
+                          ),
                         ),
                       )
                     : Padding(
@@ -2589,9 +2573,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
               TextField(
                 controller: _browserUrlController,
                 decoration: InputDecoration(
-                  hintText: LegacyTextLocalizer.isEnglish
-                      ? 'Enter URL to navigate remotely'
-                      : '输入网址并远程导航',
+                  hintText: AppTextLocalizer.choose(
+                    en: 'Enter URL to navigate remotely',
+                    zh: '输入网址并远程导航',
+                  ),
                   border: OutlineInputBorder(),
                 ),
                 onSubmitted: (_) => _navigateBrowser(),
@@ -2601,7 +2586,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
                 children: [
                   FilledButton(
                     onPressed: _browserBusy ? null : _navigateBrowser,
-                    child: Text(LegacyTextLocalizer.isEnglish ? 'Open' : '打开'),
+                    child: Text(AppTextLocalizer.choose(en: 'Open', zh: '打开')),
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton(
@@ -2614,7 +2599,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
                             'tool_title': 'Web Chat Scroll Up',
                           }),
                     child: Text(
-                      LegacyTextLocalizer.isEnglish ? 'Swipe up' : '上滑',
+                      AppTextLocalizer.choose(en: 'Swipe up', zh: '上滑'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -2628,7 +2613,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
                             'tool_title': 'Web Chat Scroll Down',
                           }),
                     child: Text(
-                      LegacyTextLocalizer.isEnglish ? 'Swipe down' : '下滑',
+                      AppTextLocalizer.choose(en: 'Swipe down', zh: '下滑'),
                     ),
                   ),
                 ],
@@ -2642,13 +2627,13 @@ class _WebChatHomeState extends State<_WebChatHome> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                LegacyTextLocalizer.isEnglish ? 'Current page' : '当前页面',
+                AppTextLocalizer.choose(en: 'Current page', zh: '当前页面'),
                 style: Theme.of(context).textTheme.titleSmall,
               ),
               const SizedBox(height: 6),
               Text(
                 (snapshot['title'] ??
-                        (LegacyTextLocalizer.isEnglish ? 'No session' : '暂无会话'))
+                        (AppTextLocalizer.choose(en: 'No session', zh: '暂无会话')))
                     .toString(),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -2675,18 +2660,20 @@ class _WebChatHomeState extends State<_WebChatHome> {
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) => Center(
                           child: Text(
-                            LegacyTextLocalizer.isEnglish
-                                ? 'Browser view unavailable'
-                                : '浏览器画面暂不可用',
+                            AppTextLocalizer.choose(
+                              en: 'Browser view unavailable',
+                              zh: '浏览器画面暂不可用',
+                            ),
                           ),
                         ),
                       ),
                     ),
                   )
                 : Text(
-                    LegacyTextLocalizer.isEnglish
-                        ? 'No browser session available for mirroring'
-                        : '当前没有可镜像的浏览器会话',
+                    AppTextLocalizer.choose(
+                      en: 'No browser session available for mirroring',
+                      zh: '当前没有可镜像的浏览器会话',
+                    ),
                   ),
           ),
         ),
@@ -2815,7 +2802,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
       items: [
         PopupMenuItem<String>(
           value: 'retry',
-          child: Text(LegacyTextLocalizer.isEnglish ? 'Retry message' : '重试消息'),
+          child: Text(AppTextLocalizer.choose(en: 'Retry message', zh: '重试消息')),
         ),
       ],
     );
@@ -2831,7 +2818,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
             name:
                 (item['fileName'] ??
                         item['name'] ??
-                        (LegacyTextLocalizer.isEnglish ? 'Attachment' : '附件'))
+                        (AppTextLocalizer.choose(en: 'Attachment', zh: '附件')))
                     .toString(),
             mimeType: (item['mimeType'] ?? 'application/octet-stream')
                 .toString(),
@@ -2856,7 +2843,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
           const Icon(Icons.auto_awesome_rounded, size: 16, color: _kAccentBlue),
           const SizedBox(width: 6),
           Text(
-            LegacyTextLocalizer.isEnglish ? 'Summarizing...' : '总结中',
+            AppTextLocalizer.choose(en: 'Summarizing...', zh: '总结中'),
             style: const TextStyle(
               fontSize: 14,
               color: _kAccentBlue,
@@ -2891,7 +2878,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
               ),
               const SizedBox(width: 6),
               Text(
-                LegacyTextLocalizer.isEnglish ? 'Summary:' : '总结如下',
+                AppTextLocalizer.choose(en: 'Summary:', zh: '总结如下'),
                 style: const TextStyle(
                   fontSize: 14,
                   color: _kAccentGreen,
@@ -2967,12 +2954,14 @@ class _WebChatHomeState extends State<_WebChatHome> {
                   const SizedBox(width: 8),
                   Text(
                     (cardData['stage'] == 4 || cardData['isLoading'] == false)
-                        ? (LegacyTextLocalizer.isEnglish
-                              ? 'Thinking complete'
-                              : '思考完成')
-                        : (LegacyTextLocalizer.isEnglish
-                              ? 'Thinking...'
-                              : '正在思考'),
+                        ? (AppTextLocalizer.choose(
+                            en: 'Thinking complete',
+                            zh: '思考完成',
+                          ))
+                        : (AppTextLocalizer.choose(
+                            en: 'Thinking...',
+                            zh: '正在思考',
+                          )),
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       color: _kPrimaryText,
@@ -2990,9 +2979,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
               const SizedBox(height: 10),
               SelectableText(
                 (cardData['thinkingContent'] ?? '').toString().trim().isEmpty
-                    ? (LegacyTextLocalizer.isEnglish
-                          ? 'Generating thinking content...'
-                          : '正在生成思考内容...')
+                    ? (AppTextLocalizer.choose(
+                        en: 'Generating thinking content...',
+                        zh: '正在生成思考内容...',
+                      ))
                     : (cardData['thinkingContent'] ?? '').toString(),
                 style: const TextStyle(color: _kSecondaryText, height: 1.55),
               ),
@@ -3127,7 +3117,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
         (item['fileName'] ??
                 item['name'] ??
                 item['path'] ??
-                (LegacyTextLocalizer.isEnglish ? 'Attachment' : '附件'))
+                (AppTextLocalizer.choose(en: 'Attachment', zh: '附件')))
             .toString();
     final mimeType = (item['mimeType'] ?? '').toString();
     if (dataUrl.startsWith('data:image/')) {

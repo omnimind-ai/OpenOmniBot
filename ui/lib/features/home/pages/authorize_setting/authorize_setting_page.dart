@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_switch/flutter_switch.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/special_permission.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -88,8 +89,11 @@ class _AuthorizeSettingPageState extends State<AuthorizeSettingPage>
   }
 
   String _localeText({required String zh, required String en}) {
-    final languageCode = Localizations.localeOf(context).languageCode;
-    return languageCode == 'en' ? en : zh;
+    return AppTextLocalizer.choose(
+      zh: zh,
+      en: en,
+      locale: Localizations.localeOf(context),
+    );
   }
 
   List<_AuthorizeSettingSection> _buildSections() {
@@ -124,13 +128,13 @@ class _AuthorizeSettingPageState extends State<AuthorizeSettingPage>
         items: [
           _AuthorizeSettingItem(
             icon: Icons.battery_saver_outlined,
-            title: context.trLegacy('后台运行权限'),
+            title: context.trText('后台运行权限'),
             subtitle: _localeText(
               zh: '减少系统回收，让陪伴与自动任务能在后台稳定继续。',
               en: 'Reduce system cleanup so companion actions and automations can continue reliably in the background.',
             ),
             trailing: _buildPermissionTrailing(
-              label: context.trLegacy(_backgroundRunning ? '已开启' : '去开启'),
+              label: context.trText(_backgroundRunning ? '已开启' : '去开启'),
               color: _backgroundRunning ? _tertiaryTextColor : _accentColor,
             ),
             onTap: () {
@@ -139,13 +143,13 @@ class _AuthorizeSettingPageState extends State<AuthorizeSettingPage>
           ),
           _AuthorizeSettingItem(
             icon: Icons.picture_in_picture_alt_outlined,
-            title: context.trLegacy('悬浮窗权限'),
+            title: context.trText('悬浮窗权限'),
             subtitle: _localeText(
               zh: '允许小万在其他应用上方显示浮窗并保持实时陪伴。',
               en: 'Allow Omnibot to stay present above other apps and keep assisting in real time.',
             ),
             trailing: _buildPermissionTrailing(
-              label: context.trLegacy(_overlayPermission ? '已开启' : '去开启'),
+              label: context.trText(_overlayPermission ? '已开启' : '去开启'),
               color: _overlayPermission ? _tertiaryTextColor : _accentColor,
             ),
             onTap: () {
@@ -154,13 +158,13 @@ class _AuthorizeSettingPageState extends State<AuthorizeSettingPage>
           ),
           _AuthorizeSettingItem(
             icon: Icons.apps_outlined,
-            title: context.trLegacy('应用列表读取'),
+            title: context.trText('应用列表读取'),
             subtitle: _localeText(
               zh: '用于识别设备已安装应用，判断当前能帮你执行哪些任务。',
               en: 'Used to identify installed apps so the assistant can decide which tasks are available on this device.',
             ),
             trailing: _buildPermissionTrailing(
-              label: context.trLegacy(_installedAppsPermission ? '已开启' : '去开启'),
+              label: context.trText(_installedAppsPermission ? '已开启' : '去开启'),
               color: _installedAppsPermission
                   ? _tertiaryTextColor
                   : _accentColor,
@@ -171,13 +175,13 @@ class _AuthorizeSettingPageState extends State<AuthorizeSettingPage>
           ),
           _AuthorizeSettingItem(
             icon: Icons.accessibility_new_rounded,
-            title: context.trLegacy('无障碍辅助权限'),
+            title: context.trText('无障碍辅助权限'),
             subtitle: _localeText(
               zh: '执行自动操作、页面阅读与流程编排时必须开启。',
               en: 'Required for automated actions, screen reading, and guided task flows.',
             ),
             trailing: _buildPermissionTrailing(
-              label: context.trLegacy(_accessibilityPermission ? '已开启' : '去开启'),
+              label: context.trText(_accessibilityPermission ? '已开启' : '去开启'),
               color: _accessibilityPermission
                   ? _tertiaryTextColor
                   : _accentColor,
@@ -203,7 +207,7 @@ class _AuthorizeSettingPageState extends State<AuthorizeSettingPage>
               en: 'Allow Omnibot to read and manage files in shared device storage for file tasks and downloads.',
             ),
             trailing: _buildPermissionTrailing(
-              label: context.trLegacy(_publicStoragePermission ? '已开启' : '去开启'),
+              label: context.trText(_publicStoragePermission ? '已开启' : '去开启'),
               color: _publicStoragePermission
                   ? _tertiaryTextColor
                   : _accentColor,
@@ -214,7 +218,7 @@ class _AuthorizeSettingPageState extends State<AuthorizeSettingPage>
           ),
           _AuthorizeSettingItem(
             icon: Icons.adb_rounded,
-            title: context.trLegacy('Shizuku 权限'),
+            title: context.trText('Shizuku 权限'),
             subtitle: _shizukuStatus.localizedGuide,
             trailing: _buildPermissionTrailing(
               label: _shizukuStatus.localizedStatusLabel,

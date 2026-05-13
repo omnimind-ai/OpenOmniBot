@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/omnibot_workspace/omnibot_artifact_preview_page.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/models/chat_link_preview.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
@@ -491,8 +492,6 @@ class MessageBubble extends StatelessWidget {
         isUserMessage: isUserMessage,
       );
     }
-    final isEnglish =
-        Localizations.maybeLocaleOf(context)?.languageCode == 'en';
     final title = preview.title.trim();
     final description = preview.description.trim();
     final siteName = preview.displaySiteName.trim();
@@ -500,9 +499,16 @@ class MessageBubble extends StatelessWidget {
         preview.imageUrl.startsWith('http://') ||
         preview.imageUrl.startsWith('https://');
     final statusLabel = switch (preview.status) {
-      ChatLinkPreview.statusLoading => isEnglish ? 'Loading preview' : '加载预览中',
-      ChatLinkPreview.statusFailed =>
-        isEnglish ? 'Preview unavailable' : '预览暂不可用',
+      ChatLinkPreview.statusLoading => AppTextLocalizer.choose(
+        zh: '加载预览中',
+        en: 'Loading preview',
+        locale: Localizations.localeOf(context),
+      ),
+      ChatLinkPreview.statusFailed => AppTextLocalizer.choose(
+        zh: '预览暂不可用',
+        en: 'Preview unavailable',
+        locale: Localizations.localeOf(context),
+      ),
       _ => '',
     };
 
@@ -620,8 +626,6 @@ class MessageBubble extends StatelessWidget {
     int index, {
     required bool isUserMessage,
   }) {
-    final isEnglish =
-        Localizations.maybeLocaleOf(context)?.languageCode == 'en';
     final title = preview.title.trim();
     final description = preview.description.trim();
     final siteName = preview.displaySiteName.trim();
@@ -638,9 +642,16 @@ class MessageBubble extends StatelessWidget {
     final metaColor = secondaryBaseColor.withValues(alpha: 0.82);
     final secondaryColor = secondaryBaseColor.withValues(alpha: 0.94);
     final statusLabel = switch (preview.status) {
-      ChatLinkPreview.statusLoading => isEnglish ? 'Loading preview' : '加载预览中',
-      ChatLinkPreview.statusFailed =>
-        isEnglish ? 'Preview unavailable' : '预览暂不可用',
+      ChatLinkPreview.statusLoading => AppTextLocalizer.choose(
+        zh: '加载预览中',
+        en: 'Loading preview',
+        locale: Localizations.localeOf(context),
+      ),
+      ChatLinkPreview.statusFailed => AppTextLocalizer.choose(
+        zh: '预览暂不可用',
+        en: 'Preview unavailable',
+        locale: Localizations.localeOf(context),
+      ),
       _ => '',
     };
 
@@ -914,7 +925,7 @@ class MessageBubble extends StatelessWidget {
                 focusedErrorBorder: InputBorder.none,
                 isDense: true,
                 contentPadding: EdgeInsets.zero,
-                hintText: context.trLegacy('编辑你的消息'),
+                hintText: context.trText('编辑你的消息'),
                 hintStyle: TextStyle(
                   color: visualProfile.primaryTextColor.withValues(alpha: 0.6),
                   fontSize: _chatTextSize,
@@ -933,14 +944,14 @@ class MessageBubble extends StatelessWidget {
               children: [
                 TextButton(
                   onPressed: onCancelUserEdit,
-                  child: Text(context.trLegacy('取消'), softWrap: false),
+                  child: Text(context.trText('取消'), softWrap: false),
                 ),
                 FilledButton(
                   onPressed: canSave ? onSaveUserEdit : null,
                   style: FilledButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                   ),
-                  child: Text(context.trLegacy('保存并发送'), softWrap: false),
+                  child: Text(context.trText('保存并发送'), softWrap: false),
                 ),
               ],
             ),

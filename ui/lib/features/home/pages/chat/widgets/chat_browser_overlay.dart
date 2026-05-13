@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ui/features/home/pages/chat/chat_page_models.dart';
 import 'package:ui/l10n/l10n.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/agent_browser_session_service.dart';
 
 class ChatBrowserOverlay extends StatefulWidget {
@@ -39,9 +39,7 @@ class _ChatBrowserOverlayState extends State<ChatBrowserOverlay> {
   late final TextEditingController _promptController;
   String? _lastPromptRequestId;
 
-  bool get _isEnglish => LegacyTextLocalizer.isEnglish;
-
-  String _text(String zh, String en) => _isEnglish ? en : zh;
+  String _text(String zh, String en) => AppTextLocalizer.choose(en: en, zh: zh);
 
   @override
   void initState() {

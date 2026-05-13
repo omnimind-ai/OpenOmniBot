@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -90,6 +91,18 @@ class _OmnibotArtifactPreviewPageState
       ..removeListener(_handleEditorChanged)
       ..dispose();
     super.dispose();
+  }
+
+  String _text(String text) {
+    return AppTextLocalizer.text(text, locale: Localizations.localeOf(context));
+  }
+
+  String _choose({required String zh, required String en}) {
+    return AppTextLocalizer.choose(
+      zh: zh,
+      en: en,
+      locale: Localizations.localeOf(context),
+    );
   }
 
   void _handleEditorChanged() {
@@ -184,18 +197,13 @@ class _OmnibotArtifactPreviewPageState
     if (_isDirty) {
       final confirmed = await AppDialog.confirm(
         context,
-        title: Localizations.localeOf(context).languageCode == 'en'
-            ? 'Discard changes'
-            : '放弃修改',
-        content: Localizations.localeOf(context).languageCode == 'en'
-            ? 'There are unsaved changes. Discard them?'
-            : '当前有未保存修改，确认放弃吗？',
-        cancelText: Localizations.localeOf(context).languageCode == 'en'
-            ? 'Keep editing'
-            : '继续编辑',
-        confirmText: Localizations.localeOf(context).languageCode == 'en'
-            ? 'Discard'
-            : '放弃',
+        title: _choose(zh: '放弃修改', en: 'Discard changes'),
+        content: _choose(
+          zh: '当前有未保存修改，确认放弃吗？',
+          en: 'There are unsaved changes. Discard them?',
+        ),
+        cancelText: _choose(zh: '继续编辑', en: 'Keep editing'),
+        confirmText: _choose(zh: '放弃', en: 'Discard'),
       );
       if (confirmed != true || !mounted) {
         return;
@@ -227,17 +235,13 @@ class _OmnibotArtifactPreviewPageState
       await _loadIfNeeded(showLoading: false);
       if (!mounted) return;
       showToast(
-        Localizations.localeOf(context).languageCode == 'en'
-            ? 'File saved'
-            : '文件已保存',
+        _choose(zh: '文件已保存', en: 'File saved'),
         type: ToastType.success,
       );
     } catch (error) {
       if (!mounted) return;
       showToast(
-        Localizations.localeOf(context).languageCode == 'en'
-            ? 'Save failed: $error'
-            : '保存失败：$error',
+        _choose(zh: '保存失败：$error', en: 'Save failed: $error'),
         type: ToastType.error,
       );
     } finally {
@@ -248,7 +252,6 @@ class _OmnibotArtifactPreviewPageState
   }
 
   Future<void> _handleOpenWithSystem() async {
-    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
     try {
       final opened = await OmnibotResourceService.openWithSystem(
         sourcePath: widget.path,
@@ -257,23 +260,23 @@ class _OmnibotArtifactPreviewPageState
       if (!mounted) return;
       if (!opened) {
         showToast(
-          isEnglish
-              ? 'Open with system failed. Please try again later.'
-              : '系统打开失败，请稍后重试',
+          _choose(
+            zh: '系统打开失败，请稍后重试',
+            en: 'Open with system failed. Please try again later.',
+          ),
           type: ToastType.error,
         );
       }
     } catch (error) {
       if (!mounted) return;
       showToast(
-        isEnglish ? 'Open with system failed: $error' : '系统打开失败：$error',
+        _choose(zh: '系统打开失败：$error', en: 'Open with system failed: $error'),
         type: ToastType.error,
       );
     }
   }
 
   Future<void> _handleShareFile() async {
-    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
     try {
       final shared = await OmnibotResourceService.shareFile(
         sourcePath: widget.path,
@@ -283,14 +286,17 @@ class _OmnibotArtifactPreviewPageState
       if (!mounted) return;
       if (!shared) {
         showToast(
-          isEnglish ? 'Share failed. Please try again later.' : '分享失败，请稍后重试',
+          _choose(
+            zh: '分享失败，请稍后重试',
+            en: 'Share failed. Please try again later.',
+          ),
           type: ToastType.error,
         );
       }
     } catch (error) {
       if (!mounted) return;
       showToast(
-        isEnglish ? 'Share failed: $error' : '分享失败：$error',
+        _choose(zh: '分享失败：$error', en: 'Share failed: $error'),
         type: ToastType.error,
       );
     }
@@ -313,18 +319,13 @@ class _OmnibotArtifactPreviewPageState
     }
     final confirmed = await AppDialog.confirm(
       context,
-      title: Localizations.localeOf(context).languageCode == 'en'
-          ? 'Exit editing'
-          : '退出编辑',
-      content: Localizations.localeOf(context).languageCode == 'en'
-          ? 'There are unsaved changes. Exit editing?'
-          : '当前有未保存修改，确认退出吗？',
-      cancelText: Localizations.localeOf(context).languageCode == 'en'
-          ? 'Keep editing'
-          : '继续编辑',
-      confirmText: Localizations.localeOf(context).languageCode == 'en'
-          ? 'Exit'
-          : '退出',
+      title: _choose(zh: '退出编辑', en: 'Exit editing'),
+      content: _choose(
+        zh: '当前有未保存修改，确认退出吗？',
+        en: 'There are unsaved changes. Exit editing?',
+      ),
+      cancelText: _choose(zh: '继续编辑', en: 'Keep editing'),
+      confirmText: _choose(zh: '退出', en: 'Exit'),
     );
     if (confirmed != true || !mounted) {
       return;
@@ -384,12 +385,11 @@ class _OmnibotArtifactPreviewPageState
           color: palette.surfaceSecondary,
           child: Text(
             _isDirty
-                ? (Localizations.localeOf(context).languageCode == 'en'
-                      ? 'Editing with unsaved changes'
-                      : '编辑中，存在未保存修改')
-                : (Localizations.localeOf(context).languageCode == 'en'
-                      ? 'Editing. Save will write back to workspace immediately'
-                      : '编辑中，保存后会立即写回 workspace'),
+                ? _choose(zh: '编辑中，存在未保存修改', en: 'Editing with unsaved changes')
+                : _choose(
+                    zh: '编辑中，保存后会立即写回 workspace',
+                    en: 'Editing. Save will write back to workspace immediately',
+                  ),
             style: TextStyle(fontSize: 12, color: palette.textSecondary),
           ),
         ),
@@ -413,9 +413,7 @@ class _OmnibotArtifactPreviewPageState
               decoration: InputDecoration(
                 filled: true,
                 fillColor: palette.surfacePrimary,
-                hintText: Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Enter file content'
-                    : '输入文件内容',
+                hintText: _choose(zh: '输入文件内容', en: 'Enter file content'),
                 alignLabelWithHint: true,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -440,11 +438,7 @@ class _OmnibotArtifactPreviewPageState
   Widget _buildBody() {
     if (!widget.exists) {
       return Center(
-        child: Text(
-          Localizations.localeOf(context).languageCode == 'en'
-              ? 'File does not exist'
-              : '文件不存在',
-        ),
+        child: Text(_choose(zh: '文件不存在', en: 'File does not exist')),
       );
     }
     if (_error != null) {
@@ -480,13 +474,7 @@ class _OmnibotArtifactPreviewPageState
           return const Center(child: CircularProgressIndicator());
         }
         if (_textContent == null) {
-          return Center(
-            child: Text(
-              Localizations.localeOf(context).languageCode == 'en'
-                  ? 'No content'
-                  : '暂无内容',
-            ),
-          );
+          return Center(child: Text(_text('暂无内容')));
         }
         if (widget.mimeType == 'text/markdown') {
           return SingleChildScrollView(
@@ -528,11 +516,7 @@ class _OmnibotArtifactPreviewPageState
                 FilledButton.icon(
                   onPressed: _handleOpenWithSystem,
                   icon: const Icon(Icons.open_in_new_outlined),
-                  label: Text(
-                    Localizations.localeOf(context).languageCode == 'en'
-                        ? 'Open with system'
-                        : '系统打开',
-                  ),
+                  label: Text(_choose(zh: '系统打开', en: 'Open with system')),
                 ),
               ],
             ),
@@ -547,14 +531,14 @@ class _OmnibotArtifactPreviewPageState
       if (_isEditing) {
         actions.add(
           IconButton(
-            tooltip: '取消编辑',
+            tooltip: _choose(zh: '取消编辑', en: 'Cancel editing'),
             onPressed: _handleCancelEditing,
             icon: const Icon(Icons.close_rounded),
           ),
         );
         actions.add(
           IconButton(
-            tooltip: '保存文件',
+            tooltip: _choose(zh: '保存文件', en: 'Save file'),
             onPressed: _isSaving ? null : _handleSaveText,
             icon: _isSaving
                 ? const SizedBox(
@@ -568,7 +552,7 @@ class _OmnibotArtifactPreviewPageState
       } else {
         actions.add(
           IconButton(
-            tooltip: '编辑文件',
+            tooltip: _choose(zh: '编辑文件', en: 'Edit file'),
             onPressed: _handleEditPressed,
             icon: const Icon(Icons.edit_outlined),
           ),
@@ -579,27 +563,17 @@ class _OmnibotArtifactPreviewPageState
       actions.add(
         PopupMenuButton<_ArtifactPreviewAction>(
           key: const ValueKey('artifact-preview-more-actions'),
-          tooltip: Localizations.localeOf(context).languageCode == 'en'
-              ? 'More actions'
-              : '更多操作',
+          tooltip: _choose(zh: '更多操作', en: 'More actions'),
           splashRadius: 18,
           onSelected: _handleToolbarAction,
           itemBuilder: (context) => [
             PopupMenuItem<_ArtifactPreviewAction>(
               value: _ArtifactPreviewAction.openWithSystem,
-              child: Text(
-                Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Open with system'
-                    : '系统打开',
-              ),
+              child: Text(_choose(zh: '系统打开', en: 'Open with system')),
             ),
             PopupMenuItem<_ArtifactPreviewAction>(
               value: _ArtifactPreviewAction.shareFile,
-              child: Text(
-                Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Share file'
-                    : '分享文件',
-              ),
+              child: Text(_choose(zh: '分享文件', en: 'Share file')),
             ),
           ],
           icon: const Icon(Icons.more_horiz_rounded),

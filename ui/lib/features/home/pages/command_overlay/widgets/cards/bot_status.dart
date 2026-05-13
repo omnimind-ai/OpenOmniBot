@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/widgets/agent_avatar.dart';
 
@@ -24,30 +24,26 @@ class BotStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final normalizedCostTime = costTime == null
-        ? ''
-        : LegacyTextLocalizer.isEnglish
-        ? costTime!
-        : costTime!.replaceAll(' ', '');
-    if (status == BotStatusType.completed && LegacyTextLocalizer.isEnglish) {
-      final completedEnglishText = normalizedCostTime.isEmpty
-          ? 'Thought complete'
-          : 'Thought for $normalizedCostTime';
-      return _buildStatusRow(
-        context,
-        customIcon: showAvatar ? const AgentAvatarButton(size: 30) : null,
-        text: completedEnglishText,
-        shimmerText: false,
-      );
-    }
-
+    final locale = Localizations.localeOf(context);
     switch (status) {
       case BotStatusType.completed:
+        final normalizedCostTime = _normalizeCostTime(costTime);
+        final completedText = AppTextLocalizer.choose(
+          en: normalizedCostTime.isEmpty
+              ? 'Thought complete'
+              : 'Thought for $normalizedCostTime',
+          zh: AppTextLocalizer.text('思考完成', locale: locale),
+          locale: locale,
+        );
         return _buildStatusRow(
           context,
           customIcon: showAvatar ? const AgentAvatarButton(size: 30) : null,
-          text: LegacyTextLocalizer.localize('思考完成'),
-          timeDesc: LegacyTextLocalizer.localize('用时'),
+          text: completedText,
+          timeDesc: AppTextLocalizer.chooseValue<String?>(
+            zh: AppTextLocalizer.text('用时', locale: locale),
+            en: null,
+            locale: locale,
+          ),
           costTime: costTime,
           shimmerText: false,
         );
@@ -55,9 +51,9 @@ class BotStatus extends StatelessWidget {
         return _buildStatusRow(
           context,
           customIcon: showAvatar ? const AgentAvatarButton(size: 30) : null,
-          text: LegacyTextLocalizer.localize(hintText ?? '正在思考'),
+          text: AppTextLocalizer.text(hintText ?? '正在思考', locale: locale),
           timeDesc: costTime != null
-              ? LegacyTextLocalizer.localize('用时')
+              ? AppTextLocalizer.text('用时', locale: locale)
               : null,
           costTime: costTime,
           shimmerText: shimmerText,
@@ -112,16 +108,13 @@ class BotStatus extends StatelessWidget {
       iconWidget = null;
     }
 
-    final normalizedCostTime = costTime == null
-        ? ''
-        : LegacyTextLocalizer.isEnglish
-        ? costTime!
-        : costTime!.replaceAll(' ', '');
-    final timeJoiner =
-        timeDesc != null &&
-            normalizedCostTime.isNotEmpty &&
-            LegacyTextLocalizer.isEnglish
-        ? ' '
+    final normalizedCostTime = _normalizeCostTime(costTime);
+    final timeJoiner = timeDesc != null && normalizedCostTime.isNotEmpty
+        ? AppTextLocalizer.choose(
+            en: ' ',
+            zh: '',
+            locale: Localizations.localeOf(context),
+          )
         : '';
     final timeText = timeDesc != null
         ? '($timeDesc$timeJoiner$normalizedCostTime)$timeDescSuffix'
@@ -153,6 +146,11 @@ class BotStatus extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _normalizeCostTime(String? raw) {
+    if (raw == null) return '';
+    return AppTextLocalizer.choose(en: raw, zh: raw.replaceAll(' ', ''));
   }
 }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/models/remote_mcp_server.dart';
 import 'package:ui/services/remote_mcp_config_service.dart';
 import 'package:ui/theme/app_colors.dart';
@@ -26,6 +27,18 @@ class _RemoteMcpServersPageState extends State<RemoteMcpServersPage> {
     _loadServers();
   }
 
+  String _text(String text) {
+    return AppTextLocalizer.text(text, locale: Localizations.localeOf(context));
+  }
+
+  String _choose({required String zh, required String en}) {
+    return AppTextLocalizer.choose(
+      zh: zh,
+      en: en,
+      locale: Localizations.localeOf(context),
+    );
+  }
+
   Future<void> _loadServers() async {
     setState(() => _loading = true);
     try {
@@ -39,9 +52,7 @@ class _RemoteMcpServersPageState extends State<RemoteMcpServersPage> {
       if (!mounted) return;
       setState(() => _loading = false);
       showToast(
-        Localizations.localeOf(context).languageCode == 'en'
-            ? 'Failed to load MCP tools'
-            : '加载 MCP 工具失败',
+        _choose(zh: '加载 MCP 工具失败', en: 'Failed to load MCP tools'),
         type: ToastType.error,
       );
     }
@@ -62,12 +73,7 @@ class _RemoteMcpServersPageState extends State<RemoteMcpServersPage> {
         }).toList();
       });
     } catch (e) {
-      showToast(
-        Localizations.localeOf(context).languageCode == 'en'
-            ? 'Toggle failed'
-            : '切换失败',
-        type: ToastType.error,
-      );
+      showToast(_text('切换失败'), type: ToastType.error);
     } finally {
       _setBusy(server.id, false);
     }
@@ -86,26 +92,11 @@ class _RemoteMcpServersPageState extends State<RemoteMcpServersPage> {
           return updated ?? item;
         }).toList();
       });
-      showToast(
-        Localizations.localeOf(context).languageCode == 'en'
-            ? 'Tool list refreshed'
-            : '工具列表已刷新',
-      );
+      showToast(_choose(zh: '工具列表已刷新', en: 'Tool list refreshed'));
     } on PlatformException catch (e) {
-      showToast(
-        e.message ??
-            (Localizations.localeOf(context).languageCode == 'en'
-                ? 'Refresh failed'
-                : '刷新失败'),
-        type: ToastType.error,
-      );
+      showToast(e.message ?? _text('刷新失败'), type: ToastType.error);
     } catch (_) {
-      showToast(
-        Localizations.localeOf(context).languageCode == 'en'
-            ? 'Refresh failed'
-            : '刷新失败',
-        type: ToastType.error,
-      );
+      showToast(_text('刷新失败'), type: ToastType.error);
     } finally {
       _setBusy(server.id, false);
     }
@@ -114,32 +105,35 @@ class _RemoteMcpServersPageState extends State<RemoteMcpServersPage> {
   Future<void> _deleteServer(RemoteMcpServer server) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          Localizations.localeOf(context).languageCode == 'en'
-              ? 'Delete MCP Service'
-              : '删除 MCP 服务',
-        ),
-        content: Text(
-          Localizations.localeOf(context).languageCode == 'en'
-              ? 'Confirm deleting "${server.name}"?'
-              : '确认删除“${server.name}”？',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(
-              Localizations.localeOf(context).languageCode == 'en'
-                  ? 'Delete'
-                  : '删除',
+      builder: (context) {
+        final locale = Localizations.localeOf(context);
+        return AlertDialog(
+          title: Text(
+            AppTextLocalizer.choose(
+              zh: '删除 MCP 服务',
+              en: 'Delete MCP Service',
+              locale: locale,
             ),
           ),
-        ],
-      ),
+          content: Text(
+            AppTextLocalizer.choose(
+              zh: '确认删除“${server.name}”？',
+              en: 'Confirm deleting "${server.name}"?',
+              locale: locale,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(AppTextLocalizer.text('取消', locale: locale)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(AppTextLocalizer.text('删除', locale: locale)),
+            ),
+          ],
+        );
+      },
     );
     if (confirmed != true) return;
 
@@ -150,16 +144,9 @@ class _RemoteMcpServersPageState extends State<RemoteMcpServersPage> {
       setState(() {
         _servers.removeWhere((item) => item.id == server.id);
       });
-      showToast(
-        Localizations.localeOf(context).languageCode == 'en' ? 'Deleted' : '已删除',
-      );
+      showToast(_text('已删除'));
     } catch (e) {
-      showToast(
-        Localizations.localeOf(context).languageCode == 'en'
-            ? 'Delete failed'
-            : '删除失败',
-        type: ToastType.error,
-      );
+      showToast(_text('删除失败'), type: ToastType.error);
     } finally {
       _setBusy(server.id, false);
     }
@@ -190,16 +177,9 @@ class _RemoteMcpServersPageState extends State<RemoteMcpServersPage> {
           _servers[index] = result;
         }
       });
-      showToast(
-        Localizations.localeOf(context).languageCode == 'en' ? 'Saved' : '已保存',
-      );
+      showToast(_choose(zh: '已保存', en: 'Saved'));
     } catch (e) {
-      showToast(
-        Localizations.localeOf(context).languageCode == 'en'
-            ? 'Save failed'
-            : '保存失败',
-        type: ToastType.error,
-      );
+      showToast(_text('保存失败'), type: ToastType.error);
     }
   }
 
@@ -221,12 +201,7 @@ class _RemoteMcpServersPageState extends State<RemoteMcpServersPage> {
       backgroundColor: context.isDarkTheme
           ? palette.pageBackground
           : AppColors.background,
-      appBar: CommonAppBar(
-        title: Localizations.localeOf(context).languageCode == 'en'
-            ? 'MCP Tools'
-            : 'MCP 工具',
-        primary: true,
-      ),
+      appBar: CommonAppBar(title: _text('MCP 工具'), primary: true),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showServerEditor(),
         child: const Icon(Icons.add),
@@ -241,9 +216,7 @@ class _RemoteMcpServersPageState extends State<RemoteMcpServersPage> {
                 padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
                 children: [
                   SettingsSectionTitle(
-                    label: Localizations.localeOf(context).languageCode == 'en'
-                        ? 'Remote Services'
-                        : '远端服务',
+                    label: _choose(zh: '远端服务', en: 'Remote Services'),
                   ),
                   for (int index = 0; index < _servers.length; index++) ...[
                     _buildServerCard(_servers[index]),
@@ -269,9 +242,7 @@ class _RemoteMcpServersPageState extends State<RemoteMcpServersPage> {
         const SizedBox(height: 12),
         Center(
           child: Text(
-            Localizations.localeOf(context).languageCode == 'en'
-                ? 'No remote MCP services'
-                : '暂无远端 MCP 服务',
+            _choose(zh: '暂无远端 MCP 服务', en: 'No remote MCP services'),
             style: TextStyle(
               fontSize: 16,
               color: context.isDarkTheme
@@ -326,9 +297,10 @@ class _RemoteMcpServersPageState extends State<RemoteMcpServersPage> {
           children: [
             _MetaChip(label: _healthLabel(server.lastHealth)),
             _MetaChip(
-              label: Localizations.localeOf(context).languageCode == 'en'
-                  ? 'Tools ${server.toolCount}'
-                  : '工具 ${server.toolCount}',
+              label: _choose(
+                zh: '工具 ${server.toolCount}',
+                en: 'Tools ${server.toolCount}',
+              ),
             ),
             if ((server.lastError ?? '').isNotEmpty)
               _MetaChip(
@@ -343,28 +315,16 @@ class _RemoteMcpServersPageState extends State<RemoteMcpServersPage> {
           children: [
             TextButton(
               onPressed: busy ? null : () => _refreshTools(server),
-              child: Text(
-                Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Refresh tools'
-                    : '刷新工具',
-              ),
+              child: Text(_choose(zh: '刷新工具', en: 'Refresh tools')),
             ),
             TextButton(
               onPressed: busy ? null : () => _showServerEditor(server: server),
-              child: Text(
-                Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Edit'
-                    : '编辑',
-              ),
+              child: Text(_text('编辑')),
             ),
             const Spacer(),
             TextButton(
               onPressed: busy ? null : () => _deleteServer(server),
-              child: Text(
-                Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Delete'
-                    : '删除',
-              ),
+              child: Text(_text('删除')),
             ),
           ],
         ),
@@ -375,17 +335,11 @@ class _RemoteMcpServersPageState extends State<RemoteMcpServersPage> {
   String _healthLabel(String health) {
     switch (health) {
       case 'healthy':
-        return Localizations.localeOf(context).languageCode == 'en'
-            ? 'Connected'
-            : '连接正常';
+        return _choose(zh: '连接正常', en: 'Connected');
       case 'error':
-        return Localizations.localeOf(context).languageCode == 'en'
-            ? 'Connection error'
-            : '连接异常';
+        return _choose(zh: '连接异常', en: 'Connection error');
       default:
-        return Localizations.localeOf(context).languageCode == 'en'
-            ? 'Unknown'
-            : '状态未知';
+        return _choose(zh: '状态未知', en: 'Unknown');
     }
   }
 }
@@ -467,14 +421,24 @@ class _RemoteMcpServerEditorSheetState
     Navigator.of(context).pop(value);
   }
 
+  String _text(String text) {
+    return AppTextLocalizer.text(text, locale: Localizations.localeOf(context));
+  }
+
+  String _choose({required String zh, required String en}) {
+    return AppTextLocalizer.choose(
+      zh: zh,
+      en: en,
+      locale: Localizations.localeOf(context),
+    );
+  }
+
   void _submit() {
     final name = _nameController.text.trim();
     final endpoint = _endpointController.text.trim();
     if (name.isEmpty || endpoint.isEmpty) {
       showToast(
-        Localizations.localeOf(context).languageCode == 'en'
-            ? 'Please enter both name and address'
-            : '请填写名称和地址',
+        _choose(zh: '请填写名称和地址', en: 'Please enter both name and address'),
         type: ToastType.error,
       );
       return;
@@ -514,21 +478,15 @@ class _RemoteMcpServerEditorSheetState
         children: [
           Text(
             widget.server == null
-                ? (Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Add MCP Service'
-                    : '添加 MCP 服务')
-                : (Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Edit MCP Service'
-                    : '编辑 MCP 服务'),
+                ? _choose(zh: '添加 MCP 服务', en: 'Add MCP Service')
+                : _choose(zh: '编辑 MCP 服务', en: 'Edit MCP Service'),
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 16),
           _InputField(
             controller: _nameController,
             focusNode: _nameFocusNode,
-            label: Localizations.localeOf(context).languageCode == 'en'
-                ? 'Name'
-                : '名称',
+            label: _text('名称'),
           ),
           const SizedBox(height: 12),
           _InputField(
@@ -539,32 +497,22 @@ class _RemoteMcpServerEditorSheetState
           const SizedBox(height: 12),
           _InputField(
             controller: _tokenController,
-            label: Localizations.localeOf(context).languageCode == 'en'
-                ? 'Bearer Token (Optional)'
-                : 'Bearer Token（可选）',
+            label: _choose(
+              zh: 'Bearer Token（可选）',
+              en: 'Bearer Token (Optional)',
+            ),
           ),
           const SizedBox(height: 12),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: _enabled,
             onChanged: (value) => setState(() => _enabled = value),
-            title: Text(
-              Localizations.localeOf(context).languageCode == 'en'
-                  ? 'Enabled'
-                  : '启用',
-            ),
+            title: Text(_choose(zh: '启用', en: 'Enabled')),
           ),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _submit,
-              child: Text(
-                Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Save'
-                    : '保存',
-              ),
-            ),
+            child: ElevatedButton(onPressed: _submit, child: Text(_text('保存'))),
           ),
         ],
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_switch/flutter_switch.dart';
 import 'package:ui/core/router/go_router_manager.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/app_update_service.dart';
 import 'package:ui/services/device_service.dart';
@@ -148,17 +149,17 @@ class _AboutPageState extends State<AboutPage> {
       final status = await AppUpdateService.checkNow();
       if (!mounted) return;
       if (status == null) {
-        showToast(context.trLegacy('检查更新失败'), type: ToastType.error);
+        showToast(context.trText('检查更新失败'), type: ToastType.error);
         return;
       }
       if (status.hasUpdate) {
         await showAppUpdateDialog(context, status);
         return;
       }
-      showToast(context.trLegacy('已是最新版'), type: ToastType.success);
+      showToast(context.trText('已是最新版'), type: ToastType.success);
     } catch (_) {
       if (!mounted) return;
-      showToast(context.trLegacy('检查更新失败'), type: ToastType.error);
+      showToast(context.trText('检查更新失败'), type: ToastType.error);
     } finally {
       if (mounted) {
         setState(() {
@@ -211,16 +212,19 @@ class _AboutPageState extends State<AboutPage> {
   String? _buildUpdateHint() {
     final status = _updateStatus;
     if (status?.hasUpdate != true) return null;
-    return '${context.trLegacy('发现新版本')} ${status!.latestVersionLabel}';
+    return '${context.trText('发现新版本')} ${status!.latestVersionLabel}';
   }
 
   void _openUserGuide() {
-    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
     GoRouterManager.push(
       '/webview/webview_page',
       extra: <String, dynamic>{
-        'url': isEnglish ? _enUserGuideUrl : _zhUserGuideUrl,
-        'title': context.trLegacy('使用手册'),
+        'url': AppTextLocalizer.choose(
+          zh: _zhUserGuideUrl,
+          en: _enUserGuideUrl,
+          locale: Localizations.localeOf(context),
+        ),
+        'title': context.trText('使用手册'),
         'appBarBackClosesPage': true,
       },
     );
@@ -341,10 +345,10 @@ class _AboutPageState extends State<AboutPage> {
         ],
         GradientButton(
           text: _isCheckingUpdate
-              ? context.trLegacy('检查中...')
+              ? context.trText('检查中...')
               : (_updateStatus?.hasUpdate == true
-                    ? context.trLegacy('查看新版本')
-                    : context.trLegacy('检查更新')),
+                    ? context.trText('查看新版本')
+                    : context.trText('检查更新')),
           width: 180,
           height: compact ? 40 : 44,
           gradientColors: updateButtonGradient,
@@ -362,7 +366,7 @@ class _AboutPageState extends State<AboutPage> {
         const SizedBox(height: 12),
         _buildAboutActionButton(
           icon: Icons.receipt_long_outlined,
-          label: context.trLegacy('请求日志'),
+          label: context.trText('请求日志'),
           compact: compact,
           onPressed: () {
             GoRouterManager.push('/my/about/request-logs');
@@ -371,7 +375,7 @@ class _AboutPageState extends State<AboutPage> {
         SizedBox(height: compact ? 6 : 8),
         _buildAboutActionButton(
           icon: Icons.bug_report_outlined,
-          label: context.trLegacy('运行日志'),
+          label: context.trText('运行日志'),
           compact: compact,
           onPressed: () {
             GoRouterManager.push('/my/about/runtime-logs');
@@ -380,7 +384,7 @@ class _AboutPageState extends State<AboutPage> {
         SizedBox(height: compact ? 6 : 8),
         _buildAboutActionButton(
           icon: Icons.menu_book_outlined,
-          label: context.trLegacy('使用手册'),
+          label: context.trText('使用手册'),
           compact: compact,
           onPressed: _openUserGuide,
         ),

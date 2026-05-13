@@ -6,14 +6,30 @@ import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/chat/widgets/chat_tool_activity_strip.dart'
     show ToolActivityRow;
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/floating_overlay_service.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/theme_context.dart';
 
-String _t(String text) => LegacyTextLocalizer.localize(text);
+String _t(String text) => AppTextLocalizer.text(text);
+
+String _runningAgentsSemanticsLabel(int count, {required bool collapsed}) {
+  return AppTextLocalizer.choose(
+    zh: collapsed ? '运行中的 Agent：$count 个。轻点展开摘要。' : '运行中的 Agent：$count 个。',
+    en: collapsed
+        ? 'Running Agents: $count. Tap to expand summary.'
+        : 'Running Agents: $count.',
+  );
+}
+
+String _runningAgentsTitle(int count) {
+  return AppTextLocalizer.choose(
+    zh: '运行中 $count 个 Agent',
+    en: '$count Agents running',
+  );
+}
 
 class AgentRunMonitorOverlay extends StatefulWidget {
   const AgentRunMonitorOverlay({super.key});
@@ -314,9 +330,12 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
                   onPanCancel: _endDrag,
                   child: Semantics(
                     button: true,
-                    label: _capsuleCollapsed
-                        ? _t('运行中的 Agent：${_runs.length} 个。轻点展开摘要。')
-                        : _t('运行中的 Agent：${_runs.length} 个。'),
+                    label: _runs.isEmpty
+                        ? _t('Agent 后端空闲。轻点打开管理面板。')
+                        : _runningAgentsSemanticsLabel(
+                            _runs.length,
+                            collapsed: _capsuleCollapsed,
+                          ),
                     child: SizedBox(
                       width: capsuleSize.width,
                       height: capsuleSize.height,
@@ -464,8 +483,8 @@ class _AgentRunExpandedCapsule extends StatelessWidget {
                 Expanded(
                   child: Text(
                     hasActiveRuns
-                        ? _t('运行中 ${runs.length} 个 Agent')
-                        : _t('Agent 空闲'),
+                        ? _runningAgentsTitle(runs.length)
+                        : _t('当前没有后端任务'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -619,7 +638,7 @@ class _AgentRunIdleRow extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              _t('当前没有运行中的 Agent'),
+              _t('当前没有任何 Agent'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(

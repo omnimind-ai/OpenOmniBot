@@ -459,10 +459,10 @@ class _ChatHistoryPageState extends State<ChatHistoryPage> {
         ? palette.accentPrimary
         : palette.textSecondary;
     final tooltip = !enabled
-        ? context.trLegacy('暂无归档对话')
+        ? context.trText('暂无归档对话')
         : _areAllDateSectionsCollapsed
-        ? context.trLegacy('展开全部日期')
-        : context.trLegacy('折叠全部日期');
+        ? context.trText('展开全部日期')
+        : context.trText('折叠全部日期');
 
     return Tooltip(
       message: tooltip,
@@ -715,7 +715,7 @@ class _ChatHistoryPageState extends State<ChatHistoryPage> {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        context.trLegacy('$messageCount 条消息'),
+        context.trText('$messageCount 条消息'),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
@@ -734,7 +734,7 @@ class _ChatHistoryPageState extends State<ChatHistoryPage> {
       return title;
     }
     final summary = (conversation.summary ?? '').trim();
-    return summary.isNotEmpty ? summary : context.trLegacy('未命名对话');
+    return summary.isNotEmpty ? summary : context.trText('未命名对话');
   }
 
   Widget _buildEmptyHint() {

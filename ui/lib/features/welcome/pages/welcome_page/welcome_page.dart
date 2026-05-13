@@ -5,6 +5,7 @@ import 'package:ui/features/welcome/pages/welcome_page/widgets/first_welcome_pag
 import 'package:ui/features/welcome/pages/welcome_page/widgets/fourth_welcome_page.dart';
 import 'package:ui/features/welcome/pages/welcome_page/widgets/second_welcome_page.dart';
 import 'package:ui/features/welcome/pages/welcome_page/widgets/third_welcome_page.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/special_permission.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/app_colors.dart';
@@ -140,14 +141,16 @@ class _WelcomePageState extends State<WelcomePage> {
                         width: 166,
                         height: 44,
                         text: _isLastPage
-                            ? (Localizations.localeOf(context).languageCode ==
-                                    'en'
-                                ? 'Start'
-                                : '开始体验')
-                            : (Localizations.localeOf(context).languageCode ==
-                                    'en'
-                                ? 'Next'
-                                : '下一步'),
+                            ? AppTextLocalizer.choose(
+                                zh: '开始体验',
+                                en: 'Start',
+                                locale: Localizations.localeOf(context),
+                              )
+                            : AppTextLocalizer.choose(
+                                zh: '下一步',
+                                en: 'Next',
+                                locale: Localizations.localeOf(context),
+                              ),
                         onTap: () {
                           if (_isLastPage) {
                             _handleStartExperience();

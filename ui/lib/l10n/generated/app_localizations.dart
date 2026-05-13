@@ -440,6 +440,24 @@ abstract class AppLocalizations {
   /// **'MCP 开关失败'**
   String get settingsMcpToggleFailed;
 
+  /// No description provided for @settingsOobFunctionAsToolTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'OOB 函数接入工具'**
+  String get settingsOobFunctionAsToolTitle;
+
+  /// No description provided for @settingsOobFunctionAsToolSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启后 agent 可以直接调用已保存的 OOB 函数'**
+  String get settingsOobFunctionAsToolSubtitle;
+
+  /// No description provided for @settingsOobFunctionAsToolToggleFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'OOB 函数工具开关失败'**
+  String get settingsOobFunctionAsToolToggleFailed;
+
   /// No description provided for @settingsCopiedAddress.
   ///
   /// In zh, this message translates to:
@@ -6667,6 +6685,1620 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'激活项目后，右侧 Workspace 显示它的 Display；继续输入或标注会作为上下文传给 hot update。'**
   String get workbenchPhilosophyActivateHint;
+
+  /// No description provided for @sourceTextf9dfa89402.
+  ///
+  /// In zh, this message translates to:
+  /// **'小万悬浮窗'**
+  String get sourceTextf9dfa89402;
+
+  /// No description provided for @sourceTextea6631ac86.
+  ///
+  /// In zh, this message translates to:
+  /// **'关闭后不再显示桌面悬浮球、半屏输入层和运行胶囊'**
+  String get sourceTextea6631ac86;
+
+  /// No description provided for @sourceText60d33fd58f.
+  ///
+  /// In zh, this message translates to:
+  /// **'小万悬浮窗已开启'**
+  String get sourceText60d33fd58f;
+
+  /// No description provided for @sourceText9803e0f8d8.
+  ///
+  /// In zh, this message translates to:
+  /// **'小万悬浮窗已关闭'**
+  String get sourceText9803e0f8d8;
+
+  /// No description provided for @sourceText8ed5fe74f6.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置悬浮窗失败'**
+  String get sourceText8ed5fe74f6;
+
+  /// No description provided for @sourceText2a4a4de806.
+  ///
+  /// In zh, this message translates to:
+  /// **'手动'**
+  String get sourceText2a4a4de806;
+
+  /// No description provided for @sourceText76c9741888.
+  ///
+  /// In zh, this message translates to:
+  /// **'Shizuku 权限'**
+  String get sourceText76c9741888;
+
+  /// No description provided for @sourceText5e04ad1c9a.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在调用内嵌 Alpine 终端执行命令'**
+  String get sourceText5e04ad1c9a;
+
+  /// No description provided for @sourceTextc0b7ed8600.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在执行内嵌 Alpine 终端命令'**
+  String get sourceTextc0b7ed8600;
+
+  /// No description provided for @sourceText60cf09e22d.
+  ///
+  /// In zh, this message translates to:
+  /// **'终端输出更新中'**
+  String get sourceText60cf09e22d;
+
+  /// No description provided for @sourceText140c80c696.
+  ///
+  /// In zh, this message translates to:
+  /// **'🎉Hi，我是小万，我会做很多事，让我展示给你下！'**
+  String get sourceText140c80c696;
+
+  /// No description provided for @sourceText82347f1be8.
+  ///
+  /// In zh, this message translates to:
+  /// **'Hi，我是小万'**
+  String get sourceText82347f1be8;
+
+  /// No description provided for @sourceText5167632783.
+  ///
+  /// In zh, this message translates to:
+  /// **'你的 AI 助手，随时准备就绪'**
+  String get sourceText5167632783;
+
+  /// No description provided for @sourceText63a921a287.
+  ///
+  /// In zh, this message translates to:
+  /// **'无需网络，完全免费'**
+  String get sourceText63a921a287;
+
+  /// No description provided for @sourceText112e197134.
+  ///
+  /// In zh, this message translates to:
+  /// **'数据完全留在设备上，不会发送到任何服务器。对话内容、个人偏好等敏感信息始终由你掌控。'**
+  String get sourceText112e197134;
+
+  /// No description provided for @sourceText8de8b69cc9.
+  ///
+  /// In zh, this message translates to:
+  /// **'无需网络连接即可运行 AI 助手。无论在飞机上、地铁里还是偏远地区，随时随地可用。'**
+  String get sourceText8de8b69cc9;
+
+  /// No description provided for @sourceTexteac537b43e.
+  ///
+  /// In zh, this message translates to:
+  /// **'无需 API 费用或订阅。模型下载后可无限次使用，没有任何隐藏费用。'**
+  String get sourceTexteac537b43e;
+
+  /// No description provided for @sourceTexte8b806ace2.
+  ///
+  /// In zh, this message translates to:
+  /// **'端侧模型较小，回复质量不如云端模型，暂不支持复杂 Agent 任务，适合日常对话与问答。'**
+  String get sourceTexte8b806ace2;
+
+  /// No description provided for @sourceText7e1cc2fc3f.
+  ///
+  /// In zh, this message translates to:
+  /// **'换一换'**
+  String get sourceText7e1cc2fc3f;
+
+  /// No description provided for @sourceText63e272f624.
+  ///
+  /// In zh, this message translates to:
+  /// **'小万正在思考...'**
+  String get sourceText63e272f624;
+
+  /// No description provided for @sourceTextd9f594509d.
+  ///
+  /// In zh, this message translates to:
+  /// **'总结中'**
+  String get sourceTextd9f594509d;
+
+  /// No description provided for @sourceText9384e034e5.
+  ///
+  /// In zh, this message translates to:
+  /// **'总结如下'**
+  String get sourceText9384e034e5;
+
+  /// No description provided for @sourceText3e44b2a933.
+  ///
+  /// In zh, this message translates to:
+  /// **'全选'**
+  String get sourceText3e44b2a933;
+
+  /// No description provided for @sourceText4edd1d0087.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制'**
+  String get sourceText4edd1d0087;
+
+  /// No description provided for @sourceTextb56d9ac6c5.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认'**
+  String get sourceTextb56d9ac6c5;
+
+  /// No description provided for @sourceTextf526c89937.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定'**
+  String get sourceTextf526c89937;
+
+  /// No description provided for @sourceText4d0b3bb4e9.
+  ///
+  /// In zh, this message translates to:
+  /// **'请稍候...'**
+  String get sourceText4d0b3bb4e9;
+
+  /// No description provided for @sourceTextee5037d25d.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存并发送'**
+  String get sourceTextee5037d25d;
+
+  /// No description provided for @sourceTextbe15d6f28c.
+  ///
+  /// In zh, this message translates to:
+  /// **'未设置模型'**
+  String get sourceTextbe15d6f28c;
+
+  /// No description provided for @sourceText01047404ef.
+  ///
+  /// In zh, this message translates to:
+  /// **'发现新版本'**
+  String get sourceText01047404ef;
+
+  /// No description provided for @sourceText1722589489.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开终端'**
+  String get sourceText1722589489;
+
+  /// No description provided for @sourceText649fc10b46.
+  ///
+  /// In zh, this message translates to:
+  /// **'管理终端环境变量'**
+  String get sourceText649fc10b46;
+
+  /// No description provided for @sourceTextd8f03e50ea.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开当前会话浏览器'**
+  String get sourceTextd8f03e50ea;
+
+  /// No description provided for @sourceTextc1c986937d.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前会话还没有可用的浏览器会话'**
+  String get sourceTextc1c986937d;
+
+  /// No description provided for @sourceText31b7c8d175.
+  ///
+  /// In zh, this message translates to:
+  /// **'纯聊天'**
+  String get sourceText31b7c8d175;
+
+  /// No description provided for @sourceText7cda072d45.
+  ///
+  /// In zh, this message translates to:
+  /// **'普通'**
+  String get sourceText7cda072d45;
+
+  /// No description provided for @sourceText17e83cc25e.
+  ///
+  /// In zh, this message translates to:
+  /// **'今天'**
+  String get sourceText17e83cc25e;
+
+  /// No description provided for @sourceText59c4fcb09e.
+  ///
+  /// In zh, this message translates to:
+  /// **'昨天'**
+  String get sourceText59c4fcb09e;
+
+  /// No description provided for @sourceText1f425b6bf0.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行中'**
+  String get sourceText1f425b6bf0;
+
+  /// No description provided for @sourceText6c189aad4d.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行成功'**
+  String get sourceText6c189aad4d;
+
+  /// No description provided for @sourceText9746cfc7d2.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行失败'**
+  String get sourceText9746cfc7d2;
+
+  /// No description provided for @sourceTextd0de773436.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待执行'**
+  String get sourceTextd0de773436;
+
+  /// No description provided for @sourceText2029839d84.
+  ///
+  /// In zh, this message translates to:
+  /// **'总结'**
+  String get sourceText2029839d84;
+
+  /// No description provided for @sourceText6c2b60f0ee.
+  ///
+  /// In zh, this message translates to:
+  /// **'识图'**
+  String get sourceText6c2b60f0ee;
+
+  /// No description provided for @sourceTexte9649f84f9.
+  ///
+  /// In zh, this message translates to:
+  /// **'未知类型'**
+  String get sourceTexte9649f84f9;
+
+  /// No description provided for @sourceText756eae0324.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在回复...'**
+  String get sourceText756eae0324;
+
+  /// No description provided for @sourceText292eea5849.
+  ///
+  /// In zh, this message translates to:
+  /// **'永不'**
+  String get sourceText292eea5849;
+
+  /// No description provided for @sourceText08d65bdbc3.
+  ///
+  /// In zh, this message translates to:
+  /// **'每日'**
+  String get sourceText08d65bdbc3;
+
+  /// No description provided for @sourceTexta93b55d8bf.
+  ///
+  /// In zh, this message translates to:
+  /// **'每周'**
+  String get sourceTexta93b55d8bf;
+
+  /// No description provided for @sourceText24aedc3608.
+  ///
+  /// In zh, this message translates to:
+  /// **'每月'**
+  String get sourceText24aedc3608;
+
+  /// No description provided for @sourceText4a9ee561f9.
+  ///
+  /// In zh, this message translates to:
+  /// **'每年'**
+  String get sourceText4a9ee561f9;
+
+  /// No description provided for @sourceText89b4aa6364.
+  ///
+  /// In zh, this message translates to:
+  /// **'时间'**
+  String get sourceText89b4aa6364;
+
+  /// No description provided for @sourceTextb6fed9af83.
+  ///
+  /// In zh, this message translates to:
+  /// **'日期'**
+  String get sourceTextb6fed9af83;
+
+  /// No description provided for @sourceText6e708ba759.
+  ///
+  /// In zh, this message translates to:
+  /// **'重复'**
+  String get sourceText6e708ba759;
+
+  /// No description provided for @sourceTextc1cb3fc29f.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务选项'**
+  String get sourceTextc1cb3fc29f;
+
+  /// No description provided for @sourceText39797f7a92.
+  ///
+  /// In zh, this message translates to:
+  /// **'请选择一个任务'**
+  String get sourceText39797f7a92;
+
+  /// No description provided for @sourceTexte03304491a.
+  ///
+  /// In zh, this message translates to:
+  /// **'请选择你想执行的任务'**
+  String get sourceTexte03304491a;
+
+  /// No description provided for @sourceTextb4a7ea5533.
+  ///
+  /// In zh, this message translates to:
+  /// **'请选择一个应用程序'**
+  String get sourceTextb4a7ea5533;
+
+  /// No description provided for @sourceText1354374f76.
+  ///
+  /// In zh, this message translates to:
+  /// **'已过期'**
+  String get sourceText1354374f76;
+
+  /// No description provided for @sourceText36d2d01f31.
+  ///
+  /// In zh, this message translates to:
+  /// **'即将执行'**
+  String get sourceText36d2d01f31;
+
+  /// No description provided for @sourceText13794e1f43.
+  ///
+  /// In zh, this message translates to:
+  /// **'好，我来帮你完成'**
+  String get sourceText13794e1f43;
+
+  /// No description provided for @sourceTextbaa298fbe1.
+  ///
+  /// In zh, this message translates to:
+  /// **'用户操作'**
+  String get sourceTextbaa298fbe1;
+
+  /// No description provided for @sourceText86e8d12a79.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除成功'**
+  String get sourceText86e8d12a79;
+
+  /// No description provided for @sourceText9abb465039.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改失败'**
+  String get sourceText9abb465039;
+
+  /// No description provided for @sourceTextf8913eb433.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改成功'**
+  String get sourceTextf8913eb433;
+
+  /// No description provided for @sourceText65fdeb927b.
+  ///
+  /// In zh, this message translates to:
+  /// **'桌面'**
+  String get sourceText65fdeb927b;
+
+  /// No description provided for @sourceText322eceb785.
+  ///
+  /// In zh, this message translates to:
+  /// **'内存中'**
+  String get sourceText322eceb785;
+
+  /// No description provided for @sourceTextf90d5c751e.
+  ///
+  /// In zh, this message translates to:
+  /// **'云内存中'**
+  String get sourceTextf90d5c751e;
+
+  /// No description provided for @sourceText7e68eb622d.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存成功'**
+  String get sourceText7e68eb622d;
+
+  /// No description provided for @sourceText6a6b660ba8.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑你的消息'**
+  String get sourceText6a6b660ba8;
+
+  /// No description provided for @sourceTextfcbd093292.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建'**
+  String get sourceTextfcbd093292;
+
+  /// No description provided for @sourceText8200c3d50b.
+  ///
+  /// In zh, this message translates to:
+  /// **'未命名对话'**
+  String get sourceText8200c3d50b;
+
+  /// No description provided for @sourceText229127ec8d.
+  ///
+  /// In zh, this message translates to:
+  /// **'折叠全部日期'**
+  String get sourceText229127ec8d;
+
+  /// No description provided for @sourceTextbc51af6ffc.
+  ///
+  /// In zh, this message translates to:
+  /// **'展开全部日期'**
+  String get sourceTextbc51af6ffc;
+
+  /// No description provided for @sourceText72be511e05.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近执行'**
+  String get sourceText72be511e05;
+
+  /// No description provided for @sourceText818a1f7be3.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无总结内容'**
+  String get sourceText818a1f7be3;
+
+  /// No description provided for @sourceTextc76c74e809.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查更新失败'**
+  String get sourceTextc76c74e809;
+
+  /// No description provided for @sourceTextae4535ef13.
+  ///
+  /// In zh, this message translates to:
+  /// **'已是最新版'**
+  String get sourceTextae4535ef13;
+
+  /// No description provided for @sourceText00f512b5e8.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查 GitHub Release 获取最新版本'**
+  String get sourceText00f512b5e8;
+
+  /// No description provided for @sourceText9afc832d99.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看新版本'**
+  String get sourceText9afc832d99;
+
+  /// No description provided for @sourceTexta6df38586d.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查更新'**
+  String get sourceTexta6df38586d;
+
+  /// No description provided for @sourceText8ff0439ff9.
+  ///
+  /// In zh, this message translates to:
+  /// **'已关闭思考'**
+  String get sourceText8ff0439ff9;
+
+  /// No description provided for @sourceTextd9d4d4e7dd.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求日志'**
+  String get sourceTextd9d4d4e7dd;
+
+  /// No description provided for @sourceTexta8ce402665.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行日志'**
+  String get sourceTexta8ce402665;
+
+  /// No description provided for @sourceText4c685c0454.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用手册'**
+  String get sourceText4c685c0454;
+
+  /// No description provided for @sourceText5060421d15.
+  ///
+  /// In zh, this message translates to:
+  /// **'概览'**
+  String get sourceText5060421d15;
+
+  /// No description provided for @sourceText9f14a3f4dd.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近记录'**
+  String get sourceText9f14a3f4dd;
+
+  /// No description provided for @sourceTextb01090a29c.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近 10 条 AI 请求，按时间倒序展示。'**
+  String get sourceTextb01090a29c;
+
+  /// No description provided for @sourceTextc740eb5be5.
+  ///
+  /// In zh, this message translates to:
+  /// **'点击条目展开查看请求与响应正文。'**
+  String get sourceTextc740eb5be5;
+
+  /// No description provided for @sourceTextcb80eb03ea.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近 200 条错误和崩溃日志，按时间倒序展示。'**
+  String get sourceTextcb80eb03ea;
+
+  /// No description provided for @sourceText8334b58cfa.
+  ///
+  /// In zh, this message translates to:
+  /// **'含堆栈的条目可展开查看。'**
+  String get sourceText8334b58cfa;
+
+  /// No description provided for @sourceTextfe12b789bf.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出运行日志'**
+  String get sourceTextfe12b789bf;
+
+  /// No description provided for @sourceText88f6dbf1a3.
+  ///
+  /// In zh, this message translates to:
+  /// **'已复制全部运行日志'**
+  String get sourceText88f6dbf1a3;
+
+  /// No description provided for @sourceText8b06115d35.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出运行日志失败'**
+  String get sourceText8b06115d35;
+
+  /// No description provided for @sourceTextd6c8084d07.
+  ///
+  /// In zh, this message translates to:
+  /// **'崩溃'**
+  String get sourceTextd6c8084d07;
+
+  /// No description provided for @sourceText367ff5ddd2.
+  ///
+  /// In zh, this message translates to:
+  /// **'总数'**
+  String get sourceText367ff5ddd2;
+
+  /// No description provided for @sourceText71bd34d484.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近一条'**
+  String get sourceText71bd34d484;
+
+  /// No description provided for @sourceText41654e0268.
+  ///
+  /// In zh, this message translates to:
+  /// **'基础信息'**
+  String get sourceText41654e0268;
+
+  /// No description provided for @sourceText7364999103.
+  ///
+  /// In zh, this message translates to:
+  /// **'载荷'**
+  String get sourceText7364999103;
+
+  /// No description provided for @sourceTextd70d425039.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存中...'**
+  String get sourceTextd70d425039;
+
+  /// No description provided for @sourceTextdbb4430dc0.
+  ///
+  /// In zh, this message translates to:
+  /// **'未选择文件'**
+  String get sourceTextdbb4430dc0;
+
+  /// No description provided for @sourceText1e620e20a1.
+  ///
+  /// In zh, this message translates to:
+  /// **'远程地址'**
+  String get sourceText1e620e20a1;
+
+  /// No description provided for @sourceTextdde21b2cec.
+  ///
+  /// In zh, this message translates to:
+  /// **'后台运行权限'**
+  String get sourceTextdde21b2cec;
+
+  /// No description provided for @sourceText135f1636e4.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用列表读取'**
+  String get sourceText135f1636e4;
+
+  /// No description provided for @sourceTextf80103fee9.
+  ///
+  /// In zh, this message translates to:
+  /// **'无障碍辅助权限'**
+  String get sourceTextf80103fee9;
+
+  /// No description provided for @sourceTextd78cde076b.
+  ///
+  /// In zh, this message translates to:
+  /// **'已开启'**
+  String get sourceTextd78cde076b;
+
+  /// No description provided for @sourceText13ec170881.
+  ///
+  /// In zh, this message translates to:
+  /// **'去开启'**
+  String get sourceText13ec170881;
+
+  /// No description provided for @sourceText291952a2ab.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除缓存'**
+  String get sourceText291952a2ab;
+
+  /// No description provided for @sourceText3d0c8b9d9f.
+  ///
+  /// In zh, this message translates to:
+  /// **'小万可以在陪伴时更了解您的喜好'**
+  String get sourceText3d0c8b9d9f;
+
+  /// No description provided for @sourceText86890292b6.
+  ///
+  /// In zh, this message translates to:
+  /// **'小万可在屏幕中实时活动，随时给予陪伴'**
+  String get sourceText86890292b6;
+
+  /// No description provided for @sourceTexta86909c7ea.
+  ///
+  /// In zh, this message translates to:
+  /// **'小万可以知道能帮你做什么事情'**
+  String get sourceTexta86909c7ea;
+
+  /// No description provided for @sourceText56735a4ab7.
+  ///
+  /// In zh, this message translates to:
+  /// **'小万执行任务时，需要给予我操作的权限'**
+  String get sourceText56735a4ab7;
+
+  /// No description provided for @sourceText99ad612dd1.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置权限'**
+  String get sourceText99ad612dd1;
+
+  /// No description provided for @sourceTextaef926661d.
+  ///
+  /// In zh, this message translates to:
+  /// **'请放心，这些权限你随时可以收回'**
+  String get sourceTextaef926661d;
+
+  /// No description provided for @sourceText02a75489b2.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看并配置无障碍、悬浮窗、Shizuku 等权限'**
+  String get sourceText02a75489b2;
+
+  /// No description provided for @sourceText75b40989f3.
+  ///
+  /// In zh, this message translates to:
+  /// **'权限检查中...'**
+  String get sourceText75b40989f3;
+
+  /// No description provided for @sourceText2599599947.
+  ///
+  /// In zh, this message translates to:
+  /// **'继续任务'**
+  String get sourceText2599599947;
+
+  /// No description provided for @sourceText14411ce362.
+  ///
+  /// In zh, this message translates to:
+  /// **'继续任务仅要求'**
+  String get sourceText14411ce362;
+
+  /// No description provided for @sourceTextf739c7d4a8.
+  ///
+  /// In zh, this message translates to:
+  /// **'Termux 终端能力'**
+  String get sourceTextf739c7d4a8;
+
+  /// No description provided for @sourceText98bd36febc.
+  ///
+  /// In zh, this message translates to:
+  /// **'可选，允许 Agent 通过 Termux 执行终端命令'**
+  String get sourceText98bd36febc;
+
+  /// No description provided for @sourceText53e32830a5.
+  ///
+  /// In zh, this message translates to:
+  /// **'可选'**
+  String get sourceText53e32830a5;
+
+  /// No description provided for @sourceTexte5d269502c.
+  ///
+  /// In zh, this message translates to:
+  /// **'让小万带你执行一次任务吧！'**
+  String get sourceTexte5d269502c;
+
+  /// No description provided for @sourceText1aca95f544.
+  ///
+  /// In zh, this message translates to:
+  /// **'其中 Termux 终端能力为可选项，未开启也不影响基础自动化'**
+  String get sourceText1aca95f544;
+
+  /// No description provided for @sourceText3bf179d8d0.
+  ///
+  /// In zh, this message translates to:
+  /// **'未绑定'**
+  String get sourceText3bf179d8d0;
+
+  /// No description provided for @sourceText2a30881946.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除绑定'**
+  String get sourceText2a30881946;
+
+  /// No description provided for @sourceTexta191935bc6.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复默认'**
+  String get sourceTexta191935bc6;
+
+  /// No description provided for @sourceText8988c04935.
+  ///
+  /// In zh, this message translates to:
+  /// **'点击右侧按钮后，可按 Provider 搜索、折叠并选择模型；Voice 的音色与自动播放可通过调节按钮展开。'**
+  String get sourceText8988c04935;
+
+  /// No description provided for @sourceText2415f124bd.
+  ///
+  /// In zh, this message translates to:
+  /// **'AI 响应完成后自动播放'**
+  String get sourceText2415f124bd;
+
+  /// No description provided for @sourceTextc4301894a2.
+  ///
+  /// In zh, this message translates to:
+  /// **'音色'**
+  String get sourceTextc4301894a2;
+
+  /// No description provided for @sourceTextc0ae8ba446.
+  ///
+  /// In zh, this message translates to:
+  /// **'例如：default_zh / mimo_default / default_en'**
+  String get sourceTextc0ae8ba446;
+
+  /// No description provided for @sourceTexta4ce420c69.
+  ///
+  /// In zh, this message translates to:
+  /// **'风格'**
+  String get sourceTexta4ce420c69;
+
+  /// No description provided for @sourceText6614801dcd.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义补充'**
+  String get sourceText6614801dcd;
+
+  /// No description provided for @sourceText558a2f3fd0.
+  ///
+  /// In zh, this message translates to:
+  /// **'唱歌模式下不支持附加风格'**
+  String get sourceText558a2f3fd0;
+
+  /// No description provided for @sourceTextfa12d9ef1b.
+  ///
+  /// In zh, this message translates to:
+  /// **'例如：更温柔、节奏慢一点、偏播客感'**
+  String get sourceTextfa12d9ef1b;
+
+  /// No description provided for @sourceText2601f9e3cb.
+  ///
+  /// In zh, this message translates to:
+  /// **'收起语音设置'**
+  String get sourceText2601f9e3cb;
+
+  /// No description provided for @sourceTextbc2c7387f0.
+  ///
+  /// In zh, this message translates to:
+  /// **'展开语音设置'**
+  String get sourceTextbc2c7387f0;
+
+  /// No description provided for @sourceText6a7d5cd91d.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有匹配的模型'**
+  String get sourceText6a7d5cd91d;
+
+  /// No description provided for @sourceText7b0de927a6.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索模型 ID'**
+  String get sourceText7b0de927a6;
+
+  /// No description provided for @sourceTexte5463e3a94.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先在模型提供商页配置 Provider'**
+  String get sourceTexte5463e3a94;
+
+  /// No description provided for @sourceText13c9595745.
+  ///
+  /// In zh, this message translates to:
+  /// **'该 Provider 暂无可选模型'**
+  String get sourceText13c9595745;
+
+  /// No description provided for @sourceText90bfe72640.
+  ///
+  /// In zh, this message translates to:
+  /// **'已进入仅聊天模式'**
+  String get sourceText90bfe72640;
+
+  /// No description provided for @sourceText9c1153036d.
+  ///
+  /// In zh, this message translates to:
+  /// **'已退出仅聊天模式'**
+  String get sourceText9c1153036d;
+
+  /// No description provided for @sourceTextd1a19c24c7.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索技能名称或描述'**
+  String get sourceTextd1a19c24c7;
+
+  /// No description provided for @sourceTextd636ae3e01.
+  ///
+  /// In zh, this message translates to:
+  /// **'未找到匹配的技能'**
+  String get sourceTextd636ae3e01;
+
+  /// No description provided for @sourceTexte4d8c16cd2.
+  ///
+  /// In zh, this message translates to:
+  /// **'流式'**
+  String get sourceTexte4d8c16cd2;
+
+  /// No description provided for @sourceText36e8d9631f.
+  ///
+  /// In zh, this message translates to:
+  /// **'非流式'**
+  String get sourceText36e8d9631f;
+
+  /// No description provided for @sourceText0e84ef42ae.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求地址'**
+  String get sourceText0e84ef42ae;
+
+  /// No description provided for @sourceText4d150364fe.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求方法'**
+  String get sourceText4d150364fe;
+
+  /// No description provided for @sourceTexta38a81c9d5.
+  ///
+  /// In zh, this message translates to:
+  /// **'错误信息'**
+  String get sourceTexta38a81c9d5;
+
+  /// No description provided for @sourceText0228e74add.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求 JSON'**
+  String get sourceText0228e74add;
+
+  /// No description provided for @sourceText9f062a0dac.
+  ///
+  /// In zh, this message translates to:
+  /// **'响应 JSON'**
+  String get sourceText9f062a0dac;
+
+  /// No description provided for @sourceTexte2d53a6d3a.
+  ///
+  /// In zh, this message translates to:
+  /// **'重试'**
+  String get sourceTexte2d53a6d3a;
+
+  /// No description provided for @sourceText661b2db84d.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载请求日志失败'**
+  String get sourceText661b2db84d;
+
+  /// No description provided for @sourceTextfa604c3dba.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近还没有 AI 请求日志'**
+  String get sourceTextfa604c3dba;
+
+  /// No description provided for @sourceTexta22889b61d.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载运行日志失败'**
+  String get sourceTexta22889b61d;
+
+  /// No description provided for @sourceText71a159aa14.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无运行日志'**
+  String get sourceText71a159aa14;
+
+  /// No description provided for @sourceText7b15e5e8e7.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除'**
+  String get sourceText7b15e5e8e7;
+
+  /// No description provided for @sourceTextfb57d700b9.
+  ///
+  /// In zh, this message translates to:
+  /// **'AI 请求'**
+  String get sourceTextfb57d700b9;
+
+  /// No description provided for @sourceText7a42fe12dc.
+  ///
+  /// In zh, this message translates to:
+  /// **'次对话'**
+  String get sourceText7a42fe12dc;
+
+  /// No description provided for @sourceTextadf4707731.
+  ///
+  /// In zh, this message translates to:
+  /// **'天连续'**
+  String get sourceTextadf4707731;
+
+  /// No description provided for @sourceText0fe8227aa4.
+  ///
+  /// In zh, this message translates to:
+  /// **'无对话'**
+  String get sourceText0fe8227aa4;
+
+  /// No description provided for @sourceText7a54a1229e.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无 Token 消耗数据'**
+  String get sourceText7a54a1229e;
+
+  /// No description provided for @sourceTexte8666c377c.
+  ///
+  /// In zh, this message translates to:
+  /// **'本地'**
+  String get sourceTexte8666c377c;
+
+  /// No description provided for @sourceText565481c9be.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端'**
+  String get sourceText565481c9be;
+
+  /// No description provided for @sourceText54c727b452.
+  ///
+  /// In zh, this message translates to:
+  /// **'无消耗'**
+  String get sourceText54c727b452;
+
+  /// No description provided for @sourceText7fe4999970.
+  ///
+  /// In zh, this message translates to:
+  /// **'长期记忆未就绪'**
+  String get sourceText7fe4999970;
+
+  /// No description provided for @sourceTextb87a8a83f5.
+  ///
+  /// In zh, this message translates to:
+  /// **'完成记忆初始化后，这里会展示跨会话沉淀的偏好与事实。'**
+  String get sourceTextb87a8a83f5;
+
+  /// No description provided for @sourceTextb92a2068aa.
+  ///
+  /// In zh, this message translates to:
+  /// **'长期记忆暂时不可用'**
+  String get sourceTextb92a2068aa;
+
+  /// No description provided for @sourceTextd3a2b13fc2.
+  ///
+  /// In zh, this message translates to:
+  /// **'长期记忆还是空的'**
+  String get sourceTextd3a2b13fc2;
+
+  /// No description provided for @sourceTexte8c59faf6d.
+  ///
+  /// In zh, this message translates to:
+  /// **'当 Agent 主动写入长期偏好后，这里会逐渐丰富起来。'**
+  String get sourceTexte8c59faf6d;
+
+  /// No description provided for @sourceText495c0debaf.
+  ///
+  /// In zh, this message translates to:
+  /// **'新增长期记忆'**
+  String get sourceText495c0debaf;
+
+  /// No description provided for @sourceText4398777297.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新长期记忆'**
+  String get sourceText4398777297;
+
+  /// No description provided for @sourceText9e636642d6.
+  ///
+  /// In zh, this message translates to:
+  /// **'刚刚'**
+  String get sourceText9e636642d6;
+
+  /// No description provided for @sourceTextedab852efe.
+  ///
+  /// In zh, this message translates to:
+  /// **'思考完成'**
+  String get sourceTextedab852efe;
+
+  /// No description provided for @sourceText774d85ae0a.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在思考'**
+  String get sourceText774d85ae0a;
+
+  /// No description provided for @sourceTexte4b6477e6e.
+  ///
+  /// In zh, this message translates to:
+  /// **'用时'**
+  String get sourceTexte4b6477e6e;
+
+  /// No description provided for @sourceText15fc7643c5.
+  ///
+  /// In zh, this message translates to:
+  /// **'准备执行任务...'**
+  String get sourceText15fc7643c5;
+
+  /// No description provided for @sourceTextd258a63cad.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消任务'**
+  String get sourceTextd258a63cad;
+
+  /// No description provided for @sourceText6df9b76521.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务已取消'**
+  String get sourceText6df9b76521;
+
+  /// No description provided for @sourceText038d05ca8c.
+  ///
+  /// In zh, this message translates to:
+  /// **'停止工具'**
+  String get sourceText038d05ca8c;
+
+  /// No description provided for @sourceText4078ac16b6.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在停止工具'**
+  String get sourceText4078ac16b6;
+
+  /// No description provided for @sourceTextcb1115d8c1.
+  ///
+  /// In zh, this message translates to:
+  /// **'停止工具调用失败，请稍后重试'**
+  String get sourceTextcb1115d8c1;
+
+  /// No description provided for @sourceTexteac987a597.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法打开 Agent 管理面板'**
+  String get sourceTexteac987a597;
+
+  /// No description provided for @sourceTexte3f4d6bd9d.
+  ///
+  /// In zh, this message translates to:
+  /// **'关闭悬浮球失败'**
+  String get sourceTexte3f4d6bd9d;
+
+  /// No description provided for @sourceTextf6d7e0312c.
+  ///
+  /// In zh, this message translates to:
+  /// **'悬浮球已关闭，可在设置里重新开启'**
+  String get sourceTextf6d7e0312c;
+
+  /// No description provided for @sourceText066af21f55.
+  ///
+  /// In zh, this message translates to:
+  /// **'点开'**
+  String get sourceText066af21f55;
+
+  /// No description provided for @sourceText15197efe93.
+  ///
+  /// In zh, this message translates to:
+  /// **'隐藏悬浮球'**
+  String get sourceText15197efe93;
+
+  /// No description provided for @sourceText5d5815647c.
+  ///
+  /// In zh, this message translates to:
+  /// **'收起'**
+  String get sourceText5d5815647c;
+
+  /// No description provided for @sourceText151eeabaf6.
+  ///
+  /// In zh, this message translates to:
+  /// **'停止失败'**
+  String get sourceText151eeabaf6;
+
+  /// No description provided for @sourceText6ef1200428.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行中的 Agent'**
+  String get sourceText6ef1200428;
+
+  /// No description provided for @sourceText5bd8f4879e.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前没有后端任务'**
+  String get sourceText5bd8f4879e;
+
+  /// No description provided for @sourceTextfaeb185030.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前没有任何 Agent'**
+  String get sourceTextfaeb185030;
+
+  /// No description provided for @sourceText68685fc5c4.
+  ///
+  /// In zh, this message translates to:
+  /// **'停止全部'**
+  String get sourceText68685fc5c4;
+
+  /// No description provided for @sourceTextf0b2cef7b0.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有正在执行的 Agent 后端任务'**
+  String get sourceTextf0b2cef7b0;
+
+  /// No description provided for @sourceText65fc81e161.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开'**
+  String get sourceText65fc81e161;
+
+  /// No description provided for @sourceText645fc8d22d.
+  ///
+  /// In zh, this message translates to:
+  /// **'停止这个 Agent'**
+  String get sourceText645fc8d22d;
+
+  /// No description provided for @sourceText5e59efab1e.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 后端空闲。轻点打开管理面板。'**
+  String get sourceText5e59efab1e;
+
+  /// No description provided for @sourceText0b961ab4d9.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在整理方案'**
+  String get sourceText0b961ab4d9;
+
+  /// No description provided for @sourceText91796bb70a.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在输出'**
+  String get sourceText91796bb70a;
+
+  /// No description provided for @sourceText33fe6867a2.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始调用工具'**
+  String get sourceText33fe6867a2;
+
+  /// No description provided for @sourceText76a18aa532.
+  ///
+  /// In zh, this message translates to:
+  /// **'工具执行中'**
+  String get sourceText76a18aa532;
+
+  /// No description provided for @sourceTextd333e5691f.
+  ///
+  /// In zh, this message translates to:
+  /// **'工具完成'**
+  String get sourceTextd333e5691f;
+
+  /// No description provided for @sourceTextcc1f7be0b2.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待权限确认'**
+  String get sourceTextcc1f7be0b2;
+
+  /// No description provided for @sourceTextf7d01365f2.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待补充信息'**
+  String get sourceTextf7d01365f2;
+
+  /// No description provided for @sourceText9617084ded.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行出错'**
+  String get sourceText9617084ded;
+
+  /// No description provided for @sourceText832451d2f4.
+  ///
+  /// In zh, this message translates to:
+  /// **'即将完成'**
+  String get sourceText832451d2f4;
+
+  /// No description provided for @sourceTextc6dc0ad888.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 后端任务'**
+  String get sourceTextc6dc0ad888;
+
+  /// No description provided for @sourceTextbdde1def59.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待模型响应'**
+  String get sourceTextbdde1def59;
+
+  /// No description provided for @sourceText3d4d1075e7.
+  ///
+  /// In zh, this message translates to:
+  /// **'工具调用'**
+  String get sourceText3d4d1075e7;
+
+  /// No description provided for @sourceTextff06c243d7.
+  ///
+  /// In zh, this message translates to:
+  /// **'超时'**
+  String get sourceTextff06c243d7;
+
+  /// No description provided for @sourceText44e681a374.
+  ///
+  /// In zh, this message translates to:
+  /// **'中断'**
+  String get sourceText44e681a374;
+
+  /// No description provided for @sourceText71757f8d79.
+  ///
+  /// In zh, this message translates to:
+  /// **'浏览中'**
+  String get sourceText71757f8d79;
+
+  /// No description provided for @sourceTextda3d2d1482.
+  ///
+  /// In zh, this message translates to:
+  /// **'响应中'**
+  String get sourceTextda3d2d1482;
+
+  /// No description provided for @sourceTextfcb979ef0b.
+  ///
+  /// In zh, this message translates to:
+  /// **'处理中'**
+  String get sourceTextfcb979ef0b;
+
+  /// No description provided for @sourceText7f55a26d7d.
+  ///
+  /// In zh, this message translates to:
+  /// **'终端'**
+  String get sourceText7f55a26d7d;
+
+  /// No description provided for @sourceText88d650dd4f.
+  ///
+  /// In zh, this message translates to:
+  /// **'浏览器'**
+  String get sourceText88d650dd4f;
+
+  /// No description provided for @sourceText81944e48a3.
+  ///
+  /// In zh, this message translates to:
+  /// **'提醒'**
+  String get sourceText81944e48a3;
+
+  /// No description provided for @sourceText2ecbc11608.
+  ///
+  /// In zh, this message translates to:
+  /// **'日历'**
+  String get sourceText2ecbc11608;
+
+  /// No description provided for @sourceText2a8ce33ff0.
+  ///
+  /// In zh, this message translates to:
+  /// **'子任务'**
+  String get sourceText2a8ce33ff0;
+
+  /// No description provided for @sourceTexta72ef18d9a.
+  ///
+  /// In zh, this message translates to:
+  /// **'工具'**
+  String get sourceTexta72ef18d9a;
+
+  /// No description provided for @sourceText15ec50fe7d.
+  ///
+  /// In zh, this message translates to:
+  /// **'[更早记录已省略]'**
+  String get sourceText15ec50fe7d;
+
+  /// No description provided for @sourceTexta5dda12242.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待龙虾烹饪'**
+  String get sourceTexta5dda12242;
+
+  /// No description provided for @sourceText70c53b8ac3.
+  ///
+  /// In zh, this message translates to:
+  /// **'配置你的 AI 助手'**
+  String get sourceText70c53b8ac3;
+
+  /// No description provided for @sourceTextf7f58b95a7.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择一种方式开始使用小万'**
+  String get sourceTextf7f58b95a7;
+
+  /// No description provided for @sourceText1670225703.
+  ///
+  /// In zh, this message translates to:
+  /// **'云 AI 服务'**
+  String get sourceText1670225703;
+
+  /// No description provided for @sourceText90f71a54c8.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接 OpenAI、Anthropic 或兼容的 API 服务'**
+  String get sourceText90f71a54c8;
+
+  /// No description provided for @sourceTextb0253cd034.
+  ///
+  /// In zh, this message translates to:
+  /// **'本地模型'**
+  String get sourceTextb0253cd034;
+
+  /// No description provided for @sourceText10691e242c.
+  ///
+  /// In zh, this message translates to:
+  /// **'在设备上运行本地 AI，离线可用，隐私安全'**
+  String get sourceText10691e242c;
+
+  /// No description provided for @sourceText1fc1afc5c5.
+  ///
+  /// In zh, this message translates to:
+  /// **'继续'**
+  String get sourceText1fc1afc5c5;
+
+  /// No description provided for @sourceText184913c0f3.
+  ///
+  /// In zh, this message translates to:
+  /// **'跳过，稍后在设置中配置'**
+  String get sourceText184913c0f3;
+
+  /// No description provided for @sourceText1e797c0dac.
+  ///
+  /// In zh, this message translates to:
+  /// **'云 AI 服务配置'**
+  String get sourceText1e797c0dac;
+
+  /// No description provided for @sourceText79973caeef.
+  ///
+  /// In zh, this message translates to:
+  /// **'配置云端 AI 服务商，使用更强大的模型能力'**
+  String get sourceText79973caeef;
+
+  /// No description provided for @sourceText993df7d096.
+  ///
+  /// In zh, this message translates to:
+  /// **'协议类型'**
+  String get sourceText993df7d096;
+
+  /// No description provided for @sourceText530aafb12a.
+  ///
+  /// In zh, this message translates to:
+  /// **'例如：我的 OpenAI'**
+  String get sourceText530aafb12a;
+
+  /// No description provided for @sourceText10b7d8eccc.
+  ///
+  /// In zh, this message translates to:
+  /// **'测试连接'**
+  String get sourceText10b7d8eccc;
+
+  /// No description provided for @sourceTexteb06635875.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接成功'**
+  String get sourceTexteb06635875;
+
+  /// No description provided for @sourceText523e40a074.
+  ///
+  /// In zh, this message translates to:
+  /// **'发现'**
+  String get sourceText523e40a074;
+
+  /// No description provided for @sourceText674373aef1.
+  ///
+  /// In zh, this message translates to:
+  /// **'个模型'**
+  String get sourceText674373aef1;
+
+  /// No description provided for @sourceText2c056f182f.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接失败'**
+  String get sourceText2c056f182f;
+
+  /// No description provided for @sourceTextd15ae9ad81.
+  ///
+  /// In zh, this message translates to:
+  /// **'在设备上运行本地 AI'**
+  String get sourceTextd15ae9ad81;
+
+  /// No description provided for @sourceText4bbe706f8d.
+  ///
+  /// In zh, this message translates to:
+  /// **'优势'**
+  String get sourceText4bbe706f8d;
+
+  /// No description provided for @sourceText37dea6b39e.
+  ///
+  /// In zh, this message translates to:
+  /// **'隐私安全'**
+  String get sourceText37dea6b39e;
+
+  /// No description provided for @sourceText6bcfca9d58.
+  ///
+  /// In zh, this message translates to:
+  /// **'数据完全留在设备上，不会发送到任何服务器'**
+  String get sourceText6bcfca9d58;
+
+  /// No description provided for @sourceText270d12d95b.
+  ///
+  /// In zh, this message translates to:
+  /// **'离线可用'**
+  String get sourceText270d12d95b;
+
+  /// No description provided for @sourceText97fcfbb5dd.
+  ///
+  /// In zh, this message translates to:
+  /// **'无需网络连接，随时随地使用 AI 助手'**
+  String get sourceText97fcfbb5dd;
+
+  /// No description provided for @sourceTextdd70b93ad6.
+  ///
+  /// In zh, this message translates to:
+  /// **'完全免费'**
+  String get sourceTextdd70b93ad6;
+
+  /// No description provided for @sourceText5d4061aac5.
+  ///
+  /// In zh, this message translates to:
+  /// **'无需 API 费用或订阅，没有使用限制'**
+  String get sourceText5d4061aac5;
+
+  /// No description provided for @sourceText498c2879b0.
+  ///
+  /// In zh, this message translates to:
+  /// **'局限性'**
+  String get sourceText498c2879b0;
+
+  /// No description provided for @sourceTexta597376852.
+  ///
+  /// In zh, this message translates to:
+  /// **'性能受限'**
+  String get sourceTexta597376852;
+
+  /// No description provided for @sourceTextb4d10c670a.
+  ///
+  /// In zh, this message translates to:
+  /// **'端侧模型较小，能力有限，回复质量不如云端模型'**
+  String get sourceTextb4d10c670a;
+
+  /// No description provided for @sourceText390d11af9b.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务受限'**
+  String get sourceText390d11af9b;
+
+  /// No description provided for @sourceText7b5c99ecb8.
+  ///
+  /// In zh, this message translates to:
+  /// **'目前无法处理复杂的 Agent 任务，适合简单对话和问答'**
+  String get sourceText7b5c99ecb8;
+
+  /// No description provided for @sourceTextea0ef2ae72.
+  ///
+  /// In zh, this message translates to:
+  /// **'下一步'**
+  String get sourceTextea0ef2ae72;
+
+  /// No description provided for @sourceText68e23d8fac.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载本地模型'**
+  String get sourceText68e23d8fac;
+
+  /// No description provided for @sourceText405be21f38.
+  ///
+  /// In zh, this message translates to:
+  /// **'推荐模型'**
+  String get sourceText405be21f38;
+
+  /// No description provided for @sourceTextf430f6d1d1.
+  ///
+  /// In zh, this message translates to:
+  /// **'根据你的设备推荐的轻量模型，适合日常对话'**
+  String get sourceTextf430f6d1d1;
+
+  /// No description provided for @sourceText1b58744dff.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在加载模型信息...'**
+  String get sourceText1b58744dff;
+
+  /// No description provided for @sourceText3f9550508b.
+  ///
+  /// In zh, this message translates to:
+  /// **'继续下载'**
+  String get sourceText3f9550508b;
+
+  /// No description provided for @sourceText4bbcf94739.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载完成'**
+  String get sourceText4bbcf94739;
+
+  /// No description provided for @sourceText33246f6a5e.
+  ///
+  /// In zh, this message translates to:
+  /// **'完成'**
+  String get sourceText33246f6a5e;
+
+  /// No description provided for @sourceText11d0241540.
+  ///
+  /// In zh, this message translates to:
+  /// **'返回'**
+  String get sourceText11d0241540;
+
+  /// No description provided for @sourceText85d011402f.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂时无法获取推荐模型'**
+  String get sourceText85d011402f;
+
+  /// No description provided for @sourceText1b2fe43b5e.
+  ///
+  /// In zh, this message translates to:
+  /// **'请检查网络连接，或稍后在设置中手动下载'**
+  String get sourceText1b2fe43b5e;
+
+  /// No description provided for @sourceText2bc19ec67e.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始体验'**
+  String get sourceText2bc19ec67e;
+
+  /// No description provided for @sourceTextc55627eba1.
+  ///
+  /// In zh, this message translates to:
+  /// **'API Key（可选）'**
+  String get sourceTextc55627eba1;
+
+  /// No description provided for @sourceText90988df4ff.
+  ///
+  /// In zh, this message translates to:
+  /// **'浏览模型市场'**
+  String get sourceText90988df4ff;
+
+  /// No description provided for @sourceText62b46f24ae.
+  ///
+  /// In zh, this message translates to:
+  /// **'推荐'**
+  String get sourceText62b46f24ae;
+
+  /// No description provided for @sourceTextc59773a6a4.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择方式'**
+  String get sourceTextc59773a6a4;
+
+  /// No description provided for @sourceTextb62ed716e3.
+  ///
+  /// In zh, this message translates to:
+  /// **'特性'**
+  String get sourceTextb62ed716e3;
 }
 
 class _AppLocalizationsDelegate

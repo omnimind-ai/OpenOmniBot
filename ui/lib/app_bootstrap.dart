@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ui/l10n/app_locale_controller.dart';
 import 'package:ui/l10n/generated/app_localizations.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
 import 'package:ui/services/app_background_service.dart';
 import 'package:ui/services/scheduled_task_scheduler_service.dart';
@@ -153,7 +153,7 @@ class _MyAppState extends ConsumerState<MyApp> {
     final widgetBuildStart = DateTime.now();
     final themeMode = ref.watch(appThemeModeProvider).materialThemeMode;
     final resolvedLocale = ref.watch(appResolvedLocaleProvider);
-    LegacyTextLocalizer.setResolvedLocale(resolvedLocale.locale);
+    AppTextLocalizer.setResolvedLocale(resolvedLocale.locale);
     final widget = MaterialApp.router(
       debugShowCheckedModeBanner: false,
       onGenerateTitle: (context) =>

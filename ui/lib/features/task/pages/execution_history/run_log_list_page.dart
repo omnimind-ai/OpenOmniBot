@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:ui/core/router/go_router_manager.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
@@ -362,7 +363,11 @@ String _firstNonBlank(Iterable<Object?> values) {
 }
 
 String _text(BuildContext context, String zh, String en) {
-  return Localizations.localeOf(context).languageCode == 'zh' ? zh : en;
+  return AppTextLocalizer.choose(
+    zh: zh,
+    en: en,
+    locale: Localizations.localeOf(context),
+  );
 }
 
 Color _successColor(BuildContext context) {

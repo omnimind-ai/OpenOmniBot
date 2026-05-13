@@ -1,4 +1,4 @@
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 
 enum ConversationMode {
   normal('normal'),
@@ -22,8 +22,8 @@ enum ConversationMode {
   }
 
   String get displayLabel => switch (this) {
-    ConversationMode.normal => LegacyTextLocalizer.localize('普通'),
-    ConversationMode.chatOnly => LegacyTextLocalizer.localize('纯聊天'),
+    ConversationMode.normal => AppTextLocalizer.text('普通'),
+    ConversationMode.chatOnly => AppTextLocalizer.text('纯聊天'),
     ConversationMode.openclaw => 'OpenClaw',
     ConversationMode.subagent => 'SubAgent',
     ConversationMode.codex => 'Codex',
@@ -168,17 +168,19 @@ class ConversationModel {
     final difference = today.difference(updatedDay).inDays;
 
     if (difference == 0) {
-      return LegacyTextLocalizer.localize('今天');
+      return AppTextLocalizer.text('今天');
     } else if (difference == 1) {
-      return LegacyTextLocalizer.localize('昨天');
+      return AppTextLocalizer.text('昨天');
     } else if (difference < 7) {
       // 显示星期几
-      final weekdays = LegacyTextLocalizer.isEnglish
-          ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-          : ['一', '二', '三', '四', '五', '六', '日'];
-      return LegacyTextLocalizer.isEnglish
-          ? weekdays[updatedDate.weekday - 1]
-          : '周${weekdays[updatedDate.weekday - 1]}';
+      final weekdays = AppTextLocalizer.chooseList(
+        en: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        zh: ['一', '二', '三', '四', '五', '六', '日'],
+      );
+      return AppTextLocalizer.choose(
+        en: weekdays[updatedDate.weekday - 1],
+        zh: '周${weekdays[updatedDate.weekday - 1]}',
+      );
     } else {
       // 显示月-日
       return '${updatedDate.month}-${updatedDate.day}';

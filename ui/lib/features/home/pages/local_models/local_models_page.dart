@@ -1598,7 +1598,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
             spacing: 8,
             runSpacing: 8,
             children: [
-              if (_isPinnedModel(model)) _buildAccentTag(context.trLegacy('推荐')),
+              if (_isPinnedModel(model)) _buildAccentTag(context.trText('推荐')),
               _buildTag(model.category.toUpperCase()),
               if (model.source.isNotEmpty) _buildTag(model.source),
               if (model.vendor.isNotEmpty) _buildTag(model.vendor),

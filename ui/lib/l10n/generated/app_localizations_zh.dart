@@ -182,6 +182,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsMcpToggleFailed => 'MCP 开关失败';
 
   @override
+  String get settingsOobFunctionAsToolTitle => 'OOB 函数接入工具';
+
+  @override
+  String get settingsOobFunctionAsToolSubtitle => '开启后 agent 可以直接调用已保存的 OOB 函数';
+
+  @override
+  String get settingsOobFunctionAsToolToggleFailed => 'OOB 函数工具开关失败';
+
+  @override
   String get settingsCopiedAddress => '已复制访问地址';
 
   @override
@@ -3546,4 +3555,816 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get workbenchPhilosophyActivateHint =>
       '激活项目后，右侧 Workspace 显示它的 Display；继续输入或标注会作为上下文传给 hot update。';
+
+  @override
+  String get sourceTextf9dfa89402 => '小万悬浮窗';
+
+  @override
+  String get sourceTextea6631ac86 => '关闭后不再显示桌面悬浮球、半屏输入层和运行胶囊';
+
+  @override
+  String get sourceText60d33fd58f => '小万悬浮窗已开启';
+
+  @override
+  String get sourceText9803e0f8d8 => '小万悬浮窗已关闭';
+
+  @override
+  String get sourceText8ed5fe74f6 => '设置悬浮窗失败';
+
+  @override
+  String get sourceText2a4a4de806 => '手动';
+
+  @override
+  String get sourceText76c9741888 => 'Shizuku 权限';
+
+  @override
+  String get sourceText5e04ad1c9a => '正在调用内嵌 Alpine 终端执行命令';
+
+  @override
+  String get sourceTextc0b7ed8600 => '正在执行内嵌 Alpine 终端命令';
+
+  @override
+  String get sourceText60cf09e22d => '终端输出更新中';
+
+  @override
+  String get sourceText140c80c696 => '🎉Hi，我是小万，我会做很多事，让我展示给你下！';
+
+  @override
+  String get sourceText82347f1be8 => 'Hi，我是小万';
+
+  @override
+  String get sourceText5167632783 => '你的 AI 助手，随时准备就绪';
+
+  @override
+  String get sourceText63a921a287 => '无需网络，完全免费';
+
+  @override
+  String get sourceText112e197134 =>
+      '数据完全留在设备上，不会发送到任何服务器。对话内容、个人偏好等敏感信息始终由你掌控。';
+
+  @override
+  String get sourceText8de8b69cc9 =>
+      '无需网络连接即可运行 AI 助手。无论在飞机上、地铁里还是偏远地区，随时随地可用。';
+
+  @override
+  String get sourceTexteac537b43e => '无需 API 费用或订阅。模型下载后可无限次使用，没有任何隐藏费用。';
+
+  @override
+  String get sourceTexte8b806ace2 =>
+      '端侧模型较小，回复质量不如云端模型，暂不支持复杂 Agent 任务，适合日常对话与问答。';
+
+  @override
+  String get sourceText7e1cc2fc3f => '换一换';
+
+  @override
+  String get sourceText63e272f624 => '小万正在思考...';
+
+  @override
+  String get sourceTextd9f594509d => '总结中';
+
+  @override
+  String get sourceText9384e034e5 => '总结如下';
+
+  @override
+  String get sourceText3e44b2a933 => '全选';
+
+  @override
+  String get sourceText4edd1d0087 => '复制';
+
+  @override
+  String get sourceTextb56d9ac6c5 => '确认';
+
+  @override
+  String get sourceTextf526c89937 => '确定';
+
+  @override
+  String get sourceText4d0b3bb4e9 => '请稍候...';
+
+  @override
+  String get sourceTextee5037d25d => '保存并发送';
+
+  @override
+  String get sourceTextbe15d6f28c => '未设置模型';
+
+  @override
+  String get sourceText01047404ef => '发现新版本';
+
+  @override
+  String get sourceText1722589489 => '打开终端';
+
+  @override
+  String get sourceText649fc10b46 => '管理终端环境变量';
+
+  @override
+  String get sourceTextd8f03e50ea => '打开当前会话浏览器';
+
+  @override
+  String get sourceTextc1c986937d => '当前会话还没有可用的浏览器会话';
+
+  @override
+  String get sourceText31b7c8d175 => '纯聊天';
+
+  @override
+  String get sourceText7cda072d45 => '普通';
+
+  @override
+  String get sourceText17e83cc25e => '今天';
+
+  @override
+  String get sourceText59c4fcb09e => '昨天';
+
+  @override
+  String get sourceText1f425b6bf0 => '执行中';
+
+  @override
+  String get sourceText6c189aad4d => '执行成功';
+
+  @override
+  String get sourceText9746cfc7d2 => '执行失败';
+
+  @override
+  String get sourceTextd0de773436 => '等待执行';
+
+  @override
+  String get sourceText2029839d84 => '总结';
+
+  @override
+  String get sourceText6c2b60f0ee => '识图';
+
+  @override
+  String get sourceTexte9649f84f9 => '未知类型';
+
+  @override
+  String get sourceText756eae0324 => '正在回复...';
+
+  @override
+  String get sourceText292eea5849 => '永不';
+
+  @override
+  String get sourceText08d65bdbc3 => '每日';
+
+  @override
+  String get sourceTexta93b55d8bf => '每周';
+
+  @override
+  String get sourceText24aedc3608 => '每月';
+
+  @override
+  String get sourceText4a9ee561f9 => '每年';
+
+  @override
+  String get sourceText89b4aa6364 => '时间';
+
+  @override
+  String get sourceTextb6fed9af83 => '日期';
+
+  @override
+  String get sourceText6e708ba759 => '重复';
+
+  @override
+  String get sourceTextc1cb3fc29f => '任务选项';
+
+  @override
+  String get sourceText39797f7a92 => '请选择一个任务';
+
+  @override
+  String get sourceTexte03304491a => '请选择你想执行的任务';
+
+  @override
+  String get sourceTextb4a7ea5533 => '请选择一个应用程序';
+
+  @override
+  String get sourceText1354374f76 => '已过期';
+
+  @override
+  String get sourceText36d2d01f31 => '即将执行';
+
+  @override
+  String get sourceText13794e1f43 => '好，我来帮你完成';
+
+  @override
+  String get sourceTextbaa298fbe1 => '用户操作';
+
+  @override
+  String get sourceText86e8d12a79 => '删除成功';
+
+  @override
+  String get sourceText9abb465039 => '修改失败';
+
+  @override
+  String get sourceTextf8913eb433 => '修改成功';
+
+  @override
+  String get sourceText65fdeb927b => '桌面';
+
+  @override
+  String get sourceText322eceb785 => '内存中';
+
+  @override
+  String get sourceTextf90d5c751e => '云内存中';
+
+  @override
+  String get sourceText7e68eb622d => '保存成功';
+
+  @override
+  String get sourceText6a6b660ba8 => '编辑你的消息';
+
+  @override
+  String get sourceTextfcbd093292 => '创建';
+
+  @override
+  String get sourceText8200c3d50b => '未命名对话';
+
+  @override
+  String get sourceText229127ec8d => '折叠全部日期';
+
+  @override
+  String get sourceTextbc51af6ffc => '展开全部日期';
+
+  @override
+  String get sourceText72be511e05 => '最近执行';
+
+  @override
+  String get sourceText818a1f7be3 => '暂无总结内容';
+
+  @override
+  String get sourceTextc76c74e809 => '检查更新失败';
+
+  @override
+  String get sourceTextae4535ef13 => '已是最新版';
+
+  @override
+  String get sourceText00f512b5e8 => '检查 GitHub Release 获取最新版本';
+
+  @override
+  String get sourceText9afc832d99 => '查看新版本';
+
+  @override
+  String get sourceTexta6df38586d => '检查更新';
+
+  @override
+  String get sourceText8ff0439ff9 => '已关闭思考';
+
+  @override
+  String get sourceTextd9d4d4e7dd => '请求日志';
+
+  @override
+  String get sourceTexta8ce402665 => '运行日志';
+
+  @override
+  String get sourceText4c685c0454 => '使用手册';
+
+  @override
+  String get sourceText5060421d15 => '概览';
+
+  @override
+  String get sourceText9f14a3f4dd => '最近记录';
+
+  @override
+  String get sourceTextb01090a29c => '最近 10 条 AI 请求，按时间倒序展示。';
+
+  @override
+  String get sourceTextc740eb5be5 => '点击条目展开查看请求与响应正文。';
+
+  @override
+  String get sourceTextcb80eb03ea => '最近 200 条错误和崩溃日志，按时间倒序展示。';
+
+  @override
+  String get sourceText8334b58cfa => '含堆栈的条目可展开查看。';
+
+  @override
+  String get sourceTextfe12b789bf => '导出运行日志';
+
+  @override
+  String get sourceText88f6dbf1a3 => '已复制全部运行日志';
+
+  @override
+  String get sourceText8b06115d35 => '导出运行日志失败';
+
+  @override
+  String get sourceTextd6c8084d07 => '崩溃';
+
+  @override
+  String get sourceText367ff5ddd2 => '总数';
+
+  @override
+  String get sourceText71bd34d484 => '最近一条';
+
+  @override
+  String get sourceText41654e0268 => '基础信息';
+
+  @override
+  String get sourceText7364999103 => '载荷';
+
+  @override
+  String get sourceTextd70d425039 => '保存中...';
+
+  @override
+  String get sourceTextdbb4430dc0 => '未选择文件';
+
+  @override
+  String get sourceText1e620e20a1 => '远程地址';
+
+  @override
+  String get sourceTextdde21b2cec => '后台运行权限';
+
+  @override
+  String get sourceText135f1636e4 => '应用列表读取';
+
+  @override
+  String get sourceTextf80103fee9 => '无障碍辅助权限';
+
+  @override
+  String get sourceTextd78cde076b => '已开启';
+
+  @override
+  String get sourceText13ec170881 => '去开启';
+
+  @override
+  String get sourceText291952a2ab => '清除缓存';
+
+  @override
+  String get sourceText3d0c8b9d9f => '小万可以在陪伴时更了解您的喜好';
+
+  @override
+  String get sourceText86890292b6 => '小万可在屏幕中实时活动，随时给予陪伴';
+
+  @override
+  String get sourceTexta86909c7ea => '小万可以知道能帮你做什么事情';
+
+  @override
+  String get sourceText56735a4ab7 => '小万执行任务时，需要给予我操作的权限';
+
+  @override
+  String get sourceText99ad612dd1 => '设置权限';
+
+  @override
+  String get sourceTextaef926661d => '请放心，这些权限你随时可以收回';
+
+  @override
+  String get sourceText02a75489b2 => '查看并配置无障碍、悬浮窗、Shizuku 等权限';
+
+  @override
+  String get sourceText75b40989f3 => '权限检查中...';
+
+  @override
+  String get sourceText2599599947 => '继续任务';
+
+  @override
+  String get sourceText14411ce362 => '继续任务仅要求';
+
+  @override
+  String get sourceTextf739c7d4a8 => 'Termux 终端能力';
+
+  @override
+  String get sourceText98bd36febc => '可选，允许 Agent 通过 Termux 执行终端命令';
+
+  @override
+  String get sourceText53e32830a5 => '可选';
+
+  @override
+  String get sourceTexte5d269502c => '让小万带你执行一次任务吧！';
+
+  @override
+  String get sourceText1aca95f544 => '其中 Termux 终端能力为可选项，未开启也不影响基础自动化';
+
+  @override
+  String get sourceText3bf179d8d0 => '未绑定';
+
+  @override
+  String get sourceText2a30881946 => '清除绑定';
+
+  @override
+  String get sourceTexta191935bc6 => '恢复默认';
+
+  @override
+  String get sourceText8988c04935 =>
+      '点击右侧按钮后，可按 Provider 搜索、折叠并选择模型；Voice 的音色与自动播放可通过调节按钮展开。';
+
+  @override
+  String get sourceText2415f124bd => 'AI 响应完成后自动播放';
+
+  @override
+  String get sourceTextc4301894a2 => '音色';
+
+  @override
+  String get sourceTextc0ae8ba446 =>
+      '例如：default_zh / mimo_default / default_en';
+
+  @override
+  String get sourceTexta4ce420c69 => '风格';
+
+  @override
+  String get sourceText6614801dcd => '自定义补充';
+
+  @override
+  String get sourceText558a2f3fd0 => '唱歌模式下不支持附加风格';
+
+  @override
+  String get sourceTextfa12d9ef1b => '例如：更温柔、节奏慢一点、偏播客感';
+
+  @override
+  String get sourceText2601f9e3cb => '收起语音设置';
+
+  @override
+  String get sourceTextbc2c7387f0 => '展开语音设置';
+
+  @override
+  String get sourceText6a7d5cd91d => '没有匹配的模型';
+
+  @override
+  String get sourceText7b0de927a6 => '搜索模型 ID';
+
+  @override
+  String get sourceTexte5463e3a94 => '请先在模型提供商页配置 Provider';
+
+  @override
+  String get sourceText13c9595745 => '该 Provider 暂无可选模型';
+
+  @override
+  String get sourceText90bfe72640 => '已进入仅聊天模式';
+
+  @override
+  String get sourceText9c1153036d => '已退出仅聊天模式';
+
+  @override
+  String get sourceTextd1a19c24c7 => '搜索技能名称或描述';
+
+  @override
+  String get sourceTextd636ae3e01 => '未找到匹配的技能';
+
+  @override
+  String get sourceTexte4d8c16cd2 => '流式';
+
+  @override
+  String get sourceText36e8d9631f => '非流式';
+
+  @override
+  String get sourceText0e84ef42ae => '请求地址';
+
+  @override
+  String get sourceText4d150364fe => '请求方法';
+
+  @override
+  String get sourceTexta38a81c9d5 => '错误信息';
+
+  @override
+  String get sourceText0228e74add => '请求 JSON';
+
+  @override
+  String get sourceText9f062a0dac => '响应 JSON';
+
+  @override
+  String get sourceTexte2d53a6d3a => '重试';
+
+  @override
+  String get sourceText661b2db84d => '加载请求日志失败';
+
+  @override
+  String get sourceTextfa604c3dba => '最近还没有 AI 请求日志';
+
+  @override
+  String get sourceTexta22889b61d => '加载运行日志失败';
+
+  @override
+  String get sourceText71a159aa14 => '暂无运行日志';
+
+  @override
+  String get sourceText7b15e5e8e7 => '清除';
+
+  @override
+  String get sourceTextfb57d700b9 => 'AI 请求';
+
+  @override
+  String get sourceText7a42fe12dc => '次对话';
+
+  @override
+  String get sourceTextadf4707731 => '天连续';
+
+  @override
+  String get sourceText0fe8227aa4 => '无对话';
+
+  @override
+  String get sourceText7a54a1229e => '暂无 Token 消耗数据';
+
+  @override
+  String get sourceTexte8666c377c => '本地';
+
+  @override
+  String get sourceText565481c9be => '云端';
+
+  @override
+  String get sourceText54c727b452 => '无消耗';
+
+  @override
+  String get sourceText7fe4999970 => '长期记忆未就绪';
+
+  @override
+  String get sourceTextb87a8a83f5 => '完成记忆初始化后，这里会展示跨会话沉淀的偏好与事实。';
+
+  @override
+  String get sourceTextb92a2068aa => '长期记忆暂时不可用';
+
+  @override
+  String get sourceTextd3a2b13fc2 => '长期记忆还是空的';
+
+  @override
+  String get sourceTexte8c59faf6d => '当 Agent 主动写入长期偏好后，这里会逐渐丰富起来。';
+
+  @override
+  String get sourceText495c0debaf => '新增长期记忆';
+
+  @override
+  String get sourceText4398777297 => '刷新长期记忆';
+
+  @override
+  String get sourceText9e636642d6 => '刚刚';
+
+  @override
+  String get sourceTextedab852efe => '思考完成';
+
+  @override
+  String get sourceText774d85ae0a => '正在思考';
+
+  @override
+  String get sourceTexte4b6477e6e => '用时';
+
+  @override
+  String get sourceText15fc7643c5 => '准备执行任务...';
+
+  @override
+  String get sourceTextd258a63cad => '取消任务';
+
+  @override
+  String get sourceText6df9b76521 => '任务已取消';
+
+  @override
+  String get sourceText038d05ca8c => '停止工具';
+
+  @override
+  String get sourceText4078ac16b6 => '正在停止工具';
+
+  @override
+  String get sourceTextcb1115d8c1 => '停止工具调用失败，请稍后重试';
+
+  @override
+  String get sourceTexteac987a597 => '无法打开 Agent 管理面板';
+
+  @override
+  String get sourceTexte3f4d6bd9d => '关闭悬浮球失败';
+
+  @override
+  String get sourceTextf6d7e0312c => '悬浮球已关闭，可在设置里重新开启';
+
+  @override
+  String get sourceText066af21f55 => '点开';
+
+  @override
+  String get sourceText15197efe93 => '隐藏悬浮球';
+
+  @override
+  String get sourceText5d5815647c => '收起';
+
+  @override
+  String get sourceText151eeabaf6 => '停止失败';
+
+  @override
+  String get sourceText6ef1200428 => '运行中的 Agent';
+
+  @override
+  String get sourceText5bd8f4879e => '当前没有后端任务';
+
+  @override
+  String get sourceTextfaeb185030 => '当前没有任何 Agent';
+
+  @override
+  String get sourceText68685fc5c4 => '停止全部';
+
+  @override
+  String get sourceTextf0b2cef7b0 => '没有正在执行的 Agent 后端任务';
+
+  @override
+  String get sourceText65fc81e161 => '打开';
+
+  @override
+  String get sourceText645fc8d22d => '停止这个 Agent';
+
+  @override
+  String get sourceText5e59efab1e => 'Agent 后端空闲。轻点打开管理面板。';
+
+  @override
+  String get sourceText0b961ab4d9 => '正在整理方案';
+
+  @override
+  String get sourceText91796bb70a => '正在输出';
+
+  @override
+  String get sourceText33fe6867a2 => '开始调用工具';
+
+  @override
+  String get sourceText76a18aa532 => '工具执行中';
+
+  @override
+  String get sourceTextd333e5691f => '工具完成';
+
+  @override
+  String get sourceTextcc1f7be0b2 => '等待权限确认';
+
+  @override
+  String get sourceTextf7d01365f2 => '等待补充信息';
+
+  @override
+  String get sourceText9617084ded => '运行出错';
+
+  @override
+  String get sourceText832451d2f4 => '即将完成';
+
+  @override
+  String get sourceTextc6dc0ad888 => 'Agent 后端任务';
+
+  @override
+  String get sourceTextbdde1def59 => '等待模型响应';
+
+  @override
+  String get sourceText3d4d1075e7 => '工具调用';
+
+  @override
+  String get sourceTextff06c243d7 => '超时';
+
+  @override
+  String get sourceText44e681a374 => '中断';
+
+  @override
+  String get sourceText71757f8d79 => '浏览中';
+
+  @override
+  String get sourceTextda3d2d1482 => '响应中';
+
+  @override
+  String get sourceTextfcb979ef0b => '处理中';
+
+  @override
+  String get sourceText7f55a26d7d => '终端';
+
+  @override
+  String get sourceText88d650dd4f => '浏览器';
+
+  @override
+  String get sourceText81944e48a3 => '提醒';
+
+  @override
+  String get sourceText2ecbc11608 => '日历';
+
+  @override
+  String get sourceText2a8ce33ff0 => '子任务';
+
+  @override
+  String get sourceTexta72ef18d9a => '工具';
+
+  @override
+  String get sourceText15ec50fe7d => '[更早记录已省略]';
+
+  @override
+  String get sourceTexta5dda12242 => '等待龙虾烹饪';
+
+  @override
+  String get sourceText70c53b8ac3 => '配置你的 AI 助手';
+
+  @override
+  String get sourceTextf7f58b95a7 => '选择一种方式开始使用小万';
+
+  @override
+  String get sourceText1670225703 => '云 AI 服务';
+
+  @override
+  String get sourceText90f71a54c8 => '连接 OpenAI、Anthropic 或兼容的 API 服务';
+
+  @override
+  String get sourceTextb0253cd034 => '本地模型';
+
+  @override
+  String get sourceText10691e242c => '在设备上运行本地 AI，离线可用，隐私安全';
+
+  @override
+  String get sourceText1fc1afc5c5 => '继续';
+
+  @override
+  String get sourceText184913c0f3 => '跳过，稍后在设置中配置';
+
+  @override
+  String get sourceText1e797c0dac => '云 AI 服务配置';
+
+  @override
+  String get sourceText79973caeef => '配置云端 AI 服务商，使用更强大的模型能力';
+
+  @override
+  String get sourceText993df7d096 => '协议类型';
+
+  @override
+  String get sourceText530aafb12a => '例如：我的 OpenAI';
+
+  @override
+  String get sourceText10b7d8eccc => '测试连接';
+
+  @override
+  String get sourceTexteb06635875 => '连接成功';
+
+  @override
+  String get sourceText523e40a074 => '发现';
+
+  @override
+  String get sourceText674373aef1 => '个模型';
+
+  @override
+  String get sourceText2c056f182f => '连接失败';
+
+  @override
+  String get sourceTextd15ae9ad81 => '在设备上运行本地 AI';
+
+  @override
+  String get sourceText4bbe706f8d => '优势';
+
+  @override
+  String get sourceText37dea6b39e => '隐私安全';
+
+  @override
+  String get sourceText6bcfca9d58 => '数据完全留在设备上，不会发送到任何服务器';
+
+  @override
+  String get sourceText270d12d95b => '离线可用';
+
+  @override
+  String get sourceText97fcfbb5dd => '无需网络连接，随时随地使用 AI 助手';
+
+  @override
+  String get sourceTextdd70b93ad6 => '完全免费';
+
+  @override
+  String get sourceText5d4061aac5 => '无需 API 费用或订阅，没有使用限制';
+
+  @override
+  String get sourceText498c2879b0 => '局限性';
+
+  @override
+  String get sourceTexta597376852 => '性能受限';
+
+  @override
+  String get sourceTextb4d10c670a => '端侧模型较小，能力有限，回复质量不如云端模型';
+
+  @override
+  String get sourceText390d11af9b => '任务受限';
+
+  @override
+  String get sourceText7b5c99ecb8 => '目前无法处理复杂的 Agent 任务，适合简单对话和问答';
+
+  @override
+  String get sourceTextea0ef2ae72 => '下一步';
+
+  @override
+  String get sourceText68e23d8fac => '下载本地模型';
+
+  @override
+  String get sourceText405be21f38 => '推荐模型';
+
+  @override
+  String get sourceTextf430f6d1d1 => '根据你的设备推荐的轻量模型，适合日常对话';
+
+  @override
+  String get sourceText1b58744dff => '正在加载模型信息...';
+
+  @override
+  String get sourceText3f9550508b => '继续下载';
+
+  @override
+  String get sourceText4bbcf94739 => '下载完成';
+
+  @override
+  String get sourceText33246f6a5e => '完成';
+
+  @override
+  String get sourceText11d0241540 => '返回';
+
+  @override
+  String get sourceText85d011402f => '暂时无法获取推荐模型';
+
+  @override
+  String get sourceText1b2fe43b5e => '请检查网络连接，或稍后在设置中手动下载';
+
+  @override
+  String get sourceText2bc19ec67e => '开始体验';
+
+  @override
+  String get sourceTextc55627eba1 => 'API Key（可选）';
+
+  @override
+  String get sourceText90988df4ff => '浏览模型市场';
+
+  @override
+  String get sourceText62b46f24ae => '推荐';
+
+  @override
+  String get sourceTextc59773a6a4 => '选择方式';
+
+  @override
+  String get sourceTextb62ed716e3 => '特性';
 }

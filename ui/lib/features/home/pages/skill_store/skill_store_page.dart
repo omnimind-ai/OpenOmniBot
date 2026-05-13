@@ -183,7 +183,7 @@ class _SkillStorePageState extends State<SkillStorePage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: Text(context.trLegacy('取消')),
+            child: Text(context.trText('取消')),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
@@ -240,7 +240,7 @@ class _SkillStorePageState extends State<SkillStorePage> {
                       textColor: context.isDarkTheme
                           ? palette.textPrimary
                           : AppColors.text,
-                      hintText: context.trLegacy('搜索技能名称或描述'),
+                      hintText: context.trText('搜索技能名称或描述'),
                     ),
                   ),
                   Expanded(
@@ -594,7 +594,7 @@ class _SkillStorePageState extends State<SkillStorePage> {
           ),
           const SizedBox(height: 12),
           Text(
-            context.trLegacy('未找到匹配的技能'),
+            context.trText('未找到匹配的技能'),
             style: TextStyle(
               fontSize: 16,
               color: context.isDarkTheme

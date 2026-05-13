@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/core/mixins/page_lifecycle_mixin.dart';
 import 'package:ui/core/router/go_router_manager.dart';
@@ -705,7 +706,7 @@ class _TrajectoryPageState extends State<TrajectoryPage>
       context,
       title: context.l10n.memoryDeleteConfirmTitle,
       content: context.l10n.memoryDeleteWarning,
-      cancelText: context.trLegacy('取消'),
+      cancelText: context.trText('取消'),
       confirmText: context.l10n.skillDelete,
       confirmButtonColor: AppColors.alertRed,
     ).then((result) async {
@@ -876,7 +877,7 @@ class _TrajectoryPageState extends State<TrajectoryPage>
       leading: TextButton(
         onPressed: _exitSelectionMode,
         child: Text(
-          context.trLegacy('取消'),
+          context.trText('取消'),
           style: TextStyle(
             color: palette.accentPrimary,
             fontSize: 14,
@@ -892,7 +893,7 @@ class _TrajectoryPageState extends State<TrajectoryPage>
             child: Text(
               isAllSelected
                   ? context.l10n.memoryDeselectAll
-                  : context.trLegacy('全选'),
+                  : context.trText('全选'),
               style: TextStyle(
                 color: palette.accentPrimary,
                 fontSize: 14,
@@ -951,11 +952,11 @@ class _TrajectoryPageState extends State<TrajectoryPage>
     if (recordDate.year == today.year &&
         recordDate.month == today.month &&
         recordDate.day == today.day) {
-      section = context.trLegacy('今天');
+      section = context.trText('今天');
     } else if (recordDate.year == today.year &&
         recordDate.month == today.month &&
         recordDate.day == today.day - 1) {
-      section = context.trLegacy('昨天');
+      section = context.trText('昨天');
     } else {
       section = context.l10n.trajectoryThreeDaysAgo;
     }
@@ -969,11 +970,11 @@ class _TrajectoryPageState extends State<TrajectoryPage>
     if (date.year == today.year &&
         date.month == today.month &&
         date.day == today.day) {
-      return '${context.trLegacy('今天')} ' + DateFormat('HH:mm').format(date);
+      return '${context.trText('今天')} ' + DateFormat('HH:mm').format(date);
     } else if (date.year == today.year &&
         date.month == today.month &&
         date.day == today.day - 1) {
-      return '${context.trLegacy('昨天')} ' + DateFormat('HH:mm').format(date);
+      return '${context.trText('昨天')} ' + DateFormat('HH:mm').format(date);
     } else {
       return DateFormat('yyyy/MM/dd HH:mm').format(date);
     }
@@ -994,5 +995,9 @@ class _TrajectoryPageState extends State<TrajectoryPage>
 }
 
 String _text(BuildContext context, String zh, String en) {
-  return Localizations.localeOf(context).languageCode == 'zh' ? zh : en;
+  return AppTextLocalizer.choose(
+    zh: zh,
+    en: en,
+    locale: Localizations.localeOf(context),
+  );
 }

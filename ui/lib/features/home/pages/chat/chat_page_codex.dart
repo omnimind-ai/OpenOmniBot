@@ -360,9 +360,10 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
         _messageController.clear();
         _hideSlashCommandPanel();
         _showSnackBar(
-          LegacyTextLocalizer.isEnglish
-              ? 'Unsupported Codex command'
-              : '不支持的 Codex 命令',
+          AppTextLocalizer.choose(
+            en: 'Unsupported Codex command',
+            zh: '不支持的 Codex 命令',
+          ),
         );
         return true;
     }
@@ -678,17 +679,22 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
         return;
       }
       if (!mounted) return;
+      final locale = Localizations.localeOf(context);
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         SnackBar(
           content: Text(
-            Localizations.localeOf(context).languageCode == 'en'
-                ? 'Codex login required'
-                : '需要登录 Codex',
+            AppTextLocalizer.choose(
+              zh: '需要登录 Codex',
+              en: 'Codex login required',
+              locale: locale,
+            ),
           ),
           action: SnackBarAction(
-            label: Localizations.localeOf(context).languageCode == 'en'
-                ? 'Login'
-                : '登录',
+            label: AppTextLocalizer.choose(
+              zh: '登录',
+              en: 'Login',
+              locale: locale,
+            ),
             onPressed: () {
               unawaited(_startCodexLogin());
             },

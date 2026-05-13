@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/widgets/bottom_sheet_bg.dart';
 import 'package:ui/widgets/gradient_button.dart';
@@ -20,6 +21,7 @@ class TargetApp {
 class AppSelectionBottomSheet extends StatefulWidget {
   /// 可选的已安装应用列表
   final List<TargetApp> availableApps;
+
   /// 选择应用后的回调
   final void Function(TargetApp selectedApp)? onAppSelected;
 
@@ -30,7 +32,8 @@ class AppSelectionBottomSheet extends StatefulWidget {
   });
 
   @override
-  State<AppSelectionBottomSheet> createState() => _AppSelectionBottomSheetState();
+  State<AppSelectionBottomSheet> createState() =>
+      _AppSelectionBottomSheetState();
 }
 
 class _AppSelectionBottomSheetState extends State<AppSelectionBottomSheet> {
@@ -44,16 +47,16 @@ class _AppSelectionBottomSheetState extends State<AppSelectionBottomSheet> {
 
   void _onStartExperience() async {
     if (_selectedIndex == null || _isLoading) return;
-    
+
     setState(() {
       _isLoading = true;
     });
 
     final selectedApp = widget.availableApps[_selectedIndex!];
-    
+
     // 先关闭底部弹窗
     Navigator.of(context).pop();
-    
+
     // 回调通知父组件
     widget.onAppSelected?.call(selectedApp);
   }
@@ -90,7 +93,7 @@ class _AppSelectionBottomSheetState extends State<AppSelectionBottomSheet> {
                       ),
                     ),
                   ),
-                )
+                ),
               ),
               // 关闭按钮居右
               Align(
@@ -107,14 +110,16 @@ class _AppSelectionBottomSheetState extends State<AppSelectionBottomSheet> {
                   ),
                 ),
               ),
-            ]
+            ],
           ),
           const SizedBox(height: 13),
           // 标题
           Text(
-            Localizations.localeOf(context).languageCode == 'en'
-                ? 'Which app would you like to try Omnibot in?'
-                : '想要在哪个应用中体验小万？',
+            AppTextLocalizer.choose(
+              zh: '想要在哪个应用中体验小万？',
+              en: 'Which app would you like to try Omnibot in?',
+              locale: Localizations.localeOf(context),
+            ),
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w500,
@@ -133,13 +138,15 @@ class _AppSelectionBottomSheetState extends State<AppSelectionBottomSheet> {
                   right: index < widget.availableApps.length - 1 ? 16 : 0,
                 ),
                 child: _buildAppItem(index),
-              )
+              ),
             ),
           ),
           const SizedBox(height: 35.2),
           // 开始体验按钮
           GestureDetector(
-            onTap: () => _selectedIndex != null && !_isLoading ? _onStartExperience() : null,
+            onTap: () => _selectedIndex != null && !_isLoading
+                ? _onStartExperience()
+                : null,
             child: Container(
               width: 295,
               height: 40,
@@ -150,14 +157,16 @@ class _AppSelectionBottomSheetState extends State<AppSelectionBottomSheet> {
               ),
               alignment: Alignment.center,
               child: Text(
-                Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Start'
-                    : '开始体验',
+                AppTextLocalizer.choose(
+                  zh: '开始体验',
+                  en: 'Start',
+                  locale: Localizations.localeOf(context),
+                ),
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: Colors.white,
-                  letterSpacing: 0.44
+                  letterSpacing: 0.44,
                 ),
               ),
             ),
@@ -187,7 +196,9 @@ class _AppSelectionBottomSheetState extends State<AppSelectionBottomSheet> {
             color: isSelected ? Color(0xFF3B74FF) : Color(0xFFEEEEEE),
             width: 1,
           ),
-          color: isSelected ? Color(0xFF3B74FF).withOpacity(0.1) : Colors.transparent,
+          color: isSelected
+              ? Color(0xFF3B74FF).withOpacity(0.1)
+              : Colors.transparent,
         ),
         child: Center(
           child: Column(
@@ -246,7 +257,7 @@ Future<TargetApp?> showAppSelectionBottomSheet({
   required List<TargetApp> availableApps,
 }) async {
   TargetApp? selectedApp;
-  
+
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -263,6 +274,6 @@ Future<TargetApp?> showAppSelectionBottomSheet({
       );
     },
   );
-  
+
   return selectedApp;
 }

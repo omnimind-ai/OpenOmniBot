@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
 import 'package:ui/services/special_permission.dart';
@@ -156,7 +157,6 @@ class _TermuxSettingPageState extends State<TermuxSettingPage>
   bool get _canStartSetup => !_isDetecting && _selectedLostCount > 0;
 
   bool get _isDarkTheme => context.isDarkTheme;
-  bool get _isEnglish => Localizations.localeOf(context).languageCode == 'en';
   Color get _pageBackground => _isDarkTheme
       ? context.omniPalette.pageBackground
       : const Color(0xFFF6F8FA);
@@ -171,33 +171,45 @@ class _TermuxSettingPageState extends State<TermuxSettingPage>
       ? context.omniPalette.surfaceSecondary
       : const Color(0xFFF8FAFC);
 
+  String _choose({required String zh, required String en}) {
+    return AppTextLocalizer.choose(
+      zh: zh,
+      en: en,
+      locale: Localizations.localeOf(context),
+    );
+  }
+
   String get _workspaceMountSectionTitle =>
-      _isEnglish ? 'Workspace mounts' : 'Workspace 挂载';
-  String get _workspaceMountSectionDesc => _isEnglish
-      ? 'Link a readable host directory into `/workspace`. Alpine, chat resource previews, and the workspace browser will all see the same files. Unmount only removes the mount entry and never deletes the real directory.'
-      : '把一个可访问的宿主目录挂到 `/workspace` 下。Alpine、聊天资源预览和文件浏览器都会看到同一份文件。卸载只会删除挂载入口，不会删除真实目录。';
-  String get _workspaceMountAddLabel => _isEnglish ? 'Add mount' : '新增挂载';
+      _choose(zh: 'Workspace 挂载', en: 'Workspace mounts');
+  String get _workspaceMountSectionDesc => _choose(
+    zh: '把一个可访问的宿主目录挂到 `/workspace` 下。Alpine、聊天资源预览和文件浏览器都会看到同一份文件。卸载只会删除挂载入口，不会删除真实目录。',
+    en: 'Link a readable host directory into `/workspace`. Alpine, chat resource previews, and the workspace browser will all see the same files. Unmount only removes the mount entry and never deletes the real directory.',
+  );
+  String get _workspaceMountAddLabel => _choose(zh: '新增挂载', en: 'Add mount');
   String get _workspaceMountEmptyDesc =>
-      _isEnglish ? 'No mounted directories yet.' : '还没有挂载任何宿主目录。';
+      _choose(zh: '还没有挂载任何宿主目录。', en: 'No mounted directories yet.');
   String get _workspaceMountPickTitle =>
-      _isEnglish ? 'Select a host directory' : '选择宿主目录';
-  String get _workspaceMountAliasTitle => _isEnglish ? 'Mount name' : '挂载名称';
-  String get _workspaceMountAliasHint => _isEnglish
-      ? 'This will become `/workspace/<name>`'
-      : '会显示为 `/workspace/<名称>`';
-  String get _workspaceMountAliasSave => _isEnglish ? 'Mount' : '挂载';
+      _choose(zh: '选择宿主目录', en: 'Select a host directory');
+  String get _workspaceMountAliasTitle => _choose(zh: '挂载名称', en: 'Mount name');
+  String get _workspaceMountAliasHint => _choose(
+    zh: '会显示为 `/workspace/<名称>`',
+    en: 'This will become `/workspace/<name>`',
+  );
+  String get _workspaceMountAliasSave => _choose(zh: '挂载', en: 'Mount');
   String get _workspaceMountUnmountTitle =>
-      _isEnglish ? 'Unmount directory' : '卸载挂载';
-  String _workspaceMountUnmountMessage(String alias) => _isEnglish
-      ? 'Unmount `/workspace/$alias`? The original host directory and its files will remain untouched.'
-      : '确认卸载 `/workspace/$alias` 吗？原始宿主目录和里面的文件都不会被删除。';
-  String _workspaceMountBrokenMessage(String sourcePath) => _isEnglish
-      ? 'Source is missing or unreadable: $sourcePath'
-      : '原始目录不存在或当前不可读：$sourcePath';
+      _choose(zh: '卸载挂载', en: 'Unmount directory');
+  String _workspaceMountUnmountMessage(String alias) => _choose(
+    zh: '确认卸载 `/workspace/$alias` 吗？原始宿主目录和里面的文件都不会被删除。',
+    en: 'Unmount `/workspace/$alias`? The original host directory and its files will remain untouched.',
+  );
+  String _workspaceMountBrokenMessage(String sourcePath) => _choose(
+    zh: '原始目录不存在或当前不可读：$sourcePath',
+    en: 'Source is missing or unreadable: $sourcePath',
+  );
   String _workspaceMountedToast(String alias) =>
-      _isEnglish ? 'Mounted as /workspace/$alias' : '已挂载到 /workspace/$alias';
+      _choose(zh: '已挂载到 /workspace/$alias', en: 'Mounted as /workspace/$alias');
   String _workspaceUnmountedToast(String alias) =>
-      _isEnglish ? 'Unmounted /workspace/$alias' : '已卸载 /workspace/$alias';
+      _choose(zh: '已卸载 /workspace/$alias', en: 'Unmounted /workspace/$alias');
 
   String _resolveL10nKey(String key) {
     // Returns the localized string for a given ARB key.
@@ -410,7 +422,7 @@ class _TermuxSettingPageState extends State<TermuxSettingPage>
         hintText: _workspaceMountAliasHint,
         initialValue: suggestedAlias,
         confirmText: _workspaceMountAliasSave,
-        cancelText: context.trLegacy('取消'),
+        cancelText: context.trText('取消'),
       ))?.trim();
       if (!mounted || alias == null) {
         return;
@@ -452,8 +464,8 @@ class _TermuxSettingPageState extends State<TermuxSettingPage>
       context,
       title: _workspaceMountUnmountTitle,
       content: _workspaceMountUnmountMessage(entry.alias),
-      cancelText: context.trLegacy('取消'),
-      confirmText: _isEnglish ? 'Unmount' : '卸载',
+      cancelText: context.trText('取消'),
+      confirmText: _choose(zh: '卸载', en: 'Unmount'),
     );
     if (confirmed != true || _isMountsBusy) {
       return;
@@ -593,8 +605,8 @@ class _TermuxSettingPageState extends State<TermuxSettingPage>
       context,
       title: context.l10n.alpineDeleteBootTask,
       content: context.l10n.alpineDeleteBootTaskMsg(task.name),
-      cancelText: context.trLegacy('取消'),
-      confirmText: context.trLegacy('删除'),
+      cancelText: context.trText('取消'),
+      confirmText: context.trText('删除'),
     );
     if (confirmed != true || _isAutoStartBusy) {
       return;
@@ -872,8 +884,8 @@ class _TermuxSettingPageState extends State<TermuxSettingPage>
 
   Widget _buildWorkspaceMountTile(WorkspaceMountEntry entry) {
     final stateLabel = entry.isBroken
-        ? (_isEnglish ? 'broken' : '异常')
-        : (_isEnglish ? 'mounted' : '已挂载');
+        ? _choose(zh: '异常', en: 'broken')
+        : _choose(zh: '已挂载', en: 'mounted');
     final stateBackground = entry.isBroken
         ? const Color(0xFFFFF7ED)
         : const Color(0xFFEAF2FF);
@@ -942,7 +954,7 @@ class _TermuxSettingPageState extends State<TermuxSettingPage>
                       ? null
                       : () => _unmountWorkspaceDirectory(entry),
                   icon: const Icon(Icons.link_off_rounded, size: 18),
-                  label: Text(_isEnglish ? 'Unmount' : '卸载'),
+                  label: Text(_choose(zh: '卸载', en: 'Unmount')),
                 ),
               ],
             ),
@@ -1189,7 +1201,7 @@ class _TermuxSettingPageState extends State<TermuxSettingPage>
                   ? null
                   : () => _deleteAutoStartTask(task),
               icon: const Icon(Icons.delete_outline_rounded, size: 18),
-              label: Text(context.trLegacy('删除')),
+              label: Text(context.trText('删除')),
             ),
           ],
         ),
@@ -1480,13 +1492,11 @@ class _AutoStartTaskDialogState extends State<_AutoStartTaskDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: Text(context.trLegacy('取消')),
+          child: Text(context.trText('取消')),
         ),
         FilledButton(
           onPressed: _submit,
-          child: Text(
-            editing ? context.trLegacy('保存') : context.trLegacy('创建'),
-          ),
+          child: Text(editing ? context.trText('保存') : context.trText('创建')),
         ),
       ],
     );

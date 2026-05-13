@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:ui/l10n/legacy_text_localizer.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/constants/storage_keys.dart';
 import 'package:ui/features/welcome/pages/welcome_page/widgets/auto_start_guide_bottom_sheet.dart';
@@ -98,10 +98,8 @@ class PermissionRegistry {
         iconPath: 'assets/welcome/permission_overlay.svg',
         iconWidth: 32.0,
         iconHeight: 32.0,
-        name: LegacyTextLocalizer.isEnglish ? 'Overlay Permission' : '悬浮窗权限',
-        description: LegacyTextLocalizer.isEnglish
-            ? 'Desktop overlay for quick access'
-            : '桌面悬浮显示，快速唤起小万',
+        name: AppTextLocalizer.choose(en: 'Overlay Permission', zh: '悬浮窗权限'),
+        description: AppTextLocalizer.choose(en: 'Desktop overlay for quick access', zh: '桌面悬浮显示，快速唤起小万'),
         openMethod: 'openOverlaySettings',
         checkMethod: 'isOverlayPermission',
       ),
@@ -110,12 +108,8 @@ class PermissionRegistry {
         iconPath: 'assets/welcome/permission_battery.svg',
         iconWidth: 32.0,
         iconHeight: 32.0,
-        name: LegacyTextLocalizer.isEnglish
-            ? 'Allow background running'
-            : '允许后台运行',
-        description: LegacyTextLocalizer.isEnglish
-            ? 'Keep running in background'
-            : '后台持续运行，切出APP不中断服务',
+        name: AppTextLocalizer.choose(en: 'Allow background running', zh: '允许后台运行'),
+        description: AppTextLocalizer.choose(en: 'Keep running in background', zh: '后台持续运行，切出APP不中断服务'),
         openMethod: 'openBatteryOptimizationSettings',
         checkMethod: 'isBackgroundRunAllowed',
       ),
@@ -124,12 +118,8 @@ class PermissionRegistry {
         iconPath: 'assets/welcome/permission_installed_apps.svg',
         iconWidth: 32.0,
         iconHeight: 32.0,
-        name: LegacyTextLocalizer.isEnglish
-            ? 'Installed Apps Access'
-            : '应用列表读取',
-        description: LegacyTextLocalizer.isEnglish
-            ? 'Enable cross-app automation'
-            : '支持跨应用自动操作',
+        name: AppTextLocalizer.choose(en: 'Installed Apps Access', zh: '应用列表读取'),
+        description: AppTextLocalizer.choose(en: 'Enable cross-app automation', zh: '支持跨应用自动操作'),
         openMethod: 'openInstalledAppsSettings',
         checkMethod: 'isInstalledAppsPermissionGranted',
       ),
@@ -138,13 +128,11 @@ class PermissionRegistry {
         iconPath: 'assets/welcome/permission_accessibility.svg',
         iconWidth: 30.0,
         iconHeight: 30.0,
-        name: LegacyTextLocalizer.isEnglish ? 'Accessibility' : '无障碍辅助权限',
-        description: LegacyTextLocalizer.isEnglish
-            ? 'Persistent automation for complex tasks'
-            : '持久化自动操作，轻松完成复杂任务',
+        name: AppTextLocalizer.choose(en: 'Accessibility', zh: '无障碍辅助权限'),
+        description: AppTextLocalizer.choose(en: 'Persistent automation for complex tasks', zh: '持久化自动操作，轻松完成复杂任务'),
         openMethod: 'openAccessibilitySettings',
         checkMethod: 'isAccessibilityServiceEnabled',
-        infoLabel: LegacyTextLocalizer.isEnglish ? 'Persistent' : '持久化',
+        infoLabel: AppTextLocalizer.choose(en: 'Persistent', zh: '持久化'),
       ),
     ];
     final optionalPermissions = <PermissionSpec>[
@@ -153,12 +141,8 @@ class PermissionRegistry {
         iconPath: 'assets/welcome/permission_installed_apps.svg',
         iconWidth: 32.0,
         iconHeight: 32.0,
-        name: LegacyTextLocalizer.isEnglish
-            ? 'Shizuku Permission'
-            : 'Shizuku 权限',
-        description: LegacyTextLocalizer.isEnglish
-            ? 'Optional advanced system actions for the agent'
-            : '可选的高级系统能力，用于扩展 agent 的系统级操作边界',
+        name: AppTextLocalizer.choose(en: 'Shizuku Permission', zh: 'Shizuku 权限'),
+        description: AppTextLocalizer.choose(en: 'Optional advanced system actions for the agent', zh: '可选的高级系统能力，用于扩展 agent 的系统级操作边界'),
         openMethod: 'openShizukuDownloadOrApp',
         customCheckMethod: () async {
           final status = await getShizukuStatus();
@@ -194,12 +178,8 @@ class PermissionRegistry {
             iconPath: 'assets/welcome/permission_autostart.svg',
             iconWidth: 32.0,
             iconHeight: 32.0,
-            name: LegacyTextLocalizer.isEnglish
-                ? 'App launch management'
-                : '应用启动管理',
-            description: LegacyTextLocalizer.isEnglish
-                ? 'Prevent Omnibot from being killed by system'
-                : '防止小万被系统关闭',
+            name: AppTextLocalizer.choose(en: 'App launch management', zh: '应用启动管理'),
+            description: AppTextLocalizer.choose(en: 'Prevent Omnibot from being killed by system', zh: '防止小万被系统关闭'),
             openMethod: 'openAutoStartSettings',
             applicableLevels: const {
               PermissionLevel.companionAutomation,

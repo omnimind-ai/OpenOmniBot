@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/theme/theme_context.dart';
 
 class BotStatus extends StatelessWidget {
@@ -16,8 +17,17 @@ class BotStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
-    if (status == BotStatusType.completed && isEnglish) {
+    final locale = Localizations.localeOf(context);
+    String choose({required String zh, required String en}) {
+      return AppTextLocalizer.choose(zh: zh, en: en, locale: locale);
+    }
+
+    final useCompactCompletedStatus = AppTextLocalizer.chooseValue(
+      zh: false,
+      en: true,
+      locale: locale,
+    );
+    if (status == BotStatusType.completed && useCompactCompletedStatus) {
       final completedText = (costTime != null && costTime!.trim().isNotEmpty)
           ? 'Thought for ${costTime!.trim()}'
           : 'Thought complete';
@@ -33,35 +43,23 @@ class BotStatus extends StatelessWidget {
         return _buildStatusRow(
           context,
           svgPath: 'assets/chatbot/thinking_icon.svg',
-          text: Localizations.localeOf(context).languageCode == 'en'
-              ? 'Thinking...'
-              : '正在思考...',
-          timeDesc: Localizations.localeOf(context).languageCode == 'en'
-              ? 'Time taken'
-              : '已用时',
+          text: choose(zh: '正在思考...', en: 'Thinking...'),
+          timeDesc: choose(zh: '已用时', en: 'Time taken'),
           costTime: costTime,
         );
       case BotStatusType.completed:
         return _buildStatusRow(
           context,
           icon: Icons.check_circle,
-          text: Localizations.localeOf(context).languageCode == 'en'
-              ? 'Thinking complete'
-              : '已完成思考',
-          timeDesc: Localizations.localeOf(context).languageCode == 'en'
-              ? 'Total time'
-              : '总用时',
+          text: choose(zh: '已完成思考', en: 'Thinking complete'),
+          timeDesc: choose(zh: '总用时', en: 'Total time'),
           costTime: costTime,
         );
       case BotStatusType.hint:
         return _buildStatusRow(
           context,
           svgPath: 'assets/chatbot/thinking_icon.svg',
-          text:
-              hintText ??
-              (Localizations.localeOf(context).languageCode == 'en'
-                  ? 'Hint'
-                  : '提示'),
+          text: hintText ?? choose(zh: '提示', en: 'Hint'),
         );
     }
   }

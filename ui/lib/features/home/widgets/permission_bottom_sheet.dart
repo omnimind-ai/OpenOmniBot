@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/authorize/widgets/permission_section.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/permission_service.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -95,6 +96,12 @@ class _PermissionBottomSheetState extends State<PermissionBottomSheet>
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
     final isDark = context.isDarkTheme;
+    final locale = Localizations.localeOf(context);
+    final displayButtonText = AppTextLocalizer.choose(
+      zh: widget.buttonText,
+      en: widget.buttonText == '开启陪伴' ? 'Enable Companion' : widget.buttonText,
+      locale: locale,
+    );
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -121,9 +128,11 @@ class _PermissionBottomSheetState extends State<PermissionBottomSheet>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Please check the permissions below'
-                    : '请检查下列权限',
+                AppTextLocalizer.choose(
+                  zh: '请检查下列权限',
+                  en: 'Please check the permissions below',
+                  locale: locale,
+                ),
                 style: TextStyle(
                   color: isDark ? null : AppColors.text,
                   fontSize: 20,
@@ -194,10 +203,7 @@ class _PermissionBottomSheetState extends State<PermissionBottomSheet>
                       ),
                       child: Center(
                         child: Text(
-                          Localizations.localeOf(context).languageCode == 'en' &&
-                                  widget.buttonText == '开启陪伴'
-                              ? 'Enable Companion'
-                              : widget.buttonText,
+                          displayButtonText,
                           style: TextStyle(
                             color: isDark ? palette.textPrimary : Colors.white,
                             fontSize: 16,
