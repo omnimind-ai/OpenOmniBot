@@ -130,6 +130,14 @@ internal object AgentConversationHistorySupport {
         ).filterValues { it != null }
     }
 
+    private fun readReasoningContent(payload: Map<String, Any?>): String? {
+        return AgentTextSanitizer.sanitizeUtf16(
+            payload["reasoning_content"]?.toString()
+                ?: payload["reasoningContent"]?.toString()
+                ?: ""
+        ).trim().takeIf { it.isNotBlank() }
+    }
+
     fun materializeRecord(record: AgentConversationEntryRecord): MaterializedEntry {
         val normalizedSummary = normalizeStoredSummary(record.summary, record.entryType)
         val baseEntry = record.toEntry().copy(summary = normalizedSummary)
@@ -485,13 +493,7 @@ internal object AgentConversationHistorySupport {
         } else {
             chooseText("terminalOutput")
         }
-        val reasoningContent = text(incoming, "reasoning_content").ifEmpty {
-            text(incoming, "reasoningContent").ifEmpty {
-                text(existing, "reasoning_content").ifEmpty {
-                    text(existing, "reasoningContent")
-                }
-            }
-        }
+        val reasoningContent = readReasoningContent(incoming) ?: readReasoningContent(existing)
 
         return linkedMapOf<String, Any?>(
             "taskId" to chooseAny("taskId"),
@@ -504,6 +506,7 @@ internal object AgentConversationHistorySupport {
             "serverName" to chooseAny("serverName"),
             "status" to chooseText("status", fallbackStatus),
             "summary" to chooseText("summary", fallbackSummary),
+            "reasoning_content" to reasoningContent,
             "progress" to chooseText("progress"),
             "args" to chooseText("args"),
             "argsJson" to chooseText("argsJson"),
@@ -543,16 +546,11 @@ internal object AgentConversationHistorySupport {
         val payload = readMap(entry.payloadJson)
         val content = buildPromptContentFromMessagePayload(payload) ?: return emptyList()
         if (content.isBlankJsonPrimitive()) return emptyList()
-        val reasoningContent = AgentTextSanitizer.sanitizeUtf16(
-            payload["reasoning_content"]?.toString()
-                ?: payload["reasoningContent"]?.toString()
-                ?: ""
-        ).trim().takeIf { it.isNotBlank() }
         return listOf(
             ChatCompletionMessage(
                 role = "assistant",
                 content = content,
-                reasoningContent = reasoningContent
+                reasoningContent = readReasoningContent(payload)
             )
         )
     }
@@ -590,6 +588,7 @@ internal object AgentConversationHistorySupport {
         val argsJson = payload["argsJson"]?.toString()?.trim()?.ifEmpty { null } ?: "{}"
         val assistantMessage = ChatCompletionMessage(
             role = "assistant",
+            reasoningContent = readReasoningContent(payload),
             toolCalls = listOf(
                 AssistantToolCall(
                     id = toolCallId,
@@ -713,6 +712,10 @@ internal object AgentConversationHistorySupport {
             terminalOutput,
             MAX_DISPLAY_TOOL_TERMINAL_CHARS
         )
+        val safeReasoningContent = trimText(
+            readReasoningContent(payload).orEmpty(),
+            MAX_STORAGE_MESSAGE_TEXT_CHARS
+        ).trim().takeIf { it.isNotBlank() }
         val payloadCompacted =
             safeArgsJson.length < AgentTextSanitizer.sanitizeUtf16(argsJson).trim().length ||
                 safeResultPreviewJson.length <
@@ -742,6 +745,7 @@ internal object AgentConversationHistorySupport {
                 payload["summary"]?.toString().orEmpty().ifEmpty { entry.summary },
                 MAX_TOOL_SUMMARY_CHARS
             ),
+            "reasoning_content" to safeReasoningContent,
             "progress" to trimText(
                 payload["progress"]?.toString().orEmpty(),
                 MAX_TOOL_SUMMARY_CHARS
@@ -866,6 +870,7 @@ internal object AgentConversationHistorySupport {
             "serverName" to cardData["serverName"],
             "status" to cardData["status"]?.toString()?.trim().orEmpty(),
             "summary" to cardData["summary"]?.toString()?.trim().orEmpty(),
+            "reasoning_content" to cardData["reasoning_content"]?.toString().orEmpty(),
             "progress" to cardData["progress"]?.toString()?.trim().orEmpty(),
             "args" to cardData["argsJson"]?.toString().orEmpty(),
             "argsJson" to cardData["argsJson"]?.toString().orEmpty(),
@@ -1117,6 +1122,10 @@ internal object AgentConversationHistorySupport {
             payload["summary"]?.toString().orEmpty().ifBlank { entry.summary },
             entry.entryType
         )
+        val safeReasoningContent = trimText(
+            readReasoningContent(payload).orEmpty(),
+            MAX_STORAGE_MESSAGE_TEXT_CHARS
+        ).trim().takeIf { it.isNotBlank() }
         val safePayload = linkedMapOf<String, Any?>(
             "taskId" to compactDisplayScalar(payload["taskId"]),
             "streamMeta" to compactDisplayStreamMeta(payload["streamMeta"]),
@@ -1133,6 +1142,7 @@ internal object AgentConversationHistorySupport {
             "toolType" to payload["toolType"]?.toString()?.trim().orEmpty().ifEmpty { "builtin" },
             "serverName" to compactDisplayScalar(payload["serverName"]),
             "status" to normalizedStatus,
+            "reasoning_content" to safeReasoningContent,
             "summary" to normalizedSummary.ifBlank { "工具调用结果已压缩保存" },
             "progress" to trimText(
                 payload["progress"]?.toString().orEmpty(),
