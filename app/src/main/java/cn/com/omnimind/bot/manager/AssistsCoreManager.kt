@@ -87,6 +87,8 @@ import cn.com.omnimind.bot.agent.UserDialog
 import cn.com.omnimind.bot.agent.WorkspaceMemoryRollupScheduler
 import cn.com.omnimind.bot.agent.WorkspaceMemoryService
 import cn.com.omnimind.bot.agent.WorkspaceScheduledTaskScheduler
+import cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandler
+import cn.com.omnimind.bot.agent.tool.handlers.SharedHelper
 import cn.com.omnimind.bot.localmodel.LocalModelFeature
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
@@ -2491,6 +2493,60 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 return@launch
             }
             val materializedSpec = OobReusableFunctionStore.materialize(spec, callArguments)
+            val omniflowRunner = OobFunctionToolHandler(
+                context = context,
+                helper = SharedHelper(context, chatTaskPayloadJson)
+            )
+            if (omniflowRunner.canRunFullyWithOmniflow(materializedSpec)) {
+                val runPayload = runCatching {
+                    withContext(Dispatchers.Default) {
+                        omniflowRunner.runMaterializedFunction(
+                            functionId = functionId,
+                            spec = spec,
+                            materializedSpec = materializedSpec
+                        )
+                    }
+                }.getOrElse { error ->
+                    linkedMapOf(
+                        "success" to false,
+                        "function_id" to functionId,
+                        "runner" to "oob_omniflow_replay",
+                        "step_count" to 0,
+                        "success_step_count" to 0,
+                        "model_used" to false,
+                        "error_message" to error.message.orEmpty(),
+                        "step_results" to emptyList<Map<String, Any?>>()
+                    )
+                }
+                val localSuccess = runPayload["success"] != false
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        linkedMapOf(
+                            "success" to localSuccess,
+                            "goal" to "oob_reusable_function_run:$functionId",
+                            "function_id" to functionId,
+                            "error_code" to if (localSuccess) null else "OOB_FUNCTION_OMNIFLOW_REPLAY_FAILED",
+                            "error_message" to runPayload["error_message"],
+                            "terminal_state" to linkedMapOf(
+                                "status" to if (localSuccess) "completed" else "error",
+                                "runner" to "oob_omniflow_replay",
+                                "step_count" to runPayload["step_count"],
+                                "success_step_count" to runPayload["success_step_count"],
+                                "model_used" to false,
+                                "arguments_applied" to true,
+                                "fallback_available" to (runPayload["fallback_available"] == true)
+                            ),
+                            "context" to linkedMapOf(
+                                "source" to "oob_reusable_function",
+                                "function_id" to functionId,
+                                "argument_count" to callArguments.size,
+                                "step_results" to runPayload["step_results"]
+                            )
+                        )
+                    )
+                }
+                return@launch
+            }
             val taskId = args["taskId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 ?: "${System.currentTimeMillis()}-ai"
             val conversationId = when (val raw = args["conversationId"]) {
@@ -4612,9 +4668,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             "",
             "执行规则:",
             "1. Function JSON 已由 native 按 parameters.bindings 完成参数物化，优先读取 runtime.resolved_arguments 和 execution.steps[*].args。",
-            "2. 按 execution.steps 顺序执行；executor=tool 时优先调用 step.callable_tool（没有则用 step.tool）并传入已物化 step.args。",
-            "3. executor=agent 或 validation/before_state/constraints 不匹配时，不要盲目重放坐标；使用 step.agent_call 或 fallback，以同一目标从当前屏幕重规划。",
-            "4. 如果 step.tool 对应现有 OOB/agent 工具，直接调用该工具并使用已物化后的 step.args；如果 callable_tool=oob.agent.run，则按 agent_call.args.prompt 执行。",
+            "2. executor=omniflow/model_free 的步骤应视为已确定动作，本地重放，不重新调用模型。",
+            "3. executor=tool 时优先调用 step.callable_tool（没有则用 step.tool）并传入已物化 step.args。",
+            "4. executor=agent 或 validation/before_state/constraints 不匹配时，不要盲目重放坐标；使用 step.agent_call 或 fallback，以同一目标从当前屏幕重规划。",
             "5. 执行完成后给出简洁结果，并说明是否发生过 agent re-plan。",
             "",
             "Function JSON:",
