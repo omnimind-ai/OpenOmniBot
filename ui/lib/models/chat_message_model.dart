@@ -34,6 +34,7 @@ class ChatMessageModel {
 
   /// 原生流式排序元数据
   final Map<String, dynamic>? streamMeta;
+  final String? reasoningContent;
 
   /// 创建时间
   final DateTime createAt;
@@ -48,6 +49,7 @@ class ChatMessageModel {
     this.isError = false,
     this.isSummarizing = false,
     this.streamMeta,
+    this.reasoningContent,
     DateTime? createAt,
   }) : createAt = createAt ?? DateTime.now();
 
@@ -114,6 +116,9 @@ class ChatMessageModel {
       streamMeta: _normalizeDynamic(json['streamMeta']) is Map<String, dynamic>
           ? _normalizeDynamic(json['streamMeta']) as Map<String, dynamic>
           : null,
+      reasoningContent: _normalizeOptionalString(
+        json['reasoning_content'] ?? json['reasoningContent'],
+      ),
       createAt: _parseCreateAt(json['createAt']),
     );
   }
@@ -130,6 +135,7 @@ class ChatMessageModel {
       'isError': isError,
       'isSummarizing': isSummarizing,
       if (streamMeta != null) 'streamMeta': streamMeta,
+      if (reasoningContent != null) 'reasoning_content': reasoningContent,
       'createAt': createAt.toIso8601String(),
     };
   }
@@ -150,6 +156,7 @@ class ChatMessageModel {
     String text, {
     String? id,
     bool isLoading = false,
+    String? reasoningContent,
   }) {
     final messageId = id ?? DateTime.now().millisecondsSinceEpoch.toString();
     return ChatMessageModel(
@@ -158,6 +165,7 @@ class ChatMessageModel {
       user: 2, // AI
       content: {'text': text, 'id': messageId},
       isLoading: isLoading,
+      reasoningContent: _normalizeOptionalString(reasoningContent),
     );
   }
 
@@ -188,6 +196,7 @@ class ChatMessageModel {
     bool? isError,
     bool? isSummarizing,
     Map<String, dynamic>? streamMeta,
+    String? reasoningContent,
     DateTime? createAt,
   }) {
     return ChatMessageModel(
@@ -200,6 +209,7 @@ class ChatMessageModel {
       isError: isError ?? this.isError,
       isSummarizing: isSummarizing ?? this.isSummarizing,
       streamMeta: streamMeta ?? this.streamMeta,
+      reasoningContent: reasoningContent ?? this.reasoningContent,
       createAt: createAt ?? this.createAt,
     );
   }
@@ -227,6 +237,11 @@ class ChatMessageModel {
       }
     }
     return null;
+  }
+
+  static String? _normalizeOptionalString(dynamic raw) {
+    final value = raw?.toString().trim() ?? '';
+    return value.isEmpty ? null : value;
   }
 
   static DateTime _parseCreateAt(dynamic raw) {
