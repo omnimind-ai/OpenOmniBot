@@ -109,6 +109,57 @@ void main() {
     },
   );
 
+  test('filters stale interrupted preview placeholders by active task ids', () {
+    final messages = [
+      _staleBrowserPreviewPlaceholder(
+        id: 'task-active-tool-preview',
+        taskId: 'task-active',
+        seq: 1,
+      ),
+      ChatMessageModel.cardMessage(
+        {
+          'type': 'agent_tool_summary',
+          'taskId': 'task-active',
+          'status': 'success',
+          'toolType': 'browser',
+          'toolName': 'browser_use',
+          'toolTitle': 'Browser action',
+          'argsJson': '{"action":"click"}',
+          'resultPreviewJson': '{"ok":true}',
+        },
+        id: 'task-active-tool-success',
+        streamMeta: const {
+          'parentTaskId': 'task-active',
+          'kind': 'tool_completed',
+          'seq': 2,
+        },
+      ),
+      ChatMessageModel.cardMessage(
+        {
+          'type': 'agent_tool_summary',
+          'taskId': 'task-active',
+          'status': 'running',
+          'toolTitle': '运行中工具',
+        },
+        id: 'task-active-tool-running',
+        streamMeta: const {
+          'parentTaskId': 'task-active',
+          'kind': 'tool_started',
+          'seq': 3,
+        },
+      ),
+    ];
+
+    final filtered = filterAgentToolMessagesByTaskIds(messages, const {
+      'task-active',
+    });
+
+    expect(filtered.map((message) => message.id), [
+      'task-active-tool-success',
+      'task-active-tool-running',
+    ]);
+  });
+
   test('completed run keeps latest tool history pinned after folding', () {
     final messages = [
       ChatMessageModel(
@@ -448,6 +499,93 @@ void main() {
 
     expect(cards, hasLength(1));
     expect(cards.single['toolCallId'], 'call-1');
+  });
+
+  test(
+    'extractAgentToolCards ignores stale interrupted preview placeholders',
+    () {
+      final messages = [
+        _staleBrowserPreviewPlaceholder(
+          id: 'task-1-tool-preview',
+          taskId: 'task-1',
+          seq: 1,
+        ),
+        ChatMessageModel.cardMessage(
+          {
+            'type': 'agent_tool_summary',
+            'taskId': 'task-1',
+            'cardId': 'task-1-tool-success',
+            'toolCallId': 'call-1',
+            'toolType': 'browser',
+            'toolName': 'browser_use',
+            'status': 'success',
+            'argsJson': '{"action":"navigate"}',
+            'resultPreviewJson': '{"ok":true}',
+          },
+          id: 'task-1-tool-success',
+          streamMeta: const {
+            'parentTaskId': 'task-1',
+            'kind': 'tool_completed',
+            'seq': 2,
+          },
+        ),
+      ];
+
+      final cards = extractAgentToolCards(messages);
+
+      expect(cards, hasLength(1));
+      expect(cards.single['cardId'], 'task-1-tool-success');
+    },
+  );
+
+  test('completed run snapshot ignores stale preview placeholders', () {
+    final messages = [
+      ChatMessageModel(
+        id: 'task-browser-text',
+        type: 1,
+        user: 2,
+        content: const {'text': '完成', 'id': 'task-browser-text'},
+        streamMeta: const {
+          'parentTaskId': 'task-browser',
+          'kind': 'completed',
+          'isFinal': true,
+          'seq': 4,
+        },
+      ),
+      ChatMessageModel.cardMessage(
+        {
+          'type': 'agent_tool_summary',
+          'taskId': 'task-browser',
+          'cardId': 'task-browser-tool-success',
+          'toolCallId': 'call-success',
+          'toolType': 'browser',
+          'toolName': 'browser_use',
+          'status': 'success',
+          'argsJson': '{"action":"get_text"}',
+          'resultPreviewJson': '{"text":"done"}',
+        },
+        id: 'task-browser-tool-success',
+        streamMeta: const {
+          'parentTaskId': 'task-browser',
+          'kind': 'tool_completed',
+          'seq': 3,
+        },
+      ),
+      _staleBrowserPreviewPlaceholder(
+        id: 'task-browser-tool-preview',
+        taskId: 'task-browser',
+        seq: 2,
+      ),
+      ChatMessageModel.userMessage('用户问题', id: 'user-browser'),
+    ];
+
+    final snapshot = resolveAgentToolActivitySnapshot(messages);
+
+    expect(snapshot.taskId, 'task-browser');
+    expect(snapshot.messages.map((message) => message.id), [
+      'task-browser-tool-success',
+    ]);
+    expect(extractAgentToolCards(snapshot.messages), hasLength(1));
   });
 
   test('extracts workbench project card from stream event envelope', () {
@@ -1316,4 +1454,32 @@ void main() {
 
     expect(ToolCardDetailGestureGate.hasActivePointers, isFalse);
   });
+}
+
+ChatMessageModel _staleBrowserPreviewPlaceholder({
+  required String id,
+  required String taskId,
+  required int seq,
+}) {
+  return ChatMessageModel.cardMessage(
+    {
+      'type': 'agent_tool_summary',
+      'taskId': taskId,
+      'cardId': id,
+      'toolCallId': '$id-call',
+      'toolType': 'browser',
+      'toolName': 'browser_use',
+      'status': 'interrupted',
+      'summary': 'Preparing tool call...',
+      'progress': 'Preparing tool call...',
+      'argsJson': '{}',
+    },
+    id: id,
+    streamMeta: {
+      'parentTaskId': taskId,
+      'entryId': id,
+      'kind': 'tool_started',
+      'seq': seq,
+    },
+  );
 }

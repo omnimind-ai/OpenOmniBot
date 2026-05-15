@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/models/chat_message_model.dart';
 
 const String kAgentToolActivityCardType = 'agent_tool_summary';
@@ -77,7 +78,7 @@ List<AgentProcessItem> compactAgentProcessItems(
   }
 
   for (final message in processMessages) {
-    if (_isStaleToolPreviewPlaceholder(message)) {
+    if (isStaleAgentToolPreviewPlaceholder(message)) {
       continue;
     }
     final candidate = _ToolActivityCandidate.tryParse(message);
@@ -99,41 +100,6 @@ List<AgentProcessItem> compactAgentProcessItems(
 
   flushPending();
   return items;
-}
-
-bool _isStaleToolPreviewPlaceholder(ChatMessageModel message) {
-  final cardData = message.cardData;
-  if (cardData == null ||
-      (cardData['type'] ?? '').toString() != kAgentToolActivityCardType) {
-    return false;
-  }
-  if ((message.streamMeta?['kind'] ?? '').toString() != 'tool_started') {
-    return false;
-  }
-  final status = _normalizeStatus(cardData['status']);
-  if (status == 'running') {
-    return false;
-  }
-  final argsText = _firstNonBlank(<Object?>[
-    cardData['argsJson'],
-    cardData['args'],
-  ]);
-  final args = _decodeJsonMap(argsText);
-  if (args.isNotEmpty) {
-    return false;
-  }
-  final preview = _firstNonBlank(<Object?>[
-    cardData['resultPreviewJson'],
-    cardData['rawResultJson'],
-  ]);
-  if (preview.isNotEmpty) {
-    return false;
-  }
-  final summary = _firstNonBlank(<Object?>[
-    cardData['summary'],
-    cardData['progress'],
-  ]).toLowerCase();
-  return summary == 'preparing tool call...' || summary == '正在准备工具调用...';
 }
 
 class _ActivityBuilder {

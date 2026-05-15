@@ -1942,24 +1942,7 @@ class AssistsMessageService {
     String? baseUrl,
     int limit = 50,
   }) async {
-    UtgRunLogsSnapshot? internalSnapshot;
-    try {
-      internalSnapshot = await getInternalRunLogs(limit: limit);
-      if (internalSnapshot.runs.isNotEmpty) {
-        return internalSnapshot;
-      }
-    } catch (_) {
-      internalSnapshot = null;
-    }
-
-    try {
-      return await getUtgRunLogs(baseUrl: baseUrl, limit: limit);
-    } catch (_) {
-      if (internalSnapshot != null) {
-        return internalSnapshot;
-      }
-      rethrow;
-    }
+    return getInternalRunLogs(limit: limit);
   }
 
   static Future<UtgRunLogDetail> getUtgRunLogDetail({
@@ -2041,15 +2024,7 @@ class AssistsMessageService {
     required String runId,
     String? baseUrl,
   }) async {
-    try {
-      final internal = await getInternalRunLogTimeline(runId: runId);
-      if (internal['success'] == true) {
-        return internal;
-      }
-    } catch (_) {
-      // Fall back to OmniFlow provider below.
-    }
-    return getRunLogTimeline(runId: runId, baseUrl: baseUrl);
+    return getInternalRunLogTimeline(runId: runId);
   }
 
   /// 将当前 OOB 模型 provider 的 API Key 推送到 OmniFlow（best-effort）。

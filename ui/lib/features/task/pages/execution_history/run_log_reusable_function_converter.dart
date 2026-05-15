@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:ui/services/assists_core_service.dart';
 
 class RunLogReusableFunctionSpec {
@@ -45,7 +46,7 @@ class RunLogReusableFunctionConverter {
     bool useAi = true,
     bool useEnglish = false,
   }) async {
-    final baseJson = buildLocalFunctionJson(
+    final baseJson = await buildLocalFunctionJsonAsync(
       runId: runId,
       title: title,
       payload: payload,
@@ -129,6 +130,8 @@ class RunLogReusableFunctionConverter {
       title,
     ]);
     final steps = <Map<String, dynamic>>[];
+    final parametersBySignature = <String, Map<String, dynamic>>{};
+    final seenParameterNames = <String>{};
 
     for (var index = 0; index < cards.length; index++) {
       final snapshot = _RunLogActionSnapshot.fromCard(
@@ -139,6 +142,8 @@ class RunLogReusableFunctionConverter {
       final stepId = 'step_${index + 1}';
       final executor = _executorForToolName(snapshot.toolName, snapshot.route);
       final replayAction = _omniflowActionForToolName(snapshot.toolName);
+      final modelFree = executor == 'omniflow';
+      final scriptable = executor != 'agent';
       final coordinateHook = _buildCoordinateHookMetadata(
         snapshot: snapshot,
         args: args,
@@ -166,32 +171,90 @@ class RunLogReusableFunctionConverter {
       steps.add({
         'id': stepId,
         'index': index,
+        'kind': _stepKindForToolName(snapshot.toolName, snapshot.route),
         'title': snapshot.title.isNotEmpty ? snapshot.title : snapshot.toolName,
+        if (summary.isNotEmpty) 'summary': summary,
+        'tool': snapshot.toolName,
+        'callable_tool': executor == 'agent'
+            ? 'oob.agent.run'
+            : snapshot.toolName,
         'executor': executor,
-        // omniflow steps
+        'scriptable': scriptable,
+        if (modelFree) 'model_free': true,
         if (replayAction != null) 'omniflow_action': replayAction,
         if (coordinateHook != null) ...coordinateHook,
         'args': args,
-        // tool steps
-        if (executor == 'tool') ...{
-          'tool': snapshot.toolName,
-          'callable_tool': snapshot.toolName,
-        },
-        // remaining agent steps: store actual tool + prompt for inline execution
-        if (executor == 'agent') ...{
-          'tool': snapshot.toolName,
-          'callable_tool': snapshot.toolName,
-          'agent_call': {
-            'tool': snapshot.toolName,
-            'args': {'prompt': fallbackPrompt},
+        if (prompt.isNotEmpty)
+          'prompt': {
+            'text': prompt,
+            'preview': _compactPreview(prompt, maxLength: 240),
+            'source': snapshot.promptSource,
           },
+        'tool_binding': {
+          'kind': executor == 'agent'
+              ? 'agent_replan'
+              : executor == 'omniflow'
+              ? 'omniflow_action'
+              : 'oob_agent_tool',
+          'name': snapshot.toolName,
+          if (executor == 'agent') 'callable_tool': 'oob.agent.run',
         },
+        if (executor == 'agent')
+          'agent_call': {
+            'tool': 'oob.agent.run',
+            'args': {
+              'prompt': fallbackPrompt,
+              'original_tool': snapshot.toolName,
+              'original_args': args,
+              if (prompt.isNotEmpty) 'original_prompt': prompt,
+            },
+            'reason': 'non_scriptable_or_vlm_step',
+          },
+        if (snapshot.route.isNotEmpty) 'route': snapshot.route,
+        if (snapshot.success != null) 'success': snapshot.success,
+        if (snapshot.durationMs != null) 'duration_ms': snapshot.durationMs,
         if (snapshot.packageName.isNotEmpty)
           'package_name': snapshot.packageName,
+        if (!_isEmptyJsonValue(snapshot.result))
+          'observed_result': snapshot.result,
+        if (snapshot.beforeSummary.isNotEmpty)
+          'before_state': snapshot.beforeSummary,
+        if (snapshot.afterSummary.isNotEmpty)
+          'after_state': snapshot.afterSummary,
+        'validation': {
+          'mode': 'soft_state_match',
+          if (snapshot.packageName.isNotEmpty)
+            'package_name': snapshot.packageName,
+          if (snapshot.beforeSummary.isNotEmpty)
+            'expected_before_state': snapshot.beforeSummary,
+        },
+        'fallback': {
+          'kind': 'agent_replan',
+          'tool': 'oob.agent.run',
+          'when': scriptable
+              ? 'state_or_selector_mismatch'
+              : 'always_for_agent_executor',
+          'prompt': fallbackPrompt,
+        },
+        'reuse_policy': {
+          'mode': 'prefer_script_then_agent_replan',
+          'allow_agent_replan_on_mismatch': true,
+          'requires_runtime_validation': true,
+        },
       });
 
+      _collectParametersFromArgs(
+        stepId: stepId,
+        stepIndex: index,
+        toolName: snapshot.toolName,
+        args: args,
+        parametersBySignature: parametersBySignature,
+        seenNames: seenParameterNames,
+        useEnglish: useEnglish,
+      );
     }
 
+    final parameters = parametersBySignature.values.toList(growable: false);
     final packageName = _firstNonBlank([
       ...steps.map((step) => step['package_name']),
       payload['final_package_name'],
@@ -203,37 +266,139 @@ class RunLogReusableFunctionConverter {
     );
     final now = DateTime.now().toUtc().toIso8601String();
 
-    final omniflowCount =
-        steps.where((s) => s['executor'] == 'omniflow').length;
-    final agentCount =
-        steps.where((s) => s['executor'] == 'agent').length;
     final startState = _firstNonBlank([
-      _asStringKeyMap(cards.isEmpty ? null : cards.first['before'])['page_title'],
+      _asStringKeyMap(
+        cards.isEmpty ? null : cards.first['before'],
+      )['page_title'],
       _asStringKeyMap(cards.isEmpty ? null : cards.first['before'])['activity'],
-      _asStringKeyMap(cards.isEmpty ? null : cards.first['before'])['package_name'],
+      _asStringKeyMap(
+        cards.isEmpty ? null : cards.first['before'],
+      )['package_name'],
+    ]);
+    final endState = _firstNonBlank([
+      _asStringKeyMap(cards.isEmpty ? null : cards.last['after'])['page_title'],
+      _asStringKeyMap(cards.isEmpty ? null : cards.last['after'])['activity'],
+      _asStringKeyMap(
+        cards.isEmpty ? null : cards.last['after'],
+      )['package_name'],
     ]);
 
     return {
-      'schema_version': 'oob.skill.v2',
+      'schema_version': 'oob.reusable_function.v1',
       'function_id': 'runlog_${_compactId(runId)}',
       'name': name,
       'description': goal.isNotEmpty ? goal : name,
+      'tags': const ['oob_reusable_function'],
       'source': {
         'kind': 'run_log',
         'run_id': runId,
         'title': title,
         'converted_at': now,
+        'converter': 'oob_run_log_reusable_function_converter',
+      },
+      'runtime_targets': ['agent', 'script'],
+      'parameters': parameters,
+      'call_contract': {
+        'api': 'AssistsMessageService.runOobReusableFunction',
+        'method_channel': 'cn.com.omnimind.bot/AssistCoreEvent',
+        'native_method': 'runOobReusableFunction',
+        'argument_binding': 'parameters[*].bindings',
+        'argument_application': 'native_materialized_before_agent_run',
+        'arguments_schema': parameters
+            .map(
+              (item) => {
+                'name': item['name'],
+                'type': item['type'],
+                'description': item['description'],
+                if (item.containsKey('default')) 'default': item['default'],
+                'required': item['required'] == true,
+              },
+            )
+            .toList(),
+        'example': {
+          'function_id': 'runlog_${_compactId(runId)}',
+          'arguments': {
+            for (final item in parameters)
+              item['name'].toString(): item['default'] ?? '<value>',
+          },
+        },
       },
       'constraints': {
         if (packageName.isNotEmpty) 'package_name': packageName,
         if (startState.isNotEmpty) 'start_state': startState,
+        if (endState.isNotEmpty) 'end_state': endState,
       },
       'execution': {
+        'kind': 'tool_sequence',
+        'runner': 'oob_tool_sequence',
+        'entrypoint': 'execute',
+        'capabilities': {
+          'scriptable_step_count': steps
+              .where((step) => step['scriptable'] == true)
+              .length,
+          'model_free_step_count': steps
+              .where((step) => step['model_free'] == true)
+              .length,
+          'omniflow_step_count': steps
+              .where((step) => step['executor'] == 'omniflow')
+              .length,
+          'agent_step_count': steps
+              .where((step) => step['executor'] == 'agent')
+              .length,
+          'requires_agent_fallback': steps.any(
+            (step) => step['executor'] == 'agent',
+          ),
+        },
+        'binding_model': {
+          'parameters_path': '\$.parameters',
+          'bindings_path': '\$.parameters[*].bindings',
+          'applied_by': 'OobReusableFunctionStore.materialize',
+        },
+        'fallback_runner': 'oob.agent.run',
         'steps': steps,
-        'omniflow_step_count': omniflowCount,
-        'agent_step_count': agentCount,
+      },
+      'agent_reuse': {
+        'strategy':
+            'Use materialized execution.steps directly when executor=omniflow/model_free. If executor=tool, call the bound OOB tool. If executor=agent or validation fails, keep the same goal and re-plan that step from the current screen.',
+        'input_contract': parameters
+            .map(
+              (item) => {
+                'name': item['name'],
+                'type': item['type'],
+                'description': item['description'],
+                if (item['default'] != null) 'default': item['default'],
+              },
+            )
+            .toList(),
+      },
+      'script_reuse': {
+        'language': 'json-actions',
+        'runner': 'oob_tool_sequence',
+        'call_shape': {
+          'function_id': 'runlog_${_compactId(runId)}',
+          'arguments': {
+            for (final item in parameters)
+              item['name'].toString(): item['default'] ?? '<value>',
+          },
+        },
       },
     };
+  }
+
+  static Future<Map<String, dynamic>> buildLocalFunctionJsonAsync({
+    required String runId,
+    required String title,
+    required Map<String, dynamic> payload,
+    required List<Map<String, dynamic>> cards,
+    bool useEnglish = false,
+  }) {
+    return compute(_buildLocalFunctionJsonInIsolate, {
+      'runId': runId,
+      'title': title,
+      'payload': _jsonSafeMap(payload),
+      'cards': cards.map(_jsonSafeMap).toList(growable: false),
+      'useEnglish': useEnglish,
+    });
   }
 
   static String buildAgentPrompt(
@@ -476,6 +641,24 @@ $fallback
     }
     return Map<String, dynamic>.from(fallback);
   }
+}
+
+Map<String, dynamic> _buildLocalFunctionJsonInIsolate(
+  Map<String, dynamic> args,
+) {
+  final payload = _asStringKeyMap(args['payload']);
+  final rawCards = args['cards'] is List ? args['cards'] as List : const [];
+  final cards = rawCards
+      .map(_asStringKeyMap)
+      .where((card) => card.isNotEmpty)
+      .toList(growable: false);
+  return RunLogReusableFunctionConverter.buildLocalFunctionJson(
+    runId: (args['runId'] ?? '').toString(),
+    title: (args['title'] ?? '').toString(),
+    payload: payload,
+    cards: cards,
+    useEnglish: args['useEnglish'] == true,
+  );
 }
 
 class _RunLogActionSnapshot {
@@ -1766,6 +1949,11 @@ dynamic _jsonSafe(dynamic value) {
     return decoded.map(_jsonSafe).toList(growable: false);
   }
   return decoded.toString();
+}
+
+Map<String, dynamic> _jsonSafeMap(Map<String, dynamic> value) {
+  final safe = _jsonSafe(value);
+  return safe is Map<String, dynamic> ? safe : _asStringKeyMap(safe);
 }
 
 String _normalizeFunctionName(String value, {required String fallback}) {

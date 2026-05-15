@@ -35,8 +35,7 @@ class _RunLogListPageState extends State<RunLogListPage> {
       _error = null;
     });
     try {
-      final snapshot = await AssistsMessageService.getRunLogsPreferInternal(
-        baseUrl: widget.baseUrl,
+      final snapshot = await AssistsMessageService.getInternalRunLogs(
         limit: _limit,
       );
       if (!mounted) return;

@@ -49,6 +49,9 @@ List<Map<String, dynamic>> extractAgentToolCards(
   final cards = <Map<String, dynamic>>[];
   final emittedKeys = <String>{};
   for (final message in messages) {
+    if (isStaleAgentToolPreviewPlaceholder(message)) {
+      continue;
+    }
     final cardData = message.cardData;
     if (cardData == null ||
         (cardData['type'] ?? '').toString() != kAgentToolSummaryCardType) {
@@ -84,6 +87,9 @@ List<ChatMessageModel> filterAgentToolMessagesByTaskIds(
   }
   return messages
       .where((message) {
+        if (isStaleAgentToolPreviewPlaceholder(message)) {
+          return false;
+        }
         if ((message.cardData?['type'] ?? '').toString() !=
             kAgentToolSummaryCardType) {
           return false;
@@ -171,7 +177,7 @@ List<ChatMessageModel> resolveAgentToolMessagesForTask(
       continue;
     }
     return group.processMessagesNewestFirst
-        .where(_isAgentToolSummaryMessage)
+        .where(_isVisibleAgentToolSummaryMessage)
         .toList(growable: false);
   }
   return const <ChatMessageModel>[];
@@ -328,11 +334,78 @@ bool _isAgentToolSummaryMessage(ChatMessageModel message) {
       kAgentToolSummaryCardType;
 }
 
+bool _isVisibleAgentToolSummaryMessage(ChatMessageModel message) {
+  return _isAgentToolSummaryMessage(message) &&
+      !isStaleAgentToolPreviewPlaceholder(message);
+}
+
+bool isStaleAgentToolPreviewPlaceholder(ChatMessageModel message) {
+  final cardData = message.cardData;
+  if (cardData == null ||
+      (cardData['type'] ?? '').toString() != kAgentToolSummaryCardType) {
+    return false;
+  }
+  final streamMeta = <String, dynamic>{
+    ..._asStringKeyMap(cardData['streamMeta']),
+    ..._asStringKeyMap(message.streamMeta),
+  };
+  if ((streamMeta['kind'] ?? '').toString() != 'tool_started') {
+    return false;
+  }
+  final status = _normalizeToolStatus(cardData['status']);
+  if (status == 'running') {
+    return false;
+  }
+  final args = _decodeJsonMap(
+    _firstNonBlank(<Object?>[cardData['argsJson'], cardData['args']]),
+  );
+  if (args.isNotEmpty) {
+    return false;
+  }
+  final preview = _firstNonBlank(<Object?>[
+    cardData['resultPreviewJson'],
+    cardData['rawResultJson'],
+  ]);
+  if (preview.isNotEmpty) {
+    return false;
+  }
+  final summary = _firstNonBlank(<Object?>[
+    cardData['summary'],
+    cardData['progress'],
+  ]).toLowerCase();
+  return summary == 'preparing tool call...' || summary == '正在准备工具调用...';
+}
+
 Map<String, dynamic> _asStringKeyMap(dynamic value) {
   if (value is! Map) {
     return const <String, dynamic>{};
   }
   return value.map((key, item) => MapEntry(key.toString(), item));
+}
+
+String _normalizeToolStatus(dynamic raw) {
+  final status = raw?.toString().trim().toLowerCase() ?? '';
+  if (status.isEmpty) {
+    return 'running';
+  }
+  if (status == 'failed' || status == 'failure') {
+    return 'error';
+  }
+  return status;
+}
+
+Map<String, dynamic> _decodeJsonMap(String raw) {
+  final text = raw.trim();
+  if (text.isEmpty) {
+    return const <String, dynamic>{};
+  }
+  try {
+    final decoded = jsonDecode(text);
+    if (decoded is Map) {
+      return decoded.map((key, value) => MapEntry(key.toString(), value));
+    }
+  } catch (_) {}
+  return const <String, dynamic>{};
 }
 
 String? _resolveSnapshotTaskId(List<ChatMessageModel> messages) {
@@ -363,7 +436,7 @@ _CompletedAgentToolRun? _resolveLatestCompletedAgentToolRun(
   return _CompletedAgentToolRun(
     taskId: group.taskId,
     messages: group.processMessagesNewestFirst
-        .where(_isAgentToolSummaryMessage)
+        .where(_isVisibleAgentToolSummaryMessage)
         .toList(growable: false),
   );
 }

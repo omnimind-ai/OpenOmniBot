@@ -87,11 +87,9 @@ class _StepDetailLoaderState extends State<_StepDetailLoader> {
 
   Future<void> _load() async {
     try {
-      final payload =
-          await AssistsMessageService.getRunLogTimelinePreferInternal(
-            runId: widget.runId,
-            baseUrl: widget.baseUrl,
-          );
+      final payload = await AssistsMessageService.getInternalRunLogTimeline(
+        runId: widget.runId,
+      );
       if (!mounted) return;
       final cards = _extractTimelineCards(payload);
       // 找匹配的 card：先匹配 cardId/tool_call_id，再匹配 toolName
@@ -215,11 +213,9 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       _error = null;
     });
     try {
-      final payload =
-          await AssistsMessageService.getRunLogTimelinePreferInternal(
-            runId: widget.runId,
-            baseUrl: widget.baseUrl,
-          );
+      final payload = await AssistsMessageService.getInternalRunLogTimeline(
+        runId: widget.runId,
+      );
       if (!mounted) return;
       setState(() {
         _payload = payload;

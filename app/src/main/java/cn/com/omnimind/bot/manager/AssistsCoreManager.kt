@@ -2626,12 +2626,18 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
             val stepResults = (runPayload["step_results"] as? List<*>)
                 ?.filterIsInstance<Map<*, *>>() ?: emptyList()
-            val pendingAgentSteps = stepResults.filter { it["needs_agent"] == true }
+            val pendingAgentSteps = stepResults.filter {
+                it["needs_agent"] == true ||
+                    (it["fallback_available"] == true && it["executor"] == "agent")
+            }
 
             // Phase 2: if agent steps couldn't run inline, hand them (and any
             // subsequent steps) to the agent with a targeted prompt.
             if (pendingAgentSteps.isNotEmpty()) {
-                val completedCount = stepResults.indexOfFirst { it["needs_agent"] == true }
+                val completedCount = stepResults.indexOfFirst {
+                    it["needs_agent"] == true ||
+                        (it["fallback_available"] == true && it["executor"] == "agent")
+                }
                 val conversationId = when (val raw = args["conversationId"]) {
                     is Number -> raw.toLong().takeIf { it > 0L }
                     is String -> raw.trim().toLongOrNull()?.takeIf { it > 0L }
@@ -2683,13 +2689,17 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         "terminal_state" to linkedMapOf(
                             "status" to if (started) "started" else "error",
                             "taskId" to taskId,
-                            "runner" to "oob_mixed_runner",
+                            "runner" to (runPayload["runner"] ?: "oob_mixed_runner"),
                             "local_steps_completed" to completedCount,
-                            "agent_steps_pending" to pendingAgentSteps.size
+                            "agent_steps_pending" to pendingAgentSteps.size,
+                            "arguments_applied" to true,
+                            "model_required" to (runPayload["model_required"] == true),
+                            "fallback_available" to (runPayload["fallback_available"] == true)
                         ),
                         "context" to linkedMapOf(
                             "source" to "oob_reusable_function",
                             "function_id" to functionId,
+                            "argument_count" to callArguments.size,
                             "step_results" to stepResults
                         )
                     ))
@@ -2708,14 +2718,19 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     "error_message" to runPayload["error_message"],
                     "terminal_state" to linkedMapOf(
                         "status" to if (localSuccess) "completed" else "error",
-                        "runner" to "oob_mixed_runner",
+                        "runner" to (runPayload["runner"] ?: "oob_mixed_runner"),
                         "step_count" to runPayload["step_count"],
                         "success_step_count" to runPayload["success_step_count"],
-                        "model_used" to (runPayload["model_used"] == true)
+                        "model_used" to (runPayload["model_used"] == true),
+                        "model_required" to (runPayload["model_required"] == true),
+                        "delegated_tool_used" to (runPayload["delegated_tool_used"] == true),
+                        "arguments_applied" to true,
+                        "fallback_available" to (runPayload["fallback_available"] == true)
                     ),
                     "context" to linkedMapOf(
                         "source" to "oob_reusable_function",
                         "function_id" to functionId,
+                        "argument_count" to callArguments.size,
                         "step_results" to stepResults
                     )
                 ))
@@ -4773,6 +4788,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         val lines = mutableListOf<String>()
         lines += "执行任务：$goal"
         if (packageName.isNotEmpty()) lines += "目标应用：$packageName"
+        if (arguments.isNotEmpty()) {
+            lines += "调用参数：${OobReusableFunctionStore.prettyJson(arguments)}"
+        }
         if (completedStepCount > 0) {
             lines += "（前 $completedStepCount 步已由本地执行完毕，从第 ${completedStepCount + 1} 步继续）"
         }
@@ -4818,7 +4836,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
 
         lines += ""
-        lines += "规则：[直接执行] 步骤调用对应工具，使用已记录参数，不重新规划；[重新规划] 步骤以所给 prompt 从当前屏幕执行。"
+        lines += "规则：[直接执行] / executor=omniflow/model_free 的步骤使用已记录参数本地重放，不重新规划；[工具调用] 使用 step.callable_tool；[重新规划] / executor=agent 的步骤以 step.agent_call 或 fallback prompt 从当前屏幕继续。"
         return lines.joinToString("\n")
     }
 

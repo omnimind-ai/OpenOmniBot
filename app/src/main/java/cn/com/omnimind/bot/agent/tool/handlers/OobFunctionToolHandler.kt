@@ -28,15 +28,15 @@ class OobFunctionToolHandler(
         cn.com.omnimind.baselib.runlog.OobReusableFunctionStore.get(context, toolName) != null
             || workspaceFunctionStore?.canHandle(toolName) == true
 
-    fun canRunFullyWithOmniflow(materializedSpec: Map<String, Any?>): Boolean {
-        val steps = materializedSteps(materializedSpec)
-        return steps.isNotEmpty() && steps.all { isOmniflowStep(it) }
-    }
-
     /** Returns the function spec from SharedPreferences or workspace, whichever has it. */
     private fun getSpec(functionId: String): Map<String, Any?>? =
         cn.com.omnimind.baselib.runlog.OobReusableFunctionStore.get(context, functionId)
             ?: workspaceFunctionStore?.get(functionId)
+
+    fun canRunFullyWithOmniflow(materializedSpec: Map<String, Any?>): Boolean {
+        val steps = materializedSteps(materializedSpec)
+        return steps.isNotEmpty() && steps.all { isOmniflowStep(it) }
+    }
 
     override suspend fun execute(
         toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
@@ -96,7 +96,8 @@ class OobFunctionToolHandler(
     ): Map<String, Any?> {
         val steps = materializedSteps(materializedSpec)
         val stepResults = mutableListOf<Map<String, Any?>>()
-        var modelUsed = false
+        var delegatedToolUsed = false
+        var modelRequired = false
         var failureReason: String? = null
 
         for ((index, step) in steps.withIndex()) {
@@ -125,7 +126,6 @@ class OobFunctionToolHandler(
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        // Coordinate remap failed — try vlm_task fallback if possible
                         val fallbackResult = tryOmniflowVlmFallback(
                             step = step,
                             stepId = stepId,
@@ -136,7 +136,10 @@ class OobFunctionToolHandler(
                             toolHandle = toolHandle,
                             parentToolCallId = parentToolCallId ?: toolName
                         )
-                        fallbackResult ?: linkedMapOf(
+                        if (fallbackResult != null) {
+                            delegatedToolUsed = true
+                        }
+                        fallbackResult ?: linkedMapOf<String, Any?>(
                             "step_id" to stepId,
                             "tool" to actionNameForStep(step),
                             "executor" to "omniflow",
@@ -149,6 +152,7 @@ class OobFunctionToolHandler(
 
                 executor == "tool" && callableTool.isNotEmpty() && router != null &&
                     env != null && callback != null && toolHandle != null -> {
+                    delegatedToolUsed = true
                     executeToolStep(
                         step = step,
                         stepId = stepId,
@@ -162,16 +166,11 @@ class OobFunctionToolHandler(
                 }
 
                 else -> {
-                    // executor=agent: call the actual recorded tool inline via router.
-                    // This keeps execution in the same context without spawning a new
-                    // agent conversation. Data flow from previous steps is sequential
-                    // but args are from the original recording (static replay).
-                    val agentTool = callableTool
-                        .ifEmpty { step["tool"]?.toString()?.trim().orEmpty() }
-                    if (agentTool.isNotEmpty() &&
-                        router != null && env != null &&
-                        callback != null && toolHandle != null) {
-                        modelUsed = true
+                    val agentTool = replayableAgentTool(step, callableTool)
+                    if (agentTool.isNotEmpty() && router != null && env != null &&
+                        callback != null && toolHandle != null
+                    ) {
+                        delegatedToolUsed = true
                         executeToolStep(
                             step = step,
                             stepId = stepId,
@@ -182,20 +181,24 @@ class OobFunctionToolHandler(
                             toolHandle = toolHandle,
                             syntheticCallId = "${parentToolCallId ?: toolName}_$stepId"
                         ).also { result ->
-                            // Annotate so caller knows a tool was used
                             (result as? LinkedHashMap<String, Any?>)
                                 ?.put("executor", "agent_tool")
                         }
                     } else {
-                        // No router — skill was triggered externally (not from within
-                        // a live agent). Mark as unexecuted so caller can decide.
+                        val agentPrompt = (step["agent_call"] as? Map<*, *>)
+                            ?.get("args")?.let { (it as? Map<*, *>)?.get("prompt")?.toString() }
+                            ?: (step["fallback"] as? Map<*, *>)?.get("prompt")?.toString()
+                            ?: stepTitle
+                        modelRequired = true
                         linkedMapOf(
                             "step_id" to stepId,
                             "tool" to agentTool.ifEmpty { "?" },
                             "executor" to "agent",
+                            "prompt" to agentPrompt,
                             "success" to false,
                             "needs_agent" to true,
-                            "summary" to "agent step requires live execution context: $stepTitle"
+                            "fallback_available" to true,
+                            "summary" to "Agent fallback required: $stepTitle"
                         )
                     }
                 }
@@ -214,11 +217,17 @@ class OobFunctionToolHandler(
             "success" to allSuccess,
             "function_id" to (spec["function_id"] ?: functionId),
             "description" to description,
-            "runner" to if (modelUsed) "oob_function_mixed_runner" else "oob_omniflow_replay",
+            "runner" to when {
+                modelRequired -> "oob_function_agent_fallback_required"
+                delegatedToolUsed -> "oob_function_mixed_runner"
+                else -> "oob_omniflow_replay"
+            },
             "step_count" to steps.size,
             "success_step_count" to successCount,
-            "model_used" to modelUsed,
-            "fallback_available" to !allSuccess,
+            "model_used" to false,
+            "model_required" to modelRequired,
+            "delegated_tool_used" to delegatedToolUsed,
+            "fallback_available" to (!allSuccess || modelRequired),
             "error_message" to failureReason,
             "step_results" to stepResults
         )
@@ -284,6 +293,21 @@ class OobFunctionToolHandler(
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun replayableAgentTool(step: Map<String, Any?>, callableTool: String): String {
+        val agentCall = step["agent_call"] as? Map<*, *>
+        val agentArgs = agentCall?.get("args") as? Map<*, *>
+        val candidates = listOf(
+            agentArgs?.get("original_tool"),
+            step["tool"],
+            callableTool,
+            agentCall?.get("tool")
+        )
+        return candidates.asSequence()
+            .map { it?.toString()?.trim().orEmpty() }
+            .firstOrNull { it.isNotEmpty() && it != "oob.agent.run" }
+            .orEmpty()
     }
 
     private suspend fun executeToolStep(
@@ -675,11 +699,11 @@ class OobFunctionToolHandler(
         sourceXml: String,
         currentXml: String,
     ): OmniflowStepArgsResult {
-        val x = (args["x"] as? Number)?.toFloat() ?: return OmniflowStepArgsResult(
+        val x = floatArg(args["x"]) ?: return OmniflowStepArgsResult(
             args,
             meta = mapOf("applied" to false, "reason" to "missing_x", "algorithm" to "anchor_projection")
         )
-        val y = (args["y"] as? Number)?.toFloat() ?: return OmniflowStepArgsResult(
+        val y = floatArg(args["y"]) ?: return OmniflowStepArgsResult(
             args,
             meta = mapOf("applied" to false, "reason" to "missing_y", "algorithm" to "anchor_projection")
         )
@@ -718,19 +742,19 @@ class OobFunctionToolHandler(
         sourceXml: String,
         currentXml: String,
     ): OmniflowStepArgsResult {
-        val x1 = (args["x1"] as? Number)?.toFloat() ?: return OmniflowStepArgsResult(
+        val x1 = floatArg(args["x1"]) ?: return OmniflowStepArgsResult(
             args,
             meta = mapOf("applied" to false, "reason" to "missing_x1", "algorithm" to "anchor_projection")
         )
-        val y1 = (args["y1"] as? Number)?.toFloat() ?: return OmniflowStepArgsResult(
+        val y1 = floatArg(args["y1"]) ?: return OmniflowStepArgsResult(
             args,
             meta = mapOf("applied" to false, "reason" to "missing_y1", "algorithm" to "anchor_projection")
         )
-        val x2 = (args["x2"] as? Number)?.toFloat() ?: return OmniflowStepArgsResult(
+        val x2 = floatArg(args["x2"]) ?: return OmniflowStepArgsResult(
             args,
             meta = mapOf("applied" to false, "reason" to "missing_x2", "algorithm" to "anchor_projection")
         )
-        val y2 = (args["y2"] as? Number)?.toFloat() ?: return OmniflowStepArgsResult(
+        val y2 = floatArg(args["y2"]) ?: return OmniflowStepArgsResult(
             args,
             meta = mapOf("applied" to false, "reason" to "missing_y2", "algorithm" to "anchor_projection")
         )
@@ -1251,6 +1275,13 @@ class OobFunctionToolHandler(
         }
         return resourceId.substringAfterLast('/').substringAfterLast(':').lowercase()
     }
+
+    private fun floatArg(value: Any?): Float? =
+        when (value) {
+            is Number -> value.toFloat()
+            is String -> value.trim().toFloatOrNull()
+            else -> null
+        }
 
     companion object {
         private val OMNIFLOW_ACTIONS = setOf(
