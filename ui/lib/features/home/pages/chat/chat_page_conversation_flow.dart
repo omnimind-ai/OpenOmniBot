@@ -787,6 +787,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       final normalized = raw
           .whereType<Map>()
           .map((item) => item.map((k, v) => MapEntry(k.toString(), v)))
+          .where(_attachmentShouldSendToModel)
           .toList();
       for (final item in normalized) {
         if (!_isImageAttachmentMap(item)) continue;
@@ -798,6 +799,13 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       return normalized;
     }
     return const [];
+  }
+
+  bool _attachmentShouldSendToModel(Map<String, dynamic> attachment) {
+    final raw = attachment['sendToModel'];
+    if (raw is bool) return raw;
+    if (raw is String) return raw.toLowerCase() != 'false';
+    return true;
   }
 
   List<Map<String, dynamic>> _latestUserAgentAttachments() {
@@ -875,6 +883,8 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
             _currentDispatchTaskId ?? _activeRuntime?.lastAgentTaskId;
         if (taskId != null) {
           _runtimeCoordinator.unregisterTask(taskId);
+          _upsertCancelledAgentRunMessage(taskId);
+          _collapseAgentRunTrace(taskId);
         }
         setState(() {
           _isAiResponding = false;
@@ -924,6 +934,8 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     AssistsMessageService.cancelRunningTask(taskId: taskId);
     if (taskId != null) {
       _updateThinkingCardToCancelled(taskId);
+      _upsertCancelledAgentRunMessage(taskId);
+      _collapseAgentRunTrace(taskId);
       _runtimeCoordinator.unregisterTask(taskId);
     }
     clearAgentStreamSessionState();
@@ -937,6 +949,8 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       AssistsMessageService.cancelRunningTask(taskId: taskId);
       _runtimeCoordinator.unregisterTask(taskId);
       _updateThinkingCardToCancelled(taskId);
+      _upsertCancelledAgentRunMessage(taskId);
+      _collapseAgentRunTrace(taskId);
       clearAgentStreamSessionState();
       resetDispatchState();
       setState(() {
@@ -980,6 +994,72 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       );
     });
     _persistDeepThinkingCardIfNeeded(_messages[index]);
+  }
+
+  @override
+  void _collapseAgentRunTrace(String taskId) {
+    final normalizedTaskId = taskId.trim();
+    if (normalizedTaskId.isEmpty) {
+      return;
+    }
+    final expandedTaskIds = _expandedAgentRunTaskIdsForMode(_activeMode);
+    if (!expandedTaskIds.contains(normalizedTaskId)) {
+      return;
+    }
+    final nextTaskIds = Set<String>.from(expandedTaskIds)
+      ..remove(normalizedTaskId);
+    _updateExpandedAgentRunTaskIds(_activeMode, nextTaskIds);
+  }
+
+  void _upsertCancelledAgentRunMessage(String taskId) {
+    final normalizedTaskId = taskId.trim();
+    if (normalizedTaskId.isEmpty) {
+      return;
+    }
+    final messageId = '$normalizedTaskId-cancelled';
+    final text = LegacyTextLocalizer.localize('任务已取消');
+    final streamMeta = ensureAgentStreamMessageMeta(
+      null,
+      seq: 1000000000,
+      roundIndex: 1000000000,
+      kind: 'text_snapshot',
+      parentTaskId: normalizedTaskId,
+      entryId: messageId,
+      isFinal: true,
+    );
+    final content = <String, dynamic>{
+      'text': text,
+      'id': messageId,
+      'renderMarkdown': false,
+    };
+    final existingIndex = _messages.indexWhere(
+      (message) => message.id == messageId,
+    );
+    setState(() {
+      if (existingIndex == -1) {
+        _messages.insert(
+          0,
+          ChatMessageModel(
+            id: messageId,
+            type: 1,
+            user: 2,
+            content: content,
+            streamMeta: streamMeta,
+          ),
+        );
+      } else {
+        _messages[existingIndex] = _messages[existingIndex].copyWith(
+          content: content,
+          isLoading: false,
+          isError: false,
+          streamMeta: streamMeta,
+        );
+      }
+    });
+    if (_currentConversationId != null) {
+      _syncRuntimeSnapshotForMode(_activeMode);
+    }
+    unawaited(saveConversation());
   }
 
   @override

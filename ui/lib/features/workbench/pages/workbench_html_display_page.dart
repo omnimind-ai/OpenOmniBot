@@ -1665,6 +1665,11 @@ class _HtmlFloatingPromptStatus {
             : t('$toolName 完成', '$toolName finished'),
         Icons.check_circle_outline_rounded,
       ),
+      AgentStreamEventKind.workbenchProjectCard =>
+        _HtmlFloatingPromptStatus.active(
+          message.isEmpty ? t('Project 已创建', 'Project created') : message,
+          Icons.dashboard_customize_outlined,
+        ),
       AgentStreamEventKind.permissionRequired =>
         _HtmlFloatingPromptStatus.active(
           t('等待权限确认', 'Waiting for permission'),

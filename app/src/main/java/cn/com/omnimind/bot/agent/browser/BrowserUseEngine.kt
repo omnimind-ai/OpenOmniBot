@@ -3293,6 +3293,10 @@ class BrowserUseEngine(
         if (!requestId.isNullOrBlank() && prompt.requestId != requestId) {
             return
         }
+        if (prompt.resources.any { it == WebPermissionRequest.RESOURCE_AUDIO_CAPTURE }) {
+            completePermissionDeny(prompt)
+            return
+        }
         val permissions = runtimePermissionsForPrompt(prompt)
         if (permissions.isEmpty()) {
             completePermissionGrant(prompt)
@@ -3325,7 +3329,6 @@ class BrowserUseEngine(
         }
         val mapped = prompt.resources.mapNotNull { resource ->
             when (resource) {
-                WebPermissionRequest.RESOURCE_AUDIO_CAPTURE -> Manifest.permission.RECORD_AUDIO
                 WebPermissionRequest.RESOURCE_VIDEO_CAPTURE -> Manifest.permission.CAMERA
                 else -> null
             }

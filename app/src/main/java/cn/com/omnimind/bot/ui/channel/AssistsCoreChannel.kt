@@ -70,6 +70,9 @@ class AssistsCoreChannel {
                 "listOobReusableFunctions" -> {
                     assistsCoreManager!!.listOobReusableFunctions(call, result)
                 }
+                "deleteOobReusableFunction" -> {
+                    assistsCoreManager!!.deleteOobReusableFunction(call, result)
+                }
                 "runOobReusableFunction" -> {
                     assistsCoreManager!!.runOobReusableFunction(call, result)
                 }
@@ -93,6 +96,9 @@ class AssistsCoreChannel {
                 }
                 "agentSkillInstallBuiltin" -> {
                     assistsCoreManager!!.agentSkillInstallBuiltin(call, result)
+                }
+                "agentSkillSyncOfficialRepository" -> {
+                    assistsCoreManager!!.agentSkillSyncOfficialRepository(call, result)
                 }
                 "getModelProviderConfig" -> {
                     assistsCoreManager!!.getModelProviderConfig(call, result)

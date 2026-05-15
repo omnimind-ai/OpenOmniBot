@@ -44,7 +44,6 @@ class _CommandOverlayState extends State<CommandOverlay> {
   bool _isPopupVisible = false;
   Map<String, dynamic>? _scheduleInfo;
   int _countdownSeconds = 0;
-  RecordingState _recordingState = RecordingState.idle; // 录音状态
   double _chatInputAreaHeight = 44;
   bool _openClawEnabled = false;
   String _openClawBaseUrl = '';
@@ -559,12 +558,6 @@ class _CommandOverlayState extends State<CommandOverlay> {
   void _onPopupVisibilityChanged(bool visible) {
     setState(() {
       _isPopupVisible = visible;
-    });
-  }
-
-  void _onRecordingStateChanged(RecordingState state) {
-    setState(() {
-      _recordingState = state;
     });
   }
 
@@ -1188,27 +1181,11 @@ $contextJson
             child: AnimatedOpacity(
               opacity: showSlashPanel ? 0.0 : 1.0,
               duration: const Duration(milliseconds: 150),
-              child: _recordingState != RecordingState.idle
-                  ? SizedBox(
-                      width: double.infinity,
-                      child: Text(
-                        _getRecordingText(),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontFamily: 'PingFang SC',
-                          fontWeight: FontWeight.w400,
-                          height: 1.50,
-                          letterSpacing: 0.333,
-                        ),
-                      ),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: const [],
-                    ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [],
+              ),
             ),
           ),
         ),
@@ -1239,7 +1216,7 @@ $contextJson
                   onSendMessage: _sendMessage,
                   onCancelTask: _onCancelTask,
                   onPopupVisibilityChanged: _onPopupVisibilityChanged,
-                  onRecordingStateChanged: _onRecordingStateChanged,
+
                   onInputHeightChanged: _onInputHeightChanged,
                   openClawEnabled: _openClawEnabled,
                   onToggleOpenClaw: _setOpenClawEnabled,
@@ -1384,21 +1361,6 @@ $contextJson
         ),
       ),
     );
-  }
-
-  String _getRecordingText() {
-    switch (_recordingState) {
-      case RecordingState.starting:
-        return "正在启动录音...";
-      case RecordingState.recording:
-        return "语音输入中...";
-      case RecordingState.stopping:
-        return "正在识别中...";
-      case RecordingState.waitingServerStop:
-        return "正在识别中...";
-      case RecordingState.idle:
-        return "";
-    }
   }
 }
 

@@ -46,14 +46,21 @@ bool shouldShowAgentToolActivitySnapshot(
 List<Map<String, dynamic>> extractAgentToolCards(
   List<ChatMessageModel> messages,
 ) {
-  return messages
-      .map((message) => message.cardData)
-      .whereType<Map<String, dynamic>>()
-      .where(
-        (cardData) =>
-            (cardData['type'] ?? '').toString() == kAgentToolSummaryCardType,
-      )
-      .toList(growable: false);
+  final cards = <Map<String, dynamic>>[];
+  final emittedKeys = <String>{};
+  for (final message in messages) {
+    final cardData = message.cardData;
+    if (cardData == null ||
+        (cardData['type'] ?? '').toString() != kAgentToolSummaryCardType) {
+      continue;
+    }
+    final key = _agentToolCardIdentity(cardData);
+    if (key.isNotEmpty && !emittedKeys.add(key)) {
+      continue;
+    }
+    cards.add(cardData);
+  }
+  return cards;
 }
 
 List<Map<String, dynamic>> extractRunningAgentToolCards(
@@ -258,11 +265,19 @@ Map<String, dynamic> buildAgentToolActivityCard(
     card['status'] = defaultStatus;
   }
 
-  final cardId = (card['cardId'] ?? '').toString().trim();
-  if (cardId.isEmpty) {
-    final toolCallId = (card['toolCallId'] ?? '').toString().trim();
+  final cardId = _agentToolCardIdentity(card);
+  if (cardId.isNotEmpty) {
+    card['cardId'] = cardId;
+    final toolCallId = _firstNonBlank([
+      card['toolCallId'],
+      card['tool_call_id'],
+      card['callId'],
+      card['call_id'],
+    ]);
     if (toolCallId.isNotEmpty) {
-      card['cardId'] = toolCallId;
+      card['toolCallId'] = toolCallId;
+    } else if (cardId != (card['toolTaskId'] ?? '').toString().trim()) {
+      card['toolCallId'] = cardId;
     }
   }
 
@@ -280,6 +295,32 @@ Map<String, dynamic> buildAgentToolActivityCard(
   }
 
   return card;
+}
+
+String _agentToolCardIdentity(
+  Map<String, dynamic> card, {
+  String fallback = '',
+}) {
+  return _firstNonBlank([
+    card['toolCallId'],
+    card['tool_call_id'],
+    card['callId'],
+    card['call_id'],
+    card['cardId'],
+    card['toolTaskId'],
+    card['tool_task_id'],
+    fallback,
+  ]);
+}
+
+String _firstNonBlank(Iterable<Object?> values) {
+  for (final value in values) {
+    final normalized = value?.toString().trim() ?? '';
+    if (normalized.isNotEmpty) {
+      return normalized;
+    }
+  }
+  return '';
 }
 
 bool _isAgentToolSummaryMessage(ChatMessageModel message) {

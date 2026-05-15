@@ -10,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.mcp.McpFileInbox
+import cn.com.omnimind.bot.share.SharedOpenPreferenceStore
 import cn.com.omnimind.bot.share.SharedOpenDraftStore
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
 import kotlinx.coroutines.Dispatchers
@@ -48,24 +49,51 @@ class McpFileReceiverActivity : ComponentActivity() {
             return
         }
 
-        val allPhotos = uris.isNotEmpty() && uris.all { uri ->
-            isImageUri(uri, mimeTypeHint)
-        }
-
-        val shouldOpenAsDraft =
-            (!sharedText.isNullOrBlank() && uris.isEmpty()) ||
-                (uris.isNotEmpty() && allPhotos)
-
-        if (shouldOpenAsDraft) {
+        if (uris.isEmpty()) {
             handleDraftShare(
                 sharedText = sharedText,
-                imageUris = if (allPhotos) uris else emptyList(),
+                imageUris = emptyList(),
                 mimeTypeHint = mimeTypeHint,
             )
             return
         }
 
-        handleFileTransfer(uris, mimeTypeHint)
+        val imageOpenMode = SharedOpenPreferenceStore.getImageOpenMode(this)
+        val fileOpenMode = SharedOpenPreferenceStore.getFileOpenMode(this)
+        val imageUris = uris.filter { uri -> isImageUri(uri, mimeTypeHint) }
+        val fileUris = uris.filterNot { uri -> isImageUri(uri, mimeTypeHint) }
+
+        val draftImageUris = if (imageOpenMode == SharedOpenPreferenceStore.MODE_WORKSPACE) {
+            emptyList()
+        } else {
+            imageUris
+        }
+        val workspaceUris = buildList {
+            if (imageOpenMode == SharedOpenPreferenceStore.MODE_WORKSPACE) {
+                addAll(imageUris)
+            }
+            if (fileOpenMode == SharedOpenPreferenceStore.MODE_WORKSPACE) {
+                addAll(fileUris)
+            }
+        }
+        val fileTransferUris = if (fileOpenMode == SharedOpenPreferenceStore.MODE_WORKSPACE) {
+            emptyList()
+        } else {
+            fileUris
+        }
+
+        if (draftImageUris.isNotEmpty() || workspaceUris.isNotEmpty()) {
+            handleDraftAndOptionalFileTransfer(
+                sharedText = sharedText,
+                imageUris = draftImageUris,
+                workspaceUris = workspaceUris,
+                fileTransferUris = fileTransferUris,
+                mimeTypeHint = mimeTypeHint,
+            )
+            return
+        }
+
+        handleFileTransfer(fileTransferUris, mimeTypeHint)
     }
 
     private fun handleDraftShare(
@@ -106,51 +134,108 @@ class McpFileReceiverActivity : ComponentActivity() {
         }
     }
 
+    private fun handleWorkspaceDraftShare(
+        sharedText: String?,
+        uris: List<Uri>,
+        mimeTypeHint: String?,
+    ) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val draft = SharedOpenDraftStore.storeWorkspaceDraft(
+                context = this@McpFileReceiverActivity,
+                text = sharedText,
+                uris = uris,
+                mimeTypeHint = mimeTypeHint,
+            )
+            withContext(Dispatchers.Main) {
+                if (draft != null) {
+                    val route =
+                        "/home/chat?conversationId=new&mode=normal&requestKey=${Uri.encode(draft.requestKey)}"
+                    TaskCompletionNavigator.navigateToMainRoute(
+                        context = this@McpFileReceiverActivity,
+                        route = route,
+                        needClear = false,
+                    )
+                    Toast.makeText(
+                        this@McpFileReceiverActivity,
+                        "已添加到 Workspace，请确认后发送",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        this@McpFileReceiverActivity,
+                        "分享内容处理失败",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+                finish()
+            }
+        }
+    }
+
+    private fun handleDraftAndOptionalFileTransfer(
+        sharedText: String?,
+        imageUris: List<Uri>,
+        workspaceUris: List<Uri>,
+        fileTransferUris: List<Uri>,
+        mimeTypeHint: String?,
+    ) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val receivedFileCount = storeFileTransfers(fileTransferUris, mimeTypeHint)
+            val draft = SharedOpenDraftStore.storeMixedDraft(
+                context = this@McpFileReceiverActivity,
+                text = sharedText,
+                imageUris = imageUris,
+                workspaceUris = workspaceUris,
+                mimeTypeHint = mimeTypeHint,
+            )
+            withContext(Dispatchers.Main) {
+                if (draft != null) {
+                    val route =
+                        "/home/chat?conversationId=new&mode=normal&requestKey=${Uri.encode(draft.requestKey)}"
+                    TaskCompletionNavigator.navigateToMainRoute(
+                        context = this@McpFileReceiverActivity,
+                        route = route,
+                        needClear = false,
+                    )
+                    val message = when {
+                        workspaceUris.isNotEmpty() && receivedFileCount > 0 ->
+                            "已添加到 Workspace，并接收 ${receivedFileCount} 个文件"
+                        workspaceUris.isNotEmpty() -> "已添加到 Workspace，请确认后发送"
+                        receivedFileCount > 0 -> "已填入新对话，并接收 ${receivedFileCount} 个文件"
+                        else -> "已填入新对话，请确认后发送"
+                    }
+                    Toast.makeText(
+                        this@McpFileReceiverActivity,
+                        message,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                } else if (receivedFileCount > 0) {
+                    Toast.makeText(
+                        this@McpFileReceiverActivity,
+                        if (receivedFileCount == 1) "文件接收成功" else "已接收 ${receivedFileCount} 个文件",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        this@McpFileReceiverActivity,
+                        "分享内容处理失败",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+                finish()
+            }
+        }
+    }
+
     private fun handleFileTransfer(uris: List<Uri>, mimeTypeHint: String?) {
         lifecycleScope.launch(Dispatchers.IO) {
-            val records = uris.mapNotNull { uri ->
-                McpFileInbox.storeFromUri(this@McpFileReceiverActivity, uri, mimeTypeHint)
-            }
-            if (records.isNotEmpty()) {
-                val fileNames = records.map { it.fileName }.distinct()
-
-                // Build enhanced priority event message
-                val message = if (fileNames.size == 1) {
-                    """
-                    |═══════════════════════════════════════
-                    |✅ 文件接收成功
-                    |═══════════════════════════════════════
-                    |文件: ${fileNames.first()}
-                    |状态: 已在小万中完全接收
-                    |提示: 任务目标已达成，可以使用 COMPLETE 动作结束
-                    |═══════════════════════════════════════
-                    """.trimMargin()
-                } else {
-                    """
-                    |═══════════════════════════════════════
-                    |✅ 批量文件接收成功
-                    |═══════════════════════════════════════
-                    |数量: ${fileNames.size}个文件
-                    |文件: ${fileNames.joinToString("、")}
-                    |状态: 已在小万中完全接收
-                    |提示: 任务目标已达成，可以使用 COMPLETE 动作结束
-                    |═══════════════════════════════════════
-                    """.trimMargin()
-                }
-
-                // Inject as priority event instead of regular memory
-                cn.com.omnimind.bot.util.AssistsUtil.Core.appendVlmPriorityEvent(
-                    memory = message,
-                    eventType = "file_received",
-                    suggestCompletion = true  // Guide VLM to complete task
-                )
-            }
+            val receivedFileCount = storeFileTransfers(uris, mimeTypeHint)
             withContext(Dispatchers.Main) {
-                if (records.isNotEmpty()) {
-                    val message = if (records.size == 1) {
+                if (receivedFileCount > 0) {
+                    val message = if (receivedFileCount == 1) {
                         "文件接收成功"
                     } else {
-                        "已接收 ${records.size} 个文件"
+                        "已接收 ${receivedFileCount} 个文件"
                     }
                     Toast.makeText(this@McpFileReceiverActivity, message, Toast.LENGTH_SHORT).show()
                 } else {
@@ -159,6 +244,45 @@ class McpFileReceiverActivity : ComponentActivity() {
                 finish()
             }
         }
+    }
+
+    private fun storeFileTransfers(uris: List<Uri>, mimeTypeHint: String?): Int {
+        if (uris.isEmpty()) return 0
+        val records = uris.mapNotNull { uri ->
+            McpFileInbox.storeFromUri(this@McpFileReceiverActivity, uri, mimeTypeHint)
+        }
+        if (records.isEmpty()) return 0
+        val fileNames = records.map { it.fileName }.distinct()
+
+        val message = if (fileNames.size == 1) {
+            """
+            |═══════════════════════════════════════
+            |✅ 文件接收成功
+            |═══════════════════════════════════════
+            |文件: ${fileNames.first()}
+            |状态: 已在小万中完全接收
+            |提示: 任务目标已达成，可以使用 COMPLETE 动作结束
+            |═══════════════════════════════════════
+            """.trimMargin()
+        } else {
+            """
+            |═══════════════════════════════════════
+            |✅ 批量文件接收成功
+            |═══════════════════════════════════════
+            |数量: ${fileNames.size}个文件
+            |文件: ${fileNames.joinToString("、")}
+            |状态: 已在小万中完全接收
+            |提示: 任务目标已达成，可以使用 COMPLETE 动作结束
+            |═══════════════════════════════════════
+            """.trimMargin()
+        }
+
+        cn.com.omnimind.bot.util.AssistsUtil.Core.appendVlmPriorityEvent(
+            memory = message,
+            eventType = "file_received",
+            suggestCompletion = true,
+        )
+        return records.size
     }
 
     private fun extractUris(intent: Intent): List<Uri> {

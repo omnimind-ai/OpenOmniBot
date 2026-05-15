@@ -158,6 +158,7 @@ data class ResolvedSkillContext(
         val base = lines.joinToString("\n")
         return if (base.length <= maxChars) base else base.take(maxChars) + "\n..."
     }
+
 }
 
 data class SkillCompatibilityResult(

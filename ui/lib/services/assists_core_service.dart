@@ -1168,6 +1168,7 @@ class UtgVlmPreHookResult {
 class AgentToolEventData {
   final String taskId;
   final String cardId;
+  final String toolCallId;
   final String toolName;
   final String displayName;
   final String toolTitle;
@@ -1193,6 +1194,7 @@ class AgentToolEventData {
   const AgentToolEventData({
     required this.taskId,
     this.cardId = '',
+    this.toolCallId = '',
     required this.toolName,
     required this.displayName,
     this.toolTitle = '',
@@ -1221,6 +1223,7 @@ class AgentToolEventData {
     return AgentToolEventData(
       taskId: (raw['taskId'] ?? '').toString(),
       cardId: (raw['cardId'] ?? '').toString(),
+      toolCallId: (raw['toolCallId'] ?? raw['tool_call_id'] ?? '').toString(),
       toolName: (raw['toolName'] ?? '').toString(),
       displayName: (raw['displayName'] ?? raw['toolName'] ?? '').toString(),
       toolTitle: (raw['toolTitle'] ?? '').toString(),
@@ -2369,6 +2372,29 @@ class AssistsMessageService {
     return UtgFunctionMutationResult.fromMap(_jsonSafeDynamicMap(result));
   }
 
+  static Future<Map<String, dynamic>> listOobReusableFunctions({
+    int limit = 100,
+  }) async {
+    final result = await assistCore.invokeMethod('listOobReusableFunctions', {
+      'limit': limit,
+    });
+    return _jsonSafeDynamicMap(result);
+  }
+
+  static Future<Map<String, dynamic>> deleteOobReusableFunction(
+    String functionId,
+  ) async {
+    final normalized = functionId.trim();
+    if (normalized.isEmpty) {
+      return {'success': false, 'error': 'functionId is empty'};
+    }
+    final result = await assistCore.invokeMethod(
+      'deleteOobReusableFunction',
+      {'functionId': normalized},
+    );
+    return _jsonSafeDynamicMap(result);
+  }
+
   static Future<Map<String, dynamic>?> getOobReusableFunction(
     String functionId,
   ) async {
@@ -2851,11 +2877,13 @@ class AssistsMessageService {
   static Future<String?> postLLMChat({
     required String text,
     String model = 'scene.dispatch.model',
+    bool responseJsonObject = false,
   }) async {
     try {
       final result = await assistCore.invokeMethod<String>('postLLMChat', {
         'text': text,
         'model': model,
+        'responseJsonObject': responseJsonObject,
       });
       return result;
     } on PlatformException catch (e) {
@@ -3128,6 +3156,19 @@ class AssistsMessageService {
       return result.map((k, v) => MapEntry(k.toString(), v));
     } on PlatformException catch (e) {
       print('安装内置 Agent skill 失败: ${e.message}');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> syncOfficialAgentSkills() async {
+    try {
+      final result = await assistCore.invokeMethod<Map<dynamic, dynamic>>(
+        'agentSkillSyncOfficialRepository',
+      );
+      if (result == null) return null;
+      return result.map((k, v) => MapEntry(k.toString(), v));
+    } on PlatformException catch (e) {
+      print('同步官方 Agent skills 失败: ${e.message}');
       return null;
     }
   }

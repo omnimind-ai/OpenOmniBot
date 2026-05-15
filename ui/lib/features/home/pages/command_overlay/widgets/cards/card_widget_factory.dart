@@ -106,6 +106,10 @@ class CardWidgetFactory {
           onRequestAuthorize: onRequestAuthorize,
         );
       case 'agent_tool_summary':
+        final toolType = (cardData['toolType'] ?? '').toString();
+        if (toolType == 'workspace' || toolType == 'workbench') {
+          return const SizedBox.shrink();
+        }
         return AgentToolSummaryCard(
           cardData: cardData,
           parentScrollController: parentScrollController,

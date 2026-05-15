@@ -185,6 +185,16 @@ List<AgentRunTimelineEntry> buildAgentRunTimelineEntries(
   final emittedTaskIds = <String>{};
   final entries = <AgentRunTimelineEntry>[];
 
+  // Pre-group candidate messages by taskId in a single O(n) pass so that
+  // _buildTimelineGroup never needs to scan all messages again.
+  final candidatesByTaskId = <String, List<ChatMessageModel>>{};
+  for (final message in messages) {
+    if (!_isAgentRunCandidateMessage(message)) continue;
+    final taskId = agentRunParentTaskId(message);
+    if (taskId == null) continue;
+    candidatesByTaskId.putIfAbsent(taskId, () => []).add(message);
+  }
+
   for (final message in messages) {
     final taskId = agentRunParentTaskId(message);
     if (taskId == null) {
@@ -199,7 +209,7 @@ List<AgentRunTimelineEntry> buildAgentRunTimelineEntries(
     }
 
     final group = _buildTimelineGroup(
-      messages,
+      candidatesByTaskId[taskId] ?? const [],
       taskId: taskId,
       isActive: normalizedActiveTaskIds.contains(taskId),
     );
@@ -288,35 +298,53 @@ AgentRunMessageRef? agentRunMessageRef(ChatMessageModel message) {
 }
 
 AgentRunTimelineGroup? _buildTimelineGroup(
-  List<ChatMessageModel> messages, {
+  List<ChatMessageModel> candidates, {
   required String taskId,
   required bool isActive,
 }) {
+  // `candidates` is pre-filtered (only candidate messages for this taskId).
   final taskMessages = _dedupeAgentRunMessages(
-    messages
-        .where((message) => agentRunParentTaskId(message) == taskId)
-        .where(_isAgentRunCandidateMessage)
-        .toList(growable: false)
+    candidates.toList(growable: false)
       ..sort((left, right) => _compareNewestFirst(left, right)),
   );
   if (taskMessages.isEmpty || (!isActive && taskMessages.length < 2)) {
     return null;
   }
 
-  final primaryVisibleMessage = _resolvePrimaryVisibleMessage(
-    taskMessages,
-    isActive: isActive,
-  );
-  if (primaryVisibleMessage == null) {
-    if (!isActive) {
+  // During active run: ALL assistant text is in the visible section (prevents
+  // reclassification jumps when a new round starts). Only thinking/tool cards
+  // go into the collapsible process section — matching the Claude.ai / Qwen
+  // pattern where process accumulates at top and text streams below.
+  if (isActive) {
+    final allTextMessages =
+        taskMessages
+            .where((m) => agentRunMessageRef(m)?.isAssistantText == true)
+            .toList(growable: false)
+          ..sort(
+            (a, b) => _compareNewestFirst(a, b),
+          ); // newest first for storage
+    final nonTextMessages = taskMessages
+        .where((m) => !(agentRunMessageRef(m)?.isAssistantText == true))
+        .toList(growable: false);
+    final compactProcessMessages = _resolveProcessMessages(nonTextMessages);
+    if (allTextMessages.isEmpty && compactProcessMessages.isEmpty) {
       return null;
     }
     return AgentRunTimelineGroup(
       taskId: taskId,
-      visibleMessagesNewestFirst: const <ChatMessageModel>[],
-      processMessagesNewestFirst: _resolveProcessMessages(taskMessages),
+      visibleMessagesNewestFirst: allTextMessages,
+      processMessagesNewestFirst: compactProcessMessages,
       isActiveRun: true,
     );
+  }
+
+  // Completed run: only the final text is visible, everything else collapses.
+  final primaryVisibleMessage = _resolvePrimaryVisibleMessage(
+    taskMessages,
+    isActive: false,
+  );
+  if (primaryVisibleMessage == null) {
+    return null;
   }
 
   final visibleMessages = _resolveVisibleMessages(
@@ -336,7 +364,7 @@ AgentRunTimelineGroup? _buildTimelineGroup(
     taskId: taskId,
     visibleMessagesNewestFirst: visibleMessages,
     processMessagesNewestFirst: compactProcessMessages,
-    isActiveRun: isActive,
+    isActiveRun: false,
   );
 }
 
@@ -351,6 +379,10 @@ List<ChatMessageModel> _resolveProcessMessages(
   for (final message in oldestFirst) {
     final isThinking = agentRunMessageRef(message)?.isThinkingCard ?? false;
     if (isThinking) {
+      if (pendingThinking != null &&
+          !_isSameThinkingRound(pendingThinking, message)) {
+        collapsedOldestFirst.add(pendingThinking);
+      }
       pendingThinking = message;
       continue;
     }
@@ -366,6 +398,18 @@ List<ChatMessageModel> _resolveProcessMessages(
 
   return collapsedOldestFirst
     ..sort((left, right) => _compareNewestFirst(left, right));
+}
+
+bool _isSameThinkingRound(ChatMessageModel left, ChatMessageModel right) {
+  final leftRef = agentRunMessageRef(left);
+  final rightRef = agentRunMessageRef(right);
+  if (leftRef == null || rightRef == null) {
+    return false;
+  }
+  return leftRef.taskId == rightRef.taskId &&
+      leftRef.isThinkingCard &&
+      rightRef.isThinkingCard &&
+      leftRef.roundIndex == rightRef.roundIndex;
 }
 
 List<ChatMessageModel> _dedupeAgentRunMessages(
@@ -391,7 +435,14 @@ String? _semanticDedupeKey(ChatMessageModel message) {
   if (ref.isThinkingCard) {
     return ref.thinkingDedupeKey;
   }
-  if (ref.isToolCard || ref.isAssistantText || ref.isPermissionCard) {
+  if (ref.isToolCard) {
+    // Tool card kind changes from 'tool_started' → 'tool_completed' as events
+    // arrive. Using kind in the key would cause cards with the same entryId but
+    // different kinds to both survive dedup → duplicate tool cards in the UI.
+    final entryId = ref.entryId.isNotEmpty ? ref.entryId : '${ref.sequence}';
+    return '${ref.taskId}#tool#$entryId';
+  }
+  if (ref.isAssistantText || ref.isPermissionCard) {
     return ref.entryDedupeKey;
   }
   return null;
@@ -451,10 +502,27 @@ ChatMessageModel? _resolvePrimaryVisibleMessage(
   final fallbackTextSnapshots = aiTextMessages
       .where(_isLegacyTextSnapshotFallbackCandidate)
       .toList(growable: false);
-  if (fallbackTextSnapshots.isEmpty) {
-    return null;
+  if (fallbackTextSnapshots.isNotEmpty) {
+    return _newestBySequence(fallbackTextSnapshots);
   }
-  return _newestBySequence(fallbackTextSnapshots);
+
+  final cancelledTextMessages = aiTextMessages
+      .where(_isCancelledTextMessage)
+      .toList(growable: false);
+  if (cancelledTextMessages.isNotEmpty) {
+    return _newestBySequence(cancelledTextMessages);
+  }
+
+  final textMessagesWithoutFinalFlag = aiTextMessages
+      .where((message) {
+        final ref = agentRunMessageRef(message);
+        return ref == null || !ref.hasExplicitFinalFlag;
+      })
+      .toList(growable: false);
+  if (textMessagesWithoutFinalFlag.isNotEmpty) {
+    return _newestBySequence(textMessagesWithoutFinalFlag);
+  }
+  return null;
 }
 
 bool _isTerminalVisibleTextMessage(ChatMessageModel message) {
@@ -477,6 +545,11 @@ bool _isLegacyTextSnapshotFallbackCandidate(ChatMessageModel message) {
     return true;
   }
   return ref.isFinal;
+}
+
+bool _isCancelledTextMessage(ChatMessageModel message) {
+  final text = (message.text ?? '').trim().toLowerCase();
+  return text == '任务已取消' || text == 'task canceled' || text == 'task cancelled';
 }
 
 List<ChatMessageModel> _resolveVisibleMessages(

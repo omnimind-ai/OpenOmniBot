@@ -8,7 +8,9 @@ import 'package:ui/features/home/pages/chat/widgets/chat_tool_activity_strip.dar
 import 'package:ui/features/home/pages/command_overlay/services/tool_card_detail_gesture_gate.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
+import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/models/chat_message_model.dart';
+import 'package:ui/services/agent_stream_meta.dart';
 
 void main() {
   setUp(() {
@@ -422,6 +424,50 @@ void main() {
     expect(snapshot.isActiveRun, isTrue);
     expect(snapshot.taskId, 'task-active');
     expect(shouldShowAgentToolActivitySnapshot(snapshot), isTrue);
+  });
+
+  test('dedupes tool summary cards by stable tool call identity', () {
+    final messages = [
+      ChatMessageModel.cardMessage({
+        'type': 'agent_tool_summary',
+        'taskId': 'task-1',
+        'cardId': 'entry-start',
+        'toolCallId': 'call-1',
+        'status': 'running',
+      }, id: 'entry-start'),
+      ChatMessageModel.cardMessage({
+        'type': 'agent_tool_summary',
+        'taskId': 'task-1',
+        'cardId': 'entry-complete',
+        'toolCallId': 'call-1',
+        'status': 'success',
+      }, id: 'entry-complete'),
+    ];
+
+    final cards = extractAgentToolCards(messages);
+
+    expect(cards, hasLength(1));
+    expect(cards.single['toolCallId'], 'call-1');
+  });
+
+  test('extracts workbench project card from stream event envelope', () {
+    final event = AgentStreamEvent.fromMap({
+      'taskId': 'task-1',
+      'seq': 7,
+      'kind': 'workbench_project_card',
+      'createdAt': 1000,
+      'entryId': 'task-1-tool-1-project',
+      'type': 'workbench_project',
+      'projectId': 'daily-crm',
+      'name': 'Daily CRM',
+    });
+
+    final cards = extractAgentStreamUiCards(event);
+
+    expect(cards, hasLength(1));
+    expect(cards.single.id, 'task-1-tool-1-project');
+    expect(cards.single.cardData['type'], 'workbench_project');
+    expect(cards.single.cardData['projectId'], 'daily-crm');
   });
 
   testWidgets(

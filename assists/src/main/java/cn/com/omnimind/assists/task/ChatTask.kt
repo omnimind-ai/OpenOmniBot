@@ -629,8 +629,9 @@ class ChatTask(override val taskChangeListener: TaskChangeListener,
         sendParams.put("sessionKey", sessionKey)
         sendParams.put("message", userMessage)
         sendParams.put("idempotencyKey", taskID)
-        if (userAttachments.length() > 0) {
-            sendParams.put("attachments", userAttachments)
+        val modelAttachments = filterModelAttachments(userAttachments)
+        if (modelAttachments.length() > 0) {
+            sendParams.put("attachments", modelAttachments)
         }
 
         val sendFrame = org.json.JSONObject()
@@ -868,6 +869,7 @@ class ChatTask(override val taskChangeListener: TaskChangeListener,
         source: Map<*, *>,
         fallbackIndex: Int,
     ): org.json.JSONObject? {
+        if (!shouldSendAttachmentToModel(source)) return null
         val rawUrl = source["url"]?.toString().orEmpty()
         val rawDataUrl = source["dataUrl"]?.toString().orEmpty()
         val path = source["path"]?.toString().orEmpty()
@@ -903,6 +905,36 @@ class ChatTask(override val taskChangeListener: TaskChangeListener,
         }
 
         return result
+    }
+
+    private fun filterModelAttachments(
+        attachments: org.json.JSONArray,
+    ): org.json.JSONArray {
+        val result = org.json.JSONArray()
+        for (i in 0 until attachments.length()) {
+            val item = attachments.optJSONObject(i) ?: continue
+            if (shouldSendAttachmentToModel(item)) {
+                result.put(item)
+            }
+        }
+        return result
+    }
+
+    private fun shouldSendAttachmentToModel(source: Map<*, *>): Boolean {
+        return when (val raw = source["sendToModel"]) {
+            is Boolean -> raw
+            is String -> !raw.equals("false", ignoreCase = true)
+            else -> true
+        }
+    }
+
+    private fun shouldSendAttachmentToModel(source: org.json.JSONObject): Boolean {
+        if (!source.has("sendToModel")) return true
+        return when (val raw = source.opt("sendToModel")) {
+            is Boolean -> raw
+            is String -> !raw.equals("false", ignoreCase = true)
+            else -> true
+        }
     }
 
     private fun extractImageUrlFromAny(raw: Any?): String {

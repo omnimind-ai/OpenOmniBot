@@ -1,6 +1,6 @@
 ---
 name: oob-project-distiller
-description: Distill an external product, GitHub repository, vibe-app share, technical document, article, pasted notes, screenshots, or product demo into an OOB Workbench Project proposal or implementation. Use when the user asks to analyze a project/link/doc and "总结成我们的 project", "蒸馏能力", "提取核心设计", "生成 soul", "把这个 app/项目变成 OOB Project", or preserve UI design, interaction logic, data model, backend AI workflows, and product intent without cloning proprietary assets.
+description: Distill an external product, GitHub repository, vibe-app share, technical document, article, pasted notes, screenshots, or product demo into an OOB Workbench Project proposal or implementation. Use when the user asks to analyze a project/link/doc and "总结成我们的 project", "蒸馏能力", "提取核心设计", "生成 soul", "把这个 app/项目变成 OOB Project", "产品分析", "GitHub 仓库分析", or preserve UI design, interaction logic, data model, backend AI workflows, and product intent without cloning proprietary assets.
 ---
 
 # OOB Project Distiller

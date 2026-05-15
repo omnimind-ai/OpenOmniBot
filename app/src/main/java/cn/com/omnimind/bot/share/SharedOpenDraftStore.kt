@@ -5,9 +5,13 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 data class SharedOpenDraftAttachment(
@@ -17,6 +21,8 @@ data class SharedOpenDraftAttachment(
     val size: Long?,
     val mimeType: String?,
     val isImage: Boolean,
+    val promptPath: String? = null,
+    val sendToModel: Boolean = true,
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "id" to id,
@@ -25,6 +31,8 @@ data class SharedOpenDraftAttachment(
         "size" to size,
         "mimeType" to mimeType,
         "isImage" to isImage,
+        "promptPath" to promptPath,
+        "sendToModel" to sendToModel,
     )
 
     fun toJson(): JSONObject = JSONObject().apply {
@@ -34,6 +42,8 @@ data class SharedOpenDraftAttachment(
         put("size", size)
         put("mimeType", mimeType)
         put("isImage", isImage)
+        put("promptPath", promptPath)
+        put("sendToModel", sendToModel)
     }
 }
 
@@ -68,6 +78,7 @@ object SharedOpenDraftStore {
     private const val PREFS_NAME = "shared_open_draft"
     private const val KEY_PENDING_DRAFT = "pending_draft"
     private const val DIR_NAME = "shared_open_drafts"
+    private const val WORKSPACE_DIR_NAME = "shared-open"
     private const val FILE_RETENTION_MS = 3L * 24L * 60L * 60L * 1000L
 
     fun store(
@@ -81,6 +92,72 @@ object SharedOpenDraftStore {
         val normalizedText = text?.trim()?.ifEmpty { null }
         val attachments = imageUris.mapNotNull { uri ->
             copyImageToLocalDraft(context, uri, mimeTypeHint)
+        }
+        if (normalizedText == null && attachments.isEmpty()) {
+            return null
+        }
+
+        val draft = SharedOpenDraft(
+            requestKey = now.toString(),
+            text = normalizedText,
+            attachments = attachments,
+            createdAt = now,
+        )
+
+        prefs(context)
+            .edit()
+            .putString(KEY_PENDING_DRAFT, draft.toJson().toString())
+            .apply()
+        return draft
+    }
+
+    fun storeWorkspaceDraft(
+        context: Context,
+        text: String?,
+        uris: List<Uri>,
+        mimeTypeHint: String? = null,
+    ): SharedOpenDraft? {
+        cleanupStaleFiles(context)
+        val now = System.currentTimeMillis()
+        val normalizedText = text?.trim()?.ifEmpty { null }
+        val attachments = uris.mapNotNull { uri ->
+            copyUriToWorkspace(context, uri, mimeTypeHint, now)
+        }
+        if (normalizedText == null && attachments.isEmpty()) {
+            return null
+        }
+
+        val draft = SharedOpenDraft(
+            requestKey = now.toString(),
+            text = normalizedText,
+            attachments = attachments,
+            createdAt = now,
+        )
+
+        prefs(context)
+            .edit()
+            .putString(KEY_PENDING_DRAFT, draft.toJson().toString())
+            .apply()
+        return draft
+    }
+
+    fun storeMixedDraft(
+        context: Context,
+        text: String?,
+        imageUris: List<Uri>,
+        workspaceUris: List<Uri>,
+        mimeTypeHint: String? = null,
+    ): SharedOpenDraft? {
+        cleanupStaleFiles(context)
+        val now = System.currentTimeMillis()
+        val normalizedText = text?.trim()?.ifEmpty { null }
+        val attachments = buildList {
+            imageUris.mapNotNullTo(this) { uri ->
+                copyImageToLocalDraft(context, uri, mimeTypeHint)
+            }
+            workspaceUris.mapNotNullTo(this) { uri ->
+                copyUriToWorkspace(context, uri, mimeTypeHint, now)
+            }
         }
         if (normalizedText == null && attachments.isEmpty()) {
             return null
@@ -123,7 +200,7 @@ object SharedOpenDraftStore {
     ): SharedOpenDraftAttachment? {
         val resolver = context.contentResolver
         val meta = queryMeta(context, uri)
-        val mimeType = resolver.getType(uri) ?: mimeTypeHint
+        val mimeType = resolveMimeType(context, uri, mimeTypeHint)
         val baseName = meta.displayName ?: "shared_image_${System.currentTimeMillis()}"
         val fileName = ensureExtension(sanitizeFileName(baseName), mimeType)
         val dir = File(context.filesDir, DIR_NAME)
@@ -155,6 +232,55 @@ object SharedOpenDraftStore {
             size = if (size > 0) size else meta.size,
             mimeType = mimeType,
             isImage = true,
+        )
+    }
+
+    private fun copyUriToWorkspace(
+        context: Context,
+        uri: Uri,
+        mimeTypeHint: String?,
+        now: Long,
+    ): SharedOpenDraftAttachment? {
+        val resolver = context.contentResolver
+        val meta = queryMeta(context, uri)
+        val mimeType = resolveMimeType(context, uri, mimeTypeHint)
+        val baseName = meta.displayName ?: "shared_file_$now"
+        val fileName = ensureExtension(sanitizeFileName(baseName), mimeType)
+        val workspaceManager = AgentWorkspaceManager(context)
+        workspaceManager.ensureRuntimeDirectories()
+        val batchName = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date(now))
+        val dir = File(AgentWorkspaceManager.rootDirectory(context), "$WORKSPACE_DIR_NAME/$batchName")
+        if (!dir.exists() && !dir.mkdirs()) {
+            OmniLog.e(TAG, "Failed to create shared workspace dir: ${dir.absolutePath}")
+            return null
+        }
+
+        val localId = UUID.randomUUID().toString()
+        val target = File(dir, "${localId}_$fileName")
+        val size = try {
+            val input = resolver.openInputStream(uri) ?: return null
+            input.use { source ->
+                target.outputStream().use { sink ->
+                    source.copyTo(sink)
+                }
+            }
+            target.length()
+        } catch (error: Exception) {
+            OmniLog.e(TAG, "Failed to copy shared uri to workspace uri=$uri", error)
+            runCatching { target.delete() }
+            return null
+        }
+
+        val resolvedMimeType = mimeType ?: workspaceManager.guessMimeType(target)
+        return SharedOpenDraftAttachment(
+            id = localId,
+            name = fileName,
+            path = target.absolutePath,
+            size = if (size > 0) size else meta.size,
+            mimeType = resolvedMimeType,
+            isImage = isImageMimeOrName(resolvedMimeType, fileName),
+            promptPath = workspaceManager.shellPathForAndroid(target) ?: target.absolutePath,
+            sendToModel = false,
         )
     }
 
@@ -206,6 +332,16 @@ object SharedOpenDraftStore {
         return if (extension.isNullOrBlank()) name else "$name.$extension"
     }
 
+    private fun resolveMimeType(context: Context, uri: Uri, mimeTypeHint: String?): String? {
+        return context.contentResolver.getType(uri)?.takeUnless(::isWildcardMimeType)
+            ?: mimeTypeHint?.takeUnless(::isWildcardMimeType)
+    }
+
+    private fun isWildcardMimeType(value: String): Boolean {
+        val normalized = value.trim()
+        return normalized.isEmpty() || normalized == "*/*"
+    }
+
     private fun fromJson(json: JSONObject): SharedOpenDraft {
         val attachmentsJson = json.optJSONArray("attachments") ?: JSONArray()
         val attachments = buildList {
@@ -219,6 +355,8 @@ object SharedOpenDraftStore {
                         size = item.takeIf { !it.isNull("size") }?.optLong("size"),
                         mimeType = item.optString("mimeType").ifBlank { null },
                         isImage = item.optBoolean("isImage", false),
+                        promptPath = item.optString("promptPath").ifBlank { null },
+                        sendToModel = item.optBoolean("sendToModel", true),
                     ),
                 )
             }
@@ -235,4 +373,19 @@ object SharedOpenDraftStore {
         val displayName: String?,
         val size: Long?,
     )
+
+    private fun isImageMimeOrName(mimeType: String?, fileName: String): Boolean {
+        if (mimeType?.startsWith("image/", ignoreCase = true) == true) {
+            return true
+        }
+        val lowerName = fileName.lowercase(Locale.US)
+        return lowerName.endsWith(".png") ||
+            lowerName.endsWith(".jpg") ||
+            lowerName.endsWith(".jpeg") ||
+            lowerName.endsWith(".webp") ||
+            lowerName.endsWith(".gif") ||
+            lowerName.endsWith(".bmp") ||
+            lowerName.endsWith(".heic") ||
+            lowerName.endsWith(".heif")
+    }
 }

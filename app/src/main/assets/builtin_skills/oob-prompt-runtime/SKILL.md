@@ -1,6 +1,6 @@
 ---
 name: oob-prompt-runtime
-description: Design, implement, or review OOB Prompt Runtime. Use for "系统提示词", "提示词运行时", "提示词组装", "prompt dump", "项目上下文注入", "上下文预算", "初始输入契约", static core, dynamic environment, device state, current app, memory, locale, tool instructions, task prompts, or prompt debugging.
+description: Design, implement, or review OOB Prompt Runtime. Use for "系统提示词", "提示词运行时", "提示词组装", "prompt dump", "项目上下文注入", "上下文预算", "初始输入契约", "prompt runtime", static core, dynamic environment, device state, current app, memory, locale, tool instructions, task prompts, or prompt debugging.
 ---
 
 # OOB Prompt Runtime

@@ -21,6 +21,7 @@ object AgentSystemPrompt {
                 skill.enabled &&
                 SkillCompatibilityChecker.evaluate(skill).available
         }
+        val loadedSkillIds = resolvedSkills.mapTo(mutableSetOf()) { it.skillId }
         val installedSkillSection = if (visibleInstalledSkills.isEmpty()) {
             LocalizedText(
                 zhCN = "当前未安装额外 skills。",
@@ -60,12 +61,24 @@ object AgentSystemPrompt {
                         }
                     )
                     val readGuidance = skillReadGuidance(skill, locale)
+                    val loadState = if (skill.id in loadedSkillIds) {
+                        LocalizedText(
+                            zhCN = "已自动加载到本轮 system prompt",
+                            enUS = "Auto-loaded into this turn's system prompt"
+                        ).resolve(locale)
+                    } else {
+                        LocalizedText(
+                            zhCN = "未自动加载；相关时调用 skills_read",
+                            enUS = "Not auto-loaded; call skills_read when relevant"
+                        ).resolve(locale)
+                    }
                     when (locale) {
                         PromptLocale.ZH_CN -> {
                             appendLine("- ${skill.name} (`${skill.id}`)")
                             appendLine("  - 讲解: $description")
                             appendLine("  - 样例: $examples")
                             appendLine("  - 能力目录: $capabilities")
+                            appendLine("  - 本轮状态: $loadState")
                             appendLine("  - 何时读正文: $readGuidance")
                             appendLine("  - SKILL.md: ${skill.shellSkillFilePath}")
                             appendLine("  - 读取正文: skills_read(skillId=\"${skill.id}\")")
@@ -75,6 +88,7 @@ object AgentSystemPrompt {
                             appendLine("  - Explanation: $description")
                             appendLine("  - Examples: $examples")
                             appendLine("  - Capability dirs: $capabilities")
+                            appendLine("  - This turn: $loadState")
                             appendLine("  - When to read body: $readGuidance")
                             appendLine("  - SKILL.md: ${skill.shellSkillFilePath}")
                             appendLine("  - Read body: skills_read(skillId=\"${skill.id}\")")
@@ -83,12 +97,7 @@ object AgentSystemPrompt {
                 }
             }.trim()
         }
-        // Skills are no longer auto-injected. The agent reads them on demand via
-        // skills_read. The loadedSkillSection is kept as a reminder to do so.
-        val loadedSkillSection = LocalizedText(
-            zhCN = "本轮未自动注入任何 skill 正文。若上方索引中有相关 skill，请主动调用 `skills_read(skillId=...)` 获取完整指令后再执行任务。",
-            enUS = "No skill body was auto-injected this turn. If a skill in the index above seems relevant, call `skills_read(skillId=...)` to load its full instructions before proceeding."
-        ).resolve(locale)
+        val loadedSkillSection = buildLoadedSkillSection(resolvedSkills, locale)
         val soulSection = memoryContext?.soul
             ?.takeIf { it.isNotBlank() }
             ?.let {
@@ -175,70 +184,71 @@ object AgentSystemPrompt {
 
         val workbenchProjectOperationRules = when (locale) {
             PromptLocale.ZH_CN -> """
-                OOB Workbench：详细创建/热更新/数据/交互规则在 oob-native-workbench skill 正文中。处理任何 Workbench 任务前，先调用 skills_read(skillId="oob-native-workbench") 读取完整规则。
+                OOB Workbench：完整规则在 oob-project skill 中。处理任何 Workbench 任务前，先调用 skills_read(skillId="oob-project") 读取完整规则。
                 核心：业务操作用 `workbench_api_call`；前端改动走 `workbench_project_hot_update`，优先 `htmlPatches`（~50 token）而非 `htmlFiles` 全量重写（~5000 token）。
                 标注定位：若 `frontendContext.selectedElement.oobId` 存在，直接搜 `data-oob-id="<oobId>"` 作为 `oldText` 锚点，不需要读全量 HTML；否则用 `file_read(lineStart/lineCount)` 只读相关段落。
 
-                【Project 新建强制执行序列】收到新建 Project 请求时，必须先调用 skills_read(skillId="oob-project-designer") 读取完整流程，然后严格按以下序列执行，每步都必须产出可见内容后才能进入下一步：
+                【Project 新建强制执行序列】收到新建 Project 请求时，必须先调用 skills_read(skillId="oob-project") 读取完整流程，然后严格按以下序列执行：
 
-                Step 1 — 领域调研（必须执行，不可跳过）
-                  至少调用 2 次 web_search，了解该领域现有优秀工具做对了什么、OOB 能在此基础上加什么。
-                  输出：向用户展示 3-5 条调研要点，说明 OOB 在此领域的设计主张。
+                Step 1 — 领域 + 开源调研（必须执行，不可跳过）
+                  至少调用 2 次 web_search 调研优秀产品/工具，再至少查询 1 次 GitHub/OSS 开源项目；必要时用 browser_use 打开 README/截图/示例深读。
+                  调研只用于校准一个小而精的 v1：一个核心闭环、一个实体、3-5 个字段、一屏展示。不要写竞品报告，不要把成熟 App 的模块都搬进来。
+                  输出：向用户展示 2-3 条产品调研要点、1-2 条开源启发，并说明 OOB v1 要保留什么、砍掉什么。
 
                 Step 2 — 方案确认（必须等用户回复，不可跳过）
-                  输出完整方案：这是什么 / 功能列表 / 交互 / 亮点 / 暂不支持。
+                  输出 v1 小方案：这是什么 / 1 个主操作 / 最多 3 条功能 / 一屏展示 / 暂不支持。
                   末尾明确提问："这个方向对吗？有什么要改的？"
-                  收到用户明确确认前，禁止进入 Step 3。用户说"好"/"可以"/"继续" = 确认。
+                  收到用户明确确认前，禁止进入 Step 3。
 
-                Step 3 — 实体蓝图（可与用户讨论，但必须输出）
-                  输出 Phase 1.8 蓝图：数据层字段 / 工具层操作 / 展示层布局 / PROJECT_SOUL 约束。
-                  这是 API 设计和 HTML 生成的统一来源，字段名三层必须一致。
+                Step 3 — ProjectContract（必须输出结构化 JSON）
+                  输出 ProjectContract JSON（格式见 oob-project skill）：entity、fields、actions（含 agentPrompt）、views。
+                  默认最多 6 个字段、最多 1 个 agent action；纯 CRUD 小工具允许。agent action 只有在主操作需要 OOB 原生能力时才加，且 agentPrompt 必须基于真实数据源/能力边界。
+                  禁止在此步骤手写 workbench_project_create 大块 JSON。
 
-                Step 4 — API 设计 + HTML 生成（内部步骤，不展示给用户）
-                  每个 agent API 需先做任务调研（web_search），带领域知识写 prompt。
+                Step 4 — Builder（内部步骤）
+                  调用：terminal_execute("python3 {skillDir}/scripts/build_project_from_contract.py --contract '<contract json>'")
+                  使用 builder 的 stdout 输出，不手动修改。
+                  builder 有 FAIL 输出时必须修复 contract 再重跑，不能忽略错误继续。
 
-                Step 5 — Review（必须执行）
-                  调用 skills_read(skillId="oob-project-reviewer") 执行完整审查，解决所有 FAIL 项。
-                  向用户输出 reviewer 报告摘要（通过/修复了N项）。
+                Step 5 — 创建
+                  workbench_project_create(<builder 输出的 JSON>)
+                  workbench_project_activate → workbench_project_open
+                  禁止跳过任何 step 直接创建；禁止手写完整 workbench_project_create JSON。
 
-                Step 6 — 创建
-                  所有以上 step 完成后，才可调用 workbench_project_create（apis 非空，htmlFiles 非空）。
-                  禁止跳过任何 step 直接创建。
-
-                【Project 更新强制规则】更新已有 Project 时，先调用 skills_read(skillId="oob-project-updater")，读取 PROJECT_SOUL.md 和 PROJECT_CONTEXT.md 后再动手改。
+                【Project 更新强制规则】更新已有 Project 时，先调用 skills_read(skillId="oob-project")，读取 PROJECT_SOUL.md 和 PROJECT_CONTEXT.md 后再动手改。
             """.trimIndent()
             PromptLocale.EN_US -> """
-                OOB Workbench: full creation/hot-update/data/interaction rules are in the oob-native-workbench skill. When working on any Workbench task, call skills_read(skillId="oob-native-workbench") first.
+                OOB Workbench: all rules are in the oob-project skill. When working on any Workbench task, call skills_read(skillId="oob-project") first.
                 Core: use `workbench_api_call` for business operations; use `workbench_project_hot_update` for frontend changes, preferring `htmlPatches` (~50 tokens) over full `htmlFiles` rewrite (~5000 tokens).
                 Targeting: if `frontendContext.selectedElement.oobId` exists, search directly for `data-oob-id="<oobId>"` as the `oldText` anchor — do NOT read the full HTML file. Otherwise use `file_read(lineStart/lineCount)` to read only the relevant section.
 
-                [Project creation mandatory sequence] When asked to create a new Project, first call skills_read(skillId="oob-project-designer"), then follow these steps in order. Each step must produce visible output before proceeding to the next:
+                [Project creation mandatory sequence] When asked to create a new Project, first call skills_read(skillId="oob-project"), then follow these steps in order:
 
-                Step 1 — Domain research (mandatory, cannot skip)
-                  Call web_search at least twice to understand what existing tools do well and what OOB can add.
-                  Output: show the user 3-5 research findings and OOB's design angle for this domain.
+                Step 1 — Domain + open-source research (mandatory, cannot skip)
+                  Call web_search at least twice for strong existing products/tools, then query GitHub/OSS at least once; use browser_use on README/screenshots/examples when deeper reading is needed.
+                  Research only calibrates a small v1: one core loop, one entity, 3-5 fields, and one-screen display. Do not write a competitor report or import mature-app module sprawl.
+                  Show the user 2-3 product findings, 1-2 open-source inspirations, and what OOB v1 keeps versus cuts.
 
-                Step 2 — Proposal confirmation (must wait for user reply, cannot skip)
-                  Output a complete proposal: what it is / feature list / interaction / highlights / not included.
-                  End with: "Does this direction work for you? Anything to change?"
-                  Do NOT proceed to Step 3 until the user explicitly confirms. "Good"/"yes"/"continue" = confirmed.
+                Step 2 — Proposal confirmation (must wait for user reply)
+                  Output a small v1 proposal: what it is / one primary action / up to 3 features / one-screen display / not included.
+                  End with: "Does this direction work for you?" Do NOT proceed until confirmed.
 
-                Step 3 — Entity blueprint (discuss with user if needed, but must output)
-                  Output the Phase 1.8 blueprint: data layer fields / tool layer operations / display layer layout / PROJECT_SOUL constraints.
-                  This is the single source for API design and HTML generation — field names must be consistent across all three layers.
+                Step 3 — ProjectContract (must output structured JSON)
+                  Output ProjectContract JSON (format in oob-project skill): entity, fields, actions (with agentPrompt), views.
+                  Default max: 6 fields and 1 agent action. Pure CRUD tools are allowed. Add an agent action only when the primary loop needs OOB-native capabilities, and base agentPrompt on real data sources/capability boundaries.
+                  Do NOT hand-write workbench_project_create JSON at this step.
 
-                Step 4 — API design + HTML generation (internal, not shown to user)
-                  For each agent API, do task research first (web_search), then write prompt with domain knowledge.
+                Step 4 — Builder (internal step)
+                  Call: terminal_execute("python3 {skillDir}/scripts/build_project_from_contract.py --contract '<contract json>'")
+                  Use the builder's stdout output as-is, do not modify it.
+                  If the builder has FAIL output, fix the contract and re-run — do not ignore errors.
 
-                Step 5 — Review (mandatory)
-                  Call skills_read(skillId="oob-project-reviewer"), resolve all FAIL items.
-                  Output reviewer summary to user (passed / fixed N items).
+                Step 5 — Create
+                  workbench_project_create(<builder output JSON>)
+                  workbench_project_activate → workbench_project_open
+                  Skipping any step or hand-writing workbench_project_create JSON directly is forbidden.
 
-                Step 6 — Create
-                  Only after all above steps are complete, call workbench_project_create (apis non-empty, htmlFiles non-empty).
-                  Skipping any step to go straight to creation is forbidden.
-
-                [Project update rule] When updating an existing Project, call skills_read(skillId="oob-project-updater") first, then read PROJECT_SOUL.md and PROJECT_CONTEXT.md before making any changes.
+                [Project update rule] When updating an existing Project, call skills_read(skillId="oob-project") first, then read PROJECT_SOUL.md and PROJECT_CONTEXT.md before making any changes.
             """.trimIndent()
         }
 
@@ -292,7 +302,8 @@ object AgentSystemPrompt {
                 - 需要安装 Python 依赖时，默认安装到 workspace 项目的 `.venv` 中；不要使用 `--break-system-packages`，除非用户明确要求改动系统 Python。
                 - 如果项目已有 `pyproject.toml` 或 `uv.lock`，优先考虑 `uv sync`、`uv run` 这类工作流，而不是污染系统 Python。
                 - 查询当前有哪些 skills、某类 skill 是否已安装，优先用 `skills_list`。
-                - 如果某个已安装 skill 看起来相关，但本轮没有注入它的正文，使用 `skills_read` 读取对应 `SKILL.md`，不要凭索引信息臆测细节。
+                - 如果某个已安装 skill 看起来相关但本轮没有自动加载，使用 `skills_read` 读取对应 `SKILL.md`，不要凭索引信息臆测细节。
+                - 如果 skill 正文要求读取 references 中的文件，使用 `skills_read_reference(skillId=..., refId=...)`，不要凭文件名猜内容。
                 - 记忆工具统一使用 `memory_*`；短期记忆写入 `memory_write_daily`，长期记忆写入 `memory_upsert_longterm`，检索使用 `memory_search`，整理使用 `memory_rollup_day`。
                 - 允许在用户明确授权时更新 `.omnibot/agent/SOUL.md`，并在回复中说明更新点与原因。
                 - `schedule_task_*`、`alarm_*`、`calendar_*`、`memory_*`、`subagent_dispatch`、`mcp__*`、`terminal_execute`、`android_privileged_action`、`android_privileged_session_*`、`terminal_session_*` 调用后先等待工具结果，再决定下一步。
@@ -301,8 +312,9 @@ object AgentSystemPrompt {
                 - 已安装 skills 根目录（shell）: $skillsRootShellPath
                 - 已安装 skills 根目录（android）: $skillsRootAndroidPath
                 - 你始终知道”已安装 skills 索引”，可用来回答”当前有哪些 skills”。
-                - Skills 不会自动注入正文。发现任务与某个 skill 相关时，在执行任务前先调用 `skills_read(skillId=...)` 读取完整指令——这是主流程，不是备选。
-                - 读取 skill 后，严格按照 skill 正文里的步骤执行，不要跳过或简化。
+                - Skills 按标准模式工作：每轮启动时先根据用户消息自动匹配相关 skill，并把命中的 SKILL.md 正文注入本 system prompt。
+                - 未命中的 skill 只在索引里；如果任务推进中发现相关，调用 `skills_read(skillId=...)` 读取正文。
+                - 已注入或读取 skill 后，严格按照 skill 正文里的步骤执行，不要跳过或简化。
                 $installedSkillSection
                 $loadedSkillSection
                 $soulSection
@@ -360,7 +372,8 @@ object AgentSystemPrompt {
                 - Install Python dependencies into the workspace project's `.venv` by default. Do not use `--break-system-packages` unless the user explicitly asks to modify the system Python.
                 - If the project already has `pyproject.toml` or `uv.lock`, prefer workflows such as `uv sync` and `uv run` instead of polluting system Python.
                 - Use `skills_list` first when you need to know which skills are installed or whether a category of skill exists.
-                - If an installed skill seems relevant but its full body was not injected in this turn, use `skills_read` to load the corresponding `SKILL.md` instead of guessing from the index.
+                - If an installed skill seems relevant but was not auto-loaded this turn, use `skills_read` to load the corresponding `SKILL.md` instead of guessing from the index.
+                - If a skill body asks for a file under references, call `skills_read_reference(skillId=..., refId=...)` instead of guessing its contents from the file name.
                 - Use `memory_*` for memory operations: `memory_write_daily` for short-term memory, `memory_upsert_longterm` for long-term memory, `memory_search` for retrieval, and `memory_rollup_day` for rollups.
                 - You may update `.omnibot/agent/SOUL.md` when the user clearly authorizes it, and you must explain what changed and why.
                 - After calling `schedule_task_*`, `alarm_*`, `calendar_*`, `memory_*`, `subagent_dispatch`, `mcp__*`, `terminal_execute`, `android_privileged_action`, `android_privileged_session_*`, or `terminal_session_*`, wait for the tool result before deciding the next step.
@@ -369,8 +382,9 @@ object AgentSystemPrompt {
                 - Installed skills root (shell): $skillsRootShellPath
                 - Installed skills root (android): $skillsRootAndroidPath
                 - You always know the installed skills index, so you can answer questions like “what skills are installed right now?”
-                - Skills are NOT auto-injected. When a task seems related to an installed skill, call `skills_read(skillId=...)` to load its full instructions before proceeding — this is the primary workflow, not a fallback.
-                - After reading a skill, follow its steps exactly. Do not skip or simplify.
+                - Skills follow the standard mode: each turn first auto-matches relevant skills from the user message and injects the matched SKILL.md bodies into this system prompt.
+                - Skills that did not match stay index-only; if they become relevant during the task, call `skills_read(skillId=...)` to load the body.
+                - After a skill is injected or read, follow its steps exactly. Do not skip or simplify.
                 $installedSkillSection
                 $loadedSkillSection
                 $soulSection
@@ -403,15 +417,10 @@ object AgentSystemPrompt {
                     "给 prompt dump 加脱敏",
                     "把 Project 上下文注入成 project_context"
                 ),
-                "oob-native-workbench" to listOf(
-                    "把 agent 结果做成可交互项目界面",
-                    "热更新 Workbench HTML",
-                    "检查 project.items 数据绑定"
-                ),
-                "oob-project-designer" to listOf(
+                "oob-project" to listOf(
                     "帮我做一个支出记录工具",
                     "创建一个健身打卡 tracker",
-                    "设计 Project API 和前端合同"
+                    "热更新 Workbench HTML，修改字段"
                 ),
                 "find-install-skills" to listOf(
                     "找个处理 PDF 的 skill",
@@ -435,15 +444,10 @@ object AgentSystemPrompt {
                     "add redacted prompt dumps",
                     "inject Project context as project_context"
                 ),
-                "oob-native-workbench" to listOf(
-                    "turn an agent result into an interactive Project UI",
-                    "hot-update Workbench HTML",
-                    "check project.items data binding"
-                ),
-                "oob-project-designer" to listOf(
+                "oob-project" to listOf(
                     "build an expense tracker",
                     "create a workout logging tracker",
-                    "design Project APIs and frontend contracts"
+                    "hot-update Workbench HTML or fix field bindings"
                 ),
                 "find-install-skills" to listOf(
                     "find a PDF handling skill",
@@ -482,6 +486,69 @@ object AgentSystemPrompt {
                 "the index is not enough to proceed safely"
             )
         }
+    }
+
+    private fun buildLoadedSkillSection(
+        resolvedSkills: List<ResolvedSkillContext>,
+        locale: PromptLocale
+    ): String {
+        if (resolvedSkills.isEmpty()) {
+            return LocalizedText(
+                zhCN = "本轮没有自动命中 skill 正文；如后续发现相关 skill，调用 `skills_read(skillId=...)`。",
+                enUS = "No skill body was auto-matched this turn; if a relevant skill becomes apparent later, call `skills_read(skillId=...)`."
+            ).resolve(locale)
+        }
+        return buildString {
+            appendLine(
+                LocalizedText(
+                    zhCN = "本轮自动加载的 skill 正文（必须遵守）：",
+                    enUS = "Auto-loaded skill bodies for this turn (must follow):"
+                ).resolve(locale)
+            )
+            resolvedSkills.forEach { skill ->
+                val skillName = skill.frontmatter["name"]?.ifBlank { skill.skillId } ?: skill.skillId
+                appendLine()
+                appendLine("## $skillName (`${skill.skillId}`)")
+                appendLine(
+                    when (locale) {
+                        PromptLocale.ZH_CN -> "- 触发原因: ${skill.triggerReason}"
+                        PromptLocale.EN_US -> "- Trigger: ${skill.triggerReason}"
+                    }
+                )
+                skill.scriptsDir?.takeIf { it.isNotBlank() }?.let { scriptsDir ->
+                    appendLine(
+                        when (locale) {
+                            PromptLocale.ZH_CN -> "- scripts: $scriptsDir"
+                            PromptLocale.EN_US -> "- Scripts: $scriptsDir"
+                        }
+                    )
+                }
+                skill.assetsDir?.takeIf { it.isNotBlank() }?.let { assetsDir ->
+                    appendLine(
+                        when (locale) {
+                            PromptLocale.ZH_CN -> "- assets: $assetsDir"
+                            PromptLocale.EN_US -> "- Assets: $assetsDir"
+                        }
+                    )
+                }
+                if (skill.loadedReferences.isNotEmpty()) {
+                    appendLine(
+                        when (locale) {
+                            PromptLocale.ZH_CN -> "- references: ${skill.loadedReferences.joinToString(", ")}"
+                            PromptLocale.EN_US -> "- References: ${skill.loadedReferences.joinToString(", ")}"
+                        }
+                    )
+                    appendLine(
+                        when (locale) {
+                            PromptLocale.ZH_CN -> "- 如正文要求读取 reference，调用 `skills_read_reference(skillId=\"${skill.skillId}\", refId=\"...\")`。"
+                            PromptLocale.EN_US -> "- If the body asks for a reference, call `skills_read_reference(skillId=\"${skill.skillId}\", refId=\"...\")`."
+                        }
+                    )
+                }
+                appendLine()
+                appendLine(skill.bodyMarkdown.trim())
+            }
+        }.trim()
     }
 
     private fun skillReadGuidance(

@@ -26,6 +26,7 @@ import 'package:ui/utils/ui.dart';
 import 'package:ui/features/memory/pages/memory_center/widgets/memory_card_list.dart';
 import 'package:ui/theme/app_text_styles.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:ui/features/task/pages/execution_history/command_library_page.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 
@@ -185,6 +186,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
   bool _isMem0Mutating = false;
   static const int _localMemoryTab = 0;
   static const int _cloudMemoryTab = 1;
+  static const int _commandsTab = 2;
   int _currentMemoryTab = _localMemoryTab;
   late PageController _memoryPageController;
 
@@ -287,6 +289,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       return;
     }
 
+    final l10n = context.l10n;
     final shouldShowLoading = !_mem0Snapshot.hasData || forceRefresh;
     if (shouldShowLoading) {
       _safeSetState(() {
@@ -305,7 +308,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       _safeSetState(() {
         _mem0Snapshot = Mem0MemorySnapshot(
           configured: true,
-          errorMessage: 'Long-term memory load failed: $e',
+          errorMessage: l10n.memoryLongTermLoadFailed(e),
         );
       });
     } finally {
@@ -1265,11 +1268,9 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
             AnimatedAlign(
               duration: const Duration(milliseconds: 280),
               curve: Curves.easeOutCubic,
-              alignment: _currentMemoryTab == _localMemoryTab
-                  ? Alignment.centerLeft
-                  : Alignment.centerRight,
+              alignment: Alignment(-1.0 + _currentMemoryTab.toDouble(), 0),
               child: FractionallySizedBox(
-                widthFactor: 0.5,
+                widthFactor: 1 / 3,
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 1),
                   decoration: BoxDecoration(
@@ -1315,12 +1316,16 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
             Row(
               children: [
                 _buildMemoryTabButton(
-                  label: AppTextLocalizer.text('短期记忆'),
+                  label: context.l10n.memoryShortTermTitle,
                   tabIndex: _localMemoryTab,
                 ),
                 _buildMemoryTabButton(
-                  label: AppTextLocalizer.text('长期记忆'),
+                  label: context.l10n.memoryLongTermTitle,
                   tabIndex: _cloudMemoryTab,
+                ),
+                _buildMemoryTabButton(
+                  label: context.l10n.memoryCommandsTitle,
+                  tabIndex: _commandsTab,
                 ),
               ],
             ),
@@ -1378,7 +1383,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
               child: Row(
                 children: [
                   Text(
-                    AppTextLocalizer.text('短期记忆'),
+                    context.l10n.memoryShortTermTitle,
                     style: TextStyle(
                       color: context.omniPalette.textPrimary,
                       fontSize: AppTextStyles.fontSizeMain,
@@ -1486,6 +1491,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
               children: [
                 _buildLocalMemoryPage(filteredCards, hasLocalMemories),
                 _buildCloudMemoryPage(hasMem0Section),
+                const CommandLibraryEmbed(),
               ],
             ),
           ),
@@ -1665,7 +1671,7 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        AppTextLocalizer.text('长期记忆'),
+                        context.l10n.memoryLongTermTitle,
                         style: TextStyle(
                           color: palette.accentPrimary,
                           fontSize: AppTextStyles.fontSizeSmall,

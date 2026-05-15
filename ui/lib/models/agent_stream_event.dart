@@ -7,6 +7,7 @@ enum AgentStreamEventKind {
   toolStarted('tool_started'),
   toolProgress('tool_progress'),
   toolCompleted('tool_completed'),
+  workbenchProjectCard('workbench_project_card'),
   completed('completed'),
   error('error'),
   permissionRequired('permission_required'),
@@ -39,11 +40,7 @@ enum AgentStreamPhase {
 }
 
 class UserDialogChoice {
-  const UserDialogChoice({
-    required this.label,
-    required this.value,
-    this.hint,
-  });
+  const UserDialogChoice({required this.label, required this.value, this.hint});
 
   final String label;
   final String value;
@@ -93,9 +90,9 @@ class UserDialog {
     final choicesRaw = raw['choices'];
     final choices = choicesRaw is List
         ? choicesRaw
-            .map(UserDialogChoice.tryParse)
-            .whereType<UserDialogChoice>()
-            .toList()
+              .map(UserDialogChoice.tryParse)
+              .whereType<UserDialogChoice>()
+              .toList()
         : <UserDialogChoice>[];
     return UserDialog(
       type: type,

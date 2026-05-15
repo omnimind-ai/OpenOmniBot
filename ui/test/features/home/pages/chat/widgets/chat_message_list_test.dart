@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ui/features/home/pages/command_overlay/widgets/cards/deep_thinking_card.dart';
 import 'package:ui/features/home/pages/chat/chat_page_models.dart';
+import 'package:ui/features/home/pages/chat/widgets/agent_tool_activity_card.dart';
 import 'package:ui/features/home/pages/chat/widgets/chat_widgets.dart';
+import 'package:ui/features/home/pages/command_overlay/widgets/cards/deep_thinking_card.dart';
 import 'package:ui/l10n/generated/app_localizations.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/widgets/agent_avatar.dart';
 import 'package:ui/widgets/streaming_text.dart';
+
+const String _kThinkingDetailText = '详细思考过程';
+const String _kThinkingFixtureText = '思考摘要\n$_kThinkingDetailText';
 
 void main() {
   testWidgets('empty chat state offsets with bottom overlay inset', (
@@ -575,7 +579,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('运行 git status'), findsNothing);
-    expect(find.text('详细思考过程'), findsNothing);
+    expect(_thinkingDetailFinder(), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('agent-run-summary-task-1')));
     await tester.pump();
@@ -589,7 +593,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 320));
 
     expect(find.text('运行 git status'), findsOneWidget);
-    expect(find.text('详细思考过程'), findsNothing);
+    expect(_thinkingDetailFinder(), findsNothing);
     expect(find.byType(AgentAvatarCircle), findsOneWidget);
     expect(find.byType(AgentAvatarButton), findsNothing);
   });
@@ -629,16 +633,72 @@ void main() {
 
     await tester.tap(thinkingToggle);
     await tester.pumpAndSettle();
-    expect(find.text('详细思考过程'), findsOneWidget);
+    expect(_thinkingDetailFinder(), findsOneWidget);
 
     await tester.tap(summaryToggle);
     await tester.pumpAndSettle();
-    expect(find.text('详细思考过程'), findsNothing);
+    expect(_thinkingDetailFinder(), findsNothing);
 
     await tester.tap(summaryToggle);
     await tester.pumpAndSettle();
     expect(find.byType(DeepThinkingCard), findsOneWidget);
-    expect(find.text('详细思考过程'), findsNothing);
+    expect(_thinkingDetailFinder(), findsNothing);
+  });
+
+  testWidgets('consecutive browser tool cards render as one activity card', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    final messages = _buildBrowserActivityAgentRunMessages();
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        child: SizedBox(
+          width: 400,
+          height: 520,
+          child: ChatMessageList(
+            messages: messages,
+            scrollController: controller,
+            onBeforeTaskExecute: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('agent-run-summary-task-2')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AgentToolActivityCard), findsOneWidget);
+    expect(find.text('浏览器操作 · 2 步'), findsOneWidget);
+    expect(
+      tester
+          .widget<AnimatedCrossFade>(
+            find.descendant(
+              of: find.byType(AgentToolActivityCard),
+              matching: find.byType(AnimatedCrossFade),
+            ),
+          )
+          .crossFadeState,
+      CrossFadeState.showFirst,
+    );
+
+    await tester.tap(find.byType(AgentToolActivityCard));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<AnimatedCrossFade>(
+            find.descendant(
+              of: find.byType(AgentToolActivityCard),
+              matching: find.byType(AnimatedCrossFade),
+            ),
+          )
+          .crossFadeState,
+      CrossFadeState.showSecond,
+    );
+    expect(find.text('打开 example.com'), findsOneWidget);
+    expect(find.text('点击登录按钮'), findsOneWidget);
   });
 
   testWidgets('agent run expansion can be controlled by the parent page', (
@@ -690,6 +750,71 @@ void main() {
     expect(expandedTaskIds, isEmpty);
     expect(find.text('运行 git status'), findsNothing);
   });
+
+  testWidgets(
+    'cancelled agent run auto-collapses trace and shows cancel body',
+    (tester) async {
+      final controller = ScrollController();
+      final messages = ObservableChatMessageList()
+        ..replaceAllMessages(_buildCompletedAgentRunMessages());
+      Set<String> expandedTaskIds = <String>{'task-1'};
+      late StateSetter setState;
+
+      await tester.pumpWidget(
+        _buildLocalizedApp(
+          child: StatefulBuilder(
+            builder: (context, stateSetter) {
+              setState = stateSetter;
+              return SizedBox(
+                width: 400,
+                height: 520,
+                child: ChatMessageList(
+                  messages: messages,
+                  scrollController: controller,
+                  expandedAgentRunTaskIds: expandedTaskIds,
+                  onExpandedAgentRunTaskIdsChanged: (nextTaskIds) {
+                    setState(() {
+                      expandedTaskIds = nextTaskIds;
+                    });
+                  },
+                  onBeforeTaskExecute: () async {},
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('运行 git status'), findsOneWidget);
+
+      messages.insert(
+        0,
+        ChatMessageModel(
+          id: 'task-1-cancelled',
+          type: 1,
+          user: 2,
+          content: const <String, dynamic>{
+            'text': '任务已取消',
+            'id': 'task-1-cancelled',
+            'renderMarkdown': false,
+          },
+          streamMeta: const <String, dynamic>{
+            'parentTaskId': 'task-1',
+            'kind': 'text_snapshot',
+            'seq': 1000000000,
+            'entryId': 'task-1-cancelled',
+            'isFinal': true,
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(expandedTaskIds, isEmpty);
+      expect(_streamingTextFinder('任务已取消'), findsOneWidget);
+      expect(find.text('运行 git status'), findsNothing);
+    },
+  );
 
   testWidgets(
     'expanding latest agent run keeps the summary row anchored while inset grows',
@@ -775,7 +900,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 32));
 
     expect(find.text('已折叠运行过程'), findsNothing);
-    expect(find.text('详细思考过程'), findsOneWidget);
+    expect(find.byType(DeepThinkingCard), findsOneWidget);
     expect(find.text('运行 git status'), findsOneWidget);
     expect(find.text('最终回答'), findsOneWidget);
   });
@@ -824,7 +949,7 @@ void main() {
     expect(find.text('已思考'), findsOneWidget);
     expect(find.text('运行 git status'), findsOneWidget);
     expect(find.text('最终回答'), findsOneWidget);
-    expect(find.text('详细思考过程'), findsNothing);
+    expect(_thinkingDetailFinder(), findsNothing);
   });
 
   testWidgets('reaching top auto-loads older messages without jumping to top', (
@@ -908,6 +1033,15 @@ Widget _buildLocalizedApp({required Widget child}) {
     localizationsDelegates: AppLocalizations.localizationsDelegates,
     supportedLocales: AppLocalizations.supportedLocales,
     home: Scaffold(body: child),
+  );
+}
+
+Finder _thinkingDetailFinder() => find.textContaining(_kThinkingDetailText);
+
+Finder _streamingTextFinder(String fullText) {
+  return find.byWidgetPredicate(
+    (widget) => widget is StreamingText && widget.fullText == fullText,
+    description: 'StreamingText("$fullText")',
   );
 }
 
@@ -1053,7 +1187,7 @@ List<ChatMessageModel> _buildCompletedAgentRunMessages({bool isFinal = true}) {
     ChatMessageModel.cardMessage(
       <String, dynamic>{
         'type': 'deep_thinking',
-        'thinkingContent': '详细思考过程',
+        'thinkingContent': _kThinkingFixtureText,
         'stage': 4,
         'isLoading': false,
         'taskID': 'task-1',
@@ -1069,6 +1203,61 @@ List<ChatMessageModel> _buildCompletedAgentRunMessages({bool isFinal = true}) {
       },
     ),
     ChatMessageModel.userMessage('用户问题', id: 'task-1-user'),
+  ];
+}
+
+List<ChatMessageModel> _buildBrowserActivityAgentRunMessages() {
+  return <ChatMessageModel>[
+    ChatMessageModel(
+      id: 'task-2-text',
+      type: 1,
+      user: 2,
+      content: const <String, dynamic>{'text': '页面已打开', 'id': 'task-2-text'},
+      streamMeta: const <String, dynamic>{
+        'parentTaskId': 'task-2',
+        'kind': 'text_snapshot',
+        'seq': 40,
+        'entryId': 'task-2-text',
+        'isFinal': true,
+      },
+    ),
+    ChatMessageModel.cardMessage(
+      <String, dynamic>{
+        'type': 'agent_tool_summary',
+        'status': 'success',
+        'toolType': 'browser',
+        'toolName': 'browser_use',
+        'toolTitle': '点击登录按钮',
+        'argsJson': '{"action":"click","selector":"#login"}',
+      },
+      id: 'task-2-browser-click',
+      streamMeta: const <String, dynamic>{
+        'parentTaskId': 'task-2',
+        'kind': 'tool_completed',
+        'seq': 30,
+        'entryId': 'task-2-browser-click',
+        'isFinal': false,
+      },
+    ),
+    ChatMessageModel.cardMessage(
+      <String, dynamic>{
+        'type': 'agent_tool_summary',
+        'status': 'success',
+        'toolType': 'browser',
+        'toolName': 'browser_use',
+        'toolTitle': '打开 example.com',
+        'argsJson': '{"action":"navigate","url":"https://example.com"}',
+      },
+      id: 'task-2-browser-navigate',
+      streamMeta: const <String, dynamic>{
+        'parentTaskId': 'task-2',
+        'kind': 'tool_completed',
+        'seq': 20,
+        'entryId': 'task-2-browser-navigate',
+        'isFinal': false,
+      },
+    ),
+    ChatMessageModel.userMessage('打开网页', id: 'task-2-user'),
   ];
 }
 
@@ -1108,7 +1297,7 @@ List<ChatMessageModel> _buildActiveAgentRunMessages() {
     ChatMessageModel.cardMessage(
       <String, dynamic>{
         'type': 'deep_thinking',
-        'thinkingContent': '详细思考过程',
+        'thinkingContent': _kThinkingFixtureText,
         'stage': 1,
         'isLoading': true,
         'taskID': 'task-1',

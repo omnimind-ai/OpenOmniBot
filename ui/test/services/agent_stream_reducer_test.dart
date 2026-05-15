@@ -7,6 +7,7 @@ void main() {
     required int seq,
     required AgentStreamEventKind kind,
     required String entryId,
+    Map<String, dynamic> raw = const <String, dynamic>{},
   }) {
     return AgentStreamEvent(
       taskId: 'agent-task',
@@ -15,6 +16,7 @@ void main() {
       createdAtMs: seq,
       entryId: entryId,
       roundIndex: 1,
+      raw: raw,
     );
   }
 
@@ -85,6 +87,35 @@ void main() {
       ),
     );
 
+    expect(completed.nextState.activeToolEntryIds, isEmpty);
+  });
+
+  test('uses toolCallId as canonical tool identity across event entry ids', () {
+    const reducer = AgentStreamReducer();
+
+    final started = reducer.reduce(
+      null,
+      toolEvent(
+        seq: 1,
+        kind: AgentStreamEventKind.toolStarted,
+        entryId: 'entry-start',
+        raw: const {'toolCallId': 'tool-call-1'},
+      ),
+    );
+    expect(started.nextState.toolCards.keys, {'tool-call-1'});
+    expect(started.nextState.activeToolEntryIds, {'tool-call-1'});
+
+    final completed = reducer.reduce(
+      started.nextState,
+      toolEvent(
+        seq: 2,
+        kind: AgentStreamEventKind.toolCompleted,
+        entryId: 'entry-complete',
+        raw: const {'toolCallId': 'tool-call-1'},
+      ),
+    );
+
+    expect(completed.nextState.toolCards.keys, {'tool-call-1'});
     expect(completed.nextState.activeToolEntryIds, isEmpty);
   });
 }

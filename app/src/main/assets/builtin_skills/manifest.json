@@ -31,20 +31,10 @@
       "hasEvals": false
     },
     {
-      "id": "oob-native-workbench",
-      "name": "oob-native-workbench",
-      "description": "Build OOB-native Workbench projects that bind Skill-driven workflows, Project Tools, Workspace files, and Flutter frontend displays.",
-      "assetPath": "builtin_skills/oob-native-workbench",
-      "hasScripts": false,
-      "hasReferences": false,
-      "hasAssets": false,
-      "hasEvals": false
-    },
-    {
-      "id": "oob-project-designer",
-      "name": "oob-project-designer",
-      "description": "Design and create an OOB Workbench Project from a user's natural-language description of a personal tool, tracker, or recurring workflow. Use when the user says \"帮我做一个\", \"我想创建一个\", \"build me a\", \"make a [X] tracker/tool/app\", or expresses intent to build a new persistent personal tool from scratch. Also use for: designing API sets, choosing executors, reviewing frontend-backend contracts.",
-      "assetPath": "builtin_skills/oob-project-designer",
+      "id": "oob-project",
+      "name": "oob-project",
+      "description": "OOB Workbench Project 完整生命周期：新建、更新、审查。Use when the user says \"帮我做一个\", \"我想创建一个\", \"build me a\", \"make a [X] tracker/tool/app\", \"改一下界面\", \"加个字段\", \"新增功能\", \"修复\", or any intent to create or modify a persistent personal tool. Covers: domain research, proposal, entity blueprint, API design, Bridge Injection, HTML generation, hot update, review, PROJECT_SOUL, document maintenance.",
+      "assetPath": "builtin_skills/oob-project",
       "hasScripts": true,
       "hasReferences": true,
       "hasAssets": true,
@@ -61,42 +51,12 @@
       "hasEvals": false
     },
     {
-      "id": "oob-native-html-frontend",
-      "name": "oob-native-html-frontend",
-      "description": "改HTML前端、改界面样式、改布局、加图表、前端热更新、修前端、写index.html、修改Project显示、改前端代码、优化移动端界面。Write, hot-update, or repair the HTML/CSS/vanilla JS display layer of an OOB Workbench Project. Use when the task is about frontend files — not Project design or API definition.",
-      "assetPath": "builtin_skills/oob-native-html-frontend",
-      "hasScripts": false,
-      "hasReferences": true,
-      "hasAssets": true,
-      "hasEvals": false
-    },
-    {
       "id": "oob-project-distiller",
       "name": "oob-project-distiller",
       "description": "Distill an external product, GitHub repository, vibe-app share, technical document, article, pasted notes, screenshots, or product demo into an OOB Workbench Project proposal or implementation. Use when the user asks to analyze a project/link/doc and \"总结成我们的 project\", \"蒸馏能力\", \"提取核心设计\", \"生成 soul\", \"把这个 app/项目变成 OOB Project\", or preserve UI design, interaction logic, data model, backend AI workflows, and product intent without cloning proprietary assets.",
       "assetPath": "builtin_skills/oob-project-distiller",
       "hasScripts": false,
       "hasReferences": true,
-      "hasAssets": false,
-      "hasEvals": false
-    },
-    {
-      "id": "oob-project-updater",
-      "name": "oob-project-updater",
-      "description": "改、加、删、修、更新、修复、优化已有 OOB Project。加字段、改界面、新增 API、修复 bug、更新规则。Use when modifying an existing project, not creating from scratch.",
-      "assetPath": "builtin_skills/oob-project-updater",
-      "hasScripts": false,
-      "hasReferences": false,
-      "hasAssets": false,
-      "hasEvals": false
-    },
-    {
-      "id": "oob-project-reviewer",
-      "name": "oob-project-reviewer",
-      "description": "Review and fix OOB Workbench Project HTML before creation or hot-update. Use after generating or modifying HTML, before workbench_project_create or workbench_project_update. Checks frontend-backend contract, mobile standards, data binding, and API alignment.",
-      "assetPath": "builtin_skills/oob-project-reviewer",
-      "hasScripts": false,
-      "hasReferences": false,
       "hasAssets": false,
       "hasEvals": false
     },

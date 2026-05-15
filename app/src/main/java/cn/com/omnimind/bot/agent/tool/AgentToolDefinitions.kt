@@ -191,6 +191,7 @@ object AgentToolDefinitions {
         "移动文件" to "Move File",
         "列出 Skills" to "List Skills",
         "读取 Skill" to "Read Skill",
+        "读取 Skill 引用" to "Read Skill Reference",
         "创建定时任务" to "Create Scheduled Task",
         "查看定时任务" to "List Scheduled Tasks",
         "修改定时任务" to "Update Scheduled Task",
@@ -377,6 +378,14 @@ object AgentToolDefinitions {
             "Skill id, skill name, SKILL.md path, or the skill root directory path. Prefer checking with skills_list first.",
         "最多返回多少字符的正文，默认 16000，范围 512-64000。" to
             "Maximum number of body characters to return. Default 16000, range 512-64000.",
+        "读取某个已安装 skill 的 references 目录下的单个引用文件。Use this after skills_read shows that a referenced guide/template is needed." to
+            "Read a single reference file under an installed skill's references directory. Use this after skills_read shows that a referenced guide or template is needed.",
+        "读取 reference 后等待结果，再根据内容继续。" to
+            "Wait for the reference content before continuing.",
+        "reference id、文件名或不带扩展名的文件名，例如 agent-prompt-templates。" to
+            "Reference id, file name, or file name without extension, for example agent-prompt-templates.",
+        "最多返回多少字符的引用内容，默认 16000，范围 512-64000。" to
+            "Maximum number of reference characters to return. Default 16000, range 512-64000.",
         "创建新的定时任务。执行后等待工具结果，再决定是否回复用户。" to
             "Create a new scheduled task. Wait for the tool result before deciding how to reply to the user.",
         "创建完成后不要在同一轮继续调用其他工具；请等待工具结果，并通过 response 输出最终答复。" to
@@ -1563,6 +1572,38 @@ object AgentToolDefinitions {
         }
     }
 
+    val skillsReadReferenceTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "skills_read_reference")
+            put("displayName", "读取 Skill 引用")
+            put("toolType", "skill")
+            put("description", "读取某个已安装 skill 的 references 目录下的单个引用文件。Use this after skills_read shows that a referenced guide/template is needed.")
+            put("postToolRule", "读取 reference 后等待结果，再根据内容继续。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("skillId") {
+                        put("type", "string")
+                        put("description", "skill 的 id、名称、SKILL.md 路径或 skill 根目录路径。建议先用 skills_list 查看。")
+                    }
+                    putJsonObject("refId") {
+                        put("type", "string")
+                        put("description", "reference id、文件名或不带扩展名的文件名，例如 agent-prompt-templates。")
+                    }
+                    putJsonObject("maxChars") {
+                        put("type", "integer")
+                        put("description", "最多返回多少字符的引用内容，默认 16000，范围 512-64000。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("skillId")
+                    add("refId")
+                }
+            }
+        }
+    }
+
     val workbenchProjectCreateTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -2618,6 +2659,7 @@ object AgentToolDefinitions {
         fileMoveTool,
         skillsListTool,
         skillsReadTool,
+        skillsReadReferenceTool,
         workbenchProjectCreateTool,
         workbenchProjectListTool,
         workbenchProjectGetTool,

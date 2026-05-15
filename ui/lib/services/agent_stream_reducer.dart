@@ -1,5 +1,6 @@
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/features/home/pages/chat/chat_page_models.dart';
+import 'package:ui/services/agent_stream_meta.dart';
 
 class AgentStreamTaskState {
   const AgentStreamTaskState({
@@ -166,7 +167,7 @@ class AgentStreamReducer {
         isDeepThinking = false;
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
-        final entryId = event.entryId?.trim() ?? '';
+        final entryId = resolveAgentToolCardId(event, raw: event.raw);
         if (entryId.isNotEmpty) {
           toolCards[entryId] = event.roundIndex;
           if (event.kind == AgentStreamEventKind.toolCompleted) {
@@ -176,6 +177,13 @@ class AgentStreamReducer {
           }
         }
         browserSnapshot = event.browserSnapshot ?? browserSnapshot;
+        break;
+      case AgentStreamEventKind.workbenchProjectCard:
+        phase = AgentStreamPhase.tool;
+        thinkingStage = 2;
+        isDeepThinking = false;
+        clearActiveThinkingEntryId = true;
+        activeThinkingEntryId = null;
         break;
       case AgentStreamEventKind.completed:
         phase = AgentStreamPhase.completed;

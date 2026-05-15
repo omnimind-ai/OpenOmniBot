@@ -178,6 +178,12 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
           completedThinkingCardId: thinkingCardToFinalize,
         );
         return;
+      case AgentStreamEventKind.workbenchProjectCard:
+        _applyAgentUiCardStreamEvent(
+          event,
+          completedThinkingCardId: thinkingCardToFinalize,
+        );
+        return;
       case AgentStreamEventKind.clarifyRequired:
         _applyAgentClarifyStreamEvent(
           event,
@@ -311,10 +317,10 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     String? completedThinkingCardId,
   }) {
     final taskId = event.taskId;
-    final cardId = (event.entryId ?? '').trim();
+    final toolEvent = AgentToolEventData.fromMap(event.raw);
+    final cardId = resolveAgentToolCardId(event, raw: event.raw);
     if (cardId.isEmpty) return;
 
-    final toolEvent = AgentToolEventData.fromMap(event.raw);
     setState(() {
       isAiResponding = true;
       _finalizeThinkingCardInMessages(taskId, completedThinkingCardId);
@@ -331,7 +337,10 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         progress: toolEvent.progress,
         resultPreviewJson: toolEvent.resultPreviewJson,
         rawResultJson: toolEvent.rawResultJson,
-        streamMeta: _streamMetaFromEvent(event),
+        streamMeta: ensureAgentStreamMessageMeta(
+          _streamMetaFromEvent(event),
+          entryId: cardId,
+        ),
       );
       if (event.kind == AgentStreamEventKind.toolCompleted &&
           (toolEvent.toolType == 'workbench' ||
@@ -645,6 +654,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       case AgentStreamEventKind.toolStarted:
       case AgentStreamEventKind.toolProgress:
       case AgentStreamEventKind.toolCompleted:
+      case AgentStreamEventKind.workbenchProjectCard:
       case AgentStreamEventKind.completed:
       case AgentStreamEventKind.error:
       case AgentStreamEventKind.permissionRequired:
@@ -894,7 +904,11 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     Map<String, dynamic>? streamMeta,
   }) {
     setState(() {
-      final index = messages.indexWhere((msg) => msg.id == cardId);
+      final index = messages.indexWhere(
+        (msg) =>
+            msg.id == cardId ||
+            (msg.cardData?['cardId'] ?? '').toString().trim() == cardId,
+      );
       final existingCardData = index == -1
           ? const <String, dynamic>{}
           : Map<String, dynamic>.from(messages[index].cardData ?? const {});
@@ -942,6 +956,12 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
             ? event.taskId
             : (existingCardData['toolTaskId'] ?? '').toString(),
         'cardId': cardId,
+        'toolCallId': _firstNonEmpty([
+          event.toolCallId,
+          event.cardId,
+          existingCardData['toolCallId'],
+          existingCardData['tool_call_id'],
+        ]),
         'toolName': event.toolName,
         'displayName': event.displayName,
         'toolTitle': event.toolTitle.isNotEmpty
@@ -998,6 +1018,61 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         );
       }
     });
+  }
+
+  void _applyAgentUiCardStreamEvent(
+    AgentStreamEvent event, {
+    String? completedThinkingCardId,
+  }) {
+    final cards = extractAgentStreamUiCards(event);
+    if (cards.isEmpty) return;
+
+    setState(() {
+      isAiResponding = true;
+      _finalizeThinkingCardInMessages(event.taskId, completedThinkingCardId);
+      for (final card in cards) {
+        _upsertAgentUiCard(event: event, card: card);
+      }
+    });
+    _persistAgentConversationSafely();
+  }
+
+  void _upsertAgentUiCard({
+    required AgentStreamEvent event,
+    required AgentStreamUiCard card,
+  }) {
+    final streamMeta = ensureAgentStreamMessageMeta(
+      _streamMetaFromEvent(event),
+      entryId: card.id,
+    );
+    final index = messages.indexWhere(
+      (message) =>
+          message.id == card.id ||
+          (message.cardData?['cardId'] ?? '').toString().trim() == card.id,
+    );
+    if (index == -1) {
+      messages.insert(
+        0,
+        ChatMessageModel.cardMessage(
+          card.cardData,
+          id: card.id,
+          streamMeta: streamMeta,
+        ).copyWith(
+          createAt: DateTime.fromMillisecondsSinceEpoch(event.createdAtMs),
+        ),
+      );
+      return;
+    }
+    final existingCardData = Map<String, dynamic>.from(
+      messages[index].cardData ?? const <String, dynamic>{},
+    );
+    messages[index] = messages[index].copyWith(
+      content: {
+        'cardData': <String, dynamic>{...existingCardData, ...card.cardData},
+        'id': card.id,
+      },
+      streamMeta: streamMeta,
+    );
   }
 
   String _resolveTerminalOutput({

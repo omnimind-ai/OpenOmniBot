@@ -11,7 +11,8 @@ void main() {
 
   tearDown(() async {
     AppUpdateService.betaOptInNotifier.value = false;
-    AppUpdateService.downloadSourceNotifier.value = AppUpdateDownloadSource.cnb;
+    AppUpdateService.downloadSourceNotifier.value =
+        AppUpdateDownloadSource.worker;
     AppUpdateService.statusNotifier.value = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
@@ -41,6 +42,21 @@ void main() {
     expect(status, isNotNull);
     expect(status!.hasUpdate, isTrue);
     expect(AppUpdateService.statusNotifier.value?.latestVersion, '0.0.2');
+  });
+
+  test('download source defaults legacy cnb to worker', () {
+    expect(
+      AppUpdateDownloadSource.fromRaw(null),
+      AppUpdateDownloadSource.worker,
+    );
+    expect(
+      AppUpdateDownloadSource.fromRaw('cnb'),
+      AppUpdateDownloadSource.worker,
+    );
+    expect(
+      AppUpdateDownloadSource.fromRaw('github'),
+      AppUpdateDownloadSource.github,
+    );
   });
 
   test('setBetaOptIn updates notifier and refreshes status', () async {

@@ -35,7 +35,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" /><!--后台服务权限-->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" /><!--后台服务数据更新权限-->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" /><!--录音权限-->
     <!-- 悬浮窗权限 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Android 10及以上后台启动权限 -->

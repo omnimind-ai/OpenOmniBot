@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:ui/features/home/pages/chat/utils/agent_activity_compactor.dart';
 import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
+import 'package:ui/features/home/pages/chat/widgets/agent_tool_activity_card.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/card_widget_factory.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/message_bubble.dart';
 import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
@@ -178,14 +180,26 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
     }
 
     final firstThinkingMessageId = _firstThinkingMessageId(processMessages);
+    final processItems = compactAgentProcessItems(processMessages);
 
     return AnimatedBuilder(
       animation: _expandController,
       child: Column(
         key: ValueKey('agent-run-process-${widget.group.taskId}'),
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: processMessages
-            .map((message) {
+        children: processItems
+            .map((item) {
+              final activity = item.activity;
+              if (activity != null) {
+                return AgentToolActivityCard(
+                  key: ValueKey(
+                    'agent-run-${widget.group.taskId}-${activity.id}',
+                  ),
+                  activity: activity,
+                  onLayoutChanged: widget.onStreamingTextLayoutChanged,
+                );
+              }
+              final message = item.message!;
               final hideAvatar =
                   firstThinkingMessageId != null &&
                   message.id == firstThinkingMessageId;

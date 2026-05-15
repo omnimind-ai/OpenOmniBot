@@ -75,6 +75,52 @@ class AppStateService {
     }
   }
 
+  static Future<String> getSharedOpenMode() async {
+    try {
+      final result = await _channel.invokeMethod<String>('getSharedOpenMode');
+      return _normalizeSharedOpenMode(result);
+    } catch (e) {
+      debugPrint('⚠️ Failed to get shared open mode: $e');
+      return 'default';
+    }
+  }
+
+  static Future<Map<String, String>> getSharedOpenModes() async {
+    try {
+      final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'getSharedOpenModes',
+      );
+      return {
+        'imageMode': _normalizeSharedOpenMode(result?['imageMode']?.toString()),
+        'fileMode': _normalizeSharedOpenMode(result?['fileMode']?.toString()),
+      };
+    } catch (e) {
+      debugPrint('⚠️ Failed to get shared open modes: $e');
+      return const {'imageMode': 'default', 'fileMode': 'default'};
+    }
+  }
+
+  static Future<String> setSharedOpenMode(String mode, {String? target}) async {
+    try {
+      final result = await _channel.invokeMethod<String>('setSharedOpenMode', {
+        'mode': mode,
+        if (target != null) 'target': target,
+      });
+      return _normalizeSharedOpenMode(result);
+    } catch (e) {
+      debugPrint('⚠️ Failed to set shared open mode: $e');
+      return _normalizeSharedOpenMode(mode);
+    }
+  }
+
+  static String _normalizeSharedOpenMode(String? mode) {
+    return switch (mode?.trim()) {
+      'workspace' => 'workspace',
+      _ => 'default',
+    };
+  }
+
+
   static Future<bool> applyLanguagePreference() async {
     try {
       final result = await _channel.invokeMethod<dynamic>(

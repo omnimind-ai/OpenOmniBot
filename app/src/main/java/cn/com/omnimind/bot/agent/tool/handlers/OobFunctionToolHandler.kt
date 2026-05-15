@@ -1,6 +1,8 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
+import cn.com.omnimind.omniintelligence.models.ScrollDirection
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
@@ -19,8 +21,22 @@ class OobFunctionToolHandler(
 
     internal var router: cn.com.omnimind.bot.agent.AgentToolExecutor? = null
 
+    /** Workspace-backed function store; injected by WorkbenchProjectStore on init. */
+    var workspaceFunctionStore: cn.com.omnimind.bot.workbench.WorkspaceFunctionStore? = null
+
     override fun canHandle(toolName: String): Boolean =
         cn.com.omnimind.baselib.runlog.OobReusableFunctionStore.get(context, toolName) != null
+            || workspaceFunctionStore?.canHandle(toolName) == true
+
+    fun canRunFullyWithOmniflow(materializedSpec: Map<String, Any?>): Boolean {
+        val steps = materializedSteps(materializedSpec)
+        return steps.isNotEmpty() && steps.all { isOmniflowStep(it) }
+    }
+
+    /** Returns the function spec from SharedPreferences or workspace, whichever has it. */
+    private fun getSpec(functionId: String): Map<String, Any?>? =
+        cn.com.omnimind.baselib.runlog.OobReusableFunctionStore.get(context, functionId)
+            ?: workspaceFunctionStore?.get(functionId)
 
     override suspend fun execute(
         toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
@@ -31,7 +47,7 @@ class OobFunctionToolHandler(
         toolHandle: cn.com.omnimind.bot.agent.AgentToolExecutionHandle
     ): cn.com.omnimind.bot.agent.ToolExecutionResult {
         val toolName = toolCall.function.name
-        val spec = cn.com.omnimind.baselib.runlog.OobReusableFunctionStore.get(context, toolName)
+        val spec = getSpec(toolName)
             ?: return cn.com.omnimind.bot.agent.ToolExecutionResult.Error(
                 toolName, "OOB function not found: $toolName"
             )
@@ -39,105 +55,26 @@ class OobFunctionToolHandler(
         val argsMap = helper.jsonObjectToMap(args)
         val materializedSpec = cn.com.omnimind.baselib.runlog.OobReusableFunctionStore.materialize(spec, argsMap)
 
-        @Suppress("UNCHECKED_CAST")
-        val steps = ((materializedSpec["execution"] as? Map<*, *>)?.get("steps") as? List<Map<String, Any?>>)
-            ?: emptyList()
-
-        val stepResults = mutableListOf<Map<String, Any?>>()
-        var stepIndex = 0
-
-        for (step in steps) {
-            toolHandle.throwIfStopRequested()
-            stepIndex++
-            val stepId = step["id"]?.toString() ?: "step_$stepIndex"
-            val stepTitle = step["title"]?.toString() ?: stepId
-            val executor = step["executor"]?.toString() ?: "agent"
-            val callableTool = step["callable_tool"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                ?: step["tool"]?.toString()?.trim().orEmpty()
-
-            helper.reportToolProgress(callback, toolName, "$stepIndex/${steps.size} $stepTitle")
-
-            val stepResult: Map<String, Any?> = when {
-                executor == "tool" && callableTool.isNotEmpty() && router != null -> {
-                    val remapResult = remapOmniflowStepArgs(step)
-                    val stepArgsMap = remapResult.args
-                    val stepArgs = when (stepArgsMap) {
-                        is Map<*, *> -> helper.mapToJsonElement(
-                            stepArgsMap.entries.associate { (k, v) -> k.toString() to v }
-                        ) as? JsonObject ?: JsonObject(emptyMap())
-                        else -> JsonObject(emptyMap())
-                    }
-                    val syntheticCall = cn.com.omnimind.baselib.llm.AssistantToolCall(
-                        id = "${toolCall.id}_$stepId",
-                        type = "function",
-                        function = cn.com.omnimind.baselib.llm.AssistantToolCallFunction(
-                            name = callableTool,
-                            arguments = stepArgs.toString()
-                        )
-                    )
-                    val subDescriptor = cn.com.omnimind.bot.agent.AgentToolRegistry.RuntimeToolDescriptor(
-                        name = callableTool,
-                        displayName = stepTitle,
-                        toolType = "oob_function_step"
-                    )
-                    try {
-                        val subResult = router!!.execute(
-                            syntheticCall, stepArgs, subDescriptor, env, callback, toolHandle
-                        )
-                        linkedMapOf<String, Any?>(
-                            "step_id" to stepId,
-                            "tool" to callableTool,
-                            "executor" to "tool",
-                            "success" to (subResult !is cn.com.omnimind.bot.agent.ToolExecutionResult.Error),
-                            "summary" to when (subResult) {
-                                is cn.com.omnimind.bot.agent.ToolExecutionResult.ContextResult -> subResult.summaryText
-                                is cn.com.omnimind.bot.agent.ToolExecutionResult.Error -> subResult.message
-                                else -> stepTitle
-                            }
-                        )
-                    } catch (e: kotlinx.coroutines.CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        linkedMapOf<String, Any?>(
-                            "step_id" to stepId,
-                            "tool" to callableTool,
-                            "executor" to "tool",
-                            "success" to false,
-                            "summary" to (e.message ?: "step failed")
-                        )
-                    }
-                }
-
-                else -> {
-                    val agentPrompt = (step["agent_call"] as? Map<*, *>)
-                        ?.get("args")?.let { (it as? Map<*, *>)?.get("prompt")?.toString() }
-                        ?: (step["fallback"] as? Map<*, *>)?.get("prompt")?.toString()
-                        ?: stepTitle
-                    linkedMapOf(
-                        "step_id" to stepId,
-                        "executor" to "agent",
-                        "prompt" to agentPrompt,
-                        "success" to true,
-                        "summary" to "agent: $stepTitle"
-                    )
-                }
-            }
-            stepResults += stepResult
-        }
-
+        val runPayload = runMaterializedFunction(
+            functionId = toolName,
+            spec = spec,
+            materializedSpec = materializedSpec,
+            callback = callback,
+            toolHandle = toolHandle,
+            env = env,
+            parentToolCallId = toolCall.id,
+            toolName = toolName
+        )
+        val steps = materializedSteps(materializedSpec)
         val description = spec["description"]?.toString().orEmpty()
-        val allSuccess = stepResults.none { it["success"] == false }
+        val stepResults = (runPayload["step_results"] as? List<*>) ?: emptyList<Any?>()
+        val allSuccess = runPayload["success"] != false
         val summary = buildString {
             append(description.ifBlank { toolName })
             append(" — ")
-            append("${stepResults.count { it["success"] != false }}/${steps.size} 步完成")
+            append("${runPayload["success_step_count"] ?: stepResults.size}/${steps.size} 步完成")
         }
-        val payload = helper.encodeLocalizedPayload(linkedMapOf(
-            "function_id" to (spec["function_id"] ?: toolName),
-            "description" to description,
-            "step_count" to steps.size,
-            "step_results" to stepResults
-        ))
+        val payload = helper.encodeLocalizedPayload(runPayload)
         return cn.com.omnimind.bot.agent.ToolExecutionResult.ContextResult(
             toolName = toolName,
             summaryText = summary,
@@ -147,10 +84,474 @@ class OobFunctionToolHandler(
         )
     }
 
+    suspend fun runMaterializedFunction(
+        functionId: String,
+        spec: Map<String, Any?>,
+        materializedSpec: Map<String, Any?>,
+        callback: cn.com.omnimind.bot.agent.AgentCallback? = null,
+        toolHandle: cn.com.omnimind.bot.agent.AgentToolExecutionHandle? = null,
+        env: cn.com.omnimind.bot.agent.AgentExecutionEnvironment? = null,
+        parentToolCallId: String? = null,
+        toolName: String = functionId,
+    ): Map<String, Any?> {
+        val steps = materializedSteps(materializedSpec)
+        val stepResults = mutableListOf<Map<String, Any?>>()
+        var modelUsed = false
+        var failureReason: String? = null
+
+        for ((index, step) in steps.withIndex()) {
+            toolHandle?.throwIfStopRequested()
+            val stepIndex = index + 1
+            val stepId = step["id"]?.toString() ?: "step_$stepIndex"
+            val stepTitle = step["title"]?.toString() ?: stepId
+            val executor = step["executor"]?.toString()?.trim()?.lowercase().orEmpty()
+                .ifEmpty { "agent" }
+            val callableTool = step["callable_tool"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                ?: step["tool"]?.toString()?.trim().orEmpty()
+
+            if (callback != null) {
+                helper.reportToolProgress(
+                    callback = callback,
+                    toolName = toolName,
+                    progress = "$stepIndex/${steps.size} $stepTitle",
+                    toolHandle = toolHandle
+                )
+            }
+
+            val stepResult: Map<String, Any?> = when {
+                isOmniflowStep(step) -> {
+                    try {
+                        executeOmniflowStep(step, stepId, stepTitle)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // Coordinate remap failed — try vlm_task fallback if possible
+                        val fallbackResult = tryOmniflowVlmFallback(
+                            step = step,
+                            stepId = stepId,
+                            stepTitle = stepTitle,
+                            failReason = e.message ?: "omniflow step failed",
+                            env = env,
+                            callback = callback,
+                            toolHandle = toolHandle,
+                            parentToolCallId = parentToolCallId ?: toolName
+                        )
+                        fallbackResult ?: linkedMapOf(
+                            "step_id" to stepId,
+                            "tool" to actionNameForStep(step),
+                            "executor" to "omniflow",
+                            "model_free" to true,
+                            "success" to false,
+                            "summary" to (e.message ?: "omniflow step failed")
+                        )
+                    }
+                }
+
+                executor == "tool" && callableTool.isNotEmpty() && router != null &&
+                    env != null && callback != null && toolHandle != null -> {
+                    executeToolStep(
+                        step = step,
+                        stepId = stepId,
+                        stepTitle = stepTitle,
+                        callableTool = callableTool,
+                        env = env,
+                        callback = callback,
+                        toolHandle = toolHandle,
+                        syntheticCallId = "${parentToolCallId ?: toolName}_$stepId"
+                    )
+                }
+
+                else -> {
+                    // executor=agent: call the actual recorded tool inline via router.
+                    // This keeps execution in the same context without spawning a new
+                    // agent conversation. Data flow from previous steps is sequential
+                    // but args are from the original recording (static replay).
+                    val agentTool = callableTool
+                        .ifEmpty { step["tool"]?.toString()?.trim().orEmpty() }
+                    if (agentTool.isNotEmpty() &&
+                        router != null && env != null &&
+                        callback != null && toolHandle != null) {
+                        modelUsed = true
+                        executeToolStep(
+                            step = step,
+                            stepId = stepId,
+                            stepTitle = stepTitle,
+                            callableTool = agentTool,
+                            env = env,
+                            callback = callback,
+                            toolHandle = toolHandle,
+                            syntheticCallId = "${parentToolCallId ?: toolName}_$stepId"
+                        ).also { result ->
+                            // Annotate so caller knows a tool was used
+                            (result as? LinkedHashMap<String, Any?>)
+                                ?.put("executor", "agent_tool")
+                        }
+                    } else {
+                        // No router — skill was triggered externally (not from within
+                        // a live agent). Mark as unexecuted so caller can decide.
+                        linkedMapOf(
+                            "step_id" to stepId,
+                            "tool" to agentTool.ifEmpty { "?" },
+                            "executor" to "agent",
+                            "success" to false,
+                            "needs_agent" to true,
+                            "summary" to "agent step requires live execution context: $stepTitle"
+                        )
+                    }
+                }
+            }
+            stepResults += stepResult
+            if (stepResult["success"] == false) {
+                failureReason = stepResult["summary"]?.toString()
+                break
+            }
+        }
+
+        val successCount = stepResults.count { it["success"] != false }
+        val allSuccess = stepResults.size == steps.size && stepResults.none { it["success"] == false }
+        val description = spec["description"]?.toString().orEmpty()
+        return linkedMapOf(
+            "success" to allSuccess,
+            "function_id" to (spec["function_id"] ?: functionId),
+            "description" to description,
+            "runner" to if (modelUsed) "oob_function_mixed_runner" else "oob_omniflow_replay",
+            "step_count" to steps.size,
+            "success_step_count" to successCount,
+            "model_used" to modelUsed,
+            "fallback_available" to !allSuccess,
+            "error_message" to failureReason,
+            "step_results" to stepResults
+        )
+    }
+
+    /**
+     * When omniflow coordinate remapping fails, fall back to vlm_task using
+     * target_description from the step args. Returns null if fallback is not
+     * possible (no router, no target_description, or vlm_task itself fails).
+     */
+    private suspend fun tryOmniflowVlmFallback(
+        step: Map<String, Any?>,
+        stepId: String,
+        stepTitle: String,
+        failReason: String,
+        env: cn.com.omnimind.bot.agent.AgentExecutionEnvironment?,
+        callback: cn.com.omnimind.bot.agent.AgentCallback?,
+        toolHandle: cn.com.omnimind.bot.agent.AgentToolExecutionHandle?,
+        parentToolCallId: String,
+    ): Map<String, Any?>? {
+        if (router == null || env == null || callback == null || toolHandle == null) return null
+        val args = normalizeArgsMap(step["args"])
+        val targetDesc = stringArg(args, "target_description", "targetDescription").orEmpty()
+        if (targetDesc.isEmpty()) return null
+        val action = actionNameForStep(step)
+        val goal = when (action) {
+            "click", "long_press" -> "找到并点击「$targetDesc」"
+            "scroll" -> "在「$targetDesc」区域滚动"
+            else -> "执行 $action 操作：$targetDesc"
+        }
+        val vlmArgs = helper.mapToJsonElement(
+            mapOf("goal" to goal, "startFromCurrent" to true)
+        ) as? kotlinx.serialization.json.JsonObject
+            ?: return null
+        val syntheticCall = cn.com.omnimind.baselib.llm.AssistantToolCall(
+            id = "${parentToolCallId}_${stepId}_fallback",
+            type = "function",
+            function = cn.com.omnimind.baselib.llm.AssistantToolCallFunction(
+                name = "vlm_task",
+                arguments = vlmArgs.toString()
+            )
+        )
+        val subDescriptor = cn.com.omnimind.bot.agent.AgentToolRegistry.RuntimeToolDescriptor(
+            name = "vlm_task",
+            displayName = stepTitle,
+            toolType = "omniflow_fallback"
+        )
+        return try {
+            val subResult = router!!.execute(
+                syntheticCall, vlmArgs, subDescriptor, env, callback, toolHandle
+            )
+            val succeeded = subResult !is cn.com.omnimind.bot.agent.ToolExecutionResult.Error
+            linkedMapOf<String, Any?>(
+                "step_id" to stepId,
+                "tool" to "vlm_task",
+                "executor" to "omniflow_vlm_fallback",
+                "success" to succeeded,
+                "omniflow_fail_reason" to failReason,
+                "summary" to "omniflow remap failed → vlm fallback: $goal"
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private suspend fun executeToolStep(
+        step: Map<String, Any?>,
+        stepId: String,
+        stepTitle: String,
+        callableTool: String,
+        env: cn.com.omnimind.bot.agent.AgentExecutionEnvironment,
+        callback: cn.com.omnimind.bot.agent.AgentCallback,
+        toolHandle: cn.com.omnimind.bot.agent.AgentToolExecutionHandle,
+        syntheticCallId: String,
+    ): Map<String, Any?> {
+        val remapResult = remapOmniflowStepArgs(step)
+        val stepArgsMap = remapResult.args
+        val stepArgs = when (stepArgsMap) {
+            is Map<*, *> -> helper.mapToJsonElement(
+                stepArgsMap.entries.associate { (k, v) -> k.toString() to v }
+            ) as? JsonObject ?: JsonObject(emptyMap())
+            else -> JsonObject(emptyMap())
+        }
+        val syntheticCall = cn.com.omnimind.baselib.llm.AssistantToolCall(
+            id = syntheticCallId,
+            type = "function",
+            function = cn.com.omnimind.baselib.llm.AssistantToolCallFunction(
+                name = callableTool,
+                arguments = stepArgs.toString()
+            )
+        )
+        val subDescriptor = cn.com.omnimind.bot.agent.AgentToolRegistry.RuntimeToolDescriptor(
+            name = callableTool,
+            displayName = stepTitle,
+            toolType = "oob_function_step"
+        )
+        return try {
+            val subResult = router!!.execute(
+                syntheticCall, stepArgs, subDescriptor, env, callback, toolHandle
+            )
+            linkedMapOf<String, Any?>(
+                "step_id" to stepId,
+                "tool" to callableTool,
+                "executor" to "tool",
+                "success" to (subResult !is cn.com.omnimind.bot.agent.ToolExecutionResult.Error),
+                "summary" to when (subResult) {
+                    is cn.com.omnimind.bot.agent.ToolExecutionResult.ContextResult -> subResult.summaryText
+                    is cn.com.omnimind.bot.agent.ToolExecutionResult.Error -> subResult.message
+                    else -> stepTitle
+                }
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            linkedMapOf<String, Any?>(
+                "step_id" to stepId,
+                "tool" to callableTool,
+                "executor" to "tool",
+                "success" to false,
+                "summary" to (e.message ?: "step failed")
+            )
+        }
+    }
+
+    private suspend fun executeOmniflowStep(
+        step: Map<String, Any?>,
+        stepId: String,
+        stepTitle: String,
+    ): Map<String, Any?> {
+        val action = actionNameForStep(step)
+        if (action !in OMNIFLOW_ACTIONS) {
+            throw IllegalArgumentException("Unsupported omniflow action: $action")
+        }
+        val remapResult = remapOmniflowStepArgs(step)
+        if (action in COORDINATE_ACTIONS && shouldUseOmniflowCoordinateHook(step)) {
+            val applied = remapResult.meta["applied"] as? Boolean
+            if (applied == false) {
+                val reason = remapResult.meta["reason"]?.toString()?.takeIf { it.isNotBlank() }
+                    ?: "coordinate_remap_unavailable"
+                throw IllegalStateException("Coordinate remap failed: $reason")
+            }
+        }
+        val args = normalizeArgsMap(remapResult.args)
+        val summary = when (action) {
+            "click" -> {
+                val x = numberArg(args, "x", "center_x", "centerX")?.toFloat()
+                    ?: throw IllegalArgumentException("click requires x")
+                val y = numberArg(args, "y", "center_y", "centerY")?.toFloat()
+                    ?: throw IllegalArgumentException("click requires y")
+                AccessibilityController.clickCoordinate(x, y)
+                "click"
+            }
+
+            "long_press" -> {
+                val x = numberArg(args, "x", "center_x", "centerX")?.toFloat()
+                    ?: throw IllegalArgumentException("long_press requires x")
+                val y = numberArg(args, "y", "center_y", "centerY")?.toFloat()
+                    ?: throw IllegalArgumentException("long_press requires y")
+                AccessibilityController.longClickCoordinate(
+                    x = x,
+                    y = y,
+                    duration = durationMs(args, defaultMs = 1000L)
+                )
+                "long_press"
+            }
+
+            "scroll" -> {
+                val x1 = numberArg(args, "x1")?.toFloat()
+                    ?: throw IllegalArgumentException("scroll requires x1")
+                val y1 = numberArg(args, "y1")?.toFloat()
+                    ?: throw IllegalArgumentException("scroll requires y1")
+                val x2 = numberArg(args, "x2")?.toFloat()
+                    ?: throw IllegalArgumentException("scroll requires x2")
+                val y2 = numberArg(args, "y2")?.toFloat()
+                    ?: throw IllegalArgumentException("scroll requires y2")
+                val dx = x2 - x1
+                val dy = y2 - y1
+                val direction = if (abs(dy) > abs(dx)) {
+                    if (dy > 0) ScrollDirection.DOWN else ScrollDirection.UP
+                } else {
+                    if (dx > 0) ScrollDirection.RIGHT else ScrollDirection.LEFT
+                }
+                AccessibilityController.scrollCoordinate(
+                    x = x1,
+                    y = y1,
+                    direction = direction,
+                    distance = hypot(dx, dy),
+                    duration = durationMs(args, defaultMs = 1500L)
+                )
+                "scroll"
+            }
+
+            "type" -> {
+                val text = stringArg(args, "content", "text", "value")
+                    ?: throw IllegalArgumentException("type requires content")
+                AccessibilityController.inputTextToFocusedNode(text)
+                "type"
+            }
+
+            "open_app" -> {
+                val packageName = stringArg(args, "package_name", "packageName")
+                    ?: throw IllegalArgumentException("open_app requires package_name")
+                AccessibilityController.launchApplication(packageName) { x, y ->
+                    AccessibilityController.clickCoordinate(x, y)
+                }
+                "open_app"
+            }
+
+            "press_home" -> {
+                AccessibilityController.goHome()
+                "press_home"
+            }
+
+            "press_back" -> {
+                AccessibilityController.goBack()
+                "press_back"
+            }
+
+            "hot_key" -> {
+                val key = stringArg(args, "key", "hotkey", "hot_key")
+                    ?: throw IllegalArgumentException("hot_key requires key")
+                AccessibilityController.pressHotKey(key)
+                "hot_key"
+            }
+
+            "wait" -> {
+                delay(durationMs(args, defaultMs = 1000L))
+                "wait"
+            }
+
+            else -> throw IllegalArgumentException("Unsupported omniflow action: $action")
+        }
+        delay(OMNIFLOW_POST_STEP_DELAY_MS)
+        return linkedMapOf(
+            "step_id" to stepId,
+            "tool" to action,
+            "executor" to "omniflow",
+            "model_free" to true,
+            "success" to true,
+            "summary" to (stepTitle.takeIf { it.isNotBlank() } ?: summary)
+        )
+    }
+
     private data class OmniflowStepArgsResult(
         val args: Any?,
         val meta: Map<String, Any?> = emptyMap(),
     )
+
+    private fun materializedSteps(materializedSpec: Map<String, Any?>): List<Map<String, Any?>> {
+        val rawSteps = (materializedSpec["execution"] as? Map<*, *>)?.get("steps") as? List<*>
+            ?: return emptyList()
+        return rawSteps.mapNotNull { rawStep ->
+            (rawStep as? Map<*, *>)?.entries?.associate { (key, value) ->
+                key.toString() to value
+            }
+        }
+    }
+
+    private fun isOmniflowStep(step: Map<String, Any?>): Boolean {
+        val executor = step["executor"]?.toString()?.trim()?.lowercase().orEmpty()
+        val modelFree = step["model_free"] == true ||
+            step["modelFree"] == true ||
+            step["model_free"]?.toString()?.equals("true", ignoreCase = true) == true
+        return executor == "omniflow" || (modelFree && actionNameForStep(step) in OMNIFLOW_ACTIONS)
+    }
+
+    private fun actionNameForStep(step: Map<String, Any?>): String =
+        firstNonBlank(
+            step["omniflow_action"],
+            step["local_action"],
+            step["tool"],
+            step["callable_tool"]
+        ).lowercase()
+
+    private fun shouldUseOmniflowCoordinateHook(step: Map<String, Any?>): Boolean {
+        val coordinateHook = step["coordinate_hook"]?.toString()?.trim()?.lowercase().orEmpty()
+        val replayEngine = step["replay_engine"]?.toString()?.trim()?.lowercase().orEmpty()
+        val executor = step["executor"]?.toString()?.trim()?.lowercase().orEmpty()
+        return coordinateHook == "omniflow" ||
+            step["omniflow"] == true ||
+            replayEngine == "omniflow_utg" ||
+            executor == "omniflow"
+    }
+
+    private fun normalizeArgsMap(rawArgs: Any?): Map<String, Any?> =
+        when (rawArgs) {
+            is Map<*, *> -> rawArgs.entries.associate { (key, value) -> key.toString() to value }
+            else -> emptyMap()
+        }
+
+    private fun numberArg(args: Map<String, Any?>, vararg keys: String): Number? {
+        for (key in keys) {
+            val value = args[key] ?: continue
+            when (value) {
+                is Number -> return value
+                is String -> value.trim().toDoubleOrNull()?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun stringArg(args: Map<String, Any?>, vararg keys: String): String? {
+        for (key in keys) {
+            val value = args[key] ?: continue
+            val text = value.toString().trim()
+            if (text.isNotEmpty()) {
+                return text
+            }
+        }
+        return null
+    }
+
+    private fun durationMs(args: Map<String, Any?>, defaultMs: Long): Long {
+        numberArg(args, "duration_ms", "durationMs")?.toLong()?.let {
+            return it.coerceAtLeast(0L)
+        }
+        numberArg(args, "duration")?.toDouble()?.let { seconds ->
+            return (seconds * 1000.0).toLong().coerceAtLeast(0L)
+        }
+        return defaultMs
+    }
+
+    private fun firstNonBlank(vararg values: Any?): String {
+        for (value in values) {
+            val text = value?.toString()?.trim().orEmpty()
+            if (text.isNotEmpty()) {
+                return text
+            }
+        }
+        return ""
+    }
 
     private data class Rect(
         val left: Float,
@@ -232,11 +633,10 @@ class OobFunctionToolHandler(
         val rawArgs = step["args"]
         val args = (rawArgs as? Map<*, *>)?.entries?.associate { (k, v) -> k.toString() to v }
             ?: return OmniflowStepArgsResult(rawArgs)
-        val replayEngine = step["replay_engine"]?.toString()?.trim().orEmpty()
-        if (step["omniflow"] != true || replayEngine != "omniflow_utg") {
+        if (!shouldUseOmniflowCoordinateHook(step)) {
             return OmniflowStepArgsResult(args)
         }
-        val tool = (step["tool"] ?: step["callable_tool"])?.toString()?.trim()?.lowercase().orEmpty()
+        val tool = actionNameForStep(step)
         if (tool !in setOf("click", "long_press", "scroll")) {
             return OmniflowStepArgsResult(args)
         }
@@ -853,6 +1253,19 @@ class OobFunctionToolHandler(
     }
 
     companion object {
+        private val OMNIFLOW_ACTIONS = setOf(
+            "click",
+            "long_press",
+            "scroll",
+            "type",
+            "open_app",
+            "press_home",
+            "press_back",
+            "hot_key",
+            "wait",
+        )
+        private val COORDINATE_ACTIONS = setOf("click", "long_press", "scroll")
+        private const val OMNIFLOW_POST_STEP_DELAY_MS = 1000L
         private val BOUNDS_REGEX = Regex("""\[(-?\d+),(-?\d+)]\[(-?\d+),(-?\d+)]""")
         private const val MAX_ANCHOR_COUNT = 5
         private const val MIN_ANCHOR_SIMILARITY = 0.45f

@@ -72,6 +72,7 @@ class _WebAgentToolEventData {
     required this.displayName,
     required this.toolType,
     this.cardId = '',
+    this.toolCallId = '',
     this.toolTitle = '',
     this.serverName,
     this.status = '',
@@ -93,6 +94,7 @@ class _WebAgentToolEventData {
   });
 
   final String cardId;
+  final String toolCallId;
   final String toolName;
   final String displayName;
   final String toolTitle;
@@ -119,6 +121,7 @@ class _WebAgentToolEventData {
     final raw = map ?? const {};
     return _WebAgentToolEventData(
       cardId: (raw['cardId'] ?? '').toString(),
+      toolCallId: (raw['toolCallId'] ?? raw['tool_call_id'] ?? '').toString(),
       toolName: (raw['toolName'] ?? '').toString(),
       displayName: (raw['displayName'] ?? raw['toolName'] ?? '').toString(),
       toolTitle: (raw['toolTitle'] ?? '').toString(),
@@ -957,6 +960,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
       case AgentStreamEventKind.textSnapshot:
       case AgentStreamEventKind.toolStarted:
       case AgentStreamEventKind.toolProgress:
+      case AgentStreamEventKind.workbenchProjectCard:
       case AgentStreamEventKind.permissionRequired:
         break;
     }
@@ -987,6 +991,9 @@ class _WebChatHomeState extends State<_WebChatHome> {
         case AgentStreamEventKind.toolCompleted:
           _upsertWebToolCard(event);
           didChange = true;
+          break;
+        case AgentStreamEventKind.workbenchProjectCard:
+          didChange = _upsertWebUiCards(event);
           break;
         case AgentStreamEventKind.clarifyRequired:
           didChange = _upsertWebAssistantMessage(
@@ -1132,13 +1139,17 @@ class _WebChatHomeState extends State<_WebChatHome> {
   }
 
   void _upsertWebToolCard(AgentStreamEvent event) {
-    final cardId = (event.entryId ?? '').trim();
+    _finalizeWebThinkingCards(event.taskId);
+    final toolEvent = _WebAgentToolEventData.fromMap(event.raw);
+    final cardId = resolveAgentToolCardId(event, raw: event.raw);
     if (cardId.isEmpty) {
       return;
     }
-    _finalizeWebThinkingCards(event.taskId);
-    final toolEvent = _WebAgentToolEventData.fromMap(event.raw);
-    final index = _messages.indexWhere((message) => message.id == cardId);
+    final index = _messages.indexWhere(
+      (message) =>
+          message.id == cardId ||
+          (message.cardData?['cardId'] ?? '').toString().trim() == cardId,
+    );
     final existingCardData = Map<String, dynamic>.from(
       index == -1
           ? const <String, dynamic>{}
@@ -1156,7 +1167,13 @@ class _WebChatHomeState extends State<_WebChatHome> {
       'toolTitle': toolEvent.toolTitle.isNotEmpty
           ? toolEvent.toolTitle
           : (existingCardData['toolTitle'] ?? '').toString(),
-      'cardId': toolEvent.cardId.isNotEmpty ? toolEvent.cardId : cardId,
+      'cardId': cardId,
+      'toolCallId': _firstNonBlank([
+        toolEvent.toolCallId,
+        toolEvent.cardId,
+        existingCardData['toolCallId'],
+        existingCardData['tool_call_id'],
+      ]),
       'toolType': toolEvent.toolType,
       'serverName': toolEvent.serverName,
       'status': status,
@@ -1221,6 +1238,53 @@ class _WebChatHomeState extends State<_WebChatHome> {
         streamMeta: streamMeta,
       );
     }
+  }
+
+  bool _upsertWebUiCards(AgentStreamEvent event) {
+    final cards = extractAgentStreamUiCards(event);
+    if (cards.isEmpty) {
+      return false;
+    }
+    _finalizeWebThinkingCards(event.taskId);
+    for (final card in cards) {
+      _upsertWebUiCard(event: event, card: card);
+    }
+    return true;
+  }
+
+  void _upsertWebUiCard({
+    required AgentStreamEvent event,
+    required AgentStreamUiCard card,
+  }) {
+    final streamMeta = ensureAgentStreamMessageMeta(
+      buildAgentStreamMetaFromEvent(event),
+      entryId: card.id,
+    );
+    final index = _messages.indexWhere(
+      (message) =>
+          message.id == card.id ||
+          (message.cardData?['cardId'] ?? '').toString().trim() == card.id,
+    );
+    if (index == -1) {
+      _messages.add(
+        ChatMessageModel.cardMessage(
+          card.cardData,
+          id: card.id,
+          streamMeta: streamMeta,
+        ).copyWith(createAt: _eventCreatedAt(event)),
+      );
+      return;
+    }
+    final existingCardData = Map<String, dynamic>.from(
+      _messages[index].cardData ?? const <String, dynamic>{},
+    );
+    _messages[index] = _messages[index].copyWith(
+      content: {
+        'cardData': <String, dynamic>{...existingCardData, ...card.cardData},
+        'id': card.id,
+      },
+      streamMeta: streamMeta,
+    );
   }
 
   void _finalizeWebThinkingCards(String taskId) {
@@ -1291,6 +1355,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
       AgentStreamEventKind.textSnapshot ||
       AgentStreamEventKind.toolStarted ||
       AgentStreamEventKind.toolProgress ||
+      AgentStreamEventKind.workbenchProjectCard ||
       AgentStreamEventKind.toolCompleted => true,
       AgentStreamEventKind.completed ||
       AgentStreamEventKind.error ||
@@ -3321,4 +3386,14 @@ class _ThinkingDotsState extends State<_ThinkingDots>
       },
     );
   }
+}
+
+String _firstNonBlank(Iterable<Object?> values) {
+  for (final value in values) {
+    final normalized = value?.toString().trim() ?? '';
+    if (normalized.isNotEmpty) {
+      return normalized;
+    }
+  }
+  return '';
 }

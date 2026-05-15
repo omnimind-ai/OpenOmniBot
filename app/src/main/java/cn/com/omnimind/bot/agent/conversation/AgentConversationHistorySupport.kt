@@ -69,11 +69,15 @@ internal object AgentConversationHistorySupport {
         user: Int,
         text: String,
         attachments: List<Map<String, Any?>> = emptyList(),
+        reasoningContent: String? = null,
         isError: Boolean,
         streamMeta: Map<String, Any?>?,
         createdAt: Long
     ): Map<String, Any?> {
         val safeText = AgentTextSanitizer.sanitizeUtf16(text)
+        val safeReasoning = AgentTextSanitizer.sanitizeUtf16(reasoningContent.orEmpty())
+            .trim()
+            .takeIf { it.isNotBlank() }
         val historyAttachments = AgentImageAttachmentSupport
             .prepareAttachments(attachments)
             .historyAttachments
@@ -95,7 +99,11 @@ internal object AgentConversationHistorySupport {
             "isSummarizing" to false,
             "streamMeta" to streamMeta,
             "createAt" to Instant.ofEpochMilli(createdAt).toString()
-        ).filterValues { it != null }
+        ).apply {
+            if (user == 2 && safeReasoning != null) {
+                put("reasoning_content", safeReasoning)
+            }
+        }.filterValues { it != null }
     }
 
     fun buildCardMessagePayload(
@@ -120,6 +128,14 @@ internal object AgentConversationHistorySupport {
             "streamMeta" to streamMeta,
             "createAt" to Instant.ofEpochMilli(createdAt).toString()
         ).filterValues { it != null }
+    }
+
+    private fun readReasoningContent(payload: Map<String, Any?>): String? {
+        return AgentTextSanitizer.sanitizeUtf16(
+            payload["reasoning_content"]?.toString()
+                ?: payload["reasoningContent"]?.toString()
+                ?: ""
+        ).trim().takeIf { it.isNotBlank() }
     }
 
     fun materializeRecord(record: AgentConversationEntryRecord): MaterializedEntry {
@@ -477,6 +493,7 @@ internal object AgentConversationHistorySupport {
         } else {
             chooseText("terminalOutput")
         }
+        val reasoningContent = readReasoningContent(incoming) ?: readReasoningContent(existing)
 
         return linkedMapOf<String, Any?>(
             "taskId" to chooseAny("taskId"),
@@ -489,6 +506,7 @@ internal object AgentConversationHistorySupport {
             "serverName" to chooseAny("serverName"),
             "status" to chooseText("status", fallbackStatus),
             "summary" to chooseText("summary", fallbackSummary),
+            "reasoning_content" to reasoningContent,
             "progress" to chooseText("progress"),
             "args" to chooseText("args"),
             "argsJson" to chooseText("argsJson"),
@@ -531,7 +549,8 @@ internal object AgentConversationHistorySupport {
         return listOf(
             ChatCompletionMessage(
                 role = "assistant",
-                content = content
+                content = content,
+                reasoningContent = readReasoningContent(payload)
             )
         )
     }
@@ -569,6 +588,7 @@ internal object AgentConversationHistorySupport {
         val argsJson = payload["argsJson"]?.toString()?.trim()?.ifEmpty { null } ?: "{}"
         val assistantMessage = ChatCompletionMessage(
             role = "assistant",
+            reasoningContent = readReasoningContent(payload),
             toolCalls = listOf(
                 AssistantToolCall(
                     id = toolCallId,
@@ -889,6 +909,9 @@ internal object AgentConversationHistorySupport {
         val text = AgentTextSanitizer.sanitizeUtf16(content["text"]?.toString().orEmpty())
         val attachments = toListOfStringAnyMap(content["attachments"])
         val imageBlocks = attachments.mapNotNull { attachment ->
+            if (!shouldSendAttachmentToModel(attachment)) {
+                return@mapNotNull null
+            }
             val imageUrl = resolveImageAttachmentUrl(attachment)
             if (imageUrl.isBlank()) {
                 null
@@ -917,6 +940,14 @@ internal object AgentConversationHistorySupport {
         }
         blocks += imageBlocks
         return JsonArray(blocks)
+    }
+
+    private fun shouldSendAttachmentToModel(attachment: Map<String, Any?>): Boolean {
+        return when (val raw = attachment["sendToModel"]) {
+            is Boolean -> raw
+            is String -> !raw.equals("false", ignoreCase = true)
+            else -> true
+        }
     }
 
     private fun resolveImageAttachmentUrl(attachment: Map<String, Any?>): String {
@@ -1379,6 +1410,18 @@ internal object AgentConversationHistorySupport {
             content["text"]?.toString().orEmpty().ifBlank { entry.summary },
             MAX_STORAGE_MESSAGE_TEXT_CHARS
         )
+        val safeReasoningContent = if (
+            entry.entryType == AgentConversationHistoryRepository.ENTRY_TYPE_ASSISTANT_MESSAGE
+        ) {
+            trimText(
+                payload["reasoning_content"]?.toString()
+                    ?: payload["reasoningContent"]?.toString()
+                    ?: "",
+                MAX_STORAGE_MESSAGE_TEXT_CHARS
+            ).trim().takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
         val safeStreamMeta = compactDisplayStreamMeta(payload["streamMeta"])
         val safeAttachments = compactDisplayList(content["attachments"])
         fun buildPayload(attachments: List<Map<String, Any?>>): Map<String, Any?> {
@@ -1391,6 +1434,7 @@ internal object AgentConversationHistorySupport {
                 },
                 text = safeText,
                 attachments = attachments,
+                reasoningContent = safeReasoningContent,
                 isError = parseBoolean(
                     payload["isError"],
                     default = entry.status == AgentConversationHistoryRepository.STATUS_ERROR

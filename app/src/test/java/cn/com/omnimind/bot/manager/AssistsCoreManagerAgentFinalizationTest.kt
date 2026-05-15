@@ -44,4 +44,19 @@ class AssistsCoreManagerAgentFinalizationTest {
         assertEquals("暂时无法生成回复，请重试。", resolution.text)
         assertTrue(resolution.persistAsError)
     }
+
+    @Test
+    fun `manual cancellation stream metadata sorts after run trace entries`() {
+        val meta = buildAgentManualCancellationStreamMeta(
+            taskId = "agent-task",
+            entryId = "agent-task-cancelled"
+        )
+
+        assertEquals(1_000_000_000L, meta["seq"])
+        assertEquals(1_000_000_000, meta["roundIndex"])
+        assertEquals("text_snapshot", meta["kind"])
+        assertEquals("agent-task", meta["parentTaskId"])
+        assertEquals("agent-task-cancelled", meta["entryId"])
+        assertEquals(true, meta["isFinal"])
+    }
 }

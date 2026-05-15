@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/models/chat_link_preview.dart';
 import 'package:ui/models/chat_message_model.dart';
@@ -126,7 +127,6 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   // 控制输入框显示/隐藏
   bool _isInputAreaVisible = true;
   bool _isExecutingTask = false; // 是否正在执行任务
-  RecordingState _recordingState = RecordingState.idle;
 
   // 对话持久化相关
   int? _currentConversationId;
@@ -254,6 +254,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
   @override
   Future<void> persistAgentConversation() => _saveConversationToDb();
+
+  @override
+  void clearAgentStreamSessionState({String? taskId}) {
+    super.clearAgentStreamSessionState(taskId: taskId);
+  }
 
   @override
   void onAgentTextMessageUpdated(String messageId, {bool isFinal = true}) {
@@ -1948,6 +1953,8 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
         AssistsMessageService.cancelRunningTask(taskId: taskId);
         if (taskId != null) {
           _updateThinkingCardToCancelled(taskId);
+          _upsertCancelledAgentRunMessage(taskId);
+          _collapseAgentRunTrace(taskId);
         }
         _resetDispatchState();
       } else {
@@ -1976,6 +1983,8 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       interruptActiveToolCard();
       AssistsMessageService.cancelRunningTask(taskId: taskId);
       _updateThinkingCardToCancelled(taskId);
+      _upsertCancelledAgentRunMessage(taskId);
+      _collapseAgentRunTrace(taskId);
       _resetDispatchState();
       setState(() {
         _isAiResponding = false;
@@ -2017,15 +2026,69 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     _persistDeepThinkingCardIfNeeded(_messages[index]);
   }
 
-  void _onPopupVisibilityChanged(bool visible) {
+  void _collapseAgentRunTrace(String taskId) {
+    final normalizedTaskId = taskId.trim();
+    if (normalizedTaskId.isEmpty ||
+        !_expandedAgentRunTaskIds.contains(normalizedTaskId)) {
+      return;
+    }
     setState(() {
-      _isPopupVisible = visible;
+      _expandedAgentRunTaskIds.remove(normalizedTaskId);
     });
   }
 
-  void _onRecordingStateChanged(RecordingState state) {
+  void _upsertCancelledAgentRunMessage(String taskId) {
+    final normalizedTaskId = taskId.trim();
+    if (normalizedTaskId.isEmpty) {
+      return;
+    }
+    final messageId = '$normalizedTaskId-cancelled';
+    final content = <String, dynamic>{
+      'text': LegacyTextLocalizer.localize('任务已取消'),
+      'id': messageId,
+      'renderMarkdown': false,
+    };
+    final streamMeta = ensureAgentStreamMessageMeta(
+      null,
+      seq: 1000000000,
+      roundIndex: 1000000000,
+      kind: 'text_snapshot',
+      parentTaskId: normalizedTaskId,
+      entryId: messageId,
+      isFinal: true,
+    );
+    final existingIndex = _messages.indexWhere(
+      (message) => message.id == messageId,
+    );
     setState(() {
-      _recordingState = state;
+      if (existingIndex == -1) {
+        _messages.insert(
+          0,
+          ChatMessageModel(
+            id: messageId,
+            type: 1,
+            user: 2,
+            content: content,
+            streamMeta: streamMeta,
+          ),
+        );
+      } else {
+        _messages[existingIndex] = _messages[existingIndex].copyWith(
+          content: content,
+          isLoading: false,
+          isError: false,
+          streamMeta: streamMeta,
+        );
+      }
+    });
+    unawaited(
+      _saveConversationToDb(generateSummary: false, markComplete: true),
+    );
+  }
+
+  void _onPopupVisibilityChanged(bool visible) {
+    setState(() {
+      _isPopupVisible = visible;
     });
   }
 
@@ -2206,28 +2269,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                     ),
                     if (_vlmInfoQuestion != null) _buildVlmInfoPrompt(),
                     // 输入框 - 根据 _isInputAreaVisible 控制显示
-                    if (_isInputAreaVisible)
-                      Column(
-                        children: [
-                          if (_recordingState != RecordingState.idle)
-                            SizedBox(
-                              width: double.infinity,
-                              child: Text(
-                                _getRecordingText(),
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Color(0xFF353E53),
-                                  fontSize: 12,
-                                  fontFamily: 'PingFang SC',
-                                  fontWeight: FontWeight.w400,
-                                  height: 1.50,
-                                  letterSpacing: 0.333,
-                                ),
-                              ),
-                            ),
-                          _buildInputArea(),
-                        ],
-                      ),
+                    if (_isInputAreaVisible) _buildInputArea(),
                     SizedBox(height: bottomInset),
                   ],
                 ),
@@ -2298,34 +2340,30 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       _messages,
       activeTaskIds: activeTaskIds,
     );
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ListView.builder(
-        controller: _messageScrollController,
-        reverse: true,
-        shrinkWrap: true,
-        // 使用 ClampingScrollPhysics 阻止边界弹性效果，防止手势穿透到原生层
-        // 这在悬浮窗模式下尤为重要，可以防止向下拖动时整个页面跟着移动
-        physics: const ClampingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-        itemCount: timelineEntries.length,
-        itemBuilder: (context, index) {
-          final entry = timelineEntries[index];
-          final isLastMessage = index == 0; // 最后一条消息（最新的）
-          final isOldestMessage =
-              index == timelineEntries.length - 1; // 最旧的一条消息
-          // 只有当消息数量大于1时，最后一条消息才添加底部padding
-          final needBottomPadding = isLastMessage && timelineEntries.length > 1;
-          // 如果最旧的一条消息不是用户发送的，给顶部添加24的padding
-          final needTopPadding = isOldestMessage && !entry.isUserMessage;
-          final padding = EdgeInsets.only(
-            top: needTopPadding ? 24.0 : 0.0,
-            bottom: needBottomPadding ? 40.0 : 0.0,
-          );
-          if (entry.message != null) {
-            final message = entry.message!;
-            return Padding(
-              padding: padding,
+    // shrinkWrap removed: parent DraggableScrollableSheet provides bounded
+    // height. shrinkWrap=true forces O(n) remeasure of ALL items on every
+    // rebuild, which freezes the UI during long streaming output.
+    return ListView.builder(
+      controller: _messageScrollController,
+      reverse: true,
+      physics: const ClampingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      itemCount: timelineEntries.length,
+      itemBuilder: (context, index) {
+        final entry = timelineEntries[index];
+        final isLastMessage = index == 0;
+        final isOldestMessage = index == timelineEntries.length - 1;
+        final needBottomPadding = isLastMessage && timelineEntries.length > 1;
+        final needTopPadding = isOldestMessage && !entry.isUserMessage;
+        final padding = EdgeInsets.only(
+          top: needTopPadding ? 24.0 : 0.0,
+          bottom: needBottomPadding ? 40.0 : 0.0,
+        );
+        if (entry.message != null) {
+          final message = entry.message!;
+          return Padding(
+            padding: padding,
+            child: RepaintBoundary(
               child: MessageBubble(
                 message: message,
                 key: ValueKey(message.dbId ?? message.contentId ?? message.id),
@@ -2335,30 +2373,32 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                 onParentScrollHandoff: _handleParentScrollHandoff,
                 onStreamingTextLayoutChanged: _handleStreamingTextLayoutChanged,
               ),
-            );
-          }
+            ),
+          );
+        }
 
           final group = entry.group!;
           return Padding(
             padding: padding,
-            child: AgentRunGroupMessage(
-              key: ValueKey('overlay-agent-run-${group.taskId}'),
-              group: group,
-              expanded: _agentRunExpansionTracker.isGroupExpanded(
-                group,
-                _expandedAgentRunTaskIds,
+            child: RepaintBoundary(
+              child: AgentRunGroupMessage(
+                key: ValueKey('overlay-agent-run-${group.taskId}'),
+                group: group,
+                expanded: _agentRunExpansionTracker.isGroupExpanded(
+                  group,
+                  _expandedAgentRunTaskIds,
+                ),
+                onToggleExpanded: () => _toggleAgentRunGroup(group.taskId),
+                onBeforeTaskExecute: _handleBeforeTaskExecute,
+                onCancelTask: _onCancelTaskFromCard,
+                parentScrollController: _messageScrollController,
+                onParentScrollHandoff: _handleParentScrollHandoff,
+                onStreamingTextLayoutChanged: _handleStreamingTextLayoutChanged,
               ),
-              onToggleExpanded: () => _toggleAgentRunGroup(group.taskId),
-              onBeforeTaskExecute: _handleBeforeTaskExecute,
-              onCancelTask: _onCancelTaskFromCard,
-              parentScrollController: _messageScrollController,
-              onParentScrollHandoff: _handleParentScrollHandoff,
-              onStreamingTextLayoutChanged: _handleStreamingTextLayoutChanged,
             ),
           );
         },
-      ),
-    );
+      );
   }
 
   Widget _buildVlmInfoPrompt() {
@@ -2577,28 +2617,9 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
         onSendMessage: _sendMessage,
         onCancelTask: _onCancelTask,
         onPopupVisibilityChanged: _onPopupVisibilityChanged,
-        onRecordingStateChanged: _onRecordingStateChanged,
         openClawEnabled: _openClawEnabled,
         onToggleOpenClaw: _setOpenClawEnabled,
       ),
     );
-  }
-
-  String _getRecordingText() {
-    switch (_recordingState) {
-      case RecordingState.starting:
-        return AppTextLocalizer.choose(
-          zh: "正在启动录音...",
-          en: "Starting recording...",
-        );
-      case RecordingState.recording:
-        return AppTextLocalizer.choose(zh: "语音输入中...", en: "Listening...");
-      case RecordingState.stopping:
-        return AppTextLocalizer.choose(zh: "正在识别中...", en: "Recognizing...");
-      case RecordingState.waitingServerStop:
-        return AppTextLocalizer.choose(zh: "正在识别中...", en: "Recognizing...");
-      case RecordingState.idle:
-        return "";
-    }
   }
 }

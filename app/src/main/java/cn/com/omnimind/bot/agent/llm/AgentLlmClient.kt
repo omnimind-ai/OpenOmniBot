@@ -2,6 +2,7 @@ package cn.com.omnimind.bot.agent
 
 import cn.com.omnimind.assists.controller.http.HttpController
 import cn.com.omnimind.baselib.llm.ChatCompletionRequest
+import cn.com.omnimind.baselib.llm.ChatCompletionMessage
 import cn.com.omnimind.baselib.llm.ChatCompletionTurn
 import cn.com.omnimind.baselib.llm.DeepSeekProvider
 import cn.com.omnimind.baselib.llm.LocalModelProviderBridge
@@ -80,7 +81,9 @@ class HttpAgentLlmClient(
         onToolCallUpdate: (suspend (StreamingToolCallSnapshot) -> Unit)?
     ): ChatCompletionTurn {
         val modelCandidates = buildModelCandidates(request.model)
-        val variants = buildRequestVariants(request)
+        val variants = buildRequestVariants(
+            sanitizeRequestForTarget(request)
+        )
         var lastFailure: StreamRequestFailure? = null
 
         for (modelIndex in modelCandidates.indices) {
@@ -179,13 +182,20 @@ class HttpAgentLlmClient(
     ): ChatCompletionTurn {
         val streamDone = CompletableDeferred<ChatCompletionTurn>()
         val completed = AtomicBoolean(false)
+        val routeInfo = HttpController.resolveChatCompletionRouteInfo(
+            modelOrScene = model,
+            explicitApiBase = modelOverride?.apiBase,
+            explicitApiKey = modelOverride?.apiKey,
+            explicitModel = modelOverride?.modelId,
+            explicitProtocolType = modelOverride?.protocolType
+        )
         val accumulator = AgentLlmStreamAccumulator(
             json = json,
             preferInlineThinkTags = LocalModelProviderBridge.isBuiltinLocalProvider(
                 modelOverride?.providerProfileId,
                 modelOverride?.apiBase
             ),
-            includeReasoningInAssistantMessage = isOfficialDeepSeekTarget()
+            includeReasoningInAssistantMessage = routeInfo?.requiresReasoningEcho == true
         )
         var lastReasoning = ""
         var lastReasoningEmitLength = 0
@@ -312,6 +322,7 @@ class HttpAgentLlmClient(
             if (!completed.compareAndSet(false, true)) return
             runCatching {
                 val turn = accumulator.buildTurn()
+                enforceReasoningEchoIfRequired(turn, routeInfo)
                 emitReasoning(force = true)
                 emitContent()
                 emitToolCalls()
@@ -389,6 +400,25 @@ class HttpAgentLlmClient(
         }
     }
 
+    private fun enforceReasoningEchoIfRequired(
+        turn: ChatCompletionTurn,
+        routeInfo: HttpController.ChatCompletionRouteInfo
+    ) {
+        if (!routeInfo.requiresReasoningEcho) {
+            return
+        }
+        if (turn.reasoning.isBlank()) {
+            return
+        }
+        if (!turn.message.reasoningContent.isNullOrBlank()) {
+            return
+        }
+        throw IllegalStateException(
+            "assistant turn is missing reasoning_content for route=${routeInfo.resolvedModel} " +
+                "protocol=${routeInfo.protocolType} despite non-empty reasoning output"
+        )
+    }
+
     private fun buildRequestVariants(request: ChatCompletionRequest): List<StreamRequestVariant> {
         val variants = mutableListOf<StreamRequestVariant>()
         val seenPayloads = LinkedHashSet<String>()
@@ -430,6 +460,52 @@ class HttpAgentLlmClient(
         return variants
     }
 
+    private fun sanitizeRequestForTarget(request: ChatCompletionRequest): ChatCompletionRequest {
+        if (shouldPreserveAllAssistantReasoning()) {
+            return request
+        }
+        val sanitizedMessages = request.messages.mapIndexed { index, message ->
+            if (
+                message.role != "assistant" ||
+                message.reasoningContent.isNullOrBlank() ||
+                shouldRetainAssistantReasoning(index, request.messages)
+            ) {
+                message
+            } else {
+                message.copy(reasoningContent = null)
+            }
+        }
+        return if (sanitizedMessages == request.messages) {
+            request
+        } else {
+            request.copy(messages = sanitizedMessages)
+        }
+    }
+
+    private fun shouldPreserveAllAssistantReasoning(): Boolean {
+        if (isOfficialDeepSeekTarget()) {
+            return true
+        }
+        return resolvedProtocolType() == DeepSeekProvider.PROTOCOL_TYPE
+    }
+
+    private fun shouldRetainAssistantReasoning(
+        assistantIndex: Int,
+        messages: List<ChatCompletionMessage>
+    ): Boolean {
+        val message = messages.getOrNull(assistantIndex) ?: return false
+        if (message.toolCalls?.isNotEmpty() == true) {
+            return true
+        }
+        for (index in assistantIndex + 1 until messages.size) {
+            when (messages[index].role) {
+                "tool" -> return true
+                "user" -> return false
+            }
+        }
+        return false
+    }
+
     private fun isOfficialDeepSeekTarget(): Boolean {
         if (modelOverride != null) {
             return DeepSeekProvider.shouldUseOfficialAdapter(
@@ -443,6 +519,15 @@ class HttpAgentLlmClient(
             protocolType = profile?.protocolType,
             apiBase = profile?.baseUrl
         )
+    }
+
+    private fun resolvedProtocolType(): String {
+        modelOverride?.protocolType
+            ?.let(DeepSeekProvider::normalizeProtocolType)
+            ?.let { return it }
+        return runCatching { ModelProviderConfigStore.getEditingProfile().protocolType }
+            .map(DeepSeekProvider::normalizeProtocolType)
+            .getOrDefault(DeepSeekProvider.normalizeProtocolType(null))
     }
 
     private fun toLegacyFunctionCall(toolChoice: JsonElement?): JsonElement? {

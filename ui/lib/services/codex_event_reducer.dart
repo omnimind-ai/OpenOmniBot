@@ -852,6 +852,19 @@ class CodexEventReducer {
   }
 
   void _completeTurn(ChatConversationRuntimeState runtime, String taskId) {
+    final isManualCancel =
+        taskId == runtime.currentDispatchTaskId &&
+        !_hasVisibleAssistantTextForTask(runtime, taskId);
+    if (isManualCancel) {
+      _appendAssistantText(
+        runtime,
+        parentTaskId: taskId,
+        entryId: '$taskId-cancelled',
+        delta: '任务已取消',
+        isFinal: true,
+        replace: true,
+      );
+    }
     runtime.isAiResponding = false;
     runtime.isExecutingTask = false;
     runtime.isCheckingExecutableTask = false;
@@ -864,6 +877,27 @@ class CodexEventReducer {
     _markAssistantMessagesFinalForTask(runtime, taskId);
     _finalizeThinkingCardsForTask(runtime, taskId);
     _markToolCardsCompleteForTask(runtime, taskId);
+  }
+
+  bool _hasVisibleAssistantTextForTask(
+    ChatConversationRuntimeState runtime,
+    String taskId,
+  ) {
+    for (final message in runtime.messages) {
+      if (message.type != 1 || message.user != 2) {
+        continue;
+      }
+      if ((message.streamMeta?['parentTaskId'] ?? '').toString() != taskId) {
+        continue;
+      }
+      if (message.streamMeta?['isFinal'] == true) {
+        return true;
+      }
+      if ((message.text ?? '').trim().isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void _markToolCardComplete(

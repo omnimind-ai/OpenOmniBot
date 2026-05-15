@@ -75,6 +75,7 @@ class AgentConversationHistoryRepository(
         conversationMode: String,
         entryId: String,
         text: String,
+        reasoningContent: String? = null,
         isError: Boolean = false,
         attachments: List<Map<String, Any?>> = emptyList(),
         streamMeta: Map<String, Any?>? = null,
@@ -85,6 +86,7 @@ class AgentConversationHistoryRepository(
             user = 2,
             text = text,
             attachments = attachments,
+            reasoningContent = reasoningContent,
             isError = isError,
             streamMeta = streamMeta,
             createdAt = createdAt

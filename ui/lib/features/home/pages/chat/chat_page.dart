@@ -10,6 +10,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher_string.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import '../../../../models/conversation_model.dart';
 import '../../../../models/conversation_thread_target.dart';
 import '../../../../models/chat_link_preview.dart';
@@ -1569,6 +1570,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
 
   @override
   void clearAgentStreamSessionState({String? taskId}) {
+    super.clearAgentStreamSessionState(taskId: taskId);
     final conversationId = _currentConversationId;
     if (conversationId == null) return;
     _runtimeCoordinator.clearConversationRuntimeSession(
@@ -2082,6 +2084,8 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   void _onCancelTaskFromCard(String taskId);
 
   void _updateThinkingCardToCancelled(String taskId);
+
+  void _collapseAgentRunTrace(String taskId);
 
   void _onPopupVisibilityChanged(bool visible);
 

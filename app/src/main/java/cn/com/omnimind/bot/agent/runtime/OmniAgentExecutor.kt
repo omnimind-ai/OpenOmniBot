@@ -94,20 +94,30 @@ class OmniAgentExecutor(
                 installedSkills = installedSkills,
                 skillLoader = skillLoader
             )
-            // Standard skill mode: no auto-injection. Skills are listed in the system
-            // prompt by name/description. The agent proactively calls skills_read when
-            // a skill seems relevant, receiving the full SKILL.md content (up to 64k).
-            // This matches the Anthropic/Claude Code skill pattern and avoids the
-            // 16-line truncation problem of keyword-based auto-injection.
-            val resolvedSkills = emptyList<ResolvedSkillContext>()
-            callback.onSkillsResolved(emptyList())
+            val resolvedSkills = resolveSkillsForRun(
+                userMessage = userMessage,
+                installedSkills = installedSkills,
+                skillLoader = skillLoader
+            )
+            callback.onSkillsResolved(resolvedSkills.map { it.toCallbackPayload() })
             val discoveredServers = RemoteMcpDiscoveryRegistry.discoverEnabledServers()
             val oobFunctionDefinitions = if (AgentToolFeatureStore.isOobFunctionAsToolEnabled(context)) {
                 runCatching {
-                    @Suppress("UNCHECKED_CAST")
-                    val functions = (OobReusableFunctionStore.list(context, limit = 50)["functions"]
-                        as? List<Map<String, Any?>>) ?: emptyList()
-                    functions.mapNotNull { spec -> buildOobToolDefinition(spec, promptLocale) }
+                    val summaries = (OobReusableFunctionStore.list(context, limit = 50)["functions"]
+                        as? List<*>) ?: emptyList<Any?>()
+                    summaries.mapNotNull { rawSummary ->
+                        val summary = rawSummary as? Map<*, *> ?: return@mapNotNull null
+                        val functionId = summary["function_id"]
+                            ?.toString()
+                            ?.trim()
+                            ?.takeIf { it.isNotEmpty() }
+                            ?: return@mapNotNull null
+                        val spec = OobReusableFunctionStore.get(context, functionId)
+                            ?: summary.entries.associate { (key, value) ->
+                                key.toString() to value
+                            }
+                        buildOobToolDefinition(spec, promptLocale)
+                    }
                 }.getOrElse { emptyList() }
             } else emptyList()
             val toolRegistry = AgentToolRegistry(
@@ -190,7 +200,7 @@ class OmniAgentExecutor(
             throw e
         } catch (e: Exception) {
             callback.onError("Agent execution failed: ${e.message}")
-            AgentResult.Error("Agent execution failed", e as? Exception)
+            AgentResult.Error("Agent execution failed", e)
         } finally {
             runCatching { toolRouter?.dispose() }
         }
@@ -235,6 +245,35 @@ class OmniAgentExecutor(
         messages.addAll(historyMessages)
         messages.add(buildCurrentUserMessage(userMessage, attachments))
         return messages
+    }
+
+    private fun resolveSkillsForRun(
+        userMessage: String,
+        installedSkills: List<SkillIndexEntry>,
+        skillLoader: SkillLoader
+    ): List<ResolvedSkillContext> {
+        return SkillTriggerMatcher.resolveMatches(
+            userMessage = userMessage,
+            entries = installedSkills
+        ).mapNotNull { match ->
+            val compatibility = SkillCompatibilityChecker.evaluate(match.entry)
+            if (!compatibility.available) {
+                null
+            } else {
+                skillLoader.load(match.entry, match.triggerReason)
+            }
+        }
+    }
+
+    private fun ResolvedSkillContext.toCallbackPayload(): Map<String, Any?> {
+        return linkedMapOf(
+            "skillId" to skillId,
+            "name" to (frontmatter["name"]?.ifBlank { skillId } ?: skillId),
+            "triggerReason" to triggerReason,
+            "scriptsDir" to scriptsDir,
+            "assetsDir" to assetsDir,
+            "references" to loadedReferences
+        )
     }
 
     private fun buildCurrentUserMessage(
@@ -330,7 +369,10 @@ class OmniAgentExecutor(
         spec: Map<String, Any?>,
         locale: PromptLocale
     ): JsonObject? {
-        val name = spec["name"]?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val functionId = spec["function_id"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return null
+        val displayName = spec["name"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: functionId
         val description = spec["description"]?.toString().orEmpty()
         val parameters = spec["parameters"] as? List<*> ?: emptyList<Any?>()
 
@@ -338,11 +380,11 @@ class OmniAgentExecutor(
             buildJsonObject {
                 put("type", JsonPrimitive("function"))
                 put("function", buildJsonObject {
-                    put("name", JsonPrimitive(name))
-                    put("displayName", JsonPrimitive(name))
+                    put("name", JsonPrimitive(functionId))
+                    put("displayName", JsonPrimitive(displayName))
                     put("toolType", JsonPrimitive("oob_function"))
                     put("description", JsonPrimitive(
-                        description.ifBlank { "OOB reusable function: $name" }
+                        description.ifBlank { "OOB reusable function: $displayName" }
                     ))
                     put("parameters", buildJsonObject {
                         put("type", JsonPrimitive("object"))

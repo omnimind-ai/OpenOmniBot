@@ -4,9 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:ui/core/router/go_router_manager.dart';
+import 'package:ui/features/home/state/habitual_hand_controller.dart';
 import 'package:ui/features/home/widgets/home_drawer.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/models/conversation_thread_target.dart';
+import 'package:ui/models/habitual_hand.dart';
 
 class _SvgTestAssetBundle extends CachingAssetBundle {
   static final Uint8List _svgBytes = Uint8List.fromList(
@@ -79,7 +83,7 @@ void main() {
       MaterialApp(
         home: DefaultAssetBundle(
           bundle: _SvgTestAssetBundle(),
-          child: ProviderScope(
+          child: _buildProviderScope(
             child: Scaffold(
               body: SizedBox(
                 width: 360,
@@ -116,7 +120,7 @@ void main() {
         MaterialApp(
           home: DefaultAssetBundle(
             bundle: _SvgTestAssetBundle(),
-            child: ProviderScope(
+            child: _buildProviderScope(
               child: Scaffold(
                 body: SizedBox(
                   width: 360,
@@ -166,7 +170,7 @@ void main() {
       MaterialApp(
         home: DefaultAssetBundle(
           bundle: _SvgTestAssetBundle(),
-          child: ProviderScope(
+          child: _buildProviderScope(
             child: Scaffold(
               body: SizedBox(
                 width: 360,
@@ -226,8 +230,8 @@ void main() {
       MaterialApp(
         home: DefaultAssetBundle(
           bundle: _SvgTestAssetBundle(),
-          child: const ProviderScope(
-            child: Scaffold(
+          child: _buildProviderScope(
+            child: const Scaffold(
               body: SizedBox(width: 360, height: 720, child: HomeDrawer()),
             ),
           ),
@@ -242,4 +246,53 @@ void main() {
       findsOne,
     );
   });
+
+  testWidgets('project shortcut opens project management page', (tester) async {
+    final router = GoRouter(
+      navigatorKey: GoRouterManager.rootNavigatorKey,
+      initialLocation: '/drawer',
+      routes: [
+        GoRoute(
+          path: '/drawer',
+          builder: (context, state) => DefaultAssetBundle(
+            bundle: _SvgTestAssetBundle(),
+            child: _buildProviderScope(
+              child: const Scaffold(
+                body: SizedBox(width: 360, height: 720, child: HomeDrawer()),
+              ),
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/home/chat',
+          builder: (context, state) => const Scaffold(body: Text('chat route')),
+        ),
+        GoRoute(
+          path: '/workbench/projects',
+          builder: (context, state) =>
+              const Scaffold(body: Text('project management route')),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('项目'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('project management route'), findsOneWidget);
+    expect(find.text('chat route'), findsNothing);
+  });
+}
+
+Widget _buildProviderScope({required Widget child}) {
+  return ProviderScope(
+    overrides: [
+      habitualHandProvider.overrideWith(
+        (ref) => HabitualHandController(initial: HabitualHand.right),
+      ),
+    ],
+    child: child,
+  );
 }

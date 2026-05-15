@@ -36,7 +36,9 @@ data class ChatCompletionRequest(
     @SerialName("enable_thinking")
     val enableThinking: Boolean? = null,
     val thinking: ChatCompletionThinking? = null,
-    val audio: ChatCompletionAudioRequest? = null
+    val audio: ChatCompletionAudioRequest? = null,
+    @SerialName("response_format")
+    val responseFormat: JsonObject? = null
 )
 
 @Serializable

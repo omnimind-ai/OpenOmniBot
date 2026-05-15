@@ -68,6 +68,13 @@ const String _kDrawerTaskHistoryIconSvg =
     '<rect x="18.5" y="0" width="5" height="5" rx="1.5" fill="currentColor"/>'
     '</svg>';
 
+const String _kDrawerCommandLibraryIconSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+    'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round">'
+    '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'
+    '</svg>';
+
 const String _kDrawerWorkbenchIconSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
     'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
@@ -453,17 +460,9 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     GoRouterManager.push(route);
   }
 
-  void _openProjectSurface() {
+  void _openProjectManagementPage() {
     _maybeCloseDrawer();
-    final target = ConversationThreadTarget.newConversation(
-      mode: widget.newConversationMode,
-      requestKey: DateTime.now().microsecondsSinceEpoch.toString(),
-    );
-    GoRouterManager.push(
-      '/home/chat',
-      extra: target,
-      queryParams: {..._threadTargetQueryParams(target), 'surface': 'project'},
-    );
+    GoRouterManager.push('/workbench/projects');
   }
 
   void _openNewConversation() {
@@ -1382,7 +1381,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       _DrawerShortcutAction(
         label: context.l10n.workbenchWorkspaceProjectMode,
         svgString: _kDrawerWorkbenchIconSvg,
-        onTap: _openProjectSurface,
+        onTap: _openProjectManagementPage,
       ),
       _DrawerShortcutAction(
         label: context.l10n.trajectoryTitle,

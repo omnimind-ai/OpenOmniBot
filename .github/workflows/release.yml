@@ -276,60 +276,120 @@ jobs:
             ${{ env.RELEASE_ASSET_DIR }}/OpenOmniBot-${{ env.SAFE_REF_NAME }}-standard.apk
             ${{ env.RELEASE_ASSET_DIR }}/OpenOmniBot-${{ env.SAFE_REF_NAME }}-standard.apk.sha256
 
-      - name: Set up Node.js for CNB CLI
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Install CNB CLI
-        if: startsWith(github.ref, 'refs/tags/')
-        run: npm install --global @cnbcool/cnb-cli
-
-      - name: Mirror GitHub release to CNB
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Upload APKs to Cloudflare R2 via Worker
+        if: steps.release_ref.outputs.publish_release == 'true'
+        shell: bash
         env:
-          CNB_TOKEN: ${{ secrets.CNB_TOKEN != '' && secrets.CNB_TOKEN || secrets.GIT_PASSWORD }}
-          CNB_API_ENDPOINT: ${{ secrets.CNB_API_ENDPOINT != '' && secrets.CNB_API_ENDPOINT || 'https://api.cnb.cool' }}
-          CNB_REPO_SLUG: o.a/OpenOmniBot
-          CNB_RELEASE_BODY: |
-            Mirrored from GitHub release:
-            https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
-
-            Commit: ${{ github.sha }}
+          APP_UPDATE_WORKER_URL: ${{ secrets.APP_UPDATE_WORKER_URL }}
+          APP_UPDATE_WORKER_TOKEN: ${{ secrets.APP_UPDATE_WORKER_TOKEN }}
+          RELEASE_TAG_NAME: ${{ steps.release_ref.outputs.release_tag_name }}
         run: |
-          if [[ -z "${CNB_TOKEN}" ]]; then
-            echo "CNB mirror token is empty. Configure repository or organization secret CNB_TOKEN, or provide GIT_PASSWORD as a fallback." >&2
+          set -euo pipefail
+
+          if [[ -z "${APP_UPDATE_WORKER_URL}" || -z "${APP_UPDATE_WORKER_TOKEN}" ]]; then
+            echo "APP_UPDATE_WORKER_URL and APP_UPDATE_WORKER_TOKEN secrets are required to upload APKs." >&2
             exit 1
           fi
 
-          if ! command -v python3.11 >/dev/null 2>&1; then
-            echo "python3.11 is required for scripts/mirror_github_release_to_cnb.py. Install Python 3.11 on the self-hosted runner." >&2
+          PYTHON_BIN=python3
+          if command -v python3.11 >/dev/null 2>&1; then
+            PYTHON_BIN=python3.11
+          fi
+
+          for edition in omniinfer standard; do
+            apk_path="${RELEASE_ASSET_DIR}/OpenOmniBot-${SAFE_REF_NAME}-${edition}.apk"
+            sha_path="${apk_path}.sha256"
+            sha256="$(awk '{print $1}' "${sha_path}")"
+            sha_file_sha256="$(sha256sum "${sha_path}" | awk '{print $1}')"
+
+            "${PYTHON_BIN}" scripts/upload_release_asset_to_worker.py \
+              --worker-url "${APP_UPDATE_WORKER_URL}" \
+              --token "${APP_UPDATE_WORKER_TOKEN}" \
+              --tag "${RELEASE_TAG_NAME}" \
+              --file "${apk_path}" \
+              --content-type "application/vnd.android.package-archive" \
+              --sha256 "${sha256}"
+
+            "${PYTHON_BIN}" scripts/upload_release_asset_to_worker.py \
+              --worker-url "${APP_UPDATE_WORKER_URL}" \
+              --token "${APP_UPDATE_WORKER_TOKEN}" \
+              --tag "${RELEASE_TAG_NAME}" \
+              --file "${sha_path}" \
+              --content-type "text/plain; charset=utf-8" \
+              --sha256 "${sha_file_sha256}"
+          done
+
+      - name: Publish release tag to Cloudflare Worker
+        if: steps.release_ref.outputs.publish_release == 'true'
+        shell: bash
+        env:
+          APP_UPDATE_WORKER_URL: ${{ secrets.APP_UPDATE_WORKER_URL }}
+          APP_UPDATE_WORKER_TOKEN: ${{ secrets.APP_UPDATE_WORKER_TOKEN }}
+          RELEASE_TAG_NAME: ${{ steps.release_ref.outputs.release_tag_name }}
+          RELEASE_TRACK: ${{ steps.release_mode.outputs.track }}
+          RELEASE_DRAFT: ${{ steps.release_mode.outputs.draft }}
+          RELEASE_PRERELEASE: ${{ steps.release_mode.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${APP_UPDATE_WORKER_URL}" || -z "${APP_UPDATE_WORKER_TOKEN}" ]]; then
+            echo "APP_UPDATE_WORKER_URL and APP_UPDATE_WORKER_TOKEN secrets are required to publish update metadata." >&2
             exit 1
           fi
 
-          PYTHON_BIN=python3.11
-          echo "Using Python interpreter: ${PYTHON_BIN}"
-          "${PYTHON_BIN}" --version
-
-          ARGS=(
-            --repo "${CNB_REPO_SLUG}"
-            --tag "${GITHUB_REF_NAME}"
-            --target-commitish "${GITHUB_SHA}"
-            --name "${GITHUB_REF_NAME}"
-            --body "${CNB_RELEASE_BODY}"
-            --make-latest false
-            --asset "${RELEASE_ASSET_DIR}/OpenOmniBot-${SAFE_REF_NAME}-omniinfer.apk"
-            --asset "${RELEASE_ASSET_DIR}/OpenOmniBot-${SAFE_REF_NAME}-omniinfer.apk.sha256"
-            --asset "${RELEASE_ASSET_DIR}/OpenOmniBot-${SAFE_REF_NAME}-standard.apk"
-            --asset "${RELEASE_ASSET_DIR}/OpenOmniBot-${SAFE_REF_NAME}-standard.apk.sha256"
-          )
-
-          if [[ "${{ steps.release_mode.outputs.draft }}" == 'true' ]]; then
-            ARGS+=(--draft)
-          fi
-          if [[ "${{ steps.release_mode.outputs.prerelease }}" == 'true' ]]; then
-            ARGS+=(--prerelease)
+          PYTHON_BIN=python3
+          if command -v python3.11 >/dev/null 2>&1; then
+            PYTHON_BIN=python3.11
           fi
 
-          "${PYTHON_BIN}" scripts/mirror_github_release_to_cnb.py "${ARGS[@]}"
+          payload_file="${RUNNER_TEMP}/app-update-worker-payload.json"
+          "${PYTHON_BIN}" - <<'PY' > "${payload_file}"
+          import json
+          import os
+          import time
+          from pathlib import Path
+
+          tag = os.environ["RELEASE_TAG_NAME"]
+          safe_ref = os.environ["SAFE_REF_NAME"]
+          github_repo = os.environ["GITHUB_REPOSITORY"]
+          asset_dir = Path(os.environ["RELEASE_ASSET_DIR"])
+
+          def env_bool(name):
+              return os.environ.get(name, "").lower() == "true"
+
+          def apk_asset(edition):
+              name = f"OpenOmniBot-{safe_ref}-{edition}.apk"
+              apk_path = asset_dir / name
+              sha256 = (asset_dir / f"{name}.sha256").read_text(encoding="utf-8").split()[0]
+              return {
+                  "name": name,
+                  "githubDownloadUrl": f"https://github.com/{github_repo}/releases/download/{tag}/{name}",
+                  "sha256": sha256,
+                  "size": apk_path.stat().st_size,
+              }
+
+          payload = {
+              "tag": tag,
+              "track": os.environ["RELEASE_TRACK"],
+              "draft": env_bool("RELEASE_DRAFT"),
+              "prerelease": env_bool("RELEASE_PRERELEASE"),
+              "publishedAt": int(time.time() * 1000),
+              "releaseUrl": f"https://github.com/{github_repo}/releases/tag/{tag}",
+              "releaseNotes": f"Published from commit {os.environ['GITHUB_SHA']}.",
+              "assets": [
+                  apk_asset("omniinfer"),
+                  apk_asset("standard"),
+              ],
+          }
+          print(json.dumps(payload, ensure_ascii=False))
+          PY
+
+          api_url="${APP_UPDATE_WORKER_URL%/}"
+          api_url="${api_url%/updates}"
+          api_url="${api_url%/admin/releases}/admin/releases"
+
+          curl --fail --show-error --silent --location \
+            --request POST "${api_url}" \
+            --header "Authorization: Bearer ${APP_UPDATE_WORKER_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data-binary @"${payload_file}"

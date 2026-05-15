@@ -17,6 +17,7 @@ import cn.com.omnimind.bot.agent.tool.handlers.ToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.VlmToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.WorkbenchToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandler
+import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -61,6 +62,8 @@ class AgentToolRouter(
 
     init {
         oobFunctionHandler.router = this
+        oobFunctionHandler.workspaceFunctionStore =
+            WorkspaceFunctionStore(AgentWorkspaceManager.rootDirectory(context))
     }
 
     private val handlerMap: Map<String, ToolHandler> = buildMap {

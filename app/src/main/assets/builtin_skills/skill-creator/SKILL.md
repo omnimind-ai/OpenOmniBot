@@ -1,6 +1,6 @@
 ---
 name: skill-creator
-description: Guide for creating and updating effective Omnibot skills. Use when the user wants to add a new skill or improve an existing skill for the built-in Alpine workspace, tool workflows, or reusable domain knowledge.
+description: Guide for creating and updating effective Omnibot skills. Use when the user wants to add a new skill, create skill, improve skill, update skill, 扩展 skill, 创建 skill, 更新 skill, 写 skill, improve an existing skill for the built-in Alpine workspace, tool workflows, or reusable domain knowledge.
 ---
 
 # Skill Creator

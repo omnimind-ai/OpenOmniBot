@@ -98,7 +98,9 @@ internal object AgentImageAttachmentSupport {
         val historyAttachments = mutableListOf<Map<String, Any?>>()
         rawAttachments.forEach { raw ->
             val prepared = prepareSingleAttachment(raw) ?: return@forEach
-            modelAttachments += prepared.first
+            if (shouldSendAttachmentToModel(raw)) {
+                modelAttachments += prepared.first
+            }
             historyAttachments += prepared.second
         }
         return PreparedAttachments(
@@ -198,6 +200,11 @@ internal object AgentImageAttachmentSupport {
         if (!remoteUrl.isNullOrBlank()) {
             base["url"] = remoteUrl
         }
+        copyIfNotBlank(base, "promptPath", raw["promptPath"]?.toString())
+        copyIfNotBlank(base, "workspacePath", raw["workspacePath"]?.toString())
+        if (!shouldSendAttachmentToModel(raw)) {
+            base["sendToModel"] = false
+        }
 
         if (!isImage) {
             return base to base
@@ -251,6 +258,14 @@ internal object AgentImageAttachmentSupport {
         }
 
         return base to base
+    }
+
+    private fun shouldSendAttachmentToModel(attachment: Map<String, Any?>): Boolean {
+        return when (val raw = attachment["sendToModel"]) {
+            is Boolean -> raw
+            is String -> !raw.equals("false", ignoreCase = true)
+            else -> true
+        }
     }
 
     private fun localPathFromAttachment(attachment: Map<String, Any?>): String? {

@@ -472,7 +472,9 @@ class _ChatAppBarProjectButton extends StatelessWidget {
     final palette = context.omniPalette;
     final color = isSelected ? palette.accentPrimary : iconTint;
     return Tooltip(
-      message: AppTextLocalizer.choose(en: 'Manage projects', zh: '项目管理'),
+      message: isSelected
+          ? AppTextLocalizer.choose(en: 'Show workspace', zh: '显示 workspace')
+          : AppTextLocalizer.choose(en: 'Show current project', zh: '显示当前项目'),
       child: GestureDetector(
         key: const ValueKey('chat-app-bar-project-surface-button'),
         onTap: onTap,
@@ -482,6 +484,7 @@ class _ChatAppBarProjectButton extends StatelessWidget {
           height: _kChatAppBarAccessoryButtonSize,
           child: Center(
             child: SvgPicture.string(
+              key: const ValueKey('chat-app-bar-project-surface-icon'),
               _kChatAppBarProjectIconSvg,
               width: 20,
               height: 20,
@@ -1675,10 +1678,65 @@ class _ChatMessageListState extends State<ChatMessageList> {
     if (!mounted) {
       return;
     }
+    _collapseCancelledAgentRuns();
     if (_autoStickToLatest && !_isAutoStickTemporarilySuppressed) {
       _scheduleStickToLatest();
     }
     setState(() {});
+  }
+
+  void _collapseCancelledAgentRuns() {
+    final collapsedTaskIds = _cancelledAgentRunTaskIds(
+      _expandedAgentRunTaskIds,
+    );
+    if (collapsedTaskIds.isEmpty) {
+      return;
+    }
+    final nextExpandedTaskIds = Set<String>.from(_expandedAgentRunTaskIds)
+      ..removeAll(collapsedTaskIds);
+    if (widget.expandedAgentRunTaskIds != null) {
+      widget.onExpandedAgentRunTaskIdsChanged?.call(nextExpandedTaskIds);
+      return;
+    }
+    _localExpandedAgentRunTaskIds
+      ..clear()
+      ..addAll(nextExpandedTaskIds);
+    widget.onExpandedAgentRunTaskIdsChanged?.call(nextExpandedTaskIds);
+  }
+
+  Set<String> _cancelledAgentRunTaskIds(Set<String> expandedTaskIds) {
+    if (expandedTaskIds.isEmpty) {
+      return const <String>{};
+    }
+    final normalizedExpandedTaskIds = expandedTaskIds
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toSet();
+    if (normalizedExpandedTaskIds.isEmpty) {
+      return const <String>{};
+    }
+    final collapsedTaskIds = <String>{};
+    final messages = _observableMessages ?? widget.messages;
+    for (final message in messages) {
+      final taskId = agentRunParentTaskId(message);
+      if (taskId == null || !normalizedExpandedTaskIds.contains(taskId)) {
+        continue;
+      }
+      if (_isCancelledAgentRunMessage(message)) {
+        collapsedTaskIds.add(taskId);
+      }
+    }
+    return collapsedTaskIds;
+  }
+
+  bool _isCancelledAgentRunMessage(ChatMessageModel message) {
+    if (message.type != 1 || message.user != 2) {
+      return false;
+    }
+    final text = (message.text ?? '').trim().toLowerCase();
+    return text == '任务已取消' ||
+        text == 'task canceled' ||
+        text == 'task cancelled';
   }
 
   void _handleParentScrollHandoff() {
@@ -2299,6 +2357,7 @@ class ChatInputWrapper extends StatelessWidget {
   final Future<void> Function({String? text}) onSendMessage;
   final VoidCallback onCancelTask;
   final void Function(bool) onPopupVisibilityChanged;
+  final FutureOr<void> Function()? onTerminalTap;
   final bool? openClawEnabled;
   final ValueChanged<bool>? onToggleOpenClaw;
   final VoidCallback? onLongPressOpenClaw;
@@ -2327,6 +2386,7 @@ class ChatInputWrapper extends StatelessWidget {
     required this.onSendMessage,
     required this.onCancelTask,
     required this.onPopupVisibilityChanged,
+    this.onTerminalTap,
     this.openClawEnabled,
     this.onToggleOpenClaw,
     this.onLongPressOpenClaw,
@@ -2363,6 +2423,7 @@ class ChatInputWrapper extends StatelessWidget {
             onSendMessage: onSendMessage,
             onCancelTask: onCancelTask,
             onPopupVisibilityChanged: onPopupVisibilityChanged,
+            onTerminalTap: onTerminalTap,
             openClawEnabled: openClawEnabled,
             onToggleOpenClaw: onToggleOpenClaw,
             onLongPressOpenClaw: onLongPressOpenClaw,

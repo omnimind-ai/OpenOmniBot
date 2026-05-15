@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:ui/features/memory/models/mem0_memory_item.dart';
 import 'package:ui/features/memory/pages/memory_center/widgets/tag_chip.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/app_text_styles.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -94,9 +95,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
             _buildPlaceholder(
               icon: Icons.cloud_off_outlined,
               title: AppTextLocalizer.text('长期记忆未就绪'),
-              subtitle: AppTextLocalizer.text(
-                '完成记忆初始化后，这里会展示跨会话沉淀的偏好与事实。',
-              ),
+              subtitle: AppTextLocalizer.text('完成记忆初始化后，这里会展示跨会话沉淀的偏好与事实。'),
             )
           else if (widget.snapshot.errorMessage != null &&
               !widget.snapshot.hasData)
@@ -109,9 +108,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
             _buildPlaceholder(
               icon: Icons.auto_awesome_outlined,
               title: AppTextLocalizer.text('长期记忆还是空的'),
-              subtitle: AppTextLocalizer.text(
-                '当 Agent 主动写入长期偏好后，这里会逐渐丰富起来。',
-              ),
+              subtitle: AppTextLocalizer.text('当 Agent 主动写入长期偏好后，这里会逐渐丰富起来。'),
             )
           else
             Column(
@@ -135,7 +132,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
     return Row(
       children: [
         Text(
-          AppTextLocalizer.text('长期记忆'),
+          context.l10n.memoryLongTermTitle,
           style: TextStyle(
             color: palette.textPrimary,
             fontSize: AppTextStyles.fontSizeMain,
@@ -166,7 +163,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
             splashRadius: 18,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            tooltip: AppTextLocalizer.text('新增长期记忆'),
+            tooltip: context.l10n.memoryAddLongTerm,
           ),
         if (widget.snapshot.configured || widget.snapshot.hasData)
           IconButton(
@@ -183,7 +180,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
             splashRadius: 18,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            tooltip: AppTextLocalizer.text('刷新长期记忆'),
+            tooltip: context.trText('刷新长期记忆'),
           ),
       ],
     );
@@ -416,7 +413,7 @@ class _Mem0MemorySectionState extends State<Mem0MemorySection> {
 
   String _formatTime(DateTime? dateTime) {
     if (dateTime == null) {
-      return AppTextLocalizer.text('长期记忆');
+      return context.l10n.memoryLongTermTitle;
     }
     final now = DateTime.now();
     final diff = now.difference(dateTime);

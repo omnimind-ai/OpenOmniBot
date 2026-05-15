@@ -219,6 +219,100 @@ class AgentConversationHistorySupportTest {
     }
 
     @Test
+    fun `buildPromptRelevantMessages preserves assistant reasoning content when present in payload`() {
+        val payload = AgentConversationHistorySupport.buildTextMessagePayload(
+            messageId = "a-reasoning",
+            user = 2,
+            text = "先调用工具",
+            reasoningContent = "需要先定位文件",
+            isError = false,
+            streamMeta = null,
+            createdAt = 1L
+        )
+        val entry = AgentConversationEntry(
+            id = 10,
+            conversationId = 7,
+            conversationMode = "normal",
+            entryId = "a-reasoning",
+            entryType = AgentConversationHistoryRepository.ENTRY_TYPE_ASSISTANT_MESSAGE,
+            status = AgentConversationHistoryRepository.STATUS_SUCCESS,
+            summary = "先调用工具",
+            payloadJson = gson.toJson(payload),
+            createdAt = 1,
+            updatedAt = 1
+        )
+
+        val messages = AgentConversationHistorySupport.buildPromptRelevantMessages(listOf(entry))
+
+        assertEquals(1, messages.size)
+        assertEquals("assistant", messages.single().role)
+        assertEquals("需要先定位文件", messages.single().reasoningContent)
+    }
+
+    @Test
+    fun `prepareEntryForStorage keeps assistant reasoning content`() {
+        val payload = AgentConversationHistorySupport.buildTextMessagePayload(
+            messageId = "a-storage",
+            user = 2,
+            text = "完成首轮",
+            reasoningContent = "上一轮思考内容",
+            isError = false,
+            streamMeta = null,
+            createdAt = 1L
+        )
+        val entry = AgentConversationEntry(
+            id = 11,
+            conversationId = 7,
+            conversationMode = "normal",
+            entryId = "a-storage",
+            entryType = AgentConversationHistoryRepository.ENTRY_TYPE_ASSISTANT_MESSAGE,
+            status = AgentConversationHistoryRepository.STATUS_SUCCESS,
+            summary = "完成首轮",
+            payloadJson = gson.toJson(payload),
+            createdAt = 1,
+            updatedAt = 1
+        )
+
+        val stored = AgentConversationHistorySupport.prepareEntryForStorage(entry)
+        val storedPayload = AgentConversationHistorySupport.readMap(stored.payloadJson)
+
+        assertEquals("上一轮思考内容", storedPayload["reasoning_content"])
+    }
+
+    @Test
+    fun `buildPromptRelevantMessages replays tool turn reasoning content from tool payload`() {
+        val entry = AgentConversationEntry(
+            id = 12,
+            conversationId = 7,
+            conversationMode = "normal",
+            entryId = "task-1-tool-1",
+            entryType = AgentConversationHistoryRepository.ENTRY_TYPE_TOOL_EVENT,
+            status = AgentConversationHistoryRepository.STATUS_SUCCESS,
+            summary = "抓取成功",
+            payloadJson = gson.toJson(
+                mapOf(
+                    "toolName" to "browser_use",
+                    "displayName" to "浏览器自动化",
+                    "toolType" to "builtin",
+                    "argsJson" to """{"url":"https://example.com"}""",
+                    "reasoning_content" to "需要先打开页面确认结构",
+                    "summary" to "抓取成功",
+                    "success" to true
+                )
+            ),
+            createdAt = 1,
+            updatedAt = 1
+        )
+
+        val messages = AgentConversationHistorySupport.buildPromptRelevantMessages(listOf(entry))
+
+        assertEquals(2, messages.size)
+        assertEquals("assistant", messages[0].role)
+        assertEquals("需要先打开页面确认结构", messages[0].reasoningContent)
+        assertEquals("browser_use", messages[0].toolCalls?.single()?.function?.name)
+    }
+
+    @Test
     fun `restoreToolPayloadFromUiMessage keeps agent tool cards restorable as tool events`() {
         val message = mapOf<String, Any?>(
             "id" to "task-1-tool-1",

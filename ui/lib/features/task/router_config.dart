@@ -6,6 +6,7 @@ import 'pages/execution_history/trajectory_page.dart';
 import 'pages/execution_history/task_execution_detail_page.dart';
 import 'pages/execution_history/run_log_list_page.dart';
 import 'pages/execution_history/run_log_timeline_page.dart';
+import 'pages/execution_history/command_library_page.dart';
 import 'pages/scheduled_tasks/scheduled_task_list_page.dart';
 import 'pages/task_modify/task_modify_page.dart';
 
@@ -63,6 +64,13 @@ List<GoRoute> taskRoutes = [
       );
     },
   ),
+  // 指令库页面
+  GoRoute(
+    path: '/task/command_library',
+    name: 'task/command_library',
+    builder: (context, state) => const CommandLibraryPage(),
+  ),
+
   // 定时任务列表页
   GoRoute(
     path: '/task/scheduled_tasks',

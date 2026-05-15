@@ -109,7 +109,7 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
   void initState() {
     super.initState();
     _hasAutoCollapsedForCurrentCompletion = _shouldAutoCollapse(widget);
-    _isCollapsed = _hasAutoCollapsedForCurrentCompletion;
+    _isCollapsed = true; // Start collapsed by default (user can expand)
     _collapseController = AnimationController(
       vsync: this,
       duration: _collapseDuration,
@@ -297,7 +297,7 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
   }
 
   void _toggleCollapsed() {
-    if (!widget.isCollapsible || widget.stage != 4) return;
+    if (!widget.isCollapsible) return;
     _setCollapsed(
       !_isCollapsed,
       markCompletionHandled: _shouldAutoCollapse(widget),
@@ -506,7 +506,7 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
         ? palette.textSecondary
         : resolvedTextColor.withValues(alpha: 0.68);
     final bool hasContent = widget.thinkingText.isNotEmpty;
-    final bool canCollapse = widget.isCollapsible && widget.stage == 4;
+    final bool canCollapse = widget.isCollapsible;
 
     // 根据阶段显示不同的文案
     String hintText;

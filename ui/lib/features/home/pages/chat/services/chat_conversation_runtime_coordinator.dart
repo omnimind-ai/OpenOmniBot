@@ -447,6 +447,25 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     if (runtime != null) {
       _flushStreamingTextForTask(runtime, taskId);
       _clearStreamingTextBatchesForTask(runtime, taskId);
+      runtime.agentStreamStates.remove(taskId);
+      runtime.currentAiMessages.remove(taskId);
+      runtime.currentThinkingMessages.remove(taskId);
+      runtime.isAiResponding = false;
+      runtime.isExecutingTask = false;
+      runtime.isCheckingExecutableTask = false;
+      runtime.deepThinkingContent = '';
+      runtime.isDeepThinking = false;
+      runtime.activeToolCardId = null;
+      runtime.activeThinkingCardId = null;
+      runtime.pendingAgentTextTaskId = null;
+      runtime.waitingThinkingBeforeAgentTextTaskId = null;
+      runtime.pendingThinkingRoundSplit = false;
+      if (runtime.currentDispatchTaskId == taskId) {
+        runtime.currentDispatchTaskId = null;
+      }
+      if (runtime.lastAgentTaskId == taskId) {
+        runtime.lastAgentTaskId = null;
+      }
     }
     _taskBindings.remove(taskId);
   }
@@ -1781,6 +1800,14 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
           completedThinkingCardId: thinkingCardToFinalize,
         );
         return;
+      case AgentStreamEventKind.workbenchProjectCard:
+        _applyAgentUiCardStreamEvent(
+          runtime,
+          binding,
+          event,
+          completedThinkingCardId: thinkingCardToFinalize,
+        );
+        return;
       case AgentStreamEventKind.clarifyRequired:
         _applyAgentClarifyStreamEvent(
           runtime,
@@ -2115,12 +2142,12 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     AgentStreamEvent event, {
     String? completedThinkingCardId,
   }) {
-    final cardId = (event.entryId ?? '').trim();
+    final toolEvent = AgentToolEventData.fromMap(event.raw);
+    final cardId = resolveAgentToolCardId(event, raw: event.raw);
     if (cardId.isEmpty) {
       return;
     }
 
-    final toolEvent = AgentToolEventData.fromMap(event.raw);
     runtime.isAiResponding = true;
     _updateToolLayerState(runtime, toolEvent);
     _flushAgentThinkingBatchToCard(
@@ -2147,7 +2174,10 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       progress: toolEvent.progress,
       resultPreviewJson: toolEvent.resultPreviewJson,
       rawResultJson: toolEvent.rawResultJson,
-      streamMeta: _streamMetaFromEvent(event),
+      streamMeta: ensureAgentStreamMessageMeta(
+        _streamMetaFromEvent(event),
+        entryId: cardId,
+      ),
     );
     if (event.kind == AgentStreamEventKind.toolCompleted) {
       if (toolEvent.toolType == 'workbench' ||
@@ -3349,6 +3379,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       case AgentStreamEventKind.toolStarted:
       case AgentStreamEventKind.toolProgress:
       case AgentStreamEventKind.toolCompleted:
+      case AgentStreamEventKind.workbenchProjectCard:
       case AgentStreamEventKind.completed:
       case AgentStreamEventKind.error:
       case AgentStreamEventKind.permissionRequired:
@@ -3557,7 +3588,11 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     required String rawResultJson,
     Map<String, dynamic>? streamMeta,
   }) {
-    final index = runtime.messages.indexWhere((msg) => msg.id == cardId);
+    final index = runtime.messages.indexWhere(
+      (msg) =>
+          msg.id == cardId ||
+          (msg.cardData?['cardId'] ?? '').toString().trim() == cardId,
+    );
     final existingCardData = index == -1
         ? const <String, dynamic>{}
         : Map<String, dynamic>.from(
@@ -3605,9 +3640,13 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       'toolTitle': event.toolTitle.isNotEmpty
           ? event.toolTitle
           : (existingCardData['toolTitle'] ?? '').toString(),
-      'cardId': event.cardId.isNotEmpty
-          ? event.cardId
-          : (existingCardData['cardId'] ?? cardId).toString(),
+      'cardId': cardId,
+      'toolCallId': _firstNonEmpty([
+        event.toolCallId,
+        event.cardId,
+        existingCardData['toolCallId'],
+        existingCardData['tool_call_id'],
+      ]),
       'toolType': event.toolType,
       'serverName': event.serverName,
       'status': status,
@@ -3661,6 +3700,76 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         ),
       );
     }
+  }
+
+  void _applyAgentUiCardStreamEvent(
+    ChatConversationRuntimeState runtime,
+    _TaskBinding binding,
+    AgentStreamEvent event, {
+    String? completedThinkingCardId,
+  }) {
+    final cards = extractAgentStreamUiCards(event);
+    if (cards.isEmpty) {
+      return;
+    }
+    runtime.isAiResponding = true;
+    _flushAgentThinkingBatchToCard(
+      runtime,
+      event.taskId,
+      cardId: completedThinkingCardId,
+    );
+    _finalizeThinkingCard(
+      runtime,
+      event.taskId,
+      cardId: completedThinkingCardId,
+    );
+    for (final card in cards) {
+      _upsertAgentUiCard(runtime: runtime, event: event, card: card);
+    }
+    notifyListeners();
+    schedulePersistRuntimeConversation(
+      conversationId: binding.conversationId,
+      mode: binding.mode,
+    );
+  }
+
+  void _upsertAgentUiCard({
+    required ChatConversationRuntimeState runtime,
+    required AgentStreamEvent event,
+    required AgentStreamUiCard card,
+  }) {
+    final streamMeta = ensureAgentStreamMessageMeta(
+      _streamMetaFromEvent(event),
+      entryId: card.id,
+    );
+    final index = runtime.messages.indexWhere(
+      (message) =>
+          message.id == card.id ||
+          (message.cardData?['cardId'] ?? '').toString().trim() == card.id,
+    );
+    if (index == -1) {
+      runtime.messages.insert(
+        0,
+        ChatMessageModel.cardMessage(
+          card.cardData,
+          id: card.id,
+          streamMeta: streamMeta,
+        ).copyWith(
+          createAt: DateTime.fromMillisecondsSinceEpoch(event.createdAtMs),
+        ),
+      );
+      return;
+    }
+    final existingCardData = Map<String, dynamic>.from(
+      runtime.messages[index].cardData ?? const <String, dynamic>{},
+    );
+    runtime.messages[index] = runtime.messages[index].copyWith(
+      content: {
+        'cardData': <String, dynamic>{...existingCardData, ...card.cardData},
+        'id': card.id,
+      },
+      streamMeta: streamMeta,
+    );
   }
 
   String _resolveTerminalOutput({

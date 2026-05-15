@@ -88,7 +88,7 @@ android {
         minSdk = 29
         targetSdk = 34
         versionCode = 1
-        versionName = "0.5.0"
+        versionName = "0.5.0.6"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a"))
@@ -105,6 +105,7 @@ android {
             buildConfigField("String", "DEFAULT_MODEL_PROVIDER_BASE_URL", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_BASE_URL")}\"")
             buildConfigField("String", "DEFAULT_MODEL_PROVIDER_API_KEY", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_API_KEY")}\"")
             buildConfigField("String", "DEFAULT_MODEL_PROVIDER_MODEL_ID", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_MODEL_ID")}\"")
+            buildConfigField("String", "APP_UPDATE_WORKER_URL", "\"${prop("OMNIBOT_UPDATE_WORKER_URL")}\"")
             resValue("bool", "is_accessibility_tool", "true")
         }
 
@@ -114,6 +115,7 @@ android {
             buildConfigField("String", "DEFAULT_MODEL_PROVIDER_BASE_URL", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_BASE_URL")}\"")
             buildConfigField("String", "DEFAULT_MODEL_PROVIDER_API_KEY", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_API_KEY")}\"")
             buildConfigField("String", "DEFAULT_MODEL_PROVIDER_MODEL_ID", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_MODEL_ID")}\"")
+            buildConfigField("String", "APP_UPDATE_WORKER_URL", "\"${prop("OMNIBOT_UPDATE_WORKER_URL")}\"")
             resValue("bool", "is_accessibility_tool", "true")
         }
 

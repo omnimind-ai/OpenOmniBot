@@ -9,14 +9,14 @@ import 'package:ui/features/local_model/local_model_feature.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/floating_overlay_service.dart';
+import 'package:ui/services/storage_service.dart';
+import 'package:ui/utils/cache_util.dart';
 import 'package:ui/services/hide_from_recents_service.dart';
 import 'package:ui/services/mcp_server_service.dart';
 import 'package:ui/services/special_permission.dart';
-import 'package:ui/services/storage_service.dart';
 import 'package:ui/services/workspace_memory_service.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/theme_context.dart';
-import 'package:ui/utils/cache_util.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 
@@ -517,29 +517,11 @@ class _SettingsPageState extends State<SettingsPage> {
               GoRouterManager.push('/home/termux_setting');
             },
           ),
-          _SettingItem(
-            icon: Icons.visibility_off_outlined,
-            iconSvg: 'assets/home/hide_recents_setting_icon.svg',
-            title: context.l10n.settingsHideRecentsTitle,
-            subtitle: context.l10n.settingsHideRecentsSubtitle,
-            trailing: _buildSwitchTrailing(
-              value: hideFromRecentsEnabled,
-              onToggle: _onHideFromRecentsChanged,
-            ),
-          ),
         ],
       ),
       _SettingSection(
         label: context.l10n.settingsSectionExperienceAppearance,
         items: [
-          _SettingItem(
-            icon: Icons.alarm_outlined,
-            title: context.l10n.settingsAlarmTitle,
-            subtitle: context.l10n.settingsAlarmSubtitle,
-            onTap: () {
-              GoRouterManager.push('/home/alarm_setting');
-            },
-          ),
           _SettingItem(
             icon: Icons.wallpaper_outlined,
             title: context.l10n.settingsAppearanceTitle,

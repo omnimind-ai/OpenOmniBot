@@ -31,7 +31,6 @@ class PermissionRequest : Activity() {
          * 敏感权限使用目的说明（与华为「同步告知权限申请目的」要求一致）
          */
         private val PERMISSION_PURPOSES: Map<String, String> = mapOf(
-            android.Manifest.permission.RECORD_AUDIO to "为实现语音输入与语音识别功能",
             android.Manifest.permission.POST_NOTIFICATIONS to "为及时向您推送消息通知",
             android.Manifest.permission.BLUETOOTH_CONNECT to "为连接蓝牙设备以提供相关服务",
             android.Manifest.permission.BLUETOOTH_SCAN to "为扫描并发现蓝牙设备",
@@ -135,7 +134,6 @@ class PermissionRequest : Activity() {
     /** 权限对应的简短标签（带冒号），用于「XXX权限使用说明：」 */
     private fun getPermissionLabelShort(permission: String): String {
         return when (permission) {
-            android.Manifest.permission.RECORD_AUDIO -> "麦克风(录音)权限使用说明："
             android.Manifest.permission.POST_NOTIFICATIONS -> "通知权限使用说明："
             android.Manifest.permission.BLUETOOTH_CONNECT -> "蓝牙连接权限使用说明："
             android.Manifest.permission.BLUETOOTH_SCAN -> "蓝牙扫描权限使用说明："

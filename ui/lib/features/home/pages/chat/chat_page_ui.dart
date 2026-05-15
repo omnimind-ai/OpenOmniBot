@@ -900,14 +900,27 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
             );
         final backgroundActive = AppBackgroundService.current.isActive;
         return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
+          duration: const Duration(milliseconds: 220),
+          reverseDuration: const Duration(milliseconds: 180),
           switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            final isProjectChild =
+                child.key == const ValueKey('chat-workspace-project-mode');
+            final offset = Tween<Offset>(
+              begin: Offset(isProjectChild ? 0.05 : -0.05, 0),
+              end: Offset.zero,
+            ).animate(animation);
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(position: offset, child: child),
+            );
+          },
           child: _workspaceProjectModeEnabled
               ? Stack(
+                  key: const ValueKey('chat-workspace-project-mode'),
                   children: [
                     OmnibotWorkspaceProjectFrontends(
-                      key: const ValueKey('chat-workspace-project-mode'),
                       translucentSurfaces: backgroundActive,
                     ),
                     _EdgeSwipeToChatZone(
@@ -917,25 +930,28 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                     ),
                   ],
                 )
-              : OmnibotWorkspaceBrowser(
-                  key: _workspaceBrowserKey,
-                  workspacePath: paths.rootPath,
-                  workspaceShellPath: paths.shellRootPath,
-                  initialDirectoryPath: _cachedWorkspaceDirectory(
-                    paths.rootPath,
+              : KeyedSubtree(
+                  key: const ValueKey('chat-workspace-file-mode'),
+                  child: OmnibotWorkspaceBrowser(
+                    key: _workspaceBrowserKey,
+                    workspacePath: paths.rootPath,
+                    workspaceShellPath: paths.shellRootPath,
+                    initialDirectoryPath: _cachedWorkspaceDirectory(
+                      paths.rootPath,
+                    ),
+                    onCurrentDirectoryChanged: _persistWorkspaceDirectory,
+                    translucentSurfaces: backgroundActive,
+                    showBreadcrumbHeader: true,
+                    showHeaderTitle: false,
+                    onCanGoUpChanged: (canGoUp) {
+                      if (_workspaceBrowserCanGoUp == canGoUp || !mounted) {
+                        return;
+                      }
+                      setState(() {
+                        _workspaceBrowserCanGoUp = canGoUp;
+                      });
+                    },
                   ),
-                  onCurrentDirectoryChanged: _persistWorkspaceDirectory,
-                  translucentSurfaces: backgroundActive,
-                  showBreadcrumbHeader: true,
-                  showHeaderTitle: false,
-                  onCanGoUpChanged: (canGoUp) {
-                    if (_workspaceBrowserCanGoUp == canGoUp || !mounted) {
-                      return;
-                    }
-                    setState(() {
-                      _workspaceBrowserCanGoUp = canGoUp;
-                    });
-                  },
                 ),
         );
       },
@@ -1113,6 +1129,33 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
       inputBottomPadding: inputBottomPadding,
       keyboardSpacer: keyboardSpacer,
     );
+
+    void handleAppBarSurfaceModeChanged(ChatSurfaceMode value) {
+      final shouldToggleWorkspaceProject =
+          value == ChatSurfaceMode.workspace &&
+          _activeSurfaceMode == ChatSurfaceMode.workspace;
+      if (shouldToggleWorkspaceProject) {
+        unawaited(
+          _switchChatMode(
+            _workspaceProjectModeEnabled
+                ? ChatSurfaceMode.workspace
+                : ChatSurfaceMode.project,
+            syncPage: true,
+            preferCachedWorkspaceMode: false,
+          ),
+        );
+        return;
+      }
+
+      unawaited(
+        _switchChatMode(
+          value,
+          syncPage: true,
+          preferCachedWorkspaceMode: false,
+        ),
+      );
+    }
+
     return Stack(
       clipBehavior: Clip.hardEdge,
       children: [
@@ -1133,9 +1176,7 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                 unawaited(_toggleCompanionMode());
               },
               activeMode: appBarMode,
-              onModeChanged: (value) {
-                unawaited(_switchChatMode(value, syncPage: true));
-              },
+              onModeChanged: handleAppBarSurfaceModeChanged,
               activeModelId: activeAppBarModelId,
               onModelTap: onAppBarModelTap,
               displayLayer: _resolveChatPaneDisplayLayer(
@@ -1177,12 +1218,7 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               isPureChatToggleLocked: _isPureChatToggleLocked,
               showWorkspacePaneButton: showWorkspacePaneButton,
               onWorkspacePaneTap: onWorkspacePaneTap,
-              showProjectSurfaceButton: true,
-              isProjectSurfaceSelected:
-                  _activeSurfaceMode == ChatSurfaceMode.workspace &&
-                  _workspaceProjectModeEnabled,
-              onProjectSurfaceTap: () =>
-                  GoRouterManager.push('/workbench/projects'),
+              showProjectSurfaceButton: false,
             ),
             Expanded(child: conversationBody),
           ],
@@ -1224,6 +1260,7 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                       onSendMessage: _sendMessage,
                       onCancelTask: _onCancelTask,
                       onPopupVisibilityChanged: _onPopupVisibilityChanged,
+                      onTerminalTap: _handleTerminalToolTap,
                       useLargeComposerStyle: true,
                       useAttachmentPickerForPlus: true,
                       onPickAttachment: _pickAttachments,

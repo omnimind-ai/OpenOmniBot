@@ -66,17 +66,31 @@ class RunLogReusableFunctionConverter {
       final raw = await AssistsMessageService.postLLMChat(
         text: prompt,
         model: 'scene.compactor.context',
+        responseJsonObject: true,
       );
-      final aiJson = _extractJsonObject(raw ?? '');
+      var aiJson = _extractJsonObject(raw ?? '');
+      String? repairRaw;
+      if (aiJson == null && (raw ?? '').trim().isNotEmpty) {
+        repairRaw = await AssistsMessageService.postLLMChat(
+          text: _buildJsonRepairPrompt(
+            invalidOutput: raw ?? '',
+            fallbackJson: baseJson,
+            useEnglish: useEnglish,
+          ),
+          model: 'scene.compactor.context',
+          responseJsonObject: true,
+        );
+        aiJson = _extractJsonObject(repairRaw ?? '');
+      }
       if (aiJson == null) {
         return RunLogReusableFunctionSpec(
           json: baseJson,
           agentPrompt: buildAgentPrompt(baseJson, useEnglish: useEnglish),
           aiEnhanced: false,
-          rawAiText: raw,
+          rawAiText: repairRaw ?? raw,
           warning: _text(
             useEnglish,
-            'AI 未返回可解析 JSON，已使用本地转换结果',
+            'AI 未返回可解析 JSON，已使用本地规则生成，可继续注册和执行。',
             'AI did not return parseable JSON. Using the local conversion.',
           ),
         );
@@ -115,8 +129,6 @@ class RunLogReusableFunctionConverter {
       title,
     ]);
     final steps = <Map<String, dynamic>>[];
-    final parametersBySignature = <String, Map<String, dynamic>>{};
-    final seenParameterNames = <String>{};
 
     for (var index = 0; index < cards.length; index++) {
       final snapshot = _RunLogActionSnapshot.fromCard(
@@ -126,90 +138,60 @@ class RunLogReusableFunctionConverter {
       final args = _jsonSafe(snapshot.args);
       final stepId = 'step_${index + 1}';
       final executor = _executorForToolName(snapshot.toolName, snapshot.route);
-      final scriptable = executor == 'tool';
-      final omniflowReplay = _buildOmniflowReplayMetadata(
+      final replayAction = _omniflowActionForToolName(snapshot.toolName);
+      final coordinateHook = _buildCoordinateHookMetadata(
         snapshot: snapshot,
         args: args,
       );
+      final prompt = snapshot.prompt;
       final fallbackPrompt = _stepFallbackPrompt(
         title: snapshot.title,
         toolName: snapshot.toolName,
         args: args,
+        prompt: prompt,
         useEnglish: useEnglish,
       );
+      final summary = _stepSummary(
+        title: snapshot.title,
+        toolName: snapshot.toolName,
+        prompt: prompt,
+        args: args,
+        result: snapshot.result,
+      );
+      // Skip vlm_task outer calls entirely — the VLM-driven actions
+      // (click/scroll/type with compile_kind=vlm_step) are recorded as
+      // separate omniflow cards with source_context for coordinate remapping.
+      if (_isVlmPerceptionTool(snapshot.toolName)) continue;
+
       steps.add({
         'id': stepId,
         'index': index,
-        'kind': _stepKindForToolName(snapshot.toolName, snapshot.route),
         'title': snapshot.title.isNotEmpty ? snapshot.title : snapshot.toolName,
-        'tool': snapshot.toolName,
-        'callable_tool': executor == 'agent'
-            ? 'oob.agent.run'
-            : snapshot.toolName,
         'executor': executor,
-        'scriptable': scriptable,
-        if (omniflowReplay != null) ...omniflowReplay,
+        // omniflow steps
+        if (replayAction != null) 'omniflow_action': replayAction,
+        if (coordinateHook != null) ...coordinateHook,
         'args': args,
-        'tool_binding': {
-          'kind': executor == 'agent' ? 'agent_replan' : 'oob_agent_tool',
-          'name': snapshot.toolName,
-          if (executor == 'agent') 'callable_tool': 'oob.agent.run',
+        // tool steps
+        if (executor == 'tool') ...{
+          'tool': snapshot.toolName,
+          'callable_tool': snapshot.toolName,
         },
-        if (executor == 'agent')
+        // remaining agent steps: store actual tool + prompt for inline execution
+        if (executor == 'agent') ...{
+          'tool': snapshot.toolName,
+          'callable_tool': snapshot.toolName,
           'agent_call': {
-            'tool': 'oob.agent.run',
-            'args': {
-              'prompt': fallbackPrompt,
-              'original_tool': snapshot.toolName,
-              'original_args': args,
-            },
-            'reason': 'non_scriptable_or_vlm_step',
+            'tool': snapshot.toolName,
+            'args': {'prompt': fallbackPrompt},
           },
-        if (snapshot.route.isNotEmpty) 'route': snapshot.route,
-        if (snapshot.success != null) 'success': snapshot.success,
-        if (snapshot.durationMs != null) 'duration_ms': snapshot.durationMs,
+        },
         if (snapshot.packageName.isNotEmpty)
           'package_name': snapshot.packageName,
-        if (!_isEmptyJsonValue(snapshot.result))
-          'observed_result': snapshot.result,
-        if (snapshot.beforeSummary.isNotEmpty)
-          'before_state': snapshot.beforeSummary,
-        if (snapshot.afterSummary.isNotEmpty)
-          'after_state': snapshot.afterSummary,
-        'validation': {
-          'mode': 'soft_state_match',
-          if (snapshot.packageName.isNotEmpty)
-            'package_name': snapshot.packageName,
-          if (snapshot.beforeSummary.isNotEmpty)
-            'expected_before_state': snapshot.beforeSummary,
-        },
-        'fallback': {
-          'kind': 'agent_replan',
-          'tool': 'oob.agent.run',
-          'when': scriptable
-              ? 'state_or_selector_mismatch'
-              : 'always_for_agent_executor',
-          'prompt': fallbackPrompt,
-        },
-        'reuse_policy': {
-          'mode': 'prefer_script_then_agent_replan',
-          'allow_agent_replan_on_mismatch': true,
-          'requires_runtime_validation': true,
-        },
       });
 
-      _collectParametersFromArgs(
-        stepId: stepId,
-        stepIndex: index,
-        toolName: snapshot.toolName,
-        args: args,
-        parametersBySignature: parametersBySignature,
-        seenNames: seenParameterNames,
-        useEnglish: useEnglish,
-      );
     }
 
-    final parameters = parametersBySignature.values.toList(growable: false);
     final packageName = _firstNonBlank([
       ...steps.map((step) => step['package_name']),
       payload['final_package_name'],
@@ -221,118 +203,35 @@ class RunLogReusableFunctionConverter {
     );
     final now = DateTime.now().toUtc().toIso8601String();
 
+    final omniflowCount =
+        steps.where((s) => s['executor'] == 'omniflow').length;
+    final agentCount =
+        steps.where((s) => s['executor'] == 'agent').length;
+    final startState = _firstNonBlank([
+      _asStringKeyMap(cards.isEmpty ? null : cards.first['before'])['page_title'],
+      _asStringKeyMap(cards.isEmpty ? null : cards.first['before'])['activity'],
+      _asStringKeyMap(cards.isEmpty ? null : cards.first['before'])['package_name'],
+    ]);
+
     return {
-      'schema_version': 'oob.reusable_function.v1',
+      'schema_version': 'oob.skill.v2',
       'function_id': 'runlog_${_compactId(runId)}',
       'name': name,
       'description': goal.isNotEmpty ? goal : name,
-      'tags': const ['omniflow', 'oob_reusable_function'],
       'source': {
         'kind': 'run_log',
         'run_id': runId,
         'title': title,
         'converted_at': now,
-        'converter': 'oob_run_log_reusable_function_converter',
-      },
-      'runtime_targets': ['agent', 'script'],
-      'parameters': parameters,
-      'call_contract': {
-        'api': 'AssistsMessageService.runOobReusableFunction',
-        'method_channel': 'cn.com.omnimind.bot/AssistCoreEvent',
-        'native_method': 'runOobReusableFunction',
-        'argument_binding': 'parameters[*].bindings',
-        'argument_application': 'native_materialized_before_agent_run',
-        'arguments_schema': parameters
-            .map(
-              (item) => {
-                'name': item['name'],
-                'type': item['type'],
-                'description': item['description'],
-                if (item.containsKey('default')) 'default': item['default'],
-                'required': item['required'] == true,
-              },
-            )
-            .toList(),
-        'example': {
-          'function_id': 'runlog_${_compactId(runId)}',
-          'arguments': {
-            for (final item in parameters)
-              item['name'].toString(): item['default'] ?? '<value>',
-          },
-        },
       },
       'constraints': {
         if (packageName.isNotEmpty) 'package_name': packageName,
-        'start_state': _firstNonBlank([
-          _asStringKeyMap(
-            cards.isEmpty ? null : cards.first['before'],
-          )['page_title'],
-          _asStringKeyMap(
-            cards.isEmpty ? null : cards.first['before'],
-          )['activity'],
-          _asStringKeyMap(
-            cards.isEmpty ? null : cards.first['before'],
-          )['package_name'],
-        ]),
-        'end_state': _firstNonBlank([
-          _asStringKeyMap(
-            cards.isEmpty ? null : cards.last['after'],
-          )['page_title'],
-          _asStringKeyMap(
-            cards.isEmpty ? null : cards.last['after'],
-          )['activity'],
-          _asStringKeyMap(
-            cards.isEmpty ? null : cards.last['after'],
-          )['package_name'],
-        ]),
+        if (startState.isNotEmpty) 'start_state': startState,
       },
       'execution': {
-        'kind': 'tool_sequence',
-        'runner': 'oob_tool_sequence',
-        'entrypoint': 'execute',
-        'capabilities': {
-          'scriptable_step_count': steps
-              .where((step) => step['scriptable'] == true)
-              .length,
-          'agent_step_count': steps
-              .where((step) => step['executor'] == 'agent')
-              .length,
-          'requires_agent_fallback': steps.any(
-            (step) => step['executor'] == 'agent',
-          ),
-        },
-        'binding_model': {
-          'parameters_path': '\$.parameters',
-          'bindings_path': '\$.parameters[*].bindings',
-          'applied_by': 'OobReusableFunctionStore.materialize',
-        },
-        'fallback_runner': 'oob.agent.run',
         'steps': steps,
-      },
-      'agent_reuse': {
-        'strategy':
-            'Use materialized execution.steps when executor=tool and UI state matches. If executor=agent or any validation fails, keep the same goal and re-plan that step from the current screen.',
-        'input_contract': parameters
-            .map(
-              (item) => {
-                'name': item['name'],
-                'type': item['type'],
-                'description': item['description'],
-                if (item['default'] != null) 'default': item['default'],
-              },
-            )
-            .toList(),
-      },
-      'script_reuse': {
-        'language': 'json-actions',
-        'runner': 'oob_tool_sequence',
-        'call_shape': {
-          'function_id': 'runlog_${_compactId(runId)}',
-          'arguments': {
-            for (final item in parameters)
-              item['name'].toString(): item['default'] ?? '<value>',
-          },
-        },
+        'omniflow_step_count': omniflowCount,
+        'agent_step_count': agentCount,
       },
     };
   }
@@ -374,9 +273,10 @@ class RunLogReusableFunctionConverter {
         '',
         'Execution strategy:',
         '1. Prefer executing materialized execution.steps in order from the JSON.',
-        '2. For executor=tool, call step.callable_tool with the materialized step.args after validation.',
-        '3. For executor=agent or validation mismatch, call step.agent_call.tool / fallback.tool and re-plan that step from the current screen.',
-        '4. Runtime arguments are applied through parameters.bindings before execution.',
+        '2. For executor=omniflow/model_free, execute the local replay action without a model call.',
+        '3. For executor=tool, call step.callable_tool with the materialized step.args after validation.',
+        '4. For executor=agent or validation mismatch, call step.agent_call.tool / fallback.tool and re-plan that step from the current screen.',
+        '5. Runtime arguments are applied through parameters.bindings before execution.',
         '',
         'Function JSON:',
         const JsonEncoder.withIndent('  ').convert(functionJson),
@@ -395,9 +295,10 @@ class RunLogReusableFunctionConverter {
       '',
       '执行策略:',
       '1. 优先按已物化的 execution.steps 顺序执行。',
-      '2. executor=tool 时，先检查 validation，再用 step.callable_tool 和已物化 step.args 调工具。',
-      '3. executor=agent 或状态不匹配时，调用 step.agent_call.tool / fallback.tool，从当前屏幕重规划该步。',
-      '4. 运行时参数会先通过 parameters.bindings 写入对应 step args。',
+      '2. executor=omniflow/model_free 时直接执行本地动作，不需要模型调用。',
+      '3. executor=tool 时，先检查 validation，再用 step.callable_tool 和已物化 step.args 调工具。',
+      '4. executor=agent 或状态不匹配时，调用 step.agent_call.tool / fallback.tool，从当前屏幕重规划该步。',
+      '5. 运行时参数会先通过 parameters.bindings 写入对应 step args。',
       '',
       'Function JSON:',
       const JsonEncoder.withIndent('  ').convert(functionJson),
@@ -415,13 +316,16 @@ You are the OOB/OmniFlow trajectory compiler. Convert the draft extracted from R
 
 Requirements:
 - Output exactly one JSON object. Do not use Markdown and do not explain.
+- The first non-whitespace character must be "{" and the last non-whitespace character must be "}".
+- Do not wrap the JSON in code fences. Do not include comments, prose, XML, YAML, or bullet lists.
 - Keep schema_version = "oob.reusable_function.v1".
 - Preserve execution.steps order, tool names, and key args. Do not invent tools that do not exist.
 - You may rewrite name/description to make it a clearer reusable function name.
 - You may refine parameters: abstract hard-coded user input, search terms, message text, URLs, and target objects into parameters; do not abstract coordinate x/y into user parameters.
 - Every parameter must include name/type/description/bindings/default. bindings must be a JSONPath string array pointing to execution.steps[*].args.
-- Preserve or improve call_contract, execution.binding_model, step executor/scriptable/callable_tool/agent_call/validation/fallback fields.
-- Clarify agent_reuse.strategy: when to replay the script and when the agent should re-plan.
+- Preserve or improve call_contract, execution.binding_model, step executor/model_free/scriptable/omniflow_action/callable_tool/agent_call/validation/fallback fields.
+- Keep model_free omniflow actions model-free; do not turn click/scroll/type/open_app/back/home/hot_key/wait into agent steps.
+- Clarify agent_reuse.strategy: when to replay locally and when the agent should re-plan.
 - Output must be consumable by both the agent and the script runner.
 
 Draft JSON:
@@ -433,17 +337,60 @@ $compact
 
 要求：
 - 只能输出一个 JSON object，不要 Markdown，不要解释。
+- 第一个非空白字符必须是 "{"，最后一个非空白字符必须是 "}"。
+- 不要使用代码块，不要包含注释、说明文字、XML、YAML 或列表解释。
 - 保持 schema_version = "oob.reusable_function.v1"。
 - 保留 execution.steps 的顺序、工具名和关键 args，不要编造不存在的工具。
 - 可以重写 name/description，使其更像可复用功能名。
 - 可以整理 parameters：把硬编码的用户输入、搜索词、消息文本、URL、目标对象抽象成参数；不要把坐标 x/y 抽象成用户参数。
 - 每个 parameter 必须包含 name/type/description/bindings/default，其中 bindings 是 JSONPath 字符串数组，指向 execution.steps[*].args。
-- 保留或优化 call_contract、execution.binding_model、每步的 executor/scriptable/callable_tool/agent_call/validation/fallback 字段。
-- 为 agent_reuse.strategy 写清楚：什么时候脚本重放，什么时候 agent 重规划。
+- 保留或优化 call_contract、execution.binding_model、每步的 executor/model_free/scriptable/omniflow_action/callable_tool/agent_call/validation/fallback 字段。
+- 保持 model_free omniflow 动作无模型执行，不要把 click/scroll/type/open_app/back/home/hot_key/wait 改成 agent 步骤。
+- 为 agent_reuse.strategy 写清楚：什么时候本地重放，什么时候 agent 重规划。
 - 输出必须能被 agent 和 script 执行器共同消费。
 
 草稿 JSON：
 $compact
+''';
+  }
+
+  static String _buildJsonRepairPrompt({
+    required String invalidOutput,
+    required Map<String, dynamic> fallbackJson,
+    bool useEnglish = false,
+  }) {
+    final fallback = const JsonEncoder.withIndent('  ').convert(fallbackJson);
+    if (useEnglish) {
+      return '''
+Repair the model output into exactly one valid JSON object.
+
+Hard requirements:
+- Return raw JSON only. The first non-whitespace character must be "{" and the last must be "}".
+- Do not use Markdown, code fences, comments, or explanations.
+- Keep schema_version = "oob.reusable_function.v1".
+- If the invalid output is unusable, return a valid improved version of the fallback JSON.
+
+Invalid output:
+$invalidOutput
+
+Fallback JSON:
+$fallback
+''';
+    }
+    return '''
+把模型输出修复成一个合法 JSON object。
+
+硬性要求：
+- 只返回原始 JSON。第一个非空白字符必须是 "{"，最后一个必须是 "}"。
+- 不要 Markdown、代码块、注释或解释。
+- 保持 schema_version = "oob.reusable_function.v1"。
+- 如果原输出不可用，就基于 fallback JSON 返回一个合法的优化版本。
+
+无效输出：
+$invalidOutput
+
+Fallback JSON：
+$fallback
 ''';
   }
 
@@ -465,9 +412,9 @@ $compact
       normalized['tags'],
       fallback: _normalizeStringList(
         fallback['tags'],
-        fallback: const ['omniflow', 'oob_reusable_function'],
+        fallback: const ['oob_reusable_function'],
       ),
-    );
+    ).where((tag) => tag.toLowerCase() != 'omniflow').toList(growable: false);
     normalized['runtime_targets'] = _normalizeStringList(
       normalized['runtime_targets'],
       fallback: const ['agent', 'script'],
@@ -544,6 +491,8 @@ class _RunLogActionSnapshot {
     required this.beforeSummary,
     required this.afterSummary,
     required this.beforeXml,
+    required this.prompt,
+    required this.promptSource,
   });
 
   final String title;
@@ -557,6 +506,8 @@ class _RunLogActionSnapshot {
   final String beforeSummary;
   final String afterSummary;
   final String beforeXml;
+  final String prompt;
+  final String promptSource;
 
   factory _RunLogActionSnapshot.fromCard(
     Map<String, dynamic> card, {
@@ -569,6 +520,12 @@ class _RunLogActionSnapshot {
     final function = _asStringKeyMap(toolCall['function']);
     final args = _extractArgs(card, toolCall, function);
     final argsMap = _asStringKeyMap(args);
+    final promptHit = _extractPromptHit([
+      _PromptSearchRoot('args', args),
+      _PromptSearchRoot('tool_call', toolCall),
+      _PromptSearchRoot('function', function),
+      _PromptSearchRoot('card', card),
+    ]);
     final toolName = _firstNonBlank([
       toolCall['name'],
       toolCall['tool_name'],
@@ -624,6 +581,8 @@ class _RunLogActionSnapshot {
         before['observation_xml'],
         before['observationXml'],
       ]),
+      prompt: promptHit.text,
+      promptSource: promptHit.source,
     );
   }
 }
@@ -855,16 +814,48 @@ String _jsonPathSuffix(List<String> segments) {
 }
 
 String _stepKindForToolName(String toolName, String route) {
-  return _executorForToolName(toolName, route) == 'agent'
+  final executor = _executorForToolName(toolName, route);
+  return executor == 'agent'
       ? 'agent_call'
+      : executor == 'omniflow'
+      ? 'omniflow_action'
       : 'tool_call';
 }
+
+bool _isVlmPerceptionTool(String toolName) {
+  switch (toolName.trim().toLowerCase()) {
+    case 'vlm_task':
+    case 'image_picker':
+    case 'screen_capture':
+    case 'android_privileged_action_screenshot':
+      return true;
+    default:
+      return false;
+  }
+}
+
+// Tools whose OUTPUT feeds into subsequent steps — cannot replay statically.
+// Replaying with hardcoded args would use stale data from the original run.
+const _dataFlowTools = {
+  'browser_use',
+  'web_search',
+  'memory_search',
+  'memory_recall',
+  'memory_query',
+  'oob_agent_run',
+  'workbench_api_list',
+  'oob_run_log_list',
+  'oob_run_log_get',
+};
 
 String _executorForToolName(String toolName, String route) {
   final normalizedTool = toolName.trim().toLowerCase();
   final normalizedRoute = route.trim().toLowerCase();
   if (normalizedTool.isEmpty || normalizedTool == 'unknown_tool') {
     return 'agent';
+  }
+  if (_omniflowActionForToolName(normalizedTool) != null) {
+    return 'omniflow';
   }
   if (normalizedRoute == 'miss' || normalizedRoute == 'vlm') {
     return 'agent';
@@ -874,20 +865,47 @@ String _executorForToolName(String toolName, String route) {
       normalizedTool.contains('vlm')) {
     return 'agent';
   }
+  // Data-flow tools: output feeds next steps, agent must handle context
+  if (_dataFlowTools.contains(normalizedTool)) {
+    return 'agent';
+  }
   return 'tool';
+}
+
+String? _omniflowActionForToolName(String toolName) {
+  switch (toolName.trim().toLowerCase()) {
+    case 'click':
+    case 'long_press':
+    case 'scroll':
+    case 'type':
+    case 'open_app':
+    case 'press_home':
+    case 'press_back':
+    case 'hot_key':
+    case 'wait':
+      return toolName.trim().toLowerCase();
+    default:
+      return null;
+  }
 }
 
 String _stepFallbackPrompt({
   required String title,
   required String toolName,
   required dynamic args,
+  required String prompt,
   required bool useEnglish,
 }) {
   final argsText = const JsonEncoder.withIndent('  ').convert(_jsonSafe(args));
+  final normalizedPrompt = prompt.trim();
   if (useEnglish) {
     return [
       'Re-plan this step from the current screen.',
       if (title.trim().isNotEmpty) 'Step goal: ${title.trim()}',
+      if (normalizedPrompt.isNotEmpty) ...[
+        'Original prompt:',
+        normalizedPrompt,
+      ],
       'Original tool: $toolName',
       'Original args:',
       argsText,
@@ -896,17 +914,55 @@ String _stepFallbackPrompt({
   return [
     '请从当前屏幕重新规划并执行这一步。',
     if (title.trim().isNotEmpty) '步骤目标：${title.trim()}',
+    if (normalizedPrompt.isNotEmpty) ...['原始 prompt：', normalizedPrompt],
     '原始工具：$toolName',
     '原始参数：',
     argsText,
   ].join('\n');
 }
 
-Map<String, dynamic>? _buildOmniflowReplayMetadata({
+String _stepSummary({
+  required String title,
+  required String toolName,
+  required String prompt,
+  required dynamic args,
+  required dynamic result,
+}) {
+  final promptPreview = _compactPreview(prompt, maxLength: 180);
+  if (promptPreview.isNotEmpty) {
+    return 'Prompt: $promptPreview';
+  }
+  final argsMap = _asStringKeyMap(args);
+  final resultMap = _asStringKeyMap(result);
+  final preview = _compactPreview(
+    _firstNonBlank([
+      argsMap['target_description'],
+      argsMap['targetDescription'],
+      argsMap['text'],
+      argsMap['content'],
+      argsMap['message'],
+      argsMap['query'],
+      argsMap['url'],
+      resultMap['summary'],
+      resultMap['message'],
+    ]),
+    maxLength: 180,
+  );
+  if (preview.isNotEmpty) {
+    return preview;
+  }
+  return _firstNonBlank([title, toolName]);
+}
+
+Map<String, dynamic>? _buildCoordinateHookMetadata({
   required _RunLogActionSnapshot snapshot,
   required dynamic args,
 }) {
-  if (!_isOmniflowReplayableAction(snapshot.toolName)) {
+  if (!_usesCoordinateHook(snapshot.toolName)) {
+    return null;
+  }
+  // No source XML → no coordinate remapping possible; use original coordinates.
+  if (snapshot.beforeXml.isEmpty) {
     return null;
   }
   final argsMap = _asStringKeyMap(args);
@@ -938,8 +994,11 @@ Map<String, dynamic>? _buildOmniflowReplayMetadata({
   }
 
   return {
-    'omniflow': true,
-    'replay_engine': 'omniflow_utg',
+    'coordinate_hook': 'omniflow',
+    'coordinate_hook_policy': {
+      'mode': 'coordinate_remap',
+      'source_context_required': true,
+    },
     'replay_policy': {
       'mode': 'coordinate_remap',
       'coordinate_transform': true,
@@ -955,7 +1014,7 @@ Map<String, dynamic>? _buildOmniflowReplayMetadata({
   };
 }
 
-bool _isOmniflowReplayableAction(String toolName) {
+bool _usesCoordinateHook(String toolName) {
   switch (toolName.trim().toLowerCase()) {
     case 'click':
     case 'long_press':
@@ -1052,6 +1111,126 @@ Map<String, dynamic> _extractToolCall(Map<String, dynamic> card) {
     if (card.containsKey('params')) 'params': card['params'],
     if (card.containsKey('arguments')) 'arguments': card['arguments'],
   };
+}
+
+class _PromptHit {
+  const _PromptHit(this.text, this.source);
+
+  final String text;
+  final String source;
+}
+
+class _PromptSearchRoot {
+  const _PromptSearchRoot(this.name, this.value);
+
+  final String name;
+  final dynamic value;
+}
+
+const Set<String> _promptKeyNames = {
+  'prompt',
+  'subagentprompt',
+  'agentprompt',
+  'augmentprompt',
+  'augumentprompt',
+  'systemprompt',
+  'userprompt',
+  'instruction',
+  'instructions',
+  'query',
+  'question',
+  'message',
+  'usermessage',
+  'input',
+  'task',
+  'goal',
+  'request',
+};
+
+_PromptHit _extractPromptHit(List<_PromptSearchRoot> roots) {
+  for (final root in roots) {
+    final hit = _findPromptInValue(
+      root.value,
+      path: root.name,
+      visited: <Object>{},
+    );
+    if (hit.text.trim().isNotEmpty) {
+      return hit;
+    }
+  }
+  return const _PromptHit('', '');
+}
+
+_PromptHit _findPromptInValue(
+  dynamic raw, {
+  required String path,
+  required Set<Object> visited,
+}) {
+  final value = _decodeJsonIfNeeded(raw);
+  if (value is Map) {
+    if (!visited.add(value)) {
+      return const _PromptHit('', '');
+    }
+    final map = value.map((key, item) => MapEntry(key.toString(), item));
+    for (final entry in map.entries) {
+      final key = entry.key.trim();
+      final normalizedKey = _normalizePromptKey(key);
+      if (_promptKeyNames.contains(normalizedKey)) {
+        final text = _promptTextFromValue(entry.value);
+        if (text.isNotEmpty) {
+          return _PromptHit(text, '$path.$key');
+        }
+      }
+    }
+    for (final entry in map.entries) {
+      final hit = _findPromptInValue(
+        entry.value,
+        path: '$path.${entry.key}',
+        visited: visited,
+      );
+      if (hit.text.isNotEmpty) {
+        return hit;
+      }
+    }
+  } else if (value is Iterable) {
+    var index = 0;
+    for (final item in value) {
+      final hit = _findPromptInValue(
+        item,
+        path: '$path[$index]',
+        visited: visited,
+      );
+      if (hit.text.isNotEmpty) {
+        return hit;
+      }
+      index++;
+    }
+  }
+  return const _PromptHit('', '');
+}
+
+String _promptTextFromValue(dynamic raw) {
+  final value = _decodeJsonIfNeeded(raw);
+  if (value is String) {
+    return value.trim();
+  }
+  if (value is num || value is bool) {
+    return value.toString();
+  }
+  if (value is Map) {
+    return _firstNonBlank([
+      value['text'],
+      value['content'],
+      value['message'],
+      value['prompt'],
+      value['value'],
+    ]);
+  }
+  return '';
+}
+
+String _normalizePromptKey(String key) {
+  return key.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '').toLowerCase().trim();
 }
 
 dynamic _extractArgs(
@@ -1197,17 +1376,29 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
       'unknown_tool',
     ]);
     final route = _firstNonBlank([merged['route'], fallbackStep['route']]);
-    final executor = _firstNonBlank([
-      merged['executor'],
-      fallbackStep['executor'],
-      _executorForToolName(toolName, route),
+    final inferredExecutor = _executorForToolName(toolName, route);
+    final executor = inferredExecutor == 'omniflow'
+        ? 'omniflow'
+        : _firstNonBlank([
+            merged['executor'],
+            fallbackStep['executor'],
+            inferredExecutor,
+          ]);
+    final replayAction = _firstNonBlank([
+      merged['omniflow_action'],
+      fallbackStep['omniflow_action'],
+      _omniflowActionForToolName(toolName),
     ]);
+    final modelFree =
+        _asBool(merged['model_free']) == true ||
+        _asBool(fallbackStep['model_free']) == true ||
+        executor == 'omniflow';
     final rawScriptable = merged['scriptable'] is bool
         ? merged['scriptable']
         : fallbackStep['scriptable'];
     final scriptable = rawScriptable is bool
         ? rawScriptable
-        : executor == 'tool';
+        : executor != 'agent';
     final callableTool = _firstNonBlank([
       merged['callable_tool'],
       fallbackStep['callable_tool'],
@@ -1226,7 +1417,9 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
       fallback: fallback,
       originalTool: toolName,
       originalArgs: _jsonSafe(merged['args'] ?? fallbackStep['args']),
+      originalPrompt: _extractStepPromptText(merged, fallbackStep),
     );
+    final prompt = _extractStepPromptText(merged, fallbackStep);
     return {
       ...merged,
       'id': _firstNonBlank([
@@ -1244,14 +1437,34 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
       'callable_tool': callableTool,
       'executor': executor,
       'scriptable': scriptable,
+      if (modelFree) 'model_free': true,
+      if (replayAction.isNotEmpty) 'omniflow_action': replayAction,
       'args': _jsonSafe(merged['args'] ?? fallbackStep['args']),
       'tool_binding': _mergeMaps(
         _asStringKeyMap(fallbackStep['tool_binding']),
         _asStringKeyMap(merged['tool_binding']),
       ),
-      if (_asBool(merged['omniflow']) == true ||
-          _asBool(fallbackStep['omniflow']) == true)
-        'omniflow': true,
+      if (prompt.isNotEmpty)
+        'prompt': {
+          ..._asStringKeyMap(fallbackStep['prompt']),
+          ..._asStringKeyMap(merged['prompt']),
+          'text': prompt,
+          'preview': _compactPreview(prompt, maxLength: 240),
+        },
+      if (_firstNonBlank([
+        merged['coordinate_hook'],
+        fallbackStep['coordinate_hook'],
+      ]).isNotEmpty)
+        'coordinate_hook': _firstNonBlank([
+          merged['coordinate_hook'],
+          fallbackStep['coordinate_hook'],
+        ]),
+      if (_asStringKeyMap(merged['coordinate_hook_policy']).isNotEmpty ||
+          _asStringKeyMap(fallbackStep['coordinate_hook_policy']).isNotEmpty)
+        'coordinate_hook_policy': _mergeMaps(
+          _asStringKeyMap(fallbackStep['coordinate_hook_policy']),
+          _asStringKeyMap(merged['coordinate_hook_policy']),
+        ),
       if (_firstNonBlank([
         merged['replay_engine'],
         fallbackStep['replay_engine'],
@@ -1292,6 +1505,7 @@ Map<String, dynamic> _normalizeAgentCall({
   required Map<String, dynamic> fallback,
   required String originalTool,
   required dynamic originalArgs,
+  required String originalPrompt,
 }) {
   if (!enabled && raw.isEmpty) {
     return const <String, dynamic>{};
@@ -1311,12 +1525,35 @@ Map<String, dynamic> _normalizeAgentCall({
       'original_tool': _firstNonBlank([rawArgs['original_tool'], originalTool]),
       if (!_isEmptyJsonValue(originalArgs))
         'original_args': rawArgs['original_args'] ?? originalArgs,
+      if (originalPrompt.trim().isNotEmpty)
+        'original_prompt': _firstNonBlank([
+          rawArgs['original_prompt'],
+          originalPrompt,
+        ]),
     },
     'reason': _firstNonBlank([
       raw['reason'],
       enabled ? 'non_scriptable_or_vlm_step' : 'agent_fallback',
     ]),
   };
+}
+
+String _extractStepPromptText(
+  Map<String, dynamic> step,
+  Map<String, dynamic> fallbackStep,
+) {
+  return _firstNonBlank([
+    _asStringKeyMap(step['prompt'])['text'],
+    step['prompt'],
+    _asStringKeyMap(fallbackStep['prompt'])['text'],
+    fallbackStep['prompt'],
+    _asStringKeyMap(
+      _asStringKeyMap(step['agent_call'])['args'],
+    )['original_prompt'],
+    _asStringKeyMap(
+      _asStringKeyMap(fallbackStep['agent_call'])['args'],
+    )['original_prompt'],
+  ]);
 }
 
 Map<String, dynamic> _normalizeCallContract({
@@ -1444,6 +1681,17 @@ String _firstNonBlank(List<dynamic> values) {
     }
   }
   return '';
+}
+
+String _compactPreview(String value, {int maxLength = 160}) {
+  final normalized = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  if (maxLength <= 1) {
+    return normalized.substring(0, maxLength);
+  }
+  return '${normalized.substring(0, maxLength - 1).trimRight()}…';
 }
 
 bool? _asBool(dynamic value) {

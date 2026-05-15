@@ -1,12 +1,15 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
+import cn.com.omnimind.baselib.runlog.InternalRunLogStore
 import cn.com.omnimind.bot.agent.AgentCallback
 import cn.com.omnimind.bot.agent.AgentExecutionEnvironment
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
 import cn.com.omnimind.bot.agent.AgentToolRegistry
+import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.agent.ToolExecutionResult
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
+import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -37,10 +40,19 @@ class WorkbenchToolHandler(
         "workbench_project_hot_update",
         "workbench_project_ingest_android",
         "workbench_project_ingest_oss",
-        "workbench_project_progress_get"
+        "workbench_project_progress_get",
+        // Run-log → 指令 (like Claude Code /project:xxx custom commands)
+        "oob_command_save",
+        "oob_command_list",
+        "oob_command_delete",
+        "oob_run_log_list",
+        "oob_run_log_get"
     )
 
     private val workbenchProjectStore = WorkbenchProjectStore(helper.context)
+    private val workspaceFunctionStore: WorkspaceFunctionStore by lazy {
+        WorkspaceFunctionStore(AgentWorkspaceManager.rootDirectory(helper.context))
+    }
 
     override suspend fun execute(
         toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
@@ -67,8 +79,133 @@ class WorkbenchToolHandler(
             "workbench_project_ingest_android" -> executeWorkbenchProjectIngestAndroid(args, env, callback)
             "workbench_project_ingest_oss" -> executeWorkbenchProjectIngestOss(args, env, callback)
             "workbench_project_progress_get" -> executeWorkbenchProjectProgressGet(args, env, callback)
+            "oob_command_save" -> executeOobFunctionSave(args, env)
+            "oob_command_list" -> executeOobFunctionList(env)
+            "oob_command_delete" -> executeOobFunctionDelete(args, env)
+            "oob_run_log_list" -> executeOobRunLogList(env)
+            "oob_run_log_get" -> executeOobRunLogGet(args, env)
             else -> ToolExecutionResult.Error(toolCall.function.name, "Unknown workbench tool")
         }
+    }
+
+    // ── oob_function_save ──────────────────────────────────────────────────────
+    // Like Claude Code's /project:xxx custom commands — user manually saves a run
+    // as a named, replayable function stored in workspace/functions/.
+
+    private fun executeOobFunctionSave(
+        args: JsonObject,
+        env: AgentExecutionEnvironment
+    ): ToolExecutionResult {
+        val argsMap = helper.jsonObjectToMap(args)
+        val runId = argsMap["run_id"]?.toString()?.trim()
+            ?: return ToolExecutionResult.Error("oob_command_save", "run_id is required")
+
+        val record = InternalRunLogStore.timelinePayload(helper.context, runId)
+        if (record["success"] != true) {
+            return ToolExecutionResult.Error(
+                "oob_function_save",
+                record["error_message"]?.toString() ?: "Run not found: $runId"
+            )
+        }
+
+        // Reconstruct InternalRunLogRecord fields from the timeline payload
+        val cards = (record["cards"] as? List<*>)
+            ?.mapNotNull { it as? Map<*, *> }
+            ?.map { m -> m.entries.associate { (k, v) -> k.toString() to v } }
+            ?: emptyList()
+
+        val runRecord = cn.com.omnimind.baselib.runlog.InternalRunLogRecord(
+            runId = runId,
+            goal = record["goal"]?.toString().orEmpty(),
+            source = record["source"]?.toString().orEmpty(),
+            toolName = record["tool_name"]?.toString().orEmpty(),
+            operationDescription = argsMap["name"]?.toString()?.trim()
+                ?: record["operation_description"]?.toString().orEmpty(),
+            success = record["done_reason"]?.toString() != "cancelled",
+            cards = cards
+        )
+
+        // Override function_id if caller provides one
+        val overrideFunctionId = argsMap["function_id"]?.toString()?.trim()
+        val descriptionOverride = argsMap["description"]?.toString()?.trim()
+
+        val result = workspaceFunctionStore.distillFromRun(helper.context, runRecord)
+
+        // Apply caller overrides after distillation
+        if (result["success"] == true) {
+            val functionId = result["function_id"]?.toString() ?: ""
+            if ((overrideFunctionId != null && overrideFunctionId != functionId)
+                || descriptionOverride != null) {
+                val spec = workspaceFunctionStore.get(functionId)
+                if (spec != null) {
+                    val updated = spec.toMutableMap()
+                    if (overrideFunctionId != null) updated["function_id"] = overrideFunctionId
+                    if (descriptionOverride != null) updated["description"] = descriptionOverride
+                    workspaceFunctionStore.register(updated)
+                    if (overrideFunctionId != null && overrideFunctionId != functionId) {
+                        workspaceFunctionStore.delete(functionId)
+                    }
+                }
+            }
+        }
+
+        val payload = result + mapOf(
+            "message" to "已保存为指令，可通过 function_id 直接调用。",
+            "usage" to "Agent 可以直接用 function_id 调用该指令。"
+        )
+        return contextResult("oob_command_save", "已保存指令", payload,
+            result["success"] == true, env)
+    }
+
+    private fun executeOobFunctionList(env: AgentExecutionEnvironment): ToolExecutionResult {
+        val functions = workspaceFunctionStore.list()
+        val payload = mapOf(
+            "success" to true,
+            "count" to functions.size,
+            "functions" to functions.map { spec ->
+                mapOf(
+                    "function_id" to spec["function_id"],
+                    "name" to spec["name"],
+                    "description" to spec["description"],
+                    "step_count" to ((spec["execution"] as? Map<*, *>)
+                        ?.get("step_count") as? Number)?.toInt()
+                )
+            }
+        )
+        val summary = if (helper.isEnglishLocale) "${functions.size} commands" else "${functions.size} 条指令"
+        return contextResult("oob_command_list", summary, payload, true, env)
+    }
+
+    private fun executeOobFunctionDelete(
+        args: JsonObject,
+        env: AgentExecutionEnvironment
+    ): ToolExecutionResult {
+        val argsMap = helper.jsonObjectToMap(args)
+        val functionId = argsMap["function_id"]?.toString()?.trim()
+            ?: return ToolExecutionResult.Error("oob_command_delete", "function_id is required")
+        val deleted = workspaceFunctionStore.delete(functionId)
+        return contextResult("oob_command_delete",
+            if (deleted) "已删除指令 $functionId" else "指令不存在",
+            mapOf("success" to deleted, "function_id" to functionId), deleted, env)
+    }
+
+    private fun executeOobRunLogList(env: AgentExecutionEnvironment): ToolExecutionResult {
+        val payload = InternalRunLogStore.listRuns(helper.context, limit = 50)
+        return contextResult("oob_run_log_list", "${payload["count"]} runs", payload, true, env)
+    }
+
+    private fun executeOobRunLogGet(
+        args: JsonObject,
+        env: AgentExecutionEnvironment
+    ): ToolExecutionResult {
+        val argsMap = helper.jsonObjectToMap(args)
+        val runId = argsMap["run_id"]?.toString()?.trim()
+            ?: return ToolExecutionResult.Error("oob_run_log_get", "run_id is required")
+        val payload = InternalRunLogStore.timelinePayload(helper.context, runId)
+        val success = payload["success"] == true
+        return contextResult("oob_run_log_get",
+            if (success) "Run ${runId.take(16)}…" else "Not found",
+            payload, success, env)
     }
 
     private suspend fun executeWorkbenchProjectCreate(

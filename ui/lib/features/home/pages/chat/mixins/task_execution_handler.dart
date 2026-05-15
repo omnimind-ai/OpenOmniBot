@@ -132,6 +132,12 @@ mixin TaskExecutionHandler<T extends StatefulWidget> on State<T> {
     final attachments = _extractAttachmentList(message);
     if (attachments.isEmpty) return text;
 
+    final pathHint = _buildAttachmentPathHint(attachments);
+    if (pathHint.isNotEmpty) {
+      if (text.trim().isEmpty) return pathHint;
+      return '$text\n$pathHint';
+    }
+
     final names = attachments
         .where((attachment) => !_isImageAttachment(attachment))
         .map(_resolveAttachmentName)
@@ -146,27 +152,22 @@ mixin TaskExecutionHandler<T extends StatefulWidget> on State<T> {
   }
 
   dynamic _buildMessageContentForModel(ChatMessageModel message) {
-    final text = message.content?['text'] as String? ?? '';
     final attachments = _extractAttachmentList(message);
-    final imageAttachments = attachments.where(_isImageAttachment).toList();
+    final imageAttachments = attachments
+        .where(
+          (item) =>
+              _isImageAttachment(item) && _shouldSendAttachmentToModel(item),
+        )
+        .toList();
 
     if (imageAttachments.isEmpty) {
       return _buildMessageTextForModel(message);
     }
 
     final blocks = <Map<String, dynamic>>[];
-    final normalizedText = text.trim();
+    final normalizedText = _buildMessageTextForModel(message).trim();
     if (normalizedText.isNotEmpty) {
       blocks.add({'type': 'text', 'text': normalizedText});
-    }
-
-    final nonImageNames = attachments
-        .where((item) => !_isImageAttachment(item))
-        .map(_resolveAttachmentName)
-        .where((name) => name.isNotEmpty)
-        .toList();
-    if (nonImageNames.isNotEmpty) {
-      blocks.add({'type': 'text', 'text': '已附加文件：${nonImageNames.join('、')}'});
     }
 
     for (final attachment in imageAttachments) {
@@ -191,6 +192,36 @@ mixin TaskExecutionHandler<T extends StatefulWidget> on State<T> {
         .whereType<Map>()
         .map((item) => item.map((k, v) => MapEntry(k.toString(), v)))
         .toList();
+  }
+
+  bool _shouldSendAttachmentToModel(Map<String, dynamic> attachment) {
+    final raw = attachment['sendToModel'];
+    if (raw is bool) return raw;
+    if (raw is String) return raw.toLowerCase() != 'false';
+    return true;
+  }
+
+  String _buildAttachmentPathHint(List<Map<String, dynamic>> attachments) {
+    final lines = attachments
+        .map((attachment) {
+          final promptPath = _resolveAttachmentPromptPath(attachment);
+          if (promptPath.isEmpty) return '';
+          final name = _resolveAttachmentName(attachment);
+          return name.isEmpty ? '- $promptPath' : '- $name: $promptPath';
+        })
+        .where((line) => line.isNotEmpty)
+        .toList();
+    if (lines.isEmpty) return '';
+    return '已添加到 workspace，可通过以下路径读取：\n${lines.join('\n')}';
+  }
+
+  String _resolveAttachmentPromptPath(Map<String, dynamic> attachment) {
+    final promptPath = (attachment['promptPath'] as String? ?? '').trim();
+    if (promptPath.isNotEmpty) return promptPath;
+    final workspacePath = (attachment['workspacePath'] as String? ?? '').trim();
+    if (workspacePath.isNotEmpty) return workspacePath;
+    if (_shouldSendAttachmentToModel(attachment)) return '';
+    return (attachment['path'] as String? ?? '').trim();
   }
 
   bool _isImageAttachment(Map<String, dynamic> attachment) {

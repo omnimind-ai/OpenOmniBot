@@ -765,6 +765,10 @@ class _AgentRunEventSummary {
         icon: Icons.check_circle_outline_rounded,
         toolCard: toolCard,
       ),
+      AgentStreamEventKind.workbenchProjectCard => _AgentRunEventSummary(
+        label: message.isEmpty ? _t('Project 已创建') : message,
+        icon: Icons.dashboard_customize_outlined,
+      ),
       AgentStreamEventKind.permissionRequired => _AgentRunEventSummary(
         label: _t('等待权限确认'),
         icon: Icons.verified_user_outlined,
@@ -808,6 +812,7 @@ class _AgentRunEventSummary {
         taskId: event.taskId,
         defaultStatus: event.success ? 'success' : 'error',
       ),
+      AgentStreamEventKind.workbenchProjectCard => null,
       _ => null,
     };
   }

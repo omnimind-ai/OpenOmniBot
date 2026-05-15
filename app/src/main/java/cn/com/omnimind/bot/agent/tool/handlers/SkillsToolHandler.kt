@@ -18,7 +18,7 @@ class SkillsToolHandler(
     private val helper: SharedHelper,
     private val workspaceManager: AgentWorkspaceManager
 ) : ToolHandler {
-    override val toolNames: Set<String> = setOf("skills_list", "skills_read")
+    override val toolNames: Set<String> = setOf("skills_list", "skills_read", "skills_read_reference")
 
     private val skillIndexService = SkillIndexService(helper.context, workspaceManager)
     private val skillLoader = SkillLoader(workspaceManager)
@@ -34,6 +34,7 @@ class SkillsToolHandler(
         return when (toolCall.function.name) {
             "skills_list" -> executeSkillsList(args, env.workspaceDescriptor, callback)
             "skills_read" -> executeSkillsRead(args, env.workspaceDescriptor, callback)
+            "skills_read_reference" -> executeSkillsReadReference(args, env.workspaceDescriptor, callback)
             else -> ToolExecutionResult.Error(toolCall.function.name, "Unknown skills tool")
         }
     }
@@ -124,5 +125,86 @@ class SkillsToolHandler(
             helper.workspacePermissionResult(e, callback)?.let { return it }
             helper.errorResult(toolName, e.message, "读取 skill 失败")
         }
+    }
+
+    private suspend fun executeSkillsReadReference(
+        args: JsonObject,
+        workspace: AgentWorkspaceDescriptor,
+        callback: AgentCallback
+    ): ToolExecutionResult {
+        val toolName = "skills_read_reference"
+        return try {
+            helper.requireWorkspaceStorageAccess(callback)?.let { return it }
+            val skillId = args["skillId"]?.jsonPrimitive?.content?.trim().orEmpty()
+            require(skillId.isNotEmpty()) { "缺少 skillId" }
+            val refId = args["refId"]?.jsonPrimitive?.content?.trim().orEmpty()
+            require(refId.isNotEmpty()) { "缺少 refId" }
+            val maxChars = args["maxChars"]?.jsonPrimitive?.intOrNull?.coerceIn(512, 64_000)
+                ?: SharedHelper.DEFAULT_SKILL_READ_MAX_CHARS
+            val entry = skillIndexService.findInstalledSkill(skillId)
+                ?: throw IllegalArgumentException("未找到 skill：$skillId")
+            val compatibility = SkillCompatibilityChecker.evaluate(entry)
+            require(compatibility.available) { compatibility.reason ?: "当前环境不可用" }
+
+            val referencesDir = File(entry.rootPath, "references").canonicalFile
+            require(referencesDir.isDirectory) { "skill 没有 references 目录：${entry.id}" }
+            val referenceFile = resolveReferenceFile(referencesDir, refId)
+                ?: throw IllegalArgumentException("未找到 skill reference：$refId")
+            val canonicalReference = referenceFile.canonicalFile
+            require(canonicalReference.path.startsWith(referencesDir.path + File.separator)) {
+                "reference 路径越界：$refId"
+            }
+            require(canonicalReference.isFile) { "reference 不是文件：$refId" }
+
+            val artifact = workspaceManager.buildArtifactForFile(canonicalReference, toolName)
+            val shellPath = workspaceManager.shellPathForAndroid(canonicalReference)
+                ?: canonicalReference.absolutePath
+            val payload = linkedMapOf<String, Any?>(
+                "skillId" to entry.id,
+                "refId" to referenceFile.nameWithoutExtension,
+                "path" to shellPath,
+                "androidPath" to canonicalReference.absolutePath,
+                "uri" to artifact.uri,
+                "content" to helper.truncateText(canonicalReference.readText(), maxChars),
+                "size" to canonicalReference.length(),
+                "mimeType" to workspaceManager.guessMimeType(canonicalReference)
+            )
+            ToolExecutionResult.ContextResult(
+                toolName = toolName,
+                summaryText = helper.localized("已读取 skill reference：${canonicalReference.name}"),
+                previewJson = helper.encodeLocalizedPayload(payload),
+                rawResultJson = helper.encodeLocalizedPayload(payload),
+                success = true,
+                artifacts = listOf(artifact),
+                workspaceId = workspace.id
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            helper.workspacePermissionResult(e, callback)?.let { return it }
+            helper.errorResult(toolName, e.message, "读取 skill reference 失败")
+        }
+    }
+
+    private fun resolveReferenceFile(referencesDir: File, refId: String): File? {
+        val normalizedRef = refId.trim().replace('\\', '/').trim('/')
+        require(normalizedRef.isNotBlank()) { "缺少 refId" }
+        require(!normalizedRef.startsWith(".") && !normalizedRef.contains("/../")) {
+            "reference 路径越界：$refId"
+        }
+        val directCandidate = File(referencesDir, normalizedRef)
+        if (directCandidate.isFile) return directCandidate
+        if (!normalizedRef.contains('/')) {
+            referencesDir.listFiles()
+                ?.filter { it.isFile }
+                ?.firstOrNull { file ->
+                    file.name == normalizedRef ||
+                        file.nameWithoutExtension == normalizedRef ||
+                        file.name.equals(normalizedRef, ignoreCase = true) ||
+                        file.nameWithoutExtension.equals(normalizedRef, ignoreCase = true)
+                }
+                ?.let { return it }
+        }
+        return null
     }
 }

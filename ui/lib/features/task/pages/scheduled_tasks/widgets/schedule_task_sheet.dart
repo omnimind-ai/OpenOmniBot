@@ -155,7 +155,10 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      AppTextLocalizer.choose(en: 'Set scheduled task', zh: '设置定时任务'),
+                      AppTextLocalizer.choose(
+                        en: 'Set scheduled task',
+                        zh: '设置定时任务',
+                      ),
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
@@ -512,40 +515,19 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
     );
   }
 
-  /// 选择时间
-  Future<void> _selectTime() async {
-    final TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: _selectedTime,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(primary: AppColors.primaryBlue),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked != null && picked != _selectedTime) {
-      setState(() {
-        _selectedTime = picked;
-      });
-    }
-  }
-
   /// 确认创建定时任务
   void _onConfirm() {
+    final targetKind = _resolvedTargetKind;
     final task = ScheduledTask(
       id: widget.existingTask?.id ?? const Uuid().v4(),
       title: widget.taskTitle,
       packageName: widget.packageName,
       nodeId: widget.nodeId,
       suggestionId: widget.suggestionId,
-      targetKind: widget.existingTask?.targetKind ?? 'vlm',
-      subagentConversationId: widget.existingTask?.subagentConversationId,
-      subagentPrompt: widget.existingTask?.subagentPrompt,
-      notificationEnabled: widget.existingTask?.notificationEnabled ?? true,
+      targetKind: targetKind,
+      subagentConversationId: _resolvedSubagentConversationId,
+      subagentPrompt: targetKind == 'subagent' ? _resolvedSubagentPrompt : null,
+      notificationEnabled: _resolvedNotificationEnabled,
       type: _selectedTabIndex == 0
           ? ScheduledTaskType.fixedTime
           : ScheduledTaskType.countdown,
@@ -569,6 +551,41 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
     );
 
     Navigator.pop(context, taskWithNextTime);
+  }
+
+  String get _resolvedTargetKind {
+    final existing = widget.existingTask?.targetKind.trim();
+    if (existing == 'subagent' || existing == 'vlm') {
+      return existing!;
+    }
+    final raw = widget.suggestionData?['targetKind']?.toString().trim();
+    return raw == 'subagent' ? 'subagent' : 'vlm';
+  }
+
+  String? get _resolvedSubagentConversationId {
+    if (widget.existingTask?.subagentConversationId?.trim().isNotEmpty ==
+        true) {
+      return widget.existingTask!.subagentConversationId;
+    }
+    final raw = widget.suggestionData?['subagentConversationId']
+        ?.toString()
+        .trim();
+    return raw?.isNotEmpty == true ? raw : null;
+  }
+
+  String? get _resolvedSubagentPrompt {
+    if (widget.existingTask?.subagentPrompt?.trim().isNotEmpty == true) {
+      return widget.existingTask!.subagentPrompt;
+    }
+    final raw = widget.suggestionData?['subagentPrompt']?.toString().trim();
+    return raw?.isNotEmpty == true ? raw : null;
+  }
+
+  bool get _resolvedNotificationEnabled {
+    if (widget.existingTask != null) {
+      return widget.existingTask!.notificationEnabled;
+    }
+    return widget.suggestionData?['notificationEnabled'] != false;
   }
 }
 
@@ -656,14 +673,8 @@ class _CountdownInputDialogState extends State<_CountdownInputDialog> {
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => _close(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: _submit,
-            child: const Text('确定'),
-          ),
+          TextButton(onPressed: () => _close(), child: const Text('取消')),
+          TextButton(onPressed: _submit, child: const Text('确定')),
         ],
       ),
     );

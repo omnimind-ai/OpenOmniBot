@@ -8,6 +8,8 @@ class SharedOpenDraftAttachmentPayload {
     required this.size,
     required this.mimeType,
     required this.isImage,
+    required this.promptPath,
+    required this.sendToModel,
   });
 
   final String id;
@@ -16,6 +18,8 @@ class SharedOpenDraftAttachmentPayload {
   final int? size;
   final String? mimeType;
   final bool isImage;
+  final String? promptPath;
+  final bool sendToModel;
 
   factory SharedOpenDraftAttachmentPayload.fromMap(Map<dynamic, dynamic> map) {
     final rawSize = map['size'];
@@ -31,6 +35,8 @@ class SharedOpenDraftAttachmentPayload {
       size: size,
       mimeType: (map['mimeType'] as String?)?.trim(),
       isImage: map['isImage'] == true,
+      promptPath: (map['promptPath'] as String?)?.trim(),
+      sendToModel: map['sendToModel'] != false,
     );
   }
 }

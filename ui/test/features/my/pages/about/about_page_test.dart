@@ -13,7 +13,8 @@ void main() {
 
   tearDown(() async {
     AppUpdateService.betaOptInNotifier.value = false;
-    AppUpdateService.downloadSourceNotifier.value = AppUpdateDownloadSource.cnb;
+    AppUpdateService.downloadSourceNotifier.value =
+        AppUpdateDownloadSource.worker;
     AppUpdateService.statusNotifier.value = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(deviceChannel, null);
@@ -35,7 +36,7 @@ void main() {
             return false;
           }
           if (call.method == 'getApkDownloadSource') {
-            return 'cnb';
+            return 'worker';
           }
           if (call.method == 'getCachedStatus') {
             return <String, dynamic>{
@@ -81,7 +82,7 @@ void main() {
     expect(find.text('Omnibot'), findsNothing);
     expect(find.text('加入 beta 测试'), findsOneWidget);
     expect(find.text('安装包下载源'), findsOneWidget);
-    expect(find.text('CNB'), findsWidgets);
+    expect(find.text('Cloudflare R2'), findsWidgets);
     expect(find.textContaining('发现新版本'), findsOneWidget);
     expect(find.text('查看新版本'), findsOneWidget);
 
@@ -92,7 +93,7 @@ void main() {
     await tester.tap(downloadSourceDropdown);
     await tester.pumpAndSettle();
 
-    expect(find.text('国内网络优先'), findsOneWidget);
+    expect(find.text('通过更新 Worker 分发'), findsOneWidget);
     expect(find.text('官方 Release'), findsOneWidget);
   });
 
@@ -110,7 +111,7 @@ void main() {
             return false;
           }
           if (call.method == 'getApkDownloadSource') {
-            return 'cnb';
+            return 'worker';
           }
           if (call.method == 'getCachedStatus') {
             return <String, dynamic>{

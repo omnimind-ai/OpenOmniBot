@@ -97,11 +97,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       final initialSurfaceMode = _requestedInitialSurfaceMode;
       if (initialSurfaceMode != null) {
         unawaited(
-          _switchChatMode(
-            initialSurfaceMode,
-            preferCachedWorkspaceMode:
-                initialSurfaceMode != ChatSurfaceMode.project,
-          ),
+          _switchChatMode(initialSurfaceMode, preferCachedWorkspaceMode: false),
         );
       }
     }
@@ -252,9 +248,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
         : initialSurfaceMode ??
               _surfaceForConversationMode(effectiveTarget.mode);
     final requestedWorkspaceProjectMode =
-        initialSurfaceMode == ChatSurfaceMode.project ||
-        (targetSurfaceMode == ChatSurfaceMode.workspace &&
-            _cachedWorkspaceProjectModeEnabled());
+        initialSurfaceMode == ChatSurfaceMode.project;
     final workspacePathsFuture =
         targetSurfaceMode == ChatSurfaceMode.workspace ||
             targetSurfaceMode == ChatSurfaceMode.project
@@ -752,11 +746,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     }
     final currentPage = _safeModePageControllerPage?.round();
     if (currentPage == targetPage) return;
-    final effectiveAnimate = animate && !_workspaceProjectModeEnabled;
-    final didDrive = _driveModePagePositions(
-      targetPage,
-      animate: effectiveAnimate,
-    );
+    final didDrive = _driveModePagePositions(targetPage, animate: animate);
     if (!didDrive) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -872,7 +862,13 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   @override
   void _handleModePageChanged(int pageIndex) {
     final targetMode = _surfaceForPageIndex(pageIndex);
-    unawaited(_switchChatMode(targetMode, syncPage: false));
+    unawaited(
+      _switchChatMode(
+        targetMode,
+        syncPage: false,
+        preferCachedWorkspaceMode: false,
+      ),
+    );
   }
 
   @override
@@ -947,6 +943,8 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
             size: item.size,
             mimeType: item.mimeType,
             isImage: item.isImage,
+            promptPath: item.promptPath,
+            sendToModel: item.sendToModel,
           ),
         )
         .toList();

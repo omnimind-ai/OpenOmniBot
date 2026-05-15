@@ -4,8 +4,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ui/features/task/pages/execution_history/run_log_reusable_function_converter.dart';
+import 'package:ui/features/task/pages/scheduled_tasks/widgets/schedule_task_sheet.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
+import 'package:ui/services/scheduled_task_scheduler_service.dart';
+import 'package:ui/services/scheduled_task_storage_service.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
@@ -86,9 +89,9 @@ class _StepDetailLoaderState extends State<_StepDetailLoader> {
     try {
       final payload =
           await AssistsMessageService.getRunLogTimelinePreferInternal(
-        runId: widget.runId,
-        baseUrl: widget.baseUrl,
-      );
+            runId: widget.runId,
+            baseUrl: widget.baseUrl,
+          );
       if (!mounted) return;
       final cards = _extractTimelineCards(payload);
       // 找匹配的 card：先匹配 cardId/tool_call_id，再匹配 toolName
@@ -351,7 +354,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       _isConvertingFunction = true;
     });
     showToast(
-      _text(context, '正在用 AI 转换为可复用功能...', 'Converting with AI...'),
+      _text(context, '正在转换为可复用功能...', 'Converting to reusable function...'),
       type: ToastType.info,
     );
     try {
@@ -360,6 +363,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
         title: widget.title,
         payload: _payload,
         cards: _cards,
+        useAi: false,
         useEnglish: _localeValue(context, zh: false, en: true),
       );
       if (!mounted) return;
@@ -370,9 +374,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
         showToast(spec.warning!, type: ToastType.warning);
       } else {
         showToast(
-          spec.aiEnhanced
-              ? _text(context, 'AI 功能结构已生成', 'AI function spec generated')
-              : _text(context, '功能结构已生成', 'Function spec generated'),
+          _text(context, '功能结构已生成', 'Function spec generated'),
           type: ToastType.success,
         );
       }
@@ -882,287 +884,299 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
           child: GestureDetector(
             onTap: () {},
             child: SizedBox(
-      height: sheetHeight,
-      width: double.infinity,
-      child: Container(
-            decoration: BoxDecoration(
-              color: isDark ? palette.surfacePrimary : Colors.white,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(22),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.14),
-                  blurRadius: 26,
-                  offset: const Offset(0, -10),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                const SizedBox(height: 10),
-                Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: palette.borderSubtle,
-                    borderRadius: BorderRadius.circular(999),
+              height: sheetHeight,
+              width: double.infinity,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isDark ? palette.surfacePrimary : Colors.white,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(22),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: statusColor.withValues(alpha: 0.12),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          success
-                              ? Icons.check_circle_outline_rounded
-                              : Icons.error_outline_rounded,
-                          size: 16,
-                          color: statusColor,
-                        ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.35 : 0.14,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
+                      blurRadius: 26,
+                      offset: const Offset(0, -10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: palette.borderSubtle,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              success
+                                  ? Icons.check_circle_outline_rounded
+                                  : Icons.error_outline_rounded,
+                              size: 16,
+                              color: statusColor,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${_text(context, '工具调用历史', 'Tool call history')} · Step ${snapshot.stepNumber}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: palette.textSecondary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  snapshot.title.isEmpty
+                                      ? _text(context, '未知步骤', 'Unknown step')
+                                      : snapshot.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: palette.textPrimary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Tooltip(
+                            message: _text(
+                              context,
+                              'AI 转此步',
+                              'Convert this step',
+                            ),
+                            child: IconButton(
+                              icon: _isConvertingStep
+                                  ? SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: palette.textSecondary,
+                                      ),
+                                    )
+                                  : const Icon(Icons.auto_awesome_rounded),
+                              color: palette.textSecondary,
+                              onPressed: _isConvertingStep
+                                  ? null
+                                  : () => _convertThisStep(snapshot),
+                            ),
+                          ),
+                          Tooltip(
+                            message: _text(context, '复制本步文本', 'Copy this step'),
+                            child: IconButton(
+                              icon: const Icon(Icons.content_copy_rounded),
+                              color: palette.textSecondary,
+                              onPressed: () => _copyText(
+                                context,
+                                snapshot.toTranscript(),
+                                _text(context, '已复制本步文本', 'Copied this step'),
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded),
+                            color: palette.textSecondary,
+                            onPressed: () => Navigator.of(context).maybePop(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Divider(height: 1, color: palette.borderSubtle),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '${_text(context, '工具调用历史', 'Tool call history')} · Step ${snapshot.stepNumber}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: palette.textSecondary,
-                                fontWeight: FontWeight.w600,
+                            // Tool name chip + call ID inline (no card)
+                            if (snapshot.toolName.isNotEmpty ||
+                                snapshot.toolCallId.isNotEmpty)
+                              Row(
+                                children: [
+                                  if (snapshot.toolName.isNotEmpty)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: _routeColor(context).withValues(
+                                          alpha: isDark ? 0.15 : 0.09,
+                                        ),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: _routeColor(context)
+                                              .withValues(
+                                                alpha: isDark ? 0.30 : 0.18,
+                                              ),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        snapshot.toolName,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontFamily: 'monospace',
+                                          fontWeight: FontWeight.w600,
+                                          color: _routeColor(context),
+                                        ),
+                                      ),
+                                    ),
+                                  if (snapshot.toolCallId.isNotEmpty) ...[
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        snapshot.toolCallId,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontFamily: 'monospace',
+                                          color: palette.textTertiary,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              snapshot.title.isEmpty
-                                  ? _text(context, '未知步骤', 'Unknown step')
-                                  : snapshot.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: palette.textPrimary,
-                                fontWeight: FontWeight.w700,
+                            const SizedBox(height: 10),
+                            // Status / route / duration pills
+                            _SummaryGrid(snapshot: snapshot),
+                            if (snapshot.prompt.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              _PromptHighlightBox(
+                                text: snapshot.prompt,
+                                source: snapshot.promptSource,
                               ),
+                            ],
+                            // Key param highlight row
+                            if (snapshot.previewText.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withValues(
+                                    alpha: isDark ? 0.09 : 0.06,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: statusColor.withValues(
+                                      alpha: isDark ? 0.22 : 0.15,
+                                    ),
+                                  ),
+                                ),
+                                child: Text(
+                                  snapshot.previewText,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: palette.textSecondary,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            // Arguments — expanded by default
+                            if (!_isEmptyJsonValue(snapshot.params)) ...[
+                              const SizedBox(height: 12),
+                              _CollapsibleSection(
+                                title: _text(context, '参数', 'Arguments'),
+                                copyValue: _prettyJson(snapshot.params),
+                                initiallyExpanded: true,
+                                child: _JsonBlock(value: snapshot.params),
+                              ),
+                            ],
+                            // Result — expanded by default
+                            if (!_isEmptyJsonValue(snapshot.result)) ...[
+                              const SizedBox(height: 8),
+                              _CollapsibleSection(
+                                title: _text(context, '结果', 'Result'),
+                                copyValue: _prettyJson(snapshot.result),
+                                initiallyExpanded: true,
+                                child: _JsonBlock(value: snapshot.result),
+                              ),
+                            ],
+                            // Route result — collapsed by default
+                            if (!_isEmptyJsonValue(snapshot.compileResult)) ...[
+                              const SizedBox(height: 8),
+                              _CollapsibleSection(
+                                title: _text(
+                                  context,
+                                  '路由/编译结果',
+                                  'Route result',
+                                ),
+                                copyValue: _prettyJson(snapshot.compileResult),
+                                initiallyExpanded: false,
+                                child: _JsonBlock(
+                                  value: snapshot.compileResult,
+                                ),
+                              ),
+                            ],
+                            // Before / after — collapsed by default
+                            if (snapshot.before.isNotEmpty ||
+                                snapshot.after.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              _CollapsibleSection(
+                                title: _text(context, '前后状态', 'Before / after'),
+                                copyValue: _prettyJson({
+                                  if (snapshot.before.isNotEmpty)
+                                    'before': snapshot.before,
+                                  if (snapshot.after.isNotEmpty)
+                                    'after': snapshot.after,
+                                }),
+                                initiallyExpanded: false,
+                                child: _JsonBlock(
+                                  value: {
+                                    if (snapshot.before.isNotEmpty)
+                                      'before': snapshot.before,
+                                    if (snapshot.after.isNotEmpty)
+                                      'after': snapshot.after,
+                                  },
+                                ),
+                              ),
+                            ],
+                            // Raw JSON — collapsed by default
+                            const SizedBox(height: 8),
+                            _CollapsibleSection(
+                              title: _text(context, '原始 JSON', 'Raw JSON'),
+                              copyValue: _prettyJson(widget.card),
+                              initiallyExpanded: false,
+                              child: _JsonBlock(value: widget.card),
                             ),
                           ],
                         ),
                       ),
-                      Tooltip(
-                        message: _text(context, 'AI 转此步', 'Convert this step'),
-                        child: IconButton(
-                          icon: _isConvertingStep
-                              ? SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: palette.textSecondary,
-                                  ),
-                                )
-                              : const Icon(Icons.auto_awesome_rounded),
-                          color: palette.textSecondary,
-                          onPressed: _isConvertingStep
-                              ? null
-                              : () => _convertThisStep(snapshot),
-                        ),
-                      ),
-                      Tooltip(
-                        message: _text(context, '复制本步文本', 'Copy this step'),
-                        child: IconButton(
-                          icon: const Icon(Icons.content_copy_rounded),
-                          color: palette.textSecondary,
-                          onPressed: () => _copyText(
-                            context,
-                            snapshot.toTranscript(),
-                            _text(context, '已复制本步文本', 'Copied this step'),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded),
-                        color: palette.textSecondary,
-                        onPressed: () => Navigator.of(context).maybePop(),
-                      ),
-                    ],
-                  ),
-                ),
-                Divider(height: 1, color: palette.borderSubtle),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Tool name chip + call ID inline (no card)
-                        if (snapshot.toolName.isNotEmpty ||
-                            snapshot.toolCallId.isNotEmpty)
-                          Row(
-                            children: [
-                              if (snapshot.toolName.isNotEmpty)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: _routeColor(context).withValues(
-                                      alpha: isDark ? 0.15 : 0.09,
-                                    ),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: _routeColor(context).withValues(
-                                        alpha: isDark ? 0.30 : 0.18,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    snapshot.toolName,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontFamily: 'monospace',
-                                      fontWeight: FontWeight.w600,
-                                      color: _routeColor(context),
-                                    ),
-                                  ),
-                                ),
-                              if (snapshot.toolCallId.isNotEmpty) ...[
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    snapshot.toolCallId,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontFamily: 'monospace',
-                                      color: palette.textTertiary,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        const SizedBox(height: 10),
-                        // Status / route / duration pills
-                        _SummaryGrid(snapshot: snapshot),
-                        // Key param highlight row
-                        if (snapshot.previewText.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: statusColor.withValues(
-                                alpha: isDark ? 0.09 : 0.06,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: statusColor.withValues(
-                                  alpha: isDark ? 0.22 : 0.15,
-                                ),
-                              ),
-                            ),
-                            child: Text(
-                              snapshot.previewText,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: palette.textSecondary,
-                                height: 1.3,
-                              ),
-                            ),
-                          ),
-                        ],
-                        // Arguments — expanded by default
-                        if (!_isEmptyJsonValue(snapshot.params)) ...[
-                          const SizedBox(height: 12),
-                          _CollapsibleSection(
-                            title: _text(context, '参数', 'Arguments'),
-                            copyValue: _prettyJson(snapshot.params),
-                            initiallyExpanded: true,
-                            child: _JsonBlock(value: snapshot.params),
-                          ),
-                        ],
-                        // Result — expanded by default
-                        if (!_isEmptyJsonValue(snapshot.result)) ...[
-                          const SizedBox(height: 8),
-                          _CollapsibleSection(
-                            title: _text(context, '结果', 'Result'),
-                            copyValue: _prettyJson(snapshot.result),
-                            initiallyExpanded: true,
-                            child: _JsonBlock(value: snapshot.result),
-                          ),
-                        ],
-                        // Route result — collapsed by default
-                        if (!_isEmptyJsonValue(snapshot.compileResult)) ...[
-                          const SizedBox(height: 8),
-                          _CollapsibleSection(
-                            title: _text(
-                              context,
-                              '路由/编译结果',
-                              'Route result',
-                            ),
-                            copyValue: _prettyJson(snapshot.compileResult),
-                            initiallyExpanded: false,
-                            child: _JsonBlock(value: snapshot.compileResult),
-                          ),
-                        ],
-                        // Before / after — collapsed by default
-                        if (snapshot.before.isNotEmpty ||
-                            snapshot.after.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          _CollapsibleSection(
-                            title: _text(
-                              context,
-                              '前后状态',
-                              'Before / after',
-                            ),
-                            copyValue: _prettyJson({
-                              if (snapshot.before.isNotEmpty)
-                                'before': snapshot.before,
-                              if (snapshot.after.isNotEmpty)
-                                'after': snapshot.after,
-                            }),
-                            initiallyExpanded: false,
-                            child: _JsonBlock(
-                              value: {
-                                if (snapshot.before.isNotEmpty)
-                                  'before': snapshot.before,
-                                if (snapshot.after.isNotEmpty)
-                                  'after': snapshot.after,
-                              },
-                            ),
-                          ),
-                        ],
-                        // Raw JSON — collapsed by default
-                        const SizedBox(height: 8),
-                        _CollapsibleSection(
-                          title: _text(context, '原始 JSON', 'Raw JSON'),
-                          copyValue: _prettyJson(widget.card),
-                          initiallyExpanded: false,
-                          child: _JsonBlock(value: widget.card),
-                        ),
-                      ],
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
         ),
       ),
     );
@@ -1174,7 +1188,7 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
       _isConvertingStep = true;
     });
     showToast(
-      _text(context, '正在用 AI 转换此步...', 'Converting this step with AI...'),
+      _text(context, '正在转换此步...', 'Converting this step...'),
       type: ToastType.info,
     );
     final stepRunId = '${widget.runId}-step-${snapshot.stepNumber}';
@@ -1195,6 +1209,7 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
           'source_step_number': snapshot.stepNumber,
         },
         cards: [widget.card],
+        useAi: false,
         useEnglish: _localeValue(context, zh: false, en: true),
       );
       if (!mounted) return;
@@ -1205,9 +1220,7 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
         showToast(spec.warning!, type: ToastType.warning);
       } else {
         showToast(
-          spec.aiEnhanced
-              ? _text(context, '此步功能结构已生成', 'Step function generated')
-              : _text(context, '此步本地功能结构已生成', 'Local step function generated'),
+          _text(context, '此步功能结构已生成', 'Step function spec generated'),
           type: ToastType.success,
         );
       }
@@ -1263,6 +1276,7 @@ class _ReusableFunctionSpecSheetState
   UtgManualRunResult? _runResult;
   bool _isImporting = false;
   bool _isExecuting = false;
+  bool _isScheduling = false;
   String? _apiError;
 
   RunLogReusableFunctionSpec get spec => widget.spec;
@@ -1284,319 +1298,352 @@ class _ReusableFunctionSpecSheetState
           child: GestureDetector(
             onTap: () {},
             child: SizedBox(
-          height: sheetHeight,
-          width: double.infinity,
-          child: Container(
-            decoration: BoxDecoration(
-              color: isDark ? palette.surfacePrimary : Colors.white,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(22),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.14),
-                  blurRadius: 26,
-                  offset: const Offset(0, -10),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                const SizedBox(height: 10),
-                Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: palette.borderSubtle,
-                    borderRadius: BorderRadius.circular(999),
+              height: sheetHeight,
+              width: double.infinity,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isDark ? palette.surfacePrimary : Colors.white,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(22),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 30,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: _routeColor(context).withValues(
-                            alpha: context.isDarkTheme ? 0.18 : 0.12,
-                          ),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.auto_awesome_rounded,
-                          size: 16,
-                          color: _routeColor(context),
-                        ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.35 : 0.14,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
+                      blurRadius: 26,
+                      offset: const Offset(0, -10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: palette.borderSubtle,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: _routeColor(context).withValues(
+                                alpha: context.isDarkTheme ? 0.18 : 0.12,
+                              ),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.auto_awesome_rounded,
+                              size: 16,
+                              color: _routeColor(context),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  spec.aiEnhanced
+                                      ? _text(
+                                          context,
+                                          'AI 转换结果',
+                                          'AI conversion',
+                                        )
+                                      : _text(
+                                          context,
+                                          '本地转换结果',
+                                          'Local conversion',
+                                        ),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: palette.textSecondary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  spec.name.isEmpty
+                                      ? spec.functionId
+                                      : spec.name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: palette.textPrimary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Tooltip(
+                            message: _text(
+                              context,
+                              '复制 Function JSON',
+                              'Copy function JSON',
+                            ),
+                            child: IconButton(
+                              icon: const Icon(Icons.data_object_rounded),
+                              color: palette.textSecondary,
+                              onPressed: () => _copyText(
+                                context,
+                                spec.prettyJson,
+                                _text(
+                                  context,
+                                  '已复制 Function JSON',
+                                  'Function JSON copied',
+                                ),
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded),
+                            color: palette.textSecondary,
+                            onPressed: () => Navigator.of(context).maybePop(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Divider(height: 1, color: palette.borderSubtle),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              spec.aiEnhanced
-                                  ? _text(context, 'AI 转换结果', 'AI conversion')
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _SummaryPill(
+                                  label: 'ID',
+                                  value: spec.functionId.isEmpty
+                                      ? _text(context, '未命名', 'Unnamed')
+                                      : spec.functionId,
+                                ),
+                                _SummaryPill(
+                                  label: _text(context, '步骤', 'Steps'),
+                                  value: spec.stepCount.toString(),
+                                ),
+                                _SummaryPill(
+                                  label: _text(context, '参数', 'Params'),
+                                  value: spec.parameterCount.toString(),
+                                ),
+                                _SummaryPill(
+                                  label: _text(context, '转换', 'Mode'),
+                                  value: spec.aiEnhanced ? 'AI' : 'Local',
+                                ),
+                                _SummaryPill(
+                                  label: 'API',
+                                  value: _registeredFunctionId.isEmpty
+                                      ? _text(context, '未注册', 'Draft')
+                                      : _text(context, '可执行', 'Executable'),
+                                ),
+                              ],
+                            ),
+                            if (spec.warning != null &&
+                                spec.warning!.trim().isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              _WarningBox(text: spec.warning!),
+                            ],
+                            if (_apiError != null &&
+                                _apiError!.trim().isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              _WarningBox(text: _apiError!),
+                            ],
+                            const SizedBox(height: 14),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _SpecActionButton(
+                                    icon: Icons.cloud_upload_outlined,
+                                    label: _isImporting
+                                        ? _text(context, '注册中', 'Registering')
+                                        : _registeredFunctionId.isEmpty
+                                        ? _text(
+                                            context,
+                                            '注册为 OOB API',
+                                            'Register OOB API',
+                                          )
+                                        : _text(context, '重新注册', 'Re-register'),
+                                    onTap: _isImporting
+                                        ? null
+                                        : _registerFunction,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _SpecActionButton(
+                                    icon: Icons.play_arrow_rounded,
+                                    label: _isExecuting
+                                        ? _text(context, '执行中', 'Running')
+                                        : _text(
+                                            context,
+                                            '执行 OOB API',
+                                            'Run OOB API',
+                                          ),
+                                    onTap: _isImporting || _isExecuting
+                                        ? null
+                                        : _executeRegisteredFunction,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (_registeredFunctionId.isNotEmpty ||
+                                _runResult != null) ...[
+                              const SizedBox(height: 12),
+                              _FunctionApiStatusBox(
+                                functionId: _registeredFunctionId,
+                                importResult: _importResult,
+                                runResult: _runResult,
+                                apiCallJson: _apiCallJson,
+                              ),
+                            ],
+                            const SizedBox(height: 10),
+                            _SpecActionButton(
+                              icon: Icons.event_available_rounded,
+                              label: _isScheduling
+                                  ? _text(
+                                      context,
+                                      '打开定时设置中',
+                                      'Opening schedule',
+                                    )
                                   : _text(
                                       context,
-                                      '本地转换结果',
-                                      'Local conversion',
+                                      '转为定时任务',
+                                      'Schedule this function',
                                     ),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: palette.textSecondary,
-                                fontWeight: FontWeight.w600,
-                              ),
+                              onTap:
+                                  _isImporting || _isExecuting || _isScheduling
+                                  ? null
+                                  : _scheduleRegisteredFunction,
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              spec.name.isEmpty ? spec.functionId : spec.name,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: palette.textPrimary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Tooltip(
-                        message: _text(
-                          context,
-                          '复制 Function JSON',
-                          'Copy function JSON',
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.data_object_rounded),
-                          color: palette.textSecondary,
-                          onPressed: () => _copyText(
-                            context,
-                            spec.prettyJson,
-                            _text(
-                              context,
-                              '已复制 Function JSON',
-                              'Function JSON copied',
-                            ),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded),
-                        color: palette.textSecondary,
-                        onPressed: () => Navigator.of(context).maybePop(),
-                      ),
-                    ],
-                  ),
-                ),
-                Divider(height: 1, color: palette.borderSubtle),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _SummaryPill(
-                              label: 'ID',
-                              value: spec.functionId.isEmpty
-                                  ? _text(context, '未命名', 'Unnamed')
-                                  : spec.functionId,
-                            ),
-                            _SummaryPill(
-                              label: _text(context, '步骤', 'Steps'),
-                              value: spec.stepCount.toString(),
-                            ),
-                            _SummaryPill(
-                              label: _text(context, '参数', 'Params'),
-                              value: spec.parameterCount.toString(),
-                            ),
-                            _SummaryPill(
-                              label: _text(context, '转换', 'Mode'),
-                              value: spec.aiEnhanced ? 'AI' : 'Local',
-                            ),
-                            _SummaryPill(
-                              label: 'API',
-                              value: _registeredFunctionId.isEmpty
-                                  ? _text(context, '未注册', 'Draft')
-                                  : _text(context, '可执行', 'Executable'),
-                            ),
-                          ],
-                        ),
-                        if (spec.warning != null &&
-                            spec.warning!.trim().isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          _WarningBox(text: spec.warning!),
-                        ],
-                        if (_apiError != null &&
-                            _apiError!.trim().isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          _WarningBox(text: _apiError!),
-                        ],
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _SpecActionButton(
-                                icon: Icons.cloud_upload_outlined,
-                                label: _isImporting
-                                    ? _text(context, '注册中', 'Registering')
-                                    : _registeredFunctionId.isEmpty
-                                    ? _text(
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _SpecActionButton(
+                                    icon: Icons.content_copy_rounded,
+                                    label: _text(
+                                      context,
+                                      '复制 JSON',
+                                      'Copy JSON',
+                                    ),
+                                    onTap: () => _copyText(
+                                      context,
+                                      spec.prettyJson,
+                                      _text(
                                         context,
-                                        '注册为 OOB API',
-                                        'Register OOB API',
-                                      )
-                                    : _text(context, '重新注册', 'Re-register'),
-                                onTap: _isImporting ? null : _registerFunction,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _SpecActionButton(
-                                icon: Icons.play_arrow_rounded,
-                                label: _isExecuting
-                                    ? _text(context, '执行中', 'Running')
-                                    : _text(
-                                        context,
-                                        '执行 OOB API',
-                                        'Run OOB API',
+                                        '已复制 Function JSON',
+                                        'Function JSON copied',
                                       ),
-                                onTap: _isImporting || _isExecuting
-                                    ? null
-                                    : _executeRegisteredFunction,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (_registeredFunctionId.isNotEmpty ||
-                            _runResult != null) ...[
-                          const SizedBox(height: 12),
-                          _FunctionApiStatusBox(
-                            functionId: _registeredFunctionId,
-                            importResult: _importResult,
-                            runResult: _runResult,
-                            apiCallJson: _apiCallJson,
-                          ),
-                        ],
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _SpecActionButton(
-                                icon: Icons.content_copy_rounded,
-                                label: _text(context, '复制 JSON', 'Copy JSON'),
-                                onTap: () => _copyText(
-                                  context,
-                                  spec.prettyJson,
-                                  _text(
-                                    context,
-                                    '已复制 Function JSON',
-                                    'Function JSON copied',
+                                    ),
                                   ),
                                 ),
-                              ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _SpecActionButton(
+                                    icon: Icons.smart_toy_outlined,
+                                    label: _text(
+                                      context,
+                                      '复制 Agent 提示',
+                                      'Copy agent prompt',
+                                    ),
+                                    onTap: () => _copyText(
+                                      context,
+                                      spec.agentPrompt,
+                                      _text(
+                                        context,
+                                        '已复制 Agent 提示',
+                                        'Agent prompt copied',
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _SpecActionButton(
-                                icon: Icons.smart_toy_outlined,
+                            if (scriptCall.trim().isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              _SpecActionButton(
+                                icon: Icons.terminal_rounded,
                                 label: _text(
                                   context,
-                                  '复制 Agent 提示',
-                                  'Copy agent prompt',
+                                  '复制脚本调用 JSON',
+                                  'Copy script call JSON',
                                 ),
                                 onTap: () => _copyText(
                                   context,
-                                  spec.agentPrompt,
+                                  scriptCall,
                                   _text(
                                     context,
-                                    '已复制 Agent 提示',
-                                    'Agent prompt copied',
+                                    '已复制脚本调用 JSON',
+                                    'Script call JSON copied',
                                   ),
                                 ),
                               ),
+                            ],
+                            const SizedBox(height: 14),
+                            _DetailSection(
+                              title: _text(
+                                context,
+                                'Function JSON',
+                                'Function JSON',
+                              ),
+                              copyValue: spec.prettyJson,
+                              child: _JsonText(text: spec.prettyJson),
                             ),
+                            const SizedBox(height: 12),
+                            _DetailSection(
+                              title: _text(
+                                context,
+                                'Agent 复用提示',
+                                'Agent reuse prompt',
+                              ),
+                              copyValue: spec.agentPrompt,
+                              child: _JsonText(text: spec.agentPrompt),
+                            ),
+                            if (scriptCall.trim().isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              _DetailSection(
+                                title: _text(
+                                  context,
+                                  'Script 调用形态',
+                                  'Script call shape',
+                                ),
+                                copyValue: scriptCall,
+                                child: _JsonText(text: scriptCall),
+                              ),
+                            ],
+                            if (_apiCallJson.trim().isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              _DetailSection(
+                                title: _text(
+                                  context,
+                                  '真实 API 调用',
+                                  'Executable API call',
+                                ),
+                                copyValue: _apiCallJson,
+                                child: _JsonText(text: _apiCallJson),
+                              ),
+                            ],
                           ],
                         ),
-                        if (scriptCall.trim().isNotEmpty) ...[
-                          const SizedBox(height: 10),
-                          _SpecActionButton(
-                            icon: Icons.terminal_rounded,
-                            label: _text(
-                              context,
-                              '复制脚本调用 JSON',
-                              'Copy script call JSON',
-                            ),
-                            onTap: () => _copyText(
-                              context,
-                              scriptCall,
-                              _text(
-                                context,
-                                '已复制脚本调用 JSON',
-                                'Script call JSON copied',
-                              ),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 14),
-                        _DetailSection(
-                          title: _text(
-                            context,
-                            'Function JSON',
-                            'Function JSON',
-                          ),
-                          copyValue: spec.prettyJson,
-                          child: _JsonText(text: spec.prettyJson),
-                        ),
-                        const SizedBox(height: 12),
-                        _DetailSection(
-                          title: _text(
-                            context,
-                            'Agent 复用提示',
-                            'Agent reuse prompt',
-                          ),
-                          copyValue: spec.agentPrompt,
-                          child: _JsonText(text: spec.agentPrompt),
-                        ),
-                        if (scriptCall.trim().isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          _DetailSection(
-                            title: _text(
-                              context,
-                              'Script 调用形态',
-                              'Script call shape',
-                            ),
-                            copyValue: scriptCall,
-                            child: _JsonText(text: scriptCall),
-                          ),
-                        ],
-                        if (_apiCallJson.trim().isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          _DetailSection(
-                            title: _text(
-                              context,
-                              '真实 API 调用',
-                              'Executable API call',
-                            ),
-                            copyValue: _apiCallJson,
-                            child: _JsonText(text: _apiCallJson),
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
         ),
       ),
     );
@@ -1613,15 +1660,22 @@ class _ReusableFunctionSpecSheetState
         functionSpec: spec.json,
       );
       if (!mounted) return;
+      final registeredId = _firstNonBlank([
+        result.createdFunctionId,
+        result.functionId,
+        spec.functionId,
+      ]);
       setState(() {
         _importResult = UtgRunLogImportResult.fromMap({
           'success': result.success,
           'run_id': widget.runId,
-          'function_id': result.createdFunctionId,
-          'created_function_id': result.createdFunctionId,
+          'function_id': registeredId,
+          'created_function_id': registeredId,
           'functions_created': result.alreadyExists ? 0 : 1,
           'asset_kind': result.assetKind,
           'asset_state': result.assetState,
+          'oob_function_as_tool_enabled':
+              result.rawJson['oob_function_as_tool_enabled'] == true,
         });
         _isImporting = false;
       });
@@ -1678,17 +1732,93 @@ class _ReusableFunctionSpecSheetState
       setState(() {
         _runResult = result;
         _isExecuting = false;
+        _apiError = result.success ? null : result.errorMessage;
       });
       showToast(
         result.success
-            ? _text(context, 'API 已开始执行', 'API execution started')
-            : _text(context, 'API 执行失败', 'API execution failed'),
+            ? _runSuccessMessage(context, result)
+            : _runFailureMessage(context, result),
         type: result.success ? ToastType.success : ToastType.error,
       );
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isExecuting = false;
+        _apiError = e.toString();
+      });
+      showToast(_apiError!, type: ToastType.error);
+    }
+  }
+
+  Future<void> _scheduleRegisteredFunction() async {
+    if (_isScheduling || _isImporting || _isExecuting) return;
+    setState(() {
+      _isScheduling = true;
+      _apiError = null;
+    });
+    try {
+      var functionId = _registeredFunctionId;
+      if (functionId.isEmpty) {
+        await _registerFunction();
+        if (!mounted) return;
+        functionId = _registeredFunctionId;
+      }
+      if (functionId.isEmpty) {
+        setState(() {
+          _isScheduling = false;
+        });
+        showToast(
+          _text(
+            context,
+            'Function 注册失败，无法转定时任务',
+            'Function registration failed',
+          ),
+          type: ToastType.error,
+        );
+        return;
+      }
+
+      final nodeId = 'runlog_function';
+      final existingTask =
+          await ScheduledTaskStorageService.getScheduledTaskBySuggestionId(
+            nodeId,
+            functionId,
+          );
+      if (!mounted) return;
+      final result = await ScheduleTaskSheet.show(
+        context: context,
+        taskTitle: spec.name.isEmpty ? functionId : spec.name,
+        packageName: _packageNameForSchedule,
+        nodeId: nodeId,
+        suggestionId: functionId,
+        suggestionData: _scheduleSuggestionData(functionId),
+        existingTask: existingTask,
+      );
+      if (!mounted) return;
+      setState(() {
+        _isScheduling = false;
+      });
+      if (result == null) {
+        return;
+      }
+      final saved = await ScheduledTaskStorageService.addScheduledTask(result);
+      if (!mounted) return;
+      if (!saved) {
+        showToast(
+          _text(context, '定时任务保存失败', 'Failed to save scheduled task'),
+          type: ToastType.error,
+        );
+        return;
+      }
+      ScheduledTaskSchedulerService.scheduleTask(result);
+      showToast(
+        _text(context, '已转为定时任务', 'Scheduled task created'),
+        type: ToastType.success,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isScheduling = false;
         _apiError = e.toString();
       });
       showToast(_apiError!, type: ToastType.error);
@@ -1712,6 +1842,7 @@ class _ReusableFunctionSpecSheetState
       _importResult?.createdFunctionId,
       _firstHitFunctionId,
       _runResult?.functionId,
+      spec.functionId,
     ]);
   }
 
@@ -1743,6 +1874,63 @@ class _ReusableFunctionSpecSheetState
     return arguments;
   }
 
+  Map<String, dynamic> _scheduleSuggestionData(String functionId) {
+    return {
+      'targetKind': 'subagent',
+      'subagentPrompt': _scheduledFunctionPrompt(functionId),
+      'notificationEnabled': true,
+      'source': 'run_log_reusable_function',
+      'sourceRunId': widget.runId,
+      'oobFunctionId': functionId,
+      'oobFunctionArguments': _defaultArguments,
+    };
+  }
+
+  String _scheduledFunctionPrompt(String functionId) {
+    final argumentsJson = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(_defaultArguments);
+    if (_localeValue(context, zh: false, en: true)) {
+      return [
+        'Execute this already registered OOB function now. Do not create, update, or discuss the schedule.',
+        '',
+        'Function ID: $functionId',
+        'Arguments JSON:',
+        argumentsJson,
+        '',
+        'Execution rule: call the OOB function API with the arguments above. The runtime executes executor=omniflow/model_free steps locally without a model call; executor=tool uses step.callable_tool; executor=agent or validation mismatch may re-plan with step.agent_call/fallback prompt.',
+        '',
+        'Function JSON:',
+        spec.prettyJson,
+      ].join('\n');
+    }
+    return [
+      '现在执行这个已经注册的 OOB function。不要创建、修改或讨论定时任务。',
+      '',
+      'Function ID: $functionId',
+      'Arguments JSON:',
+      argumentsJson,
+      '',
+      '执行规则：用上面的参数调用 OOB function API。运行时会把 executor=omniflow/model_free 的步骤本地执行，不调用模型；executor=tool 调用 step.callable_tool；executor=agent 或 validation 不匹配时可使用 step.agent_call/fallback prompt 重规划。',
+      '',
+      'Function JSON:',
+      spec.prettyJson,
+    ].join('\n');
+  }
+
+  String get _packageNameForSchedule {
+    final constraints = _asStringKeyMap(spec.json['constraints']);
+    final execution = _asStringKeyMap(spec.json['execution']);
+    final steps = execution['steps'];
+    final stepPackages = <dynamic>[];
+    if (steps is List) {
+      for (final step in steps) {
+        stepPackages.add(_asStringKeyMap(step)['package_name']);
+      }
+    }
+    return _firstNonBlank([constraints['package_name'], ...stepPackages]);
+  }
+
   String get _apiCallJson {
     final functionId = _registeredFunctionId;
     if (functionId.isEmpty) {
@@ -1759,6 +1947,30 @@ class _ReusableFunctionSpecSheetState
         },
       },
     });
+  }
+
+  String _runSuccessMessage(BuildContext context, UtgManualRunResult result) {
+    final status = result.terminalState['status']?.toString().trim() ?? '';
+    final taskId = result.terminalState['taskId']?.toString().trim() ?? '';
+    if (taskId.isNotEmpty) {
+      return _localeValue(
+        context,
+        zh: 'API 已开始执行：$taskId',
+        en: 'API execution started: $taskId',
+      );
+    }
+    if (status == 'completed') {
+      return _text(context, 'API 已本地执行完成', 'API completed locally');
+    }
+    return _text(context, 'API 已开始执行', 'API execution started');
+  }
+
+  String _runFailureMessage(BuildContext context, UtgManualRunResult result) {
+    final error = result.errorMessage?.trim();
+    if (error != null && error.isNotEmpty) {
+      return error;
+    }
+    return _text(context, 'API 执行失败', 'API execution failed');
   }
 
   void _copyText(BuildContext context, String text, String successMessage) {
@@ -1791,7 +2003,7 @@ class _FunctionApiStatusBox extends StatelessWidget {
             ' · hits=${importResult!.hitFunctionIds.length}',
       if (runResult != null)
         'run: ${runResult!.success ? 'started' : 'failed'}'
-            '${runResult!.runFilePath.trim().isNotEmpty ? ' · ${runResult!.runFilePath}' : ''}',
+            '${_runStatusSuffix(runResult!)}',
     ];
     return Container(
       width: double.infinity,
@@ -1840,6 +2052,20 @@ class _FunctionApiStatusBox extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _runStatusSuffix(UtgManualRunResult result) {
+    final parts = <String>[];
+    final status = result.terminalState['status']?.toString().trim() ?? '';
+    final runner = result.terminalState['runner']?.toString().trim() ?? '';
+    final taskId = result.terminalState['taskId']?.toString().trim() ?? '';
+    final error = result.errorMessage?.trim() ?? '';
+    if (status.isNotEmpty) parts.add('status=$status');
+    if (runner.isNotEmpty) parts.add('runner=$runner');
+    if (taskId.isNotEmpty) parts.add('task=$taskId');
+    if (result.runFilePath.trim().isNotEmpty) parts.add(result.runFilePath);
+    if (!result.success && error.isNotEmpty) parts.add(error);
+    return parts.isEmpty ? '' : ' · ${parts.join(' · ')}';
   }
 }
 
@@ -1928,6 +2154,78 @@ class _WarningBox extends StatelessWidget {
   }
 }
 
+class _PromptHighlightBox extends StatelessWidget {
+  const _PromptHighlightBox({required this.text, required this.source});
+
+  final String text;
+  final String source;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final color = _routeColor(context);
+    final title = source.trim().isEmpty
+        ? _text(context, 'Prompt', 'Prompt')
+        : '${_text(context, 'Prompt', 'Prompt')} · $source';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: context.isDarkTheme ? 0.13 : 0.07),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.notes_rounded, size: 15, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Tooltip(
+                message: _text(context, '复制 Prompt', 'Copy prompt'),
+                child: IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.content_copy_rounded, size: 16),
+                  color: palette.textSecondary,
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: text));
+                    showToast(
+                      _text(context, '已复制 Prompt', 'Prompt copied'),
+                      type: ToastType.success,
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          SelectableText(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              color: palette.textPrimary,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SummaryGrid extends StatelessWidget {
   const _SummaryGrid({required this.snapshot});
 
@@ -1940,7 +2238,7 @@ class _SummaryGrid extends StatelessWidget {
       MapEntry(
         _text(context, '执行方式', 'Execution'),
         _isModelFreeReplayStep(snapshot)
-            ? _text(context, '脚本，无模型', 'Script, no model')
+            ? _text(context, '本地重放 / 无模型调用', 'Local replay / no model')
             : _text(context, '需要模型', 'Needs model'),
       ),
       if (snapshot.compileKind.isNotEmpty)
@@ -2181,56 +2479,6 @@ class _CollapsibleSectionState extends State<_CollapsibleSection> {
   }
 }
 
-class _KeyValueBlock extends StatelessWidget {
-  const _KeyValueBlock({required this.values, required this.fallback});
-
-  final Map<String, String> values;
-  final String fallback;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    if (values.isEmpty) {
-      return _JsonText(text: fallback);
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: values.entries
-          .map(
-            (entry) => Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 74,
-                    child: Text(
-                      entry.key,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: palette.textSecondary,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: SelectableText(
-                      entry.value,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: palette.textPrimary,
-                        height: 1.35,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          )
-          .toList(growable: false),
-    );
-  }
-}
-
 class _JsonBlock extends StatelessWidget {
   const _JsonBlock({required this.value});
 
@@ -2352,6 +2600,8 @@ class _RunLogStepSnapshot {
     required this.success,
     required this.durationMs,
     required this.packageName,
+    required this.prompt,
+    required this.promptSource,
   });
 
   final Map<String, dynamic> card;
@@ -2370,6 +2620,8 @@ class _RunLogStepSnapshot {
   final bool? success;
   final int? durationMs;
   final String packageName;
+  final String prompt;
+  final String promptSource;
 
   factory _RunLogStepSnapshot.fromCard(
     Map<String, dynamic> card, {
@@ -2388,6 +2640,13 @@ class _RunLogStepSnapshot {
       'routeResult',
     ]);
     final result = _extractResult(card);
+    final promptHit = _extractPromptHit([
+      _PromptSearchRoot('params', params),
+      _PromptSearchRoot('tool_call', toolCall),
+      _PromptSearchRoot('function', function),
+      _PromptSearchRoot('card', card),
+      _PromptSearchRoot('result', result),
+    ]);
     final headerStepIndex = _asInt(
       _firstPresentValue(header, const ['step_index', 'stepIndex', 'index']),
     );
@@ -2466,6 +2725,8 @@ class _RunLogStepSnapshot {
       success: success,
       durationMs: durationMs,
       packageName: packageName,
+      prompt: promptHit.text,
+      promptSource: promptHit.source,
     );
   }
 
@@ -2473,6 +2734,9 @@ class _RunLogStepSnapshot {
     final parts = <String>[];
     final paramsMap = _asStringKeyMap(params);
     final resultMap = _asStringKeyMap(result);
+    if (prompt.isNotEmpty) {
+      parts.add('Prompt: ${_compactPreview(prompt, maxLength: 180)}');
+    }
     final target = _firstNonBlank([
       paramsMap['target_description'],
       paramsMap['targetDescription'],
@@ -2537,8 +2801,12 @@ class _RunLogStepSnapshot {
       if (success != null) 'Success: $success',
       if (durationMs != null) 'Duration: ${_formatMs(durationMs!)}',
       if (packageName.isNotEmpty) 'Package: $packageName',
+      if (prompt.isNotEmpty) 'Prompt Source: $promptSource',
     ];
 
+    if (prompt.isNotEmpty) {
+      _appendTranscriptSection(lines, 'Prompt', prompt);
+    }
     _appendTranscriptSection(lines, 'Tool Call', toolCall);
     _appendTranscriptSection(lines, 'Arguments', params);
     _appendTranscriptSection(lines, 'Result', result);
@@ -2610,6 +2878,126 @@ dynamic _extractResult(Map<String, dynamic> card) {
     card['errorMessage'],
   ]);
   return _decodeJsonIfNeeded(value);
+}
+
+class _PromptHit {
+  const _PromptHit(this.text, this.source);
+
+  final String text;
+  final String source;
+}
+
+class _PromptSearchRoot {
+  const _PromptSearchRoot(this.name, this.value);
+
+  final String name;
+  final dynamic value;
+}
+
+const Set<String> _promptKeyNames = {
+  'prompt',
+  'subagentprompt',
+  'agentprompt',
+  'augmentprompt',
+  'augumentprompt',
+  'systemprompt',
+  'userprompt',
+  'instruction',
+  'instructions',
+  'query',
+  'question',
+  'message',
+  'usermessage',
+  'input',
+  'task',
+  'goal',
+  'request',
+};
+
+_PromptHit _extractPromptHit(List<_PromptSearchRoot> roots) {
+  for (final root in roots) {
+    final hit = _findPromptInValue(
+      root.value,
+      path: root.name,
+      visited: <Object>{},
+    );
+    if (hit.text.trim().isNotEmpty) {
+      return hit;
+    }
+  }
+  return const _PromptHit('', '');
+}
+
+_PromptHit _findPromptInValue(
+  dynamic raw, {
+  required String path,
+  required Set<Object> visited,
+}) {
+  final value = _decodeJsonIfNeeded(raw);
+  if (value is Map) {
+    if (!visited.add(value)) {
+      return const _PromptHit('', '');
+    }
+    final map = value.map((key, item) => MapEntry(key.toString(), item));
+    for (final entry in map.entries) {
+      final key = entry.key.trim();
+      final normalizedKey = _normalizePromptKey(key);
+      if (_promptKeyNames.contains(normalizedKey)) {
+        final text = _promptTextFromValue(entry.value);
+        if (text.isNotEmpty) {
+          return _PromptHit(text, '$path.$key');
+        }
+      }
+    }
+    for (final entry in map.entries) {
+      final hit = _findPromptInValue(
+        entry.value,
+        path: '$path.${entry.key}',
+        visited: visited,
+      );
+      if (hit.text.isNotEmpty) {
+        return hit;
+      }
+    }
+  } else if (value is Iterable) {
+    var index = 0;
+    for (final item in value) {
+      final hit = _findPromptInValue(
+        item,
+        path: '$path[$index]',
+        visited: visited,
+      );
+      if (hit.text.isNotEmpty) {
+        return hit;
+      }
+      index++;
+    }
+  }
+  return const _PromptHit('', '');
+}
+
+String _promptTextFromValue(dynamic raw) {
+  final value = _decodeJsonIfNeeded(raw);
+  if (value is String) {
+    return value.trim();
+  }
+  if (value is num || value is bool) {
+    return value.toString();
+  }
+  if (value is Map) {
+    return _firstNonBlank([
+      value['text'],
+      value['content'],
+      value['message'],
+      value['prompt'],
+      value['value'],
+    ]);
+  }
+  return '';
+}
+
+String _normalizePromptKey(String key) {
+  return key.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '').toLowerCase().trim();
 }
 
 void _appendTranscriptSection(List<String> lines, String title, dynamic value) {
@@ -2693,13 +3081,6 @@ bool _isModelFreeReplayStep(_RunLogStepSnapshot snapshot) {
     'press_back',
     'hot_key',
     'wait',
-    'finished',
-    'feedback',
-    'abort',
-    'record',
-    'info',
-    'require_user_choice',
-    'require_user_confirmation',
   };
   return modelFreeTools.contains(toolName);
 }
@@ -2891,6 +3272,17 @@ String _firstNonBlank(List<dynamic> values) {
     }
   }
   return '';
+}
+
+String _compactPreview(String value, {int maxLength = 160}) {
+  final normalized = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  if (maxLength <= 1) {
+    return normalized.substring(0, maxLength);
+  }
+  return '${normalized.substring(0, maxLength - 1).trimRight()}…';
 }
 
 bool? _asBool(dynamic value) {

@@ -87,6 +87,8 @@ import cn.com.omnimind.bot.agent.UserDialog
 import cn.com.omnimind.bot.agent.WorkspaceMemoryRollupScheduler
 import cn.com.omnimind.bot.agent.WorkspaceMemoryService
 import cn.com.omnimind.bot.agent.WorkspaceScheduledTaskScheduler
+import cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandler
+import cn.com.omnimind.bot.agent.tool.handlers.SharedHelper
 import cn.com.omnimind.bot.localmodel.LocalModelFeature
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
@@ -252,6 +254,23 @@ private fun sanitizeInteropMap(payload: Map<String, Any?>): Map<String, Any?> {
             put(key, sanitizeInteropValue(value))
         }
     }
+}
+
+internal const val AGENT_MANUAL_CANCELLATION_SEQUENCE = 1_000_000_000L
+internal const val AGENT_MANUAL_CANCELLATION_ROUND = 1_000_000_000
+
+internal fun buildAgentManualCancellationStreamMeta(
+    taskId: String,
+    entryId: String
+): Map<String, Any?> {
+    return linkedMapOf(
+        "seq" to AGENT_MANUAL_CANCELLATION_SEQUENCE,
+        "roundIndex" to AGENT_MANUAL_CANCELLATION_ROUND,
+        "kind" to "text_snapshot",
+        "parentTaskId" to taskId,
+        "entryId" to entryId,
+        "isFinal" to true
+    )
 }
 
 internal fun extractChatTaskTextPayload(content: String): String {
@@ -839,20 +858,66 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     }
 
     private fun cancelActiveAgentRun(taskId: String?, reason: String) {
-        val jobsToCancel = synchronized(activeAgentLock) {
+        val runsToCancel = synchronized(activeAgentLock) {
             if (taskId.isNullOrBlank()) {
-                val snapshot = activeAgentRuns.values.map { it.job }
+                val snapshot = activeAgentRuns.values.toList()
                 activeAgentRuns.clear()
                 snapshot
             } else {
-                val current = activeAgentRuns.remove(taskId)?.job
+                val current = activeAgentRuns.remove(taskId)
                 if (current == null) emptyList() else listOf(current)
             }
         }
-        if (jobsToCancel.isNotEmpty()) {
+        if (runsToCancel.isNotEmpty()) {
             OmniLog.i(TAG, "Cancelling active agent run(s): $reason taskId=$taskId")
-            jobsToCancel.forEach { job ->
-                job.cancel(CancellationException(reason))
+            runsToCancel.forEach { run ->
+                publishManualAgentCancellation(run)
+                run.job.cancel(CancellationException(reason))
+            }
+        }
+    }
+
+    private fun publishManualAgentCancellation(run: ActiveAgentRunContext) {
+        val conversationId = run.conversationId ?: return
+        val cancelledText = when (AppLocaleManager.resolvePromptLocale(context)) {
+            PromptLocale.EN_US -> "Task canceled"
+            PromptLocale.ZH_CN -> "任务已取消"
+        }
+        val entryId = "${run.taskId}-cancelled"
+        val now = System.currentTimeMillis()
+        val streamMeta = buildAgentManualCancellationStreamMeta(run.taskId, entryId)
+        workJob.launch {
+            runCatching {
+                val repository = conversationHistoryRepository()
+                repository.upsertAssistantMessage(
+                    conversationId = conversationId,
+                    conversationMode = run.conversationMode,
+                    entryId = entryId,
+                    text = cancelledText,
+                    isError = false,
+                    streamMeta = streamMeta,
+                    createdAt = now
+                )
+                withContext(Dispatchers.Main) {
+                    invokeFlutterEventSafely(
+                        "onAgentStreamEvent",
+                        sanitizeInteropMap(
+                            mapOf(
+                                "taskId" to run.taskId,
+                                "seq" to AGENT_MANUAL_CANCELLATION_SEQUENCE,
+                                "kind" to "text_snapshot",
+                                "entryId" to entryId,
+                                "roundIndex" to AGENT_MANUAL_CANCELLATION_ROUND,
+                                "isFinal" to true,
+                                "text" to cancelledText,
+                                "createdAt" to now,
+                                "streamMeta" to streamMeta
+                            )
+                        )
+                    )
+                }
+            }.onFailure {
+                OmniLog.w(TAG, "publish manual agent cancellation failed: ${it.message}", it)
             }
             dispatchAgentRunStateChanged("agent_run_cancelled")
         }
@@ -2384,14 +2449,25 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 else -> emptyMap()
             }
             val payload = runCatching {
-                OobReusableFunctionStore.register(context, functionSpec)
+                OobReusableFunctionStore.register(context, functionSpec).toMutableMap().apply {
+                    AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, true)
+                    put("oob_function_as_tool_enabled", true)
+                    // Dual-write to workspace so functions are portable (travel with workspace export)
+                    runCatching {
+                        cn.com.omnimind.bot.workbench.WorkspaceFunctionStore(
+                            cn.com.omnimind.bot.agent.AgentWorkspaceManager.rootDirectory(context)
+                        ).register(functionSpec)
+                    }
+                }
             }.getOrElse { error ->
                 linkedMapOf(
                     "success" to false,
                     "error_code" to "OOB_FUNCTION_REGISTER_FAILED",
                     "error_message" to error.message.orEmpty(),
                     "function_kind" to "oob_reusable_function",
-                    "asset_state" to "native_local"
+                    "asset_state" to "native_local",
+                    "oob_function_as_tool_enabled" to
+                        AgentToolFeatureStore.isOobFunctionAsToolEnabled(context)
                 )
             }
             withContext(Dispatchers.Main) {
@@ -2423,6 +2499,26 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
+    fun deleteOobReusableFunction(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val args = normalizeMethodCallMap(call.arguments)
+            val functionId = (
+                args["functionId"] ?: args["function_id"] ?: call.argument<String>("functionId")
+            )?.toString()?.trim().orEmpty()
+            val deleted = if (functionId.isEmpty()) false
+            else OobReusableFunctionStore.delete(context, functionId)
+            withContext(Dispatchers.Main) {
+                result.success(
+                    linkedMapOf(
+                        "success" to deleted,
+                        "function_id" to functionId,
+                        "deleted" to deleted
+                    )
+                )
+            }
+        }
+    }
+
     fun runOobReusableFunction(call: MethodCall, result: MethodChannel.Result) {
         mainJob.launch {
             val args = normalizeMethodCallMap(call.arguments)
@@ -2445,7 +2541,14 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 return@launch
             }
 
-            val spec = OobReusableFunctionStore.get(context, functionId)
+            val workspaceFunctionStore = cn.com.omnimind.bot.workbench.WorkspaceFunctionStore(
+                AgentWorkspaceManager.rootDirectory(context)
+            )
+            val sharedPrefsSpec = OobReusableFunctionStore.get(context, functionId)
+            val spec = sharedPrefsSpec ?: workspaceFunctionStore.get(functionId)
+            if (sharedPrefsSpec == null && spec != null) {
+                runCatching { OobReusableFunctionStore.register(context, spec) }
+            }
             if (spec == null) {
                 withContext(Dispatchers.Main) {
                     result.success(
@@ -2491,60 +2594,87 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 return@launch
             }
             val materializedSpec = OobReusableFunctionStore.materialize(spec, callArguments)
-            val taskId = args["taskId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                ?: "${System.currentTimeMillis()}-ai"
-            val conversationId = when (val raw = args["conversationId"]) {
-                is Number -> raw.toLong().takeIf { it > 0L }
-                is String -> raw.trim().toLongOrNull()?.takeIf { it > 0L }
-                else -> null
-            }
-            val conversationMode = args["conversationMode"]
-                ?.toString()
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() }
-            val prompt = buildOobReusableFunctionRunPrompt(
-                functionId = functionId,
-                functionSpec = materializedSpec,
-                arguments = callArguments
-            )
-
-            val createArgs = linkedMapOf<String, Any?>(
-                "taskId" to taskId,
-                "userMessage" to prompt,
-                "reasoningEffort" to "low"
+            val runner = OobFunctionToolHandler(
+                context = context,
+                helper = SharedHelper(context, chatTaskPayloadJson)
             ).apply {
-                conversationId?.let { put("conversationId", it) }
-                conversationMode?.let { put("conversationMode", it) }
+                this.workspaceFunctionStore = workspaceFunctionStore
             }
-            var startResult: Any? = null
-            var startErrorCode: String? = null
-            var startErrorMessage: String? = null
-            createAgentTask(
-                MethodCall("createAgentTask", createArgs),
-                object : MethodChannel.Result {
-                    override fun success(result: Any?) {
-                        startResult = result
-                    }
 
-                    override fun error(
-                        errorCode: String,
-                        errorMessage: String?,
-                        errorDetails: Any?
-                    ) {
-                        startErrorCode = errorCode
-                        startErrorMessage = errorMessage
-                    }
-
-                    override fun notImplemented() {
-                        startErrorCode = "NOT_IMPLEMENTED"
-                        startErrorMessage = "createAgentTask not implemented"
-                    }
+            // Phase 1: run all steps inline — omniflow/tool steps execute locally;
+            // agent steps return needs_agent=true when no router is available.
+            val runPayload = runCatching {
+                withContext(Dispatchers.Default) {
+                    runner.runMaterializedFunction(
+                        functionId = functionId,
+                        spec = spec,
+                        materializedSpec = materializedSpec
+                    )
                 }
-            )
-            val started = startErrorCode == null && startResult == "SUCCESS"
-            withContext(Dispatchers.Main) {
-                result.success(
-                    linkedMapOf(
+            }.getOrElse { error ->
+                linkedMapOf(
+                    "success" to false,
+                    "function_id" to functionId,
+                    "runner" to "oob_mixed_runner",
+                    "step_count" to 0,
+                    "success_step_count" to 0,
+                    "model_used" to false,
+                    "error_message" to error.message.orEmpty(),
+                    "step_results" to emptyList<Map<String, Any?>>()
+                )
+            }
+
+            val stepResults = (runPayload["step_results"] as? List<*>)
+                ?.filterIsInstance<Map<*, *>>() ?: emptyList()
+            val pendingAgentSteps = stepResults.filter { it["needs_agent"] == true }
+
+            // Phase 2: if agent steps couldn't run inline, hand them (and any
+            // subsequent steps) to the agent with a targeted prompt.
+            if (pendingAgentSteps.isNotEmpty()) {
+                val completedCount = stepResults.indexOfFirst { it["needs_agent"] == true }
+                val conversationId = when (val raw = args["conversationId"]) {
+                    is Number -> raw.toLong().takeIf { it > 0L }
+                    is String -> raw.trim().toLongOrNull()?.takeIf { it > 0L }
+                    else -> currentConversationId
+                }
+                val conversationMode = args["conversationMode"]
+                    ?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: currentConversationMode
+                val taskId = args["taskId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: "${System.currentTimeMillis()}-ai"
+                val prompt = buildOobReusableFunctionRunPrompt(
+                    functionId = functionId,
+                    functionSpec = materializedSpec,
+                    arguments = callArguments,
+                    completedStepCount = completedCount
+                )
+                val createArgs = linkedMapOf<String, Any?>(
+                    "taskId" to taskId,
+                    "userMessage" to prompt,
+                    "reasoningEffort" to "low"
+                ).apply {
+                    conversationId?.let { put("conversationId", it) }
+                    conversationMode?.let { put("conversationMode", it) }
+                }
+                var startResult: Any? = null
+                var startErrorCode: String? = null
+                var startErrorMessage: String? = null
+                createAgentTask(
+                    MethodCall("createAgentTask", createArgs),
+                    object : MethodChannel.Result {
+                        override fun success(result: Any?) { startResult = result }
+                        override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
+                            startErrorCode = errorCode; startErrorMessage = errorMessage
+                        }
+                        override fun notImplemented() {
+                            startErrorCode = "NOT_IMPLEMENTED"
+                            startErrorMessage = "createAgentTask not implemented"
+                        }
+                    }
+                )
+                val started = startErrorCode == null && startResult == "SUCCESS"
+                withContext(Dispatchers.Main) {
+                    result.success(linkedMapOf(
                         "success" to started,
                         "goal" to "oob_reusable_function_run:$functionId",
                         "function_id" to functionId,
@@ -2553,16 +2683,42 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         "terminal_state" to linkedMapOf(
                             "status" to if (started) "started" else "error",
                             "taskId" to taskId,
-                            "runner" to "oob_agent_reusable_function",
-                            "arguments_applied" to true
+                            "runner" to "oob_mixed_runner",
+                            "local_steps_completed" to completedCount,
+                            "agent_steps_pending" to pendingAgentSteps.size
                         ),
                         "context" to linkedMapOf(
                             "source" to "oob_reusable_function",
                             "function_id" to functionId,
-                            "argument_count" to callArguments.size
+                            "step_results" to stepResults
                         )
+                    ))
+                }
+                return@launch
+            }
+
+            // All steps executed locally.
+            val localSuccess = runPayload["success"] != false
+            withContext(Dispatchers.Main) {
+                result.success(linkedMapOf(
+                    "success" to localSuccess,
+                    "goal" to "oob_reusable_function_run:$functionId",
+                    "function_id" to functionId,
+                    "error_code" to if (localSuccess) null else "OOB_FUNCTION_STEP_FAILED",
+                    "error_message" to runPayload["error_message"],
+                    "terminal_state" to linkedMapOf(
+                        "status" to if (localSuccess) "completed" else "error",
+                        "runner" to "oob_mixed_runner",
+                        "step_count" to runPayload["step_count"],
+                        "success_step_count" to runPayload["success_step_count"],
+                        "model_used" to (runPayload["model_used"] == true)
+                    ),
+                    "context" to linkedMapOf(
+                        "source" to "oob_reusable_function",
+                        "function_id" to functionId,
+                        "step_results" to stepResults
                     )
-                )
+                ))
             }
         }
     }
@@ -3006,10 +3162,15 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     fun postLLMChat(call: MethodCall, result: MethodChannel.Result) {
         val text = call.argument<String>("text") ?: ""
         val model = call.argument<String>("model") ?: "scene.dispatch.model"
+        val responseJsonObject = call.argument<Boolean>("responseJsonObject") ?: false
 
         workJob.launch {
             try {
-                val response = HttpController.postLLMRequest(model, text)
+                val response = HttpController.postLLMRequest(
+                    model = model,
+                    text = text,
+                    responseJsonObject = responseJsonObject
+                )
 
                 withContext(Dispatchers.Main) {
                     result.success(response.message)
@@ -4598,28 +4759,67 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     private fun buildOobReusableFunctionRunPrompt(
         functionId: String,
         functionSpec: Map<String, Any?>,
-        arguments: Map<String, Any?>
+        arguments: Map<String, Any?>,
+        completedStepCount: Int = 0,
     ): String {
-        val prettySpec = OobReusableFunctionStore.prettyJson(functionSpec)
-        val prettyArgs = OobReusableFunctionStore.prettyJson(arguments)
-        return listOf(
-            "请执行这个 OOB 可复用 function。",
-            "",
-            "Function ID: $functionId",
-            "",
-            "调用参数 JSON:",
-            prettyArgs,
-            "",
-            "执行规则:",
-            "1. Function JSON 已由 native 按 parameters.bindings 完成参数物化，优先读取 runtime.resolved_arguments 和 execution.steps[*].args。",
-            "2. 按 execution.steps 顺序执行；executor=tool 时优先调用 step.callable_tool（没有则用 step.tool）并传入已物化 step.args。",
-            "3. executor=agent 或 validation/before_state/constraints 不匹配时，不要盲目重放坐标；使用 step.agent_call 或 fallback，以同一目标从当前屏幕重规划。",
-            "4. 如果 step.tool 对应现有 OOB/agent 工具，直接调用该工具并使用已物化后的 step.args；如果 callable_tool=oob.agent.run，则按 agent_call.args.prompt 执行。",
-            "5. 执行完成后给出简洁结果，并说明是否发生过 agent re-plan。",
-            "",
-            "Function JSON:",
-            prettySpec
-        ).joinToString("\n")
+        val goal = functionSpec["description"]?.toString()?.trim()
+            ?: functionSpec["name"]?.toString()?.trim()
+            ?: functionId
+        val constraints = functionSpec["constraints"] as? Map<*, *>
+        val packageName = constraints?.get("package_name")?.toString()?.trim().orEmpty()
+        val steps = ((functionSpec["execution"] as? Map<*, *>)?.get("steps") as? List<*>)
+            ?.filterIsInstance<Map<*, *>>() ?: emptyList()
+
+        val lines = mutableListOf<String>()
+        lines += "执行任务：$goal"
+        if (packageName.isNotEmpty()) lines += "目标应用：$packageName"
+        if (completedStepCount > 0) {
+            lines += "（前 $completedStepCount 步已由本地执行完毕，从第 ${completedStepCount + 1} 步继续）"
+        }
+        lines += ""
+        lines += "步骤（按顺序执行）："
+
+        steps.forEachIndexed { i, rawStep ->
+            val step = rawStep.entries.associate { (k, v) -> k.toString() to v }
+            val num = i + 1
+            val title = step["title"]?.toString()?.trim().orEmpty()
+            val executor = step["executor"]?.toString()?.trim()?.lowercase().orEmpty()
+            val done = i < completedStepCount
+
+            when {
+                done -> lines += "$num. [已完成] $title"
+                executor == "omniflow" -> {
+                    val action = step["omniflow_action"]?.toString()
+                        ?: step["tool"]?.toString() ?: "?"
+                    val args = step["args"]
+                    val argsLine = when {
+                        args is Map<*, *> && args.isNotEmpty() ->
+                            args.entries.take(4).joinToString(", ") { (k, v) -> "$k=$v" }
+                        else -> ""
+                    }
+                    val coordNote = if (step["coordinate_hook"] != null) "（有录制坐标，优先 remap）" else ""
+                    lines += "$num. [直接执行] $title"
+                    lines += "  → $action${if (argsLine.isNotEmpty()) " $argsLine" else ""}$coordNote"
+                }
+                executor == "agent" -> {
+                    val prompt = ((step["agent_call"] as? Map<*, *>)
+                        ?.get("args") as? Map<*, *>)
+                        ?.get("prompt")?.toString()?.trim() ?: title
+                    lines += "$num. [重新规划] $title"
+                    lines += "  → $prompt"
+                }
+                else -> {
+                    val tool = step["callable_tool"]?.toString()
+                        ?: step["tool"]?.toString() ?: "?"
+                    lines += "$num. [工具调用] $title"
+                    lines += "  → $tool"
+                }
+            }
+        }
+
+        lines += ""
+        lines += "规则：[直接执行] 步骤调用对应工具，使用已记录参数，不重新规划；[重新规划] 步骤以所给 prompt 从当前屏幕执行。"
+        return lines.joinToString("\n")
     }
 
     private fun parseScheduledSubagentRunMeta(
@@ -5300,6 +5500,57 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
+    fun agentSkillSyncOfficialRepository(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            try {
+                if (!WorkspaceStorageAccess.isGranted(context)) {
+                    withContext(Dispatchers.Main) {
+                        result.error(
+                            "WORKSPACE_STORAGE_PERMISSION_REQUIRED",
+                            WorkspaceStorageAccess.REQUIRED_PERMISSION_NAME,
+                            null
+                        )
+                    }
+                    return@launch
+                }
+                val workspaceManager = AgentWorkspaceManager(context)
+                val skillIndexService = SkillIndexService(context, workspaceManager)
+                val syncResult = skillIndexService.syncOfficialSkillsRepository()
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        mapOf(
+                            "action" to syncResult.action,
+                            "repositoryUrl" to syncResult.repositoryUrl,
+                            "rootPath" to syncResult.rootPath,
+                            "shellRootPath" to syncResult.shellRootPath,
+                            "skillCount" to syncResult.skillCount,
+                            "skills" to syncResult.skills.map(::skillEntryPayload),
+                            "output" to syncResult.output
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    val isWorkspacePermissionError =
+                        WorkspaceStorageAccess.looksLikePermissionError(e)
+                    result.error(
+                        if (isWorkspacePermissionError) {
+                            "WORKSPACE_STORAGE_PERMISSION_REQUIRED"
+                        } else {
+                            "AGENT_SKILL_SYNC_OFFICIAL_ERROR"
+                        },
+                        if (isWorkspacePermissionError) {
+                            WorkspaceStorageAccess.REQUIRED_PERMISSION_NAME
+                        } else {
+                            e.message
+                        },
+                        null
+                    )
+                }
+            }
+        }
+    }
+
     fun getTokenUsageRecords(call: MethodCall, result: MethodChannel.Result) {
         val sinceMs = call.argument<Number>("since")?.toLong() ?: 0L
         workJob.launch {
@@ -5898,6 +6149,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         // Populated by onToolCallPreview during streaming; consumed by onToolCallStart
         // so both phases write to the same Flutter card.
         val previewEntryIdByToolCallId = mutableMapOf<String, String>()
+        val previewEntryIdsByToolName = mutableMapOf<String, ArrayDeque<String>>()
 
         // -----------------------------------------------------------------------
         // Helper methods
@@ -5928,6 +6180,41 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 store.remove(toolName)
             }
             return value
+        }
+
+        fun rememberPreviewToolEntry(
+            toolName: String,
+            toolCallId: String,
+            entryId: String
+        ) {
+            previewEntryIdByToolCallId[toolCallId] = entryId
+            previewEntryIdsByToolName.getOrPut(toolName) { ArrayDeque() }.addLast(entryId)
+        }
+
+        fun removePreviewToolEntry(entryId: String) {
+            previewEntryIdByToolCallId.entries.removeIf { it.value == entryId }
+            val emptyToolNames = mutableListOf<String>()
+            previewEntryIdsByToolName.forEach { (name, queue) ->
+                queue.remove(entryId)
+                if (queue.isEmpty()) {
+                    emptyToolNames.add(name)
+                }
+            }
+            emptyToolNames.forEach(previewEntryIdsByToolName::remove)
+        }
+
+        fun takePreviewToolEntry(toolName: String, toolCallId: String): String? {
+            previewEntryIdByToolCallId.remove(toolCallId)?.let { entryId ->
+                removePreviewToolEntry(entryId)
+                return entryId
+            }
+            val queue = previewEntryIdsByToolName[toolName] ?: return null
+            val entryId = if (queue.isEmpty()) null else queue.removeFirst()
+            if (queue.isEmpty()) {
+                previewEntryIdsByToolName.remove(toolName)
+            }
+            entryId?.let { removePreviewToolEntry(it) }
+            return entryId
         }
 
         suspend fun publishConversationMessagesSync() {
@@ -6370,8 +6657,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             if (previewEntryIdByToolCallId.containsKey(resolvedId)) return
 
             // Allocate the entry ID now; onToolCallStart will reuse it via the map.
-            val entryId = "$taskId-tool-${toolSequence + previewEntryIdByToolCallId.size + 1}"
-            previewEntryIdByToolCallId[resolvedId] = entryId
+            val entryId = "$taskId-tool-${++toolSequence}"
+            rememberPreviewToolEntry(toolName, resolvedId, entryId)
 
             val roundIndex = currentToolRoundIndex()
             val earlyPayload = this@AssistsCoreManager.buildToolStartPayload(toolName, "{}").toMutableMap().apply {
@@ -6475,14 +6762,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             // Look up the entry ID allocated during onToolCallPreview using the
             // LLM-assigned toolCallId as the stable key. This guarantees the
             // confirmed event lands on the same Flutter card as the preview,
-            // regardless of execution order.
-            val previewEntryId = previewEntryIdByToolCallId.remove(toolCallId)
-            val entryId = if (previewEntryId != null) {
-                ++toolSequence   // keep the counter in sync
-                previewEntryId
-            } else {
-                "$taskId-tool-${++toolSequence}"
-            }
+            // with a tool-name fallback for providers that rewrite streamed IDs.
+            val entryId = takePreviewToolEntry(toolName, toolCallId)
+                ?: "$taskId-tool-${++toolSequence}"
             val startedAtMillis = System.currentTimeMillis()
             activeToolStartTimes[entryId] = startedAtMillis
             val roundIndex = currentToolRoundIndex()

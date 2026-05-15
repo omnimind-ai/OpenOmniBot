@@ -1,6 +1,6 @@
 ---
 name: oob-web-research
-description: 调研、搜索整理、收集资料、分析竞品、研究市场、小红书调研、GitHub分析、爬取内容、批量收集、信息汇总。Use when the task involves gathering, extracting, or aggregating information from the web — search results, platform pages, repositories, or social content — and storing findings in a Project.
+description: 调研、搜索整理、收集资料、分析竞品、研究市场、小红书调研、GitHub分析、爬取内容、批量收集、信息汇总、web research。Use when the task involves gathering, extracting, or aggregating information from the web — search results, platform pages, repositories, or social content — and storing findings in a Project.
 ---
 
 # OOB Web Research

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/assists_core_service.dart';
+import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/omnibot_markdown_body.dart';
 import 'package:ui/widgets/omnibot_resource_widgets.dart';
 
@@ -8,8 +9,7 @@ import 'package:ui/widgets/omnibot_resource_widgets.dart';
 const String kThinkingText = '小万正在思考...';
 
 /// 思考中的加载文案（本地化显示用）
-String get kThinkingTextLocalized =>
-    AppTextLocalizer.text(kThinkingText);
+String get kThinkingTextLocalized => AppTextLocalizer.text(kThinkingText);
 
 /// 总结中的加载文案（本地化显示用）
 String get kSummarizingText => AppTextLocalizer.text('总结中');
@@ -77,13 +77,22 @@ class StreamingText extends StatefulWidget {
 class _StreamingTextState extends State<StreamingText> {
   String _previousFullText = '';
   bool _isFirstBuild = true;
-  String? _lastSelectedContent; // 跟踪最后选中的内容
   int? _lastNotifiedDisplayLength;
+  // Only incremented when animation must restart from scratch:
+  // thinking→content transition, or full text replacement (not streaming append).
+  int _animationEpoch = 0;
 
   @override
   void didUpdateWidget(StreamingText oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.fullText != widget.fullText) {
+      final wasThinking = oldWidget.fullText == kThinkingText;
+      final isAppend = widget.fullText.startsWith(oldWidget.fullText);
+      // Restart animation only on thinking→content or full replacement,
+      // NOT on every streaming append.
+      if (wasThinking || !isAppend) {
+        _animationEpoch++;
+      }
       _previousFullText = _resolveAnimationStartText(
         previousText: oldWidget.fullText,
         nextText: widget.fullText,
@@ -141,17 +150,7 @@ class _StreamingTextState extends State<StreamingText> {
             )
           : Text(localizedText, style: widget.style);
 
-      return widget.selectable
-          ? SelectionArea(
-              onSelectionChanged: (content) {
-                _lastSelectedContent = content?.plainText;
-              },
-              contextMenuBuilder: (context, selectableRegionState) {
-                return _buildSelectionContextMenu(selectableRegionState);
-              },
-              child: child,
-            )
-          : child;
+      return _wrapSelectable(child, localizedText);
     }
 
     if (widget.enableMarkdown) {
@@ -164,17 +163,7 @@ class _StreamingTextState extends State<StreamingText> {
         trailingInline: widget.trailing,
       );
 
-      return widget.selectable
-          ? SelectionArea(
-              onSelectionChanged: (content) {
-                _lastSelectedContent = content?.plainText;
-              },
-              contextMenuBuilder: (context, selectableRegionState) {
-                return _buildSelectionContextMenu(selectableRegionState);
-              },
-              child: child,
-            )
-          : child;
+      return _wrapSelectable(child, widget.fullText);
     }
 
     // ── 纯文本动画路径 ──
@@ -193,7 +182,7 @@ class _StreamingTextState extends State<StreamingText> {
     );
 
     return TweenAnimationBuilder<double>(
-      key: ValueKey(previousLength), // 确保从"思考中..."切换时重建动画
+      key: ValueKey(_animationEpoch), // 只在思考→内容或文本替换时重建，流式追加不重建
       tween: Tween<double>(
         begin: previousLength.toDouble(),
         end: widget.fullText.length.toDouble(),
@@ -219,17 +208,7 @@ class _StreamingTextState extends State<StreamingText> {
             trailingInline: widget.trailing,
           );
 
-          return widget.selectable
-              ? SelectionArea(
-                  onSelectionChanged: (content) {
-                    _lastSelectedContent = content?.plainText;
-                  },
-                  contextMenuBuilder: (context, selectableRegionState) {
-                    return _buildSelectionContextMenu(selectableRegionState);
-                  },
-                  child: child,
-                )
-              : child;
+          return _wrapSelectable(child, displayText);
         }
 
         // 计算动画进度（0.0 到 1.0）
@@ -250,18 +229,40 @@ class _StreamingTextState extends State<StreamingText> {
         );
 
         // 计算新增部分的透明度（最后几个字符渐显）
-        return widget.selectable
-            ? SelectionArea(
-                onSelectionChanged: (content) {
-                  _lastSelectedContent = content?.plainText;
-                },
-                contextMenuBuilder: (context, selectableRegionState) {
-                  return _buildSelectionContextMenu(selectableRegionState);
-                },
-                child: child,
-              )
-            : child;
+        return _wrapSelectable(child, displayText);
       },
+    );
+  }
+
+  Widget _wrapSelectable(Widget child, String copyText) {
+    if (!widget.selectable) {
+      return child;
+    }
+
+    // Flutter's native SelectionArea can keep detached selectables registered
+    // while chat messages stream, animate, or get removed from a scrolling list.
+    // Prefer stable full-message copy over granular selection for dynamic chat.
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onLongPress: () => _copyText(copyText),
+      child: child,
+    );
+  }
+
+  Future<void> _copyText(String text) async {
+    final normalized = text.trim();
+    if (normalized.isEmpty) {
+      return;
+    }
+    final copied = await AssistsMessageService.copyToClipboard(normalized);
+    if (!mounted) {
+      return;
+    }
+    showToast(
+      copied
+          ? AppTextLocalizer.choose(en: 'Copied', zh: '已复制')
+          : AppTextLocalizer.choose(en: 'Copy failed', zh: '复制失败'),
+      type: copied ? ToastType.success : ToastType.error,
     );
   }
 
@@ -336,38 +337,5 @@ class _StreamingTextState extends State<StreamingText> {
         ),
       ),
     ];
-  }
-
-  /// 构建选择文本的上下文菜单（使用 AssistsMessageService 复制到剪贴板）
-  Widget _buildSelectionContextMenu(
-    SelectableRegionState selectableRegionState,
-  ) {
-    return AdaptiveTextSelectionToolbar.buttonItems(
-      anchors: selectableRegionState.contextMenuAnchors,
-      buttonItems: [
-        // 全选按钮
-        ContextMenuButtonItem(
-          label: AppTextLocalizer.text('全选'),
-          onPressed: () {
-            selectableRegionState.selectAll(SelectionChangedCause.toolbar);
-          },
-        ),
-        // 复制按钮 - 使用 native channel 复制
-        ContextMenuButtonItem(
-          label: AppTextLocalizer.text('复制'),
-          onPressed: () {
-            // 使用 onSelectionChanged 回调跟踪到的选中内容
-            final selectedText = _lastSelectedContent;
-
-            if (selectedText != null && selectedText.isNotEmpty) {
-              // 使用 native channel 复制到剪贴板
-              AssistsMessageService.copyToClipboard(selectedText);
-            }
-
-            selectableRegionState.hideToolbar();
-          },
-        ),
-      ],
-    );
   }
 }

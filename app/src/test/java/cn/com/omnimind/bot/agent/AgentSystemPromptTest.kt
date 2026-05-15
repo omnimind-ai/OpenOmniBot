@@ -148,11 +148,12 @@ class AgentSystemPromptTest {
             locale = PromptLocale.ZH_CN
         )
 
-        assertTrue(prompt.contains("每项含简短讲解"))
+        assertTrue(prompt.contains("已安装 skills"))
         assertTrue(prompt.contains("讲解: Use for 系统提示词 and prompt dump debugging."))
         assertTrue(prompt.contains("样例: 系统提示词怎么拆分"))
         assertTrue(prompt.contains("把 Project 上下文注入成 project_context"))
         assertTrue(prompt.contains("能力目录: references"))
+        assertTrue(prompt.contains("本轮状态: 未自动加载；相关时调用 skills_read"))
         assertTrue(prompt.contains("何时读正文: 准备执行该类任务、需要 references"))
         assertTrue(prompt.contains("读取正文: skills_read(skillId=\"oob-prompt-runtime\")"))
     }

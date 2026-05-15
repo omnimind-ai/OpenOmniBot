@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ui/l10n/app_language_mode.dart';
+import 'package:ui/models/habitual_hand.dart';
 import 'package:ui/theme/app_theme_mode.dart';
 
 /// SharedPreferences 统一管理类。
@@ -151,6 +152,7 @@ class StorageService {
 
   static const String kAutoBackToChatAfterTaskKey =
       'auto_back_to_chat_after_task';
+  static const String kHabitualHandKey = 'habitual_hand';
   static const String kThemeOptionKey = 'theme_option';
   static const String kLanguageOptionKey = 'language_option';
 
@@ -161,6 +163,19 @@ class StorageService {
 
   static Future<void> setAutoBackToChatAfterTaskEnabled(bool enabled) async {
     await setBool(kAutoBackToChatAfterTaskKey, enabled);
+  }
+
+  static HabitualHand getHabitualHand() {
+    return habitualHandFromStorageValue(
+      getString(
+        kHabitualHandKey,
+        defaultValue: HabitualHand.right.storageValue,
+      ),
+    );
+  }
+
+  static Future<bool> setHabitualHand(HabitualHand hand) async {
+    return setString(kHabitualHandKey, hand.storageValue);
   }
 
   static AppThemeMode getThemeMode() {
@@ -189,9 +204,7 @@ class StorageService {
     await setString(kLanguageOptionKey, mode.storageValue);
   }
 
-  static ResolvedAppLocale getResolvedAppLocale({
-    Locale? systemLocale,
-  }) {
+  static ResolvedAppLocale getResolvedAppLocale({Locale? systemLocale}) {
     return resolveAppLocale(
       mode: getLanguageMode(),
       systemLocale: systemLocale ?? PlatformDispatcher.instance.locale,

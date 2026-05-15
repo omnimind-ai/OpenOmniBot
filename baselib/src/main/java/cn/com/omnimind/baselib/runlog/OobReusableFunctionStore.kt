@@ -95,6 +95,20 @@ object OobReusableFunctionStore {
         )
     }
 
+    @Synchronized
+    fun delete(context: Context, functionId: String): Boolean {
+        val normalized = functionId.trim()
+        if (normalized.isEmpty()) return false
+        val prefs = prefs(context)
+        val key = "$SPEC_PREFIX$normalized"
+        if (!prefs.contains(key)) return false
+        prefs.edit().remove(key).apply()
+        val index = readIndex(prefs).toMutableList()
+        index.remove(normalized)
+        writeIndex(prefs, index)
+        return true
+    }
+
     fun materialize(
         functionSpec: Map<String, Any?>,
         arguments: Map<String, Any?>

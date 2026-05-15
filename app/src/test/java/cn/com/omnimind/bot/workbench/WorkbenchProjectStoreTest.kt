@@ -278,6 +278,139 @@ class WorkbenchProjectStoreTest {
         assertEquals(WORKBENCH_HTML_RENDERER, display["renderer"])
     }
 
+    @Test
+    fun projectApiActionPrefersRunUseOverToolIdInference() {
+        // toolId says ".create" but run.use says "native.collection.archive"
+        // — runtime must route to archive, not create
+        val store = store()
+        store.createProject(
+            mapOf(
+                "projectId" to "oob-workbench-runuse",
+                "entityName" to "Task",
+                "apis" to listOf(
+                    mapOf(
+                        "toolId" to "task.create",
+                        "displayName" to "Create",
+                        "inputSchema" to mapOf("title" to "string"),
+                        "outputSchema" to mapOf("item" to "object"),
+                        "run" to mapOf("use" to "native.collection.create")
+                    ),
+                    mapOf(
+                        "toolId" to "task.add",   // "add" → inferred as create without run.use
+                        "displayName" to "Archive via add",
+                        "inputSchema" to mapOf("item_id" to "string"),
+                        "outputSchema" to mapOf("item" to "object"),
+                        "run" to mapOf("use" to "native.collection.archive")  // explicit: archive
+                    )
+                )
+            )
+        )
+
+        val created = store.callApi(
+            projectId = "oob-workbench-runuse",
+            apiId = "task.create",
+            inputs = mapOf("title" to "Test task"),
+            caller = "test"
+        )
+        assertTrue(created["success"] == true)
+        val itemId = ((created["outputs"] as Map<*, *>)["item"] as Map<*, *>)["id"].toString()
+
+        // "task.add" has run.use = archive — must archive, not create a new item
+        val archived = store.callApi(
+            projectId = "oob-workbench-runuse",
+            apiId = "task.add",
+            inputs = mapOf("item_id" to itemId),
+            caller = "test"
+        )
+        assertTrue(archived["success"] == true)
+        val archivedItem = (archived["outputs"] as Map<*, *>)["item"] as Map<*, *>
+        assertEquals("archived", archivedItem["status"])
+    }
+
+    @Test
+    fun nativeCollectionGetReturnsSingleItem() {
+        val store = store()
+        store.createProject(
+            mapOf(
+                "projectId" to "oob-workbench-getitem",
+                "entityName" to "Note",
+                "apis" to listOf(
+                    mapOf(
+                        "toolId" to "note.create",
+                        "displayName" to "Create",
+                        "inputSchema" to mapOf("title" to "string"),
+                        "outputSchema" to mapOf("item" to "object"),
+                        "run" to mapOf("use" to "native.collection.create")
+                    ),
+                    mapOf(
+                        "toolId" to "note.get",
+                        "displayName" to "Get",
+                        "inputSchema" to mapOf("item_id" to "string"),
+                        "outputSchema" to mapOf("item" to "object"),
+                        "run" to mapOf("use" to "native.collection.get")
+                    )
+                )
+            )
+        )
+
+        val created = store.callApi(
+            projectId = "oob-workbench-getitem",
+            apiId = "note.create",
+            inputs = mapOf("title" to "Hello"),
+            caller = "test"
+        )
+        val itemId = ((created["outputs"] as Map<*, *>)["item"] as Map<*, *>)["id"].toString()
+
+        val got = store.callApi(
+            projectId = "oob-workbench-getitem",
+            apiId = "note.get",
+            inputs = mapOf("item_id" to itemId),
+            caller = "test"
+        )
+        assertTrue(got["success"] == true)
+        val item = (got["outputs"] as Map<*, *>)["item"] as Map<*, *>
+        assertEquals(itemId, item["id"])
+        assertEquals("Hello", item["title"])
+
+        val notFound = store.callApi(
+            projectId = "oob-workbench-getitem",
+            apiId = "note.get",
+            inputs = mapOf("item_id" to "nonexistent-id"),
+            caller = "test"
+        )
+        assertEquals(false, notFound["success"])
+    }
+
+    @Test
+    fun cleanFrontendHtmlPathStripsKnownPrefixes() {
+        val root = Files.createTempDirectory("workbench-path-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        // Files with the wrong prefix should be stripped, not rejected
+        store.createProject(
+            mapOf(
+                "projectId" to "oob-workbench-pathstrip",
+                "entityName" to "Item",
+                "htmlFiles" to listOf(
+                    // Model mistakenly includes "frontend/html/" prefix — should be stripped
+                    mapOf(
+                        "path" to "frontend/html/index.html",
+                        "content" to "<!doctype html><p>test</p>"
+                    ),
+                    // Subdirectory path (e.g. styles/app.css) must be preserved as-is
+                    mapOf(
+                        "path" to "styles/app.css",
+                        "content" to "body{margin:0}"
+                    )
+                )
+            )
+        )
+        val projectDir = root.resolve("projects/oob-workbench-pathstrip")
+        // index.html must land at frontend/html/index.html (prefix stripped once)
+        assertTrue(projectDir.resolve("frontend/html/index.html").exists())
+        // styles/app.css must land at frontend/html/styles/app.css
+        assertTrue(projectDir.resolve("frontend/html/styles/app.css").exists())
+    }
+
     private fun executionCount(result: Map<String, Any?>, toolId: String): Int {
         val project = result["project"] as Map<*, *>
         val tools = project["tools"] as List<*>

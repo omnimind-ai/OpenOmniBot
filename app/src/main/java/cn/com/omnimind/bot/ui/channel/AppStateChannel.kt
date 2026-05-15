@@ -9,6 +9,7 @@ import cn.com.omnimind.bot.activity.StartupThemeResolver
 import cn.com.omnimind.bot.share.SharedOpenDraftStore
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
 import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
+import cn.com.omnimind.bot.share.SharedOpenPreferenceStore
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -97,6 +98,37 @@ class AppStateChannel {
                     OmniLog.e(TAG, "Context unavailable, cannot navigate back to chat")
                     result.error("INVALID_CONTEXT", "Context unavailable", null)
                 }
+            }
+            "getSharedOpenMode" -> {
+                val appContext = context?.applicationContext
+                if (appContext == null) {
+                    result.error("INVALID_CONTEXT", "Context is null", null)
+                    return
+                }
+                result.success(SharedOpenPreferenceStore.getOpenMode(appContext))
+            }
+            "getSharedOpenModes" -> {
+                val appContext = context?.applicationContext
+                if (appContext == null) {
+                    result.error("INVALID_CONTEXT", "Context is null", null)
+                    return
+                }
+                result.success(SharedOpenPreferenceStore.getOpenModes(appContext))
+            }
+            "setSharedOpenMode" -> {
+                val appContext = context?.applicationContext
+                val mode = call.argument<String>("mode")
+                val target = call.argument<String>("target")?.trim()?.lowercase()
+                if (appContext == null) {
+                    result.error("INVALID_CONTEXT", "Context is null", null)
+                    return
+                }
+                val saved = when (target) {
+                    "image" -> SharedOpenPreferenceStore.setImageOpenMode(appContext, mode.orEmpty())
+                    "file" -> SharedOpenPreferenceStore.setFileOpenMode(appContext, mode.orEmpty())
+                    else -> SharedOpenPreferenceStore.setOpenMode(appContext, mode.orEmpty())
+                }
+                result.success(saved)
             }
             "applyLanguagePreference" -> {
                 val appContext = context?.applicationContext
