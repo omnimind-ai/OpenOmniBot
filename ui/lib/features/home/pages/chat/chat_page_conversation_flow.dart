@@ -333,11 +333,117 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     );
   }
 
+  bool _hasConfiguredNormalChatProviderModel({
+    List<ModelProviderProfileSummary>? profiles,
+    Map<String, List<ProviderModelOption>>? modelOptionsByProfileId,
+    List<SceneCatalogItem>? sceneCatalog,
+  }) {
+    final profileSource = profiles ?? _modelProviderProfiles;
+    final optionsSource = modelOptionsByProfileId ?? _modelOptionsByProfileId;
+    final catalogSource = sceneCatalog ?? _sceneCatalog;
+    final configuredProfileIds = profileSource
+        .where((profile) => profile.configured)
+        .map((profile) => profile.id)
+        .toSet();
+    if (configuredProfileIds.isEmpty) {
+      return false;
+    }
+
+    for (final profileId in configuredProfileIds) {
+      final models =
+          optionsSource[profileId] ?? const <ProviderModelOption>[];
+      if (models.any((model) => model.id.trim().isNotEmpty)) {
+        return true;
+      }
+    }
+
+    for (final scene in catalogSource) {
+      final providerProfileId = scene.effectiveProviderProfileId.trim();
+      if (!scene.providerConfigured ||
+          !configuredProfileIds.contains(providerProfileId)) {
+        continue;
+      }
+      if (scene.effectiveModel.trim().isNotEmpty) {
+        return true;
+      }
+    }
+
+    final override = _activeConversationModelOverrideSelection;
+    return override != null &&
+        configuredProfileIds.contains(override.providerProfileId) &&
+        override.modelId.trim().isNotEmpty;
+  }
+
+  @override
+  Future<bool> _ensureNormalChatModelConfigurationForSend() async {
+    if (_activeMode != ChatPageMode.normal || _isOpenClawSurface) {
+      return true;
+    }
+    if (_hasConfiguredNormalChatProviderModel()) {
+      return true;
+    }
+    if (_isCheckingSendModelConfiguration) {
+      return false;
+    }
+
+    _isCheckingSendModelConfiguration = true;
+    try {
+      final results = await Future.wait<dynamic>([
+        ModelProviderConfigService.loadModelGroups(),
+        SceneModelConfigService.getSceneCatalog(),
+      ]);
+      if (!mounted) {
+        return false;
+      }
+
+      final groups = results[0] as List<ProviderModelGroup>;
+      final catalog = results[1] as List<SceneCatalogItem>;
+      final profiles = groups.map((group) => group.profile).toList();
+      final source = <String, List<ProviderModelOption>>{
+        for (final group in groups)
+          group.profile.id: List<ProviderModelOption>.from(group.models),
+      };
+      final mergedOptions = _mergeChatModelOptions(
+        profiles: profiles,
+        source: source,
+        sceneCatalog: catalog,
+        overrideSelection: _activeConversationModelOverrideSelection,
+      );
+      final hasConfiguredModel = _hasConfiguredNormalChatProviderModel(
+        profiles: profiles,
+        modelOptionsByProfileId: mergedOptions,
+        sceneCatalog: catalog,
+      );
+
+      setState(() {
+        _modelProviderProfiles = profiles;
+        _modelOptionsByProfileId = mergedOptions;
+        _sceneCatalog = catalog;
+      });
+      if (hasConfiguredModel) {
+        return true;
+      }
+    } catch (e) {
+      debugPrint('检查聊天模型配置失败: $e');
+    } finally {
+      _isCheckingSendModelConfiguration = false;
+    }
+
+    if (mounted) {
+      showToast(
+        LegacyTextLocalizer.localize('请先配置ai服务商和模型'),
+        type: ToastType.warning,
+      );
+    }
+    return false;
+  }
+
   @override
   Future<void> _sendMessage({String? text}) async {
     final messageText = (text ?? _messageController.text).trim();
     final hasAttachments = _pendingAttachments.isNotEmpty;
     if ((messageText.isEmpty && !hasAttachments) || _isAiResponding) return;
+    if (!await _ensureNormalChatModelConfigurationForSend()) return;
 
     final attachments = _pendingAttachments
         .map((item) => item.toMap())
@@ -402,6 +508,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       _showOpenClawCommandPanel(expand: true);
       return;
     }
+    if (!await _ensureNormalChatModelConfigurationForSend()) return;
 
     _inputFocusNode.unfocus();
     final messageIds = addUserMessage(messageText, attachments: attachments);

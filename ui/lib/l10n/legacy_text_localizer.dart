@@ -328,6 +328,7 @@ class LegacyTextLocalizer {
     '请先在模型提供商页配置 Provider':
         'Please configure a provider in Model Providers first',
     '该 Provider 暂无可选模型': 'No selectable models for this provider',
+    '请先配置ai服务商和模型': 'Please configure an AI provider and model first',
     '已进入仅聊天模式': 'Entered chat-only mode',
     '已退出仅聊天模式': 'Exited chat-only mode',
     '搜索技能名称或描述': 'Search skill name or description',

@@ -129,6 +129,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
 
   // ===================== State =====================
   bool _isPopupVisible = false;
+  bool _isCheckingSendModelConfiguration = false;
   final ChatConversationRuntimeCoordinator _runtimeCoordinator =
       ChatConversationRuntimeCoordinator.instance;
   final ChatConversationLifecycleGuard _conversationLifecycleGuard =
@@ -1930,6 +1931,8 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   String? _mimeTypeFromExtension(String path, {String extension = ''});
 
   void _showSnackBar(String message);
+
+  Future<bool> _ensureNormalChatModelConfigurationForSend();
 
   Future<void> _sendMessage({String? text});
 

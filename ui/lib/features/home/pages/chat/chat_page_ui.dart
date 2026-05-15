@@ -2009,6 +2009,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
       showToast('No content to send after editing', type: ToastType.warning);
       return;
     }
+    if (!await _ensureNormalChatModelConfigurationForSend()) {
+      return;
+    }
 
     _cancelUserMessageEditing();
     if (!mounted) return;
@@ -2084,6 +2087,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
             : '只有最新一条用户消息支持重试',
         type: ToastType.warning,
       );
+      return;
+    }
+    if (!await _ensureNormalChatModelConfigurationForSend()) {
       return;
     }
 
