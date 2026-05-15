@@ -4330,6 +4330,12 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     missing: List<String>? = null,
                     extras: Map<String, Any?> = emptyMap()
                 ) {
+                    val effectiveThinking = thinking
+                        ?.takeIf { it.isNotBlank() }
+                        ?: latestThinkingContent.takeIf {
+                            kind == "text_snapshot" &&
+                                it.isNotBlank()
+                        }
                     val basePayload = AgentStreamEvent(
                         taskId = taskId,
                         seq = nextEventSeq(),
@@ -4339,7 +4345,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         roundIndex = roundIndex,
                         isFinal = isFinal,
                         text = text,
-                        thinking = thinking,
+                        thinking = effectiveThinking,
                         stage = stage,
                         prefillTokensPerSecond = prefillTokensPerSecond,
                         decodeTokensPerSecond = decodeTokensPerSecond,

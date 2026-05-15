@@ -234,6 +234,9 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     final messageId = (event.entryId ?? '').trim();
     final text = event.text.trim();
     if (messageId.isEmpty || text.isEmpty) return;
+    final reasoningContent =
+        _normalizeReasoningContent(event.thinking) ??
+        _normalizeReasoningContent(deepThinkingContent);
     final streamMeta = ensureAgentStreamMessageMeta(
       _streamMetaFromEvent(event),
       entryId: messageId,
@@ -259,6 +262,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
                 'decodeTokensPerSecond': event.decodeTokensPerSecond,
             },
             streamMeta: streamMeta,
+            reasoningContent: reasoningContent,
           ),
         );
       } else {
@@ -274,6 +278,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         messages[index] = existing.copyWith(
           content: content,
           streamMeta: streamMeta,
+          reasoningContent: reasoningContent ?? existing.reasoningContent,
         );
       }
       isAiResponding = true;
@@ -317,6 +322,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         progress: toolEvent.progress,
         resultPreviewJson: toolEvent.resultPreviewJson,
         rawResultJson: toolEvent.rawResultJson,
+        reasoningContent: event.thinking,
         streamMeta: _streamMetaFromEvent(event),
       );
     });
@@ -331,6 +337,9 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         ? event.question.trim()
         : event.text.trim();
     final messageId = (event.entryId ?? '').trim();
+    final reasoningContent =
+        _normalizeReasoningContent(event.thinking) ??
+        _normalizeReasoningContent(deepThinkingContent);
     final streamMeta = ensureAgentStreamMessageMeta(
       _streamMetaFromEvent(event),
       entryId: messageId,
@@ -351,12 +360,15 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
               user: 2,
               content: {'text': text, 'id': messageId},
               streamMeta: streamMeta,
+              reasoningContent: reasoningContent,
             ),
           );
         } else {
           messages[index] = messages[index].copyWith(
             content: {'text': text, 'id': messageId},
             streamMeta: streamMeta,
+            reasoningContent:
+                reasoningContent ?? messages[index].reasoningContent,
           );
         }
       }
@@ -412,6 +424,9 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     final taskId = event.taskId;
     final messageId = (event.entryId ?? '').trim();
     final text = event.text.trim();
+    final reasoningContent =
+        _normalizeReasoningContent(event.thinking) ??
+        _normalizeReasoningContent(deepThinkingContent);
     final permissionCardId =
         (event.raw['permissionCardId'] ?? '$taskId-permission').toString();
     final executionPermissionIds = _resolveExecutionPermissionIds(
@@ -442,12 +457,15 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
               user: 2,
               content: {'text': text, 'id': messageId},
               streamMeta: replyStreamMeta,
+              reasoningContent: reasoningContent,
             ),
           );
         } else {
           messages[index] = messages[index].copyWith(
             content: {'text': text, 'id': messageId},
             streamMeta: replyStreamMeta,
+            reasoningContent:
+                reasoningContent ?? messages[index].reasoningContent,
           );
         }
       }
@@ -744,6 +762,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     required String progress,
     required String resultPreviewJson,
     required String rawResultJson,
+    String? reasoningContent,
     Map<String, dynamic>? streamMeta,
   }) {
     setState(() {
@@ -771,6 +790,9 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         'toolType': event.toolType,
         'serverName': event.serverName,
         'status': status,
+        'reasoning_content':
+            _normalizeReasoningContent(reasoningContent) ??
+            (existingCardData['reasoning_content'] ?? '').toString(),
         'summary': summary.isNotEmpty
             ? summary
             : (existingCardData['summary'] ?? '').toString(),
@@ -880,5 +902,10 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         : candidate;
     final remaining = _maxTerminalOutputChars - notice.length;
     return '$notice${body.substring(body.length > remaining ? body.length - remaining : 0)}';
+  }
+
+  String? _normalizeReasoningContent(String? value) {
+    final normalized = value?.trim() ?? '';
+    return normalized.isEmpty ? null : normalized;
   }
 }

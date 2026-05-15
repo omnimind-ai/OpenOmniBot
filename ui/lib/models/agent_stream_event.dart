@@ -127,7 +127,8 @@ class AgentStreamEvent {
       roundIndex: _asInt(raw['roundIndex']) ?? 0,
       isFinal: raw['isFinal'] == true,
       text: (raw['text'] ?? raw['message'] ?? '').toString(),
-      thinking: (raw['thinking'] ?? '').toString(),
+      thinking:
+          (raw['thinking'] ?? raw['reasoning_content'] ?? '').toString(),
       stage: _asInt(raw['stage']) ?? 1,
       prefillTokensPerSecond: _asDouble(raw['prefillTokensPerSecond']),
       decodeTokensPerSecond: _asDouble(raw['decodeTokensPerSecond']),
