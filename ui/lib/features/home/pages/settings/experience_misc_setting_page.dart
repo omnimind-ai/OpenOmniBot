@@ -27,6 +27,7 @@ class _ExperienceMiscSettingPageState
   bool _hideFromRecentsEnabled = false;
   bool _vibrationEnabled = true;
   bool _autoBackToChatAfterTaskEnabled = true;
+  bool _useIndependentChatSendButton = true;
 
   @override
   void initState() {
@@ -37,6 +38,8 @@ class _ExperienceMiscSettingPageState
           defaultValue: true,
         ) ??
         true;
+    _useIndependentChatSendButton =
+        StorageService.isIndependentChatSendButtonEnabled();
     _loadHideFromRecentsState();
     _loadVibrationState();
     _loadAutoBackToChatAfterTaskState();
@@ -129,6 +132,20 @@ class _ExperienceMiscSettingPageState
     }
   }
 
+  Future<void> _onIndependentChatSendButtonChanged(bool value) async {
+    final saved = await StorageService.setIndependentChatSendButtonEnabled(
+      value,
+    );
+    if (!mounted) return;
+    if (!saved) {
+      showToast(context.l10n.settingsSaveFailed, type: ToastType.error);
+      return;
+    }
+    setState(() {
+      _useIndependentChatSendButton = value;
+    });
+  }
+
   Future<void> _onHabitualHandChanged(HabitualHand? value) async {
     if (value == null) {
       return;
@@ -175,6 +192,15 @@ class _ExperienceMiscSettingPageState
             trailing: _buildSwitchTrailing(
               value: _vibrationEnabled,
               onToggle: _onVibrationChanged,
+            ),
+          ),
+          _SettingItem(
+            icon: Icons.keyboard_return_rounded,
+            title: context.trLegacy('使用独立的发送按钮'),
+            subtitle: context.trLegacy('开启后，聊天页键盘回车为换行；关闭后，回车直接发送'),
+            trailing: _buildSwitchTrailing(
+              value: _useIndependentChatSendButton,
+              onToggle: _onIndependentChatSendButtonChanged,
             ),
           ),
           _SettingItem(

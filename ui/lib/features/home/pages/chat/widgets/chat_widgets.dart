@@ -2299,6 +2299,7 @@ class ChatInputWrapper extends StatelessWidget {
   final ValueChanged<double>? onInputHeightChanged;
   final CodexPermissionMode? codexPermissionMode;
   final ValueChanged<CodexPermissionMode>? onCodexPermissionModeChanged;
+  final bool useIndependentSendButton;
   final bool translucent;
 
   const ChatInputWrapper({
@@ -2329,6 +2330,7 @@ class ChatInputWrapper extends StatelessWidget {
     this.onInputHeightChanged,
     this.codexPermissionMode,
     this.onCodexPermissionModeChanged,
+    this.useIndependentSendButton = true,
     this.translucent = false,
   });
 
@@ -2368,6 +2370,7 @@ class ChatInputWrapper extends StatelessWidget {
             codexPermissionMode: codexPermissionMode,
             onCodexPermissionModeChanged: onCodexPermissionModeChanged,
             onInputHeightChanged: onInputHeightChanged,
+            useIndependentSendButton: useIndependentSendButton,
           ),
         ],
       ),

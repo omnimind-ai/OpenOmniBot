@@ -152,6 +152,8 @@ class StorageService {
 
   static const String kAutoBackToChatAfterTaskKey =
       'auto_back_to_chat_after_task';
+  static const String kUseIndependentChatSendButtonKey =
+      'use_independent_chat_send_button';
   static const String kHabitualHandKey = 'habitual_hand';
   static const String kThemeOptionKey = 'theme_option';
   static const String kLanguageOptionKey = 'language_option';
@@ -163,6 +165,15 @@ class StorageService {
 
   static Future<void> setAutoBackToChatAfterTaskEnabled(bool enabled) async {
     await setBool(kAutoBackToChatAfterTaskKey, enabled);
+  }
+
+  static bool isIndependentChatSendButtonEnabled() {
+    return getBool(kUseIndependentChatSendButtonKey, defaultValue: true) ??
+        true;
+  }
+
+  static Future<bool> setIndependentChatSendButtonEnabled(bool enabled) {
+    return setBool(kUseIndependentChatSendButtonKey, enabled);
   }
 
   static HabitualHand getHabitualHand() {

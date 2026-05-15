@@ -849,10 +849,14 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
   /// 统一的输入框组件
   Widget _buildTextField({bool multiline = false}) {
     final palette = context.omniPalette;
-    final keyboardType = multiline
+    final useKeyboardNewline =
+        multiline &&
+        widget.useIndependentSendButton &&
+        StorageService.isIndependentChatSendButtonEnabled();
+    final keyboardType = useKeyboardNewline
         ? TextInputType.multiline
         : TextInputType.text;
-    final textInputAction = multiline
+    final textInputAction = useKeyboardNewline
         ? TextInputAction.newline
         : TextInputAction.send;
     final textColor = context.isDarkTheme
@@ -882,7 +886,7 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
           minLines: 1,
           maxLines: multiline ? 2 : 1,
           scrollPhysics: const ClampingScrollPhysics(),
-          onSubmitted: multiline
+          onSubmitted: useKeyboardNewline
               ? null
               : (_) {
                   if (widget.controller.text.trim().isNotEmpty) {

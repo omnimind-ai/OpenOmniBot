@@ -6,6 +6,7 @@ import 'dart:ui';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/services/special_permission.dart';
+import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/widgets/image_preview_overlay.dart';
 import 'package:ui/widgets/text_input_context_menu.dart';
@@ -96,6 +97,7 @@ class ChatInputArea extends StatefulWidget {
   final VoidCallback? onLongPressContextUsageRing;
   final CodexPermissionMode? codexPermissionMode;
   final ValueChanged<CodexPermissionMode>? onCodexPermissionModeChanged;
+  final bool useIndependentSendButton;
 
   const ChatInputArea({
     super.key,
@@ -124,6 +126,7 @@ class ChatInputArea extends StatefulWidget {
     this.onLongPressContextUsageRing,
     this.codexPermissionMode,
     this.onCodexPermissionModeChanged,
+    this.useIndependentSendButton = true,
   });
 
   @override
