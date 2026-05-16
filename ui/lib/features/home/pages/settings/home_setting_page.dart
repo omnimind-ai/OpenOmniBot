@@ -80,6 +80,23 @@ class _HomeSettingPageState extends State<HomeSettingPage> {
     }
   }
 
+  Future<void> _togglePinnedPrompt(
+    HomeQuickPrompt prompt,
+    HomeGreetingSettings settings,
+  ) async {
+    final isPinned = settings.pinnedQuickPromptIds.contains(prompt.id);
+    if (!isPinned && settings.pinnedQuickPromptIds.length >= 2) {
+      showToast(context.trLegacy('最多固定两个快捷指令'));
+      return;
+    }
+    final saved = await HomeGreetingSettingsService.togglePinnedQuickPrompt(
+      prompt.id,
+    );
+    if (!saved && mounted) {
+      showToast(context.trLegacy('设置失败'), type: ToastType.error);
+    }
+  }
+
   Future<void> _showPromptEditor({HomeQuickPrompt? prompt}) async {
     final titleController = TextEditingController(
       text: prompt == null ? '' : prompt.title,
@@ -148,7 +165,7 @@ class _HomeSettingPageState extends State<HomeSettingPage> {
                             index == settings.quickPrompts.length - 1;
                         return Column(
                           children: [
-                            _buildPromptTile(prompt),
+                            _buildPromptTile(prompt, settings),
                             if (!isLast)
                               Divider(
                                 height: 1,
@@ -256,8 +273,13 @@ class _HomeSettingPageState extends State<HomeSettingPage> {
     );
   }
 
-  Widget _buildPromptTile(HomeQuickPrompt prompt) {
+  Widget _buildPromptTile(
+    HomeQuickPrompt prompt,
+    HomeGreetingSettings settings,
+  ) {
     final palette = context.omniPalette;
+    final pinnedIndex = settings.pinnedQuickPromptIds.indexOf(prompt.id);
+    final isPinned = pinnedIndex >= 0;
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 13, 0, 13),
       child: Row(
@@ -299,6 +321,10 @@ class _HomeSettingPageState extends State<HomeSettingPage> {
                     ),
                     const SizedBox(width: 6),
                     _PromptTypeBadge(builtIn: prompt.builtIn),
+                    if (isPinned) ...[
+                      const SizedBox(width: 6),
+                      _PinnedBadge(index: pinnedIndex + 1),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 3),
@@ -316,6 +342,15 @@ class _HomeSettingPageState extends State<HomeSettingPage> {
             ),
           ),
           const SizedBox(width: 8),
+          IconButton(
+            tooltip: context.trLegacy(isPinned ? '取消固定' : '固定到首页'),
+            onPressed: () => _togglePinnedPrompt(prompt, settings),
+            icon: Icon(
+              isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+              size: 18,
+              color: isPinned ? palette.accentPrimary : palette.textTertiary,
+            ),
+          ),
           if (!prompt.builtIn)
             IconButton(
               tooltip: context.trLegacy('编辑'),
@@ -436,6 +471,35 @@ class _PromptTypeBadge extends StatelessWidget {
           fontSize: 10,
           height: 1,
           fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+}
+
+class _PinnedBadge extends StatelessWidget {
+  final int index;
+
+  const _PinnedBadge({required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: palette.accentPrimary.withValues(
+          alpha: context.isDarkTheme ? 0.18 : 0.1,
+        ),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '${context.trLegacy('固定')} $index',
+        style: TextStyle(
+          color: palette.accentPrimary,
+          fontSize: 10,
+          height: 1,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

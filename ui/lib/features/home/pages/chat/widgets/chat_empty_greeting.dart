@@ -35,6 +35,7 @@ class ChatEmptyGreeting extends StatelessWidget {
   final Color? accentColor;
   final bool compact;
   final List<HomeQuickPrompt> quickPrompts;
+  final List<String> pinnedQuickPromptIds;
   final ValueChanged<HomeQuickPrompt>? onQuickPromptSelected;
 
   const ChatEmptyGreeting({
@@ -44,6 +45,7 @@ class ChatEmptyGreeting extends StatelessWidget {
     this.accentColor,
     this.compact = false,
     this.quickPrompts = const <HomeQuickPrompt>[],
+    this.pinnedQuickPromptIds = const <String>[],
     this.onQuickPromptSelected,
   });
 
@@ -136,23 +138,13 @@ class ChatEmptyGreeting extends StatelessWidget {
                 ),
                 if (quickPrompts.isNotEmpty) ...[
                   const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: quickPrompts
-                        .take(2)
-                        .map(
-                          (prompt) => _QuickPromptPill(
-                            prompt: prompt,
-                            textColor: primaryColor,
-                            accentColor: keywordColor,
-                            compact: compact,
-                            onTap: onQuickPromptSelected == null
-                                ? null
-                                : () => onQuickPromptSelected!(prompt),
-                          ),
-                        )
-                        .toList(growable: false),
+                  _RandomQuickPromptPills(
+                    quickPrompts: quickPrompts,
+                    pinnedQuickPromptIds: pinnedQuickPromptIds,
+                    textColor: primaryColor,
+                    accentColor: keywordColor,
+                    compact: compact,
+                    onQuickPromptSelected: onQuickPromptSelected,
                   ),
                 ],
               ],
@@ -160,6 +152,117 @@ class ChatEmptyGreeting extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _RandomQuickPromptPills extends StatefulWidget {
+  final List<HomeQuickPrompt> quickPrompts;
+  final List<String> pinnedQuickPromptIds;
+  final Color textColor;
+  final Color accentColor;
+  final bool compact;
+  final ValueChanged<HomeQuickPrompt>? onQuickPromptSelected;
+
+  const _RandomQuickPromptPills({
+    required this.quickPrompts,
+    required this.pinnedQuickPromptIds,
+    required this.textColor,
+    required this.accentColor,
+    required this.compact,
+    this.onQuickPromptSelected,
+  });
+
+  @override
+  State<_RandomQuickPromptPills> createState() =>
+      _RandomQuickPromptPillsState();
+}
+
+class _RandomQuickPromptPillsState extends State<_RandomQuickPromptPills> {
+  final math.Random _random = math.Random();
+  String _promptSignature = '';
+  List<HomeQuickPrompt> _selectedPrompts = const <HomeQuickPrompt>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshSelection();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RandomQuickPromptPills oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextSignature = _buildPromptSignature(widget.quickPrompts);
+    if (nextSignature != _promptSignature) {
+      _refreshSelection(signature: nextSignature);
+    }
+  }
+
+  void _refreshSelection({String? signature}) {
+    _promptSignature = signature ?? _buildPromptSignature(widget.quickPrompts);
+    final candidates = widget.quickPrompts
+        .where((prompt) => prompt.title.trim().isNotEmpty)
+        .toList(growable: false);
+    final pinnedIds = widget.pinnedQuickPromptIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .take(2)
+        .toList(growable: false);
+    if (pinnedIds.isNotEmpty) {
+      final promptsById = {for (final prompt in candidates) prompt.id: prompt};
+      _selectedPrompts = pinnedIds
+          .map((id) => promptsById[id])
+          .whereType<HomeQuickPrompt>()
+          .take(2)
+          .toList(growable: false);
+      return;
+    }
+    if (candidates.length <= 2) {
+      _selectedPrompts = candidates;
+      return;
+    }
+    final shuffled = List<HomeQuickPrompt>.of(candidates)..shuffle(_random);
+    _selectedPrompts = shuffled.take(2).toList(growable: false);
+  }
+
+  String _buildPromptSignature(List<HomeQuickPrompt> prompts) {
+    final promptSignature = prompts
+        .map(
+          (prompt) => [
+            prompt.id,
+            prompt.title,
+            prompt.titleEn ?? '',
+            prompt.prompt,
+            prompt.promptEn ?? '',
+            prompt.iconKey,
+          ].join('\u0001'),
+        )
+        .join('\u0002');
+    final pinnedSignature = widget.pinnedQuickPromptIds.join('\u0003');
+    return '$promptSignature\u0004$pinnedSignature';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_selectedPrompts.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _selectedPrompts
+          .map(
+            (prompt) => _QuickPromptPill(
+              prompt: prompt,
+              textColor: widget.textColor,
+              accentColor: widget.accentColor,
+              compact: widget.compact,
+              onTap: widget.onQuickPromptSelected == null
+                  ? null
+                  : () => widget.onQuickPromptSelected!(prompt),
+            ),
+          )
+          .toList(growable: false),
     );
   }
 }

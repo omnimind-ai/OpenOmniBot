@@ -97,19 +97,19 @@ class HomeQuickPrompt {
 class HomeGreetingSettings {
   final bool greetingEnabled;
   final List<HomeQuickPrompt> quickPrompts;
+  final List<String> pinnedQuickPromptIds;
 
   const HomeGreetingSettings({
     required this.greetingEnabled,
     required this.quickPrompts,
+    this.pinnedQuickPromptIds = const <String>[],
   });
 
   static HomeGreetingSettings get defaults => const HomeGreetingSettings(
     greetingEnabled: true,
     quickPrompts: HomeGreetingSettingsService.defaultQuickPrompts,
+    pinnedQuickPromptIds: <String>[],
   );
-
-  List<HomeQuickPrompt> get visibleQuickPrompts =>
-      quickPrompts.take(2).toList(growable: false);
 
   factory HomeGreetingSettings.fromJson(Map<String, dynamic> json) {
     final rawPrompts = json['quickPrompts'];
@@ -123,9 +123,18 @@ class HomeGreetingSettings {
               .where((item) => item.id.trim().isNotEmpty)
               .toList(growable: false)
         : HomeGreetingSettingsService.defaultQuickPrompts;
+    final rawPinnedIds = json['pinnedQuickPromptIds'];
+    final pinnedIds = rawPinnedIds is List
+        ? rawPinnedIds
+              .map((item) => item.toString().trim())
+              .where((item) => item.isNotEmpty)
+              .take(2)
+              .toList(growable: false)
+        : const <String>[];
     return HomeGreetingSettings(
       greetingEnabled: json['greetingEnabled'] != false,
       quickPrompts: prompts,
+      pinnedQuickPromptIds: pinnedIds,
     );
   }
 
@@ -133,16 +142,19 @@ class HomeGreetingSettings {
     return {
       'greetingEnabled': greetingEnabled,
       'quickPrompts': quickPrompts.map((item) => item.toJson()).toList(),
+      'pinnedQuickPromptIds': pinnedQuickPromptIds,
     };
   }
 
   HomeGreetingSettings copyWith({
     bool? greetingEnabled,
     List<HomeQuickPrompt>? quickPrompts,
+    List<String>? pinnedQuickPromptIds,
   }) {
     return HomeGreetingSettings(
       greetingEnabled: greetingEnabled ?? this.greetingEnabled,
       quickPrompts: quickPrompts ?? this.quickPrompts,
+      pinnedQuickPromptIds: pinnedQuickPromptIds ?? this.pinnedQuickPromptIds,
     );
   }
 }
@@ -153,18 +165,20 @@ class HomeGreetingSettingsService {
       id: 'builtin_summarize',
       title: '总结一下',
       titleEn: 'Summarize',
-      prompt: '请帮我总结一下当前内容，并列出关键要点。',
-      promptEn: 'Please summarize this and list the key points.',
+      prompt: '请帮我总结下面内容，并列出关键要点：',
+      promptEn:
+          'Please summarize the following content and list the key points:',
       iconKey: 'summarize',
       builtIn: true,
     ),
     HomeQuickPrompt(
-      id: 'builtin_plan',
-      title: '帮我规划',
-      titleEn: 'Plan',
-      prompt: '请帮我把这个目标拆成清晰、可执行的步骤。',
-      promptEn: 'Please break this goal into clear, actionable steps.',
-      iconKey: 'plan',
+      id: 'builtin_search',
+      title: '帮我查一下',
+      titleEn: 'Look Up',
+      prompt: '请帮我查一下下面内容，并给出可靠来源和简明结论：',
+      promptEn:
+          'Please look up the following topic, then provide reliable sources and a concise conclusion:',
+      iconKey: 'search',
       builtIn: true,
     ),
     HomeQuickPrompt(
@@ -184,6 +198,16 @@ class HomeGreetingSettingsService {
       promptEn:
           'I want to explore an idea. Please help map possible directions first:',
       iconKey: 'explore',
+      builtIn: true,
+    ),
+    HomeQuickPrompt(
+      id: 'builtin_install_minis_skills',
+      title: '安装技能',
+      titleEn: 'Install Skills',
+      prompt: '帮我安装这些skills：https://github.com/OpenMinis/MinisSkills',
+      promptEn:
+          'Help me install these skills: https://github.com/OpenMinis/MinisSkills',
+      iconKey: 'install',
       builtIn: true,
     ),
   ];
@@ -263,11 +287,49 @@ class HomeGreetingSettingsService {
     final nextPrompts = notifier.value.quickPrompts
         .where((item) => item.id != id)
         .toList(growable: false);
-    return _save(notifier.value.copyWith(quickPrompts: nextPrompts));
+    final nextPinnedIds = notifier.value.pinnedQuickPromptIds
+        .where((item) => item != id)
+        .toList(growable: false);
+    return _save(
+      notifier.value.copyWith(
+        quickPrompts: nextPrompts,
+        pinnedQuickPromptIds: nextPinnedIds,
+      ),
+    );
   }
 
   static Future<bool> resetQuickPrompts() {
-    return _save(notifier.value.copyWith(quickPrompts: defaultQuickPrompts));
+    return _save(
+      notifier.value.copyWith(
+        quickPrompts: defaultQuickPrompts,
+        pinnedQuickPromptIds: const <String>[],
+      ),
+    );
+  }
+
+  static Future<bool> togglePinnedQuickPrompt(String id) {
+    final normalizedId = id.trim();
+    if (normalizedId.isEmpty) {
+      return Future.value(false);
+    }
+    final existingIds = notifier.value.quickPrompts
+        .map((prompt) => prompt.id)
+        .toSet();
+    if (!existingIds.contains(normalizedId)) {
+      return Future.value(false);
+    }
+    final currentPinnedIds = notifier.value.pinnedQuickPromptIds;
+    final nextPinnedIds = currentPinnedIds.contains(normalizedId)
+        ? currentPinnedIds
+              .where((item) => item != normalizedId)
+              .toList(growable: false)
+        : currentPinnedIds.length >= 2
+        ? null
+        : <String>[...currentPinnedIds, normalizedId];
+    if (nextPinnedIds == null) {
+      return Future.value(false);
+    }
+    return _save(notifier.value.copyWith(pinnedQuickPromptIds: nextPinnedIds));
   }
 
   static Future<bool> _save(HomeGreetingSettings settings) async {

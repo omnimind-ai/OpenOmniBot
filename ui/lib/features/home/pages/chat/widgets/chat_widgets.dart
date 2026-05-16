@@ -1387,6 +1387,7 @@ class ChatMessageList extends StatefulWidget {
   final bool showEmptyGreeting;
   final bool liftEmptyGreeting;
   final List<HomeQuickPrompt> emptyGreetingQuickPrompts;
+  final List<String> emptyGreetingPinnedQuickPromptIds;
   final ValueChanged<HomeQuickPrompt>? onQuickPromptSelected;
 
   const ChatMessageList({
@@ -1412,6 +1413,7 @@ class ChatMessageList extends StatefulWidget {
     this.showEmptyGreeting = true,
     this.liftEmptyGreeting = false,
     this.emptyGreetingQuickPrompts = const <HomeQuickPrompt>[],
+    this.emptyGreetingPinnedQuickPromptIds = const <String>[],
     this.onQuickPromptSelected,
   });
 
@@ -2018,6 +2020,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
                       : widget.visualProfile.secondaryTextColor,
                   accentColor: context.omniPalette.accentPrimary,
                   quickPrompts: widget.emptyGreetingQuickPrompts,
+                  pinnedQuickPromptIds:
+                      widget.emptyGreetingPinnedQuickPromptIds,
                   onQuickPromptSelected: widget.onQuickPromptSelected,
                 ),
               ),

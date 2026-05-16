@@ -847,7 +847,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
       },
       showEmptyGreeting: homeGreetingSettings.greetingEnabled,
       liftEmptyGreeting: liftEmptyGreeting,
-      emptyGreetingQuickPrompts: homeGreetingSettings.visibleQuickPrompts,
+      emptyGreetingQuickPrompts: homeGreetingSettings.quickPrompts,
+      emptyGreetingPinnedQuickPromptIds:
+          homeGreetingSettings.pinnedQuickPromptIds,
       onQuickPromptSelected: _applyHomeQuickPrompt,
       scrollController: _scrollControllerForMode(mode),
       bottomOverlayInset:

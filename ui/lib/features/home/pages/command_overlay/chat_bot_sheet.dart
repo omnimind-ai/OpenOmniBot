@@ -2198,8 +2198,9 @@ class _ChatBotSheetState extends State<ChatBotSheet>
                               accentColor: Theme.of(
                                 context,
                               ).colorScheme.primary,
-                              quickPrompts:
-                                  homeGreetingSettings.visibleQuickPrompts,
+                              quickPrompts: homeGreetingSettings.quickPrompts,
+                              pinnedQuickPromptIds:
+                                  homeGreetingSettings.pinnedQuickPromptIds,
                               onQuickPromptSelected: _applyHomeQuickPrompt,
                             ),
                           ),

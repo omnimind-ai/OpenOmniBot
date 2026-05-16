@@ -50,6 +50,10 @@ class LegacyTextLocalizer {
     '指令名称': 'Prompt Name',
     '填充文本': 'Text to Fill',
     '请填写完整信息': 'Please fill in all fields',
+    '固定': 'Pinned',
+    '固定到首页': 'Pin to Home',
+    '取消固定': 'Unpin',
+    '最多固定两个快捷指令': 'Pin up to two quick prompts',
     '首页、后台隐藏、闹钟、振动与打开方式':
         'Home, Hide from Recents, alarms, vibration, and open behavior',
     '闹钟、振动、自动回聊天与打开方式': 'Alarms, vibration, return-to-chat, and open behavior',
