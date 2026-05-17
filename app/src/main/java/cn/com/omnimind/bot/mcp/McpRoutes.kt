@@ -7,6 +7,7 @@ import cn.com.omnimind.baselib.llm.SceneModelBindingEntry
 import cn.com.omnimind.baselib.llm.SceneModelBindingStore
 import cn.com.omnimind.bot.agent.AgentAiCapabilityConfigSync
 import cn.com.omnimind.bot.manager.AssistsCoreManager
+import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
 import cn.com.omnimind.bot.util.AssistsUtil
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
@@ -232,6 +233,7 @@ object McpRoutes {
         args: Map<String, Any?>?
     ): Map<String, Any?> {
         return runCatching {
+            val omniflowToolkit by lazy { OobOmniFlowToolkitService(context) }
             when (name) {
             "vlm_task" -> McpToolExecutors.executeVlmTask(context, args, serverScope)
             "task_status" -> McpToolExecutors.executeTaskStatus(args)
@@ -240,6 +242,17 @@ object McpRoutes {
             "file_transfer" -> McpToolExecutors.executeFileTransfer(args)
             "agent_run" -> McpToolExecutors.executeAgentRun(context, args)
             "oob_tool_call" -> McpToolExecutors.executeOobToolCall(context, args)
+            "omniflow.recall" -> omniflowToolkit.recall(args)
+            "omniflow.call_function" -> omniflowToolkit.callFunction(args)
+            "omniflow.ingest_run_log" -> omniflowToolkit.ingestRunLog(args)
+            "oob_function_list" -> omniflowToolkit.listFunctions(args)
+            "oob_function_get" -> omniflowToolkit.getFunction(args)
+            "oob_function_register" -> omniflowToolkit.registerFunction(args)
+            "oob_function_guard_check" -> omniflowToolkit.guardCheck(args)
+            "oob_function_run" -> omniflowToolkit.runFunction(args)
+            "oob_run_log_list" -> omniflowToolkit.listRunLogs(args)
+            "oob_run_log_get" -> omniflowToolkit.getRunLog(args)
+            "oob_run_log_convert" -> omniflowToolkit.convertRunLog(args)
             "oob_project_create" -> mcpProjectCreate(context, args)
             "oob_project_activate" -> mcpProjectActivate(context, args)
             "oob_project_open" -> mcpProjectOpen(context, args)

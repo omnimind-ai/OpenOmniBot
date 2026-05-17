@@ -26,6 +26,14 @@ If MCP is available, call `tools/list`.
 Use Direct MCP mode if these tools exist:
 
 ```text
+omniflow.recall
+omniflow.call_function
+omniflow.ingest_run_log
+```
+
+Use legacy Direct MCP mode if only these compatibility tools exist:
+
+```text
 oob_function_list
 oob_function_get
 oob_function_guard_check
@@ -47,7 +55,23 @@ the in-app Agent to use OmniFlow UI/native capabilities.
 
 ## Direct MCP Workflow
 
-List and run:
+Canonical recall and run:
+
+1. `omniflow.recall(goal, current_package?, current_node_id?, k?)`
+2. If `decision=hit` and the hit has no required arguments, call
+   `omniflow.call_function(function_id, {})`.
+3. If candidates are returned, choose one, fill arguments from `inputSchema`,
+   then call `omniflow.call_function(function_id, arguments)`.
+4. If recall misses or call_function returns `fallback=true`, continue with the
+   host agent's normal planner.
+
+Canonical writeback:
+
+1. After a successful non-cache run, call
+   `omniflow.ingest_run_log(run_id)` or pass an inline `run_log`.
+2. Treat failed, empty, or non-replayable RunLogs as rejected.
+
+Legacy list and run:
 
 1. `oob_function_list`
 2. `oob_function_get(functionId)`

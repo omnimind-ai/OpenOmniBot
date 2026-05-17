@@ -67,6 +67,9 @@ class OmniFlowAgentKit:
             "skill": self.skill(),
             "sample_function": self.sample_function(),
             "activation_tools": [
+                "omniflow.recall",
+                "omniflow.call_function",
+                "omniflow.ingest_run_log",
                 "oob_function_list",
                 "oob_function_get",
                 "oob_function_guard_check",

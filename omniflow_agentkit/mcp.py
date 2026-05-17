@@ -64,13 +64,21 @@ class OmniFlowMcpClient:
 
     def has_direct_omniflow(self) -> bool:
         names = {str(tool.get("name", "")).strip() for tool in self.list_tools()}
+        canonical = {
+            "omniflow.recall",
+            "omniflow.call_function",
+        }
         required = {
             "oob_function_list",
             "oob_function_get",
             "oob_function_guard_check",
             "oob_function_run",
         }
-        return required.issubset(names)
+        return canonical.issubset(names) or required.issubset(names)
+
+    def has_canonical_omniflow(self) -> bool:
+        names = {str(tool.get("name", "")).strip() for tool in self.list_tools()}
+        return {"omniflow.recall", "omniflow.call_function"}.issubset(names)
 
     def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         return self.rpc("tools/call", {"name": name, "arguments": arguments or {}})
@@ -78,8 +86,62 @@ class OmniFlowMcpClient:
     def read_resource(self, uri: str, limit: int = 50) -> dict[str, Any]:
         return self.rpc("resources/read", {"uri": uri, "limit": limit})
 
+    def recall(
+        self,
+        goal: str,
+        *,
+        current_package: str = "",
+        current_node_id: str = "",
+        k: int = 8,
+    ) -> dict[str, Any]:
+        return self.call_tool(
+            "omniflow.recall",
+            {
+                "goal": goal,
+                "current_package": current_package,
+                "current_node_id": current_node_id,
+                "k": k,
+            },
+        )
+
+    def call_function(
+        self,
+        function_id: str,
+        arguments: dict[str, Any] | None = None,
+        *,
+        goal: str = "",
+    ) -> dict[str, Any]:
+        return self.call_tool(
+            "omniflow.call_function",
+            {
+                "function_id": function_id,
+                "arguments": arguments or {},
+                "goal": goal,
+            },
+        )
+
+    def ingest_run_log(
+        self,
+        run_id: str | None = None,
+        *,
+        run_log: dict[str, Any] | None = None,
+        auto_enrich: bool = True,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"auto_enrich": auto_enrich}
+        if run_id:
+            payload["run_id"] = run_id
+        if run_log is not None:
+            payload["run_log"] = run_log
+        return self.call_tool("omniflow.ingest_run_log", payload)
+
     def list_functions(self, limit: int = 100) -> dict[str, Any]:
         return self.call_tool("oob_function_list", {"limit": limit})
+
+    def register_function(self, function_spec: dict[str, Any], source: str = "mcp") -> dict[str, Any]:
+        return self.call_tool(
+            "oob_function_register",
+            {"functionSpec": function_spec, "source": source},
+        )
 
     def guard_check(self, function_id: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         return self.call_tool(
@@ -94,13 +156,38 @@ class OmniFlowMcpClient:
         *,
         dry_run: bool = False,
         continue_with_agent: bool = False,
+        execution_mode: str | None = None,
     ) -> dict[str, Any]:
-        return self.call_tool(
-            "oob_function_run",
-            {
-                "functionId": function_id,
-                "arguments": arguments or {},
-                "dryRun": dry_run,
-                "continueWithAgent": continue_with_agent,
-            },
-        )
+        payload: dict[str, Any] = {
+            "functionId": function_id,
+            "arguments": arguments or {},
+            "dryRun": dry_run,
+            "continueWithAgent": continue_with_agent,
+        }
+        if execution_mode:
+            payload["executionMode"] = execution_mode
+        return self.call_tool("oob_function_run", payload)
+
+    def list_run_logs(self, limit: int = 50) -> dict[str, Any]:
+        return self.call_tool("oob_run_log_list", {"limit": limit})
+
+    def get_run_log(self, run_id: str) -> dict[str, Any]:
+        return self.call_tool("oob_run_log_get", {"runId": run_id})
+
+    def convert_run_log(
+        self,
+        run_id: str,
+        *,
+        register: bool = False,
+        function_id: str | None = None,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"runId": run_id, "register": register}
+        if function_id:
+            payload["functionId"] = function_id
+        if name:
+            payload["name"] = name
+        if description:
+            payload["description"] = description
+        return self.call_tool("oob_run_log_convert", payload)

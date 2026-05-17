@@ -16,13 +16,121 @@ tools/list
 Direct OmniFlow mode is available only when the tool list contains:
 
 ```text
+omniflow.recall
+omniflow.call_function
+```
+
+Writeback mode additionally uses:
+
+```text
+omniflow.ingest_run_log
+```
+
+Legacy OOB compatibility mode is available when the tool list contains:
+
+```text
 oob_function_list
 oob_function_get
+oob_function_register
 oob_function_guard_check
 oob_function_run
+oob_run_log_list
+oob_run_log_get
+oob_run_log_convert
 ```
 
 ## Fixed Tools
+
+### `omniflow.recall`
+
+Finds reusable Function candidates for a goal and current app/page scope.
+Recall does not fill missing arguments and does not execute parameterized
+Functions.
+
+Input:
+
+```json
+{
+  "goal": "open Android Settings",
+  "current_package": "com.android.settings",
+  "current_node_id": "optional-node",
+  "k": 8
+}
+```
+
+Result:
+
+```json
+{
+  "success": true,
+  "decision": "hit | recall | miss",
+  "hit": {
+    "function_id": "open_settings_demo",
+    "inputSchema": {"type": "object", "properties": {}, "required": []}
+  },
+  "candidates": [],
+  "reason": "oob_fixed_recall"
+}
+```
+
+### `omniflow.call_function`
+
+Executes one agent-selected Function with explicit arguments.
+
+Input:
+
+```json
+{
+  "function_id": "open_settings_demo",
+  "arguments": {},
+  "goal": "open Android Settings"
+}
+```
+
+Result:
+
+```json
+{
+  "success": true,
+  "fallback": false,
+  "error": null,
+  "run_id": "oob_function_run_...",
+  "actions_executed": 2,
+  "control": {
+    "postcondition": "passed",
+    "fallback_reason": "",
+    "guard_decision": "allow"
+  }
+}
+```
+
+If guard policy, remapping, terminal verification, or a live-context step
+prevents deterministic replay, the result returns `success=false` or
+`fallback=true` with `control.fallback_reason`.
+
+### `omniflow.ingest_run_log`
+
+Converts a successful OOB RunLog into a reusable local Function asset.
+
+Input:
+
+```json
+{
+  "run_id": "runlog_install_demo",
+  "auto_enrich": true
+}
+```
+
+Result:
+
+```json
+{
+  "accepted": true,
+  "function_id": "install_sample_apk_demo",
+  "status": "created | updated | rejected",
+  "reason": ""
+}
+```
 
 ### `oob_function_list`
 
@@ -138,17 +246,22 @@ Input:
   "functionId": "open_settings_demo",
   "arguments": {},
   "dryRun": false,
-  "continueWithAgent": false
+  "continueWithAgent": false,
+  "executionMode": "foreground"
 }
 ```
 
 Default behavior:
 
 - Execute only the deterministic local prefix.
+- `executionMode=background` may enqueue long-running work such as trusted app
+  install, but it still must pass the same guard checks and audit logging.
 - Return `needs_agent=true` for live-context or planning steps.
 - Return `needs_confirmation=true` for confirmation-required steps.
 - Stop immediately on `block`.
 - Do not launch Agent fallback unless `continueWithAgent=true`.
+- App install, permission, package, settings, and shell actions normally require
+  confirmation unless the host has an explicit trusted/pre-approved policy.
 
 Result:
 
@@ -159,6 +272,7 @@ Result:
   "runner": "oob_omniflow_replay",
   "guard_decision": "allow",
   "risk_level": "low",
+  "execution_mode": "foreground",
   "step_results": [],
   "needs_agent": false,
   "needs_confirmation": false,
