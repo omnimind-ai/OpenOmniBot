@@ -1,5 +1,13 @@
 package cn.com.omnimind.bot.runlog
 
+/**
+ * Static replay classification shared by RunLog conversion and local replay.
+ *
+ * This is not a dispatcher or service layer. Keep execution in
+ * [OmniflowStepExecutor], registration in [OobRunLogReplayService], and tool
+ * routing in OobFunctionToolHandler. The lists here intentionally bridge OOB's
+ * legacy local action names with OmniFlow's exported canonical action names.
+ */
 object RunLogReplayPolicy {
     const val schemaVersion: String = "oob.runlog_replay_policy.v1"
 
@@ -8,14 +16,45 @@ object RunLogReplayPolicy {
         "long_press",
         "scroll",
         "type",
+        "input_text",
+        "swipe",
         "open_app",
         "press_home",
         "press_back",
+        "press_key",
         "hot_key",
         "wait",
+        "finished",
     )
 
-    val coordinateActions: Set<String> = setOf("click", "long_press", "scroll")
+    val omniflowActionAliases: Map<String, String> = mapOf(
+        "tap" to "click",
+        "click_at" to "click",
+        "click_element" to "click",
+        "clickelement" to "click",
+        "longclick" to "long_press",
+        "long_click" to "long_press",
+        "longpress" to "long_press",
+        "type_text" to "input_text",
+        "set_text" to "input_text",
+        "settext" to "input_text",
+        "inputtext" to "input_text",
+        "scroll_down" to "swipe",
+        "scroll_up" to "swipe",
+        "scroll_left" to "swipe",
+        "scroll_right" to "swipe",
+        "presskey" to "press_key",
+        "key_event" to "press_key",
+        "keyevent" to "press_key",
+        "openapp" to "open_app",
+        "launch_app" to "open_app",
+        "launchapp" to "open_app",
+        "finish" to "finished",
+        "done" to "finished",
+        "complete" to "finished",
+    )
+
+    val coordinateActions: Set<String> = setOf("click", "long_press", "scroll", "swipe")
 
     val perceptionTools: Set<String> = setOf(
         "vlm_task",
@@ -37,6 +76,21 @@ object RunLogReplayPolicy {
         "oob_run_log_convert",
     )
 
+    val providerOnlyTools: Set<String> = setOf(
+        "go_to_node",
+        "click_node",
+        "node_click",
+        "navigate_to_node",
+        "gotonode",
+        "goto_node",
+        "call_function",
+        "run_function",
+        "execute_function",
+        "callfunction",
+        "runfunction",
+        "executefunction",
+    )
+
     val skipTools: Set<String> = setOf(
         "notification_send",
         "calendar_event_create",
@@ -48,11 +102,11 @@ object RunLogReplayPolicy {
 
     fun omniflowActionForToolName(toolName: String): String? {
         val normalized = normalizeToolName(toolName)
-        return normalized.takeIf { it in omniflowActions }
+        return normalized.takeIf { it in omniflowActions } ?: omniflowActionAliases[normalized]
     }
 
     fun isCoordinateAction(toolName: String): Boolean =
-        normalizeToolName(toolName) in coordinateActions
+        omniflowActionForToolName(toolName) in coordinateActions
 
     fun isPerceptionTool(toolName: String): Boolean =
         normalizeToolName(toolName) in perceptionTools
@@ -60,8 +114,11 @@ object RunLogReplayPolicy {
     fun isDataFlowTool(toolName: String): Boolean =
         normalizeToolName(toolName) in dataFlowTools
 
+    fun isProviderOnlyTool(toolName: String): Boolean =
+        normalizeToolName(toolName) in providerOnlyTools
+
     fun isAgentTool(toolName: String): Boolean =
-        isPerceptionTool(toolName) || isDataFlowTool(toolName)
+        isPerceptionTool(toolName) || isDataFlowTool(toolName) || isProviderOnlyTool(toolName)
 
     fun shouldSkipTool(toolName: String): Boolean =
         normalizeToolName(toolName) in skipTools
@@ -71,12 +128,14 @@ object RunLogReplayPolicy {
         return when {
             normalized in perceptionTools -> "perception_only_step_without_recorded_actions"
             normalized in dataFlowTools -> "data_flow_tool_requires_live_context"
+            normalized in providerOnlyTools -> "provider_owned_replay_requires_omniflow"
             else -> "non_scriptable_or_vlm_step"
         }
     }
 
     fun requiresAgentPlanningReason(reason: String): Boolean {
         return reason == "data_flow_tool_requires_live_context" ||
-            reason == "perception_only_step_without_recorded_actions"
+            reason == "perception_only_step_without_recorded_actions" ||
+            reason == "provider_owned_replay_requires_omniflow"
     }
 }

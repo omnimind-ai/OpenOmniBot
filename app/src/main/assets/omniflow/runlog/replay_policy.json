@@ -5,16 +5,47 @@
     "long_press",
     "scroll",
     "type",
+    "input_text",
+    "swipe",
     "open_app",
     "press_home",
     "press_back",
+    "press_key",
     "hot_key",
-    "wait"
+    "wait",
+    "finished"
   ],
+  "omniflow_action_aliases": {
+    "tap": "click",
+    "click_at": "click",
+    "click_element": "click",
+    "clickelement": "click",
+    "longclick": "long_press",
+    "long_click": "long_press",
+    "longpress": "long_press",
+    "type_text": "input_text",
+    "set_text": "input_text",
+    "settext": "input_text",
+    "inputtext": "input_text",
+    "scroll_down": "swipe",
+    "scroll_up": "swipe",
+    "scroll_left": "swipe",
+    "scroll_right": "swipe",
+    "presskey": "press_key",
+    "key_event": "press_key",
+    "keyevent": "press_key",
+    "openapp": "open_app",
+    "launch_app": "open_app",
+    "launchapp": "open_app",
+    "finish": "finished",
+    "done": "finished",
+    "complete": "finished"
+  },
   "coordinate_actions": [
     "click",
     "long_press",
-    "scroll"
+    "scroll",
+    "swipe"
   ],
   "perception_tools": [
     "vlm_task",
@@ -34,6 +65,20 @@
     "oob_run_log_get",
     "oob_run_log_convert"
   ],
+  "provider_only_tools": [
+    "go_to_node",
+    "click_node",
+    "node_click",
+    "navigate_to_node",
+    "gotonode",
+    "goto_node",
+    "call_function",
+    "run_function",
+    "execute_function",
+    "callfunction",
+    "runfunction",
+    "executefunction"
+  ],
   "skip_tools": [
     "notification_send",
     "calendar_event_create",
@@ -43,6 +88,7 @@
   "agent_step_reasons": {
     "perception": "perception_only_step_without_recorded_actions",
     "data_flow": "data_flow_tool_requires_live_context",
+    "provider_only": "provider_owned_replay_requires_omniflow",
     "fallback": "non_scriptable_or_vlm_step"
   }
 }

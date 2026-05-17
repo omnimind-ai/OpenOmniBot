@@ -16,9 +16,11 @@ class RunLogReusableFunctionCompilerTest {
 
         assertEquals(RunLogReplayPolicy.schemaVersion, policy["schema_version"])
         assertEquals(RunLogReplayPolicy.omniflowActions, stringSet(policy["omniflow_actions"]))
+        assertEquals(RunLogReplayPolicy.omniflowActionAliases, stringMap(policy["omniflow_action_aliases"]))
         assertEquals(RunLogReplayPolicy.coordinateActions, stringSet(policy["coordinate_actions"]))
         assertEquals(RunLogReplayPolicy.perceptionTools, stringSet(policy["perception_tools"]))
         assertEquals(RunLogReplayPolicy.dataFlowTools, stringSet(policy["data_flow_tools"]))
+        assertEquals(RunLogReplayPolicy.providerOnlyTools, stringSet(policy["provider_only_tools"]))
         assertEquals(RunLogReplayPolicy.skipTools, stringSet(policy["skip_tools"]))
     }
 
@@ -116,6 +118,27 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
+    fun `provider owned omniflow graph tools compile to agent steps`() {
+        val spec = compile(
+            listOf(
+                card("go_to_node", mapOf("node_id" to "node_1")),
+                card("call_function", mapOf("function_id" to "func_provider")),
+            ),
+            runId = "run-provider-owned",
+        )
+
+        val steps = stepsFrom(spec)
+        assertEquals(2, steps.size)
+        for (step in steps) {
+            assertEquals("agent", step["executor"])
+            assertEquals(false, step["scriptable"])
+            assertEquals("oob.agent.run", step["callable_tool"])
+            val agentCall = step["agent_call"] as? Map<*, *>
+            assertEquals("provider_owned_replay_requires_omniflow", agentCall?.get("reason"))
+        }
+    }
+
+    @Test
     fun `args can come from direct args or nested tool call arguments`() {
         val spec = compile(
             listOf(
@@ -135,6 +158,30 @@ class RunLogReusableFunctionCompilerTest {
         assertEquals("type", steps[0]["tool"])
         assertEquals("hello", (steps[0]["args"] as Map<*, *>)["content"])
         assertEquals(500, ((steps[1]["args"] as Map<*, *>)["duration_ms"] as Number).toInt())
+    }
+
+    @Test
+    fun `omniflow canonical action names compile to local replay steps`() {
+        val spec = compile(
+            listOf(
+                card("input_text", mapOf("text" to "hello")),
+                card("swipe", mapOf("x1" to 10, "y1" to 20, "x2" to 10, "y2" to 300)),
+                card("press_key", mapOf("key" to "BACK")),
+                card("finish", mapOf("content" to "done")),
+            ),
+            runId = "run-omniflow-canonical",
+        )
+
+        val steps = stepsFrom(spec)
+        assertEquals(listOf("input_text", "swipe", "press_key", "finished"), steps.map { it["tool"] })
+        assertTrue(steps.all { it["executor"] == "omniflow" })
+        assertTrue(steps.all { it["model_free"] == true })
+        assertEquals("input_text", steps[0]["omniflow_action"])
+        assertEquals("swipe", steps[1]["omniflow_action"])
+        assertEquals("press_key", steps[2]["omniflow_action"])
+        assertEquals("finished", steps[3]["omniflow_action"])
+        assertEquals("finished", steps[3]["callable_tool"])
+        assertEquals("finish", steps[3]["source_tool"])
     }
 
     private fun compile(
@@ -195,6 +242,13 @@ class RunLogReusableFunctionCompilerTest {
         return (value as? List<*>)
             ?.map { it.toString() }
             ?.toSet()
+            .orEmpty()
+    }
+
+    private fun stringMap(value: Any?): Map<String, String> {
+        return (value as? Map<*, *>)
+            ?.entries
+            ?.associate { (key, item) -> key.toString() to item.toString() }
             .orEmpty()
     }
 

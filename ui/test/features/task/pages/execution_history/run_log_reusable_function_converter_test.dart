@@ -33,15 +33,20 @@ void main() {
       case 'long_press':
         return {'x': 120, 'y': 240};
       case 'scroll':
+      case 'swipe':
         return {'x1': 500, 'y1': 1600, 'x2': 500, 'y2': 800};
       case 'type':
+      case 'input_text':
         return {'content': 'hello'};
       case 'open_app':
         return {'package_name': 'com.example.app'};
       case 'hot_key':
+      case 'press_key':
         return {'key': 'ENTER'};
       case 'wait':
         return {'duration_ms': 1000};
+      case 'finished':
+        return {'content': 'done'};
       default:
         return const {};
     }
@@ -59,6 +64,10 @@ void main() {
       RunLogReplayPolicy.omniflowActions,
     );
     expect(
+      _stringMap(policy['omniflow_action_aliases']),
+      RunLogReplayPolicy.omniflowActionAliases,
+    );
+    expect(
       _stringSet(policy['coordinate_actions']),
       RunLogReplayPolicy.coordinateActions,
     );
@@ -70,6 +79,10 @@ void main() {
       _stringSet(policy['data_flow_tools']),
       RunLogReplayPolicy.dataFlowTools,
     );
+    expect(
+      _stringSet(policy['provider_only_tools']),
+      RunLogReplayPolicy.providerOnlyTools,
+    );
     expect(_stringSet(policy['skip_tools']), RunLogReplayPolicy.skipTools);
   });
 
@@ -79,11 +92,15 @@ void main() {
       'long_press',
       'scroll',
       'type',
+      'input_text',
+      'swipe',
       'open_app',
       'press_home',
       'press_back',
+      'press_key',
       'hot_key',
       'wait',
+      'finished',
     ];
 
     final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
@@ -113,7 +130,7 @@ void main() {
       expect(step.containsKey('agent_call'), isFalse);
       expect((step['tool_binding'] as Map)['kind'], 'omniflow_action');
 
-      if (const {'click', 'long_press', 'scroll'}.contains(action)) {
+      if (RunLogReplayPolicy.isCoordinateAction(action)) {
         expect(step['coordinate_hook'], 'omniflow');
         expect(
           ((step['source_context'] as Map)['src_ctx'] as Map)['page'],
@@ -123,6 +140,41 @@ void main() {
         expect(step.containsKey('coordinate_hook'), isFalse);
       }
     }
+  });
+
+  test('normalizes Omniflow action aliases before export', () {
+    final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+      runId: 'run-aliases',
+      title: 'Replay aliases',
+      payload: const {'goal': 'Replay aliases'},
+      cards: [
+        card('tap', const {'x': 120, 'y': 240}),
+        card('type_text', const {'text': 'hello'}),
+        card('done', const {'content': 'done'}),
+      ],
+      useEnglish: true,
+    );
+
+    final steps = stepsFrom(spec);
+    expect(steps.map((step) => step['tool']), [
+      'click',
+      'input_text',
+      'finished',
+    ]);
+    expect(steps.map((step) => step['callable_tool']), [
+      'click',
+      'input_text',
+      'finished',
+    ]);
+    expect(steps.map((step) => step['source_tool']), [
+      'tap',
+      'type_text',
+      'done',
+    ]);
+    expect(
+      (steps.first['source_context'] as Map)['action'],
+      containsPair('tool', 'click'),
+    );
   });
 
   test('keeps unknown VLM-routed actions on agent fallback', () {
@@ -251,6 +303,31 @@ void main() {
     );
   });
 
+  test('keeps provider-owned graph and function tools on agent replan', () {
+    final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+      runId: 'run-provider-owned',
+      title: 'Provider owned replay',
+      payload: const {'goal': 'Provider owned replay'},
+      cards: [
+        card('go_to_node', const {'node_id': 'node_1'}),
+        card('call_function', const {'function_id': 'func_provider'}),
+      ],
+      useEnglish: true,
+    );
+
+    final steps = stepsFrom(spec);
+    expect(steps, hasLength(2));
+    for (final step in steps) {
+      expect(step['executor'], 'agent');
+      expect(step['scriptable'], isFalse);
+      expect(step['callable_tool'], 'oob.agent.run');
+      expect(
+        (step['agent_call'] as Map)['reason'],
+        'provider_owned_replay_requires_omniflow',
+      );
+    }
+  });
+
   test(
     'AI normalization cannot turn data-flow steps into direct tool replay',
     () {
@@ -319,4 +396,10 @@ void main() {
 
 Set<String> _stringSet(Object? value) {
   return (value as List).map((item) => item.toString()).toSet();
+}
+
+Map<String, String> _stringMap(Object? value) {
+  return (value as Map).map(
+    (key, item) => MapEntry(key.toString(), item.toString()),
+  );
 }

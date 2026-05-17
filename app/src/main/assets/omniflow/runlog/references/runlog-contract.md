@@ -48,11 +48,22 @@ Omniflow:
 - `long_press`
 - `scroll`
 - `type`
+- `input_text`
+- `swipe`
 - `open_app`
 - `press_home`
 - `press_back`
+- `press_key`
 - `hot_key`
 - `wait`
+- `finished`
+
+Compatibility aliases from provider/exported OmniFlow assets are normalized
+before execution: `tap/click_at/click_element -> click`,
+`type_text/set_text/inputtext -> input_text`, `scroll_* -> swipe`,
+`presskey/key_event -> press_key`, `openapp/launch_app -> open_app`, and
+`finish/done/complete -> finished`. `source_context.page` and OOB's
+`source_context.src_ctx.page` are both valid coordinate remap inputs.
 
 Perception-only agent:
 
@@ -74,6 +85,13 @@ Data-flow agent:
 - `oob_run_log_get`
 - `oob_run_log_convert`
 
+Provider-owned agent:
+
+- `go_to_node`
+- `click_node`
+- `node_click`
+- `call_function`
+
 ## Known Failure Modes
 
 - Empty function from VLM-only RunLog.
@@ -82,6 +100,11 @@ Data-flow agent:
 - Direct UI replay tries to execute a tool step without router.
 - Agent prompt has stale args after materialization.
 - Workspace command save uses different rules from Flutter conversion.
+- Regression where provider/exported Function uses canonical
+  `input_text/swipe/press_key` while OOB only handles legacy
+  `type/scroll/press_home/press_back`.
+- Provider-owned `go_to_node/click_node/call_function` accidentally becomes a
+  direct OOB `executor=tool` step instead of an agent/provider fallback.
 
 ## Required Test Cases
 
@@ -91,3 +114,5 @@ Data-flow agent:
 - AI-normalized output cannot override data-flow executor policy.
 - Mixed replay returns `needs_agent` at the first non-local step.
 - Command save distillation follows the same executor policy.
+- Provider canonical action names and aliases normalize to deterministic local
+  replay actions.

@@ -10,9 +10,9 @@ object RunLogReusableFunctionCompiler {
         .create()
 
     fun compile(record: InternalRunLogRecord): Map<String, Any?>? {
-        val hasRecordedReplayStep = record.cards.any(::hasRecordedReplayStep)
-        val steps = record.cards
-            .filter { card -> card["success"] != false }
+        val replayableCards = record.cards.filter(::isSuccessfulCard)
+        val hasRecordedReplayStep = replayableCards.any(::hasRecordedReplayStep)
+        val steps = replayableCards
             .mapNotNull { card ->
                 cardToStep(card, skipPerceptionTools = hasRecordedReplayStep)
             }
@@ -75,8 +75,7 @@ object RunLogReusableFunctionCompiler {
             return false
         }
         val args = asMap(extractArgs(card))
-        val action = firstNonBlank(args["action"], args["omniflow_action"])
-        return RunLogReplayPolicy.omniflowActionForToolName(action) != null
+        return androidPrivilegedReplayAction(args) != null
     }
 
     private fun cardToStep(
@@ -101,23 +100,23 @@ object RunLogReusableFunctionCompiler {
             RunLogReplayPolicy.shouldSkipTool(normalizedToolName) -> null
             RunLogReplayPolicy.isPerceptionTool(normalizedToolName) && skipPerceptionTools -> null
             normalizedToolName == "android_privileged_action" -> {
-                val action = firstNonBlank(args["action"], args["omniflow_action"])
-                    .trim()
-                    .lowercase()
-                if (action !in RunLogReplayPolicy.omniflowActions) return null
+                val action = androidPrivilegedReplayAction(args) ?: return null
                 omniflowStep(
                     title = title,
-                    toolName = action,
-                    action = action,
-                    args = args.filterKeys { it != "action" && it != "omniflow_action" },
+                    replayAction = action,
+                    sourceToolName = normalizedToolName,
+                    args = androidPrivilegedReplayArgs(args),
                     sourceContext = sourceContext,
                 )
             }
-            normalizedToolName in RunLogReplayPolicy.omniflowActions -> {
+            RunLogReplayPolicy.omniflowActionForToolName(normalizedToolName) != null -> {
+                val replayAction = requireNotNull(
+                    RunLogReplayPolicy.omniflowActionForToolName(normalizedToolName)
+                )
                 omniflowStep(
                     title = title,
-                    toolName = normalizedToolName,
-                    action = normalizedToolName,
+                    replayAction = replayAction,
+                    sourceToolName = normalizedToolName,
                     args = args,
                     sourceContext = sourceContext,
                 )
@@ -171,23 +170,24 @@ object RunLogReusableFunctionCompiler {
 
     private fun omniflowStep(
         title: String,
-        toolName: String,
-        action: String,
+        replayAction: String,
+        sourceToolName: String,
         args: Map<String, Any?>,
         sourceContext: Map<String, Any?>,
     ): Map<String, Any?> {
         val usesCoordinateHook =
-            action in RunLogReplayPolicy.coordinateActions && sourceContext.isNotEmpty()
+            RunLogReplayPolicy.isCoordinateAction(replayAction) && sourceContext.isNotEmpty()
         return nullableMap(
             "title" to title,
             "kind" to "omniflow_action",
             "executor" to "omniflow",
-            "omniflow_action" to action,
-            "local_action" to action,
+            "omniflow_action" to replayAction,
+            "local_action" to replayAction,
             "model_free" to true,
             "scriptable" to true,
-            "tool" to toolName,
-            "callable_tool" to action,
+            "tool" to replayAction,
+            "callable_tool" to replayAction,
+            "source_tool" to sourceToolName.takeIf { it != replayAction },
             "args" to args,
             "source_context" to sourceContext.takeIf { it.isNotEmpty() },
             "coordinate_hook" to if (usesCoordinateHook) "omniflow" else null,
@@ -250,9 +250,32 @@ object RunLogReusableFunctionCompiler {
         val explicit = asMap(args["source_context"]).ifEmpty { asMap(card["source_context"]) }
         if (explicit.isNotEmpty()) return explicit
         val before = asMap(card["before"])
-        val sourceXml = firstNonBlank(before["observation_xml"], before["observationXml"])
+            .ifEmpty { asMap(card["observation_before_act"]) }
+            .ifEmpty { asMap(card["before_observation"]) }
+            .ifEmpty { asMap(card["observation"]) }
+        val sourceXml = firstNonBlank(
+            before["observation_xml"],
+            before["observationXml"],
+            before["xml"],
+            before["page"],
+        )
         if (sourceXml.isEmpty()) return emptyMap()
-        val sourceAction = linkedMapOf<String, Any?>("tool" to toolNameForCard(card))
+        val rawToolName = toolNameForCard(card)
+        val normalizedToolName = RunLogReplayPolicy.normalizeToolName(rawToolName)
+        val actionArgs = if (normalizedToolName == "android_privileged_action") {
+            androidPrivilegedReplayArgs(args)
+        } else {
+            args
+        }
+        val sourceAction = linkedMapOf<String, Any?>(
+            "tool" to (
+                if (normalizedToolName == "android_privileged_action") {
+                    androidPrivilegedReplayAction(args)
+                } else {
+                    RunLogReplayPolicy.omniflowActionForToolName(rawToolName)
+                } ?: rawToolName
+                )
+        )
         for (key in listOf(
             "target_description",
             "targetDescription",
@@ -266,8 +289,8 @@ object RunLogReusableFunctionCompiler {
             "duration_ms",
             "durationMs",
         )) {
-            if (args.containsKey(key) && args[key] != null) {
-                sourceAction[key] = args[key]
+            if (actionArgs.containsKey(key) && actionArgs[key] != null) {
+                sourceAction[key] = actionArgs[key]
             }
         }
         return linkedMapOf(
@@ -296,6 +319,41 @@ object RunLogReusableFunctionCompiler {
             "agent_step_count" to steps.count { it["executor"] == "agent" },
             "requires_agent_fallback" to steps.any { it["executor"] == "agent" },
         )
+    }
+
+    private fun isSuccessfulCard(card: Map<String, Any?>): Boolean {
+        val header = asMap(card["header"])
+        return asBoolean(card["success"]) != false && asBoolean(header["success"]) != false
+    }
+
+    private fun asBoolean(value: Any?): Boolean? =
+        when (value) {
+            is Boolean -> value
+            is String -> value.trim().lowercase().let { text ->
+                when (text) {
+                    "true" -> true
+                    "false" -> false
+                    else -> null
+                }
+            }
+            else -> null
+        }
+
+    private fun androidPrivilegedReplayAction(args: Map<String, Any?>): String? {
+        return RunLogReplayPolicy.omniflowActionForToolName(
+            firstNonBlank(args["action"], args["omniflow_action"])
+        )
+    }
+
+    private fun androidPrivilegedReplayArgs(args: Map<String, Any?>): Map<String, Any?> {
+        val nestedArguments = asMap(args["arguments"])
+        val flattened = LinkedHashMap<String, Any?>()
+        for ((key, value) in args) {
+            if (key == "action" || key == "omniflow_action" || key == "arguments") continue
+            flattened[key] = value
+        }
+        flattened.putAll(nestedArguments)
+        return flattened
     }
 
     private fun deriveFunctionId(record: InternalRunLogRecord): String {

@@ -44,9 +44,14 @@ The executor lists live in `replay_policy.json` and are mirrored by Kotlin and
 Dart policy classes with parity tests. Update the JSON and both mirrors
 together.
 
-- `executor=omniflow`: deterministic local replay only. Allowed actions are `click`, `long_press`, `scroll`, `type`, `open_app`, `press_home`, `press_back`, `hot_key`, and `wait`.
+- `executor=omniflow`: deterministic local replay only. Allowed actions are
+  the OOB local set plus OmniFlow canonical aliases: `click`, `long_press`,
+  `scroll`, `type`, `input_text`, `swipe`, `open_app`, `press_home`,
+  `press_back`, `press_key`, `hot_key`, `wait`, and `finished`.
 - `executor=tool`: direct tool call only when a live `AgentToolRouter` exists and the tool output is not live data needed by later steps.
 - `executor=agent`: live planning or perception. Use for VLM-only cards, `browser_use`, `web_search`, memory lookup, RunLog lookup, and workbench list/query tools.
+- Provider-owned OmniFlow graph/function calls such as `go_to_node`,
+  `click_node`, and `call_function` are also `executor=agent` in OOB v1.
 
 Do not hard replay `browser_use` or `web_search`; their outputs are live context and can be stale.
 
@@ -66,6 +71,27 @@ Direct UI execution is two phase:
 2. If a tool/data-flow/agent step is reached, return `needs_agent=true` and start an Agent task with the remaining function spec.
 
 Agent runtime execution may delegate normal tools through the router, but data-flow/perception-only steps should still be planned by Agent instead of blindly calling the original tool.
+
+## OmniFlow Compatibility Boundary
+
+Port into OOB:
+
+- Canonical action names and aliases: `input_text`, `swipe`, `press_key`,
+  `finished`, plus common aliases such as `tap`, `type_text`, `scroll_*`,
+  `launch_app`, and `done`.
+- `source_context.page` as an input alias for OOB's
+  `source_context.src_ctx.page` coordinate remap shape.
+- Function metadata that keeps `source.run_id`, `source_run_ids`, execution
+  counts, and local runner state available for future provider import/export.
+
+Keep in OmniFlow/provider for now:
+
+- Provider HTTP/MCP lifecycle, cache gate, recall, cloud push/pull, and retry
+  resume semantics.
+- SQLite `RunStore`, background enrich, semantic dedup, L1/L2 cache writeback,
+  and multi-user registry.
+- Full UTG graph routing plus `go_to_node/click_node/call_function` execution.
+  OOB v1 only replays fixed local actions and hands the rest to Agent.
 
 ## Verification
 

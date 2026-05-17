@@ -42,6 +42,40 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
+    fun `normalizes omniflow canonical aliases`() {
+        assertEquals(
+            "click",
+            OmniflowStepExecutor.actionNameForStep(
+                mapOf("model_free" to true, "tool" to "tap")
+            )
+        )
+        assertEquals(
+            "input_text",
+            OmniflowStepExecutor.actionNameForStep(
+                mapOf("model_free" to true, "tool" to "type_text")
+            )
+        )
+        assertEquals(
+            "finished",
+            OmniflowStepExecutor.actionNameForStep(
+                mapOf("model_free" to true, "tool" to "done")
+            )
+        )
+    }
+
+    @Test
+    fun `detects omniflow canonical action names`() {
+        val step = mapOf(
+            "model_free" to true,
+            "tool" to "input_text",
+            "args" to mapOf("text" to "hello"),
+        )
+
+        assertTrue(OmniflowStepExecutor.isOmniflowStep(step))
+        assertEquals("input_text", OmniflowStepExecutor.actionNameForStep(step))
+    }
+
+    @Test
     fun `remap keeps non coordinate action args unchanged`() {
         val args = mapOf("content" to "hello")
         val result = OmniflowStepExecutor.remapStepArgs(

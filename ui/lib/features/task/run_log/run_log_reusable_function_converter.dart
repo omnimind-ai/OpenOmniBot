@@ -187,6 +187,9 @@ class RunLogReusableFunctionConverter {
         snapshot.toolName,
       );
       final modelFree = executor == 'omniflow';
+      final emittedToolName = modelFree && replayAction != null
+          ? replayAction
+          : snapshot.toolName;
       final scriptable = executor != 'agent';
       final coordinateHook = _buildCoordinateHookMetadata(
         snapshot: snapshot,
@@ -211,13 +214,15 @@ class RunLogReusableFunctionConverter {
         'id': stepId,
         'index': executionIndex,
         if (executionIndex != index) 'source_index': index,
-        'kind': _stepKindForToolName(snapshot.toolName, snapshot.route),
-        'title': snapshot.title.isNotEmpty ? snapshot.title : snapshot.toolName,
+        'kind': _stepKindForToolName(emittedToolName, snapshot.route),
+        'title': snapshot.title.isNotEmpty ? snapshot.title : emittedToolName,
         if (summary.isNotEmpty) 'summary': summary,
-        'tool': snapshot.toolName,
+        'tool': emittedToolName,
         'callable_tool': executor == 'agent'
             ? 'oob.agent.run'
-            : snapshot.toolName,
+            : emittedToolName,
+        if (emittedToolName != snapshot.toolName)
+          'source_tool': snapshot.toolName,
         'executor': executor,
         'scriptable': scriptable,
         if (modelFree) 'model_free': true,
@@ -236,7 +241,7 @@ class RunLogReusableFunctionConverter {
               : executor == 'omniflow'
               ? 'omniflow_action'
               : 'oob_agent_tool',
-          'name': snapshot.toolName,
+          'name': emittedToolName,
           if (executor == 'agent') 'callable_tool': 'oob.agent.run',
         },
         if (executor == 'agent')
@@ -750,7 +755,13 @@ class _RunLogActionSnapshot {
     required int fallbackIndex,
   }) {
     final header = _asStringKeyMap(card['header']);
-    final before = _asStringKeyMap(card['before']);
+    final before = _asStringKeyMap(card['before']).isNotEmpty
+        ? _asStringKeyMap(card['before'])
+        : _asStringKeyMap(card['observation_before_act']).isNotEmpty
+        ? _asStringKeyMap(card['observation_before_act'])
+        : _asStringKeyMap(card['before_observation']).isNotEmpty
+        ? _asStringKeyMap(card['before_observation'])
+        : _asStringKeyMap(card['observation']);
     final after = _asStringKeyMap(card['after']);
     final toolCall = _extractToolCall(card);
     final function = _asStringKeyMap(toolCall['function']);
@@ -816,6 +827,8 @@ class _RunLogActionSnapshot {
       beforeXml: _firstNonBlank([
         before['observation_xml'],
         before['observationXml'],
+        before['xml'],
+        before['page'],
       ]),
       prompt: promptHit.text,
       promptSource: promptHit.source,
@@ -1096,8 +1109,9 @@ String _executorForToolName(String toolName, String route) {
       normalizedTool.contains('vlm')) {
     return 'agent';
   }
-  // Data-flow tools: output feeds next steps, agent must handle context
-  if (RunLogReplayPolicy.isDataFlowTool(normalizedTool)) {
+  // Data-flow, perception, and provider-owned graph/function tools require
+  // live context or OmniFlow provider semantics.
+  if (RunLogReplayPolicy.isAgentTool(normalizedTool)) {
     return 'agent';
   }
   return 'tool';
@@ -1180,8 +1194,11 @@ Map<String, dynamic>? _buildCoordinateHookMetadata({
     return null;
   }
   final argsMap = _asStringKeyMap(args);
+  final replayAction =
+      RunLogReplayPolicy.omniflowActionForToolName(snapshot.toolName) ??
+      snapshot.toolName;
   final sourceAction = <String, dynamic>{
-    'tool': snapshot.toolName,
+    'tool': replayAction,
     if (_firstNonBlank([
       argsMap['target_description'],
       argsMap['targetDescription'],
@@ -1229,14 +1246,7 @@ Map<String, dynamic>? _buildCoordinateHookMetadata({
 }
 
 bool _usesCoordinateHook(String toolName) {
-  switch (toolName.trim().toLowerCase()) {
-    case 'click':
-    case 'long_press':
-    case 'scroll':
-      return true;
-    default:
-      return false;
-  }
+  return RunLogReplayPolicy.isCoordinateAction(toolName);
 }
 
 String _parameterBaseName(String key, String toolName) {
@@ -1584,12 +1594,20 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
         inferredExecutor,
       ]),
     };
-    final replayAction = _firstNonBlank([
+    final rawReplayAction = _firstNonBlank([
       if (executor == 'omniflow') merged['omniflow_action'],
       if (executor == 'omniflow') fallbackStep['omniflow_action'],
       if (executor == 'omniflow')
         RunLogReplayPolicy.omniflowActionForToolName(toolName),
     ]);
+    final replayAction = executor == 'omniflow'
+        ? (RunLogReplayPolicy.omniflowActionForToolName(rawReplayAction) ??
+              RunLogReplayPolicy.omniflowActionForToolName(toolName) ??
+              rawReplayAction)
+        : '';
+    final emittedToolName = executor == 'omniflow' && replayAction.isNotEmpty
+        ? replayAction
+        : toolName;
     final modelFree =
         executor == 'omniflow' ||
         (executor != 'agent' &&
@@ -1605,6 +1623,8 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
         : true;
     final callableTool = executor == 'agent'
         ? 'oob.agent.run'
+        : executor == 'omniflow' && replayAction.isNotEmpty
+        ? replayAction
         : _firstNonBlank([
             merged['callable_tool'],
             fallbackStep['callable_tool'],
@@ -1639,9 +1659,10 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
         'step_${index + 1}',
       ]),
       'index': _asInt(merged['index']) ?? index,
-      'kind': _stepKindForToolName(toolName, route),
-      'tool': toolName,
+      'kind': _stepKindForToolName(emittedToolName, route),
+      'tool': emittedToolName,
       'callable_tool': callableTool,
+      if (emittedToolName != toolName) 'source_tool': toolName,
       'executor': executor,
       'scriptable': scriptable,
       if (modelFree) 'model_free': true,
@@ -1658,7 +1679,7 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
               : executor == 'omniflow'
               ? 'omniflow_action'
               : 'oob_agent_tool',
-          'name': toolName,
+          'name': emittedToolName,
           if (executor == 'agent') 'callable_tool': 'oob.agent.run',
         },
       ),

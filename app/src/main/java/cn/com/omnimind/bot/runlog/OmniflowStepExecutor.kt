@@ -23,17 +23,21 @@ object OmniflowStepExecutor {
         val modelFree = step["model_free"] == true ||
             step["modelFree"] == true ||
             step["model_free"]?.toString()?.equals("true", ignoreCase = true) == true
+        val action = actionNameForStep(step)
         return executor == "omniflow" ||
-            (modelFree && actionNameForStep(step) in RunLogReplayPolicy.omniflowActions)
+            (modelFree && action in RunLogReplayPolicy.omniflowActions)
     }
 
-    fun actionNameForStep(step: Map<String, Any?>): String =
-        firstNonBlank(
+    fun actionNameForStep(step: Map<String, Any?>): String {
+        val raw = firstNonBlank(
             step["omniflow_action"],
             step["local_action"],
             step["tool"],
             step["callable_tool"]
-        ).lowercase()
+        )
+        return RunLogReplayPolicy.omniflowActionForToolName(raw)
+            ?: RunLogReplayPolicy.normalizeToolName(raw)
+    }
 
     fun normalizeArgsMap(rawArgs: Any?): Map<String, Any?> =
         when (rawArgs) {
@@ -94,37 +98,23 @@ object OmniflowStepExecutor {
                 "long_press"
             }
 
-            "scroll" -> {
-                val x1 = numberArg(args, "x1")?.toFloat()
-                    ?: throw IllegalArgumentException("scroll requires x1")
-                val y1 = numberArg(args, "y1")?.toFloat()
-                    ?: throw IllegalArgumentException("scroll requires y1")
-                val x2 = numberArg(args, "x2")?.toFloat()
-                    ?: throw IllegalArgumentException("scroll requires x2")
-                val y2 = numberArg(args, "y2")?.toFloat()
-                    ?: throw IllegalArgumentException("scroll requires y2")
-                val dx = x2 - x1
-                val dy = y2 - y1
-                val direction = if (abs(dy) > abs(dx)) {
-                    if (dy > 0) ScrollDirection.DOWN else ScrollDirection.UP
-                } else {
-                    if (dx > 0) ScrollDirection.RIGHT else ScrollDirection.LEFT
-                }
+            "scroll", "swipe" -> {
+                val swipe = swipeSpec(args)
                 AccessibilityController.scrollCoordinate(
-                    x = x1,
-                    y = y1,
-                    direction = direction,
-                    distance = hypot(dx, dy),
+                    x = swipe.x,
+                    y = swipe.y,
+                    direction = swipe.direction,
+                    distance = swipe.distance,
                     duration = durationMs(args, defaultMs = 1500L)
                 )
-                "scroll"
+                action
             }
 
-            "type" -> {
+            "type", "input_text" -> {
                 val text = stringArg(args, "content", "text", "value")
-                    ?: throw IllegalArgumentException("type requires content")
+                    ?: throw IllegalArgumentException("$action requires content")
                 AccessibilityController.inputTextToFocusedNode(text)
-                "type"
+                action
             }
 
             "open_app" -> {
@@ -136,27 +126,23 @@ object OmniflowStepExecutor {
                 "open_app"
             }
 
-            "press_home" -> {
-                AccessibilityController.goHome()
-                "press_home"
-            }
-
-            "press_back" -> {
-                AccessibilityController.goBack()
-                "press_back"
-            }
-
-            "hot_key" -> {
+            "press_home", "press_back", "hot_key", "press_key" -> {
                 val key = stringArg(args, "key", "hotkey", "hot_key")
-                    ?: throw IllegalArgumentException("hot_key requires key")
+                    ?: when (action) {
+                        "press_home" -> "HOME"
+                        "press_back" -> "BACK"
+                        else -> throw IllegalArgumentException("$action requires key")
+                    }
                 AccessibilityController.pressHotKey(key)
-                "hot_key"
+                action
             }
 
             "wait" -> {
                 delay(durationMs(args, defaultMs = 1000L))
                 "wait"
             }
+
+            "finished" -> "finished"
 
             else -> throw IllegalArgumentException("Unsupported omniflow action: $action")
         }
@@ -182,15 +168,18 @@ object OmniflowStepExecutor {
         if (tool !in RunLogReplayPolicy.coordinateActions) {
             return StepArgsResult(args)
         }
-        val sourceContext = step["source_context"] as? Map<*, *> ?: return StepArgsResult(
+        val sourceContext = (step["source_context"] as? Map<*, *>)
+            ?: (args["source_context"] as? Map<*, *>)
+            ?: return StepArgsResult(
             args,
             meta = mapOf("applied" to false, "reason" to "missing_source_context", "algorithm" to "anchor_projection")
         )
-        val srcCtx = sourceContext["src_ctx"] as? Map<*, *> ?: return StepArgsResult(
-            args,
-            meta = mapOf("applied" to false, "reason" to "missing_src_ctx", "algorithm" to "anchor_projection")
+        val srcCtx = sourceContext["src_ctx"] as? Map<*, *>
+        val sourceXml = firstNonBlank(
+            srcCtx?.get("page"),
+            sourceContext["page"],
+            sourceContext["xml"],
         )
-        val sourceXml = srcCtx["page"]?.toString()?.trim().orEmpty()
         if (sourceXml.isEmpty()) {
             return StepArgsResult(
                 args,
@@ -206,7 +195,7 @@ object OmniflowStepExecutor {
         }
         return when (tool) {
             "click", "long_press" -> remapPointActionArgs(tool, args, sourceXml, currentXml)
-            "scroll" -> remapScrollActionArgs(args, sourceXml, currentXml)
+            "scroll", "swipe" -> remapScrollActionArgs(tool, args, sourceXml, currentXml)
             else -> StepArgsResult(args)
         }
     }
@@ -240,6 +229,68 @@ object OmniflowStepExecutor {
             return (seconds * 1000.0).toLong().coerceAtLeast(0L)
         }
         return defaultMs
+    }
+
+    private data class SwipeSpec(
+        val x: Float,
+        val y: Float,
+        val direction: ScrollDirection,
+        val distance: Float,
+    )
+
+    private fun swipeSpec(args: Map<String, Any?>): SwipeSpec {
+        val x1 = numberArg(args, "x1")?.toFloat()
+        val y1 = numberArg(args, "y1")?.toFloat()
+        val x2 = numberArg(args, "x2")?.toFloat()
+        val y2 = numberArg(args, "y2")?.toFloat()
+        if (x1 != null && y1 != null && x2 != null && y2 != null) {
+            val dx = x2 - x1
+            val dy = y2 - y1
+            val direction = if (abs(dy) > abs(dx)) {
+                if (dy > 0) ScrollDirection.DOWN else ScrollDirection.UP
+            } else {
+                if (dx > 0) ScrollDirection.RIGHT else ScrollDirection.LEFT
+            }
+            return SwipeSpec(x1, y1, direction, hypot(dx, dy))
+        }
+
+        val direction = directionArg(args)
+            ?: throw IllegalArgumentException("swipe requires direction or x1/y1/x2/y2")
+        val rootCenter = currentRootCenter()
+        val x: Float = numberArg(args, "x", "center_x", "centerX")?.toFloat()
+            ?: rootCenter?.first
+            ?: DEFAULT_SCREEN_CENTER_X
+        val y: Float = numberArg(args, "y", "center_y", "centerY")?.toFloat()
+            ?: rootCenter?.second
+            ?: DEFAULT_SCREEN_CENTER_Y
+        val distance: Float = numberArg(args, "distance", "distance_px", "distancePx")
+            ?.toFloat()
+            ?.coerceAtLeast(1f)
+            ?: DEFAULT_SWIPE_DISTANCE
+        return SwipeSpec(x, y, direction, distance)
+    }
+
+    private fun directionArg(args: Map<String, Any?>): ScrollDirection? {
+        val raw = stringArg(args, "direction", "scroll_direction", "scrollDirection")
+            ?.trim()
+            ?.lowercase()
+            ?: return null
+        return when (raw) {
+            "up" -> ScrollDirection.UP
+            "down" -> ScrollDirection.DOWN
+            "left" -> ScrollDirection.LEFT
+            "right" -> ScrollDirection.RIGHT
+            else -> null
+        }
+    }
+
+    private fun currentRootCenter(): Pair<Float, Float>? {
+        val currentXml = AccessibilityController.getCaptureScreenShotXml(true)
+            ?.trim()
+            .orEmpty()
+        if (currentXml.isEmpty()) return null
+        val page = parsePageModel(currentXml) ?: return null
+        return page.rootBounds.centerX to page.rootBounds.centerY
     }
 
     private fun firstNonBlank(vararg values: Any?): String {
@@ -373,6 +424,7 @@ object OmniflowStepExecutor {
     }
 
     private fun remapScrollActionArgs(
+        tool: String,
         args: Map<String, Any?>,
         sourceXml: String,
         currentXml: String,
@@ -424,7 +476,7 @@ object OmniflowStepExecutor {
             ),
             meta = mapOf(
                 "applied" to true,
-                "tool" to "scroll",
+                "tool" to tool,
                 "mode" to targetMatch.mode,
                 "algorithm" to "anchor_projection",
                 "confidence" to targetMatch.confidence,
@@ -924,6 +976,9 @@ object OmniflowStepExecutor {
         }
 
     private const val POST_STEP_DELAY_MS = 1000L
+    private const val DEFAULT_SCREEN_CENTER_X = 540f
+    private const val DEFAULT_SCREEN_CENTER_Y = 960f
+    private const val DEFAULT_SWIPE_DISTANCE = 600f
     private val BOUNDS_REGEX = Regex("""\[(-?\d+),(-?\d+)]\[(-?\d+),(-?\d+)]""")
     private const val MAX_ANCHOR_COUNT = 5
     private const val MIN_ANCHOR_SIMILARITY = 0.45f
