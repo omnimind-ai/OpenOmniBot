@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/chat/utils/agent_activity_compactor.dart';
 import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
 import 'package:ui/features/home/pages/chat/widgets/agent_tool_activity_card.dart';
+import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/card_widget_factory.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/message_bubble.dart';
 import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
@@ -145,6 +146,9 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
           runLogId: widget.group.runLogId,
           isActiveRun: widget.group.isActiveRun,
           expanded: widget.expanded,
+          thinkingCount: widget.group.thinkingCount,
+          toolCount: widget.group.toolCount,
+          latestProcessSummary: _latestProcessSummary(processMessages),
           onTap: widget.onToggleExpanded,
         ),
         _buildAnimatedProcessSection(processMessages),
@@ -254,6 +258,32 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
     }
     return null;
   }
+
+  String _latestProcessSummary(List<ChatMessageModel> processMessages) {
+    for (final message in processMessages.reversed) {
+      final cardData = message.cardData;
+      final cardType = (cardData?['type'] ?? '').toString();
+      if (cardType == kAgentToolSummaryCardType && cardData != null) {
+        final title = resolveAgentToolTitle(cardData).trim();
+        if (title.isNotEmpty) {
+          return title;
+        }
+      }
+      if (cardType == 'deep_thinking') {
+        final text = (cardData?['thinkingContent'] ?? '').toString().trim();
+        if (text.isNotEmpty) {
+          final firstLine = text
+              .split('\n')
+              .map((line) => line.trim())
+              .firstWhere((line) => line.isNotEmpty, orElse: () => '');
+          if (firstLine.isNotEmpty) {
+            return firstLine;
+          }
+        }
+      }
+    }
+    return '';
+  }
 }
 
 class _AgentRunSummaryHeader extends StatelessWidget {
@@ -263,6 +293,9 @@ class _AgentRunSummaryHeader extends StatelessWidget {
     required this.runLogId,
     required this.isActiveRun,
     required this.expanded,
+    required this.thinkingCount,
+    required this.toolCount,
+    required this.latestProcessSummary,
     required this.onTap,
   });
 
@@ -270,15 +303,24 @@ class _AgentRunSummaryHeader extends StatelessWidget {
   final String runLogId;
   final bool isActiveRun;
   final bool expanded;
+  final int thinkingCount;
+  final int toolCount;
+  final String latestProcessSummary;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final locale = Localizations.localeOf(context);
     final palette = context.omniPalette;
-    final label = isActiveRun
-        ? AppTextLocalizer.choose(zh: '运行中', en: 'Running', locale: locale)
-        : AppTextLocalizer.choose(zh: '已思考', en: 'Run trace', locale: locale);
+    final label = AppTextLocalizer.choose(
+      zh: '执行过程',
+      en: 'Process',
+      locale: locale,
+    );
+    final statusLabel = isActiveRun
+        ? AppTextLocalizer.choose(zh: '进行中', en: 'Running', locale: locale)
+        : AppTextLocalizer.choose(zh: '已完成', en: 'Done', locale: locale);
+    final summary = _summaryText(locale);
     final labelColor = expanded ? palette.textSecondary : palette.textTertiary;
     final lineColor = expanded
         ? palette.textSecondary.withValues(
@@ -313,18 +355,61 @@ class _AgentRunSummaryHeader extends StatelessWidget {
                   },
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                    color: labelColor,
-                    fontFamily: 'PingFang SC',
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final showSummary =
+                          summary.isNotEmpty && constraints.maxWidth >= 142;
+                      final showDivider = constraints.maxWidth >= 188;
+                      return Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: labelColor,
+                                fontFamily: 'PingFang SC',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _ProcessStatusPill(
+                            label: statusLabel,
+                            isActiveRun: isActiveRun,
+                            expanded: expanded,
+                          ),
+                          if (showSummary) ...[
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                summary,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  color: palette.textTertiary,
+                                  height: 1.1,
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (showDivider) ...[
+                            const SizedBox(width: 10),
+                            SizedBox(
+                              width: 42,
+                              child: Container(height: 1, color: lineColor),
+                            ),
+                          ],
+                        ],
+                      );
+                    },
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(child: Container(height: 1, color: lineColor)),
                 const SizedBox(width: 6),
                 Tooltip(
                   message: AppTextLocalizer.choose(
@@ -364,6 +449,73 @@ class _AgentRunSummaryHeader extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _summaryText(Locale locale) {
+    final parts = <String>[];
+    if (thinkingCount > 0) {
+      parts.add(
+        AppTextLocalizer.choose(
+          zh: '$thinkingCount 段思考',
+          en: '$thinkingCount ${thinkingCount == 1 ? 'thought' : 'thoughts'}',
+          locale: locale,
+        ),
+      );
+    }
+    if (toolCount > 0) {
+      parts.add(
+        AppTextLocalizer.choose(
+          zh: '$toolCount 个工具',
+          en: '$toolCount ${toolCount == 1 ? 'tool' : 'tools'}',
+          locale: locale,
+        ),
+      );
+    }
+    final trimmed = latestProcessSummary.trim();
+    if (trimmed.isNotEmpty) {
+      parts.add(trimmed);
+    }
+    return parts.join(' · ');
+  }
+}
+
+class _ProcessStatusPill extends StatelessWidget {
+  const _ProcessStatusPill({
+    required this.label,
+    required this.isActiveRun,
+    required this.expanded,
+  });
+
+  final String label;
+  final bool isActiveRun;
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final color = isActiveRun
+        ? palette.accentPrimary
+        : (expanded ? palette.textSecondary : palette.textTertiary);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: context.isDarkTheme ? 0.12 : 0.08),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: color,
+            height: 1,
           ),
         ),
       ),

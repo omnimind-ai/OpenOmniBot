@@ -361,34 +361,31 @@ void main() {
     );
   });
 
-  test(
-    'auto-expands a run only after it transitions from active to completed',
-    () {
-      final tracker = AgentRunCompletionExpansionTracker();
-      final activeMessages = _buildCompletedRunMessages(isFinal: false);
+  test('does not auto-expand process details when a run completes', () {
+    final tracker = AgentRunCompletionExpansionTracker();
+    final activeMessages = _buildCompletedRunMessages(isFinal: false);
 
-      expect(
-        tracker.sync(
-          messages: activeMessages,
-          activeTaskIds: const <String>{'task-1'},
-        ),
-        isFalse,
-      );
-      expect(tracker.isTaskExpanded('task-1', const <String>{}), isFalse);
+    expect(
+      tracker.sync(
+        messages: activeMessages,
+        activeTaskIds: const <String>{'task-1'},
+      ),
+      isFalse,
+    );
+    expect(tracker.isTaskExpanded('task-1', const <String>{}), isFalse);
 
-      expect(
-        tracker.sync(
-          messages: _buildCompletedRunMessages(),
-          activeTaskIds: const <String>{},
-        ),
-        isTrue,
-      );
-      expect(tracker.isTaskExpanded('task-1', const <String>{}), isTrue);
+    expect(
+      tracker.sync(
+        messages: _buildCompletedRunMessages(),
+        activeTaskIds: const <String>{},
+      ),
+      isFalse,
+    );
+    expect(tracker.isTaskExpanded('task-1', const <String>{}), isFalse);
 
-      tracker.consumeAutoExpandedTask('task-1');
-      expect(tracker.isTaskExpanded('task-1', const <String>{}), isFalse);
-    },
-  );
+    tracker.consumeAutoExpandedTask('task-1');
+    expect(tracker.isTaskExpanded('task-1', const <String>{}), isFalse);
+  });
 
   test(
     'uses cancelled text as the visible body for a manually stopped run',

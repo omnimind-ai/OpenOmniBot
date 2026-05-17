@@ -694,6 +694,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         if (activeToolEntryIds.length != state.activeToolEntryIds.length) {
           runtime.agentStreamStates[normalizedTaskId] = state.copyWith(
             activeToolEntryIds: activeToolEntryIds,
+            activeToolFallbackEntryIds: state.activeToolFallbackEntryIds
+                .where(activeToolEntryIds.contains)
+                .toSet(),
           );
         }
         runtime.activeToolCardId = activeToolEntryIds.isEmpty

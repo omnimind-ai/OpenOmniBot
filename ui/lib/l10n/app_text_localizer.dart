@@ -335,6 +335,7 @@ class AppTextLocalizer {
         '刷新长期记忆': (l10n) => l10n.sourceText4398777297,
         '刚刚': (l10n) => l10n.sourceText9e636642d6,
         '思考完成': (l10n) => l10n.sourceTextedab852efe,
+        '完成思考': (l10n) => l10n.sourceTextedab852efe,
         '正在思考': (l10n) => l10n.sourceText774d85ae0a,
         '用时': (l10n) => l10n.sourceTexte4b6477e6e,
         '准备执行任务...': (l10n) => l10n.sourceText15fc7643c5,

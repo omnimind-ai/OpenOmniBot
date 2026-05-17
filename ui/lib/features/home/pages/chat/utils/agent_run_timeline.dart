@@ -105,37 +105,21 @@ class AgentRunMessageRef {
 
 class AgentRunCompletionExpansionTracker {
   final Set<String> _autoExpandedCompletedTaskIds = <String>{};
-  Set<String> _previousActiveTaskIds = <String>{};
 
   Set<String> get autoExpandedCompletedTaskIds =>
       Set.unmodifiable(_autoExpandedCompletedTaskIds);
 
   Set<String> effectiveExpandedTaskIds(Iterable<String> manualTaskIds) {
-    return <String>{
-      ...normalizeAgentRunTaskIds(manualTaskIds),
-      ..._autoExpandedCompletedTaskIds,
-    };
+    return normalizeAgentRunTaskIds(manualTaskIds);
   }
 
   bool sync({
     required Iterable<ChatMessageModel> messages,
     required Iterable<String> activeTaskIds,
   }) {
-    final currentActiveTaskIds = normalizeAgentRunTaskIds(activeTaskIds);
-    final messageTaskIds = agentRunTaskIdsFromMessages(messages);
-    final completedTaskIds = _previousActiveTaskIds
-        .difference(currentActiveTaskIds)
-        .intersection(messageTaskIds);
     final before = Set<String>.from(_autoExpandedCompletedTaskIds);
 
-    _autoExpandedCompletedTaskIds
-      ..removeWhere(
-        (taskId) =>
-            currentActiveTaskIds.contains(taskId) ||
-            !messageTaskIds.contains(taskId),
-      )
-      ..addAll(completedTaskIds);
-    _previousActiveTaskIds = currentActiveTaskIds;
+    _autoExpandedCompletedTaskIds.clear();
     return !_setEquals(before, _autoExpandedCompletedTaskIds);
   }
 
@@ -144,18 +128,16 @@ class AgentRunCompletionExpansionTracker {
     if (normalizedTaskId == null) {
       return false;
     }
-    return _autoExpandedCompletedTaskIds.contains(normalizedTaskId) ||
-        normalizeAgentRunTaskIds(
-          manualExpandedTaskIds,
-        ).contains(normalizedTaskId);
+    return normalizeAgentRunTaskIds(
+      manualExpandedTaskIds,
+    ).contains(normalizedTaskId);
   }
 
   bool isGroupExpanded(
     AgentRunTimelineGroup group,
     Iterable<String> manualExpandedTaskIds,
   ) {
-    return group.isActiveRun ||
-        isTaskExpanded(group.taskId, manualExpandedTaskIds);
+    return isTaskExpanded(group.taskId, manualExpandedTaskIds);
   }
 
   bool consumeAutoExpandedTask(String taskId) {
@@ -168,7 +150,6 @@ class AgentRunCompletionExpansionTracker {
 
   void clear() {
     _autoExpandedCompletedTaskIds.clear();
-    _previousActiveTaskIds = <String>{};
   }
 }
 

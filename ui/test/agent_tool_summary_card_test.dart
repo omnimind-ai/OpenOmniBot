@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_summary_card.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/terminal_output_utils.dart';
@@ -31,6 +32,37 @@ void main() {
     expect(output, contains('hello'));
     expect(output, contains('[stderr]'));
     expect(output, contains('warning'));
+  });
+
+  test('TerminalOutputUtils uses shared terminal trim policy with notice', () {
+    final output = TerminalOutputUtils.trim(
+      List.generate(605, (index) => 'line $index').join('\n'),
+    );
+
+    expect(output, startsWith('[更早输出已省略]\n'));
+    expect(output, isNot(contains('line 0')));
+    expect(output, contains('line 604'));
+  });
+
+  test('TerminalOutputUtils localizes display notices in English', () {
+    AppTextLocalizer.setResolvedLocale(const Locale('en'));
+
+    final trimmed = TerminalOutputUtils.trim(
+      List.generate(605, (index) => 'line $index').join('\n'),
+    );
+    final fallback = TerminalOutputUtils.buildDisplayOutput(
+      terminalOutput: '',
+      rawResultJson: jsonEncode({
+        'liveFallbackReason': 'shared storage unavailable',
+        'stdout': 'hello',
+      }),
+      resultPreviewJson: '',
+    );
+
+    expect(trimmed, startsWith('[Earlier output omitted]\n'));
+    expect(fallback, contains('[Live output fallback]'));
+    expect(trimmed, isNot(contains('[更早输出已省略]')));
+    expect(fallback, isNot(contains('[实时输出已回退]')));
   });
 
   test('AnsiTextSpanBuilder applies color and bold to sgr spans', () {
@@ -73,6 +105,18 @@ void main() {
 
     expect(find.text('检查仓库状态'), findsOneWidget);
     expect(find.text('终端执行'), findsNothing);
+  });
+
+  test('tool card title and preview ignore generic placeholders', () {
+    final cardData = {
+      'status': 'running',
+      'toolType': 'browser',
+      'summary': 'Preparing tool call...',
+      'progress': 'Preparing tool call...',
+    };
+
+    expect(resolveAgentToolTitle(cardData), '工具调用');
+    expect(resolveAgentToolPreview(cardData), '浏览中');
   });
 
   testWidgets('tool card opens detail sheet when tapped', (tester) async {

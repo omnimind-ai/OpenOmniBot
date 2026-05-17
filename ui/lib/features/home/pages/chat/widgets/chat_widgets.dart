@@ -2116,8 +2116,7 @@ class _ChatTimelineListRow extends StatelessWidget {
       padding: padding,
       child: AgentRunGroupMessage(
         group: group,
-        expanded:
-            group.isActiveRun || expandedAgentRunTaskIds.contains(group.taskId),
+        expanded: expandedAgentRunTaskIds.contains(group.taskId),
         onToggleExpanded: () => onToggleAgentRunGroup(group.taskId),
         onBeforeTaskExecute: onBeforeTaskExecute,
         onCancelTask: onCancelTask,

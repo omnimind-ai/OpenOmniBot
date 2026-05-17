@@ -88,6 +88,29 @@ class AgentToolTerminalOutputPolicy {
     }
     return text;
   }
+
+  static String trimForDisplay(
+    String value, {
+    int maxChars = defaultMaxChars,
+    int maxLines = defaultMaxLines,
+    String truncationNotice = '',
+  }) {
+    if (value.isEmpty) return value;
+    final trimmed = trim(value, maxChars: maxChars, maxLines: maxLines);
+    if (trimmed.length == value.length) {
+      return trimmed;
+    }
+    final notice = truncationNotice.trimRight();
+    if (notice.isEmpty || trimmed.startsWith(notice)) {
+      return trimmed;
+    }
+    final prefix = '$notice\n';
+    final remaining = maxChars > prefix.length ? maxChars - prefix.length : 0;
+    final body = remaining > 0 && trimmed.length > remaining
+        ? trimmed.substring(trimmed.length - remaining)
+        : trimmed;
+    return '$prefix$body';
+  }
 }
 
 class AgentToolCardPolicy {
@@ -215,6 +238,20 @@ class AgentToolCardPolicy {
         text == '正在准备工具调用...' ||
         text == '工具调用中' ||
         text == '执行中';
+  }
+
+  static bool isGenericTerminalProgressText(Object? raw) {
+    final normalized = raw?.toString().trim() ?? '';
+    if (normalized.isEmpty) {
+      return true;
+    }
+    return isPlaceholderText(normalized) ||
+        normalized == '正在调用内嵌 Alpine 终端执行命令' ||
+        normalized == '正在执行内嵌 Alpine 终端命令' ||
+        normalized == '终端输出更新中' ||
+        normalized == 'Running a command in the embedded Alpine terminal' ||
+        normalized == 'Executing a command in the embedded Alpine terminal' ||
+        normalized == 'Updating terminal output';
   }
 
   static String semanticTitleForStep({
@@ -584,6 +621,31 @@ class AgentToolCardPolicy {
     );
   }
 
+  static String operationIdFromEvent(
+    AgentStreamEvent event, {
+    Map<dynamic, dynamic>? raw,
+  }) {
+    final source = raw ?? event.raw;
+    return firstNonBlank(<Object?>[
+      source['toolCallId'],
+      source['tool_call_id'],
+      event.raw['toolCallId'],
+      event.raw['tool_call_id'],
+      source['callId'],
+      source['call_id'],
+      event.raw['callId'],
+      event.raw['call_id'],
+      source['toolTaskId'],
+      source['tool_task_id'],
+      event.raw['toolTaskId'],
+      event.raw['tool_task_id'],
+      source['cardId'],
+      source['card_id'],
+      event.raw['cardId'],
+      event.raw['card_id'],
+    ]);
+  }
+
   static String cardIdForEvent(
     AgentStreamEvent event, {
     Map<dynamic, dynamic>? raw,
@@ -630,6 +692,43 @@ class AgentToolCardPolicy {
       _runLogIdFromJsonString(card['rawResultJson']),
     ]);
     return AgentToolRunLogRef(runLogId: runLogId, cardId: identity.primaryId);
+  }
+
+  static bool cardMatchesId(
+    Map<String, dynamic>? cardData,
+    String targetId, {
+    ChatMessageModel? message,
+  }) {
+    final target = targetId.trim().toLowerCase();
+    if (target.isEmpty) {
+      return false;
+    }
+    final card = cardData ?? message?.cardData ?? const <String, dynamic>{};
+    final toolCall = asStringMap(card['tool_call']);
+    final toolCallAlt = asStringMap(card['toolCall']);
+    final action = asStringMap(card['action']);
+    final call = asStringMap(card['call']);
+    final ids = _normalizeIdentitySet(<Object?>[
+      ...identityFromCard(card, message: message).ids,
+      card['id'],
+      toolCall['id'],
+      toolCall['tool_call_id'],
+      toolCall['toolCallId'],
+      toolCall['call_id'],
+      toolCall['callId'],
+      toolCallAlt['id'],
+      toolCallAlt['tool_call_id'],
+      toolCallAlt['toolCallId'],
+      toolCallAlt['call_id'],
+      toolCallAlt['callId'],
+      action['id'],
+      action['tool_call_id'],
+      action['toolCallId'],
+      call['id'],
+      call['tool_call_id'],
+      call['toolCallId'],
+    ]);
+    return ids.any((id) => id.toLowerCase() == target);
   }
 
   static Color statusColor(String status) {

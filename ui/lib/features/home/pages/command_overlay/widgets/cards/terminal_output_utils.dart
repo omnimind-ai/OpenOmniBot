@@ -1,40 +1,26 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 
 const Color kTerminalSurfaceBlack = Color(0xFF06080C);
 const Color kTerminalSurfaceBlackElevated = Color(0xFF0C1016);
 const Color kTerminalSurfaceShadow = Color(0x52000000);
 
 class TerminalOutputUtils {
-  static const int maxChars = 64 * 1024;
-  static const int maxLines = 600;
-  static const String truncationNotice = '[更早输出已省略]\n';
+  static const int maxChars = AgentToolTerminalOutputPolicy.defaultMaxChars;
+  static const int maxLines = AgentToolTerminalOutputPolicy.defaultMaxLines;
+  static String truncationNotice() =>
+      AppTextLocalizer.choose(zh: '[更早输出已省略]', en: '[Earlier output omitted]');
+  static String liveFallbackNotice() =>
+      AppTextLocalizer.choose(zh: '[实时输出已回退]', en: '[Live output fallback]');
 
   static String trim(String value) {
-    if (value.isEmpty) return value;
-
-    var candidate = value;
-    if (candidate.length > maxChars) {
-      candidate = candidate.substring(candidate.length - maxChars);
-    }
-
-    final lines = candidate.split('\n');
-    if (lines.length > maxLines) {
-      candidate = lines.sublist(lines.length - maxLines).join('\n');
-    }
-
-    final wasTrimmed =
-        candidate.length < value.length || lines.length > maxLines;
-    if (!wasTrimmed) {
-      return candidate;
-    }
-
-    final body = candidate.startsWith(truncationNotice)
-        ? candidate.substring(truncationNotice.length)
-        : candidate;
-    final remaining = maxChars - truncationNotice.length;
-    return '$truncationNotice${body.substring(body.length > remaining ? body.length - remaining : 0)}';
+    return AgentToolTerminalOutputPolicy.trimForDisplay(
+      value,
+      maxChars: maxChars,
+      maxLines: maxLines,
+      truncationNotice: truncationNotice(),
+    );
   }
 
   static String buildDisplayOutput({
@@ -61,7 +47,7 @@ class TerminalOutputUtils {
     final segments = <String>[];
     final liveFallbackReason = (source['liveFallbackReason'] ?? '').toString();
     if (liveFallbackReason.trim().isNotEmpty) {
-      segments.add('[实时输出已回退]\n$liveFallbackReason');
+      segments.add('${liveFallbackNotice()}\n$liveFallbackReason');
     }
 
     final stdout = (source['stdout'] ?? '').toString().trimRight();
@@ -84,21 +70,11 @@ class TerminalOutputUtils {
   }
 
   static Map<String, dynamic> decodeJsonMap(String value) {
-    return _decodeJsonMap(value);
+    return AgentToolCardPolicy.decodeJsonMap(value);
   }
 
   static Map<String, dynamic> _decodeJsonMap(String value) {
-    final text = value.trim();
-    if (text.isEmpty) return const {};
-    try {
-      final decoded = jsonDecode(text);
-      if (decoded is Map) {
-        return decoded.map((key, value) => MapEntry(key.toString(), value));
-      }
-    } catch (_) {
-      return const {};
-    }
-    return const {};
+    return AgentToolCardPolicy.decodeJsonMap(value);
   }
 }
 

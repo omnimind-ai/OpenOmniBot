@@ -7,6 +7,7 @@ import 'package:ui/features/task/run_log/run_log_reusable_function_converter.dar
 import 'package:ui/features/task/pages/scheduled_tasks/widgets/schedule_task_sheet.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 import 'package:ui/services/scheduled_task_scheduler_service.dart';
 import 'package:ui/services/scheduled_task_storage_service.dart';
 import 'package:ui/services/assists_core_service.dart';
@@ -92,20 +93,14 @@ class _StepDetailLoaderState extends State<_StepDetailLoader> {
       );
       if (!mounted) return;
       final cards = _extractTimelineCards(payload);
-      // 找匹配的 card：先匹配 cardId/tool_call_id，再匹配 toolName
+      // Match through the same identity policy as live tool cards so runlog
+      // detail links survive adapter differences such as callId vs toolCallId.
       final targetId = widget.cardId.trim().toLowerCase();
       Map<String, dynamic>? matched;
       int matchedIndex = 0;
       for (int i = 0; i < cards.length; i++) {
         final c = cards[i];
-        final ids = [
-          c['cardId']?.toString() ?? '',
-          c['card_id']?.toString() ?? '',
-          c['tool_call_id']?.toString() ?? '',
-          c['toolCallId']?.toString() ?? '',
-          _asStringKeyMap(c['tool_call'])['id']?.toString() ?? '',
-        ];
-        if (ids.any((id) => id.isNotEmpty && id.toLowerCase() == targetId)) {
+        if (AgentToolCardPolicy.cardMatchesId(c, targetId)) {
           matched = c;
           matchedIndex = i;
           break;
@@ -432,9 +427,9 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
     try {
       final convertResult =
           await AssistsMessageService.convertInternalRunLogToOobFunction(
-        runId: widget.runId,
-        register: true,
-      );
+            runId: widget.runId,
+            register: true,
+          );
       final functionId = _firstNonBlank([
         convertResult['created_function_id'],
         convertResult['function_id'],
@@ -3343,13 +3338,7 @@ dynamic _firstPresent(List<dynamic> values) {
 }
 
 String _firstNonBlank(List<dynamic> values) {
-  for (final value in values) {
-    final text = value?.toString().trim() ?? '';
-    if (text.isNotEmpty) {
-      return text;
-    }
-  }
-  return '';
+  return AgentToolCardPolicy.firstNonBlank(values);
 }
 
 String _compactPreview(String value, {int maxLength = 160}) {

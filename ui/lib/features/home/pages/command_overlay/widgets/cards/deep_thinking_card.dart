@@ -109,7 +109,7 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
   void initState() {
     super.initState();
     _hasAutoCollapsedForCurrentCompletion = _shouldAutoCollapse(widget);
-    _isCollapsed = true; // Start collapsed by default (user can expand)
+    _isCollapsed = _shouldStartCollapsed(widget);
     _collapseController = AnimationController(
       vsync: this,
       duration: _collapseDuration,
@@ -386,6 +386,13 @@ class _DeepThinkingCardState extends State<DeepThinkingCard>
         widget.isCollapsible &&
         widget.stage == 4 &&
         !widget.isLoading;
+  }
+
+  bool _shouldStartCollapsed(DeepThinkingCard widget) {
+    if (!widget.isCollapsible) {
+      return false;
+    }
+    return widget.autoCollapseOnComplete;
   }
 
   bool _shouldResetScrollPositionOnExpand() {

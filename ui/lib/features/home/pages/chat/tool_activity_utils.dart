@@ -377,8 +377,8 @@ bool isStaleAgentToolPreviewPlaceholder(ChatMessageModel message) {
   final summary = _firstNonBlank(<Object?>[
     cardData['summary'],
     cardData['progress'],
-  ]).toLowerCase();
-  return summary == 'preparing tool call...' || summary == '正在准备工具调用...';
+  ]);
+  return tool_policy.AgentToolCardPolicy.isPlaceholderText(summary);
 }
 
 Map<String, dynamic> _decodeJsonMap(String raw) {
@@ -427,7 +427,8 @@ class _CompletedAgentToolRun {
 
 String resolveAgentToolTitle(Map<String, dynamic> cardData) {
   final explicit = (cardData[kAgentToolTitleField] ?? '').toString().trim();
-  if (explicit.isNotEmpty) {
+  if (explicit.isNotEmpty &&
+      !tool_policy.AgentToolCardPolicy.isPlaceholderText(explicit)) {
     return AppTextLocalizer.text(
       _compactToolText(explicit, maxChars: _kToolCardTitleMaxChars),
     );
@@ -436,7 +437,8 @@ String resolveAgentToolTitle(Map<String, dynamic> cardData) {
   final fromArgs = _extractToolTitleFromArgs(
     (cardData['argsJson'] ?? '').toString(),
   );
-  if (fromArgs.isNotEmpty) {
+  if (fromArgs.isNotEmpty &&
+      !tool_policy.AgentToolCardPolicy.isPlaceholderText(fromArgs)) {
     return AppTextLocalizer.text(
       _compactToolText(fromArgs, maxChars: _kToolCardTitleMaxChars),
     );
@@ -462,7 +464,10 @@ String resolveAgentToolTitle(Map<String, dynamic> cardData) {
     );
   }
 
-  final summary = (cardData['summary'] ?? '').toString().trim();
+  final summary = _firstNonPlaceholder(<Object?>[
+    cardData['summary'],
+    cardData['progress'],
+  ]);
   if (summary.isNotEmpty) {
     return AppTextLocalizer.text(
       _compactToolText(summary, maxChars: _kToolCardTitleMaxChars),
@@ -499,8 +504,8 @@ String resolveAgentToolPreview(Map<String, dynamic> cardData) {
     }
   }
 
-  final progress = (cardData['progress'] ?? '').toString().trim();
-  final summary = (cardData['summary'] ?? '').toString().trim();
+  final progress = _nonPlaceholderText(cardData['progress']);
+  final summary = _nonPlaceholderText(cardData['summary']);
   final title = resolveAgentToolTitle(cardData);
   if (progress.isNotEmpty && progress != title) {
     return AppTextLocalizer.text(
@@ -642,6 +647,22 @@ String _extractToolTitleFromArgs(String argsJson) {
           '')
       .toString()
       .trim();
+}
+
+String _firstNonPlaceholder(Iterable<Object?> values) {
+  for (final value in values) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isNotEmpty &&
+        !tool_policy.AgentToolCardPolicy.isPlaceholderText(text)) {
+      return text;
+    }
+  }
+  return '';
+}
+
+String _nonPlaceholderText(Object? value) {
+  final text = value?.toString().trim() ?? '';
+  return tool_policy.AgentToolCardPolicy.isPlaceholderText(text) ? '' : text;
 }
 
 String _compactToolText(String value, {required int maxChars}) {

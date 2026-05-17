@@ -1317,9 +1317,10 @@ class _WebChatHomeState extends State<_WebChatHome> {
       group,
       _expandedAgentRunTaskIds,
     );
-    final label = group.isActiveRun
-        ? (AppTextLocalizer.choose(en: 'Running', zh: '运行中'))
-        : (AppTextLocalizer.choose(en: 'Run trace', zh: '已思考'));
+    final label = AppTextLocalizer.choose(en: 'Process', zh: '执行过程');
+    final statusLabel = group.isActiveRun
+        ? AppTextLocalizer.choose(en: 'Running', zh: '进行中')
+        : AppTextLocalizer.choose(en: 'Done', zh: '已完成');
     final summary = _agentRunGroupSummary(group);
     final processMessages = group.processMessagesOldestFirst;
     final visibleMessages = group.visibleMessagesOldestFirst;
@@ -1344,31 +1345,79 @@ class _WebChatHomeState extends State<_WebChatHome> {
                     color: group.isActiveRun ? _kAccentBlue : _kSubtleText,
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: _kSecondaryText,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final showSummary =
+                            summary.isNotEmpty && constraints.maxWidth >= 150;
+                        final showDivider = constraints.maxWidth >= 196;
+                        return Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: _kSecondaryText,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    (group.isActiveRun
+                                            ? _kAccentBlue
+                                            : _kSubtleText)
+                                        .withValues(alpha: 0.09),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                statusLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: group.isActiveRun
+                                      ? _kAccentBlue
+                                      : _kSubtleText,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                            if (showSummary) ...[
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  summary,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: _kSubtleText,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            if (showDivider) ...[
+                              const SizedBox(width: 8),
+                              const SizedBox(
+                                width: 42,
+                                child: Divider(height: 1, color: _kPanelBorder),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
                     ),
-                  ),
-                  if (summary.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        summary,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _kSubtleText,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Divider(height: 1, color: _kPanelBorder),
                   ),
                   const SizedBox(width: 4),
                   AnimatedRotation(
@@ -1402,15 +1451,15 @@ class _WebChatHomeState extends State<_WebChatHome> {
     if (group.thinkingCount > 0) {
       parts.add(
         AppTextLocalizer.choose(
-          en: '${group.thinkingCount} thinking',
-          zh: '${group.thinkingCount} 个思考',
+          en: '${group.thinkingCount} ${group.thinkingCount == 1 ? 'thought' : 'thoughts'}',
+          zh: '${group.thinkingCount} 段思考',
         ),
       );
     }
     if (group.toolCount > 0) {
       parts.add(
         AppTextLocalizer.choose(
-          en: '${group.toolCount} tools',
+          en: '${group.toolCount} ${group.toolCount == 1 ? 'tool' : 'tools'}',
           zh: '${group.toolCount} 个工具',
         ),
       );

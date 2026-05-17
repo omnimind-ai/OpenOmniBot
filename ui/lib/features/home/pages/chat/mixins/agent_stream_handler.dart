@@ -870,6 +870,9 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         if (activeToolEntryIds.length != state.activeToolEntryIds.length) {
           _agentStreamStates[normalizedTaskId] = state.copyWith(
             activeToolEntryIds: activeToolEntryIds,
+            activeToolFallbackEntryIds: state.activeToolFallbackEntryIds
+                .where(activeToolEntryIds.contains)
+                .toSet(),
           );
         }
         _activeToolCardId = activeToolEntryIds.isEmpty

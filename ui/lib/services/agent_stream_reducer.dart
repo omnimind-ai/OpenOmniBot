@@ -1,6 +1,7 @@
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/features/home/pages/chat/chat_page_models.dart';
 import 'package:ui/services/agent_stream_meta.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 
 class AgentStreamTaskState {
   const AgentStreamTaskState({
@@ -10,6 +11,7 @@ class AgentStreamTaskState {
     this.assistantSegments = const <String, int>{},
     this.toolCards = const <String, int>{},
     this.activeToolEntryIds = const <String>{},
+    this.activeToolFallbackEntryIds = const <String>{},
     this.activeThinkingEntryId,
     this.activeAssistantEntryId,
     this.phase = AgentStreamPhase.idle,
@@ -24,6 +26,7 @@ class AgentStreamTaskState {
   final Map<String, int> assistantSegments;
   final Map<String, int> toolCards;
   final Set<String> activeToolEntryIds;
+  final Set<String> activeToolFallbackEntryIds;
   final String? activeThinkingEntryId;
   final String? activeAssistantEntryId;
   final AgentStreamPhase phase;
@@ -37,6 +40,7 @@ class AgentStreamTaskState {
     Map<String, int>? assistantSegments,
     Map<String, int>? toolCards,
     Set<String>? activeToolEntryIds,
+    Set<String>? activeToolFallbackEntryIds,
     String? activeThinkingEntryId,
     bool clearActiveThinkingEntryId = false,
     String? activeAssistantEntryId,
@@ -54,6 +58,8 @@ class AgentStreamTaskState {
       assistantSegments: assistantSegments ?? this.assistantSegments,
       toolCards: toolCards ?? this.toolCards,
       activeToolEntryIds: activeToolEntryIds ?? this.activeToolEntryIds,
+      activeToolFallbackEntryIds:
+          activeToolFallbackEntryIds ?? this.activeToolFallbackEntryIds,
       activeThinkingEntryId: clearActiveThinkingEntryId
           ? null
           : (activeThinkingEntryId ?? this.activeThinkingEntryId),
@@ -116,6 +122,7 @@ class AgentStreamReducer {
     Map<String, int>? assistantSegments;
     Map<String, int>? toolCards;
     Set<String>? activeToolEntryIds;
+    Set<String>? activeToolFallbackEntryIds;
 
     var phase = previousState.phase;
     var thinkingStage = previousState.thinkingStage;
@@ -152,8 +159,9 @@ class AgentStreamReducer {
         if (event.entryId != null && event.entryId!.trim().isNotEmpty) {
           activeAssistantEntryId = event.entryId!.trim();
           final roundIndex = event.roundIndex <= 0 ? 1 : event.roundIndex;
-          assistantSegments =
-              Map<String, int>.from(previousState.assistantSegments);
+          assistantSegments = Map<String, int>.from(
+            previousState.assistantSegments,
+          );
           isNewAssistantEntry =
               activeAssistantEntryId != previousAssistantEntryId &&
               !assistantSegments.containsKey(activeAssistantEntryId);
@@ -171,12 +179,50 @@ class AgentStreamReducer {
         final entryId = resolveAgentToolCardId(event, raw: event.raw);
         if (entryId.isNotEmpty) {
           toolCards = Map<String, int>.from(previousState.toolCards);
-          activeToolEntryIds = Set<String>.from(previousState.activeToolEntryIds);
+          activeToolEntryIds = Set<String>.from(
+            previousState.activeToolEntryIds,
+          );
+          activeToolFallbackEntryIds = Set<String>.from(
+            previousState.activeToolFallbackEntryIds,
+          );
           toolCards[entryId] = event.roundIndex;
+          final stableOperationId = AgentToolCardPolicy.operationIdFromEvent(
+            event,
+            raw: event.raw,
+          );
+          final eventEntryId = event.entryId?.trim() ?? '';
           if (event.kind == AgentStreamEventKind.toolCompleted) {
             activeToolEntryIds.remove(entryId);
+            activeToolFallbackEntryIds.remove(entryId);
+            if (eventEntryId.isNotEmpty) {
+              activeToolEntryIds.remove(eventEntryId);
+              activeToolFallbackEntryIds.remove(eventEntryId);
+            }
+            if (stableOperationId.isNotEmpty) {
+              final fallbackId = _removeUnambiguousFallbackToolAlias(
+                activeToolEntryIds,
+                activeToolFallbackEntryIds,
+              );
+              if (fallbackId.isNotEmpty && fallbackId != entryId) {
+                toolCards.remove(fallbackId);
+              }
+            }
           } else {
             activeToolEntryIds.add(entryId);
+            if (stableOperationId.isEmpty) {
+              activeToolFallbackEntryIds.add(entryId);
+            } else {
+              activeToolFallbackEntryIds.remove(entryId);
+              if (event.kind != AgentStreamEventKind.toolStarted) {
+                final fallbackId = _removeUnambiguousFallbackToolAlias(
+                  activeToolEntryIds,
+                  activeToolFallbackEntryIds,
+                );
+                if (fallbackId.isNotEmpty && fallbackId != entryId) {
+                  toolCards.remove(fallbackId);
+                }
+              }
+            }
           }
         }
         browserSnapshot = event.browserSnapshot ?? browserSnapshot;
@@ -196,6 +242,7 @@ class AgentStreamReducer {
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
         activeToolEntryIds = const <String>{};
+        activeToolFallbackEntryIds = const <String>{};
         break;
       case AgentStreamEventKind.error:
         phase = AgentStreamPhase.error;
@@ -204,6 +251,7 @@ class AgentStreamReducer {
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
         activeToolEntryIds = const <String>{};
+        activeToolFallbackEntryIds = const <String>{};
         break;
       case AgentStreamEventKind.clarifyRequired:
         phase = AgentStreamPhase.clarify;
@@ -212,6 +260,7 @@ class AgentStreamReducer {
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
         activeToolEntryIds = const <String>{};
+        activeToolFallbackEntryIds = const <String>{};
         break;
       case AgentStreamEventKind.permissionRequired:
         phase = AgentStreamPhase.permissionRequired;
@@ -220,6 +269,7 @@ class AgentStreamReducer {
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
         activeToolEntryIds = const <String>{};
+        activeToolFallbackEntryIds = const <String>{};
         break;
     }
 
@@ -229,6 +279,7 @@ class AgentStreamReducer {
       assistantSegments: assistantSegments,
       toolCards: toolCards,
       activeToolEntryIds: activeToolEntryIds,
+      activeToolFallbackEntryIds: activeToolFallbackEntryIds,
       activeThinkingEntryId: activeThinkingEntryId,
       clearActiveThinkingEntryId: clearActiveThinkingEntryId,
       activeAssistantEntryId: activeAssistantEntryId,
@@ -246,5 +297,18 @@ class AgentStreamReducer {
       isNewThinkingEntry: isNewThinkingEntry,
       isNewAssistantEntry: isNewAssistantEntry,
     );
+  }
+
+  String _removeUnambiguousFallbackToolAlias(
+    Set<String> activeToolEntryIds,
+    Set<String> activeToolFallbackEntryIds,
+  ) {
+    if (activeToolFallbackEntryIds.length != 1) {
+      return '';
+    }
+    final fallbackId = activeToolFallbackEntryIds.single;
+    activeToolFallbackEntryIds.remove(fallbackId);
+    activeToolEntryIds.remove(fallbackId);
+    return fallbackId;
   }
 }

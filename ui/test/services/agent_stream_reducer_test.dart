@@ -147,4 +147,79 @@ void main() {
     expect(completed.nextState.toolCards.keys, {'tool-call-1'});
     expect(completed.nextState.activeToolEntryIds, isEmpty);
   });
+
+  test('replaces entry-id fallback when later events reveal toolCallId', () {
+    const reducer = AgentStreamReducer();
+
+    final started = reducer.reduce(
+      null,
+      toolEvent(
+        seq: 1,
+        kind: AgentStreamEventKind.toolStarted,
+        entryId: 'entry-start',
+      ),
+    );
+    expect(started.nextState.toolCards.keys, {'entry-start'});
+    expect(started.nextState.activeToolEntryIds, {'entry-start'});
+    expect(started.nextState.activeToolFallbackEntryIds, {'entry-start'});
+
+    final completed = reducer.reduce(
+      started.nextState,
+      toolEvent(
+        seq: 2,
+        kind: AgentStreamEventKind.toolCompleted,
+        entryId: 'entry-complete',
+        raw: const {'toolCallId': 'tool-call-1'},
+      ),
+    );
+
+    expect(completed.nextState.toolCards.keys, {'tool-call-1'});
+    expect(completed.nextState.activeToolEntryIds, isEmpty);
+    expect(completed.nextState.activeToolFallbackEntryIds, isEmpty);
+  });
+
+  test('keeps ambiguous fallback tool entries when a stable id appears', () {
+    const reducer = AgentStreamReducer();
+
+    final firstStarted = reducer.reduce(
+      null,
+      toolEvent(
+        seq: 1,
+        kind: AgentStreamEventKind.toolStarted,
+        entryId: 'entry-start-1',
+      ),
+    );
+    final secondStarted = reducer.reduce(
+      firstStarted.nextState,
+      toolEvent(
+        seq: 2,
+        kind: AgentStreamEventKind.toolStarted,
+        entryId: 'entry-start-2',
+      ),
+    );
+
+    final completed = reducer.reduce(
+      secondStarted.nextState,
+      toolEvent(
+        seq: 3,
+        kind: AgentStreamEventKind.toolCompleted,
+        entryId: 'entry-complete',
+        raw: const {'toolCallId': 'tool-call-1'},
+      ),
+    );
+
+    expect(completed.nextState.toolCards.keys, {
+      'entry-start-1',
+      'entry-start-2',
+      'tool-call-1',
+    });
+    expect(completed.nextState.activeToolEntryIds, {
+      'entry-start-1',
+      'entry-start-2',
+    });
+    expect(completed.nextState.activeToolFallbackEntryIds, {
+      'entry-start-1',
+      'entry-start-2',
+    });
+  });
 }

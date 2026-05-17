@@ -572,7 +572,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 320));
 
-    expect(find.text('已思考'), findsOneWidget);
+    expect(find.text('执行过程'), findsOneWidget);
+    expect(find.text('已完成'), findsOneWidget);
+    expect(find.textContaining('1 段思考'), findsOneWidget);
+    expect(find.textContaining('1 个工具'), findsOneWidget);
     expect(find.text('最终回答'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('agent-run-avatar-task-1')),
@@ -596,6 +599,62 @@ void main() {
     expect(_thinkingDetailFinder(), findsNothing);
     expect(find.byType(AgentAvatarCircle), findsOneWidget);
     expect(find.byType(AgentAvatarButton), findsNothing);
+  });
+
+  testWidgets('agent run summary stays stable on narrow width', (tester) async {
+    final controller = ScrollController();
+    final messages = _buildCompletedAgentRunMessages();
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        child: SizedBox(
+          width: 220,
+          height: 520,
+          child: ChatMessageList(
+            messages: messages,
+            scrollController: controller,
+            onBeforeTaskExecute: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(find.text('执行过程'), findsOneWidget);
+    expect(find.text('最终回答'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('agent run summary localizes in English', (tester) async {
+    final controller = ScrollController();
+    final messages = _buildCompletedAgentRunMessages();
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        locale: const Locale('en'),
+        child: SizedBox(
+          width: 400,
+          height: 520,
+          child: ChatMessageList(
+            messages: messages,
+            scrollController: controller,
+            onBeforeTaskExecute: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(find.text('Process'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+    expect(find.textContaining('1 thought'), findsOneWidget);
+    expect(find.textContaining('1 tool'), findsOneWidget);
+    expect(find.textContaining('1 thoughts'), findsNothing);
+    expect(find.textContaining('1 tools'), findsNothing);
+    expect(find.text('执行过程'), findsNothing);
+    expect(find.text('已完成'), findsNothing);
   });
 
   testWidgets('reopening run collapses thinking details by default again', (
@@ -876,7 +935,7 @@ void main() {
     },
   );
 
-  testWidgets('active agent run remains expanded while task is in flight', (
+  testWidgets('active agent run keeps process collapsed by default', (
     tester,
   ) async {
     final controller = ScrollController();
@@ -899,10 +958,21 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 32));
 
-    expect(find.text('已折叠运行过程'), findsNothing);
+    expect(find.text('执行过程'), findsOneWidget);
+    expect(find.text('进行中'), findsOneWidget);
+    expect(find.byType(DeepThinkingCard), findsNothing);
+    expect(
+      find.byKey(const ValueKey('agent-run-process-task-1')),
+      findsNothing,
+    );
+    expect(find.text('最终回答'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('agent-run-summary-task-1')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
     expect(find.byType(DeepThinkingCard), findsOneWidget);
     expect(find.text('运行 git status'), findsOneWidget);
-    expect(find.text('最终回答'), findsOneWidget);
   });
 
   testWidgets('completed active run keeps tool output visible', (tester) async {
@@ -946,8 +1016,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 320));
 
-    expect(find.text('已思考'), findsOneWidget);
-    expect(find.text('运行 git status'), findsOneWidget);
+    expect(find.text('执行过程'), findsOneWidget);
+    expect(find.text('已完成'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('agent-run-process-task-1')),
+      findsNothing,
+    );
     expect(find.text('最终回答'), findsOneWidget);
     expect(_thinkingDetailFinder(), findsNothing);
   });
@@ -1027,9 +1101,12 @@ Widget _buildChatMessageListHarness({
   );
 }
 
-Widget _buildLocalizedApp({required Widget child}) {
+Widget _buildLocalizedApp({
+  required Widget child,
+  Locale locale = const Locale('zh'),
+}) {
   return MaterialApp(
-    locale: const Locale('zh'),
+    locale: locale,
     localizationsDelegates: AppLocalizations.localizationsDelegates,
     supportedLocales: AppLocalizations.supportedLocales,
     home: Scaffold(body: child),

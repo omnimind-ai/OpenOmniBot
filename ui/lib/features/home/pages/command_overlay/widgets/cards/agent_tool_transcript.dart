@@ -566,16 +566,7 @@ String _truncateInline(String value, {int maxLength = 140}) {
 }
 
 bool _isGenericTerminalProgressMessage(String value) {
-  final normalized = value.trim();
-  if (normalized.isEmpty) {
-    return true;
-  }
-  return normalized == '正在调用内嵌 Alpine 终端执行命令' ||
-      normalized == '正在执行内嵌 Alpine 终端命令' ||
-      normalized == '终端输出更新中' ||
-      normalized == 'Running a command in the embedded Alpine terminal' ||
-      normalized == 'Executing a command in the embedded Alpine terminal' ||
-      normalized == 'Updating terminal output';
+  return AgentToolCardPolicy.isGenericTerminalProgressText(value);
 }
 
 String _firstNonBlank(Map<String, dynamic> value, List<String> keys) {

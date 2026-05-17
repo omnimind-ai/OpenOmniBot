@@ -4,12 +4,15 @@ import 'package:ui/features/home/pages/command_overlay/services/tool_card_detail
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/card_widget_factory.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/deep_thinking_card.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
+import 'package:ui/l10n/generated/app_localizations.dart';
 import 'package:ui/widgets/agent_avatar.dart';
 
 Widget _wrapWithZhApp(Widget child) {
-  return const MaterialApp(
-    locale: Locale('zh'),
-    home: Scaffold(),
+  return MaterialApp(
+    locale: const Locale('zh'),
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
+    home: Scaffold(body: child),
   );
 }
 
@@ -36,7 +39,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('完成思考'), findsOneWidget);
+      expect(find.text('思考完成'), findsOneWidget);
       expect(find.byType(DeepThinkingCard), findsOneWidget);
     },
   );
@@ -53,6 +56,9 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(InkWell));
     await tester.pumpAndSettle();
 
     final alignedClip = find.descendant(
@@ -86,7 +92,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('完成思考'), findsOneWidget);
+    expect(find.text('思考完成'), findsOneWidget);
     expect(find.byType(DeepThinkingCard), findsOneWidget);
   });
 
@@ -148,8 +154,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('完成思考'), findsOneWidget);
-    expect(find.textContaining('流式思考内容'), findsNothing);
+    expect(find.text('思考完成'), findsOneWidget);
+    expect(find.text('流式思考内容'), findsOneWidget);
+    expect(find.byType(Scrollable), findsNothing);
   });
 
   testWidgets(
@@ -168,7 +175,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('完成思考'), findsOneWidget);
+      expect(find.text('思考完成'), findsOneWidget);
       expect(find.text('完成后仍保持展开的思考内容'), findsOneWidget);
     },
   );
@@ -183,36 +190,32 @@ void main() {
       ).join('\n');
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: DeepThinkingCard(
-              thinkingText: longThinkingText,
-              stage: 3,
-              isLoading: true,
-              isCollapsible: false,
-              maxHeight: 120,
-              onStreamingTextLayoutChanged: () {
-                layoutUpdateCount += 1;
-              },
-            ),
+        _wrapWithZhApp(
+          DeepThinkingCard(
+            thinkingText: longThinkingText,
+            stage: 3,
+            isLoading: true,
+            isCollapsible: false,
+            maxHeight: 120,
+            onStreamingTextLayoutChanged: () {
+              layoutUpdateCount += 1;
+            },
           ),
         ),
       );
       await tester.pump();
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: DeepThinkingCard(
-              thinkingText: longThinkingText,
-              stage: 4,
-              isLoading: false,
-              isCollapsible: true,
-              maxHeight: 120,
-              onStreamingTextLayoutChanged: () {
-                layoutUpdateCount += 1;
-              },
-            ),
+        _wrapWithZhApp(
+          DeepThinkingCard(
+            thinkingText: longThinkingText,
+            stage: 4,
+            isLoading: false,
+            isCollapsible: true,
+            maxHeight: 120,
+            onStreamingTextLayoutChanged: () {
+              layoutUpdateCount += 1;
+            },
           ),
         ),
       );
@@ -235,17 +238,15 @@ void main() {
     var layoutUpdateCount = 0;
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: DeepThinkingCard(
-            thinkingText: '第一行\n第二行\n第三行',
-            stage: 4,
-            isLoading: false,
-            isCollapsible: true,
-            onStreamingTextLayoutChanged: () {
-              layoutUpdateCount += 1;
-            },
-          ),
+      _wrapWithZhApp(
+        DeepThinkingCard(
+          thinkingText: '第一行\n第二行\n第三行',
+          stage: 4,
+          isLoading: false,
+          isCollapsible: true,
+          onStreamingTextLayoutChanged: () {
+            layoutUpdateCount += 1;
+          },
         ),
       ),
     );
@@ -429,18 +430,16 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: DeepThinkingCard(
-            thinkingText: List.generate(
-              120,
-              (index) => '第 ${index + 1} 行思考内容，验证抬手后的惯性滚动。',
-            ).join('\n'),
-            stage: 4,
-            isLoading: false,
-            isCollapsible: false,
-            maxHeight: 120,
-          ),
+      _wrapWithZhApp(
+        DeepThinkingCard(
+          thinkingText: List.generate(
+            120,
+            (index) => '第 ${index + 1} 行思考内容，验证抬手后的惯性滚动。',
+          ).join('\n'),
+          stage: 4,
+          isLoading: false,
+          isCollapsible: false,
+          maxHeight: 120,
         ),
       ),
     );
@@ -474,15 +473,13 @@ void main() {
     ).join('\n');
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: DeepThinkingCard(
-            thinkingText: longThinkingText,
-            stage: 4,
-            isLoading: false,
-            isCollapsible: false,
-            maxHeight: 120,
-          ),
+      _wrapWithZhApp(
+        DeepThinkingCard(
+          thinkingText: longThinkingText,
+          stage: 4,
+          isLoading: false,
+          isCollapsible: false,
+          maxHeight: 120,
         ),
       ),
     );
@@ -499,15 +496,13 @@ void main() {
     expect(innerState.position.pixels, innerState.position.maxScrollExtent);
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: DeepThinkingCard(
-            thinkingText: longThinkingText,
-            stage: 4,
-            isLoading: false,
-            isCollapsible: true,
-            maxHeight: 120,
-          ),
+      _wrapWithZhApp(
+        DeepThinkingCard(
+          thinkingText: longThinkingText,
+          stage: 4,
+          isLoading: false,
+          isCollapsible: true,
+          maxHeight: 120,
         ),
       ),
     );
@@ -534,31 +529,27 @@ void main() {
     const thinkingText = '这是一段会被手动终止的思考内容';
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: DeepThinkingCard(
-            thinkingText: thinkingText,
-            stage: 1,
-            isLoading: true,
-            startTime: 1711711711000,
-            showStatusAvatar: true,
-          ),
+      _wrapWithZhApp(
+        const DeepThinkingCard(
+          thinkingText: thinkingText,
+          stage: 1,
+          isLoading: true,
+          startTime: 1711711711000,
+          showStatusAvatar: true,
         ),
       ),
     );
     await tester.pump();
 
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: DeepThinkingCard(
-            thinkingText: thinkingText,
-            stage: 5,
-            isLoading: false,
-            startTime: 1711711711000,
-            endTime: 1711711719000,
-            showStatusAvatar: true,
-          ),
+      _wrapWithZhApp(
+        const DeepThinkingCard(
+          thinkingText: thinkingText,
+          stage: 5,
+          isLoading: false,
+          startTime: 1711711711000,
+          endTime: 1711711719000,
+          showStatusAvatar: true,
         ),
       ),
     );
@@ -566,39 +557,37 @@ void main() {
 
     expect(find.byType(AgentAvatarButton), findsOneWidget);
     expect(find.text('任务已取消'), findsOneWidget);
-    expect(find.text('完成思考'), findsOneWidget);
+    expect(find.text('思考完成'), findsOneWidget);
   });
 }
 
 Widget _buildNestedThinkingHarness({
   required ScrollController parentController,
 }) {
-  return MaterialApp(
-    home: Scaffold(
-      body: Center(
-        child: SizedBox(
-          width: 360,
-          height: 320,
-          child: SingleChildScrollView(
-            controller: parentController,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 180),
-                DeepThinkingCard(
-                  thinkingText: List.generate(
-                    80,
-                    (index) => '第 ${index + 1} 行思考内容，保留足够高度用于滚动联动测试。',
-                  ).join('\n'),
-                  stage: 4,
-                  isLoading: false,
-                  isCollapsible: true,
-                  maxHeight: 120,
-                  parentScrollController: parentController,
-                ),
-                const SizedBox(height: 960),
-              ],
-            ),
+  return _wrapWithZhApp(
+    Center(
+      child: SizedBox(
+        width: 360,
+        height: 320,
+        child: SingleChildScrollView(
+          controller: parentController,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 180),
+              DeepThinkingCard(
+                thinkingText: List.generate(
+                  80,
+                  (index) => '第 ${index + 1} 行思考内容，保留足够高度用于滚动联动测试。',
+                ).join('\n'),
+                stage: 4,
+                isLoading: false,
+                isCollapsible: true,
+                maxHeight: 120,
+                parentScrollController: parentController,
+              ),
+              const SizedBox(height: 960),
+            ],
           ),
         ),
       ),

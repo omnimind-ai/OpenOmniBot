@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 import 'package:ui/services/app_background_service.dart';
 import 'artifact_card.dart';
 import 'agent_tool_summary_card.dart';
@@ -105,7 +106,7 @@ class CardWidgetFactory {
           cardData: cardData,
           onRequestAuthorize: onRequestAuthorize,
         );
-      case 'agent_tool_summary':
+      case kAgentToolSummaryCardType:
         final toolType = (cardData['toolType'] ?? '').toString();
         if (toolType == 'workspace' || toolType == 'workbench') {
           return const SizedBox.shrink();
