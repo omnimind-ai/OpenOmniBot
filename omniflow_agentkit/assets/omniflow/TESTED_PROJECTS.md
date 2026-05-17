@@ -4,16 +4,22 @@ Date: 2026-05-17
 
 These checks validate that the OmniFlow Agent Kit can be handed to external
 GUI-agent projects as a directly callable library plus skill package. The public
-MCP surface is canonical-only:
+MCP surface includes the canonical OmniFlow tools:
 
 ```text
 omniflow.recall
 omniflow.call_function
 omniflow.ingest_run_log
+omniflow.explore_replay
 ```
 
-Legacy direct OOB tool names are intentionally absent from the Python CLI, mock
-MCP server, Android MCP discovery, and external project acceptance flow.
+The OOB MCP server and Agent Kit also expose direct Function/RunLog tools for
+debugging and deterministic replay audits:
+
+```text
+oob_function_list/get/register/guard_check/run
+oob_run_log_list/get/convert
+```
 
 ## Test Commands
 
@@ -28,6 +34,8 @@ PYTHONPATH=/private/tmp/omniflow-agentkit-install-test2 python3 -m omniflow_agen
 External acceptance command:
 
 ```bash
+export OMNIFLOW_MCP_URL=http://127.0.0.1:8899/mcp
+export OMNIFLOW_MCP_TOKEN=<token-from-oob-settings>
 bash scripts/omniflow_acceptance_mobilegpt.sh
 bash scripts/omniflow_acceptance_all_guiagents.sh
 ```
@@ -41,15 +49,16 @@ python3 -m venv /private/tmp/omniflow-acceptance/venv
 cd /private/tmp/omniflow-probe-mobilegpt
 /private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit probe-repo .
 /private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit prompt "Run the safest saved Function" --repo .
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-recall "open Android Settings" --mcp-url http://127.0.0.1:<mock-port>/mcp
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-call-function settings_click_path_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-ingest-runlog runlog_install_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-call-function install_sample_apk_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-recall "open Android Settings"
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-call-function settings_click_path_demo
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-ingest-runlog runlog_install_demo
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-explore-replay "open network settings" --package-name com.android.settings --stop-text Network --no-replay
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-call-function install_sample_apk_demo
 ```
 
-The MCP commands were run against `scripts/omniflow_mock_mcp_server.py`, which
-exposes an already-registered `settings_click_path_demo` Function through the
-same canonical JSON-RPC tool names expected from OOB MCP.
+The MCP commands require a real OOB MCP endpoint. Set `OMNIFLOW_MCP_URL` or
+`OOB_MCP_URL`, and set `OMNIFLOW_MCP_TOKEN` or `OOB_MCP_TOKEN` when token auth
+is enabled in OOB settings.
 
 The broader acceptance script repeats the same install and trigger sequence from
 these external repo directories:
@@ -68,10 +77,10 @@ You are in an external open-source repo, MobileGPT. Do not modify files.
 Run exactly these commands and no variants:
 
 /private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit probe-repo .
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-recall "open Android Settings and click through the demo path" --mcp-url http://127.0.0.1:<mock-port>/mcp
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-call-function settings_click_path_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-ingest-runlog runlog_install_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-call-function install_sample_apk_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-recall "open Android Settings and click through the demo path"
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-call-function settings_click_path_demo
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-ingest-runlog runlog_install_demo
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-call-function install_sample_apk_demo
 
 Then summarize whether all commands succeeded, include recommended_mode if present,
 and include the function_id, run_id, runner_duration_ms, and click step count.
@@ -84,9 +93,9 @@ Codex CLI result:
 All commands succeeded with exit code 0.
 recommended_mode: python_skill_plus_mcp
 function_id: settings_click_path_demo
-run_id: mock-run-settings-click-path-demo
+run_id: <real-run-id>
 registered function_id: install_sample_apk_demo
-replay run_id: mock-run-install-sample-apk-demo
+replay run_id: <real-run-id>
 ```
 
 `read-only` and `workspace-write` Codex sandboxes were also checked; both
@@ -148,12 +157,12 @@ Acceptance result:
 canonical_recall=ok
 canonical_hit_function_id=settings_click_path_demo
 canonical_call_function=ok
-canonical_run_id=mock-run-settings-click-path-demo
+canonical_run_id=<real-run-id>
 canonical_click_step_count=4
 canonical_ingest_runlog=ok
 canonical_ingested_function_id=install_sample_apk_demo
 canonical_call_ingested_function=ok
-ingested_function_run_id=mock-run-install-sample-apk-demo
+ingested_function_run_id=<real-run-id>
 omniflow_mobilegpt_acceptance=ok
 ```
 
@@ -189,10 +198,10 @@ Acceptance result:
 ```text
 canonical_recall=ok
 canonical_call_function=ok
-canonical_run_id=mock-run-settings-click-path-demo
+canonical_run_id=<real-run-id>
 canonical_ingest_runlog=ok
 canonical_call_ingested_function=ok
-ingested_function_run_id=mock-run-install-sample-apk-demo
+ingested_function_run_id=<real-run-id>
 omniflow_mobile_use_acceptance=ok
 ```
 
@@ -230,10 +239,10 @@ Acceptance result:
 ```text
 canonical_recall=ok
 canonical_call_function=ok
-canonical_run_id=mock-run-settings-click-path-demo
+canonical_run_id=<real-run-id>
 canonical_ingest_runlog=ok
 canonical_call_ingested_function=ok
-ingested_function_run_id=mock-run-install-sample-apk-demo
+ingested_function_run_id=<real-run-id>
 omniflow_mobile_mcp_acceptance=ok
 ```
 
@@ -250,8 +259,8 @@ omniflow_mobile_mcp_acceptance=ok
 - Each tested external project can recall the existing
   `settings_click_path_demo` Function through MCP.
 - Each tested external project can run that Function through
-  `omniflow.call_function` and receives `mock-run-settings-click-path-demo`.
+  `omniflow.call_function` and receives a real run id.
 - Each tested external project can ingest `runlog_install_demo` into
   `install_sample_apk_demo`.
 - Each tested external project can run the ingested Function through
-  `omniflow.call_function` and receives `mock-run-install-sample-apk-demo`.
+  `omniflow.call_function` and receives a real run id.

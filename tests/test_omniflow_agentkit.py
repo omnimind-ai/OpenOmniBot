@@ -1,10 +1,10 @@
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stdout
 from io import StringIO
 import json
+import os
 import tempfile
 from pathlib import Path
 import unittest
-from unittest.mock import patch
 
 from omniflow_agentkit import OmniFlowAgentKit, OmniFlowMcpClient, RepoProbe
 from omniflow_agentkit.__main__ import main
@@ -21,6 +21,15 @@ class OmniFlowAgentKitTest(unittest.TestCase):
                 "omniflow.recall",
                 "omniflow.call_function",
                 "omniflow.ingest_run_log",
+                "omniflow.explore_replay",
+                "oob_function_list",
+                "oob_function_get",
+                "oob_function_register",
+                "oob_function_guard_check",
+                "oob_function_run",
+                "oob_run_log_list",
+                "oob_run_log_get",
+                "oob_run_log_convert",
             ],
         )
         self.assertEqual(
@@ -58,118 +67,79 @@ class OmniFlowAgentKitTest(unittest.TestCase):
             self.assertEqual(report.recommended_mode, "python_skill_plus_mcp")
             self.assertIn("python", report.detected_stack)
 
-    def test_cli_can_use_canonical_function_tools(self):
-        calls = []
+    def test_cli_can_use_real_mcp_function_tools_when_configured(self):
+        url = os.environ.get("OMNIFLOW_MCP_URL") or os.environ.get("OOB_MCP_URL")
+        token = os.environ.get("OMNIFLOW_MCP_TOKEN") or os.environ.get("OOB_MCP_TOKEN")
+        if not url:
+            self.skipTest("Set OMNIFLOW_MCP_URL or OOB_MCP_URL to run real MCP integration")
 
-        class FakeResponse:
-            def __init__(self, payload):
-                self.payload = payload
+        client = OmniFlowMcpClient(url, token=token)
+        self.assertTrue(client.has_direct_omniflow())
+        self.assertTrue(client.has_canonical_omniflow())
 
-            def __enter__(self):
-                return self
+        base_args = ["--mcp-url", url]
+        if token:
+            base_args += ["--token", token]
 
-            def __exit__(self, exc_type, exc, traceback):
-                return False
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            code = main(["mcp-recall", "open settings", *base_args])
+        self.assertEqual(code, 0)
+        recalled = json.loads(stdout.getvalue())
+        self.assertEqual(recalled["decision"], "hit")
+        self.assertEqual(recalled["hit"]["function_id"], "settings_click_path_demo")
 
-            def read(self):
-                return json.dumps(self.payload).encode("utf-8")
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            code = main(["mcp-call-function", "settings_click_path_demo", *base_args])
+        self.assertEqual(code, 0)
+        called = json.loads(stdout.getvalue())
+        self.assertTrue(called["success"])
+        self.assertEqual(called["function_id"], "settings_click_path_demo")
+        self.assertTrue(called.get("run_id"))
 
-        def fake_urlopen(req, timeout):
-            payload = json.loads(req.data.decode("utf-8"))
-            method = payload["method"]
-            result = {}
-            if method == "tools/list":
-                result = {
-                    "tools": [
-                        {"name": "omniflow.recall"},
-                        {"name": "omniflow.call_function"},
-                        {"name": "omniflow.ingest_run_log"},
-                    ]
-                }
-            elif method == "tools/call":
-                params = payload.get("params", {})
-                name = params.get("name")
-                arguments = params.get("arguments", {})
-                calls.append(name)
-                if name == "omniflow.recall":
-                    result = {
-                        "success": True,
-                        "decision": "hit",
-                        "hit": {
-                            "function_id": "settings_click_path_demo",
-                            "inputSchema": {"type": "object", "properties": {}, "required": []},
-                        },
-                        "candidates": [],
-                    }
-                elif name == "omniflow.call_function":
-                    result = {
-                        "success": True,
-                        "fallback": False,
-                        "error": None,
-                        "function_id": arguments.get("function_id"),
-                        "run_id": "mock-run-1",
-                        "actions_executed": 2,
-                    }
-                elif name == "omniflow.ingest_run_log":
-                    result = {
-                        "success": True,
-                        "accepted": True,
-                        "function_id": "install_sample_apk_demo",
-                        "status": "created",
-                    }
-            return FakeResponse({"jsonrpc": "2.0", "id": payload.get("id"), "result": result})
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            code = main(["mcp-ingest-runlog", "runlog_install_demo", *base_args])
+        self.assertEqual(code, 0)
+        ingested = json.loads(stdout.getvalue())
+        self.assertTrue(ingested["accepted"])
+        self.assertEqual(ingested["function_id"], "install_sample_apk_demo")
 
-        with patch("omniflow_agentkit.mcp.request.urlopen", fake_urlopen):
-            url = "http://127.0.0.1:8765/mcp"
-            client = OmniFlowMcpClient(url)
-            self.assertTrue(client.has_direct_omniflow())
-            self.assertTrue(client.has_canonical_omniflow())
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            code = main(["mcp-list-functions", *base_args])
+        self.assertEqual(code, 0)
+        function_list = json.loads(stdout.getvalue())
+        self.assertGreaterEqual(function_list["count"], 1)
 
-            stdout = StringIO()
-            with redirect_stdout(stdout):
-                code = main(["mcp-recall", "open settings", "--mcp-url", url])
-            self.assertEqual(code, 0)
-            recalled = json.loads(stdout.getvalue())
-            self.assertEqual(recalled["decision"], "hit")
-            self.assertEqual(recalled["hit"]["function_id"], "settings_click_path_demo")
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            code = main(["mcp-get-function", "settings_click_path_demo", *base_args])
+        self.assertEqual(code, 0)
+        function_get = json.loads(stdout.getvalue())
+        self.assertEqual(function_get["function_id"], "settings_click_path_demo")
 
-            stdout = StringIO()
-            with redirect_stdout(stdout):
-                code = main(["mcp-call-function", "settings_click_path_demo", "--mcp-url", url])
-            self.assertEqual(code, 0)
-            called = json.loads(stdout.getvalue())
-            self.assertTrue(called["success"])
-            self.assertEqual(called["function_id"], "settings_click_path_demo")
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            code = main(["mcp-guard-check", "settings_click_path_demo", *base_args])
+        self.assertEqual(code, 0)
+        guard = json.loads(stdout.getvalue())
+        self.assertIn(guard["decision"], {"allow", "needs_agent", "needs_confirmation"})
 
-            stdout = StringIO()
-            with redirect_stdout(stdout):
-                code = main(["mcp-ingest-runlog", "runlog_install_demo", "--mcp-url", url])
-            self.assertEqual(code, 0)
-            ingested = json.loads(stdout.getvalue())
-            self.assertTrue(ingested["accepted"])
-            self.assertEqual(ingested["function_id"], "install_sample_apk_demo")
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            code = main(["mcp-list-runlogs", *base_args])
+        self.assertEqual(code, 0)
+        runlogs = json.loads(stdout.getvalue())
+        self.assertGreaterEqual(runlogs["count"], 1)
 
-            stdout = StringIO()
-            with redirect_stdout(stdout):
-                code = main(["mcp-call-function", "install_sample_apk_demo", "--mcp-url", url])
-            self.assertEqual(code, 0)
-            installed = json.loads(stdout.getvalue())
-            self.assertTrue(installed["success"])
-            self.assertEqual(installed["function_id"], "install_sample_apk_demo")
-
-            self.assertEqual(calls, [
-                "omniflow.recall",
-                "omniflow.call_function",
-                "omniflow.ingest_run_log",
-                "omniflow.call_function",
-            ])
-
-            legacy_cmd = "mcp-" + "run-function"
-            stderr = StringIO()
-            with redirect_stderr(stderr):
-                with self.assertRaises(SystemExit) as raised:
-                    main([legacy_cmd, "settings_click_path_demo", "--mcp-url", url])
-            self.assertEqual(raised.exception.code, 2)
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            code = main(["mcp-convert-runlog", "runlog_install_demo", *base_args])
+        self.assertEqual(code, 0)
+        converted = json.loads(stdout.getvalue())
+        self.assertEqual(converted["function_id"], "install_sample_apk_demo")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 # OmniFlow Agent Kit Acceptance
 
 The kit is acceptable when an external GUI agent can complete these checks using
-only the shipped docs, skill, and canonical MCP tools.
+only the shipped docs, skill, and MCP tools.
 
 ## Documentation Checks
 
@@ -12,13 +12,16 @@ only the shipped docs, skill, and canonical MCP tools.
 - The agent can find the guard decision rules.
 - The agent can find fallback instructions when canonical MCP tools are absent.
 
-## Canonical MCP Checks
+## MCP Checks
 
 When the host implements the OOB OmniFlow MCP contract:
 
-- `tools/list` exposes exactly the replay activation surface:
-  `omniflow.recall`, `omniflow.call_function`, and
-  `omniflow.ingest_run_log`.
+- `tools/list` exposes the canonical activation surface:
+  `omniflow.recall`, `omniflow.call_function`, `omniflow.ingest_run_log`, and
+  `omniflow.explore_replay`.
+- `tools/list` also exposes the direct Function and RunLog surface:
+  `oob_function_list/get/register/guard_check/run` and
+  `oob_run_log_list/get/convert`.
 - `omniflow.recall` returns a direct no-argument hit or ranked candidates with
   `inputSchema`.
 - `omniflow.call_function` executes only an explicit agent-selected
@@ -26,8 +29,14 @@ When the host implements the OOB OmniFlow MCP contract:
 - `omniflow.ingest_run_log` registers a successful RunLog as a reusable Function
   or rejects it with a reason.
 - The same ingested Function can be replayed through `omniflow.call_function`.
-- Legacy OOB direct names are absent from public discovery and from the Python
-  Agent Kit CLI.
+- `omniflow.explore_replay` can return a bounded
+  `oob.omniflow_utg.v1` path plus a generated Function id without requiring
+  provider-side graph commands.
+- `oob_function_run` can execute the same Function directly and returns runner
+  timing plus per-step timing.
+- `oob_run_log_convert` can convert `runlog_install_demo` into
+  `install_sample_apk_demo`, and `oob_function_run` can run it in background
+  mode after confirmation.
 
 ## GUI Bridge Checks
 
@@ -57,9 +66,70 @@ Minimum sample task:
 2. Run it through `omniflow.call_function`.
 3. Confirm the result includes 7 step results and 4 `click` steps.
 4. Ingest `runlog_install_demo` through `omniflow.ingest_run_log`.
-5. Run the returned Function id through `omniflow.call_function`.
-6. Report `function_id=settings_click_path_demo`, the run id, runner duration,
+5. Run a bounded `omniflow.explore_replay` request with `replay=false` and
+   confirm it returns `utg.schema_version=oob.omniflow_utg.v1`.
+6. Run the returned Function id through `omniflow.call_function`.
+7. Report `function_id=settings_click_path_demo`, the run id, runner duration,
    and the slowest click step.
+
+## Real OOB MCP Explore Replay Acceptance
+
+This check runs against a real OOB app instance.
+Before running it:
+
+1. Install and launch the develop APK on a device or emulator. For a new
+   device, use:
+   `OMNIMIND_API_KEY=<key> bash scripts/prepare-oob-device.sh --device <serial>`.
+   The script seeds the default provider as
+   `http://cloud.omnimind.com.cn/v1` without printing the key.
+2. Enable the OOB Accessibility service.
+3. Open OOB Settings, enable MCP Server, and copy the token.
+4. Keep the device unlocked and on a stable screen.
+
+Run through `adb forward`:
+
+```bash
+OOB_MCP_ADB_FORWARD=1 \
+OOB_MCP_TOKEN=<token-from-oob-settings> \
+bash scripts/omniflow_acceptance_oob_mcp_explore_replay.sh
+```
+
+Or call the LAN endpoint directly:
+
+```bash
+OOB_MCP_URL=http://<device-lan-ip>:8899/mcp \
+OOB_MCP_TOKEN=<token-from-oob-settings> \
+bash scripts/omniflow_acceptance_oob_mcp_explore_replay.sh
+```
+
+Default task:
+
+```text
+goal=open network settings
+package_name=com.android.settings
+max_steps=1
+stop_text=<empty>
+replay=true
+reset_before_replay=true
+```
+
+Only set `OOB_MCP_STOP_TEXT` when the target text is not already visible on the
+package launch screen; otherwise exploration can stop before recording any edge.
+
+Pass criteria:
+
+- `tools/list` contains `omniflow.explore_replay` plus Function guard/get tools.
+- `omniflow.explore_replay` returns `success=true`.
+- The result has `run_id`, `function_id`, and
+  `utg.schema_version=oob.omniflow_utg.v1`.
+- `utg.edge_count >= 1` and `explore.step_count >= 1`.
+- With default `OOB_MCP_REPLAY=1`, the replay result also returns
+  `success=true` and at least one executed action.
+- `oob_function_guard_check` allows the generated Function, and
+  `oob_function_get` shows at least one compiled replay step.
+- The script prints `oob_mcp_explore_replay_acceptance=ok`.
+
+Token auth should stay enabled for real OOB MCP acceptance.
 
 ## External Project Acceptance
 
@@ -112,9 +182,10 @@ Pass criteria:
   `omniflow-agentkit mcp-call-function install_sample_apk_demo ...` runs the
   ingested Function and returns a run id.
 - Codex CLI runs only `probe-repo`, `mcp-recall`, `mcp-call-function`,
-  `mcp-ingest-runlog`, and the second `mcp-call-function` from the external
-  project directory and reports success, including the Function id, run id,
-  runner duration, and click count.
+  `mcp-ingest-runlog`, `mcp-list-functions`, `mcp-guard-check`,
+  `mcp-run-function`, `mcp-convert-runlog`, and the background
+  `mcp-run-function` from the external project directory and reports success,
+  including the Function id, run id, runner duration, and click count.
 - `recommended_mode` for MobileGPT is `python_skill_plus_mcp`.
 
 For the broader check, the same installed wheel and MCP trigger path must also
@@ -133,10 +204,10 @@ The expected RunLog registration and replay markers are:
 canonical_recall=ok
 canonical_hit_function_id=settings_click_path_demo
 canonical_call_function=ok
-canonical_run_id=mock-run-settings-click-path-demo
+canonical_run_id=<real-run-id>
 canonical_click_step_count=4
 canonical_ingest_runlog=ok
 canonical_ingested_function_id=install_sample_apk_demo
 canonical_call_ingested_function=ok
-ingested_function_run_id=mock-run-install-sample-apk-demo
+ingested_function_run_id=<real-run-id>
 ```

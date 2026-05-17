@@ -24,8 +24,8 @@ object OmniflowStepExecutor {
             step["modelFree"] == true ||
             step["model_free"]?.toString()?.equals("true", ignoreCase = true) == true
         val action = actionNameForStep(step)
-        return executor == "omniflow" ||
-            (modelFree && action in RunLogReplayPolicy.omniflowActions)
+        return action in RunLogReplayPolicy.omniflowActions &&
+            (executor == "omniflow" || modelFree)
     }
 
     fun actionNameForStep(step: Map<String, Any?>): String {
@@ -64,6 +64,9 @@ object OmniflowStepExecutor {
         val action = actionNameForStep(step)
         if (action !in RunLogReplayPolicy.omniflowActions) {
             throw IllegalArgumentException("Unsupported omniflow action: $action")
+        }
+        if (action.requiresAccessibility() && !AccessibilityController.initController()) {
+            throw IllegalStateException("Accessibility controller is not ready")
         }
         val remapResult = remapStepArgs(step)
         if (action in RunLogReplayPolicy.coordinateActions && shouldUseCoordinateHook(step)) {
@@ -203,11 +206,9 @@ object OmniflowStepExecutor {
     private fun shouldUseCoordinateHook(step: Map<String, Any?>): Boolean {
         val coordinateHook = step["coordinate_hook"]?.toString()?.trim()?.lowercase().orEmpty()
         val replayEngine = step["replay_engine"]?.toString()?.trim()?.lowercase().orEmpty()
-        val executor = step["executor"]?.toString()?.trim()?.lowercase().orEmpty()
         return coordinateHook == "omniflow" ||
             step["omniflow"] == true ||
-            replayEngine == "omniflow_utg" ||
-            executor == "omniflow"
+            replayEngine == "omniflow_utg"
     }
 
     private fun numberArg(args: Map<String, Any?>, vararg keys: String): Number? {
@@ -302,6 +303,9 @@ object OmniflowStepExecutor {
         }
         return ""
     }
+
+    private fun String.requiresAccessibility(): Boolean =
+        this != "wait" && this != "finished"
 
     private data class Rect(
         val left: Float,

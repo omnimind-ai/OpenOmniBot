@@ -47,11 +47,12 @@ together.
 - `executor=omniflow`: deterministic local replay only. Allowed actions are
   the OOB local set plus OmniFlow canonical aliases: `click`, `long_press`,
   `scroll`, `type`, `input_text`, `swipe`, `open_app`, `press_home`,
-  `press_back`, `press_key`, `hot_key`, `wait`, and `finished`.
+  `press_back`, `press_key`, `hot_key`, `wait`, and `finished`. OOB-native
+  OmniFlow graph/function commands such as `go_to_node`, `click_node`, and
+  `call_function` also use this executor and are dispatched by
+  `OobFunctionToolHandler`.
 - `executor=tool`: direct tool call only when a live `AgentToolRouter` exists and the tool output is not live data needed by later steps.
 - `executor=agent`: live planning or perception. Use for VLM-only cards, `browser_use`, `web_search`, memory lookup, RunLog lookup, and workbench list/query tools.
-- Provider-owned OmniFlow graph/function calls such as `go_to_node`,
-  `click_node`, and `call_function` are also `executor=agent` in OOB v1.
 
 Do not hard replay `browser_use` or `web_search`; their outputs are live context and can be stale.
 
@@ -66,6 +67,8 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
 - Keep parameter bindings aligned with actual `execution.steps` indexes after skipping wrapper cards.
 - For agent steps, bind runtime parameters into both `step.args` and `step.agent_call.args.original_args`.
 - AI normalization may rename and parameterize, but must not change executor policy. Normalize data-flow tools back to `executor=agent`.
+- OmniFlow graph/function tools compile to `kind=omniflow_graph` or
+  `kind=omniflow_function`, `executor=omniflow`, and `model_free=true`.
 
 ## Replay Rules
 
@@ -75,6 +78,10 @@ Direct UI execution is two phase:
 2. If a tool/data-flow/agent step is reached, return `needs_agent=true` and start an Agent task with the remaining function spec.
 
 Agent runtime execution may delegate normal tools through the router, but data-flow/perception-only steps should still be planned by Agent instead of blindly calling the original tool.
+OmniFlow function calls are resolved against the local OOB reusable function
+stores and execute recursively with a bounded call stack. OmniFlow graph calls
+execute explicit `path` entries or UTG edges by lowering them to supported
+primitive local actions.
 
 ## OmniFlow Compatibility Boundary
 
@@ -94,8 +101,8 @@ Keep in OmniFlow/provider for now:
   resume semantics.
 - SQLite `RunStore`, background enrich, semantic dedup, L1/L2 cache writeback,
   and multi-user registry.
-- Full UTG graph routing plus `go_to_node/click_node/call_function` execution.
-  OOB v1 only replays fixed local actions and hands the rest to Agent.
+- Cloud/provider graph optimization beyond the local path/edge data embedded in
+  OOB function specs.
 
 ## Verification
 

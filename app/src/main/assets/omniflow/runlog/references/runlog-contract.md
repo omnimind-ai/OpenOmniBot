@@ -83,17 +83,27 @@ Data-flow agent:
 - `omniflow.recall`
 - `omniflow.ingest_run_log`
 - `workbench_api_list`
+- `oob_function_list`
+- `oob_function_get`
+- `oob_function_register`
+- `oob_function_guard_check`
 - `oob_run_log_list`
 - `oob_run_log_get`
 - `oob_run_log_convert`
 
-Provider-owned agent:
+OOB-native OmniFlow execution:
 
 - `go_to_node`
 - `click_node`
 - `node_click`
 - `omniflow.call_function`
 - `call_function`
+- `oob_function_run`
+
+These compile to `executor=omniflow`, not `executor=agent`. Graph tools execute
+embedded `path`/UTG edge data through the local primitive action executor.
+Function tools resolve another registered OOB Function and execute it
+recursively in `OobFunctionToolHandler`.
 
 ## Known Failure Modes
 
@@ -110,8 +120,8 @@ Provider-owned agent:
 - Regression where provider/exported Function uses canonical
   `input_text/swipe/press_key` while OOB only handles legacy
   `type/scroll/press_home/press_back`.
-- Provider-owned `go_to_node/click_node/call_function` accidentally becomes a
-  direct OOB `executor=tool` step instead of an agent/provider fallback.
+- OmniFlow `go_to_node/click_node/call_function` accidentally becomes
+  `executor=agent` or `executor=tool` instead of local `executor=omniflow`.
 
 ## Required Test Cases
 
@@ -123,6 +133,8 @@ Provider-owned agent:
 - Command save distillation follows the same executor policy.
 - Provider canonical action names and aliases normalize to deterministic local
   replay actions.
+- OmniFlow graph/function commands compile and execute as local
+  `executor=omniflow` steps.
 - Failed local action does not suppress VLM-only fallback.
 - `android_privileged_action` local UI wrappers flatten nested `arguments` into
   executable step args.

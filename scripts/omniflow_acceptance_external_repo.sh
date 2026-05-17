@@ -11,21 +11,39 @@ REPO_DIR="${OMNIFLOW_REPO_DIR:-$WORK_ROOT/repo}"
 VENV_DIR="$WORK_ROOT/venv"
 DIST_DIR="$WORK_ROOT/dist"
 CODEX_OUTPUT="$WORK_ROOT/codex-output.txt"
-MCP_URL_FILE="$WORK_ROOT/mock-mcp-url.txt"
 RECALL_OUTPUT="$WORK_ROOT/canonical-recall-output.json"
 CALL_FUNCTION_OUTPUT="$WORK_ROOT/canonical-call-function-output.json"
 CANONICAL_INSTALL_OUTPUT="$WORK_ROOT/canonical-install-function-output.json"
 INGEST_RUNLOG_OUTPUT="$WORK_ROOT/canonical-ingest-runlog-output.json"
 TIMING_OUTPUT="$WORK_ROOT/timing.tsv"
-MOCK_MCP_PID=""
 SAFE_PROJECT="${PROJECT_NAME//-/_}"
 CLICK_FUNCTION_ID="${OMNIFLOW_CLICK_FUNCTION_ID:-settings_click_path_demo}"
 INSTALL_FUNCTION_ID="${OMNIFLOW_INSTALL_FUNCTION_ID:-install_sample_apk_demo}"
+PYTHON_BIN="${OMNIFLOW_PYTHON:-python3}"
+MCP_URL="${OMNIFLOW_MCP_URL:-${OOB_MCP_URL:-}}"
+MCP_TOKEN="${OMNIFLOW_MCP_TOKEN:-${OOB_MCP_TOKEN:-}}"
+FUNCTION_LIST_OUTPUT="$WORK_ROOT/direct-function-list-output.json"
+FUNCTION_GET_OUTPUT="$WORK_ROOT/direct-function-get-output.json"
+GUARD_CHECK_OUTPUT="$WORK_ROOT/direct-guard-check-output.json"
+RUN_FUNCTION_OUTPUT="$WORK_ROOT/direct-run-function-output.json"
+RUNLOG_LIST_OUTPUT="$WORK_ROOT/direct-runlog-list-output.json"
+RUNLOG_GET_OUTPUT="$WORK_ROOT/direct-runlog-get-output.json"
+RUNLOG_CONVERT_OUTPUT="$WORK_ROOT/direct-runlog-convert-output.json"
+RUN_FUNCTION_INSTALL_OUTPUT="$WORK_ROOT/direct-run-install-function-output.json"
 
 mkdir -p "$WORK_ROOT" "$DIST_DIR"
 
+if [ -z "$MCP_URL" ]; then
+  echo "real_mcp_url=missing_set_OMNIFLOW_MCP_URL_or_OOB_MCP_URL" >&2
+  exit 1
+fi
+export OMNIFLOW_MCP_URL="$MCP_URL"
+if [ -n "$MCP_TOKEN" ]; then
+  export OMNIFLOW_MCP_TOKEN="$MCP_TOKEN"
+fi
+
 now_ms() {
-  python3 -c 'import time; print(int(time.time() * 1000))'
+  "$PYTHON_BIN" -c 'import time; print(int(time.time() * 1000))'
 }
 
 record_timing() {
@@ -42,7 +60,7 @@ record_timing() {
 record_function_run_timing() {
   local prefix="$1"
   local json_path="$2"
-  PREFIX="$prefix" JSON_PATH="$json_path" python3 - <<'PY' | while IFS=$'\t' read -r name value; do
+  PREFIX="$prefix" JSON_PATH="$json_path" "$PYTHON_BIN" - <<'PY' | while IFS=$'\t' read -r name value; do
 import json
 import os
 import re
@@ -127,7 +145,7 @@ PY
 }
 
 print_timing_summary() {
-  TIMING_OUTPUT="$TIMING_OUTPUT" python3 - <<'PY'
+  TIMING_OUTPUT="$TIMING_OUTPUT" "$PYTHON_BIN" - <<'PY'
 import os
 
 path = os.environ["TIMING_OUTPUT"]
@@ -153,6 +171,12 @@ canonical_function_runners = [
 canonical_function_steps = [
     (name, value) for name, value in function_steps if name.startswith("canonical_")
 ]
+direct_function_runners = [
+    (name, value) for name, value in function_runners if name.startswith("function_run_")
+]
+direct_function_steps = [
+    (name, value) for name, value in function_steps if name.startswith("function_run_")
+]
 
 def emit(prefix, items):
     if not items:
@@ -166,18 +190,13 @@ emit("timing_function_slowest_runner", function_runners)
 emit("timing_function_slowest_step", function_steps)
 emit("timing_canonical_function_slowest_runner", canonical_function_runners)
 emit("timing_canonical_function_slowest_step", canonical_function_steps)
+emit("timing_direct_function_slowest_runner", direct_function_runners)
+emit("timing_direct_function_slowest_step", direct_function_steps)
 PY
 }
 
 TOTAL_START_MS="$(now_ms)"
 : > "$TIMING_OUTPUT"
-
-cleanup() {
-  if [ -n "$MOCK_MCP_PID" ]; then
-    kill "$MOCK_MCP_PID" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT
 
 STEP_START_MS="$(now_ms)"
 if [ ! -d "$REPO_DIR/.git" ]; then
@@ -191,34 +210,25 @@ record_timing "repo_prepare" "$STEP_START_MS"
 
 STEP_START_MS="$(now_ms)"
 rm -rf "$ROOT_DIR/build" "$ROOT_DIR/omniflow_agentkit.egg-info"
-python3 -m pip wheel --no-deps --no-build-isolation -w "$DIST_DIR" "$ROOT_DIR"
+"$PYTHON_BIN" -m pip wheel --no-deps --no-build-isolation -w "$DIST_DIR" "$ROOT_DIR"
 record_timing "wheel_build" "$STEP_START_MS"
 
 STEP_START_MS="$(now_ms)"
-python3 -m venv "$VENV_DIR"
+"$PYTHON_BIN" -m venv "$VENV_DIR"
 record_timing "venv_create" "$STEP_START_MS"
 
 STEP_START_MS="$(now_ms)"
 "$VENV_DIR/bin/python" -m pip install --no-deps --force-reinstall "$DIST_DIR"/omniflow_agentkit-0.1.0-py3-none-any.whl
 record_timing "wheel_install" "$STEP_START_MS"
 
-rm -f "$MCP_URL_FILE" "$RECALL_OUTPUT" "$CALL_FUNCTION_OUTPUT" \
-  "$CANONICAL_INSTALL_OUTPUT" "$INGEST_RUNLOG_OUTPUT"
+rm -f "$RECALL_OUTPUT" "$CALL_FUNCTION_OUTPUT" \
+  "$CANONICAL_INSTALL_OUTPUT" "$INGEST_RUNLOG_OUTPUT" \
+  "$FUNCTION_LIST_OUTPUT" "$FUNCTION_GET_OUTPUT" "$GUARD_CHECK_OUTPUT" \
+  "$RUN_FUNCTION_OUTPUT" "$RUNLOG_LIST_OUTPUT" "$RUNLOG_GET_OUTPUT" \
+  "$RUNLOG_CONVERT_OUTPUT" "$RUN_FUNCTION_INSTALL_OUTPUT"
 STEP_START_MS="$(now_ms)"
-python3 "$ROOT_DIR/scripts/omniflow_mock_mcp_server.py" --port-file "$MCP_URL_FILE" &
-MOCK_MCP_PID="$!"
-for _ in {1..50}; do
-  if [ -s "$MCP_URL_FILE" ]; then
-    break
-  fi
-  sleep 0.1
-done
-if [ ! -s "$MCP_URL_FILE" ]; then
-  echo "mock_mcp_server=failed_to_start" >&2
-  exit 1
-fi
-MCP_URL="$(sed -n '1p' "$MCP_URL_FILE")"
-record_timing "mock_mcp_start" "$STEP_START_MS"
+"$VENV_DIR/bin/omniflow-agentkit" mcp-list-functions --timeout 5 >/dev/null
+record_timing "real_mcp_probe" "$STEP_START_MS"
 
 (
   cd "$REPO_DIR"
@@ -276,7 +286,41 @@ PY
   record_function_run_timing "canonical_ingested_function" "$CANONICAL_INSTALL_OUTPUT"
 
   STEP_START_MS="$(now_ms)"
-  CLICK_FUNCTION_ID="$CLICK_FUNCTION_ID" INSTALL_FUNCTION_ID="$INSTALL_FUNCTION_ID" RECALL_OUTPUT="$RECALL_OUTPUT" CALL_FUNCTION_OUTPUT="$CALL_FUNCTION_OUTPUT" INGEST_RUNLOG_OUTPUT="$INGEST_RUNLOG_OUTPUT" CANONICAL_INSTALL_OUTPUT="$CANONICAL_INSTALL_OUTPUT" "$VENV_DIR/bin/python" - <<'PY'
+  "$VENV_DIR/bin/omniflow-agentkit" mcp-list-functions --mcp-url "$MCP_URL" >"$FUNCTION_LIST_OUTPUT"
+  record_timing "mcp_list_functions" "$STEP_START_MS"
+
+  STEP_START_MS="$(now_ms)"
+  "$VENV_DIR/bin/omniflow-agentkit" mcp-get-function "$CLICK_FUNCTION_ID" --mcp-url "$MCP_URL" >"$FUNCTION_GET_OUTPUT"
+  record_timing "mcp_get_function" "$STEP_START_MS"
+
+  STEP_START_MS="$(now_ms)"
+  "$VENV_DIR/bin/omniflow-agentkit" mcp-guard-check "$CLICK_FUNCTION_ID" --mcp-url "$MCP_URL" >"$GUARD_CHECK_OUTPUT"
+  record_timing "mcp_guard_check" "$STEP_START_MS"
+
+  STEP_START_MS="$(now_ms)"
+  "$VENV_DIR/bin/omniflow-agentkit" mcp-run-function "$CLICK_FUNCTION_ID" --mcp-url "$MCP_URL" >"$RUN_FUNCTION_OUTPUT"
+  record_timing "mcp_run_function_existing" "$STEP_START_MS"
+  record_function_run_timing "function_run_existing" "$RUN_FUNCTION_OUTPUT"
+
+  STEP_START_MS="$(now_ms)"
+  "$VENV_DIR/bin/omniflow-agentkit" mcp-list-runlogs --mcp-url "$MCP_URL" >"$RUNLOG_LIST_OUTPUT"
+  record_timing "mcp_list_runlogs" "$STEP_START_MS"
+
+  STEP_START_MS="$(now_ms)"
+  "$VENV_DIR/bin/omniflow-agentkit" mcp-get-runlog runlog_install_demo --mcp-url "$MCP_URL" >"$RUNLOG_GET_OUTPUT"
+  record_timing "mcp_get_runlog" "$STEP_START_MS"
+
+  STEP_START_MS="$(now_ms)"
+  "$VENV_DIR/bin/omniflow-agentkit" mcp-convert-runlog runlog_install_demo --mcp-url "$MCP_URL" >"$RUNLOG_CONVERT_OUTPUT"
+  record_timing "mcp_convert_runlog" "$STEP_START_MS"
+
+  STEP_START_MS="$(now_ms)"
+  "$VENV_DIR/bin/omniflow-agentkit" mcp-run-function "$INSTALL_FUNCTION_ID" --mcp-url "$MCP_URL" --execution-mode background --confirmed >"$RUN_FUNCTION_INSTALL_OUTPUT"
+  record_timing "mcp_run_installed_function_background" "$STEP_START_MS"
+  record_function_run_timing "function_run_install" "$RUN_FUNCTION_INSTALL_OUTPUT"
+
+  STEP_START_MS="$(now_ms)"
+  CLICK_FUNCTION_ID="$CLICK_FUNCTION_ID" INSTALL_FUNCTION_ID="$INSTALL_FUNCTION_ID" RECALL_OUTPUT="$RECALL_OUTPUT" CALL_FUNCTION_OUTPUT="$CALL_FUNCTION_OUTPUT" INGEST_RUNLOG_OUTPUT="$INGEST_RUNLOG_OUTPUT" CANONICAL_INSTALL_OUTPUT="$CANONICAL_INSTALL_OUTPUT" FUNCTION_LIST_OUTPUT="$FUNCTION_LIST_OUTPUT" FUNCTION_GET_OUTPUT="$FUNCTION_GET_OUTPUT" GUARD_CHECK_OUTPUT="$GUARD_CHECK_OUTPUT" RUN_FUNCTION_OUTPUT="$RUN_FUNCTION_OUTPUT" RUNLOG_LIST_OUTPUT="$RUNLOG_LIST_OUTPUT" RUNLOG_GET_OUTPUT="$RUNLOG_GET_OUTPUT" RUNLOG_CONVERT_OUTPUT="$RUNLOG_CONVERT_OUTPUT" RUN_FUNCTION_INSTALL_OUTPUT="$RUN_FUNCTION_INSTALL_OUTPUT" "$VENV_DIR/bin/python" - <<'PY'
 import json
 import os
 
@@ -286,28 +330,70 @@ recall = json.loads(open(os.environ["RECALL_OUTPUT"], encoding="utf-8").read())
 called = json.loads(open(os.environ["CALL_FUNCTION_OUTPUT"], encoding="utf-8").read())
 ingested = json.loads(open(os.environ["INGEST_RUNLOG_OUTPUT"], encoding="utf-8").read())
 installed = json.loads(open(os.environ["CANONICAL_INSTALL_OUTPUT"], encoding="utf-8").read())
+function_list = json.loads(open(os.environ["FUNCTION_LIST_OUTPUT"], encoding="utf-8").read())
+function_get = json.loads(open(os.environ["FUNCTION_GET_OUTPUT"], encoding="utf-8").read())
+guard = json.loads(open(os.environ["GUARD_CHECK_OUTPUT"], encoding="utf-8").read())
+direct_run = json.loads(open(os.environ["RUN_FUNCTION_OUTPUT"], encoding="utf-8").read())
+runlog_list = json.loads(open(os.environ["RUNLOG_LIST_OUTPUT"], encoding="utf-8").read())
+runlog_get = json.loads(open(os.environ["RUNLOG_GET_OUTPUT"], encoding="utf-8").read())
+converted = json.loads(open(os.environ["RUNLOG_CONVERT_OUTPUT"], encoding="utf-8").read())
+direct_install = json.loads(open(os.environ["RUN_FUNCTION_INSTALL_OUTPUT"], encoding="utf-8").read())
+
+def step_type(step):
+    return step.get("type") or step.get("tool") or step.get("action")
 
 assert recall["decision"] == "hit"
 assert recall["hit"]["function_id"] == click_function_id
 assert called["success"] is True
 assert called["function_id"] == click_function_id
+assert called.get("run_id")
 assert called["actions_executed"] >= 7
-assert sum(1 for step in called["step_results"] if step["type"] == "click") >= 4
+assert sum(1 for step in called["step_results"] if step_type(step) == "click") >= 4
 assert ingested["accepted"] is True
 assert ingested["function_id"] == install_function_id
 assert installed["success"] is True
 assert installed["function_id"] == install_function_id
-assert installed["run_id"] == "mock-run-install-sample-apk-demo"
+assert installed.get("run_id")
+assert function_list["count"] >= 1
+assert any(item["function_id"] == click_function_id for item in function_list["functions"])
+assert function_get["function_id"] == click_function_id
+assert function_get["execution"]["step_count"] == 7
+assert guard["decision"] == "allow"
+assert direct_run["success"] is True
+assert direct_run["function_id"] == click_function_id
+assert direct_run.get("run_id")
+assert len(direct_run["step_results"]) == 7
+assert sum(1 for step in direct_run["step_results"] if step_type(step) == "click") == 4
+assert runlog_list["count"] >= 1
+assert runlog_get["run_id"] == "runlog_install_demo"
+assert converted["success"] is True
+assert converted["function_id"] == install_function_id
+assert direct_install["success"] is True
+assert direct_install["function_id"] == install_function_id
+assert direct_install.get("run_id")
+assert direct_install["execution_mode"] == "background"
 
 print("canonical_recall=ok")
 print(f"canonical_hit_function_id={recall['hit']['function_id']}")
 print("canonical_call_function=ok")
 print(f"canonical_run_id={called['run_id']}")
-print(f"canonical_click_step_count={sum(1 for step in called['step_results'] if step['type'] == 'click')}")
+print(f"canonical_click_step_count={sum(1 for step in called['step_results'] if step_type(step) == 'click')}")
 print("canonical_ingest_runlog=ok")
 print(f"canonical_ingested_function_id={ingested['function_id']}")
 print("canonical_call_ingested_function=ok")
 print(f"ingested_function_run_id={installed['run_id']}")
+print("direct_function_list=ok")
+print("direct_function_get=ok")
+print("direct_guard_check=ok")
+print("direct_run_function=ok")
+print(f"direct_run_id={direct_run['run_id']}")
+print(f"direct_step_count={len(direct_run['step_results'])}")
+print(f"direct_click_step_count={sum(1 for step in direct_run['step_results'] if step_type(step) == 'click')}")
+print("direct_runlog_list=ok")
+print("direct_runlog_get=ok")
+print("direct_runlog_convert=ok")
+print("direct_background_install=ok")
+print(f"direct_background_install_run_id={direct_install['run_id']}")
 PY
   record_timing "verify_mcp_results" "$STEP_START_MS"
 )
@@ -327,13 +413,17 @@ $VENV_DIR/bin/omniflow-agentkit probe-repo .
 $VENV_DIR/bin/omniflow-agentkit mcp-recall "open Android Settings and click through the demo path" --mcp-url "$MCP_URL"
 $VENV_DIR/bin/omniflow-agentkit mcp-call-function "$CLICK_FUNCTION_ID" --mcp-url "$MCP_URL"
 $VENV_DIR/bin/omniflow-agentkit mcp-ingest-runlog runlog_install_demo --mcp-url "$MCP_URL"
-$VENV_DIR/bin/omniflow-agentkit mcp-call-function "$INSTALL_FUNCTION_ID" --mcp-url "$MCP_URL"
+$VENV_DIR/bin/omniflow-agentkit mcp-list-functions --mcp-url "$MCP_URL"
+$VENV_DIR/bin/omniflow-agentkit mcp-guard-check "$CLICK_FUNCTION_ID" --mcp-url "$MCP_URL"
+$VENV_DIR/bin/omniflow-agentkit mcp-run-function "$CLICK_FUNCTION_ID" --mcp-url "$MCP_URL"
+$VENV_DIR/bin/omniflow-agentkit mcp-convert-runlog runlog_install_demo --mcp-url "$MCP_URL"
+$VENV_DIR/bin/omniflow-agentkit mcp-run-function "$INSTALL_FUNCTION_ID" --mcp-url "$MCP_URL" --execution-mode background --confirmed
 
 Then summarize whether all commands succeeded, include recommended_mode if present,
 and include the function_id, run_id, runner_duration_ms, and click step count.
 PROMPT
   cat "$CODEX_OUTPUT"
-  if ! grep -q "mock-run-install-sample-apk-demo" "$CODEX_OUTPUT"; then
+  if ! grep -q "function_id" "$CODEX_OUTPUT"; then
     echo "codex_function_trigger=failed" >&2
     exit 1
   fi

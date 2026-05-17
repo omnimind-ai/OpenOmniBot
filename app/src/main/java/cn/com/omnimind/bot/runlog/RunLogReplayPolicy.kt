@@ -73,6 +73,10 @@ object RunLogReplayPolicy {
         "omniflow.recall",
         "omniflow.ingest_run_log",
         "workbench_api_list",
+        "oob_function_list",
+        "oob_function_get",
+        "oob_function_register",
+        "oob_function_guard_check",
         "oob_run_log_list",
         "oob_run_log_get",
         "oob_run_log_convert",
@@ -90,6 +94,7 @@ object RunLogReplayPolicy {
     val omniflowFunctionTools: Set<String> = setOf(
         "omniflow.call_function",
         "call_function",
+        "oob_function_run",
         "run_function",
         "execute_function",
         "callfunction",

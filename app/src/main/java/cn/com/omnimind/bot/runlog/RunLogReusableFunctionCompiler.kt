@@ -95,6 +95,7 @@ object RunLogReusableFunctionCompiler {
         val args = jsonSafeMap(extractArgs(card))
         val result = jsonSafe(extractResult(card))
         val sourceContext = sourceContextForCard(card, args)
+        val utg = jsonSafeMap(card["utg"])
 
         return when {
             RunLogReplayPolicy.shouldSkipTool(normalizedToolName) -> null
@@ -107,6 +108,7 @@ object RunLogReusableFunctionCompiler {
                     sourceToolName = normalizedToolName,
                     args = androidPrivilegedReplayArgs(args),
                     sourceContext = sourceContext,
+                    utg = utg,
                 )
             }
             RunLogReplayPolicy.omniflowActionForToolName(normalizedToolName) != null -> {
@@ -119,6 +121,17 @@ object RunLogReusableFunctionCompiler {
                     sourceToolName = normalizedToolName,
                     args = args,
                     sourceContext = sourceContext,
+                    utg = utg,
+                )
+            }
+            RunLogReplayPolicy.isOmniflowExecutionTool(normalizedToolName) -> {
+                omniflowExecutionStep(
+                    title = title,
+                    toolName = normalizedToolName,
+                    args = args,
+                    result = result,
+                    sourceContext = sourceContext,
+                    utg = utg,
                 )
             }
             RunLogReplayPolicy.isAgentTool(normalizedToolName) -> {
@@ -168,12 +181,38 @@ object RunLogReusableFunctionCompiler {
         }
     }
 
+    private fun omniflowExecutionStep(
+        title: String,
+        toolName: String,
+        args: Map<String, Any?>,
+        result: Any?,
+        sourceContext: Map<String, Any?>,
+        utg: Map<String, Any?> = emptyMap(),
+    ): Map<String, Any?> {
+        val isGraphTool = RunLogReplayPolicy.isOmniflowGraphTool(toolName)
+        return nullableMap(
+            "title" to title,
+            "kind" to if (isGraphTool) "omniflow_graph" else "omniflow_function",
+            "executor" to "omniflow",
+            "model_free" to true,
+            "scriptable" to true,
+            "tool" to toolName,
+            "callable_tool" to toolName,
+            "args" to args,
+            "source_context" to sourceContext.takeIf { it.isNotEmpty() },
+            "replay_engine" to if (isGraphTool) "omniflow_utg" else null,
+            "utg" to utg.takeIf { it.isNotEmpty() },
+            "observed_result" to result.takeUnless(::isEmptyJsonValue),
+        )
+    }
+
     private fun omniflowStep(
         title: String,
         replayAction: String,
         sourceToolName: String,
         args: Map<String, Any?>,
         sourceContext: Map<String, Any?>,
+        utg: Map<String, Any?> = emptyMap(),
     ): Map<String, Any?> {
         val usesCoordinateHook =
             RunLogReplayPolicy.isCoordinateAction(replayAction) && sourceContext.isNotEmpty()
@@ -191,6 +230,8 @@ object RunLogReusableFunctionCompiler {
             "args" to args,
             "source_context" to sourceContext.takeIf { it.isNotEmpty() },
             "coordinate_hook" to if (usesCoordinateHook) "omniflow" else null,
+            "replay_engine" to if (utg.isNotEmpty()) "omniflow_utg" else null,
+            "utg" to utg.takeIf { it.isNotEmpty() },
         )
     }
 

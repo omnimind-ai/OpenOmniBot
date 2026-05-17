@@ -20,6 +20,8 @@ class RunLogReusableFunctionCompilerTest {
         assertEquals(RunLogReplayPolicy.coordinateActions, stringSet(policy["coordinate_actions"]))
         assertEquals(RunLogReplayPolicy.perceptionTools, stringSet(policy["perception_tools"]))
         assertEquals(RunLogReplayPolicy.dataFlowTools, stringSet(policy["data_flow_tools"]))
+        assertEquals(RunLogReplayPolicy.omniflowGraphTools, stringSet(policy["omniflow_graph_tools"]))
+        assertEquals(RunLogReplayPolicy.omniflowFunctionTools, stringSet(policy["omniflow_function_tools"]))
         assertEquals(RunLogReplayPolicy.providerOnlyTools, stringSet(policy["provider_only_tools"]))
         assertEquals(RunLogReplayPolicy.skipTools, stringSet(policy["skip_tools"]))
     }
@@ -143,13 +145,77 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
-    fun `provider owned omniflow graph tools compile to agent steps`() {
+    fun `omniflow graph and function tools compile to local omniflow execution`() {
         val spec = compile(
             listOf(
                 card("go_to_node", mapOf("node_id" to "node_1")),
-                card("call_function", mapOf("function_id" to "func_provider")),
+                card("call_function", mapOf("function_id" to "func_local")),
             ),
-            runId = "run-provider-owned",
+            runId = "run-omniflow-execution",
+        )
+
+        val steps = stepsFrom(spec)
+        assertEquals(2, steps.size)
+        val graph = steps[0]
+        assertEquals("go_to_node", graph["tool"])
+        assertEquals("go_to_node", graph["callable_tool"])
+        assertEquals("omniflow", graph["executor"])
+        assertEquals("omniflow_graph", graph["kind"])
+        assertEquals(true, graph["model_free"])
+        assertEquals(true, graph["scriptable"])
+        assertFalse(graph.containsKey("agent_call"))
+
+        val function = steps[1]
+        assertEquals("call_function", function["tool"])
+        assertEquals("call_function", function["callable_tool"])
+        assertEquals("omniflow", function["executor"])
+        assertEquals("omniflow_function", function["kind"])
+        assertEquals(true, function["model_free"])
+        assertEquals(true, function["scriptable"])
+        assertFalse(function.containsKey("agent_call"))
+
+        val capabilities = capabilitiesFrom(spec)
+        assertEquals(2, capabilities["omniflow_step_count"])
+        assertEquals(0, capabilities["agent_step_count"])
+        assertEquals(false, capabilities["requires_agent_fallback"])
+    }
+
+    @Test
+    fun `provider only policy no longer classifies omniflow execution tools as agent`() {
+        assertTrue(RunLogReplayPolicy.providerOnlyTools.isEmpty())
+        for (toolName in listOf(
+            "go_to_node",
+            "click_node",
+            "call_function",
+            "omniflow.call_function",
+            "oob_function_run",
+        )) {
+            assertTrue(RunLogReplayPolicy.isOmniflowExecutionTool(toolName))
+            assertFalse(RunLogReplayPolicy.isAgentTool(toolName))
+        }
+        for (toolName in listOf(
+            "oob_function_list",
+            "oob_function_get",
+            "oob_function_register",
+            "oob_function_guard_check",
+            "oob_run_log_convert",
+        )) {
+            assertTrue(RunLogReplayPolicy.isAgentTool(toolName))
+            assertFalse(RunLogReplayPolicy.isOmniflowExecutionTool(toolName))
+        }
+        for (reason in listOf("provider_owned_replay_requires_omniflow")) {
+            assertFalse(RunLogReplayPolicy.requiresAgentPlanningReason(reason))
+        }
+    }
+
+    @Test
+    fun `data flow tools still compile to agent steps after omniflow migration`() {
+        val spec = compile(
+            listOf(
+                card("omniflow.recall", mapOf("goal" to "settings")),
+                card("web_search", mapOf("query" to "release notes")),
+            ),
+            runId = "run-agent-still-needed",
         )
 
         val steps = stepsFrom(spec)
@@ -159,7 +225,7 @@ class RunLogReusableFunctionCompilerTest {
             assertEquals(false, step["scriptable"])
             assertEquals("oob.agent.run", step["callable_tool"])
             val agentCall = step["agent_call"] as? Map<*, *>
-            assertEquals("provider_owned_replay_requires_omniflow", agentCall?.get("reason"))
+            assertEquals("data_flow_tool_requires_live_context", agentCall?.get("reason"))
         }
     }
 

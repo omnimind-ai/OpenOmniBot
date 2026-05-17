@@ -40,6 +40,7 @@ Use Direct MCP mode if these tools exist:
 omniflow.recall
 omniflow.call_function
 omniflow.ingest_run_log
+omniflow.explore_replay
 ```
 
 If direct tools are absent, use GUI bridge mode through the OOB app:
@@ -69,6 +70,21 @@ the in-app Agent to use OmniFlow UI/native capabilities.
 1. After a successful non-cache run, call
    `omniflow.ingest_run_log(run_id)` or pass an inline `run_log`.
 2. Treat failed, empty, or non-replayable RunLogs as rejected.
+
+### Explore, Save, and Replay a New Path
+
+Use this only when recall misses and the user wants OOB to discover a reusable
+local UI path. Keep the exploration bounded.
+
+1. Call `omniflow.explore_replay(goal, package_name?, max_steps?, stop_text?,
+   replay?, reset_before_replay?)`.
+2. Prefer `max_steps <= 3` and a concrete `stop_text` when possible.
+3. Leave `allow_risky_actions=false` unless the user explicitly confirmed the
+   risk.
+4. Treat returned `utg.schema_version=oob.omniflow_utg.v1` as a local path
+   record, not a full provider-side graph.
+5. If `phase=registered`, report the Function id and do not claim replay ran.
+   If `phase=replayed`, report both explore and replay results.
 
 ## GUI Bridge Workflows
 

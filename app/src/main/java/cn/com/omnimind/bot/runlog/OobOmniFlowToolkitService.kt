@@ -29,6 +29,7 @@ class OobOmniFlowToolkitService(
     )
 ) {
     private val replayService = OobRunLogReplayService(context, workspaceFunctionStore)
+    private val explorer = OobOmniFlowExplorer(context)
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -138,7 +139,8 @@ class OobOmniFlowToolkitService(
             "success" to success,
             "fallback" to fallback,
             "error" to if (success) null else runPayload["error_message"],
-            "run_id" to "omniflow_run_${System.currentTimeMillis()}",
+            "run_id" to runPayload["run_id"],
+            "audit_run_id" to runPayload["audit_run_id"],
             "function_id" to functionId,
             "goal" to goal.takeIf { it.isNotEmpty() },
             "actions_executed" to (runPayload["success_step_count"] ?: 0),
@@ -184,6 +186,139 @@ class OobOmniFlowToolkitService(
             },
             "reason" to (result["error_message"] ?: ""),
             "result" to result,
+            "source" to "oob_native_omniflow_toolkit"
+        )
+    }
+
+    suspend fun explore(args: Map<String, Any?>?): Map<String, Any?> {
+        val request = args ?: emptyMap()
+        val register = boolArg(request["register"])
+        val functionId = firstNonBlank(request["function_id"], request["functionId"])
+        val name = firstNonBlank(request["name"])
+        val description = firstNonBlank(request["description"])
+        val exploreResult = explorer.explore(request)
+        val success = exploreResult["success"] == true
+        if (!success) {
+            return linkedMapOf(
+                "success" to false,
+                "phase" to "explore",
+                "explore" to exploreResult,
+                "error_code" to exploreResult["error_code"],
+                "error_message" to exploreResult["error_message"],
+                "source" to "oob_native_omniflow_toolkit"
+            )
+        }
+        if (!register) {
+            return linkedMapOf(
+                "success" to true,
+                "phase" to "explore",
+                "run_id" to exploreResult["run_id"],
+                "utg" to exploreResult["utg"],
+                "explore" to exploreResult,
+                "registered" to false,
+                "source" to "oob_native_omniflow_toolkit"
+            )
+        }
+
+        val convertResult = replayService.convertRunLog(
+            runId = exploreResult["run_id"]?.toString().orEmpty(),
+            register = true,
+            functionIdOverride = functionId.takeIf { it.isNotEmpty() },
+            nameOverride = name.takeIf { it.isNotEmpty() },
+            descriptionOverride = description.takeIf { it.isNotEmpty() },
+        )
+        val converted = convertResult["success"] == true
+        return linkedMapOf(
+            "success" to converted,
+            "phase" to if (converted) "registered" else "convert",
+            "run_id" to exploreResult["run_id"],
+            "function_id" to convertResult["function_id"],
+            "created_function_id" to convertResult["created_function_id"],
+            "registered" to converted,
+            "utg" to exploreResult["utg"],
+            "explore" to exploreResult,
+            "convert" to convertResult,
+            "error_code" to convertResult["error_code"],
+            "error_message" to convertResult["error_message"],
+            "source" to "oob_native_omniflow_toolkit"
+        )
+    }
+
+    suspend fun exploreAndReplay(args: Map<String, Any?>?): Map<String, Any?> {
+        val request = args ?: emptyMap()
+        val exploreArgs = linkedMapOf<String, Any?>().apply {
+            putAll(request)
+            put("register", true)
+        }
+        val exploreResult = explore(exploreArgs)
+        if (exploreResult["success"] != true) {
+            return linkedMapOf(
+                "success" to false,
+                "phase" to (exploreResult["phase"] ?: "explore"),
+                "explore" to exploreResult,
+                "error_code" to exploreResult["error_code"],
+                "error_message" to exploreResult["error_message"],
+                "source" to "oob_native_omniflow_toolkit"
+            )
+        }
+
+        val functionId = firstNonBlank(exploreResult["function_id"], exploreResult["created_function_id"])
+        val packageName = firstNonBlank(
+            request["package_name"],
+            request["packageName"],
+            request["target_package"],
+            request["targetPackage"],
+        )
+        val shouldReplay = request["replay"] != false &&
+            !request["replay"]?.toString().equals("false", ignoreCase = true)
+        if (!shouldReplay) {
+            return linkedMapOf(
+                "success" to true,
+                "phase" to "registered",
+                "run_id" to exploreResult["run_id"],
+                "function_id" to functionId,
+                "utg" to exploreResult["utg"],
+                "replay_skipped" to true,
+                "explore" to exploreResult,
+                "source" to "oob_native_omniflow_toolkit"
+            )
+        }
+
+        val settleDelayMs = longArg(
+            request["settle_delay_ms"],
+            request["settleDelayMs"],
+            defaultValue = 800L
+        ).coerceIn(100L, 5_000L)
+        val resetBackSteps = intArg(
+            request["reset_back_steps"],
+            request["resetBackSteps"],
+            defaultValue = 1
+        ).coerceIn(0, 8)
+        if (boolArg(request["reset_before_replay"]) || boolArg(request["resetBeforeReplay"])) {
+            explorer.resetBeforeReplay(
+                targetPackageName = packageName,
+                backSteps = resetBackSteps,
+                settleDelayMs = settleDelayMs,
+            )
+        }
+
+        val replayResult = callFunction(
+            linkedMapOf(
+                "function_id" to functionId,
+                "arguments" to mapArg(request["arguments"]),
+                "goal" to firstNonBlank(request["goal"], request["query"], request["task"])
+            )
+        )
+        val replaySuccess = replayResult["success"] == true
+        return linkedMapOf(
+            "success" to replaySuccess,
+            "phase" to if (replaySuccess) "replayed" else "replay",
+            "run_id" to exploreResult["run_id"],
+            "function_id" to functionId,
+            "explore" to exploreResult,
+            "replay" to replayResult,
+            "utg" to exploreResult["utg"],
+            "error" to replayResult["error"],
             "source" to "oob_native_omniflow_toolkit"
         )
     }
@@ -307,6 +442,8 @@ class OobOmniFlowToolkitService(
         )
         return linkedMapOf<String, Any?>(
             "success" to (runPayload["success"] == true),
+            "run_id" to runPayload["run_id"],
+            "audit_run_id" to runPayload["audit_run_id"],
             "function_id" to functionId,
             "runner" to runPayload["runner"],
             "guard_decision" to decision,
@@ -317,7 +454,6 @@ class OobOmniFlowToolkitService(
             "needs_agent" to (runPayload["model_required"] == true),
             "needs_confirmation" to false,
             "error_message" to runPayload["error_message"],
-            "audit_run_id" to "omniflow_run_${System.currentTimeMillis()}",
             "guard" to guard,
             "result" to runPayload
         )
@@ -341,7 +477,7 @@ class OobOmniFlowToolkitService(
         val runId = firstNonBlank(request["runId"], request["run_id"])
         return replayService.convertRunLog(
             runId = runId,
-            register = boolArg(request["register"]),
+            register = boolArgOrDefault(request["register"], defaultValue = true),
             functionIdOverride = firstNonBlank(request["functionId"], request["function_id"])
                 .takeIf { it.isNotEmpty() },
             nameOverride = firstNonBlank(request["name"]).takeIf { it.isNotEmpty() },
@@ -367,8 +503,8 @@ class OobOmniFlowToolkitService(
                 runLog["operationDescription"],
                 runLog["goal"],
             ),
-            startedAtMs = longArg(runLog["started_at_ms"], System.currentTimeMillis()),
-            finishedAtMs = longArg(runLog["finished_at_ms"], System.currentTimeMillis()),
+            startedAtMs = longArg(runLog["started_at_ms"], defaultValue = System.currentTimeMillis()),
+            finishedAtMs = longArg(runLog["finished_at_ms"], defaultValue = System.currentTimeMillis()),
             success = success,
             doneReason = firstNonBlank(resultMap["done_reason"], runLog["done_reason"]),
             errorMessage = firstNonBlank(resultMap["error"], runLog["error_message"]),
@@ -580,6 +716,12 @@ class OobOmniFlowToolkitService(
                 reason = "$action is a deterministic local replay action"
                 requiresRoot = false
             }
+            RunLogReplayPolicy.isOmniflowExecutionTool(action) -> {
+                decision = "allow"
+                risk = if (RunLogReplayPolicy.isOmniflowFunctionTool(action)) "medium" else "low"
+                reason = "$action is handled by OOB native OmniFlow execution"
+                requiresRoot = false
+            }
             executor == "agent" || RunLogReplayPolicy.isAgentTool(action) -> {
                 decision = "needs_agent"
                 risk = "medium"
@@ -726,19 +868,25 @@ class OobOmniFlowToolkitService(
             else -> emptyList()
         }
 
-    private fun intArg(value: Any?, defaultValue: Int): Int =
-        when (value) {
-            is Number -> value.toInt()
-            is String -> value.trim().toIntOrNull() ?: defaultValue
-            else -> defaultValue
+    private fun intArg(vararg values: Any?, defaultValue: Int): Int {
+        values.forEach { value ->
+            when (value) {
+                is Number -> return value.toInt()
+                is String -> value.trim().toIntOrNull()?.let { return it }
+            }
         }
+        return defaultValue
+    }
 
-    private fun longArg(value: Any?, defaultValue: Long): Long =
-        when (value) {
-            is Number -> value.toLong()
-            is String -> value.trim().toLongOrNull() ?: defaultValue
-            else -> defaultValue
+    private fun longArg(vararg values: Any?, defaultValue: Long): Long {
+        values.forEach { value ->
+            when (value) {
+                is Number -> return value.toLong()
+                is String -> value.trim().toLongOrNull()?.let { return it }
+            }
         }
+        return defaultValue
+    }
 
     private fun boolArg(value: Any?): Boolean =
         when (value) {
@@ -747,6 +895,22 @@ class OobOmniFlowToolkitService(
                 value.trim() == "1"
             is Number -> value.toInt() != 0
             else -> false
+        }
+
+    private fun boolArgOrDefault(value: Any?, defaultValue: Boolean): Boolean =
+        when (value) {
+            null -> defaultValue
+            is Boolean -> value
+            is String -> {
+                val text = value.trim().lowercase()
+                when (text) {
+                    "true", "1", "yes", "y", "on" -> true
+                    "false", "0", "no", "n", "off" -> false
+                    else -> defaultValue
+                }
+            }
+            is Number -> value.toInt() != 0
+            else -> defaultValue
         }
 
     private data class RankedFunction(

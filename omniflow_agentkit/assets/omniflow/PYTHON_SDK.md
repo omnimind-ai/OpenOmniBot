@@ -45,12 +45,25 @@ client = OmniFlowMcpClient(
 )
 
 tools = client.list_tools()
-if client.has_direct_omniflow():
+if client.has_canonical_omniflow():
     recalled = client.recall("open Android Settings")
     function_id = recalled["hit"]["function_id"]
     result = client.call_function(function_id, {})
+    explored = client.explore_replay(
+        "open network settings",
+        package_name="com.android.settings",
+        max_steps=3,
+        stop_text="Network",
+        replay=False,
+    )
     ingested = client.ingest_run_log("runlog_install_demo")
-    installed = client.call_function(ingested["function_id"], {})
+if client.has_direct_omniflow():
+    functions = client.list_functions()
+    direct_function_id = function_id if "function_id" in locals() else "settings_click_path_demo"
+    guard = client.guard_check(direct_function_id, {})
+    direct = client.run_function(direct_function_id, {})
+    converted = client.convert_run_log("runlog_install_demo")
+    installed = client.run_function(converted["function_id"], {}, execution_mode="background", confirmed=True)
 ```
 
 ## Repo Probe
@@ -78,7 +91,12 @@ python -m omniflow_agentkit probe-repo /tmp/mobilegpt
 python -m omniflow_agentkit mcp-recall "open Android Settings" --mcp-url http://127.0.0.1:8765/mcp
 python -m omniflow_agentkit mcp-call-function settings_click_path_demo --mcp-url http://127.0.0.1:8765/mcp
 python -m omniflow_agentkit mcp-ingest-runlog runlog_install_demo --mcp-url http://127.0.0.1:8765/mcp
-python -m omniflow_agentkit mcp-call-function install_sample_apk_demo --mcp-url http://127.0.0.1:8765/mcp
+python -m omniflow_agentkit mcp-explore-replay "open network settings" --mcp-url http://127.0.0.1:8765/mcp --package-name com.android.settings --stop-text Network --no-replay
+python -m omniflow_agentkit mcp-list-functions --mcp-url http://127.0.0.1:8765/mcp
+python -m omniflow_agentkit mcp-guard-check settings_click_path_demo --mcp-url http://127.0.0.1:8765/mcp
+python -m omniflow_agentkit mcp-run-function settings_click_path_demo --mcp-url http://127.0.0.1:8765/mcp
+python -m omniflow_agentkit mcp-convert-runlog runlog_install_demo --mcp-url http://127.0.0.1:8765/mcp
+python -m omniflow_agentkit mcp-run-function install_sample_apk_demo --mcp-url http://127.0.0.1:8765/mcp --execution-mode background --confirmed
 python -m omniflow_agentkit openai-smoke "Inspect OmniFlow readiness" --repo /tmp/mobilegpt
 ```
 

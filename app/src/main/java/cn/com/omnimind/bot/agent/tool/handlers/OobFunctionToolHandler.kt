@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.agent.tool.handlers
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
 import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 import kotlinx.serialization.json.JsonObject
+import java.util.concurrent.atomic.AtomicLong
 
 class OobFunctionToolHandler(
     private val context: android.content.Context,
@@ -16,17 +17,22 @@ class OobFunctionToolHandler(
     var workspaceFunctionStore: cn.com.omnimind.bot.workbench.WorkspaceFunctionStore? = null
 
     override fun canHandle(toolName: String): Boolean =
-        cn.com.omnimind.baselib.runlog.OobReusableFunctionStore.get(context, toolName) != null
-            || workspaceFunctionStore?.canHandle(toolName) == true
+        runCatching {
+            cn.com.omnimind.baselib.runlog.OobReusableFunctionStore.get(context, toolName) != null
+        }.getOrDefault(false) || workspaceFunctionStore?.canHandle(toolName) == true
 
     /** Returns the function spec from SharedPreferences or workspace, whichever has it. */
     private fun getSpec(functionId: String): Map<String, Any?>? =
-        cn.com.omnimind.baselib.runlog.OobReusableFunctionStore.get(context, functionId)
+        runCatching {
+            cn.com.omnimind.baselib.runlog.OobReusableFunctionStore.get(context, functionId)
+        }.getOrNull()
             ?: workspaceFunctionStore?.get(functionId)
 
     fun canRunFullyWithOmniflow(materializedSpec: Map<String, Any?>): Boolean {
         val steps = materializedSteps(materializedSpec)
-        return steps.isNotEmpty() && steps.all { OmniflowStepExecutor.isOmniflowStep(it) }
+        return steps.isNotEmpty() && steps.all { step ->
+            OmniflowStepExecutor.isOmniflowStep(step) || isOmniflowExecutionStep(step)
+        }
     }
 
     override suspend fun execute(
@@ -86,8 +92,37 @@ class OobFunctionToolHandler(
         toolName: String = functionId,
         allowAgentFallback: Boolean = true,
         allowToolDelegationWithoutRouter: Boolean = false,
+        callStack: List<String> = emptyList(),
     ): Map<String, Any?> {
         val runStartedAtMs = System.currentTimeMillis()
+        val normalizedFunctionId = functionId.trim()
+        val auditRunId = nextRunId(runStartedAtMs)
+        if (normalizedFunctionId.isNotEmpty() && normalizedFunctionId in callStack) {
+            return failedRunPayload(
+                functionId = functionId,
+                spec = spec,
+                auditRunId = auditRunId,
+                startedAtMs = runStartedAtMs,
+                errorCode = "OOB_FUNCTION_RECURSION",
+                errorMessage = "Recursive OOB function call detected: " +
+                    (callStack + normalizedFunctionId).joinToString(" -> ")
+            )
+        }
+        if (callStack.size >= MAX_OMNIFLOW_CALL_DEPTH) {
+            return failedRunPayload(
+                functionId = functionId,
+                spec = spec,
+                auditRunId = auditRunId,
+                startedAtMs = runStartedAtMs,
+                errorCode = "OOB_FUNCTION_MAX_DEPTH",
+                errorMessage = "OOB function call depth exceeds $MAX_OMNIFLOW_CALL_DEPTH"
+            )
+        }
+        val activeCallStack = if (normalizedFunctionId.isNotEmpty()) {
+            callStack + normalizedFunctionId
+        } else {
+            callStack
+        }
         val steps = materializedSteps(materializedSpec)
         val stepResults = mutableListOf<Map<String, Any?>>()
         var delegatedToolUsed = false
@@ -104,6 +139,7 @@ class OobFunctionToolHandler(
                 .ifEmpty { "agent" }
             val callableTool = step["callable_tool"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 ?: step["tool"]?.toString()?.trim().orEmpty()
+            val omniflowExecutionTool = omniflowExecutionToolForStep(step, callableTool)
 
             if (callback != null) {
                 helper.reportToolProgress(
@@ -115,6 +151,32 @@ class OobFunctionToolHandler(
             }
 
             val stepResult: Map<String, Any?> = when {
+                RunLogReplayPolicy.isOmniflowFunctionTool(omniflowExecutionTool) -> {
+                    executeOmniflowFunctionStep(
+                        step = step,
+                        stepId = stepId,
+                        stepTitle = stepTitle,
+                        callableTool = omniflowExecutionTool,
+                        callback = callback,
+                        toolHandle = toolHandle,
+                        env = env,
+                        parentToolCallId = parentToolCallId,
+                        toolName = toolName,
+                        allowAgentFallback = allowAgentFallback,
+                        allowToolDelegationWithoutRouter = allowToolDelegationWithoutRouter,
+                        callStack = activeCallStack,
+                    )
+                }
+
+                RunLogReplayPolicy.isOmniflowGraphTool(omniflowExecutionTool) -> {
+                    executeOmniflowGraphStep(
+                        step = step,
+                        stepId = stepId,
+                        stepTitle = stepTitle,
+                        callableTool = omniflowExecutionTool,
+                    )
+                }
+
                 OmniflowStepExecutor.isOmniflowStep(step) -> {
                     try {
                         executeOmniflowStep(step, stepId, stepTitle)
@@ -261,6 +323,8 @@ class OobFunctionToolHandler(
         val description = spec["description"]?.toString().orEmpty()
         return linkedMapOf(
             "success" to allSuccess,
+            "run_id" to auditRunId,
+            "audit_run_id" to auditRunId,
             "function_id" to (spec["function_id"] ?: functionId),
             "description" to description,
             "runner" to when {
@@ -274,6 +338,8 @@ class OobFunctionToolHandler(
             "model_required" to modelRequired,
             "delegated_tool_used" to delegatedToolUsed,
             "fallback_available" to (!allSuccess || modelRequired),
+            "error_code" to stepResults.firstOrNull { it["success"] == false }
+                ?.get("error_code"),
             "error_message" to failureReason,
             "timing" to linkedMapOf(
                 "source" to "oob_function_runner",
@@ -446,12 +512,364 @@ class OobFunctionToolHandler(
         }
     }
 
+    private suspend fun executeOmniflowFunctionStep(
+        step: Map<String, Any?>,
+        stepId: String,
+        stepTitle: String,
+        callableTool: String,
+        callback: cn.com.omnimind.bot.agent.AgentCallback?,
+        toolHandle: cn.com.omnimind.bot.agent.AgentToolExecutionHandle?,
+        env: cn.com.omnimind.bot.agent.AgentExecutionEnvironment?,
+        parentToolCallId: String?,
+        toolName: String,
+        allowAgentFallback: Boolean,
+        allowToolDelegationWithoutRouter: Boolean,
+        callStack: List<String>,
+    ): Map<String, Any?> {
+        val args = stepArgs(step)
+        val functionId = firstNonBlank(
+            args["function_id"],
+            args["functionId"],
+            args["id"],
+            args["name"],
+            step["function_id"],
+            step["functionId"],
+        )
+        if (functionId.isEmpty()) {
+            return failureStepResult(
+                stepId = stepId,
+                tool = callableTool.ifEmpty { "call_function" },
+                executor = "omniflow_function",
+                summary = "$stepTitle missing function_id",
+                errorCode = "OOB_FUNCTION_ID_MISSING",
+            )
+        }
+        val nestedSpec = getSpec(functionId)
+            ?: return failureStepResult(
+                stepId = stepId,
+                tool = callableTool.ifEmpty { "call_function" },
+                executor = "omniflow_function",
+                summary = "OOB reusable function not found: $functionId",
+                errorCode = "OOB_FUNCTION_NOT_FOUND",
+                extras = mapOf("nested_function_id" to functionId),
+            )
+        val nestedArguments = nestedFunctionArguments(args)
+        val missing = cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
+            .missingRequiredArguments(nestedSpec, nestedArguments)
+        if (missing.isNotEmpty()) {
+            return failureStepResult(
+                stepId = stepId,
+                tool = callableTool.ifEmpty { "call_function" },
+                executor = "omniflow_function",
+                summary = "Missing required arguments: ${missing.joinToString(", ")}",
+                errorCode = "OOB_FUNCTION_ARGUMENTS_MISSING",
+                extras = mapOf(
+                    "nested_function_id" to functionId,
+                    "missing_required_arguments" to missing,
+                ),
+            )
+        }
+        val materialized = cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
+            .materialize(nestedSpec, nestedArguments)
+        val nestedRun = runMaterializedFunction(
+            functionId = functionId,
+            spec = nestedSpec,
+            materializedSpec = materialized,
+            callback = callback,
+            toolHandle = toolHandle,
+            env = env,
+            parentToolCallId = "${parentToolCallId ?: toolName}_$stepId",
+            toolName = functionId,
+            allowAgentFallback = allowAgentFallback,
+            allowToolDelegationWithoutRouter = allowToolDelegationWithoutRouter,
+            callStack = callStack,
+        )
+        val success = nestedRun["success"] == true
+        return linkedMapOf<String, Any?>(
+            "step_id" to stepId,
+            "tool" to callableTool.ifEmpty { "call_function" },
+            "executor" to "omniflow_function",
+            "model_free" to true,
+            "success" to success,
+            "nested_function_id" to functionId,
+            "nested_run_id" to nestedRun["run_id"],
+            "nested_runner" to nestedRun["runner"],
+            "nested_step_count" to nestedRun["step_count"],
+            "nested_success_step_count" to nestedRun["success_step_count"],
+            "nested_model_required" to nestedRun["model_required"],
+            "step_results" to nestedRun["step_results"],
+            "timing" to nestedRun["timing"],
+            "error_code" to nestedRun["error_code"],
+            "summary" to if (success) {
+                "$stepTitle completed via local OOB Function: $functionId"
+            } else {
+                nestedRun["error_message"]?.toString()?.takeIf { it.isNotBlank() }
+                    ?: "$stepTitle failed via local OOB Function: $functionId"
+            },
+        ).filterValues { it != null }
+    }
+
+    private suspend fun executeOmniflowGraphStep(
+        step: Map<String, Any?>,
+        stepId: String,
+        stepTitle: String,
+        callableTool: String,
+    ): Map<String, Any?> {
+        val path = resolveGraphPath(step, callableTool)
+        if (path.isEmpty()) {
+            return failureStepResult(
+                stepId = stepId,
+                tool = callableTool.ifEmpty { "go_to_node" },
+                executor = "omniflow_graph",
+                summary = "$stepTitle has no executable UTG path",
+                errorCode = "OOB_UTG_PATH_EMPTY",
+            )
+        }
+
+        val primitiveResults = mutableListOf<Map<String, Any?>>()
+        for ((index, primitiveStep) in path.withIndex()) {
+            val pathStepId = "${stepId}_path_${index + 1}"
+            val pathTitle = primitiveStep["title"]?.toString()?.takeIf { it.isNotBlank() }
+                ?: "$stepTitle path ${index + 1}"
+            val startedAtMs = System.currentTimeMillis()
+            val result = try {
+                executeOmniflowStep(primitiveStep, pathStepId, pathTitle)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failureStepResult(
+                    stepId = pathStepId,
+                    tool = OmniflowStepExecutor.actionNameForStep(primitiveStep),
+                    executor = "omniflow",
+                    summary = e.message ?: "UTG path action failed",
+                    errorCode = "OOB_UTG_ACTION_FAILED",
+                )
+            }
+            val finishedAtMs = System.currentTimeMillis()
+            primitiveResults += LinkedHashMap<String, Any?>().apply {
+                putAll(result)
+                putIfAbsent("index", index)
+                putIfAbsent("started_at_ms", startedAtMs)
+                putIfAbsent("finished_at_ms", finishedAtMs)
+                putIfAbsent("duration_ms", (finishedAtMs - startedAtMs).coerceAtLeast(0))
+            }
+            if (result["success"] == false) break
+        }
+
+        val success = primitiveResults.size == path.size &&
+            primitiveResults.none { it["success"] == false }
+        return linkedMapOf<String, Any?>(
+            "step_id" to stepId,
+            "tool" to callableTool.ifEmpty { "go_to_node" },
+            "executor" to "omniflow_graph",
+            "model_free" to true,
+            "success" to success,
+            "path_length" to path.size,
+            "success_path_step_count" to primitiveResults.count { it["success"] != false },
+            "step_results" to primitiveResults,
+            "summary" to if (success) {
+                "$stepTitle completed via local UTG path"
+            } else {
+                primitiveResults.lastOrNull()?.get("summary")?.toString()
+                    ?: "$stepTitle failed in local UTG path"
+            },
+        )
+    }
+
     private suspend fun executeOmniflowStep(
         step: Map<String, Any?>,
         stepId: String,
         stepTitle: String,
     ): Map<String, Any?> {
         return OmniflowStepExecutor.execute(step, stepId, stepTitle)
+    }
+
+    private fun isOmniflowExecutionStep(step: Map<String, Any?>): Boolean {
+        val tool = omniflowExecutionToolForStep(step, executionToolName(step))
+        return RunLogReplayPolicy.isOmniflowExecutionTool(tool)
+    }
+
+    private fun executionToolName(step: Map<String, Any?>): String =
+        firstNonBlank(
+            step["callable_tool"],
+            step["tool"],
+            step["omniflow_action"],
+            step["local_action"],
+            step["type"],
+        )
+
+    private fun omniflowExecutionToolForStep(
+        step: Map<String, Any?>,
+        callableTool: String,
+    ): String {
+        val agentCall = stringMap(step["agent_call"])
+        val agentArgs = stringMap(agentCall["args"])
+        val candidates = listOf(
+            callableTool,
+            step["tool"],
+            step["callable_tool"],
+            step["omniflow_action"],
+            step["local_action"],
+            step["type"],
+            agentArgs["original_tool"],
+            agentCall["original_tool"],
+        )
+        return candidates.asSequence()
+            .map { it?.toString()?.trim().orEmpty() }
+            .map { RunLogReplayPolicy.normalizeToolName(it) }
+            .firstOrNull { it.isNotEmpty() && RunLogReplayPolicy.isOmniflowExecutionTool(it) }
+            .orEmpty()
+    }
+
+    private fun stepArgs(step: Map<String, Any?>): Map<String, Any?> {
+        val directArgs = stringMap(step["args"])
+        val agentCall = stringMap(step["agent_call"])
+        val agentArgs = stringMap(agentCall["args"])
+        val originalArgs = stringMap(directArgs["original_args"])
+            .ifEmpty { stringMap(directArgs["originalArgs"]) }
+            .ifEmpty { stringMap(agentArgs["original_args"]) }
+            .ifEmpty { stringMap(agentArgs["originalArgs"]) }
+        val topLevelArgs = buildMap {
+            for (key in EXECUTION_ARG_KEYS) {
+                if (step.containsKey(key)) put(key, step[key])
+            }
+        }
+        return when {
+            directArgs.hasExecutionArgs() -> directArgs
+            originalArgs.isNotEmpty() -> originalArgs
+            topLevelArgs.isNotEmpty() -> topLevelArgs
+            else -> directArgs
+        }
+    }
+
+    private fun nestedFunctionArguments(args: Map<String, Any?>): Map<String, Any?> {
+        val nested = stringMap(args["arguments"])
+            .ifEmpty { stringMap(args["args"]) }
+            .ifEmpty { stringMap(args["input"]) }
+        if (nested.isNotEmpty()) return nested
+        return linkedMapOf<String, Any?>().apply {
+            args.forEach { (key, value) ->
+                if (key !in FUNCTION_CALL_META_KEYS) put(key, value)
+            }
+        }
+    }
+
+    private fun resolveGraphPath(
+        step: Map<String, Any?>,
+        callableTool: String,
+    ): List<Map<String, Any?>> {
+        val args = stepArgs(step)
+        val directPath = listArg(args["path"]).ifEmpty { listArg(step["path"]) }
+        val utg = stringMap(args["utg"])
+            .ifEmpty { stringMap(step["utg"]) }
+            .ifEmpty { stringMap(args["graph"]) }
+            .ifEmpty { stringMap(step["graph"]) }
+        val utgPathIds = listArg(utg["path"])
+        val utgEdges = listArg(utg["edges"])
+            .mapNotNull { stringMap(it).takeIf { edge -> edge.isNotEmpty() } }
+        val edges = listArg(args["edges"])
+            .ifEmpty { listArg(step["edges"]) }
+            .mapNotNull { stringMap(it).takeIf { edge -> edge.isNotEmpty() } }
+            .ifEmpty { utgEdges }
+
+        val rawPath = when {
+            directPath.isNotEmpty() -> directPath
+            edges.isNotEmpty() && RunLogReplayPolicy.normalizeToolName(callableTool) in
+                setOf("click_node", "node_click") -> selectClickNodeEdges(edges, args)
+            utgPathIds.isNotEmpty() && utgEdges.isNotEmpty() -> {
+                val edgeById = utgEdges.associateBy { firstNonBlank(it["edge_id"], it["edgeId"], it["id"]) }
+                utgPathIds.mapNotNull { rawId -> edgeById[rawId?.toString().orEmpty()] }
+            }
+            edges.isNotEmpty() -> selectGoToNodeEdges(edges, args)
+            else -> emptyList()
+        }
+        return rawPath.mapNotNull { raw ->
+            val edge = stringMap(raw)
+            edgeToOmniflowStep(edge)
+        }
+    }
+
+    private fun selectClickNodeEdges(
+        edges: List<Map<String, Any?>>,
+        args: Map<String, Any?>,
+    ): List<Map<String, Any?>> {
+        val edgeId = firstNonBlank(args["edge_id"], args["edgeId"])
+        val actionId = firstNonBlank(args["action_id"], args["actionId"])
+        val targetNodeId = firstNonBlank(args["node_id"], args["nodeId"], args["target_node_id"], args["targetNodeId"])
+        val selected = edges.firstOrNull { edge ->
+            (edgeId.isNotEmpty() && firstNonBlank(edge["edge_id"], edge["edgeId"], edge["id"]) == edgeId) ||
+                (actionId.isNotEmpty() && firstNonBlank(edge["action_id"], edge["actionId"]) == actionId) ||
+                (targetNodeId.isNotEmpty() && firstNonBlank(edge["to_node_id"], edge["toNodeId"], edge["node_id"], edge["nodeId"]) == targetNodeId)
+        } ?: edges.firstOrNull()
+        return selected?.let { listOf(it) }.orEmpty()
+    }
+
+    private fun selectGoToNodeEdges(
+        edges: List<Map<String, Any?>>,
+        args: Map<String, Any?>,
+    ): List<Map<String, Any?>> {
+        val targetNodeId = firstNonBlank(args["node_id"], args["nodeId"], args["target_node_id"], args["targetNodeId"])
+        if (targetNodeId.isEmpty()) return edges
+        val targetIndex = edges.indexOfFirst { edge ->
+            firstNonBlank(edge["to_node_id"], edge["toNodeId"], edge["node_id"], edge["nodeId"]) == targetNodeId
+        }
+        return if (targetIndex >= 0) edges.take(targetIndex + 1) else emptyList()
+    }
+
+    private fun edgeToOmniflowStep(edge: Map<String, Any?>): Map<String, Any?>? {
+        val action = firstNonBlank(
+            edge["action"],
+            edge["tool"],
+            edge["omniflow_action"],
+            edge["local_action"],
+            edge["type"],
+        )
+        val localAction = RunLogReplayPolicy.omniflowActionForToolName(action) ?: return null
+        val edgeArgs = linkedMapOf<String, Any?>()
+        edgeArgs.putAll(stringMap(edge["args"]))
+        for (key in listOf(
+            "x",
+            "y",
+            "x1",
+            "y1",
+            "x2",
+            "y2",
+            "direction",
+            "distance",
+            "distance_px",
+            "distancePx",
+            "duration",
+            "duration_ms",
+            "durationMs",
+            "content",
+            "text",
+            "value",
+            "package_name",
+            "packageName",
+            "key",
+            "hotkey",
+            "hot_key",
+            "target_description",
+            "targetDescription",
+        )) {
+            if (edgeArgs[key] == null && edge.containsKey(key)) {
+                edgeArgs[key] = edge[key]
+            }
+        }
+        return linkedMapOf(
+            "title" to firstNonBlank(edge["title"], edge["summary"], edge["target_description"], edge["targetDescription"], localAction),
+            "kind" to "omniflow_action",
+            "executor" to "omniflow",
+            "omniflow_action" to localAction,
+            "local_action" to localAction,
+            "model_free" to true,
+            "scriptable" to true,
+            "tool" to localAction,
+            "callable_tool" to localAction,
+            "args" to edgeArgs,
+            "source_context" to stringMap(edge["source_context"]).takeIf { it.isNotEmpty() },
+            "coordinate_hook" to edge["coordinate_hook"],
+        ).filterValues { it != null }
     }
 
     private fun materializedSteps(materializedSpec: Map<String, Any?>): List<Map<String, Any?>> {
@@ -464,4 +882,120 @@ class OobFunctionToolHandler(
         }
     }
 
+    private fun failureStepResult(
+        stepId: String,
+        tool: String,
+        executor: String,
+        summary: String,
+        errorCode: String,
+        extras: Map<String, Any?> = emptyMap(),
+    ): Map<String, Any?> = linkedMapOf<String, Any?>(
+        "step_id" to stepId,
+        "tool" to tool,
+        "executor" to executor,
+        "model_free" to true,
+        "success" to false,
+        "needs_agent" to false,
+        "fallback_available" to false,
+        "error_code" to errorCode,
+        "summary" to summary,
+    ).apply {
+        putAll(extras)
+    }
+
+    private fun failedRunPayload(
+        functionId: String,
+        spec: Map<String, Any?>,
+        auditRunId: String,
+        startedAtMs: Long,
+        errorCode: String,
+        errorMessage: String,
+    ): Map<String, Any?> {
+        val finishedAtMs = System.currentTimeMillis()
+        return linkedMapOf(
+            "success" to false,
+            "run_id" to auditRunId,
+            "audit_run_id" to auditRunId,
+            "function_id" to (spec["function_id"] ?: functionId),
+            "description" to spec["description"]?.toString().orEmpty(),
+            "runner" to "oob_omniflow_replay",
+            "step_count" to 0,
+            "success_step_count" to 0,
+            "model_used" to false,
+            "model_required" to false,
+            "delegated_tool_used" to false,
+            "fallback_available" to false,
+            "error_code" to errorCode,
+            "error_message" to errorMessage,
+            "timing" to linkedMapOf(
+                "source" to "oob_function_runner",
+                "started_at_ms" to startedAtMs,
+                "finished_at_ms" to finishedAtMs,
+                "runner_duration_ms" to (finishedAtMs - startedAtMs).coerceAtLeast(0)
+            ),
+            "step_results" to emptyList<Map<String, Any?>>()
+        )
+    }
+
+    private fun firstNonBlank(vararg values: Any?): String {
+        for (value in values) {
+            val text = value?.toString()?.trim().orEmpty()
+            if (text.isNotEmpty()) return text
+        }
+        return ""
+    }
+
+    private fun stringMap(value: Any?): Map<String, Any?> {
+        val map = value as? Map<*, *> ?: return emptyMap()
+        return map.entries.associate { (key, item) -> key.toString() to item }
+    }
+
+    private fun listArg(value: Any?): List<Any?> =
+        when (value) {
+            is List<*> -> value
+            is Array<*> -> value.toList()
+            else -> emptyList()
+        }
+
+    private fun Map<String, Any?>.hasExecutionArgs(): Boolean =
+        EXECUTION_ARG_KEYS.any { key -> this[key] != null }
+
+    private val FUNCTION_CALL_META_KEYS = setOf(
+        "function_id",
+        "functionId",
+        "id",
+        "name",
+        "tool",
+        "callable_tool",
+        "arguments",
+        "args",
+        "input",
+    )
+
+    private val EXECUTION_ARG_KEYS = setOf(
+        "function_id",
+        "functionId",
+        "id",
+        "name",
+        "node_id",
+        "nodeId",
+        "target_node_id",
+        "targetNodeId",
+        "edge_id",
+        "edgeId",
+        "action_id",
+        "actionId",
+        "path",
+        "edges",
+        "utg",
+        "graph",
+    )
+
+    private companion object {
+        const val MAX_OMNIFLOW_CALL_DEPTH = 8
+        val RUN_SEQUENCE = AtomicLong(0)
+    }
+
+    private fun nextRunId(startedAtMs: Long): String =
+        "omniflow_run_${startedAtMs}_${RUN_SEQUENCE.incrementAndGet()}"
 }

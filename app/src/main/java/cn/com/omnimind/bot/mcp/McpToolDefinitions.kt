@@ -311,6 +311,132 @@ BEHAVIOR:
         )
     )
 
+    val omniflowExploreReplayTool = mapOf(
+        "name" to "omniflow.explore_replay",
+        "description" to """Run OOB-native exploratory UI crawling, persist the path as a UTG-backed RunLog, convert it into a reusable Function, then optionally replay that Function through the existing local runner.""".trimIndent(),
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "goal" to mapOf("type" to "string", "description" to "Natural-language objective used to rank safe clickable UI nodes."),
+                "package_name" to mapOf("type" to "string", "description" to "Optional Android package to launch before exploration."),
+                "max_steps" to mapOf("type" to "integer", "description" to "Maximum exploration clicks. Default 3, capped at 8."),
+                "settle_delay_ms" to mapOf("type" to "integer", "description" to "Delay after launch/click before capturing XML. Default 800ms."),
+                "stop_text" to mapOf("type" to "string", "description" to "Optional text/content/resource substring that stops exploration once seen in captured XML."),
+                "allow_risky_actions" to mapOf("type" to "boolean", "description" to "Allow labels such as delete, pay, submit, or logout. Default false."),
+                "function_id" to mapOf("type" to "string", "description" to "Optional stable Function id for the generated path."),
+                "replay" to mapOf("type" to "boolean", "description" to "Whether to replay after registration. Default true."),
+                "reset_before_replay" to mapOf("type" to "boolean", "description" to "Optionally press Back and relaunch package before replay."),
+                "reset_back_steps" to mapOf("type" to "integer", "description" to "Back presses used when reset_before_replay=true. Default 1."),
+                "arguments" to mapOf("type" to "object", "description" to "Function arguments for replay; generated UTG functions are usually argument-free.")
+            ),
+            "required" to listOf("goal")
+        )
+    )
+
+    val oobFunctionListTool = mapOf(
+        "name" to "oob_function_list",
+        "description" to "List registered OOB reusable Functions available for direct deterministic replay.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "limit" to mapOf("type" to "integer", "description" to "Maximum number of Functions to return. Default: 100.")
+            )
+        )
+    )
+
+    val oobFunctionGetTool = mapOf(
+        "name" to "oob_function_get",
+        "description" to "Read one registered OOB reusable Function by id.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "functionId" to mapOf("type" to "string", "description" to "Function id to read.")
+            ),
+            "required" to listOf("functionId")
+        )
+    )
+
+    val oobFunctionRegisterTool = mapOf(
+        "name" to "oob_function_register",
+        "description" to "Register or update one OOB reusable Function spec.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "functionSpec" to mapOf("type" to "object", "description" to "Reusable Function spec object.")
+            ),
+            "required" to listOf("functionSpec")
+        )
+    )
+
+    val oobFunctionGuardCheckTool = mapOf(
+        "name" to "oob_function_guard_check",
+        "description" to "Run preflight guard checks for one OOB reusable Function before replay.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "functionId" to mapOf("type" to "string", "description" to "Function id to check."),
+                "arguments" to mapOf("type" to "object", "description" to "Materialization arguments for the Function.")
+            ),
+            "required" to listOf("functionId")
+        )
+    )
+
+    val oobFunctionRunTool = mapOf(
+        "name" to "oob_function_run",
+        "description" to "Run one OOB reusable Function directly after guard preflight; returns runner and per-step timing.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "functionId" to mapOf("type" to "string", "description" to "Function id to run."),
+                "arguments" to mapOf("type" to "object", "description" to "Materialization arguments for the Function."),
+                "dryRun" to mapOf("type" to "boolean", "description" to "Only return guard decision without executing."),
+                "continueWithAgent" to mapOf("type" to "boolean", "description" to "Allow Agent fallback for non-deterministic steps."),
+                "executionMode" to mapOf("type" to "string", "description" to "foreground or background. Default: foreground."),
+                "confirmed" to mapOf("type" to "boolean", "description" to "Set true only after user confirmation for guarded operations.")
+            ),
+            "required" to listOf("functionId")
+        )
+    )
+
+    val oobRunLogListTool = mapOf(
+        "name" to "oob_run_log_list",
+        "description" to "List recent OOB internal RunLogs that can be inspected or converted to Functions.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "limit" to mapOf("type" to "integer", "description" to "Maximum number of RunLogs to return. Default: 50.")
+            )
+        )
+    )
+
+    val oobRunLogGetTool = mapOf(
+        "name" to "oob_run_log_get",
+        "description" to "Read one OOB internal RunLog timeline payload by id.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "runId" to mapOf("type" to "string", "description" to "RunLog id to read.")
+            ),
+            "required" to listOf("runId")
+        )
+    )
+
+    val oobRunLogConvertTool = mapOf(
+        "name" to "oob_run_log_convert",
+        "description" to "Convert one successful OOB RunLog into a reusable Function and optionally register it.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "runId" to mapOf("type" to "string", "description" to "RunLog id to convert."),
+                "register" to mapOf("type" to "boolean", "description" to "Register the converted Function. Default follows service policy."),
+                "functionId" to mapOf("type" to "string", "description" to "Optional Function id override."),
+                "name" to mapOf("type" to "string", "description" to "Optional Function name override."),
+                "description" to mapOf("type" to "string", "description" to "Optional Function description override.")
+            ),
+            "required" to listOf("runId")
+        )
+    )
+
     val oobProjectCreateTool = mapOf(
         "name" to "oob_project_create",
         "description" to """Create or reuse an OOB Workbench Project.
@@ -381,6 +507,15 @@ This is the MCP control entry for Project creation. It writes the normal Workben
             omniflowRecallTool,
             omniflowCallFunctionTool,
             omniflowIngestRunLogTool,
+            omniflowExploreReplayTool,
+            oobFunctionListTool,
+            oobFunctionGetTool,
+            oobFunctionRegisterTool,
+            oobFunctionGuardCheckTool,
+            oobFunctionRunTool,
+            oobRunLogListTool,
+            oobRunLogGetTool,
+            oobRunLogConvertTool,
             oobProjectCreateTool,
             oobProjectActivateTool,
             oobProjectOpenTool,
