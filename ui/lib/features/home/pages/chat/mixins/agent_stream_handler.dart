@@ -8,6 +8,7 @@ import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/agent_tool_card_projection.dart';
 import 'package:ui/services/agent_stream_reducer.dart';
 import 'package:ui/services/agent_stream_meta.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/voice_playback_coordinator.dart';
 
@@ -824,8 +825,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     for (var index = 0; index < messages.length; index++) {
       final message = messages[index];
       final rawCardData = message.cardData;
-      if (rawCardData == null ||
-          (rawCardData['type'] ?? '').toString() != 'agent_tool_summary') {
+      if (rawCardData == null || !AgentToolCardPolicy.isToolCard(rawCardData)) {
         continue;
       }
       final cardTaskId = _firstNonEmpty([

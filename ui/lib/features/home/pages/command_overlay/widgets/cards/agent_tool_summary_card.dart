@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
 import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 import 'package:ui/services/app_background_service.dart';
 import 'package:ui/theme/theme_context.dart';
 
@@ -28,7 +28,7 @@ class AgentToolSummaryCard extends StatelessWidget {
     final preview = resolveAgentToolPreview(cardData);
     final typeLabel = resolveAgentToolTypeLabel(cardData);
     final statusColor = resolveAgentToolStatusColor(status);
-    final runLogId = _resolveRunLogId(cardData);
+    final runLogRef = AgentToolCardPolicy.runLogRef(cardData);
     final palette = context.omniPalette;
     final cardBackgroundColor = context.isDarkTheme
         ? Color.alphaBlend(
@@ -84,26 +84,20 @@ class AgentToolSummaryCard extends StatelessWidget {
                 ),
                 child: InkWell(
                   onTap: () {
-                    final cardId = _firstNonBlank([
-                      cardData['cardId'],
-                      cardData['card_id'],
-                      cardData['toolCallId'],
-                      cardData['tool_call_id'],
-                    ]);
-                    if (runLogId.isNotEmpty && cardId.isNotEmpty) {
+                    if (runLogRef.hasStep) {
                       unawaited(
                         showRunLogStepDetailSheet(
                           context,
-                          runId: runLogId,
-                          cardId: cardId,
+                          runId: runLogRef.runLogId,
+                          cardId: runLogRef.cardId,
                           title: resolveAgentToolTitle(cardData),
                         ),
                       );
-                    } else if (runLogId.isNotEmpty) {
+                    } else if (runLogRef.hasRunLog) {
                       unawaited(
                         showRunLogTimelineSheet(
                           context,
-                          runId: runLogId,
+                          runId: runLogRef.runLogId,
                           title: resolveAgentToolTitle(cardData),
                         ),
                       );
@@ -168,49 +162,6 @@ class AgentToolSummaryCard extends StatelessWidget {
       ),
     );
   }
-}
-
-String _resolveRunLogId(Map<String, dynamic> cardData) {
-  return _firstNonBlank([
-    cardData['runLogId'],
-    cardData['run_log_id'],
-    cardData['runId'],
-    cardData['run_id'],
-    cardData['toolTaskId'],
-    cardData['taskId'],
-    cardData['taskID'],
-    _runLogIdFromJsonString(cardData['resultPreviewJson']),
-    _runLogIdFromJsonString(cardData['rawResultJson']),
-  ]);
-}
-
-String _runLogIdFromJsonString(dynamic raw) {
-  final text = raw?.toString().trim() ?? '';
-  if (text.isEmpty) return '';
-  try {
-    final decoded = jsonDecode(text);
-    if (decoded is! Map) return '';
-    return _firstNonBlank([
-      decoded['runLogId'],
-      decoded['run_log_id'],
-      decoded['runId'],
-      decoded['run_id'],
-      decoded['taskId'],
-      decoded['task_id'],
-    ]);
-  } catch (_) {
-    return '';
-  }
-}
-
-String _firstNonBlank(Iterable<Object?> values) {
-  for (final value in values) {
-    final text = value?.toString().trim() ?? '';
-    if (text.isNotEmpty) {
-      return text;
-    }
-  }
-  return '';
 }
 
 class _StatusIcon extends StatelessWidget {

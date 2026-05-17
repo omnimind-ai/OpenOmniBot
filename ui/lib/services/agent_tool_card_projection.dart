@@ -1,10 +1,9 @@
-import 'dart:convert';
-
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/agent_stream_meta.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 
-const String kAgentToolCardType = 'agent_tool_summary';
+const String kAgentToolCardType = kAgentToolSummaryCardType;
 
 class AgentToolCardProjectionResult {
   const AgentToolCardProjectionResult({
@@ -25,7 +24,10 @@ class AgentToolCardProjectionResult {
 class AgentToolCardProjection {
   const AgentToolCardProjection._();
 
-  static const int defaultMaxTerminalOutputChars = 24 * 1024;
+  static const int defaultMaxTerminalOutputChars =
+      AgentToolTerminalOutputPolicy.defaultMaxChars;
+  static const int defaultMaxTerminalOutputLines =
+      AgentToolTerminalOutputPolicy.defaultMaxLines;
   static const int defaultMaxSummaryChars = 240;
   static const int defaultMaxProgressChars = 240;
   static const int defaultMaxPreviewJsonChars = 8 * 1024;
@@ -37,13 +39,14 @@ class AgentToolCardProjection {
     required String defaultRunningSummary,
     Map<String, dynamic>? streamMeta,
     int maxTerminalOutputChars = defaultMaxTerminalOutputChars,
+    int maxTerminalOutputLines = defaultMaxTerminalOutputLines,
     int maxSummaryChars = defaultMaxSummaryChars,
     int maxProgressChars = defaultMaxProgressChars,
     int maxPreviewJsonChars = defaultMaxPreviewJsonChars,
     int maxRawResultJsonChars = defaultMaxRawResultJsonChars,
   }) {
     final toolEvent = _AgentToolCardEvent.fromMap(event.raw);
-    final identity = _ToolCardIdentity.fromEvent(event, toolEvent);
+    final identity = AgentToolCardPolicy.identityFromEvent(event);
     if (identity.primaryId.isEmpty) {
       return null;
     }
@@ -55,47 +58,51 @@ class AgentToolCardProjection {
       toolEvent: toolEvent,
       streamEvent: event,
     );
-    final existingCardData = existingIndex == -1
+    final existingMessage = existingIndex == -1
+        ? null
+        : messages[existingIndex];
+    final existingCardData = existingMessage == null
         ? const <String, dynamic>{}
         : Map<String, dynamic>.from(
-            messages[existingIndex].cardData ?? const <String, dynamic>{},
+            existingMessage.cardData ?? const <String, dynamic>{},
           );
 
-    final resolvedCardId = _firstNonEmpty(<Object?>[
+    final resolvedCardId = AgentToolCardPolicy.firstNonBlank(<Object?>[
       identity.primaryId,
       existingCardData['cardId'],
-      existingIndex == -1 ? null : messages[existingIndex].id,
+      existingMessage?.id,
     ]);
     if (resolvedCardId.isEmpty) {
       return null;
     }
 
-    final argsJson = _firstNonEmpty(<Object?>[
+    final argsJson = AgentToolCardPolicy.firstNonBlank(<Object?>[
       toolEvent.argsJson,
       existingCardData['argsJson'],
       existingCardData['args'],
     ]);
-    final args = _decodeJsonMap(argsJson);
-    final toolName = _firstNonEmpty(<Object?>[
+    final args = AgentToolCardPolicy.decodeJsonMap(argsJson);
+    final toolName = AgentToolCardPolicy.firstNonBlank(<Object?>[
       toolEvent.toolName,
       existingCardData['toolName'],
       existingCardData['name'],
     ]);
-    final displayName = _firstNonEmpty(<Object?>[
+    final displayName = AgentToolCardPolicy.firstNonBlank(<Object?>[
       toolEvent.displayName,
       existingCardData['displayName'],
       toolName,
     ]);
-    final toolType = _firstNonEmpty(<Object?>[
+    final toolType = AgentToolCardPolicy.firstNonBlank(<Object?>[
       toolEvent.toolType,
       existingCardData['toolType'],
       'builtin',
     ]);
-    final terminalOutput = _resolveTerminalOutput(
+    final terminalOutput = AgentToolTerminalOutputPolicy.merge(
       existing: (existingCardData['terminalOutput'] ?? '').toString(),
       full: toolEvent.terminalOutput,
       delta: toolEvent.terminalOutputDelta,
       maxChars: maxTerminalOutputChars,
+      maxLines: maxTerminalOutputLines,
     );
     final summary = _compactTextField(
       _resolveSummary(
@@ -107,7 +114,7 @@ class AgentToolCardProjection {
       maxChars: maxSummaryChars,
     );
     final progress = _compactTextField(
-      _firstNonEmpty(<Object?>[
+      AgentToolCardPolicy.firstNonBlank(<Object?>[
         toolEvent.progress,
         existingCardData['progress'],
         toolEvent.summary,
@@ -115,14 +122,14 @@ class AgentToolCardProjection {
       maxChars: maxProgressChars,
     );
     final resultPreviewJson = _compactJsonField(
-      _firstNonEmpty(<Object?>[
+      AgentToolCardPolicy.firstNonBlank(<Object?>[
         toolEvent.resultPreviewJson,
         existingCardData['resultPreviewJson'],
       ]),
       maxChars: maxPreviewJsonChars,
     );
     final rawResultJson = _compactJsonField(
-      _firstNonEmpty(<Object?>[
+      AgentToolCardPolicy.firstNonBlank(<Object?>[
         toolEvent.rawResultJson,
         existingCardData['rawResultJson'],
       ]),
@@ -130,25 +137,25 @@ class AgentToolCardProjection {
     );
     final artifacts = toolEvent.artifacts.isNotEmpty
         ? toolEvent.artifacts
-        : _asMapList(existingCardData['artifacts']);
+        : AgentToolCardPolicy.asMapList(existingCardData['artifacts']);
     final actions = toolEvent.actions.isNotEmpty
         ? toolEvent.actions
-        : _asMapList(existingCardData['actions']);
-    final runLogId = _firstNonEmpty(<Object?>[
+        : AgentToolCardPolicy.asMapList(existingCardData['actions']);
+    final runLogId = AgentToolCardPolicy.firstNonBlank(<Object?>[
       toolEvent.runLogId,
       event.runId,
       existingCardData['runLogId'],
       existingCardData['run_id'],
       event.taskId,
     ]);
-    final toolCallId = _firstNonEmpty(<Object?>[
+    final toolCallId = AgentToolCardPolicy.firstNonBlank(<Object?>[
       toolEvent.toolCallId,
       existingCardData['toolCallId'],
       existingCardData['tool_call_id'],
       toolEvent.callId,
       resolvedCardId,
     ]);
-    final toolTaskId = _firstNonEmpty(<Object?>[
+    final toolTaskId = AgentToolCardPolicy.firstNonBlank(<Object?>[
       toolEvent.toolTaskId,
       existingCardData['toolTaskId'],
       existingCardData['tool_task_id'],
@@ -166,7 +173,7 @@ class AgentToolCardProjection {
       'run_id': runLogId,
       'toolName': toolName,
       'displayName': displayName,
-      'toolTitle': _firstNonEmpty(<Object?>[
+      'toolTitle': AgentToolCardPolicy.firstNonBlank(<Object?>[
         toolEvent.toolTitle,
         existingCardData['toolTitle'],
         existingCardData['tool_title'],
@@ -175,7 +182,7 @@ class AgentToolCardProjection {
       'cardId': resolvedCardId,
       'toolCallId': toolCallId,
       'toolType': toolType,
-      'serverName': _firstNonEmpty(<Object?>[
+      'serverName': AgentToolCardPolicy.firstNonBlank(<Object?>[
         toolEvent.serverName,
         existingCardData['serverName'],
         existingCardData['server_name'],
@@ -190,7 +197,7 @@ class AgentToolCardProjection {
       'terminalOutputDelta': toolEvent.terminalOutputDelta,
       'terminalSessionId':
           toolEvent.terminalSessionId ?? existingCardData['terminalSessionId'],
-      'terminalStreamState': _firstNonEmpty(<Object?>[
+      'terminalStreamState': AgentToolCardPolicy.firstNonBlank(<Object?>[
         toolEvent.terminalStreamState,
         existingCardData['terminalStreamState'],
       ]),
@@ -238,15 +245,7 @@ class AgentToolCardProjection {
   }
 
   static String normalizeStatus(Object? raw, {String fallback = 'running'}) {
-    final status = raw?.toString().trim().toLowerCase() ?? '';
-    if (status.isEmpty) {
-      return fallback;
-    }
-    return switch (status) {
-      'failed' || 'failure' => 'error',
-      'cancelled' || 'canceled' || 'aborted' => 'interrupted',
-      _ => status,
-    };
+    return AgentToolCardPolicy.normalizeStatus(raw, fallback: fallback);
   }
 
   static int findExistingIndexForEvent({
@@ -257,7 +256,7 @@ class AgentToolCardProjection {
     return _findExistingToolCardIndex(
       messages,
       parentTaskId: event.taskId,
-      identity: _ToolCardIdentity.fromEvent(event, toolEvent),
+      identity: AgentToolCardPolicy.identityFromEvent(event),
       toolEvent: toolEvent,
       streamEvent: event,
     );
@@ -266,13 +265,13 @@ class AgentToolCardProjection {
   static int _findExistingToolCardIndex(
     List<ChatMessageModel> messages, {
     required String parentTaskId,
-    required _ToolCardIdentity identity,
+    required AgentToolCardIdentity identity,
     required _AgentToolCardEvent toolEvent,
     required AgentStreamEvent streamEvent,
   }) {
     for (var index = 0; index < messages.length; index++) {
       final cardData = messages[index].cardData;
-      if (!_isToolCard(cardData)) {
+      if (!AgentToolCardPolicy.isToolCard(cardData)) {
         continue;
       }
       if (_identityMatches(messages[index], identity)) {
@@ -286,13 +285,14 @@ class AgentToolCardProjection {
 
     for (var index = 0; index < messages.length; index++) {
       final cardData = messages[index].cardData;
-      if (!_isToolCard(cardData)) {
+      if (!AgentToolCardPolicy.isToolCard(cardData)) {
         continue;
       }
       if (!_isSameParentTask(cardData!, messages[index], parentTaskId)) {
         continue;
       }
-      if (normalizeStatus(cardData['status']) != 'running') {
+      if (AgentToolCardPolicy.normalizeStatus(cardData['status']) !=
+          'running') {
         continue;
       }
       if (!_isSameToolSurface(cardData, toolEvent)) {
@@ -305,17 +305,16 @@ class AgentToolCardProjection {
 
   static bool _identityMatches(
     ChatMessageModel message,
-    _ToolCardIdentity identity,
+    AgentToolCardIdentity identity,
   ) {
-    if (identity.allIds.isEmpty) {
+    if (identity.ids.isEmpty) {
       return false;
     }
-    final existingIds = _messageToolIdentities(message);
-    return existingIds.any(identity.allIds.contains);
-  }
-
-  static bool _isToolCard(Map<String, dynamic>? cardData) {
-    return (cardData?['type'] ?? '').toString() == kAgentToolCardType;
+    final existingIdentity = AgentToolCardPolicy.identityFromCard(
+      message.cardData,
+      message: message,
+    );
+    return existingIdentity.matches(identity);
   }
 
   static bool _isSameParentTask(
@@ -323,11 +322,8 @@ class AgentToolCardProjection {
     ChatMessageModel message,
     String parentTaskId,
   ) {
-    final taskId = _firstNonEmpty(<Object?>[
-      cardData['taskId'],
-      cardData['taskID'],
-      message.streamMeta?['parentTaskId'],
-    ]);
+    final taskId =
+        AgentToolCardPolicy.taskIdForMessage(message, cardData: cardData) ?? '';
     return taskId == parentTaskId;
   }
 
@@ -356,37 +352,6 @@ class AgentToolCardProjection {
     return existingServer.isEmpty ||
         incomingServer.isEmpty ||
         existingServer == incomingServer;
-  }
-
-  static Set<String> _messageToolIdentities(ChatMessageModel message) {
-    final cardData = message.cardData ?? const <String, dynamic>{};
-    return _normalizeIdentitySet(<Object?>[
-      message.id,
-      message.contentId,
-      cardData['cardId'],
-      cardData['toolCallId'],
-      cardData['tool_call_id'],
-      cardData['callId'],
-      cardData['call_id'],
-      cardData['toolTaskId'],
-      cardData['tool_task_id'],
-      message.streamMeta?['entryId'],
-    ]);
-  }
-
-  static String _resolveTerminalOutput({
-    required String existing,
-    required String full,
-    required String delta,
-    required int maxChars,
-  }) {
-    if (full.isNotEmpty) {
-      return _trimTerminalOutput(full, maxChars: maxChars);
-    }
-    if (delta.isNotEmpty) {
-      return _trimTerminalOutput(existing + delta, maxChars: maxChars);
-    }
-    return _trimTerminalOutput(existing, maxChars: maxChars);
   }
 
   static String _resolveSummary(
@@ -435,48 +400,6 @@ class AgentToolCardProjection {
       return existing;
     }
     return 'running';
-  }
-}
-
-class _ToolCardIdentity {
-  const _ToolCardIdentity({required this.primaryId, required this.allIds});
-
-  final String primaryId;
-  final Set<String> allIds;
-
-  static _ToolCardIdentity fromEvent(
-    AgentStreamEvent event,
-    _AgentToolCardEvent toolEvent,
-  ) {
-    final primaryId = _firstNonEmpty(<Object?>[
-      toolEvent.toolCallId,
-      event.raw['toolCallId'],
-      event.raw['tool_call_id'],
-      toolEvent.callId,
-      event.raw['callId'],
-      event.raw['call_id'],
-      toolEvent.cardId,
-      event.raw['cardId'],
-      toolEvent.toolTaskId,
-      event.raw['toolTaskId'],
-      event.raw['tool_task_id'],
-      event.entryId,
-    ]);
-    final ids = _normalizeIdentitySet(<Object?>[
-      toolEvent.cardId,
-      toolEvent.toolCallId,
-      toolEvent.callId,
-      toolEvent.toolTaskId,
-      event.raw['cardId'],
-      event.raw['toolCallId'],
-      event.raw['tool_call_id'],
-      event.raw['callId'],
-      event.raw['call_id'],
-      event.raw['toolTaskId'],
-      event.raw['tool_task_id'],
-      event.entryId,
-    ]);
-    return _ToolCardIdentity(primaryId: primaryId, allIds: ids);
   }
 }
 
@@ -563,32 +486,11 @@ class _AgentToolCardEvent {
       interruptedBy: raw['interruptedBy']?.toString(),
       interruptionReason: raw['interruptionReason']?.toString(),
       runLogId: (raw['runLogId'] ?? raw['run_id'] ?? '').toString(),
-      artifacts: _asMapList(raw['artifacts']),
-      actions: _asMapList(raw['actions']),
+      artifacts: AgentToolCardPolicy.asMapList(raw['artifacts']),
+      actions: AgentToolCardPolicy.asMapList(raw['actions']),
       success: raw['success'] != false,
     );
   }
-}
-
-Set<String> _normalizeIdentitySet(Iterable<Object?> values) {
-  final result = <String>{};
-  for (final value in values) {
-    final normalized = value?.toString().trim() ?? '';
-    if (normalized.isNotEmpty) {
-      result.add(normalized);
-    }
-  }
-  return result;
-}
-
-String _firstNonEmpty(Iterable<Object?> values) {
-  for (final value in values) {
-    final normalized = value?.toString().trim() ?? '';
-    if (normalized.isNotEmpty) {
-      return normalized;
-    }
-  }
-  return '';
 }
 
 String _compactTextField(String value, {required int maxChars}) {
@@ -605,40 +507,4 @@ String _compactJsonField(String value, {required int maxChars}) {
     return normalized;
   }
   return '${normalized.substring(0, maxChars)}\n...(truncated)';
-}
-
-String _trimTerminalOutput(String value, {required int maxChars}) {
-  if (value.length <= maxChars) {
-    return value;
-  }
-  final start = value.length - maxChars;
-  final newline = value.indexOf('\n', start);
-  if (newline >= 0 && newline + 1 < value.length) {
-    return value.substring(newline + 1);
-  }
-  return value.substring(start);
-}
-
-Map<String, dynamic> _decodeJsonMap(String raw) {
-  final text = raw.trim();
-  if (text.isEmpty) {
-    return const <String, dynamic>{};
-  }
-  try {
-    final decoded = jsonDecode(text);
-    if (decoded is Map) {
-      return decoded.map((key, value) => MapEntry(key.toString(), value));
-    }
-  } catch (_) {}
-  return const <String, dynamic>{};
-}
-
-List<Map<String, dynamic>> _asMapList(dynamic raw) {
-  if (raw is! List) {
-    return const <Map<String, dynamic>>[];
-  }
-  return raw
-      .whereType<Map>()
-      .map((item) => item.map((key, value) => MapEntry(key.toString(), value)))
-      .toList(growable: false);
 }

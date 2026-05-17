@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -10,6 +9,7 @@ import 'package:ui/features/home/pages/command_overlay/widgets/cards/terminal_ou
 import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/models/chat_message_model.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/theme_context.dart';
 
@@ -935,7 +935,9 @@ class ToolActivityRow extends StatelessWidget {
     final status = (card['status'] ?? 'running').toString();
     final toolTypeLabel = resolveAgentToolTypeLabel(card);
     final statusLabel = resolveAgentToolStatusLabel(card);
-    final runLogId = showRunLogButton ? _resolveRunLogId(card) : '';
+    final runLogId = showRunLogButton
+        ? AgentToolCardPolicy.runLogRef(card).runLogId
+        : '';
 
     return SizedBox(
       height: _kToolActivityRowHeight,
@@ -1059,49 +1061,6 @@ class _RunLogActivityButton extends StatelessWidget {
       ),
     );
   }
-}
-
-String _resolveRunLogId(Map<String, dynamic> cardData) {
-  return _firstNonBlank([
-    cardData['runLogId'],
-    cardData['run_log_id'],
-    cardData['runId'],
-    cardData['run_id'],
-    cardData['toolTaskId'],
-    cardData['taskId'],
-    cardData['taskID'],
-    _runLogIdFromJsonString(cardData['resultPreviewJson']),
-    _runLogIdFromJsonString(cardData['rawResultJson']),
-  ]);
-}
-
-String _runLogIdFromJsonString(dynamic raw) {
-  final text = raw?.toString().trim() ?? '';
-  if (text.isEmpty) return '';
-  try {
-    final decoded = jsonDecode(text);
-    if (decoded is! Map) return '';
-    return _firstNonBlank([
-      decoded['runLogId'],
-      decoded['run_log_id'],
-      decoded['runId'],
-      decoded['run_id'],
-      decoded['taskId'],
-      decoded['task_id'],
-    ]);
-  } catch (_) {
-    return '';
-  }
-}
-
-String _firstNonBlank(Iterable<Object?> values) {
-  for (final value in values) {
-    final text = value?.toString().trim() ?? '';
-    if (text.isNotEmpty) {
-      return text;
-    }
-  }
-  return '';
 }
 
 String _text(BuildContext context, String zh, String en) {

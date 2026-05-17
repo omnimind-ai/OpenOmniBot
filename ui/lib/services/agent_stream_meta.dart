@@ -1,4 +1,5 @@
 import 'package:ui/models/agent_stream_event.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 
 class AgentStreamUiCard {
   const AgentStreamUiCard({required this.id, required this.cardData});
@@ -11,23 +12,7 @@ String resolveAgentToolCardId(
   AgentStreamEvent event, {
   Map<dynamic, dynamic>? raw,
 }) {
-  return _firstNonEmpty([
-    raw?['cardId'],
-    raw?['toolCallId'],
-    raw?['tool_call_id'],
-    raw?['callId'],
-    raw?['call_id'],
-    raw?['toolTaskId'],
-    raw?['tool_task_id'],
-    event.raw['cardId'],
-    event.raw['toolCallId'],
-    event.raw['tool_call_id'],
-    event.raw['callId'],
-    event.raw['call_id'],
-    event.raw['toolTaskId'],
-    event.raw['tool_task_id'],
-    event.entryId,
-  ]);
+  return AgentToolCardPolicy.cardIdForEvent(event, raw: raw);
 }
 
 List<AgentStreamUiCard> extractAgentStreamUiCards(AgentStreamEvent event) {

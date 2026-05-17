@@ -122,6 +122,62 @@ void main() {
     expect(processIds, ['task-6-tool', 'task-6-thinking-copy']);
   });
 
+  test(
+    'dedupes tool card snapshots by tool call id across entry id changes',
+    () {
+      final messages = <ChatMessageModel>[
+        _assistantMessage(
+          id: 'task-6c-text',
+          text: '最终回答',
+          taskId: 'task-6c',
+          kind: 'text_snapshot',
+          seq: 30,
+          isFinal: true,
+        ),
+        _cardMessage(
+          id: 'task-6c-tool-complete',
+          taskId: 'task-6c',
+          kind: 'tool_completed',
+          seq: 20,
+          cardData: <String, dynamic>{
+            'type': 'agent_tool_summary',
+            'taskId': 'task-6c',
+            'cardId': 'task-6c-tool-complete',
+            'toolCallId': 'call-6c',
+            'status': 'success',
+            'toolType': 'browser',
+            'toolName': 'browser_use',
+            'argsJson': '{"action":"navigate","url":"https://example.com"}',
+          },
+        ),
+        _cardMessage(
+          id: 'task-6c-tool-start',
+          taskId: 'task-6c',
+          kind: 'tool_started',
+          seq: 10,
+          cardData: <String, dynamic>{
+            'type': 'agent_tool_summary',
+            'taskId': 'task-6c',
+            'cardId': 'task-6c-tool-start',
+            'toolCallId': 'call-6c',
+            'status': 'running',
+            'toolType': 'browser',
+            'toolName': 'browser_use',
+            'summary': 'Preparing tool call...',
+          },
+        ),
+      ];
+
+      final group = buildAgentRunTimelineEntries(messages).single.group;
+
+      expect(group?.toolCount, 1);
+      expect(
+        group?.processMessagesNewestFirst.single.id,
+        'task-6c-tool-complete',
+      );
+    },
+  );
+
   test('keeps distinct thinking rounds in the same run', () {
     final messages = <ChatMessageModel>[
       _assistantMessage(

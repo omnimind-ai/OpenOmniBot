@@ -49,6 +49,27 @@ void main() {
     expect(items.single.activity?.stepCount, 1);
   });
 
+  test(
+    'folded activity title prefers semantic target over placeholder text',
+    () {
+      final items = compactAgentProcessItems(<ChatMessageModel>[
+        _toolMessage(
+          id: 'task-8-tool-1',
+          seq: 1,
+          toolType: 'terminal',
+          toolName: 'terminal_session_exec',
+          argsJson: '{"command":"flutter test ui/test/services"}',
+          status: 'success',
+          summary: 'Preparing tool call...',
+        ),
+      ]);
+
+      final activity = items.single.activity;
+      expect(activity?.title, 'flutter test ui/test/services');
+      expect(activity?.steps.single.title, 'flutter test ui/test/services');
+    },
+  );
+
   test('marks repeated failed browser action as retry', () {
     final items = compactAgentProcessItems(<ChatMessageModel>[
       _toolMessage(

@@ -1,6 +1,5 @@
-import 'dart:convert';
-
 import 'package:ui/models/chat_message_model.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 
 class AgentRunTimelineEntry {
   const AgentRunTimelineEntry.message(this.message) : group = null;
@@ -85,7 +84,7 @@ class AgentRunMessageRef {
 
   bool get isThinkingCard => cardType == 'deep_thinking';
 
-  bool get isToolCard => cardType == 'agent_tool_summary';
+  bool get isToolCard => cardType == kAgentToolSummaryCardType;
 
   bool get isPermissionCard => cardType == 'permission_section';
 
@@ -437,10 +436,17 @@ String? _semanticDedupeKey(ChatMessageModel message) {
   }
   if (ref.isToolCard) {
     // Tool card kind changes from 'tool_started' → 'tool_completed' as events
-    // arrive. Using kind in the key would cause cards with the same entryId but
-    // different kinds to both survive dedup → duplicate tool cards in the UI.
-    final entryId = ref.entryId.isNotEmpty ? ref.entryId : '${ref.sequence}';
-    return '${ref.taskId}#tool#$entryId';
+    // arrive, and adapters may replace entryId once the real toolCallId is
+    // known. Dedupe by normalized tool identity first so a single operation
+    // keeps one folded card across started/progress/completed projections.
+    final operationId = AgentToolCardPolicy.operationIdFromCard(
+      message.cardData,
+      message: message,
+    );
+    final toolId = operationId.isNotEmpty
+        ? operationId
+        : (ref.entryId.isNotEmpty ? ref.entryId : '${ref.sequence}');
+    return '${ref.taskId}#tool#$toolId';
   }
   if (ref.isAssistantText || ref.isPermissionCard) {
     return ref.entryDedupeKey;
@@ -618,7 +624,7 @@ String? _normalizeTaskId(String taskId) {
 String _kindForCardType(String cardType) {
   return switch (cardType) {
     'deep_thinking' => 'thinking_snapshot',
-    'agent_tool_summary' => 'tool_completed',
+    kAgentToolSummaryCardType => 'tool_completed',
     'permission_section' => 'permission_required',
     _ => '',
   };
@@ -721,44 +727,12 @@ bool _setEquals(Set<String> left, Set<String> right) {
 }
 
 String _runLogIdFromMessage(ChatMessageModel message) {
-  final cardData = message.cardData;
   final streamMeta = message.streamMeta;
-  return _firstNonEmpty([
+  return _firstNonEmpty(<Object?>[
     streamMeta?['runLogId'],
     streamMeta?['run_log_id'],
     streamMeta?['runId'],
     streamMeta?['run_id'],
-    cardData?['runLogId'],
-    cardData?['run_log_id'],
-    cardData?['runId'],
-    cardData?['run_id'],
-    cardData?['toolTaskId'],
-    cardData?['taskId'],
-    cardData?['taskID'],
-    _runLogIdFromJsonString(cardData?['resultPreviewJson']),
-    _runLogIdFromJsonString(cardData?['rawResultJson']),
+    AgentToolCardPolicy.runLogRef(message.cardData, message: message).runLogId,
   ]);
-}
-
-String _runLogIdFromJsonString(dynamic raw) {
-  final text = raw?.toString().trim() ?? '';
-  if (text.isEmpty) {
-    return '';
-  }
-  try {
-    final decoded = jsonDecode(text);
-    if (decoded is! Map) {
-      return '';
-    }
-    return _firstNonEmpty([
-      decoded['runLogId'],
-      decoded['run_log_id'],
-      decoded['runId'],
-      decoded['run_id'],
-      decoded['taskId'],
-      decoded['task_id'],
-    ]);
-  } catch (_) {
-    return '';
-  }
 }

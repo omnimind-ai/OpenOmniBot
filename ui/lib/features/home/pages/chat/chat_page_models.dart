@@ -5,6 +5,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:ui/models/chat_message_model.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 
 enum ChatIslandDisplayLayer {
   mode('mode'),
@@ -38,8 +39,6 @@ class ChatMessageListItemNotifier extends ValueNotifier<ChatMessageModel> {
 
 class ObservableChatMessageList extends ChangeNotifier
     with ListMixin<ChatMessageModel> {
-  static const String _kAgentToolSummaryCardType = 'agent_tool_summary';
-
   final List<ChatMessageModel> _messages = <ChatMessageModel>[];
   final List<ChatMessageListItemNotifier> _messageNotifiers =
       <ChatMessageListItemNotifier>[];
@@ -279,8 +278,7 @@ class ObservableChatMessageList extends ChangeNotifier
     if (message.type != 2) {
       return false;
     }
-    return (message.cardData?['type'] ?? '').toString() ==
-        _kAgentToolSummaryCardType;
+    return AgentToolCardPolicy.isToolCard(message.cardData);
   }
 
   void _disposeMessageNotifiers(

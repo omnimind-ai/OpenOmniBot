@@ -1,11 +1,10 @@
-import 'dart:convert';
-
 import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/terminal_output_utils.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/models/chat_message_model.dart';
+import 'package:ui/services/agent_tool_card_policy.dart' as tool_policy;
 
-const String kAgentToolSummaryCardType = 'agent_tool_summary';
+const String kAgentToolSummaryCardType = tool_policy.kAgentToolSummaryCardType;
 const String kAgentToolTitleField = 'toolTitle';
 const int _kToolCardTitleMaxChars = 80;
 const int _kToolCardPreviewMaxChars = 160;
@@ -60,7 +59,10 @@ List<Map<String, dynamic>> extractAgentToolCards(
         (cardData['type'] ?? '').toString() != kAgentToolSummaryCardType) {
       continue;
     }
-    final key = _agentToolCardIdentity(cardData);
+    final key = tool_policy.AgentToolCardPolicy.operationIdFromCard(
+      cardData,
+      message: message,
+    );
     if (key.isNotEmpty && !emittedKeys.add(key)) {
       continue;
     }
@@ -73,7 +75,13 @@ List<Map<String, dynamic>> extractRunningAgentToolCards(
   List<ChatMessageModel> messages,
 ) {
   return extractAgentToolCards(messages)
-      .where((cardData) => (cardData['status'] ?? '').toString() == 'running')
+      .where(
+        (cardData) =>
+            tool_policy.AgentToolCardPolicy.normalizeStatus(
+              cardData['status'],
+            ) ==
+            'running',
+      )
       .toList(growable: false);
 }
 
@@ -187,21 +195,15 @@ List<ChatMessageModel> resolveAgentToolMessagesForTask(
 }
 
 String? resolveAgentToolTaskId(ChatMessageModel message) {
-  final fromCard = (message.cardData?['taskId'] ?? '').toString().trim();
-  if (fromCard.isNotEmpty) {
-    return fromCard;
-  }
-  final fromStream = (message.streamMeta?['parentTaskId'] ?? '')
-      .toString()
-      .trim();
-  return fromStream.isEmpty ? null : fromStream;
+  return tool_policy.AgentToolCardPolicy.taskIdForMessage(message);
 }
 
 Map<String, dynamic>? resolveActiveAgentToolCard(
   List<Map<String, dynamic>> cards,
 ) {
   for (final card in cards) {
-    if ((card['status'] ?? '').toString() == 'running') {
+    if (tool_policy.AgentToolCardPolicy.normalizeStatus(card['status']) ==
+        'running') {
       return card;
     }
   }
@@ -214,11 +216,15 @@ Map<String, dynamic>? resolveActiveAgentToolCard(
 Map<String, dynamic>? buildAgentToolActivityCardFromActiveRun(
   Map<String, dynamic> run,
 ) {
-  final activeTool = _asStringKeyMap(run['activeTool']);
+  final activeTool = tool_policy.AgentToolCardPolicy.asStringMap(
+    run['activeTool'],
+  );
   if (activeTool.isEmpty) {
     return null;
   }
-  final extras = _asStringKeyMap(activeTool['extras']);
+  final extras = tool_policy.AgentToolCardPolicy.asStringMap(
+    activeTool['extras'],
+  );
   final raw = <String, dynamic>{...extras};
   for (final key in const [
     'toolName',
@@ -274,10 +280,12 @@ Map<String, dynamic> buildAgentToolActivityCard(
     card['status'] = defaultStatus;
   }
 
-  final cardId = _agentToolCardIdentity(card);
+  final cardId = tool_policy.AgentToolCardPolicy.identityFromCard(
+    card,
+  ).primaryId;
   if (cardId.isNotEmpty) {
     card['cardId'] = cardId;
-    final toolCallId = _firstNonBlank([
+    final toolCallId = tool_policy.AgentToolCardPolicy.firstNonBlank([
       card['toolCallId'],
       card['tool_call_id'],
       card['callId'],
@@ -305,40 +313,23 @@ Map<String, dynamic> buildAgentToolActivityCard(
 
   // Truncate large result payloads. Full content is in RunLog; the card only
   // needs enough for preview and retry detection.
-  for (final key in const ['rawResultJson', 'resultPreviewJson', 'terminalOutput']) {
+  for (final key in const [
+    'rawResultJson',
+    'resultPreviewJson',
+    'terminalOutput',
+  ]) {
     final raw = (card[key] ?? '').toString();
     if (raw.length > _kToolCardRawResultMaxChars) {
-      card[key] = '${raw.substring(0, _kToolCardRawResultMaxChars)}\n…(truncated)';
+      card[key] =
+          '${raw.substring(0, _kToolCardRawResultMaxChars)}\n…(truncated)';
     }
   }
 
   return card;
 }
 
-String _agentToolCardIdentity(
-  Map<String, dynamic> card, {
-  String fallback = '',
-}) {
-  return _firstNonBlank([
-    card['toolCallId'],
-    card['tool_call_id'],
-    card['callId'],
-    card['call_id'],
-    card['cardId'],
-    card['toolTaskId'],
-    card['tool_task_id'],
-    fallback,
-  ]);
-}
-
 String _firstNonBlank(Iterable<Object?> values) {
-  for (final value in values) {
-    final normalized = value?.toString().trim() ?? '';
-    if (normalized.isNotEmpty) {
-      return normalized;
-    }
-  }
-  return '';
+  return tool_policy.AgentToolCardPolicy.firstNonBlank(values);
 }
 
 bool _isAgentToolSummaryMessage(ChatMessageModel message) {
@@ -358,13 +349,15 @@ bool isStaleAgentToolPreviewPlaceholder(ChatMessageModel message) {
     return false;
   }
   final streamMeta = <String, dynamic>{
-    ..._asStringKeyMap(cardData['streamMeta']),
-    ..._asStringKeyMap(message.streamMeta),
+    ...tool_policy.AgentToolCardPolicy.asStringMap(cardData['streamMeta']),
+    ...tool_policy.AgentToolCardPolicy.asStringMap(message.streamMeta),
   };
   if ((streamMeta['kind'] ?? '').toString() != 'tool_started') {
     return false;
   }
-  final status = _normalizeToolStatus(cardData['status']);
+  final status = tool_policy.AgentToolCardPolicy.normalizeStatus(
+    cardData['status'],
+  );
   if (status == 'running') {
     return false;
   }
@@ -388,36 +381,8 @@ bool isStaleAgentToolPreviewPlaceholder(ChatMessageModel message) {
   return summary == 'preparing tool call...' || summary == '正在准备工具调用...';
 }
 
-Map<String, dynamic> _asStringKeyMap(dynamic value) {
-  if (value is! Map) {
-    return const <String, dynamic>{};
-  }
-  return value.map((key, item) => MapEntry(key.toString(), item));
-}
-
-String _normalizeToolStatus(dynamic raw) {
-  final status = raw?.toString().trim().toLowerCase() ?? '';
-  if (status.isEmpty) {
-    return 'running';
-  }
-  if (status == 'failed' || status == 'failure') {
-    return 'error';
-  }
-  return status;
-}
-
 Map<String, dynamic> _decodeJsonMap(String raw) {
-  final text = raw.trim();
-  if (text.isEmpty) {
-    return const <String, dynamic>{};
-  }
-  try {
-    final decoded = jsonDecode(text);
-    if (decoded is Map) {
-      return decoded.map((key, value) => MapEntry(key.toString(), value));
-    }
-  } catch (_) {}
-  return const <String, dynamic>{};
+  return tool_policy.AgentToolCardPolicy.decodeJsonMap(raw);
 }
 
 String? _resolveSnapshotTaskId(List<ChatMessageModel> messages) {
@@ -555,7 +520,9 @@ String resolveAgentToolStatusLabel(Map<String, dynamic> cardData) {
   if (explicitStatusLabel.isNotEmpty) {
     return AppTextLocalizer.text(explicitStatusLabel);
   }
-  final status = (cardData['status'] ?? 'running').toString();
+  final status = tool_policy.AgentToolCardPolicy.normalizeStatus(
+    cardData['status'],
+  );
   final toolType = (cardData['toolType'] ?? 'builtin').toString();
   if (status == 'timeout') {
     return AppTextLocalizer.text('超时');
@@ -669,19 +636,12 @@ String buildAgentToolTranscript(
 }
 
 String _extractToolTitleFromArgs(String argsJson) {
-  final text = argsJson.trim();
-  if (text.isEmpty) {
-    return '';
-  }
-  try {
-    final decoded = jsonDecode(text);
-    if (decoded is! Map) {
-      return '';
-    }
-    return (decoded['tool_title'] ?? '').toString().trim();
-  } catch (_) {
-    return '';
-  }
+  return (tool_policy.AgentToolCardPolicy.decodeJsonMap(
+            argsJson,
+          )['tool_title'] ??
+          '')
+      .toString()
+      .trim();
 }
 
 String _compactToolText(String value, {required int maxChars}) {

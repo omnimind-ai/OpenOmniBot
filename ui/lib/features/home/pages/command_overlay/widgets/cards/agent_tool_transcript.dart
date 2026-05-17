@@ -4,10 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/terminal_output_utils.dart';
-import 'package:ui/theme/app_colors.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 
-const Color _kTimeoutStatusColor = Color(0xFFFF8A3D);
-const Color _kInterruptedStatusColor = Color(0xFFFFC04D);
 const BorderRadius _kTranscriptSurfaceRadius = BorderRadius.all(
   Radius.circular(20),
 );
@@ -116,58 +114,11 @@ Future<void> showAgentToolDetailSheet(
 }
 
 Color resolveAgentToolStatusColor(String status) {
-  switch (status) {
-    case 'success':
-      return const Color(0xFF2F8F4E);
-    case 'error':
-      return AppColors.alertRed;
-    case 'timeout':
-      return _kTimeoutStatusColor;
-    case 'interrupted':
-      return _kInterruptedStatusColor;
-    default:
-      return const Color(0xFF2C7FEB);
-  }
+  return AgentToolCardPolicy.statusColor(status);
 }
 
 IconData resolveAgentToolStatusIcon(String status, String toolType) {
-  if (status == 'timeout') {
-    return Icons.hourglass_top_rounded;
-  }
-  if (status == 'interrupted') {
-    return Icons.stop_circle_outlined;
-  }
-  if (status == 'error') {
-    return Icons.error_outline_rounded;
-  }
-  if (toolType == 'terminal') {
-    return Icons.terminal_rounded;
-  }
-  if (toolType == 'browser') {
-    return Icons.language_rounded;
-  }
-  if (toolType == 'calendar') {
-    return Icons.calendar_month_rounded;
-  }
-  if (toolType == 'alarm' || toolType == 'schedule') {
-    return Icons.alarm_rounded;
-  }
-  if (toolType == 'memory') {
-    return Icons.psychology_alt_rounded;
-  }
-  if (toolType == 'workspace') {
-    return Icons.folder_outlined;
-  }
-  if (toolType == 'workbench') {
-    return Icons.dashboard_customize_outlined;
-  }
-  if (toolType == 'subagent') {
-    return Icons.hub_outlined;
-  }
-  if (toolType == 'mcp') {
-    return Icons.extension_outlined;
-  }
-  return Icons.check_circle_outline_rounded;
+  return AgentToolCardPolicy.statusIcon(status, toolType);
 }
 
 TextSpan _buildDetailTextSpan(AgentToolTranscript transcript) {

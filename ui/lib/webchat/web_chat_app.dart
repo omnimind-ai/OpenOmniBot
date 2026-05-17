@@ -20,6 +20,7 @@ import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/agent_tool_card_projection.dart';
 import 'package:ui/services/agent_stream_run_projection.dart';
 import 'package:ui/services/agent_stream_meta.dart';
+import 'package:ui/services/agent_tool_card_policy.dart' as tool_policy;
 import 'package:ui/webchat/web_backends.dart';
 
 enum _ShellSection { chat, workspace, browser }
@@ -735,7 +736,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
       if (cardData == null) {
         continue;
       }
-      if ((cardData['type'] ?? '').toString() != 'agent_tool_summary') {
+      if (!tool_policy.AgentToolCardPolicy.isToolCard(cardData)) {
         continue;
       }
       if ((cardData['toolType'] ?? '').toString() == 'browser') {
@@ -2889,7 +2890,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
             ],
           ),
         );
-      case 'agent_tool_summary':
+      case tool_policy.kAgentToolSummaryCardType:
         final status = (cardData['status'] ?? 'running').toString();
         final title = resolveAgentToolTitle(cardData);
         final statusLabel = resolveAgentToolStatusLabel(cardData);

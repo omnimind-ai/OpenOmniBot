@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
@@ -7,6 +6,7 @@ import 'package:ui/features/home/pages/chat/utils/agent_activity_compactor.dart'
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
 import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 import 'package:ui/theme/theme_context.dart';
 
 class AgentToolActivityCard extends StatefulWidget {
@@ -113,9 +113,10 @@ class _ActivityHeader extends StatelessWidget {
     final statusColor = resolveAgentToolStatusColor(activity.status);
     final statusLabel = resolveAgentToolStatusLabel(<String, dynamic>{
       'status': activity.status,
-      'toolType': _toolTypeFor(activity.kind),
+      'toolType': AgentToolCardPolicy.toolTypeForKind(activity.kind),
     });
     final label = _activityLabel(context, activity.kind);
+    final title = _activityTitle(activity, expanded: expanded);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -123,16 +124,41 @@ class _ActivityHeader extends StatelessWidget {
         _ActivityStatusIcon(activity: activity),
         const SizedBox(width: 8),
         Flexible(
-          child: Text(
-            '$label · ${activity.stepCount} ${_stepUnit(context)}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: context.isDarkTheme ? palette.textPrimary : Colors.black87,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              height: 1.2,
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '$label · ${activity.stepCount} ${_stepUnit(context)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: context.isDarkTheme
+                      ? palette.textSecondary
+                      : Colors.black54,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  height: 1.1,
+                ),
+              ),
+              if (title.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '${_activityTitlePrefix(context)} · $title',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.isDarkTheme
+                          ? palette.textPrimary
+                          : Colors.black87,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      height: 1.15,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
         const SizedBox(width: 8),
@@ -182,7 +208,7 @@ class _ActivityStatusIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusColor = resolveAgentToolStatusColor(activity.status);
-    final toolType = _toolTypeFor(activity.kind);
+    final toolType = AgentToolCardPolicy.toolTypeForKind(activity.kind);
     final iconColor = context.isDarkTheme
         ? Color.lerp(context.omniPalette.textSecondary, statusColor, 0.38)!
         : statusColor;
@@ -392,21 +418,24 @@ String _stepUnit(BuildContext context) {
   );
 }
 
-String _toolTypeFor(AgentToolActivityKind kind) {
-  switch (kind) {
-    case AgentToolActivityKind.browser:
-      return 'browser';
-    case AgentToolActivityKind.research:
-      return 'research';
-    case AgentToolActivityKind.terminal:
-      return 'terminal';
-    case AgentToolActivityKind.workspace:
-      return 'workspace';
-    case AgentToolActivityKind.workbench:
-      return 'workbench';
-    case AgentToolActivityKind.mcp:
-      return 'mcp';
+String _activityTitlePrefix(BuildContext context) {
+  return AppTextLocalizer.choose(
+    zh: '目标',
+    en: 'Target',
+    locale: Localizations.localeOf(context),
+  );
+}
+
+String _activityTitle(AgentToolActivity activity, {required bool expanded}) {
+  if (expanded) {
+    return '';
   }
+  final title = activity.title.trim();
+  if (title.isEmpty ||
+      title == AgentToolCardPolicy.activityKindLabel(activity.kind)) {
+    return '';
+  }
+  return title;
 }
 
 String _stepTitle(AgentToolActivityStep step) {
@@ -432,60 +461,13 @@ String _stepSubtitle(AgentToolActivityStep step) {
 
 String _resolveActivityRunLogId(AgentToolActivity activity) {
   for (final message in activity.messages) {
-    final runLogId = _resolveRunLogId(message.cardData);
+    final runLogId = AgentToolCardPolicy.runLogRef(
+      message.cardData,
+      message: message,
+    ).runLogId;
     if (runLogId.isNotEmpty) {
       return runLogId;
     }
   }
   return activity.taskId;
-}
-
-String _resolveRunLogId(Map<String, dynamic>? cardData) {
-  if (cardData == null) {
-    return '';
-  }
-  return _firstNonBlank(<Object?>[
-    cardData['runLogId'],
-    cardData['run_log_id'],
-    cardData['runId'],
-    cardData['run_id'],
-    cardData['toolTaskId'],
-    cardData['taskId'],
-    cardData['taskID'],
-    _runLogIdFromJsonString(cardData['resultPreviewJson']),
-    _runLogIdFromJsonString(cardData['rawResultJson']),
-  ]);
-}
-
-String _runLogIdFromJsonString(dynamic raw) {
-  final text = raw?.toString().trim() ?? '';
-  if (text.isEmpty) {
-    return '';
-  }
-  try {
-    final decoded = jsonDecode(text);
-    if (decoded is! Map) {
-      return '';
-    }
-    return _firstNonBlank(<Object?>[
-      decoded['runLogId'],
-      decoded['run_log_id'],
-      decoded['runId'],
-      decoded['run_id'],
-      decoded['taskId'],
-      decoded['task_id'],
-    ]);
-  } catch (_) {
-    return '';
-  }
-}
-
-String _firstNonBlank(Iterable<Object?> values) {
-  for (final value in values) {
-    final text = value?.toString().trim() ?? '';
-    if (text.isNotEmpty) {
-      return text;
-    }
-  }
-  return '';
 }

@@ -19,6 +19,7 @@ import 'package:ui/services/codex_event_reducer.dart';
 import 'package:ui/services/conversation_history_service.dart';
 import 'package:ui/services/conversation_service.dart';
 import 'package:ui/services/link_preview_service.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 import 'package:ui/services/voice_playback_coordinator.dart';
 import 'package:ui/services/agent_stream_meta.dart';
 import 'package:ui/utils/data_parser.dart';
@@ -645,8 +646,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     for (var index = 0; index < runtime.messages.length; index++) {
       final message = runtime.messages[index];
       final rawCardData = message.cardData;
-      if (rawCardData == null ||
-          (rawCardData['type'] ?? '').toString() != 'agent_tool_summary') {
+      if (rawCardData == null || !AgentToolCardPolicy.isToolCard(rawCardData)) {
         continue;
       }
       final cardTaskId = _firstNonEmpty([

@@ -4,6 +4,7 @@ import 'package:ui/features/home/pages/chat/mixins/agent_stream_handler.dart';
 import 'package:ui/features/home/pages/chat/services/chat_conversation_runtime_coordinator.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/agent_stream_meta.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 
 class CodexReduceResult {
   const CodexReduceResult({
@@ -652,7 +653,11 @@ class CodexEventReducer {
         : runtime.messages[index].cardData ?? const <String, dynamic>{};
     final existingOutput = (existingCardData['terminalOutput'] ?? '')
         .toString();
-    final output = _trimTerminalOutput(existingOutput + outputDelta);
+    final output = AgentToolTerminalOutputPolicy.merge(
+      existing: existingOutput,
+      full: '',
+      delta: outputDelta,
+    );
     _upsertToolCard(
       runtime,
       cardId: cardId,
@@ -691,7 +696,7 @@ class CodexEventReducer {
     final existing = index == -1 ? null : runtime.messages[index];
     final existingCardData = existing?.cardData ?? const <String, dynamic>{};
     final cardData = <String, dynamic>{
-      'type': 'agent_tool_summary',
+      'type': kAgentToolSummaryCardType,
       'taskId': taskId,
       'toolName': 'codex.$toolType',
       'displayName': title,
@@ -1059,7 +1064,7 @@ class CodexEventReducer {
     final cardIds = runtime.messages
         .where((message) {
           final cardData = message.cardData;
-          if (cardData?['type'] != 'agent_tool_summary') {
+          if (cardData?['type'] != kAgentToolSummaryCardType) {
             return false;
           }
           final cardTaskId =
@@ -1304,18 +1309,4 @@ String _accountSummary(Map<String, dynamic> params) {
     if (type != null && type != 'chatgpt') type,
   ];
   return parts.isEmpty ? _safeJson(params) : parts.join(' / ');
-}
-
-String _trimTerminalOutput(String value) {
-  const maxChars = 64 * 1024;
-  const maxLines = 600;
-  var text = value;
-  if (text.length > maxChars) {
-    text = text.substring(text.length - maxChars);
-  }
-  final lines = text.split('\n');
-  if (lines.length > maxLines) {
-    text = lines.sublist(lines.length - maxLines).join('\n');
-  }
-  return text;
 }
