@@ -15,9 +15,9 @@ OmniFlow matching.
 ```json
 {
   "schema_version": "oob.reusable_function.v1",
-  "function_id": "open_settings_demo",
-  "name": "Open Settings",
-  "description": "Open Android Settings and wait.",
+  "function_id": "settings_click_path_demo",
+  "name": "Settings Click Path Demo",
+  "description": "Open Android Settings and replay a deterministic path with multiple click steps.",
   "parameters": [],
   "source": {
     "kind": "manual",
@@ -41,15 +41,17 @@ OmniFlow matching.
       {
         "id": "step_2",
         "index": 1,
-        "title": "Wait",
+        "title": "Tap Network & internet",
         "executor": "omniflow",
-        "omniflow_action": "wait",
+        "omniflow_action": "click",
         "args": {
-          "duration_ms": 1000
+          "x": 180,
+          "y": 420,
+          "target": "Network & internet"
         }
       }
     ],
-    "step_count": 2
+    "step_count": 7
   }
 }
 ```
@@ -128,8 +130,8 @@ memory_search
 memory_recall
 memory_query
 oob_agent_run
-oob_run_log_list
-oob_run_log_get
+omniflow.recall
+omniflow.ingest_run_log
 workbench_api_list
 ```
 

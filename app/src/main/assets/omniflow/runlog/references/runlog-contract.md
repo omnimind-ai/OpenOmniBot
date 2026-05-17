@@ -80,6 +80,8 @@ Data-flow agent:
 - `memory_recall`
 - `memory_query`
 - `oob_agent_run`
+- `omniflow.recall`
+- `omniflow.ingest_run_log`
 - `workbench_api_list`
 - `oob_run_log_list`
 - `oob_run_log_get`
@@ -90,6 +92,7 @@ Provider-owned agent:
 - `go_to_node`
 - `click_node`
 - `node_click`
+- `omniflow.call_function`
 - `call_function`
 
 ## Known Failure Modes

@@ -10,45 +10,31 @@ tools, operate Android UI, and ask the user for confirmation.
 1. Read `skills/guiagent-omniflow/SKILL.md`.
 2. If MCP is available, call `tools/list`.
 3. Choose the best available mode:
-   - Direct MCP mode when `oob_function_*` tools exist.
+   - Direct MCP mode when `omniflow.recall` and `omniflow.call_function` exist.
    - GUI bridge mode when only the OOB app UI is available.
    - Agent bridge mode when only `agent_run` exists.
 
 ## Direct MCP Workflow
 
-### List and inspect Functions
+### Recall and run Functions
 
 ```text
-tools/call oob_function_list
-tools/call oob_function_get(functionId)
-tools/call oob_function_guard_check(functionId, arguments)
+tools/call omniflow.recall(goal, current_package?, current_node_id?, k?)
+tools/call omniflow.call_function(function_id, arguments)
 ```
 
-Run only when guard returns `allow`, or when the user explicitly confirms a
-`needs_confirmation` result.
+Run only a Function returned by recall or explicitly selected by the user. If
+`call_function` returns `fallback=true`, continue through the host agent planner
+or GUI bridge path.
 
-### Convert a RunLog
+### Write back a RunLog
 
 ```text
-tools/call oob_run_log_list
-tools/call oob_run_log_get(runId)
-tools/call oob_run_log_convert(runId, register=false)
-tools/call oob_function_guard_check(functionId, arguments)
-tools/call oob_run_log_convert(runId, register=true)
+tools/call omniflow.ingest_run_log(run_id)
 ```
 
-Do not register an obviously unsafe Function. If a Function requires live
-planning, register it only if the user wants reusable Agent fallback behavior.
-
-### Run a Function
-
-```text
-tools/call oob_function_run(functionId, arguments, dryRun=false, continueWithAgent=false)
-```
-
-If the result has `needs_agent=true`, ask the user whether to continue with
-Agent fallback. Then rerun with `continueWithAgent=true` or start the fallback
-workflow requested by the result.
+Do not ingest an obviously unsafe, failed, or empty RunLog. If the host rejects
+it, report the reason instead of inventing another storage call.
 
 ## GUI Bridge Workflow
 

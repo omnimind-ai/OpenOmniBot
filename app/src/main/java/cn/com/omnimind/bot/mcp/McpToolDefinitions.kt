@@ -311,110 +311,6 @@ BEHAVIOR:
         )
     )
 
-    val oobFunctionListTool = mapOf(
-        "name" to "oob_function_list",
-        "description" to "Compatibility tool: list OOB reusable Functions registered in local storage and the current workspace.",
-        "inputSchema" to mapOf(
-            "type" to "object",
-            "properties" to mapOf(
-                "limit" to mapOf("type" to "integer", "description" to "Maximum functions to return. Default 100.")
-            )
-        )
-    )
-
-    val oobFunctionGetTool = mapOf(
-        "name" to "oob_function_get",
-        "description" to "Compatibility tool: read one full OOB reusable Function spec.",
-        "inputSchema" to mapOf(
-            "type" to "object",
-            "properties" to mapOf(
-                "functionId" to mapOf("type" to "string", "description" to "Function id."),
-                "function_id" to mapOf("type" to "string", "description" to "Function id.")
-            )
-        )
-    )
-
-    val oobFunctionRegisterTool = mapOf(
-        "name" to "oob_function_register",
-        "description" to "Compatibility tool: register or update one OOB reusable Function spec.",
-        "inputSchema" to mapOf(
-            "type" to "object",
-            "properties" to mapOf(
-                "functionSpec" to mapOf("type" to "object", "description" to "OOB reusable Function spec."),
-                "source" to mapOf("type" to "string", "description" to "Optional caller/source label.")
-            ),
-            "required" to listOf("functionSpec")
-        )
-    )
-
-    val oobFunctionGuardCheckTool = mapOf(
-        "name" to "oob_function_guard_check",
-        "description" to "Compatibility tool: preflight one OOB Function and return allow, needs_agent, needs_confirmation, or block.",
-        "inputSchema" to mapOf(
-            "type" to "object",
-            "properties" to mapOf(
-                "functionId" to mapOf("type" to "string", "description" to "Function id."),
-                "arguments" to mapOf("type" to "object", "description" to "Materialization arguments.")
-            ),
-            "required" to listOf("functionId")
-        )
-    )
-
-    val oobFunctionRunTool = mapOf(
-        "name" to "oob_function_run",
-        "description" to "Compatibility tool: guard-check and run one OOB Function through the same deterministic replay dispatcher as `omniflow.call_function`.",
-        "inputSchema" to mapOf(
-            "type" to "object",
-            "properties" to mapOf(
-                "functionId" to mapOf("type" to "string", "description" to "Function id."),
-                "arguments" to mapOf("type" to "object", "description" to "Materialization arguments."),
-                "dryRun" to mapOf("type" to "boolean", "description" to "Only return guard decision."),
-                "continueWithAgent" to mapOf("type" to "boolean", "description" to "Allow Agent fallback markers for live-context steps."),
-                "executionMode" to mapOf("type" to "string", "description" to "foreground or background. OOB simple mode executes the same guarded path.")
-            ),
-            "required" to listOf("functionId")
-        )
-    )
-
-    val oobRunLogListTool = mapOf(
-        "name" to "oob_run_log_list",
-        "description" to "Compatibility tool: list recent internal OOB RunLogs.",
-        "inputSchema" to mapOf(
-            "type" to "object",
-            "properties" to mapOf(
-                "limit" to mapOf("type" to "integer", "description" to "Maximum RunLogs to return. Default 50.")
-            )
-        )
-    )
-
-    val oobRunLogGetTool = mapOf(
-        "name" to "oob_run_log_get",
-        "description" to "Compatibility tool: read one internal OOB RunLog timeline payload.",
-        "inputSchema" to mapOf(
-            "type" to "object",
-            "properties" to mapOf(
-                "runId" to mapOf("type" to "string", "description" to "RunLog id."),
-                "run_id" to mapOf("type" to "string", "description" to "RunLog id.")
-            )
-        )
-    )
-
-    val oobRunLogConvertTool = mapOf(
-        "name" to "oob_run_log_convert",
-        "description" to "Compatibility tool: preview or register a reusable Function from an internal OOB RunLog.",
-        "inputSchema" to mapOf(
-            "type" to "object",
-            "properties" to mapOf(
-                "runId" to mapOf("type" to "string", "description" to "RunLog id."),
-                "run_id" to mapOf("type" to "string", "description" to "RunLog id."),
-                "register" to mapOf("type" to "boolean", "description" to "Whether to register the Function."),
-                "functionId" to mapOf("type" to "string", "description" to "Optional function id override."),
-                "name" to mapOf("type" to "string", "description" to "Optional display name override."),
-                "description" to mapOf("type" to "string", "description" to "Optional description override.")
-            )
-        )
-    )
-
     val oobProjectCreateTool = mapOf(
         "name" to "oob_project_create",
         "description" to """Create or reuse an OOB Workbench Project.
@@ -485,14 +381,6 @@ This is the MCP control entry for Project creation. It writes the normal Workben
             omniflowRecallTool,
             omniflowCallFunctionTool,
             omniflowIngestRunLogTool,
-            oobFunctionListTool,
-            oobFunctionGetTool,
-            oobFunctionRegisterTool,
-            oobFunctionGuardCheckTool,
-            oobFunctionRunTool,
-            oobRunLogListTool,
-            oobRunLogGetTool,
-            oobRunLogConvertTool,
             oobProjectCreateTool,
             oobProjectActivateTool,
             oobProjectOpenTool,

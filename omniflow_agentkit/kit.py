@@ -70,13 +70,6 @@ class OmniFlowAgentKit:
                 "omniflow.recall",
                 "omniflow.call_function",
                 "omniflow.ingest_run_log",
-                "oob_function_list",
-                "oob_function_get",
-                "oob_function_guard_check",
-                "oob_function_run",
-                "oob_run_log_list",
-                "oob_run_log_get",
-                "oob_run_log_convert",
             ],
             "guard_decisions": ["allow", "needs_agent", "needs_confirmation", "block"],
         }

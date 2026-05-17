@@ -19,6 +19,17 @@ Activate when the user asks for any of these:
 - Check whether a stored action is safe.
 - Build a reusable action library from OOB history.
 
+Do not activate for one-off chat, static writing, or Workbench Project UI unless
+the user is asking to reuse execution behavior.
+
+## Required First Steps
+
+1. Identify access mode.
+2. Inspect before executing.
+3. Guard-check before running.
+4. Ask the user before confirmation-required or live-context continuation.
+5. Stop on blocked actions.
+
 ## Access Mode Selection
 
 If MCP is available, call `tools/list`.
@@ -31,18 +42,6 @@ omniflow.call_function
 omniflow.ingest_run_log
 ```
 
-Use legacy Direct MCP mode if only these compatibility tools exist:
-
-```text
-oob_function_list
-oob_function_get
-oob_function_guard_check
-oob_function_run
-oob_run_log_list
-oob_run_log_get
-oob_run_log_convert
-```
-
 If direct tools are absent, use GUI bridge mode through the OOB app:
 
 ```text
@@ -53,9 +52,9 @@ Function Library / Command Library -> Inspect -> Run
 If only `agent_run` exists, use Agent bridge mode with a targeted prompt asking
 the in-app Agent to use OmniFlow UI/native capabilities.
 
-## Direct MCP Workflow
+## Direct MCP Workflows
 
-Canonical recall and run:
+### Recall and Run a Function
 
 1. `omniflow.recall(goal, current_package?, current_node_id?, k?)`
 2. If `decision=hit` and the hit has no required arguments, call
@@ -65,34 +64,23 @@ Canonical recall and run:
 4. If recall misses or call_function returns `fallback=true`, continue with the
    host agent's normal planner.
 
-Canonical writeback:
+### Write Back a RunLog
 
 1. After a successful non-cache run, call
    `omniflow.ingest_run_log(run_id)` or pass an inline `run_log`.
 2. Treat failed, empty, or non-replayable RunLogs as rejected.
 
-Legacy list and run:
+## GUI Bridge Workflows
 
-1. `oob_function_list`
-2. `oob_function_get(functionId)`
-3. `oob_function_guard_check(functionId, arguments)`
-4. `oob_function_run(functionId, arguments, dryRun=false, continueWithAgent=false)`
+### Convert
 
-Convert:
+Open OOB, go to Run Logs, select a successful run, inspect timeline cards,
+convert to reusable Function, inspect the generated spec/details, then save.
 
-1. `oob_run_log_list`
-2. `oob_run_log_get(runId)`
-3. `oob_run_log_convert(runId, register=false)`
-4. Inspect and guard-check the generated Function.
-5. Register only if safe and useful.
+### Run
 
-## GUI Bridge Workflow
-
-Convert: open OOB, go to Run Logs, select a successful run, inspect timeline
-cards, convert to reusable Function, inspect details, then save.
-
-Run: open Function Library or Command Library, select the Function, inspect
-details, fill arguments, check warnings, then run only when safe.
+Open Function Library or Command Library, select the Function, inspect details,
+fill arguments, check warnings, and run only when safe.
 
 ## Guard Rules
 
@@ -118,6 +106,22 @@ Defaults:
 
 ## Final Response Requirements
 
-Report Function id, guard decision, local replay status, Agent fallback status,
-confirmation status, run/audit id if available, and visible result or failure
-reason.
+When you finish, report:
+
+- Function id.
+- Guard decision.
+- Whether local replay ran.
+- Whether Agent fallback was needed.
+- Whether user confirmation was requested.
+- Run/audit id if available.
+- Visible result or failure reason.
+
+## Reference Docs
+
+Read these files when available:
+
+- `docs/omniflow/README.md`
+- `docs/omniflow/MCP_CONTRACT.md`
+- `docs/omniflow/FUNCTION_SPEC.md`
+- `docs/omniflow/GUI_AGENT_PLAYBOOK.md`
+- `docs/omniflow/ACCEPTANCE.md`

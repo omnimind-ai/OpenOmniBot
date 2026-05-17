@@ -3,7 +3,17 @@
 Date: 2026-05-17
 
 These checks validate that the OmniFlow Agent Kit can be handed to external
-GUI-agent projects as a directly callable library plus skill package.
+GUI-agent projects as a directly callable library plus skill package. The public
+MCP surface is canonical-only:
+
+```text
+omniflow.recall
+omniflow.call_function
+omniflow.ingest_run_log
+```
+
+Legacy direct OOB tool names are intentionally absent from the Python CLI, mock
+MCP server, Android MCP discovery, and external project acceptance flow.
 
 ## Test Commands
 
@@ -22,7 +32,7 @@ bash scripts/omniflow_acceptance_mobilegpt.sh
 bash scripts/omniflow_acceptance_all_guiagents.sh
 ```
 
-Manual external acceptance steps that were run:
+Manual external acceptance steps:
 
 ```bash
 python3 -m pip wheel --no-deps --no-build-isolation -w /private/tmp/omniflow-acceptance/dist .
@@ -32,19 +42,14 @@ cd /private/tmp/omniflow-probe-mobilegpt
 /private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit probe-repo .
 /private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit prompt "Run the safest saved Function" --repo .
 /private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-recall "open Android Settings" --mcp-url http://127.0.0.1:<mock-port>/mcp
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-call-function open_settings_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-call-function settings_click_path_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
 /private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-ingest-runlog runlog_install_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-list-functions --mcp-url http://127.0.0.1:<mock-port>/mcp
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-list-runlogs --mcp-url http://127.0.0.1:<mock-port>/mcp
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-convert-runlog runlog_install_demo --mcp-url http://127.0.0.1:<mock-port>/mcp --register --function-id install_sample_apk_demo
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-guard-check open_settings_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-run-function open_settings_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-run-function install_sample_apk_demo --mcp-url http://127.0.0.1:<mock-port>/mcp --background
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-call-function install_sample_apk_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
 ```
 
-The `mcp-*` commands were run against `scripts/omniflow_mock_mcp_server.py`,
-which exposes an already-registered `open_settings_demo` Function through the
-same JSON-RPC tool names expected from OOB MCP.
+The MCP commands were run against `scripts/omniflow_mock_mcp_server.py`, which
+exposes an already-registered `settings_click_path_demo` Function through the
+same canonical JSON-RPC tool names expected from OOB MCP.
 
 The broader acceptance script repeats the same install and trigger sequence from
 these external repo directories:
@@ -60,14 +65,16 @@ Codex CLI external acceptance:
 ```bash
 codex exec --cd /private/tmp/omniflow-probe-mobilegpt --sandbox danger-full-access --skip-git-repo-check - <<'PROMPT'
 You are in an external open-source repo, MobileGPT. Do not modify files.
-Run exactly these three commands and no variants:
+Run exactly these commands and no variants:
 
 /private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit probe-repo .
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-convert-runlog runlog_install_demo --mcp-url http://127.0.0.1:<mock-port>/mcp --register --function-id install_sample_apk_demo
-/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-run-function install_sample_apk_demo --mcp-url http://127.0.0.1:<mock-port>/mcp --background
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-recall "open Android Settings and click through the demo path" --mcp-url http://127.0.0.1:<mock-port>/mcp
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-call-function settings_click_path_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-ingest-runlog runlog_install_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
+/private/tmp/omniflow-acceptance/venv/bin/omniflow-agentkit mcp-call-function install_sample_apk_demo --mcp-url http://127.0.0.1:<mock-port>/mcp
 
 Then summarize whether all commands succeeded, include recommended_mode if present,
-and include the registered function_id and background run_id.
+and include the function_id, run_id, runner_duration_ms, and click step count.
 PROMPT
 ```
 
@@ -76,14 +83,16 @@ Codex CLI result:
 ```text
 All commands succeeded with exit code 0.
 recommended_mode: python_skill_plus_mcp
+function_id: settings_click_path_demo
+run_id: mock-run-settings-click-path-demo
 registered function_id: install_sample_apk_demo
-background run_id: mock-bg-install-run
+replay run_id: mock-run-install-sample-apk-demo
 ```
 
 `read-only` and `workspace-write` Codex sandboxes were also checked; both
-blocked the loopback MCP call before `oob_function_run`. The successful Codex
-simulation therefore uses `danger-full-access` while instructing the agent not
-to modify files.
+blocked the loopback MCP call before `omniflow.call_function`. The successful
+Codex simulation therefore uses `danger-full-access` while instructing the
+agent not to modify files.
 
 OpenAI skill smoke test command:
 
@@ -127,29 +136,24 @@ system_or_developer_prompt = kit.agent_prompt(
 )
 
 client = OmniFlowMcpClient(endpoint="http://127.0.0.1:8765/mcp", token="...")
-if client.has_direct_omniflow():
-    functions = client.list_functions()
-    guard = client.guard_check("open_settings_demo", {})
-    if guard.get("decision") == "allow":
-        result = client.run_function("open_settings_demo", {})
+if client.has_canonical_omniflow():
+    recalled = client.recall("open Android Settings")
+    function_id = recalled["hit"]["function_id"]
+    result = client.call_function(function_id, {})
 ```
 
 Acceptance result:
 
 ```text
 canonical_recall=ok
-canonical_hit_function_id=open_settings_demo
+canonical_hit_function_id=settings_click_path_demo
 canonical_call_function=ok
-canonical_run_id=mock-run-open-settings-demo
+canonical_run_id=mock-run-settings-click-path-demo
+canonical_click_step_count=4
 canonical_ingest_runlog=ok
 canonical_ingested_function_id=install_sample_apk_demo
-external_function_trigger=ok
-triggered_function_id=open_settings_demo
-run_id=mock-run-open-settings-demo
-runlog_function_register=ok
-registered_function_id=install_sample_apk_demo
-background_install_execution=ok
-background_run_id=mock-bg-install-run
+canonical_call_ingested_function=ok
+ingested_function_run_id=mock-run-install-sample-apk-demo
 omniflow_mobilegpt_acceptance=ok
 ```
 
@@ -175,20 +179,20 @@ Probe result:
 
 How mobile-use should use OmniFlow:
 
-- Inject `OmniFlowAgentKit.skill()` or `agent_prompt(...)` into the mobile agent instruction context.
+- Inject `OmniFlowAgentKit.skill()` or `agent_prompt(...)` into the mobile
+  agent instruction context.
 - Use `OmniFlowMcpClient` when OOB MCP is reachable.
-- Fall back to GUI bridge mode if direct `oob_function_*` tools are absent.
+- Fall back to GUI bridge mode if canonical `omniflow.*` tools are absent.
 
 Acceptance result:
 
 ```text
-external_function_trigger=ok
-triggered_function_id=open_settings_demo
-run_id=mock-run-open-settings-demo
-runlog_function_register=ok
-registered_function_id=install_sample_apk_demo
-background_install_execution=ok
-background_run_id=mock-bg-install-run
+canonical_recall=ok
+canonical_call_function=ok
+canonical_run_id=mock-run-settings-click-path-demo
+canonical_ingest_runlog=ok
+canonical_call_ingested_function=ok
+ingested_function_run_id=mock-run-install-sample-apk-demo
 omniflow_mobile_use_acceptance=ok
 ```
 
@@ -216,19 +220,20 @@ How mobile-mcp should use OmniFlow:
 
 - Prefer direct MCP mode.
 - Discover with `tools/list`.
-- Use `oob_function_guard_check` before every `oob_function_run`.
-- Treat the Python kit as a contract/test client or export `python -m omniflow_agentkit pack` as JSON for Node-side agent context.
+- Use `omniflow.recall`, `omniflow.call_function`, and
+  `omniflow.ingest_run_log` for replay and RunLog registration.
+- Treat the Python kit as a contract/test client or export
+  `python -m omniflow_agentkit pack` as JSON for Node-side agent context.
 
 Acceptance result:
 
 ```text
-external_function_trigger=ok
-triggered_function_id=open_settings_demo
-run_id=mock-run-open-settings-demo
-runlog_function_register=ok
-registered_function_id=install_sample_apk_demo
-background_install_execution=ok
-background_run_id=mock-bg-install-run
+canonical_recall=ok
+canonical_call_function=ok
+canonical_run_id=mock-run-settings-click-path-demo
+canonical_ingest_runlog=ok
+canonical_call_ingested_function=ok
+ingested_function_run_id=mock-run-install-sample-apk-demo
 omniflow_mobile_mcp_acceptance=ok
 ```
 
@@ -237,11 +242,16 @@ omniflow_mobile_mcp_acceptance=ok
 - The Python kit imports and runs without third-party dependencies.
 - The wheel builds and installs with package assets.
 - Installed package can run `python -m omniflow_agentkit pack --no-docs`.
-- MobileGPT is detected as a Python/Android agent project and gets `python_skill_plus_mcp`.
-- mobile-use is detected as a Python agent project and gets `python_skill_plus_mcp`.
+- MobileGPT is detected as a Python/Android agent project and gets
+  `python_skill_plus_mcp`.
+- mobile-use is detected as a Python agent project and gets
+  `python_skill_plus_mcp`.
 - mobile-mcp is detected as an MCP project and gets `direct_mcp`.
-- Each tested external project can trigger the existing `open_settings_demo`
-  Function through MCP and receives `mock-run-open-settings-demo`.
-- Each tested external project can convert `runlog_install_demo` into
-  `install_sample_apk_demo`, register it, and run it in background mode with
-  `mock-bg-install-run`.
+- Each tested external project can recall the existing
+  `settings_click_path_demo` Function through MCP.
+- Each tested external project can run that Function through
+  `omniflow.call_function` and receives `mock-run-settings-click-path-demo`.
+- Each tested external project can ingest `runlog_install_demo` into
+  `install_sample_apk_demo`.
+- Each tested external project can run the ingested Function through
+  `omniflow.call_function` and receives `mock-run-install-sample-apk-demo`.

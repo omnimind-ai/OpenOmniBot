@@ -138,10 +138,12 @@ class OobOmniFlowToolkitService(
             "success" to success,
             "fallback" to fallback,
             "error" to if (success) null else runPayload["error_message"],
-            "run_id" to "oob_function_run_${System.currentTimeMillis()}",
+            "run_id" to "omniflow_run_${System.currentTimeMillis()}",
             "function_id" to functionId,
             "goal" to goal.takeIf { it.isNotEmpty() },
             "actions_executed" to (runPayload["success_step_count"] ?: 0),
+            "step_results" to runPayload["step_results"],
+            "timing" to runPayload["timing"],
             "control" to linkedMapOf(
                 "postcondition" to if (success) "passed" else "not_verified",
                 "fallback_reason" to fallbackReason,
@@ -311,10 +313,11 @@ class OobOmniFlowToolkitService(
             "risk_level" to guard["risk_level"],
             "execution_mode" to executionMode,
             "step_results" to runPayload["step_results"],
+            "timing" to runPayload["timing"],
             "needs_agent" to (runPayload["model_required"] == true),
             "needs_confirmation" to false,
             "error_message" to runPayload["error_message"],
-            "audit_run_id" to "oob_function_run_${System.currentTimeMillis()}",
+            "audit_run_id" to "omniflow_run_${System.currentTimeMillis()}",
             "guard" to guard,
             "result" to runPayload
         )

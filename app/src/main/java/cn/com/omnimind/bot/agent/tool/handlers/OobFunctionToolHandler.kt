@@ -87,6 +87,7 @@ class OobFunctionToolHandler(
         allowAgentFallback: Boolean = true,
         allowToolDelegationWithoutRouter: Boolean = false,
     ): Map<String, Any?> {
+        val runStartedAtMs = System.currentTimeMillis()
         val steps = materializedSteps(materializedSpec)
         val stepResults = mutableListOf<Map<String, Any?>>()
         var delegatedToolUsed = false
@@ -94,6 +95,7 @@ class OobFunctionToolHandler(
         var failureReason: String? = null
 
         for ((index, step) in steps.withIndex()) {
+            val stepStartedAtMs = System.currentTimeMillis()
             toolHandle?.throwIfStopRequested()
             val stepIndex = index + 1
             val stepId = step["id"]?.toString() ?: "step_$stepIndex"
@@ -238,13 +240,22 @@ class OobFunctionToolHandler(
                     }
                 }
             }
-            stepResults += stepResult
-            if (stepResult["success"] == false) {
-                failureReason = stepResult["summary"]?.toString()
+            val stepFinishedAtMs = System.currentTimeMillis()
+            val timedStepResult = LinkedHashMap<String, Any?>().apply {
+                putAll(stepResult)
+                putIfAbsent("index", index)
+                putIfAbsent("started_at_ms", stepStartedAtMs)
+                putIfAbsent("finished_at_ms", stepFinishedAtMs)
+                putIfAbsent("duration_ms", (stepFinishedAtMs - stepStartedAtMs).coerceAtLeast(0))
+            }
+            stepResults += timedStepResult
+            if (timedStepResult["success"] == false) {
+                failureReason = timedStepResult["summary"]?.toString()
                 break
             }
         }
 
+        val runFinishedAtMs = System.currentTimeMillis()
         val successCount = stepResults.count { it["success"] != false }
         val allSuccess = stepResults.size == steps.size && stepResults.none { it["success"] == false }
         val description = spec["description"]?.toString().orEmpty()
@@ -264,6 +275,12 @@ class OobFunctionToolHandler(
             "delegated_tool_used" to delegatedToolUsed,
             "fallback_available" to (!allSuccess || modelRequired),
             "error_message" to failureReason,
+            "timing" to linkedMapOf(
+                "source" to "oob_function_runner",
+                "started_at_ms" to runStartedAtMs,
+                "finished_at_ms" to runFinishedAtMs,
+                "runner_duration_ms" to (runFinishedAtMs - runStartedAtMs).coerceAtLeast(0)
+            ),
             "step_results" to stepResults
         )
     }

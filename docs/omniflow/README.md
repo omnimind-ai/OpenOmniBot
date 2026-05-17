@@ -50,20 +50,15 @@ the host app runtime, MCP server, guard policy, and audited runner.
 
 ### Mode A: Direct MCP
 
-Use this when `tools/list` contains `oob_function_*` and `oob_run_log_*` tools.
-This is the preferred stable external interface.
+Use this when `tools/list` contains the canonical OmniFlow tools. This is the
+preferred stable external interface.
 
 Minimum direct tools:
 
 ```text
-oob_function_list
-oob_function_get
-oob_function_register
-oob_function_guard_check
-oob_function_run
-oob_run_log_list
-oob_run_log_get
-oob_run_log_convert
+omniflow.recall
+omniflow.call_function
+omniflow.ingest_run_log
 ```
 
 Read `MCP_CONTRACT.md` before calling these tools.
@@ -128,7 +123,7 @@ Default policy:
 
 1. Read `skills/guiagent-omniflow/SKILL.md`.
 2. If using MCP, call `tools/list`.
-3. If `oob_function_list` exists, use direct MCP mode.
+3. If `omniflow.recall` and `omniflow.call_function` exist, use direct MCP mode.
 4. If direct tools are missing, open the OOB app and use GUI bridge mode.
 5. Always inspect a Function before running it.
 6. Always call guard or visually inspect guard state before execution.

@@ -1,39 +1,37 @@
 # OmniFlow Agent Kit Acceptance
 
 The kit is acceptable when an external GUI agent can complete these checks using
-only the shipped docs and skill.
+only the shipped docs, skill, and canonical MCP tools.
 
 ## Documentation Checks
 
 - The agent can explain what OmniFlow is and when to activate it.
-- The agent can identify available access modes by reading `tools/list` and the UI.
+- The agent can identify available access mode by reading `tools/list` and the UI.
 - The agent can find the Function schema.
 - The agent can find the MCP tool contract.
 - The agent can find the guard decision rules.
-- The agent can find fallback instructions when direct MCP tools are absent.
+- The agent can find fallback instructions when canonical MCP tools are absent.
 
-## Direct MCP Checks
+## Canonical MCP Checks
 
-When the host implements the direct MCP contract:
+When the host implements the OOB OmniFlow MCP contract:
 
-- `tools/list` exposes `omniflow.recall` and `omniflow.call_function`.
+- `tools/list` exposes exactly the replay activation surface:
+  `omniflow.recall`, `omniflow.call_function`, and
+  `omniflow.ingest_run_log`.
 - `omniflow.recall` returns a direct no-argument hit or ranked candidates with
   `inputSchema`.
 - `omniflow.call_function` executes only an explicit agent-selected
   `function_id` and returns structured `success/fallback/control` fields.
 - `omniflow.ingest_run_log` registers a successful RunLog as a reusable Function
   or rejects it with a reason.
-- `oob_function_list` returns stored Function summaries.
-- `oob_function_get` returns a full spec.
-- `oob_function_guard_check` returns `allow`, `needs_agent`, `needs_confirmation`, or `block`.
-- `oob_function_run` does not execute blocked or confirmation-required steps silently.
-- `oob_run_log_list` and `oob_run_log_get` expose recent runs as read-only data.
-- `oob_run_log_convert(register=false)` previews a Function without writing it.
-- `oob_run_log_convert(register=true)` registers a Function through the same repository used by UI and Agent.
+- The same ingested Function can be replayed through `omniflow.call_function`.
+- Legacy OOB direct names are absent from public discovery and from the Python
+  Agent Kit CLI.
 
 ## GUI Bridge Checks
 
-When direct MCP tools are absent:
+When canonical MCP tools are absent:
 
 - The agent can open OOB and navigate to Run Logs.
 - The agent can inspect a successful run timeline.
@@ -54,11 +52,14 @@ When direct MCP tools are absent:
 
 Minimum sample task:
 
-1. Register or find the sample `open_settings_demo` Function.
-2. Guard-check it.
-3. Run it.
-4. Confirm the device opens Android Settings and waits.
-5. Report `function_id=open_settings_demo` and the run result.
+1. Recall the sample `settings_click_path_demo` Function with
+   `omniflow.recall`.
+2. Run it through `omniflow.call_function`.
+3. Confirm the result includes 7 step results and 4 `click` steps.
+4. Ingest `runlog_install_demo` through `omniflow.ingest_run_log`.
+5. Run the returned Function id through `omniflow.call_function`.
+6. Report `function_id=settings_click_path_demo`, the run id, runner duration,
+   and the slowest click step.
 
 ## External Project Acceptance
 
@@ -94,28 +95,26 @@ Pass criteria:
 - It builds an `omniflow-agentkit` wheel.
 - It creates a clean venv outside this repo.
 - It installs the wheel into that venv.
-- From the MobileGPT directory, Python import succeeds.
-- From the MobileGPT directory, `omniflow-agentkit probe-repo .` succeeds.
-- From the MobileGPT directory, `omniflow-agentkit prompt ... --repo .` succeeds.
-- From the MobileGPT directory, `omniflow-agentkit mcp-recall ...` finds
-  `open_settings_demo`.
-- From the MobileGPT directory, `omniflow-agentkit mcp-call-function open_settings_demo ...`
-  triggers that Function and returns a run id.
-- From the MobileGPT directory, `omniflow-agentkit mcp-ingest-runlog runlog_install_demo ...`
-  registers a Function converted from a RunLog.
-- From the MobileGPT directory, `omniflow-agentkit mcp-list-functions ...`
-  discovers an existing Function exposed by the host MCP server.
-- From the MobileGPT directory, `omniflow-agentkit mcp-guard-check open_settings_demo ...`
-  returns `decision=allow`.
-- From the MobileGPT directory, `omniflow-agentkit mcp-run-function open_settings_demo ...`
-  triggers that existing Function and returns a run id.
-- From the MobileGPT directory, `omniflow-agentkit mcp-convert-runlog runlog_install_demo --register ...`
-  registers a Function converted from a RunLog.
-- From the MobileGPT directory, `omniflow-agentkit mcp-run-function install_sample_apk_demo --background ...`
-  enqueues the registered install Function and returns a background run id.
-- Codex CLI runs `probe-repo`, `mcp-convert-runlog`, and background
-  `mcp-run-function` from the MobileGPT directory and reports success,
-  including the registered Function id and background run id.
+- From the external project directory, Python import succeeds.
+- From the external project directory, `omniflow-agentkit probe-repo .`
+  succeeds.
+- From the external project directory, `omniflow-agentkit prompt ... --repo .`
+  succeeds.
+- From the external project directory, `omniflow-agentkit mcp-recall ...` finds
+  `settings_click_path_demo`.
+- From the external project directory,
+  `omniflow-agentkit mcp-call-function settings_click_path_demo ...` triggers
+  that Function and returns a run id, runner timing, 7 steps, and 4 click steps.
+- From the external project directory,
+  `omniflow-agentkit mcp-ingest-runlog runlog_install_demo ...` registers a
+  Function converted from a RunLog.
+- From the external project directory,
+  `omniflow-agentkit mcp-call-function install_sample_apk_demo ...` runs the
+  ingested Function and returns a run id.
+- Codex CLI runs only `probe-repo`, `mcp-recall`, `mcp-call-function`,
+  `mcp-ingest-runlog`, and the second `mcp-call-function` from the external
+  project directory and reports success, including the Function id, run id,
+  runner duration, and click count.
 - `recommended_mode` for MobileGPT is `python_skill_plus_mcp`.
 
 For the broader check, the same installed wheel and MCP trigger path must also
@@ -128,11 +127,16 @@ omniflow_mobile_mcp_acceptance=ok
 omniflow_all_guiagents_acceptance=ok
 ```
 
-The expected RunLog registration and background execution markers are:
+The expected RunLog registration and replay markers are:
 
 ```text
-runlog_function_register=ok
-registered_function_id=install_sample_apk_demo
-background_install_execution=ok
-background_run_id=mock-bg-install-run
+canonical_recall=ok
+canonical_hit_function_id=settings_click_path_demo
+canonical_call_function=ok
+canonical_run_id=mock-run-settings-click-path-demo
+canonical_click_step_count=4
+canonical_ingest_runlog=ok
+canonical_ingested_function_id=install_sample_apk_demo
+canonical_call_ingested_function=ok
+ingested_function_run_id=mock-run-install-sample-apk-demo
 ```

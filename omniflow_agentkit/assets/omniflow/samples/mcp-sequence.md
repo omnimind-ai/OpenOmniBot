@@ -1,72 +1,67 @@
 # Sample MCP Sequence
 
-Use this only when `tools/list` shows direct OmniFlow tools.
+Use this when `tools/list` shows the OmniFlow Function tools.
 
-## Register Sample Function
+## Recall
 
 ```json
 {
-  "name": "oob_function_register",
+  "name": "omniflow.recall",
   "arguments": {
-    "functionSpec": {
-      "schema_version": "oob.reusable_function.v1",
-      "function_id": "open_settings_demo",
-      "name": "Open Settings",
-      "description": "Open Android Settings and wait for one second.",
-      "parameters": [],
-      "execution": {
-        "kind": "tool_sequence",
-        "steps": [
-          {
-            "id": "step_1",
-            "index": 0,
-            "title": "Open Android Settings",
-            "executor": "omniflow",
-            "omniflow_action": "open_app",
-            "args": {"package_name": "com.android.settings"}
-          },
-          {
-            "id": "step_2",
-            "index": 1,
-            "title": "Wait",
-            "executor": "omniflow",
-            "omniflow_action": "wait",
-            "args": {"duration_ms": 1000}
-          }
-        ]
-      }
-    }
+    "goal": "open Android Settings and click through the demo path",
+    "current_package": "com.android.settings",
+    "k": 8
   }
 }
 ```
 
-## Guard Check
+Expected result: `decision=hit` with `function_id=settings_click_path_demo`, or a
+ranked candidate list that the agent can select from.
+
+## Call Function
 
 ```json
 {
-  "name": "oob_function_guard_check",
+  "name": "omniflow.call_function",
   "arguments": {
-    "functionId": "open_settings_demo",
-    "arguments": {}
-  }
-}
-```
-
-Expected decision: `allow`.
-
-## Run
-
-```json
-{
-  "name": "oob_function_run",
-  "arguments": {
-    "functionId": "open_settings_demo",
+    "function_id": "settings_click_path_demo",
     "arguments": {},
-    "dryRun": false,
-    "continueWithAgent": false
+    "goal": "open Android Settings and click through the demo path"
   }
 }
 ```
 
-Expected result: the device opens Android Settings and the response includes
-`success=true` and `function_id=open_settings_demo`.
+Expected result: the response includes `success=true`,
+`function_id=settings_click_path_demo`, `run_id`,
+`timing.runner_duration_ms`, and 7 `step_results`, including 4 `click` steps.
+
+## Write Back A RunLog
+
+```json
+{
+  "name": "omniflow.ingest_run_log",
+  "arguments": {
+    "run_id": "runlog_install_demo",
+    "auto_enrich": true
+  }
+}
+```
+
+Expected result: the host registers or updates a reusable Function and returns
+`accepted=true` with the resulting `function_id`.
+
+## Call Ingested Function
+
+```json
+{
+  "name": "omniflow.call_function",
+  "arguments": {
+    "function_id": "install_sample_apk_demo",
+    "arguments": {},
+    "goal": "run the ingested install sample Function"
+  }
+}
+```
+
+Expected result: the response includes `success=true`,
+`function_id=install_sample_apk_demo`, and a replay `run_id`.

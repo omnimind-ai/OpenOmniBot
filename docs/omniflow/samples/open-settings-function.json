@@ -1,8 +1,8 @@
 {
   "schema_version": "oob.reusable_function.v1",
-  "function_id": "open_settings_demo",
-  "name": "Open Settings",
-  "description": "Open Android Settings and wait for one second.",
+  "function_id": "settings_click_path_demo",
+  "name": "Settings Click Path Demo",
+  "description": "Open Android Settings and replay a deterministic path with multiple click steps.",
   "parameters": [],
   "source": {
     "kind": "sample",
@@ -13,9 +13,9 @@
     "runner": "oob_tool_sequence",
     "entrypoint": "execute",
     "capabilities": {
-      "scriptable_step_count": 2,
-      "model_free_step_count": 2,
-      "omniflow_step_count": 2,
+      "scriptable_step_count": 7,
+      "model_free_step_count": 7,
+      "omniflow_step_count": 7,
       "agent_step_count": 0,
       "requires_agent_fallback": false
     },
@@ -39,7 +39,77 @@
       {
         "id": "step_2",
         "index": 1,
-        "title": "Wait for Settings",
+        "title": "Tap Network & internet",
+        "kind": "omniflow_action",
+        "executor": "omniflow",
+        "omniflow_action": "click",
+        "local_action": "click",
+        "model_free": true,
+        "scriptable": true,
+        "tool": "click",
+        "callable_tool": "click",
+        "args": {
+          "x": 180,
+          "y": 420,
+          "target": "Network & internet"
+        }
+      },
+      {
+        "id": "step_3",
+        "index": 2,
+        "title": "Tap Internet",
+        "kind": "omniflow_action",
+        "executor": "omniflow",
+        "omniflow_action": "click",
+        "local_action": "click",
+        "model_free": true,
+        "scriptable": true,
+        "tool": "click",
+        "callable_tool": "click",
+        "args": {
+          "x": 160,
+          "y": 520,
+          "target": "Internet"
+        }
+      },
+      {
+        "id": "step_4",
+        "index": 3,
+        "title": "Type demo query",
+        "kind": "omniflow_action",
+        "executor": "omniflow",
+        "omniflow_action": "type",
+        "local_action": "type",
+        "model_free": true,
+        "scriptable": true,
+        "tool": "type",
+        "callable_tool": "type",
+        "args": {
+          "text": "demo wifi"
+        }
+      },
+      {
+        "id": "step_5",
+        "index": 4,
+        "title": "Tap search result",
+        "kind": "omniflow_action",
+        "executor": "omniflow",
+        "omniflow_action": "click",
+        "local_action": "click",
+        "model_free": true,
+        "scriptable": true,
+        "tool": "click",
+        "callable_tool": "click",
+        "args": {
+          "x": 290,
+          "y": 610,
+          "target": "Search result"
+        }
+      },
+      {
+        "id": "step_6",
+        "index": 5,
+        "title": "Wait for detail page",
         "kind": "omniflow_action",
         "executor": "omniflow",
         "omniflow_action": "wait",
@@ -49,12 +119,30 @@
         "tool": "wait",
         "callable_tool": "wait",
         "args": {
-          "duration_ms": 1000
+          "duration_ms": 500
+        }
+      },
+      {
+        "id": "step_7",
+        "index": 6,
+        "title": "Tap Back",
+        "kind": "omniflow_action",
+        "executor": "omniflow",
+        "omniflow_action": "click",
+        "local_action": "click",
+        "model_free": true,
+        "scriptable": true,
+        "tool": "click",
+        "callable_tool": "click",
+        "args": {
+          "x": 54,
+          "y": 94,
+          "target": "Back"
         }
       }
     ],
-    "step_count": 2,
-    "omniflow_step_count": 2,
+    "step_count": 7,
+    "omniflow_step_count": 7,
     "agent_step_count": 0,
     "requires_agent_fallback": false
   }

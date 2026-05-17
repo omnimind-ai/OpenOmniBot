@@ -7,20 +7,47 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import argparse
 import json
 from pathlib import Path
+import re
+import time
 from typing import Any
 
 
-FUNCTION_ID = "open_settings_demo"
+FUNCTION_ID = "settings_click_path_demo"
 RUNLOG_ID = "runlog_install_demo"
 INSTALL_FUNCTION_ID = "install_sample_apk_demo"
 
 
-def open_settings_function() -> dict[str, Any]:
+def epoch_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def duration_ms(start_ns: int) -> int:
+    return max(1, int(round((time.perf_counter_ns() - start_ns) / 1_000_000)))
+
+
+def safe_step_name(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_]+", "_", value).strip("_") or "step"
+
+
+def settings_click_path_function() -> dict[str, Any]:
     return {
         "function_id": FUNCTION_ID,
-        "name": "Open Android Settings",
-        "guard_summary": "Deterministic local UI replay",
+        "name": "Settings Click Path Demo",
+        "schema_version": "oob.reusable_function.v1",
+        "guard_summary": "Deterministic local UI replay with multiple click steps",
         "risk_level": "low",
+        "execution": {
+            "step_count": 7,
+            "steps": [
+                {"tool": "open_app", "package": "com.android.settings"},
+                {"tool": "click", "target": "Network & internet", "x": 180, "y": 420},
+                {"tool": "click", "target": "Internet", "x": 160, "y": 520},
+                {"tool": "type", "text": "demo wifi"},
+                {"tool": "click", "target": "Search result", "x": 290, "y": 610},
+                {"tool": "wait", "ms": 500},
+                {"tool": "click", "target": "Back", "x": 54, "y": 94},
+            ],
+        },
     }
 
 
@@ -28,14 +55,19 @@ def install_function() -> dict[str, Any]:
     return {
         "function_id": INSTALL_FUNCTION_ID,
         "name": "Install sample APK",
-        "guard_summary": "Pre-approved mock background install",
+        "schema_version": "oob.reusable_function.v1",
+        "guard_summary": "Pre-approved mock install",
         "risk_level": "medium",
+        "execution": {
+            "step_count": 1,
+            "steps": [{"tool": "package.install", "apk": "sample.apk"}],
+        },
     }
 
 
 class MockOmniFlowMcpHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    registered_functions: dict[str, dict[str, Any]] = {FUNCTION_ID: open_settings_function()}
+    registered_functions: dict[str, dict[str, Any]] = {FUNCTION_ID: settings_click_path_function()}
 
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
@@ -60,14 +92,6 @@ class MockOmniFlowMcpHandler(BaseHTTPRequestHandler):
                     {"name": "omniflow.recall"},
                     {"name": "omniflow.call_function"},
                     {"name": "omniflow.ingest_run_log"},
-                    {"name": "oob_function_list"},
-                    {"name": "oob_function_get"},
-                    {"name": "oob_function_register"},
-                    {"name": "oob_function_guard_check"},
-                    {"name": "oob_function_run"},
-                    {"name": "oob_run_log_list"},
-                    {"name": "oob_run_log_get"},
-                    {"name": "oob_run_log_convert"},
                 ]
             }
         if method != "tools/call":
@@ -91,15 +115,7 @@ class MockOmniFlowMcpHandler(BaseHTTPRequestHandler):
             }
         if name == "omniflow.call_function":
             function_id = arguments.get("function_id", FUNCTION_ID)
-            return {
-                "success": True,
-                "fallback": False,
-                "error": None,
-                "run_id": "mock-run-open-settings-demo",
-                "function_id": function_id,
-                "actions_executed": 2,
-                "control": {"postcondition": "passed", "fallback_reason": ""},
-            }
+            return self._canonical_call_function(function_id)
         if name == "omniflow.ingest_run_log":
             function_id = INSTALL_FUNCTION_ID
             self.registered_functions[function_id] = install_function()
@@ -110,117 +126,66 @@ class MockOmniFlowMcpHandler(BaseHTTPRequestHandler):
                 "status": "created",
                 "reason": "",
             }
-        if name == "oob_function_list":
-            return {
-                "functions": list(self.registered_functions.values())
-            }
-        if name == "oob_function_get":
-            function_id = arguments.get("functionId", FUNCTION_ID)
-            return {
-                "function_id": function_id,
-                "schema_version": "oob.reusable_function.v1",
-                "steps": self._steps_for_function(function_id),
-            }
-        if name == "oob_function_register":
-            spec = arguments.get("functionSpec", {})
-            function_id = spec.get("function_id", "registered_from_mcp")
-            self.registered_functions[function_id] = {
-                "function_id": function_id,
-                "name": spec.get("name", function_id),
-                "guard_summary": "Registered through mock MCP",
-                "risk_level": "low",
-            }
-            return {
-                "success": True,
-                "registered": True,
-                "function_id": function_id,
-                "source": arguments.get("source", "mcp"),
-            }
-        if name == "oob_function_guard_check":
-            function_id = arguments.get("functionId", FUNCTION_ID)
-            return {
-                "function_id": function_id,
-                "decision": "allow",
-                "risk_level": "medium" if function_id == INSTALL_FUNCTION_ID else "low",
-                "reason": "Mock fixture allows this pre-approved Function.",
-            }
-        if name == "oob_function_run":
-            function_id = arguments.get("functionId", FUNCTION_ID)
-            execution_mode = arguments.get("executionMode", "foreground")
-            if function_id == INSTALL_FUNCTION_ID and execution_mode == "background":
-                return {
-                    "success": True,
-                    "function_id": function_id,
-                    "runner": "mock_oob_background_worker",
-                    "guard_decision": "allow",
-                    "execution_mode": "background",
-                    "background": True,
-                    "status": "queued",
-                    "step_results": [
-                        {"index": 0, "type": "package.install", "status": "queued"},
-                    ],
-                    "run_id": "mock-bg-install-run",
-                }
-            return {
-                "success": True,
-                "function_id": function_id,
-                "runner": "mock_oob_mcp",
-                "guard_decision": "allow",
-                "execution_mode": execution_mode,
-                "step_results": [
-                    {"index": 0, "type": "open_app", "status": "ok"},
-                    {"index": 1, "type": "wait", "status": "ok"},
-                ],
-                "run_id": "mock-run-open-settings-demo",
-            }
-        if name == "oob_run_log_list":
-            return {
-                "run_logs": [
-                    {
-                        "run_id": RUNLOG_ID,
-                        "name": "Install sample APK",
-                        "status": "success",
-                        "convertible": True,
-                    }
-                ]
-            }
-        if name == "oob_run_log_get":
-            return {
-                "run_id": arguments.get("runId", RUNLOG_ID),
-                "status": "success",
-                "timeline": [
-                    {"type": "package.install", "apk": "sample.apk"},
-                ],
-            }
-        if name == "oob_run_log_convert":
-            function_id = arguments.get("functionId", INSTALL_FUNCTION_ID)
-            spec = {
-                "schema_version": "oob.reusable_function.v1",
-                "function_id": function_id,
-                "name": arguments.get("name", "Install sample APK"),
-                "description": arguments.get("description", "Install a sample APK in the background."),
-                "parameters": [],
-                "execution": {
-                    "kind": "tool_sequence",
-                    "steps": [{"type": "package.install", "apk": "sample.apk"}],
-                },
-            }
-            registered = bool(arguments.get("register", False))
-            if registered:
-                self.registered_functions[function_id] = install_function()
-            return {
-                "success": True,
-                "registered": registered,
-                "run_id": arguments.get("runId", RUNLOG_ID),
-                "function_id": function_id,
-                "function_spec": spec,
-            }
         return {}
 
-    def _steps_for_function(self, function_id: str) -> list[dict[str, Any]]:
+    def _canonical_call_function(self, function_id: str) -> dict[str, Any]:
+        started_at_ms = epoch_ms()
+        start_ns = time.perf_counter_ns()
         if function_id == INSTALL_FUNCTION_ID:
-            return [{"type": "package.install", "apk": "sample.apk"}]
-        return [{"type": "open_app", "package": "com.android.settings"}, {"type": "wait", "ms": 500}]
+            step_results = [self._run_step(0, "package.install", "ok", 8)]
+            return {
+                "success": True,
+                "fallback": False,
+                "error": None,
+                "run_id": "mock-run-install-sample-apk-demo",
+                "function_id": function_id,
+                "actions_executed": 1,
+                "step_results": step_results,
+                "timing": self._timing(started_at_ms, start_ns),
+                "control": {"postcondition": "passed", "fallback_reason": ""},
+            }
+        step_results = self._run_settings_click_path()
+        return {
+            "success": True,
+            "fallback": False,
+            "error": None,
+            "run_id": "mock-run-settings-click-path-demo",
+            "function_id": function_id,
+            "actions_executed": len(step_results),
+            "step_results": step_results,
+            "timing": self._timing(started_at_ms, start_ns),
+            "control": {"postcondition": "passed", "fallback_reason": ""},
+        }
+
+    def _run_settings_click_path(self) -> list[dict[str, Any]]:
+        return [
+            self._run_step(0, "open_app", "ok", 12),
+            self._run_step(1, "click", "ok", 16),
+            self._run_step(2, "click", "ok", 21),
+            self._run_step(3, "type", "ok", 14),
+            self._run_step(4, "click", "ok", 18),
+            self._run_step(5, "wait", "ok", 9),
+            self._run_step(6, "click", "ok", 24),
+        ]
+
+    def _run_step(self, index: int, step_type: str, status: str, simulated_ms: int) -> dict[str, Any]:
+        start_ns = time.perf_counter_ns()
+        time.sleep(simulated_ms / 1000)
+        return {
+            "index": index,
+            "type": safe_step_name(step_type),
+            "status": status,
+            "duration_ms": duration_ms(start_ns),
+        }
+
+    def _timing(self, started_at_ms: int, start_ns: int) -> dict[str, Any]:
+        finished_at_ms = epoch_ms()
+        return {
+            "source": "mock_mcp_runner",
+            "started_at_ms": started_at_ms,
+            "finished_at_ms": finished_at_ms,
+            "runner_duration_ms": duration_ms(start_ns),
+        }
 
 
 def main() -> int:
