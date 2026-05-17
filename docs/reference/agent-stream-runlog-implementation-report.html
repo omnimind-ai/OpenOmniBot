@@ -236,13 +236,14 @@
       <li><code>omniflow_acceptance_all_guiagents.sh</code> 覆盖 mobilegpt、mobile-use、mobile-mcp 三类 repo，分别验证 Python skill + MCP 和 direct MCP 模式。</li>
     </ul>
 
-    <h3>6. WebChat 直通流修正</h3>
+    <h3>6. 共享 Run Part 投影层</h3>
     <ul>
-      <li><code>web_chat_app.dart</code> 现在在 <code>thinking_started</code> 即创建空的 deep thinking 占位卡，避免 output 先落屏、thinking 后插入导致视觉顺序错乱。</li>
-      <li>同一 task 的多轮 thinking 不再互相删除，只清理升级到 <code>*-thinking-2</code> 等新轮次时遗留的空首轮占位。</li>
-      <li><code>error</code> 事件遵循 native 的 <code>persistAsError</code> 语义：已有用户可见 output 时保留正文，只把该消息标为 final；没有正文时才展示错误 bubble。</li>
-      <li>WebChat 消息排序从只按 <code>createAt</code> 改为 <code>createAt + stream seq</code>，解决同一毫秒内 thinking/text/tool/error 到达顺序不稳定的问题。</li>
-      <li>主聊天页新增直通 <code>onAgentStreamEvent</code> 回归测试，覆盖 thinking-start → thinking-snapshot → output → error 后仍归并为同一个 run。</li>
+      <li>参考 Anthropic content block、Vercel AI SDK message part、OpenAI Responses output item 的共同模型，新增 <code>AgentStreamRunProjection</code>：把 stream event 投影成稳定 run part，而不是在页面里临时补分支。</li>
+      <li><code>thinking_started</code> 统一投影为空的 thinking part，占位先出现；后续 <code>thinking_snapshot</code> 只更新同一个 part，避免 output 先落屏、thinking 后插入导致顺序错乱。</li>
+      <li>多轮 thinking 只清理升级到 <code>*-thinking-2</code> 等新轮次时遗留的空首轮占位；已有内容的 thinking round 不被删除。</li>
+      <li><code>error</code> 是 run 的 terminal status，不是 assistant text part 的替代正文：已有用户可见 output 时保留正文；没有正文时才投影成错误 bubble。</li>
+      <li>消息排序统一为 <code>createAt + stream seq</code>，解决同一毫秒内 thinking/text/tool/error 到达顺序不稳定的问题。</li>
+      <li>WebChat 已从局部 upsert 逻辑切到共享投影层；主聊天页新增直通 <code>onAgentStreamEvent</code> 回归测试，覆盖 thinking-start → thinking-snapshot → output → error 后仍归并为同一个 run。</li>
     </ul>
   </section>
 
@@ -259,7 +260,8 @@
         <tr><td>Replay</td><td><code>app/src/main/java/cn/com/omnimind/bot/runlog/OmniflowStepExecutor.kt</code></td><td>本机 model-free action 执行和坐标重映射。</td></tr>
         <tr><td>VLM</td><td><code>assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/ActionTargetGrounder.kt</code></td><td>当前 Accessibility XML 上的语义目标 grounding。</td></tr>
         <tr><td>External</td><td><code>omniflow_agentkit/mcp.py</code></td><td>无依赖 JSON-RPC MCP client。</td></tr>
-        <tr><td>WebChat stream</td><td><code>ui/lib/webchat/web_chat_app.dart</code></td><td>WebChat 直通 Agent stream 的 thinking 占位、error 保正文、同毫秒 seq 排序。</td></tr>
+        <tr><td>Stream projection</td><td><code>ui/lib/services/agent_stream_run_projection.dart</code></td><td>Agent stream event 到稳定 run part 的共享投影规则。</td></tr>
+        <tr><td>WebChat stream</td><td><code>ui/lib/webchat/web_chat_app.dart</code></td><td>WebChat 直通 Agent stream 调用共享投影层。</td></tr>
       </tbody>
     </table>
   </section>
@@ -274,6 +276,7 @@
       <li><span class="ok">通过：</span>失败的本地 replay card 不会吞掉 VLM fallback；<code>android_privileged_action.arguments</code> 会展平为可执行端侧参数。</li>
       <li><span class="ok">通过：</span>ActionTargetGrounder 能把点击修正到匹配节点中心，低置信度不改动作。</li>
       <li><span class="ok">通过：</span>AgentKit CLI 可通过 mock MCP 完成 list/guard/run。</li>
+      <li><span class="ok">通过：</span>共享投影层单测覆盖 error 不覆盖已有 output、无 output 才生成错误 bubble、同毫秒按 seq 排序、空首轮 thinking 占位清理。</li>
       <li><span class="ok">通过：</span>直通 stream 在 error 后保留已输出正文，thinking 和 output 仍归并到同一个 Agent run。</li>
       <li><span class="warn">待真机：</span>长流式回答 CPU/帧耗时、RunLog 大量 upsert 写入频率、真实设备 replay 触达率。</li>
     </ul>

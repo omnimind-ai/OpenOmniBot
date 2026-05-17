@@ -17,6 +17,7 @@ import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
+import 'package:ui/services/agent_stream_run_projection.dart';
 import 'package:ui/services/agent_stream_meta.dart';
 import 'package:ui/webchat/web_backends.dart';
 
@@ -1037,14 +1038,12 @@ class _WebChatHomeState extends State<_WebChatHome> {
     final cardId = (event.entryId ?? '').trim().isNotEmpty
         ? event.entryId!.trim()
         : '${event.taskId}-thinking';
-    final basePlaceholderId = '${event.taskId}-thinking-1';
     _messages.removeWhere((message) {
-      if (cardId == basePlaceholderId || message.id != basePlaceholderId) {
-        return false;
-      }
-      return (message.cardData?['thinkingContent']?.toString() ?? '')
-          .trim()
-          .isEmpty;
+      return AgentStreamRunProjection.shouldDropEmptyBaseThinkingPlaceholder(
+        message,
+        taskId: event.taskId,
+        nextThinkingEntryId: cardId,
+      );
     });
     final index = _messages.indexWhere((message) => message.id == cardId);
     final existing = index == -1 ? null : _messages[index];
@@ -1054,11 +1053,9 @@ class _WebChatHomeState extends State<_WebChatHome> {
     final nextThinking = event.thinking.trim().isNotEmpty
         ? event.thinking
         : (existingCardData['thinkingContent'] ?? '').toString();
-    final isPlaceholderStart =
-        event.kind == AgentStreamEventKind.thinkingStarted;
     if (nextThinking.trim().isEmpty &&
         existing == null &&
-        !isPlaceholderStart) {
+        !AgentStreamRunProjection.shouldCreateThinkingPlaceholder(event)) {
       return;
     }
     final startTime =
@@ -1095,14 +1092,12 @@ class _WebChatHomeState extends State<_WebChatHome> {
     required String text,
     required bool isFinal,
     bool isError = false,
+    String? messageIdOverride,
   }) {
-    final explicitMessageId = (event.entryId ?? '').trim();
-    final fallbackMessageId = explicitMessageId.isEmpty
-        ? _resolveWebAssistantMessageId(event)
-        : '';
-    final messageId = explicitMessageId.isNotEmpty
-        ? explicitMessageId
-        : fallbackMessageId;
+    final overrideId = messageIdOverride?.trim() ?? '';
+    final messageId = overrideId.isNotEmpty
+        ? overrideId
+        : AgentStreamRunProjection.resolveAssistantMessageId(_messages, event);
     final normalizedText = text.trim();
     if (messageId.isEmpty || normalizedText.isEmpty) {
       return false;
@@ -1146,72 +1141,14 @@ class _WebChatHomeState extends State<_WebChatHome> {
   }
 
   bool _upsertWebErrorMessage(AgentStreamEvent event) {
-    final persistAsError = event.raw['persistAsError'] == true;
-    final eventText = event.text.trim();
-    final fallbackError = event.errorMessage.trim().isNotEmpty
-        ? event.errorMessage
-        : AppTextLocalizer.choose(
-            en: "I can't generate a reply right now. Please try again.",
-            zh: '暂时无法生成回复，请重试。',
-          );
-    final existingIndex = _resolveWebAssistantMessageIndex(event);
-    final existingText = existingIndex == -1
-        ? ''
-        : (_messages[existingIndex].text ?? '').trim();
-
-    if (!persistAsError && existingText.isNotEmpty) {
-      return _upsertWebAssistantMessage(
-        event,
-        text: eventText.isNotEmpty ? eventText : existingText,
-        isFinal: true,
-        isError: false,
-      );
-    }
-
-    final resolvedText = eventText.isNotEmpty
-        ? eventText
-        : (existingText.isNotEmpty ? existingText : fallbackError);
+    final projection = AgentStreamRunProjection.resolveError(event, _messages);
     return _upsertWebAssistantMessage(
       event,
-      text: resolvedText,
+      text: projection.text,
       isFinal: true,
-      isError: persistAsError || existingText.isEmpty,
+      isError: projection.isError,
+      messageIdOverride: projection.messageId,
     );
-  }
-
-  int _resolveWebAssistantMessageIndex(AgentStreamEvent event) {
-    final entryId = (event.entryId ?? '').trim();
-    if (entryId.isNotEmpty) {
-      final directIndex = _messages.indexWhere(
-        (message) => message.id == entryId,
-      );
-      if (directIndex != -1) {
-        return directIndex;
-      }
-    }
-
-    var result = -1;
-    var newestSeq = -1;
-    for (var index = 0; index < _messages.length; index++) {
-      final message = _messages[index];
-      final ref = agentRunMessageRef(message);
-      if (ref == null || ref.taskId != event.taskId || !ref.isAssistantText) {
-        continue;
-      }
-      if (ref.sequence >= newestSeq) {
-        newestSeq = ref.sequence;
-        result = index;
-      }
-    }
-    return result;
-  }
-
-  String _resolveWebAssistantMessageId(AgentStreamEvent event) {
-    final index = _resolveWebAssistantMessageIndex(event);
-    if (index == -1) {
-      return '';
-    }
-    return _messages[index].id;
   }
 
   void _upsertWebToolCard(AgentStreamEvent event) {
@@ -1425,19 +1362,9 @@ class _WebChatHomeState extends State<_WebChatHome> {
         eventConversationKey != _conversationKey(conversation)) {
       return;
     }
-    final shouldTrack = switch (event.kind) {
-      AgentStreamEventKind.thinkingStarted ||
-      AgentStreamEventKind.thinkingSnapshot ||
-      AgentStreamEventKind.textSnapshot ||
-      AgentStreamEventKind.toolStarted ||
-      AgentStreamEventKind.toolProgress ||
-      AgentStreamEventKind.workbenchProjectCard ||
-      AgentStreamEventKind.toolCompleted => true,
-      AgentStreamEventKind.completed ||
-      AgentStreamEventKind.error ||
-      AgentStreamEventKind.clarifyRequired ||
-      AgentStreamEventKind.permissionRequired => false,
-    };
+    final shouldTrack = AgentStreamRunProjection.shouldTrackActiveRun(
+      event.kind,
+    );
     if (!mounted) {
       return;
     }
@@ -1492,26 +1419,8 @@ class _WebChatHomeState extends State<_WebChatHome> {
       return _messages.reversed.toList();
     }
     final merged = <ChatMessageModel>[..._messages];
-    merged.sort(_compareWebDisplayMessages);
+    merged.sort(AgentStreamRunProjection.compareMessagesOldestFirst);
     return merged;
-  }
-
-  int _compareWebDisplayMessages(
-    ChatMessageModel left,
-    ChatMessageModel right,
-  ) {
-    final timeCompare = left.createAt.compareTo(right.createAt);
-    if (timeCompare != 0) {
-      return timeCompare;
-    }
-    final leftSeq = agentRunSequence(left);
-    final rightSeq = agentRunSequence(right);
-    if (leftSeq != rightSeq) {
-      if (leftSeq < 0) return -1;
-      if (rightSeq < 0) return 1;
-      return leftSeq.compareTo(rightSeq);
-    }
-    return left.id.compareTo(right.id);
   }
 
   List<AgentRunTimelineEntry> _displayTimelineEntries() {
