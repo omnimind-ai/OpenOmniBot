@@ -108,6 +108,57 @@ class MessageBubble extends StatelessWidget {
         : visualProfile.secondaryTextColor;
   }
 
+  Color _resolvedUserPrimaryTextColor(BuildContext context) {
+    return _usesThemeDrivenText()
+        ? context.omniPalette.textPrimary
+        : visualProfile.primaryTextColor;
+  }
+
+  Color _resolvedUserBubbleColor(BuildContext context) {
+    if (!_usesThemeDrivenText()) {
+      return visualProfile.userBubbleColor;
+    }
+    return context.isDarkTheme
+        ? context.omniPalette.surfaceSecondary
+        : visualProfile.userBubbleColor;
+  }
+
+  Color _resolvedAttachmentSurfaceColor(BuildContext context) {
+    if (!_usesThemeDrivenText()) {
+      return visualProfile.attachmentSurfaceColor;
+    }
+    return context.isDarkTheme
+        ? context.omniPalette.surfaceElevated
+        : visualProfile.attachmentSurfaceColor;
+  }
+
+  Color _resolvedAttachmentBorderColor(BuildContext context) {
+    if (!_usesThemeDrivenText()) {
+      return visualProfile.attachmentBorderColor;
+    }
+    return context.isDarkTheme
+        ? context.omniPalette.borderSubtle
+        : visualProfile.attachmentBorderColor;
+  }
+
+  Color _resolvedAttachmentIconColor(BuildContext context) {
+    if (!_usesThemeDrivenText()) {
+      return visualProfile.attachmentIconColor;
+    }
+    return context.isDarkTheme
+        ? context.omniPalette.textSecondary
+        : visualProfile.attachmentIconColor;
+  }
+
+  Color _resolvedAttachmentTextColor(BuildContext context) {
+    if (!_usesThemeDrivenText()) {
+      return visualProfile.attachmentTextColor;
+    }
+    return context.isDarkTheme
+        ? context.omniPalette.textPrimary
+        : visualProfile.attachmentTextColor;
+  }
+
   @override
   Widget build(BuildContext context) {
     // user: 1=用户, 2=AI, 3=系统
@@ -184,7 +235,7 @@ class MessageBubble extends StatelessWidget {
               constraints: BoxConstraints(maxWidth: maxBubbleWidth),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               decoration: ShapeDecoration(
-                color: visualProfile.userBubbleColor,
+                color: _resolvedUserBubbleColor(context),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(4),
                 ),
@@ -199,7 +250,7 @@ class MessageBubble extends StatelessWidget {
                       attachments,
                     )
                   else ...[
-                    if (text.isNotEmpty) _buildUserText(text),
+                    if (text.isNotEmpty) _buildUserText(context, text),
                     if (attachments.isNotEmpty) ...[
                       if (text.isNotEmpty) const SizedBox(height: 8),
                       _buildUserAttachmentList(context, attachments),
@@ -289,7 +340,7 @@ class MessageBubble extends StatelessWidget {
             heroTags,
           );
         }
-        return _buildFileAttachmentChip(item);
+        return _buildFileAttachmentChip(context, item);
       }).toList(),
     );
   }
@@ -318,14 +369,17 @@ class MessageBubble extends StatelessWidget {
         height: 84,
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: visualProfile.attachmentSurfaceColor,
+          color: _resolvedAttachmentSurfaceColor(context),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: visualProfile.attachmentBorderColor,
+            color: _resolvedAttachmentBorderColor(context),
             width: 1,
           ),
         ),
-        child: Hero(tag: heroTag, child: _buildAttachmentImageWidget(item)),
+        child: Hero(
+          tag: heroTag,
+          child: _buildAttachmentImageWidget(context, item),
+        ),
       ),
     );
   }
@@ -351,7 +405,10 @@ class MessageBubble extends StatelessWidget {
     return null;
   }
 
-  Widget _buildAttachmentImageWidget(Map<String, dynamic> item) {
+  Widget _buildAttachmentImageWidget(
+    BuildContext context,
+    Map<String, dynamic> item,
+  ) {
     final dataUrl = (item['dataUrl'] as String? ?? '').trim();
     if (dataUrl.startsWith('data:')) {
       final bytes = _decodeDataUrlBytes(dataUrl);
@@ -360,7 +417,7 @@ class MessageBubble extends StatelessWidget {
           bytes,
           fit: BoxFit.cover,
           gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => _buildImageFallback(),
+          errorBuilder: (_, __, ___) => _buildImageFallback(context),
         );
       }
     }
@@ -371,7 +428,7 @@ class MessageBubble extends StatelessWidget {
         url,
         fit: BoxFit.cover,
         gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => _buildImageFallback(),
+        errorBuilder: (_, __, ___) => _buildImageFallback(context),
       );
     }
     if (url.startsWith('data:')) {
@@ -381,7 +438,7 @@ class MessageBubble extends StatelessWidget {
           bytes,
           fit: BoxFit.cover,
           gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => _buildImageFallback(),
+          errorBuilder: (_, __, ___) => _buildImageFallback(context),
         );
       }
     }
@@ -392,23 +449,26 @@ class MessageBubble extends StatelessWidget {
         File(path),
         fit: BoxFit.cover,
         gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => _buildImageFallback(),
+        errorBuilder: (_, __, ___) => _buildImageFallback(context),
       );
     }
-    return _buildImageFallback();
+    return _buildImageFallback(context);
   }
 
-  Widget _buildImageFallback() {
+  Widget _buildImageFallback(BuildContext context) {
     return Center(
       child: Icon(
         Icons.image_not_supported_outlined,
         size: 20,
-        color: visualProfile.attachmentIconColor,
+        color: _resolvedAttachmentIconColor(context),
       ),
     );
   }
 
-  Widget _buildFileAttachmentChip(Map<String, dynamic> item) {
+  Widget _buildFileAttachmentChip(
+    BuildContext context,
+    Map<String, dynamic> item,
+  ) {
     final displayName = _resolveAttachmentDisplayName(item);
     final sizeText = _formatAttachmentSize(item['size']);
 
@@ -416,10 +476,10 @@ class MessageBubble extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 220, minHeight: 40),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: visualProfile.attachmentSurfaceColor,
+        color: _resolvedAttachmentSurfaceColor(context),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: visualProfile.attachmentBorderColor,
+          color: _resolvedAttachmentBorderColor(context),
           width: 1,
         ),
       ),
@@ -429,7 +489,7 @@ class MessageBubble extends StatelessWidget {
           Icon(
             Icons.insert_drive_file_outlined,
             size: 15,
-            color: visualProfile.attachmentIconColor,
+            color: _resolvedAttachmentIconColor(context),
           ),
           const SizedBox(width: 6),
           Flexible(
@@ -438,7 +498,7 @@ class MessageBubble extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: visualProfile.attachmentTextColor,
+                color: _resolvedAttachmentTextColor(context),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
                 height: 1.25,
@@ -499,6 +559,12 @@ class MessageBubble extends StatelessWidget {
     final hasImage =
         preview.imageUrl.startsWith('http://') ||
         preview.imageUrl.startsWith('https://');
+    final primaryColor = isUserMessage
+        ? _resolvedUserPrimaryTextColor(context)
+        : _resolvedAiPrimaryTextColor(context);
+    final secondaryColor = isUserMessage
+        ? _resolvedUserPrimaryTextColor(context).withValues(alpha: 0.82)
+        : _resolvedAiSecondaryTextColor(context);
     final statusLabel = switch (preview.status) {
       ChatLinkPreview.statusLoading => isEnglish ? 'Loading preview' : '加载预览中',
       ChatLinkPreview.statusFailed =>
@@ -521,10 +587,10 @@ class MessageBubble extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: 360),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: visualProfile.attachmentSurfaceColor,
+            color: _resolvedAttachmentSurfaceColor(context),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: visualProfile.attachmentBorderColor,
+              color: _resolvedAttachmentBorderColor(context),
               width: 1,
             ),
           ),
@@ -541,7 +607,7 @@ class MessageBubble extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: visualProfile.secondaryTextColor,
+                          color: secondaryColor,
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                         ),
@@ -553,7 +619,7 @@ class MessageBubble extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: visualProfile.primaryTextColor,
+                          color: primaryColor,
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           height: 1.25,
@@ -568,7 +634,7 @@ class MessageBubble extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: visualProfile.secondaryTextColor,
+                          color: secondaryColor,
                           fontSize: 12,
                           height: 1.35,
                         ),
@@ -584,10 +650,7 @@ class MessageBubble extends StatelessWidget {
                         statusLabel,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: visualProfile.secondaryTextColor,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: secondaryColor, fontSize: 12),
                       ),
                     ],
                   ],
@@ -603,7 +666,7 @@ class MessageBubble extends StatelessWidget {
                     height: 72,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) =>
-                        _buildLinkPreviewImageFallback(),
+                        _buildLinkPreviewImageFallback(context),
                   ),
                 ),
               ],
@@ -629,10 +692,10 @@ class MessageBubble extends StatelessWidget {
         preview.imageUrl.startsWith('http://') ||
         preview.imageUrl.startsWith('https://');
     final primaryColor = isUserMessage
-        ? visualProfile.primaryTextColor
+        ? _resolvedUserPrimaryTextColor(context)
         : _resolvedAiPrimaryTextColor(context);
     final secondaryBaseColor = isUserMessage
-        ? visualProfile.primaryTextColor
+        ? _resolvedUserPrimaryTextColor(context)
         : _resolvedAiSecondaryTextColor(context);
     final lineColor = secondaryBaseColor.withValues(alpha: 0.42);
     final metaColor = secondaryBaseColor.withValues(alpha: 0.82);
@@ -742,7 +805,7 @@ class MessageBubble extends StatelessWidget {
                     height: 40,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) =>
-                        _buildCompactLinkPreviewImageFallback(),
+                        _buildCompactLinkPreviewImageFallback(context),
                   ),
                 ),
               ],
@@ -753,16 +816,17 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildCompactLinkPreviewImageFallback() {
+  Widget _buildCompactLinkPreviewImageFallback(BuildContext context) {
+    final color = _resolvedAttachmentIconColor(context);
     return Container(
       width: 40,
       height: 40,
       alignment: Alignment.center,
-      color: visualProfile.primaryTextColor.withValues(alpha: 0.08),
+      color: color.withValues(alpha: 0.08),
       child: Icon(
         Icons.link_outlined,
         size: 14,
-        color: visualProfile.primaryTextColor.withValues(alpha: 0.72),
+        color: color.withValues(alpha: 0.72),
       ),
     );
   }
@@ -780,16 +844,16 @@ class MessageBubble extends StatelessWidget {
     await OmnibotResourceService.handleLinkTap(url);
   }
 
-  Widget _buildLinkPreviewImageFallback() {
+  Widget _buildLinkPreviewImageFallback(BuildContext context) {
     return Container(
       width: 72,
       height: 72,
-      color: visualProfile.attachmentSurfaceColor,
+      color: _resolvedAttachmentSurfaceColor(context),
       alignment: Alignment.center,
       child: Icon(
         Icons.link_outlined,
         size: 18,
-        color: visualProfile.attachmentIconColor,
+        color: _resolvedAttachmentIconColor(context),
       ),
     );
   }
@@ -900,7 +964,7 @@ class MessageBubble extends StatelessWidget {
                 bottom: MediaQuery.of(context).viewInsets.bottom + 96,
               ),
               style: TextStyle(
-                color: visualProfile.primaryTextColor,
+                color: _resolvedUserPrimaryTextColor(context),
                 fontSize: _chatTextSize,
                 fontFamily: 'PingFang SC',
                 fontWeight: FontWeight.w400,
@@ -920,7 +984,9 @@ class MessageBubble extends StatelessWidget {
                 contentPadding: EdgeInsets.zero,
                 hintText: context.trLegacy('编辑你的消息'),
                 hintStyle: TextStyle(
-                  color: visualProfile.primaryTextColor.withValues(alpha: 0.6),
+                  color: _resolvedUserPrimaryTextColor(
+                    context,
+                  ).withValues(alpha: 0.6),
                   fontSize: _chatTextSize,
                 ),
               ),
@@ -955,11 +1021,11 @@ class MessageBubble extends StatelessWidget {
   }
 
   /// 构建用户文本（不使用流式效果）
-  Widget _buildUserText(String text) {
+  Widget _buildUserText(BuildContext context, String text) {
     return Text(
       text,
       style: TextStyle(
-        color: visualProfile.primaryTextColor,
+        color: _resolvedUserPrimaryTextColor(context),
         fontSize: _chatTextSize,
         fontFamily: 'PingFang SC',
         fontWeight: FontWeight.w400,
@@ -1068,7 +1134,9 @@ class MessageBubble extends StatelessWidget {
             '${speed.toStringAsFixed(1)} tok/s',
             style: TextStyle(
               fontSize: 11,
-              color: visualProfile.secondaryTextColor.withValues(alpha: 0.6),
+              color: _resolvedAiSecondaryTextColor(
+                context,
+              ).withValues(alpha: 0.6),
               fontWeight: FontWeight.w400,
             ),
           ),

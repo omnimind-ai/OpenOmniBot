@@ -9,6 +9,7 @@ import 'package:ui/services/screen_dialog_service.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/constants/openclaw/openclaw_keys.dart';
 import 'package:ui/features/home/pages/common/openclaw_connection_checker.dart';
+import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/data_parser.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/image/cached_image.dart';
@@ -167,12 +168,13 @@ class _CommandOverlayState extends State<CommandOverlay> {
   }
 
   Widget _buildOpenClawToggle() {
+    final palette = context.omniPalette;
+    final labelColor = context.isDarkTheme
+        ? palette.textSecondary
+        : const Color(0xFF666666);
     return Row(
       children: [
-        const Text(
-          'OpenClaw',
-          style: TextStyle(fontSize: 12, color: Color(0xFF666666)),
-        ),
+        Text('OpenClaw', style: TextStyle(fontSize: 12, color: labelColor)),
         const SizedBox(width: 8),
         Switch.adaptive(
           value: _openClawEnabled,
@@ -182,15 +184,12 @@ class _CommandOverlayState extends State<CommandOverlay> {
         const Spacer(),
         TextButton.icon(
           onPressed: _showOpenClawConfigDialog,
-          icon: const Icon(Icons.settings, size: 16, color: Color(0xFF666666)),
-          label: const Text(
-            '配置',
-            style: TextStyle(fontSize: 12, color: Color(0xFF666666)),
-          ),
+          icon: Icon(Icons.settings, size: 16, color: labelColor),
+          label: Text('配置', style: TextStyle(fontSize: 12, color: labelColor)),
           style: TextButton.styleFrom(
             visualDensity: VisualDensity.compact,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            foregroundColor: const Color(0xFF666666),
+            foregroundColor: labelColor,
           ),
         ),
       ],
@@ -476,6 +475,17 @@ class _CommandOverlayState extends State<CommandOverlay> {
 
   Widget _buildSlashCommandPanel() {
     final visible = _showSlashCommandPanel || _openClawPanelExpanded;
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final panelTextColor = isDark
+        ? palette.textPrimary
+        : const Color(0xFF1F2937);
+    final panelSecondaryTextColor = isDark
+        ? palette.textSecondary
+        : const Color(0xFF6B7280);
+    final panelAccentColor = isDark
+        ? palette.accentPrimary
+        : const Color(0xFF2563EB);
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
       transitionBuilder: (child, animation) {
@@ -497,11 +507,12 @@ class _CommandOverlayState extends State<CommandOverlay> {
               margin: const EdgeInsets.fromLTRB(24, 0, 24, 6),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: isDark ? palette.surfacePrimary : Colors.white,
                 borderRadius: BorderRadius.circular(12),
+                border: isDark ? Border.all(color: palette.borderSubtle) : null,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.08),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -511,12 +522,12 @@ class _CommandOverlayState extends State<CommandOverlay> {
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'OpenClaw 配置',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
+                            color: panelTextColor,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -553,16 +564,16 @@ class _CommandOverlayState extends State<CommandOverlay> {
                       },
                       borderRadius: BorderRadius.circular(10),
                       child: Row(
-                        children: const [
-                          Icon(Icons.link, size: 16, color: Color(0xFF2563EB)),
-                          SizedBox(width: 8),
+                        children: [
+                          Icon(Icons.link, size: 16, color: panelAccentColor),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               'OpenClaw',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
+                                color: panelTextColor,
                               ),
                             ),
                           ),
@@ -570,7 +581,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
                             '配置',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Color(0xFF6B7280),
+                              color: panelSecondaryTextColor,
                             ),
                           ),
                         ],

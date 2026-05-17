@@ -32,6 +32,7 @@ import 'package:ui/widgets/ai_generated_badge.dart';
 import 'package:ui/constants/openclaw/openclaw_keys.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/features/home/pages/chat/mixins/agent_stream_handler.dart';
+import 'package:ui/theme/theme_context.dart';
 
 /// 聊天上下文存储的key
 const String kChatContextStorageKey = 'chat_context_for_summary';
@@ -2078,6 +2079,8 @@ class _ChatBotSheetState extends State<ChatBotSheet>
     final screenHeight = MediaQuery.of(context).size.height;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final inputAreaHeight = _inputAreaHeight > 0 ? _inputAreaHeight : 72.0;
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
     final liftEmptyGreeting = _emptyGreetingKeyboardLiftTracker.resolveForBuild(
       bottomInset,
     );
@@ -2111,14 +2114,20 @@ class _ChatBotSheetState extends State<ChatBotSheet>
               behavior: HitTestBehavior.translucent,
               onPointerDown: (event) => _handleOutsideTap(event.position),
               child: Container(
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF9FCFF), // #F9FCFF
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? palette.pageBackground
+                      : const Color(0xFFF9FCFF),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: Color(0x1A000000),
+                      color: isDark
+                          ? Colors.black.withValues(alpha: 0.28)
+                          : const Color(0x1A000000),
                       blurRadius: 20,
-                      offset: Offset(0, -4),
+                      offset: const Offset(0, -4),
                     ),
                   ],
                 ),
@@ -2145,7 +2154,9 @@ class _ChatBotSheetState extends State<ChatBotSheet>
                                 width: 100,
                                 height: 4,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFCCCCCC), // #CCCCCC
+                                  color: isDark
+                                      ? palette.borderStrong
+                                      : const Color(0xFFCCCCCC),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                               ),
@@ -2193,11 +2204,9 @@ class _ChatBotSheetState extends State<ChatBotSheet>
                                 : Alignment.center,
                             child: ChatEmptyGreeting(
                               compact: true,
-                              primaryTextColor: const Color(0xFF353E53),
-                              secondaryTextColor: const Color(0xFF71809B),
-                              accentColor: Theme.of(
-                                context,
-                              ).colorScheme.primary,
+                              primaryTextColor: palette.textPrimary,
+                              secondaryTextColor: palette.textSecondary,
+                              accentColor: palette.accentPrimary,
                               quickPrompts: homeGreetingSettings.quickPrompts,
                               pinnedQuickPromptIds:
                                   homeGreetingSettings.pinnedQuickPromptIds,
@@ -2312,13 +2321,21 @@ class _ChatBotSheetState extends State<ChatBotSheet>
   }
 
   Widget _buildVlmInfoPrompt() {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final promptAccentColor = isDark
+        ? palette.accentPrimary
+        : const Color(0xFF4F83FF);
+    final promptTextColor = isDark
+        ? palette.textPrimary
+        : const Color(0xFF1D3E7B);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFE8F2FF),
+        color: isDark ? palette.surfaceSecondary : const Color(0xFFE8F2FF),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF4F83FF)),
+        border: Border.all(color: promptAccentColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2330,13 +2347,12 @@ class _ChatBotSheetState extends State<ChatBotSheet>
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF1D3E7B),
-            ),
+            ).copyWith(color: promptTextColor),
           ),
           const SizedBox(height: 6),
           Text(
             _vlmInfoQuestion ?? '',
-            style: const TextStyle(fontSize: 13, color: Color(0xFF1D3E7B)),
+            style: TextStyle(fontSize: 13, color: promptTextColor),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -2391,6 +2407,17 @@ class _ChatBotSheetState extends State<ChatBotSheet>
 
   Widget _buildSlashCommandPanel() {
     final visible = _showSlashCommandPanel || _openClawPanelExpanded;
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final panelTextColor = isDark
+        ? palette.textPrimary
+        : const Color(0xFF1F2937);
+    final panelSecondaryTextColor = isDark
+        ? palette.textSecondary
+        : const Color(0xFF6B7280);
+    final panelAccentColor = isDark
+        ? palette.accentPrimary
+        : const Color(0xFF2563EB);
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
       transitionBuilder: (child, animation) {
@@ -2412,11 +2439,12 @@ class _ChatBotSheetState extends State<ChatBotSheet>
               margin: const EdgeInsets.fromLTRB(24, 0, 24, 6),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: isDark ? palette.surfacePrimary : Colors.white,
                 borderRadius: BorderRadius.circular(12),
+                border: isDark ? Border.all(color: palette.borderSubtle) : null,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.08),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -2426,12 +2454,12 @@ class _ChatBotSheetState extends State<ChatBotSheet>
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'OpenClaw 配置',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
+                            color: panelTextColor,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -2473,27 +2501,23 @@ class _ChatBotSheetState extends State<ChatBotSheet>
                       borderRadius: BorderRadius.circular(10),
                       child: Row(
                         children: [
-                          const Icon(
-                            Icons.link,
-                            size: 16,
-                            color: Color(0xFF2563EB),
-                          ),
+                          Icon(Icons.link, size: 16, color: panelAccentColor),
                           const SizedBox(width: 8),
-                          const Expanded(
+                          Expanded(
                             child: Text(
                               'OpenClaw',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
+                                color: panelTextColor,
                               ),
                             ),
                           ),
                           Text(
                             LegacyTextLocalizer.isEnglish ? 'Config' : '配置',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: Color(0xFF6B7280),
+                              color: panelSecondaryTextColor,
                             ),
                           ),
                         ],
