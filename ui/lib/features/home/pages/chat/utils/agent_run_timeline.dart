@@ -43,6 +43,8 @@ class AgentRunTimelineGroup {
       .where((message) => agentRunMessageRef(message)?.isToolCard ?? false)
       .length;
 
+  bool get isRunLogOnly => !isActiveRun && processMessagesNewestFirst.isEmpty;
+
   String get runLogId {
     final candidates = <Object?>[
       ...visibleMessagesNewestFirst.map(_runLogIdFromMessage),

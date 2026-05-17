@@ -1720,6 +1720,55 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         )
     }
 
+    private fun buildAssistantResponseRunLogCard(
+        entryId: String,
+        text: String,
+        isError: Boolean,
+        startedAtMillis: Long,
+        finishedAtMillis: Long
+    ): Map<String, Any?> {
+        val normalizedText = AgentTextSanitizer.sanitizeUtf16(text).trim()
+        val durationMs = (finishedAtMillis - startedAtMillis).coerceAtLeast(0L)
+        val status = if (isError) {
+            AgentConversationHistoryRepository.STATUS_ERROR
+        } else {
+            AgentConversationHistoryRepository.STATUS_SUCCESS
+        }
+        val title = t("最终回复", "Final response")
+        val result = JSONObject(
+            mapOf(
+                "text" to normalizedText,
+                "status" to status
+            )
+        ).toString()
+        return linkedMapOf(
+            "card_id" to entryId,
+            "header" to linkedMapOf<String, Any?>(
+                "step_index" to 0,
+                "title" to title,
+                "tool_name" to "assistant_response",
+                "status" to status,
+                "success" to !isError,
+                "duration_ms" to durationMs
+            ),
+            "title" to title,
+            "summary" to normalizedText.take(160),
+            "tool_name" to "assistant_response",
+            "toolName" to "assistant_response",
+            "tool_type" to "message",
+            "status" to status,
+            "success" to !isError,
+            "duration_ms" to durationMs,
+            "started_at_ms" to startedAtMillis,
+            "finished_at_ms" to finishedAtMillis,
+            "params" to JSONObject(mapOf("kind" to "assistant_response")).toString(),
+            "arguments" to JSONObject(mapOf("kind" to "assistant_response")).toString(),
+            "result" to result,
+            "output" to normalizedText,
+            "compile_kind" to "assistant_text"
+        )
+    }
+
     private fun conversationHistoryRepository(): AgentConversationHistoryRepository {
         return AgentConversationHistoryRepository(context)
     }
@@ -6521,6 +6570,25 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     ),
                     createdAt = createdAt
                 )
+            }
+            if (isFinal) {
+                val finishedAt = System.currentTimeMillis()
+                runCatching {
+                    InternalRunLogStore.upsertCard(
+                        context = this@AssistsCoreManager.context,
+                        runId = taskId,
+                        cardId = entryId,
+                        card = this@AssistsCoreManager.buildAssistantResponseRunLogCard(
+                            entryId = entryId,
+                            text = normalizedText,
+                            isError = isError,
+                            startedAtMillis = createdAt,
+                            finishedAtMillis = finishedAt
+                        )
+                    )
+                }.onFailure {
+                    OmniLog.w(TAG, "upsert assistant response run log failed: ${it.message}")
+                }
             }
         }
 

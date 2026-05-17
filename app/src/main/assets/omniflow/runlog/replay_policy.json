@@ -67,13 +67,15 @@
     "oob_run_log_get",
     "oob_run_log_convert"
   ],
-  "provider_only_tools": [
+  "omniflow_graph_tools": [
     "go_to_node",
     "click_node",
     "node_click",
     "navigate_to_node",
     "gotonode",
-    "goto_node",
+    "goto_node"
+  ],
+  "omniflow_function_tools": [
     "omniflow.call_function",
     "call_function",
     "run_function",
@@ -82,15 +84,19 @@
     "runfunction",
     "executefunction"
   ],
+  "provider_only_tools": [],
   "skip_tools": [
     "notification_send",
     "calendar_event_create",
     "skills_loaded",
-    "status_update"
+    "status_update",
+    "assistant_response"
   ],
   "agent_step_reasons": {
     "perception": "perception_only_step_without_recorded_actions",
     "data_flow": "data_flow_tool_requires_live_context",
+    "omniflow_graph": "omniflow_graph_local_execution",
+    "omniflow_function": "omniflow_function_local_execution",
     "provider_only": "provider_owned_replay_requires_omniflow",
     "fallback": "non_scriptable_or_vlm_step"
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/chat/chat_page_models.dart';
 import 'package:ui/features/home/pages/chat/widgets/agent_tool_activity_card.dart';
@@ -13,6 +14,43 @@ const String _kThinkingDetailText = '详细思考过程';
 const String _kThinkingFixtureText = '思考摘要\n$_kThinkingDetailText';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  const assistCoreChannel = MethodChannel(
+    'cn.com.omnimind.bot/AssistCoreEvent',
+  );
+
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, (call) async {
+          if (call.method == 'getSceneModelBindings') {
+            return const <Map<String, dynamic>>[];
+          }
+          if (call.method == 'getSceneVoiceConfig') {
+            return const <String, dynamic>{
+              'autoPlay': false,
+              'voiceId': 'default_zh',
+              'stylePreset': '默认',
+              'customStyle': '',
+            };
+          }
+          if (call.method == 'getInternalRunLogTimeline') {
+            return <String, dynamic>{
+              'success': true,
+              'run_id': (call.arguments as Map?)?['runId'] ?? '',
+              'done_reason': 'finished',
+              'cards': const <Map<String, dynamic>>[],
+            };
+          }
+          return 'SUCCESS';
+        });
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, null);
+  });
+
   testWidgets('empty chat state offsets with bottom overlay inset', (
     tester,
   ) async {
@@ -691,13 +729,16 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('agent-run-summary-task-text-only')),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
 
     expect(
       find.byKey(const ValueKey('agent-run-process-task-text-only')),
       findsNothing,
     );
     expect(find.text('直接回答'), findsOneWidget);
+    expect(find.text('RunLog 已记录'), findsOneWidget);
+    expect(find.textContaining('没有工具调用'), findsOneWidget);
   });
 
   testWidgets('text-only runlog entry localizes in English', (tester) async {

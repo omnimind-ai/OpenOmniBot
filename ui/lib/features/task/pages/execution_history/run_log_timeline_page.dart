@@ -216,12 +216,14 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       setState(() {
         _payload = payload;
         _cards = _extractTimelineCards(payload);
+        final error = _runLogPayloadError(context, payload);
+        _error = error;
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = _text(context, 'RunLog 暂时不可用', 'RunLog is not available yet');
         _isLoading = false;
       });
     }
@@ -314,20 +316,17 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_error != null) {
-      return Center(
-        child: Text(
-          '${l10n.runLogTimelineLoadFailed}\n$_error',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: context.omniPalette.textSecondary),
-        ),
+      return _RunLogTimelineEmptyNotice(
+        icon: Icons.route_rounded,
+        title: l10n.runLogTimelineLoadFailed,
+        message: _error!,
       );
     }
     if (_cards.isEmpty) {
-      return Center(
-        child: Text(
-          l10n.runLogTimelineEmpty,
-          style: TextStyle(color: context.omniPalette.textSecondary),
-        ),
+      return _RunLogTimelineEmptyNotice(
+        icon: Icons.check_circle_outline_rounded,
+        title: _text(context, 'RunLog 已记录', 'RunLog logged'),
+        message: _runLogEmptyMessage(context, _payload),
       );
     }
     return ListView.builder(
@@ -541,6 +540,54 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
         spec: spec,
         runId: widget.runId,
         baseUrl: widget.baseUrl,
+      ),
+    );
+  }
+}
+
+class _RunLogTimelineEmptyNotice extends StatelessWidget {
+  const _RunLogTimelineEmptyNotice({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 28, color: palette.textTertiary),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: palette.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: palette.textSecondary,
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3160,6 +3207,56 @@ bool _isModelFreeReplayStep(_RunLogStepSnapshot snapshot) {
 
 List<Map<String, dynamic>> _extractTimelineCards(Map<String, dynamic> payload) {
   return _findTimelineCards(payload, <Object>{});
+}
+
+String? _runLogPayloadError(
+  BuildContext context,
+  Map<String, dynamic> payload,
+) {
+  final success = _asBool(payload['success']);
+  if (success != false) {
+    return null;
+  }
+  final code = (payload['error_code'] ?? payload['errorCode'])
+      ?.toString()
+      .trim()
+      .toUpperCase();
+  if (code == 'NOT_FOUND' || code == 'RUN_LOG_ID_EMPTY') {
+    return _text(
+      context,
+      'RunLog 尚未落盘，请稍后再试。',
+      'RunLog is still being saved. Try again shortly.',
+    );
+  }
+  final message = (payload['error_message'] ?? payload['errorMessage'])
+      ?.toString()
+      .trim();
+  if (message != null && message.isNotEmpty) {
+    return message;
+  }
+  return _text(context, 'RunLog 暂时不可用', 'RunLog is not available yet');
+}
+
+String _runLogEmptyMessage(BuildContext context, Map<String, dynamic> payload) {
+  final success = _asBool(payload['success']);
+  final doneReason = (payload['done_reason'] ?? payload['doneReason'])
+      ?.toString()
+      .trim();
+  if (success == true) {
+    return _text(
+      context,
+      '这次回复没有工具调用，只有最终文本，因此没有可展开的执行步骤。',
+      'This reply did not call tools, so there are no execution steps to expand.',
+    );
+  }
+  if (doneReason != null && doneReason.isNotEmpty) {
+    return _text(
+      context,
+      '这条 RunLog 已结束，但没有生成可展示的步骤。',
+      'This RunLog finished without displayable steps.',
+    );
+  }
+  return context.l10n.runLogTimelineEmpty;
 }
 
 List<Map<String, dynamic>> _findTimelineCards(

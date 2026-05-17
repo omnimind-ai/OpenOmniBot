@@ -239,6 +239,10 @@ class RunLogReusableFunctionConverter {
               ? 'agent_replan'
               : executor == 'omniflow'
               ? 'omniflow_action'
+              : RunLogReplayPolicy.isOmniflowGraphTool(emittedToolName)
+              ? 'omniflow_graph'
+              : RunLogReplayPolicy.isOmniflowFunctionTool(emittedToolName)
+              ? 'omniflow_function'
               : 'oob_agent_tool',
           'name': emittedToolName,
           if (executor == 'agent') 'callable_tool': 'oob.agent.run',
@@ -1111,8 +1115,7 @@ String _executorForToolName(String toolName, String route) {
       normalizedTool.contains('vlm')) {
     return 'agent';
   }
-  // Data-flow, perception, and provider-owned graph/function tools require
-  // live context or OmniFlow provider semantics.
+  // Data-flow and perception tools require live context.
   if (RunLogReplayPolicy.isAgentTool(normalizedTool)) {
     return 'agent';
   }
@@ -1720,6 +1723,10 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
               ? 'agent_replan'
               : executor == 'omniflow'
               ? 'omniflow_action'
+              : RunLogReplayPolicy.isOmniflowGraphTool(emittedToolName)
+              ? 'omniflow_graph'
+              : RunLogReplayPolicy.isOmniflowFunctionTool(emittedToolName)
+              ? 'omniflow_function'
               : 'oob_agent_tool',
           'name': emittedToolName,
           if (executor == 'agent') 'callable_tool': 'oob.agent.run',

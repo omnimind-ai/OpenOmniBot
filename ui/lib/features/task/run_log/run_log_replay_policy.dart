@@ -67,19 +67,25 @@ class RunLogReplayPolicy {
     'memory_recall',
     'memory_query',
     'oob_agent_run',
+    'omniflow.recall',
+    'omniflow.ingest_run_log',
     'workbench_api_list',
     'oob_run_log_list',
     'oob_run_log_get',
     'oob_run_log_convert',
   };
 
-  static const providerOnlyTools = <String>{
+  static const omniflowGraphTools = <String>{
     'go_to_node',
     'click_node',
     'node_click',
     'navigate_to_node',
     'gotonode',
     'goto_node',
+  };
+
+  static const omniflowFunctionTools = <String>{
+    'omniflow.call_function',
     'call_function',
     'run_function',
     'execute_function',
@@ -88,11 +94,14 @@ class RunLogReplayPolicy {
     'executefunction',
   };
 
+  static const providerOnlyTools = <String>{};
+
   static const skipTools = <String>{
     'notification_send',
     'calendar_event_create',
     'skills_loaded',
     'status_update',
+    'assistant_response',
   };
 
   static String normalizeToolName(String toolName) {
@@ -121,6 +130,18 @@ class RunLogReplayPolicy {
 
   static bool isProviderOnlyTool(String toolName) {
     return providerOnlyTools.contains(normalizeToolName(toolName));
+  }
+
+  static bool isOmniflowGraphTool(String toolName) {
+    return omniflowGraphTools.contains(normalizeToolName(toolName));
+  }
+
+  static bool isOmniflowFunctionTool(String toolName) {
+    return omniflowFunctionTools.contains(normalizeToolName(toolName));
+  }
+
+  static bool isOmniflowExecutionTool(String toolName) {
+    return isOmniflowGraphTool(toolName) || isOmniflowFunctionTool(toolName);
   }
 
   static bool isAgentTool(String toolName) {

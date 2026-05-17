@@ -85,6 +85,14 @@ void main() {
       RunLogReplayPolicy.dataFlowTools,
     );
     expect(
+      _stringSet(policy['omniflow_graph_tools']),
+      RunLogReplayPolicy.omniflowGraphTools,
+    );
+    expect(
+      _stringSet(policy['omniflow_function_tools']),
+      RunLogReplayPolicy.omniflowFunctionTools,
+    );
+    expect(
       _stringSet(policy['provider_only_tools']),
       RunLogReplayPolicy.providerOnlyTools,
     );
@@ -335,11 +343,11 @@ void main() {
     );
   });
 
-  test('keeps provider-owned graph and function tools on agent replan', () {
+  test('keeps omniflow graph and function tools on local tool replay', () {
     final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
-      runId: 'run-provider-owned',
-      title: 'Provider owned replay',
-      payload: const {'goal': 'Provider owned replay'},
+      runId: 'run-omniflow-tools',
+      title: 'OmniFlow tool replay',
+      payload: const {'goal': 'OmniFlow tool replay'},
       cards: [
         card('go_to_node', const {'node_id': 'node_1'}),
         card('call_function', const {'function_id': 'func_provider'}),
@@ -349,15 +357,17 @@ void main() {
 
     final steps = stepsFrom(spec);
     expect(steps, hasLength(2));
-    for (final step in steps) {
-      expect(step['executor'], 'agent');
-      expect(step['scriptable'], isFalse);
-      expect(step['callable_tool'], 'oob.agent.run');
-      expect(
-        (step['agent_call'] as Map)['reason'],
-        'provider_owned_replay_requires_omniflow',
-      );
-    }
+    expect(steps[0]['executor'], 'tool');
+    expect(steps[0]['scriptable'], isTrue);
+    expect(steps[0]['callable_tool'], 'go_to_node');
+    expect((steps[0]['tool_binding'] as Map)['kind'], 'omniflow_graph');
+    expect(steps[0].containsKey('agent_call'), isFalse);
+
+    expect(steps[1]['executor'], 'tool');
+    expect(steps[1]['scriptable'], isTrue);
+    expect(steps[1]['callable_tool'], 'call_function');
+    expect((steps[1]['tool_binding'] as Map)['kind'], 'omniflow_function');
+    expect(steps[1].containsKey('agent_call'), isFalse);
   });
 
   test('flattens android privileged local action arguments for replay', () {

@@ -137,6 +137,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
     final processMessages = widget.group.processMessagesOldestFirst;
     final visibleMessages = widget.group.visibleMessagesOldestFirst;
     final hasProcessMessages = processMessages.isNotEmpty;
+    final isRunLogOnly = widget.group.isRunLogOnly;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -150,7 +151,12 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
           thinkingCount: widget.group.thinkingCount,
           toolCount: widget.group.toolCount,
           latestProcessSummary: _latestProcessSummary(processMessages),
-          onTap: hasProcessMessages ? widget.onToggleExpanded : null,
+          onTap: hasProcessMessages
+              ? widget.onToggleExpanded
+              : isRunLogOnly
+              ? () => _openRunLog(context)
+              : null,
+          showToggle: hasProcessMessages,
         ),
         _buildAnimatedProcessSection(processMessages),
         ...visibleMessages.map(
@@ -170,6 +176,13 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
         ),
       ],
     );
+  }
+
+  void _openRunLog(BuildContext context) {
+    final runLogId = widget.group.runLogId.trim().isEmpty
+        ? widget.group.taskId
+        : widget.group.runLogId.trim();
+    showRunLogTimelineSheet(context, runId: runLogId, title: 'RunLog');
   }
 
   Widget _buildAnimatedProcessSection(List<ChatMessageModel> processMessages) {
@@ -298,6 +311,7 @@ class _AgentRunSummaryHeader extends StatelessWidget {
     required this.toolCount,
     required this.latestProcessSummary,
     required this.onTap,
+    required this.showToggle,
   });
 
   final String taskId;
@@ -308,12 +322,13 @@ class _AgentRunSummaryHeader extends StatelessWidget {
   final int toolCount;
   final String latestProcessSummary;
   final VoidCallback? onTap;
+  final bool showToggle;
 
   @override
   Widget build(BuildContext context) {
     final locale = Localizations.localeOf(context);
     final palette = context.omniPalette;
-    final isRunLogOnly = !isActiveRun && onTap == null;
+    final isRunLogOnly = !isActiveRun && !showToggle;
     final label = AppTextLocalizer.choose(
       zh: isRunLogOnly ? '运行记录' : '执行过程',
       en: isRunLogOnly ? 'RunLog' : 'Process',
@@ -440,7 +455,7 @@ class _AgentRunSummaryHeader extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (onTap != null) ...[
+                if (showToggle) ...[
                   const SizedBox(width: 8),
                   AnimatedRotation(
                     turns: expanded ? 0 : -0.25,

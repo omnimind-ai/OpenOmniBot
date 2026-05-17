@@ -78,13 +78,16 @@ object RunLogReplayPolicy {
         "oob_run_log_convert",
     )
 
-    val providerOnlyTools: Set<String> = setOf(
+    val omniflowGraphTools: Set<String> = setOf(
         "go_to_node",
         "click_node",
         "node_click",
         "navigate_to_node",
         "gotonode",
         "goto_node",
+    )
+
+    val omniflowFunctionTools: Set<String> = setOf(
         "omniflow.call_function",
         "call_function",
         "run_function",
@@ -94,11 +97,18 @@ object RunLogReplayPolicy {
         "executefunction",
     )
 
+    /**
+     * Backward-compatible contract field. These tools used to be provider-only,
+     * but OOB now has a native execution layer for OmniFlow graph/function calls.
+     */
+    val providerOnlyTools: Set<String> = emptySet()
+
     val skipTools: Set<String> = setOf(
         "notification_send",
         "calendar_event_create",
         "skills_loaded",
         "status_update",
+        "assistant_response",
     )
 
     fun normalizeToolName(toolName: String): String = toolName.trim().lowercase()
@@ -120,6 +130,15 @@ object RunLogReplayPolicy {
     fun isProviderOnlyTool(toolName: String): Boolean =
         normalizeToolName(toolName) in providerOnlyTools
 
+    fun isOmniflowGraphTool(toolName: String): Boolean =
+        normalizeToolName(toolName) in omniflowGraphTools
+
+    fun isOmniflowFunctionTool(toolName: String): Boolean =
+        normalizeToolName(toolName) in omniflowFunctionTools
+
+    fun isOmniflowExecutionTool(toolName: String): Boolean =
+        isOmniflowGraphTool(toolName) || isOmniflowFunctionTool(toolName)
+
     fun isAgentTool(toolName: String): Boolean =
         isPerceptionTool(toolName) || isDataFlowTool(toolName) || isProviderOnlyTool(toolName)
 
@@ -138,7 +157,6 @@ object RunLogReplayPolicy {
 
     fun requiresAgentPlanningReason(reason: String): Boolean {
         return reason == "data_flow_tool_requires_live_context" ||
-            reason == "perception_only_step_without_recorded_actions" ||
-            reason == "provider_owned_replay_requires_omniflow"
+            reason == "perception_only_step_without_recorded_actions"
     }
 }
