@@ -178,8 +178,8 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
         title: _text(context, '暂无指令', 'No Commands Yet'),
         subtitle: _text(
           context,
-          '在 RunLog 详情页把执行过的任务「注册为 OOB API」后，指令会出现在这里。',
-          'Register a RunLog as an OOB API to create a reusable command.',
+          '成功的 RunLog 会在系统空闲时自动固化；也可以在 RunLog 详情页直接重放。',
+          'Successful RunLogs are saved automatically when OOB is idle. You can also replay from RunLog details.',
         ),
         actionLabel: _text(context, '刷新', 'Refresh'),
         onAction: _load,
@@ -358,8 +358,8 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
         title: _text(context, '暂无指令', 'No Commands Yet'),
         subtitle: _text(
           context,
-          '在 RunLog 详情页把执行过的任务「注册为 OOB API」后，指令会出现在这里。',
-          'Register a RunLog as an OOB API to create a reusable command.',
+          '成功的 RunLog 会在系统空闲时自动固化；也可以在 RunLog 详情页直接重放。',
+          'Successful RunLogs are saved automatically when OOB is idle. You can also replay from RunLog details.',
         ),
         actionLabel: _text(context, '刷新', 'Refresh'),
         onAction: _load,

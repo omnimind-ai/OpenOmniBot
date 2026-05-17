@@ -59,6 +59,12 @@ class SharedHelper(
         "正在查询已安装应用" to "Querying installed apps",
         "未找到匹配的已安装应用。" to "No matching installed apps found.",
         "查询已安装应用失败" to "Failed to query installed apps",
+        "正在搜索网页" to "Searching the web",
+        "正在抽取搜索结果" to "Extracting search results",
+        "网页搜索失败" to "Web search failed",
+        "网页搜索被页面风控阻断" to "Web search was blocked by page risk controls",
+        "网页搜索完成，未抽取到结构化结果。" to
+            "Web search completed, but no structured results were extracted.",
         "浏览器操作失败" to "Browser action failed",
         "正在查询当前时间" to "Querying current time",
         "查询当前时间失败" to "Failed to query current time",
@@ -289,6 +295,9 @@ class SharedHelper(
         }
         Regex("^找到 (\\d+) 个匹配结果$").matchEntire(text)?.let {
             return "Found ${it.groupValues[1]} matching results."
+        }
+        Regex("^找到 (\\d+) 条网页搜索结果。$").matchEntire(text)?.let {
+            return "Found ${it.groupValues[1]} web search results."
         }
         Regex("^共找到 (\\d+) 个 skill$").matchEntire(text)?.let {
             return "Found ${it.groupValues[1]} skills."

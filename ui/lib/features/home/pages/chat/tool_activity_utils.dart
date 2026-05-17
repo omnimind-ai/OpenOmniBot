@@ -9,6 +9,9 @@ const String kAgentToolSummaryCardType = 'agent_tool_summary';
 const String kAgentToolTitleField = 'toolTitle';
 const int _kToolCardTitleMaxChars = 80;
 const int _kToolCardPreviewMaxChars = 160;
+// Keep raw result payloads bounded. Claude Code caps tool output at 30K chars;
+// we use 8K since these are stored in Flutter memory per-message.
+const int _kToolCardRawResultMaxChars = 8192;
 
 class AgentToolActivitySnapshot {
   const AgentToolActivitySnapshot({
@@ -300,6 +303,15 @@ Map<String, dynamic> buildAgentToolActivityCard(
     card['displayName'] = toolName;
   }
 
+  // Truncate large result payloads. Full content is in RunLog; the card only
+  // needs enough for preview and retry detection.
+  for (final key in const ['rawResultJson', 'resultPreviewJson', 'terminalOutput']) {
+    final raw = (card[key] ?? '').toString();
+    if (raw.length > _kToolCardRawResultMaxChars) {
+      card[key] = '${raw.substring(0, _kToolCardRawResultMaxChars)}\n…(truncated)';
+    }
+  }
+
   return card;
 }
 
@@ -559,6 +571,9 @@ String resolveAgentToolStatusLabel(Map<String, dynamic> cardData) {
     default:
       if (toolType == 'terminal') return AppTextLocalizer.text('运行中');
       if (toolType == 'browser') return AppTextLocalizer.text('浏览中');
+      if (toolType == 'research') {
+        return AppTextLocalizer.choose(en: 'Searching', zh: '搜索中');
+      }
       if (toolType == 'workbench') {
         return AppTextLocalizer.choose(en: 'Updating', zh: '处理中');
       }
@@ -578,6 +593,8 @@ String resolveAgentToolTypeLabel(Map<String, dynamic> cardData) {
       return AppTextLocalizer.text('终端');
     case 'browser':
       return AppTextLocalizer.text('浏览器');
+    case 'research':
+      return AppTextLocalizer.choose(en: 'Research', zh: '搜索');
     case 'workspace':
       return AppTextLocalizer.text('工作区');
     case 'workbench':

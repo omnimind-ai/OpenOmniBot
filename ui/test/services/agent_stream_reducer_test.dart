@@ -3,6 +3,35 @@ import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/services/agent_stream_reducer.dart';
 
 void main() {
+  test('parses v1 envelope aliases while preserving legacy fields', () {
+    final event = AgentStreamEvent.fromMap(const {
+      'schema_version': 'oob.agent_event.v1',
+      'trace_id': 'trace-1',
+      'run_id': 'run-1',
+      'span_id': 'span-1',
+      'parent_span_id': 'root',
+      'channel': 'agent_stream',
+      'event': 'text_snapshot',
+      'timestamp_ms': 1234,
+      'status': 'running',
+      'taskId': 'agent-task',
+      'seq': 7,
+      'entryId': 'agent-task-text',
+      'text': 'hello',
+    });
+
+    expect(event.kind, AgentStreamEventKind.textSnapshot);
+    expect(event.createdAtMs, 1234);
+    expect(event.schemaVersion, 'oob.agent_event.v1');
+    expect(event.traceId, 'trace-1');
+    expect(event.runId, 'run-1');
+    expect(event.spanId, 'span-1');
+    expect(event.parentSpanId, 'root');
+    expect(event.channel, 'agent_stream');
+    expect(event.eventName, 'text_snapshot');
+    expect(event.status, 'running');
+  });
+
   AgentStreamEvent toolEvent({
     required int seq,
     required AgentStreamEventKind kind,

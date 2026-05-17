@@ -1,5 +1,9 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ui/features/task/pages/execution_history/run_log_reusable_function_converter.dart';
+import 'package:ui/features/task/run_log/run_log_reusable_function_converter.dart';
+import 'package:ui/features/task/run_log/run_log_replay_policy.dart';
 
 void main() {
   const sourceXml =
@@ -16,6 +20,11 @@ void main() {
         'observation_xml': sourceXml,
       },
     };
+  }
+
+  List<Map<String, dynamic>> stepsFrom(Map<String, dynamic> spec) {
+    final execution = spec['execution'] as Map<String, dynamic>;
+    return (execution['steps'] as List).cast<Map<String, dynamic>>();
   }
 
   Map<String, dynamic> argsFor(String toolName) {
@@ -38,6 +47,32 @@ void main() {
     }
   }
 
+  test('replay policy matches shared json contract', () {
+    final file = File(
+      '../app/src/main/assets/omniflow/runlog/replay_policy.json',
+    );
+    final policy = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+
+    expect(policy['schema_version'], RunLogReplayPolicy.schemaVersion);
+    expect(
+      _stringSet(policy['omniflow_actions']),
+      RunLogReplayPolicy.omniflowActions,
+    );
+    expect(
+      _stringSet(policy['coordinate_actions']),
+      RunLogReplayPolicy.coordinateActions,
+    );
+    expect(
+      _stringSet(policy['perception_tools']),
+      RunLogReplayPolicy.perceptionTools,
+    );
+    expect(
+      _stringSet(policy['data_flow_tools']),
+      RunLogReplayPolicy.dataFlowTools,
+    );
+    expect(_stringSet(policy['skip_tools']), RunLogReplayPolicy.skipTools);
+  });
+
   test('marks executable VLM actions as omniflow model-free steps', () {
     const actions = [
       'click',
@@ -59,9 +94,12 @@ void main() {
       useEnglish: true,
     );
 
-    expect(spec['tags'], isNot(contains('omniflow')));
-    final execution = spec['execution'] as Map<String, dynamic>;
-    final steps = (execution['steps'] as List).cast<Map<String, dynamic>>();
+    expect(spec.containsKey('tags'), isFalse);
+    expect(spec.containsKey('runtime_targets'), isFalse);
+    expect(spec.containsKey('call_contract'), isFalse);
+    expect(spec.containsKey('script_reuse'), isFalse);
+    expect(spec.containsKey('agent_reuse'), isFalse);
+    final steps = stepsFrom(spec);
     expect(steps, hasLength(actions.length));
 
     for (var index = 0; index < actions.length; index++) {
@@ -101,11 +139,184 @@ void main() {
       useEnglish: true,
     );
 
-    final execution = spec['execution'] as Map<String, dynamic>;
-    final steps = (execution['steps'] as List).cast<Map<String, dynamic>>();
+    final steps = stepsFrom(spec);
     expect(steps.single['executor'], 'agent');
     expect(steps.single['model_free'], isNot(isTrue));
     expect(steps.single['callable_tool'], 'oob.agent.run');
     expect(steps.single['agent_call'], isA<Map>());
   });
+
+  test('keeps VLM-only runlog as an agent replay step', () {
+    final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+      runId: 'run-vlm-only',
+      title: 'Find and tap settings',
+      payload: const {'goal': 'Find and tap settings'},
+      cards: [
+        card('vlm_task', const {'goal': 'Find and tap settings'}),
+      ],
+      useEnglish: true,
+    );
+
+    final steps = stepsFrom(spec);
+    expect(steps, hasLength(1));
+    final step = steps.single;
+    expect(step['tool'], 'vlm_task');
+    expect(step['executor'], 'agent');
+    expect(step['callable_tool'], 'oob.agent.run');
+    expect((step['tool_binding'] as Map)['kind'], 'agent_replan');
+
+    final agentCall = step['agent_call'] as Map;
+    expect(agentCall['tool'], 'oob.agent.run');
+    expect(
+      agentCall['reason'],
+      'perception_only_step_without_recorded_actions',
+    );
+    expect((agentCall['args'] as Map)['original_tool'], 'vlm_task');
+
+    final capabilities = (spec['execution'] as Map)['capabilities'] as Map;
+    expect(capabilities['agent_step_count'], 1);
+    expect(capabilities['omniflow_step_count'], 0);
+    expect(capabilities['requires_agent_fallback'], isTrue);
+  });
+
+  test('skips VLM perception wrapper when recorded action card exists', () {
+    final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+      runId: 'run-vlm-click',
+      title: 'Tap Open',
+      payload: const {'goal': 'Tap Open'},
+      cards: [
+        card('vlm_task', const {'goal': 'Tap Open'}),
+        card('click', const {'target_description': 'Open', 'x': 120, 'y': 240}),
+      ],
+      useEnglish: true,
+    );
+
+    final steps = stepsFrom(spec);
+    expect(steps, hasLength(1));
+    final clickStep = steps.single;
+    expect(clickStep['id'], 'step_1');
+    expect(clickStep['index'], 0);
+    expect(clickStep['source_index'], 1);
+    expect(clickStep['tool'], 'click');
+    expect(clickStep['executor'], 'omniflow');
+    expect(clickStep['model_free'], isTrue);
+    expect(clickStep['coordinate_hook'], 'omniflow');
+    expect(clickStep.containsKey('agent_call'), isFalse);
+
+    final parameters = (spec['parameters'] as List).cast<Map>();
+    final targetParameter = parameters.firstWhere(
+      (item) => item['name'] == 'target',
+    );
+    expect(
+      targetParameter['bindings'],
+      contains(r'$.execution.steps[0].args.target_description'),
+    );
+  });
+
+  test('keeps data-flow tools on agent replan instead of direct replay', () {
+    final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+      runId: 'run-browser',
+      title: 'Research docs',
+      payload: const {'goal': 'Research docs'},
+      cards: [
+        card('browser_use', const {
+          'url': 'https://example.com',
+          'query': 'release notes',
+        }),
+        card('web_search', const {'query': 'OmniBot docs'}),
+      ],
+      useEnglish: true,
+    );
+
+    final steps = stepsFrom(spec);
+    expect(steps, hasLength(2));
+    for (final step in steps) {
+      expect(step['executor'], 'agent');
+      expect(step['scriptable'], isFalse);
+      expect(step['callable_tool'], 'oob.agent.run');
+      expect((step['tool_binding'] as Map)['kind'], 'agent_replan');
+      final agentCall = step['agent_call'] as Map;
+      expect(agentCall['tool'], 'oob.agent.run');
+      expect(agentCall['reason'], 'data_flow_tool_requires_live_context');
+      expect((agentCall['args'] as Map)['original_tool'], step['tool']);
+    }
+
+    final parameters = (spec['parameters'] as List).cast<Map>();
+    final queryParameter = parameters.firstWhere(
+      (item) => item['name'] == 'query',
+    );
+    expect(
+      queryParameter['bindings'],
+      contains(r'$.execution.steps[0].agent_call.args.original_args.query'),
+    );
+  });
+
+  test(
+    'AI normalization cannot turn data-flow steps into direct tool replay',
+    () {
+      final fallback = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+        runId: 'run-ai-browser',
+        title: 'Research docs',
+        payload: const {'goal': 'Research docs'},
+        cards: [
+          card('browser_use', const {
+            'url': 'https://example.com',
+            'query': 'release notes',
+          }),
+        ],
+        useEnglish: true,
+      );
+      final aiJson = {
+        ...fallback,
+        'execution': {
+          ...(fallback['execution'] as Map),
+          'capabilities': {
+            'scriptable_step_count': 1,
+            'agent_step_count': 0,
+            'requires_agent_fallback': false,
+          },
+          'steps': [
+            {
+              ...(stepsFrom(fallback).single),
+              'executor': 'tool',
+              'scriptable': true,
+              'callable_tool': 'browser_use',
+              'tool_binding': {'kind': 'oob_agent_tool', 'name': 'browser_use'},
+              'agent_call': {
+                'tool': 'browser_use',
+                'args': {'prompt': 'Search release notes'},
+              },
+            },
+          ],
+        },
+      };
+
+      final normalized =
+          RunLogReusableFunctionConverter.normalizeAiJsonForTesting(
+            aiJson.cast<String, dynamic>(),
+            fallback,
+          );
+
+      final step = stepsFrom(normalized).single;
+      expect(step['executor'], 'agent');
+      expect(step['scriptable'], isFalse);
+      expect(step['callable_tool'], 'oob.agent.run');
+      expect((step['tool_binding'] as Map)['kind'], 'agent_replan');
+      expect((step['tool_binding'] as Map)['callable_tool'], 'oob.agent.run');
+      expect(
+        (step['agent_call'] as Map)['reason'],
+        'data_flow_tool_requires_live_context',
+      );
+
+      final capabilities =
+          (normalized['execution'] as Map)['capabilities'] as Map;
+      expect(capabilities['scriptable_step_count'], 0);
+      expect(capabilities['agent_step_count'], 1);
+      expect(capabilities['requires_agent_fallback'], isTrue);
+    },
+  );
+}
+
+Set<String> _stringSet(Object? value) {
+  return (value as List).map((item) => item.toString()).toSet();
 }

@@ -13,7 +13,7 @@
     {
       "id": "skill-creator",
       "name": "skill-creator",
-      "description": "Guide for creating and updating effective Omnibot skills. Use when the user wants to add a new skill or improve an existing skill for the built-in Alpine workspace, tool workflows, or reusable domain knowledge.",
+      "description": "Guide for creating and updating effective Omnibot skills. Use when the user wants to add a new skill, create skill, improve skill, update skill, 扩展 skill, 创建 skill, 更新 skill, 写 skill, improve an existing skill for the built-in Alpine workspace, tool workflows, or reusable domain knowledge.",
       "assetPath": "builtin_skills/skill-creator",
       "hasScripts": false,
       "hasReferences": false,
@@ -23,7 +23,7 @@
     {
       "id": "oob-prompt-runtime",
       "name": "oob-prompt-runtime",
-      "description": "Design, implement, or review OOB Prompt Runtime. Use for \"系统提示词\", \"提示词运行时\", \"提示词组装\", \"prompt dump\", \"项目上下文注入\", \"上下文预算\", \"初始输入契约\", static core, dynamic environment, device state, current app, memory, locale, tool instructions, task prompts, or prompt debugging.",
+      "description": "Design, implement, or review OOB Prompt Runtime. Use for \"系统提示词\", \"提示词运行时\", \"提示词组装\", \"prompt dump\", \"项目上下文注入\", \"上下文预算\", \"初始输入契约\", \"prompt runtime\", static core, dynamic environment, device state, current app, memory, locale, tool instructions, task prompts, or prompt debugging.",
       "assetPath": "builtin_skills/oob-prompt-runtime",
       "hasScripts": false,
       "hasReferences": true,
@@ -33,7 +33,7 @@
     {
       "id": "oob-project",
       "name": "oob-project",
-      "description": "OOB Workbench Project 完整生命周期：新建、更新、审查。Use when the user says \"帮我做一个\", \"我想创建一个\", \"build me a\", \"make a [X] tracker/tool/app\", \"改一下界面\", \"加个字段\", \"新增功能\", \"修复\", or any intent to create or modify a persistent personal tool. Covers: domain research, proposal, entity blueprint, API design, Bridge Injection, HTML generation, hot update, review, PROJECT_SOUL, document maintenance.",
+      "description": "OOB Workbench Project 完整生命周期总入口：新建 Project、更新、蒸馏、审查、HTML Display、Project Tool/API 设计、热更新、导出、PROJECT_SOUL/PROJECT_CONTEXT 维护。Use when the user says \"帮我做一个\", \"我想创建一个\", \"新建 Project\", \"build me a\", \"make a [X] tracker/tool/app\", \"改一下界面\", \"加个字段\", \"新增功能\", \"修复\", \"project review\", \"审查 project\", \"总结成我们的 project\", \"蒸馏能力\", \"提取核心设计\", \"生成 soul\", \"把这个 app/项目变成 OOB Project\", \"产品分析\", \"GitHub 仓库分析\", or any intent to create, distill, modify, review, export, or maintain a persistent personal tool.",
       "assetPath": "builtin_skills/oob-project",
       "hasScripts": true,
       "hasReferences": true,
@@ -43,18 +43,8 @@
     {
       "id": "oob-web-research",
       "name": "oob-web-research",
-      "description": "调研、搜索整理、收集资料、分析竞品、研究市场、小红书调研、GitHub分析、爬取内容、批量收集、信息汇总、网页提取。Use when gathering, extracting, or aggregating information from the web — search results, platform pages, repositories, or social content.",
+      "description": "调研、搜索整理、收集资料、分析竞品、研究市场、小红书调研、GitHub分析、爬取内容、批量收集、信息汇总、web research。Use when the task involves gathering, extracting, or aggregating information from the web — search results, platform pages, repositories, or social content — and storing findings in a Project.",
       "assetPath": "builtin_skills/oob-web-research",
-      "hasScripts": false,
-      "hasReferences": true,
-      "hasAssets": false,
-      "hasEvals": false
-    },
-    {
-      "id": "oob-project-distiller",
-      "name": "oob-project-distiller",
-      "description": "Distill an external product, GitHub repository, vibe-app share, technical document, article, pasted notes, screenshots, or product demo into an OOB Workbench Project proposal or implementation. Use when the user asks to analyze a project/link/doc and \"总结成我们的 project\", \"蒸馏能力\", \"提取核心设计\", \"生成 soul\", \"把这个 app/项目变成 OOB Project\", or preserve UI design, interaction logic, data model, backend AI workflows, and product intent without cloning proprietary assets.",
-      "assetPath": "builtin_skills/oob-project-distiller",
       "hasScripts": false,
       "hasReferences": true,
       "hasAssets": false,
@@ -63,7 +53,7 @@
     {
       "id": "find-install-skills",
       "name": "find-install-skills",
-      "description": "Find and install relevant Omnibot skills. Use when the user asks \"找个 skill\", \"有没有这个功能的 skill\", \"find a skill for X\", \"is there a skill for X\",\"install a skill for X\", or wants to extend the agent with an installable workflow.",
+      "description": "Find and install relevant Omnibot skills. Use when the user asks \"找个 skill\", \"有没有这个功能的 skill\", \"find a skill for X\", \"is there a skill for X\", \"install skill\", \"安装 skill\", \"技能商店\", or wants to extend the agent with an installable workflow.",
       "assetPath": "builtin_skills/find-install-skills",
       "hasScripts": true,
       "hasReferences": false,

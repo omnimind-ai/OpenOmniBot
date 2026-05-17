@@ -5,7 +5,14 @@ import 'package:ui/models/chat_message_model.dart';
 
 const String kAgentToolActivityCardType = 'agent_tool_summary';
 
-enum AgentToolActivityKind { browser, terminal, workspace, workbench, mcp }
+enum AgentToolActivityKind {
+  browser,
+  research,
+  terminal,
+  workspace,
+  workbench,
+  mcp,
+}
 
 class AgentProcessItem {
   const AgentProcessItem.message(this.message) : activity = null;
@@ -50,6 +57,7 @@ class AgentToolActivityStep {
     required this.target,
     required this.status,
     required this.isRetry,
+    required this.isCurrent,
     required this.message,
   });
 
@@ -59,48 +67,105 @@ class AgentToolActivityStep {
   final String target;
   final String status;
   final bool isRetry;
+  /// True for the last in-progress step while the activity is still running.
+  final bool isCurrent;
   final ChatMessageModel message;
 }
 
-List<AgentProcessItem> compactAgentProcessItems(
-  List<ChatMessageModel> processMessages,
-) {
-  final items = <AgentProcessItem>[];
-  _ActivityBuilder? pending;
+/// Stateful wrapper around [compactAgentProcessItems] that skips recomputation
+/// when the message list has not grown since the last call (append-only).
+/// Own one instance per StatefulWidget that renders a process section.
+/// Incremental activity compactor — processes each message exactly once.
+///
+/// Owns one per [State] that renders a process section. On each call to
+/// [compact], only messages past [_processedCount] are visited; committed
+/// (flushed) items are never recomputed. The pending [_ActivityBuilder] for
+/// the current in-progress group caches its own output and only rebuilds
+/// when new candidates arrive, giving O(1) amortised cost per event.
+class AgentActivityCompactor {
+  String? _firstMessageId;
+  int _processedCount = 0;
+  final List<AgentProcessItem> _committed = [];
+  _ActivityBuilder? _pending;
+  List<AgentProcessItem> _cachedResult = const [];
 
-  void flushPending() {
-    final builder = pending;
-    if (builder == null) {
-      return;
+  List<AgentProcessItem> compact(List<ChatMessageModel> messages) {
+    if (messages.isEmpty) {
+      _reset();
+      return const [];
     }
-    items.add(builder.buildItem());
-    pending = null;
+
+    // Detect list replacement (widget reused for a different group/task).
+    final firstId = messages.first.id;
+    if (firstId != _firstMessageId) {
+      _reset();
+      _firstMessageId = firstId;
+    }
+
+    if (messages.length == _processedCount) return _cachedResult;
+
+    // Defensive: list shrank — shouldn't happen with append-only data.
+    if (messages.length < _processedCount) {
+      _reset();
+      _firstMessageId = messages.first.id;
+    }
+
+    for (var i = _processedCount; i < messages.length; i++) {
+      _processOne(messages[i]);
+    }
+    _processedCount = messages.length;
+    _cachedResult = _buildResult();
+    return _cachedResult;
   }
 
-  for (final message in processMessages) {
-    if (isStaleAgentToolPreviewPlaceholder(message)) {
-      continue;
-    }
+  void _reset() {
+    _firstMessageId = null;
+    _processedCount = 0;
+    _committed.clear();
+    _pending = null;
+    _cachedResult = const [];
+  }
+
+  void _processOne(ChatMessageModel message) {
+    if (isStaleAgentToolPreviewPlaceholder(message)) return;
+
     final candidate = _ToolActivityCandidate.tryParse(message);
     if (candidate == null) {
-      flushPending();
-      items.add(AgentProcessItem.message(message));
-      continue;
+      _flushPending();
+      _committed.add(AgentProcessItem.message(message));
+      return;
     }
 
-    final builder = pending;
+    final builder = _pending;
     if (builder != null && builder.canAppend(candidate)) {
       builder.append(candidate);
-      continue;
+      return;
     }
 
-    flushPending();
-    pending = _ActivityBuilder(candidate);
+    _flushPending();
+    _pending = _ActivityBuilder(candidate);
   }
 
-  flushPending();
-  return items;
+  void _flushPending() {
+    final builder = _pending;
+    if (builder == null) return;
+    _committed.add(builder.buildItem());
+    _pending = null;
+  }
+
+  List<AgentProcessItem> _buildResult() {
+    final builder = _pending;
+    if (builder == null) return List.unmodifiable(_committed);
+    return [..._committed, builder.buildItem()];
+  }
 }
+
+/// Convenience wrapper for tests and one-off calls.
+/// Production code should use [AgentActivityCompactor] directly.
+List<AgentProcessItem> compactAgentProcessItems(
+  List<ChatMessageModel> processMessages,
+) =>
+    AgentActivityCompactor().compact(processMessages);
 
 class _ActivityBuilder {
   _ActivityBuilder(_ToolActivityCandidate first)
@@ -113,50 +178,78 @@ class _ActivityBuilder {
   final String activityKey;
   final AgentToolActivityKind kind;
   final String taskId;
-  final List<_ToolActivityCandidate> _candidates = <_ToolActivityCandidate>[];
 
-  bool canAppend(_ToolActivityCandidate candidate) {
-    return candidate.activityKey == activityKey;
-  }
+  // Incremental coalescing state: O(1) per append.
+  // cardId → latest candidate for that tool call (started→progress×N→completed).
+  final Map<String, _ToolActivityCandidate> _latestByCardId = {};
+  final List<String> _cardIdOrder = [];
+  int _syntheticKeyCounter = 0;
+
+  // Memoised output — cleared on every append so the next buildItem() recomputes.
+  AgentProcessItem? _cached;
+
+  // All raw messages kept for AgentToolActivity.messages (RunLog correlation).
+  final List<ChatMessageModel> _allMessages = [];
+
+  bool canAppend(_ToolActivityCandidate candidate) =>
+      candidate.activityKey == activityKey;
 
   void append(_ToolActivityCandidate candidate) {
-    _candidates.add(candidate);
+    final id = candidate.cardId.isEmpty
+        ? '__${_syntheticKeyCounter++}'
+        : candidate.cardId;
+    if (!_latestByCardId.containsKey(id)) {
+      _cardIdOrder.add(id);
+    }
+    _latestByCardId[id] = candidate;
+    _allMessages.add(candidate.message);
+    _cached = null; // invalidate
   }
 
-  AgentProcessItem buildItem() {
-    if (_candidates.length < 2) {
-      return AgentProcessItem.message(_candidates.single.message);
+  AgentProcessItem buildItem() => _cached ??= _buildItem();
+
+  AgentProcessItem _buildItem() {
+    final deduped = _cardIdOrder
+        .map((id) => _latestByCardId[id]!)
+        .toList(growable: false);
+
+    int lastRunningIdx = -1;
+    for (var i = deduped.length - 1; i >= 0; i--) {
+      if (deduped[i].status == 'running') {
+        lastRunningIdx = i;
+        break;
+      }
     }
 
     final steps = <AgentToolActivityStep>[];
     String previousActionKey = '';
     String previousStatus = '';
-    for (final candidate in _candidates) {
-      final actionKey = candidate.actionKey;
+    for (var i = 0; i < deduped.length; i++) {
+      final c = deduped[i];
+      final actionKey = c.actionKey;
       final isRetry =
           actionKey.isNotEmpty &&
           previousActionKey == actionKey &&
-          (_isFailureStatus(previousStatus) || steps.isNotEmpty);
-      steps.add(candidate.toStep(isRetry: isRetry));
+          _isFailureStatus(previousStatus);
+      steps.add(c.toStep(isRetry: isRetry, isCurrent: i == lastRunningIdx));
       previousActionKey = actionKey;
-      previousStatus = candidate.status;
+      previousStatus = c.status;
     }
 
     final id = _firstNonBlank(<Object?>[
-      _candidates.first.taskId,
-      _candidates.first.cardId,
+      deduped.first.taskId,
+      deduped.first.cardId,
       activityKey,
     ]);
+    final resolvedStatus = _resolveActivityStatus(deduped);
     return AgentProcessItem.activity(
       AgentToolActivity(
         id: '$id-${kind.name}-activity',
         kind: kind,
-        title: _activityTitle(kind, _candidates),
-        status: _resolveActivityStatus(_candidates),
+        title: _activityTitle(kind, deduped, resolvedStatus),
+        status: resolvedStatus,
         taskId: taskId,
-        messages: _candidates
-            .map((candidate) => candidate.message)
-            .toList(growable: false),
+        messages: List.unmodifiable(_allMessages),
         steps: steps,
       ),
     );
@@ -254,7 +347,7 @@ class _ToolActivityCandidate {
     );
   }
 
-  AgentToolActivityStep toStep({required bool isRetry}) {
+  AgentToolActivityStep toStep({required bool isRetry, bool isCurrent = false}) {
     return AgentToolActivityStep(
       cardId: cardId,
       title: title,
@@ -262,6 +355,7 @@ class _ToolActivityCandidate {
       target: target,
       status: status,
       isRetry: isRetry,
+      isCurrent: isCurrent,
       message: message,
     );
   }
@@ -273,6 +367,12 @@ AgentToolActivityKind? _resolveActivityKind(Map<String, dynamic> cardData) {
 
   if (toolType == 'browser' || toolName == 'browser_use') {
     return AgentToolActivityKind.browser;
+  }
+  if (toolType == 'research' ||
+      toolName == 'web_search' ||
+      toolName == 'vlm_task' ||
+      toolName == 'image_picker') {
+    return AgentToolActivityKind.research;
   }
   if (toolType == 'terminal' || toolName.startsWith('terminal_')) {
     return AgentToolActivityKind.terminal;
@@ -298,6 +398,8 @@ String _activityKey(
   switch (kind) {
     case AgentToolActivityKind.browser:
       return '$taskId|browser';
+    case AgentToolActivityKind.research:
+      return '$taskId|research';
     case AgentToolActivityKind.terminal:
       final sessionId = _firstNonBlank(<Object?>[
         cardData['terminalSessionId'],
@@ -339,6 +441,8 @@ String _resolveAction(
   switch (kind) {
     case AgentToolActivityKind.browser:
       return toolName == 'browser_use' ? 'browser' : toolName;
+    case AgentToolActivityKind.research:
+      return toolName == 'web_search' ? 'search' : toolName;
     case AgentToolActivityKind.terminal:
       return toolName.startsWith('terminal_')
           ? toolName.substring('terminal_'.length)
@@ -370,6 +474,15 @@ String _resolveTarget(
         args['key'],
         _coordinates(args),
         action == 'type' ? null : args['text'],
+        cardData['summary'],
+        cardData['progress'],
+      ]);
+    case AgentToolActivityKind.research:
+      return _firstNonBlank(<Object?>[
+        args['query'],
+        args['imagePath'],
+        args['image_path'],
+        args['source'],
         cardData['summary'],
         cardData['progress'],
       ]);
@@ -418,6 +531,8 @@ String _actionKey(
   switch (kind) {
     case AgentToolActivityKind.browser:
       return _normalizeKey('$action|$target');
+    case AgentToolActivityKind.research:
+      return _normalizeKey('$action|$target');
     case AgentToolActivityKind.terminal:
       return _normalizeKey(
         '$action|${_firstNonBlank(<Object?>[cardData['terminalSessionId'], args['terminalSessionId'], args['command'], target])}',
@@ -431,13 +546,22 @@ String _actionKey(
 
 String _activityTitle(
   AgentToolActivityKind kind,
-  List<_ToolActivityCandidate> candidates,
+  List<_ToolActivityCandidate> deduped,
+  String resolvedStatus,
 ) {
-  final lastExplicit = candidates.reversed
-      .map((candidate) => candidate.title.trim())
-      .firstWhere((title) => title.isNotEmpty, orElse: () => '');
-  if (lastExplicit.isNotEmpty && candidates.length == 1) {
-    return lastExplicit;
+  // When running: show the current step's target so the user can see progress.
+  // When done: fall back to the kind label (step count is shown separately).
+  if (resolvedStatus == 'running') {
+    final current = deduped.lastWhere(
+      (c) => c.status == 'running',
+      orElse: () => deduped.last,
+    );
+    final target = current.target.trim();
+    if (target.isNotEmpty) return target;
+  }
+  if (deduped.length == 1) {
+    final t = deduped.single.title.trim();
+    if (t.isNotEmpty) return t;
   }
   return _activityKindLabel(kind);
 }
@@ -446,6 +570,8 @@ String _activityKindLabel(AgentToolActivityKind kind) {
   switch (kind) {
     case AgentToolActivityKind.browser:
       return 'Browser activity';
+    case AgentToolActivityKind.research:
+      return 'Research activity';
     case AgentToolActivityKind.terminal:
       return 'Terminal activity';
     case AgentToolActivityKind.workspace:
@@ -458,26 +584,27 @@ String _activityKindLabel(AgentToolActivityKind kind) {
 }
 
 String _resolveActivityStatus(List<_ToolActivityCandidate> candidates) {
-  if (candidates.any((candidate) => candidate.status == 'running')) {
-    return 'running';
+  var hasRunning = false;
+  var hasInterrupted = false;
+  var hasError = false;
+  var allSuccess = true;
+  for (final c in candidates) {
+    final s = c.status;
+    if (s == 'running') hasRunning = true;
+    if (s == 'interrupted') hasInterrupted = true;
+    if (_isFailureStatus(s)) hasError = true;
+    if (s != 'success') allSuccess = false;
   }
+  if (hasRunning) return 'running';
   final finalStatus = candidates.last.status;
   if (finalStatus == 'success' ||
       finalStatus == 'interrupted' ||
       _isFailureStatus(finalStatus)) {
-    return finalStatus == 'failed' || finalStatus == 'failure'
-        ? 'error'
-        : finalStatus;
+    return _isFailureStatus(finalStatus) ? 'error' : finalStatus;
   }
-  if (candidates.any((candidate) => candidate.status == 'interrupted')) {
-    return 'interrupted';
-  }
-  if (candidates.any((candidate) => _isFailureStatus(candidate.status))) {
-    return 'error';
-  }
-  if (candidates.every((candidate) => candidate.status == 'success')) {
-    return 'success';
-  }
+  if (hasInterrupted) return 'interrupted';
+  if (hasError) return 'error';
+  if (allSuccess) return 'success';
   return finalStatus;
 }
 

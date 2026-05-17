@@ -3,9 +3,9 @@ package cn.com.omnimind.bot.agent
 import android.content.Context
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.i18n.PromptLocale
-import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
 import cn.com.omnimind.bot.agent.config.AgentToolFeatureStore
 import cn.com.omnimind.bot.mcp.RemoteMcpDiscoveryRegistry
+import cn.com.omnimind.bot.runlog.OobRunLogReplayService
 import cn.com.omnimind.bot.workbench.WorkbenchDisplayLayoutContext
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import kotlinx.coroutines.CancellationException
@@ -103,21 +103,9 @@ class OmniAgentExecutor(
             val discoveredServers = RemoteMcpDiscoveryRegistry.discoverEnabledServers()
             val oobFunctionDefinitions = if (AgentToolFeatureStore.isOobFunctionAsToolEnabled(context)) {
                 runCatching {
-                    val summaries = (OobReusableFunctionStore.list(context, limit = 50)["functions"]
-                        as? List<*>) ?: emptyList<Any?>()
-                    summaries.mapNotNull { rawSummary ->
-                        val summary = rawSummary as? Map<*, *> ?: return@mapNotNull null
-                        val functionId = summary["function_id"]
-                            ?.toString()
-                            ?.trim()
-                            ?.takeIf { it.isNotEmpty() }
-                            ?: return@mapNotNull null
-                        val spec = OobReusableFunctionStore.get(context, functionId)
-                            ?: summary.entries.associate { (key, value) ->
-                                key.toString() to value
-                            }
-                        buildOobToolDefinition(spec, promptLocale)
-                    }
+                    OobRunLogReplayService(context)
+                        .listFunctionSpecs(limit = 50)
+                        .mapNotNull { spec -> buildOobToolDefinition(spec, promptLocale) }
                 }.getOrElse { emptyList() }
             } else emptyList()
             val toolRegistry = AgentToolRegistry(

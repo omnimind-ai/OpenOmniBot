@@ -21,6 +21,29 @@ private const val SKILL_REGISTRY_FILE_NAME = ".skill_registry.json"
 private const val OFFICIAL_SKILLS_GITHUB_REPOSITORY_URL = "https://github.com/omnimind-ai/OmniBotSkills"
 private const val OFFICIAL_SKILLS_CNB_REPOSITORY_URL = "https://cnb.cool/o.a/OmniBotSkills"
 private const val OFFICIAL_SKILLS_DIRECTORY_NAME = "OmniBotSkills"
+private val RETIRED_BUILTIN_SKILL_IDS = setOf(
+    "oob-native-" + "workbench",
+    "oob-project-" + "designer",
+    "oob-project-" + "distiller"
+)
+
+internal fun <T> removeRetiredBuiltinSkillInstallations(
+    skillsRoot: File,
+    registry: MutableMap<String, T>
+): Boolean {
+    var changed = false
+    RETIRED_BUILTIN_SKILL_IDS.forEach { skillId ->
+        val targetDir = File(skillsRoot, skillId)
+        if (targetDir.exists()) {
+            targetDir.deleteRecursively()
+            changed = changed || !targetDir.exists()
+        }
+        if (!targetDir.exists() && registry.remove(skillId) != null) {
+            changed = true
+        }
+    }
+    return changed
+}
 
 private data class BuiltinSkillManifest(
     val skills: List<BuiltinSkillAsset> = emptyList()
@@ -120,7 +143,7 @@ private class BuiltinSkillAssetStore(
 
     fun seedMissingBuiltins(registryStore: SkillRegistryStore) {
         val registry = registryStore.read()
-        var changed = false
+        var changed = removeRetiredBuiltins(registry)
         listBuiltins().forEach { builtin ->
             val targetDir = targetDirFor(builtin)
             val alreadyInstalled = targetDir.exists() && registry.containsKey(builtin.id)
@@ -143,6 +166,15 @@ private class BuiltinSkillAssetStore(
         if (changed) {
             registryStore.write(registry)
         }
+    }
+
+    private fun removeRetiredBuiltins(
+        registry: MutableMap<String, SkillRegistryEntry>
+    ): Boolean {
+        return removeRetiredBuiltinSkillInstallations(
+            skillsRoot = workspaceManager.skillsRoot(),
+            registry = registry
+        )
     }
 
     private fun builtinSkillContentUnchanged(builtin: BuiltinSkillAsset, targetDir: File): Boolean {

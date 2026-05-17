@@ -15,6 +15,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.Channel
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -24,7 +26,6 @@ import kotlinx.serialization.json.contentOrNull
 import okhttp3.Response
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
-import java.util.concurrent.atomic.AtomicBoolean
 
 interface AgentLlmClient {
     suspend fun streamTurn(
@@ -195,7 +196,7 @@ class HttpAgentLlmClient(
                 modelOverride?.providerProfileId,
                 modelOverride?.apiBase
             ),
-            includeReasoningInAssistantMessage = routeInfo?.requiresReasoningEcho == true
+            includeReasoningInAssistantMessage = routeInfo.requiresReasoningEcho
         )
         var lastReasoning = ""
         var lastReasoningEmitLength = 0
@@ -204,6 +205,10 @@ class HttpAgentLlmClient(
         val reasoningLock = Any()
         var lastContent = ""
         var eventSource: EventSource? = null
+        // Structural events (tool lifecycle, completion, errors) must preserve
+        // ordering → kept in an unbounded queue.
+        // High-frequency content/toolPreview updates are conflated: only the
+        // latest value is ever pending, so O(token-rate) lambdas never pile up.
         val emissionQueue = Channel<suspend () -> Unit>(Channel.UNLIMITED)
         val emissionJob = scope.launch {
             for (block in emissionQueue) {
@@ -211,13 +216,16 @@ class HttpAgentLlmClient(
                     .onFailure { OmniLog.w(tag, "stream emission failed: ${it.message}") }
             }
         }
+        // Content conflation state — written from OkHttp thread, read by emission coroutine.
+        val pendingContent = AtomicReference<String?>(null)
+        val contentEmissionScheduled = AtomicBoolean(false)
+        // ToolCall preview conflation — one slot per tool index.
+        val pendingToolCallByIndex = AtomicReference<Map<Int, StreamingToolCallSnapshot>>(emptyMap())
+        val toolCallEmissionScheduled = AtomicBoolean(false)
         var hasPublishedReasoningForTurn = false
         val lastToolCallSignatures = mutableMapOf<Int, String>()
 
         fun enqueueEmission(block: suspend () -> Unit) {
-            if (emissionQueue.isClosedForSend) {
-                return
-            }
             emissionQueue.trySend(block)
         }
 
@@ -280,7 +288,7 @@ class HttpAgentLlmClient(
                 }
             }
             if (snapshot != null) {
-                dispatchReasoningSnapshot(snapshot!!)
+                dispatchReasoningSnapshot(snapshot)
             }
         }
 
@@ -291,15 +299,21 @@ class HttpAgentLlmClient(
                 emitReasoning(force = true)
             }
             lastContent = content
-            if (onContentUpdate != null) {
+            if (onContentUpdate == null) return
+            // Conflate: store latest, schedule at most one pending delivery.
+            pendingContent.set(content)
+            if (contentEmissionScheduled.compareAndSet(false, true)) {
                 enqueueEmission {
-                    onContentUpdate.invoke(content)
+                    contentEmissionScheduled.set(false)
+                    pendingContent.getAndSet(null)?.let { onContentUpdate.invoke(it) }
                 }
             }
         }
 
         fun emitToolCalls() {
             if (onToolCallUpdate == null) return
+            var anyNew = false
+            val updates = mutableMapOf<Int, StreamingToolCallSnapshot>()
             accumulator.currentToolCallSnapshots().forEach { snapshot ->
                 val toolName = snapshot.name?.trim().orEmpty()
                 if (toolName.isEmpty()) return@forEach
@@ -308,12 +322,19 @@ class HttpAgentLlmClient(
                     toolName,
                     snapshot.arguments
                 ).joinToString("\u001f")
-                if (lastToolCallSignatures[snapshot.index] == signature) {
-                    return@forEach
-                }
+                if (lastToolCallSignatures[snapshot.index] == signature) return@forEach
                 lastToolCallSignatures[snapshot.index] = signature
+                updates[snapshot.index] = snapshot
+                anyNew = true
+            }
+            if (!anyNew) return
+            // Conflate per tool index: merge pending, one lambda in queue.
+            pendingToolCallByIndex.updateAndGet { prev -> if (prev.isEmpty()) updates else prev + updates }
+            if (toolCallEmissionScheduled.compareAndSet(false, true)) {
                 enqueueEmission {
-                    onToolCallUpdate.invoke(snapshot)
+                    toolCallEmissionScheduled.set(false)
+                    pendingToolCallByIndex.getAndSet(emptyMap()).values
+                        .forEach { onToolCallUpdate.invoke(it) }
                 }
             }
         }

@@ -1,17 +1,20 @@
 package cn.com.omnimind.bot.workbench
 
 import cn.com.omnimind.bot.workbench.executor.WorkbenchExecutor
+import com.google.gson.Gson
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.zip.ZipFile
 
 class WorkbenchProjectStoreTest {
     private fun store(): WorkbenchProjectStore {
         return WorkbenchProjectStore(Files.createTempDirectory("workbench-store-test").toFile())
     }
+    private val gson = Gson()
 
     @Test
     fun createProjectWritesGenericProjectRuntimeFiles() {
@@ -248,6 +251,77 @@ class WorkbenchProjectStoreTest {
     }
 
     @Test
+    fun persistedJsonSchemaApiRegistryIsNormalizedOnRead() {
+        val root = Files.createTempDirectory("workbench-store-test").toFile()
+        val store = WorkbenchProjectStore(root)
+        store.createProject(
+            mapOf(
+                "projectId" to "oob-workbench-legacy-schedule",
+                "entityName" to "Schedule"
+            )
+        )
+        root.resolve("projects/api_registry.json").writeText(
+            """
+            [
+              {
+                "apiId": "schedule.create",
+                "projectId": "oob-workbench-legacy-schedule",
+                "toolId": "schedule.create",
+                "displayName": "Save schedule",
+                "description": "Create a structured schedule record.",
+                "inputSchema": {
+                  "type": "object",
+                  "properties": {
+                    "summary": { "type": "string" },
+                    "date": { "type": "string", "format": "date" },
+                    "startTime": { "type": "string" },
+                    "endTime": { "type": "string" }
+                  },
+                  "required": ["summary", "date", "startTime"]
+                },
+                "outputSchema": {
+                  "type": "object",
+                  "properties": {
+                    "item": { "type": "object" }
+                  }
+                },
+                "executorKind": "native_project_collection",
+                "run": {
+                  "use": "native.collection.create"
+                }
+              }
+            ]
+            """.trimIndent()
+        )
+
+        val createResult = store.callApi(
+            projectId = "oob-workbench-legacy-schedule",
+            apiId = "schedule.create",
+            inputs = mapOf(
+                "summary" to "Design review",
+                "date" to "2026-05-15",
+                "startTime" to "10:00"
+            ),
+            caller = "test"
+        )
+        assertTrue(createResult["success"] == true)
+        val created = (createResult["outputs"] as Map<*, *>)["item"] as Map<*, *>
+        assertEquals("Design review", created["title"])
+
+        val invalidResult = store.callApi(
+            projectId = "oob-workbench-legacy-schedule",
+            apiId = "schedule.create",
+            inputs = mapOf("summary" to "Missing date"),
+            caller = "test"
+        )
+        assertEquals(false, invalidResult["success"])
+        assertEquals(
+            "Missing required input field(s): date, startTime",
+            invalidResult["errorMessage"]
+        )
+    }
+
+    @Test
     fun updateProjectWritesHtmlFilesAndMakesHtmlDisplayDefault() {
         val store = store()
         store.createProject(
@@ -409,6 +483,41 @@ class WorkbenchProjectStoreTest {
         assertTrue(projectDir.resolve("frontend/html/index.html").exists())
         // styles/app.css must land at frontend/html/styles/app.css
         assertTrue(projectDir.resolve("frontend/html/styles/app.css").exists())
+    }
+
+    @Test
+    fun exportProjectUsesCanonicalOobProjectSkill() {
+        val root = Files.createTempDirectory("workbench-export-test").toFile()
+        val store = WorkbenchProjectStore(
+            workspaceRoot = root,
+            builtinWorkbenchSkillReader = { "# OOB Project\n" }
+        )
+        store.createProject(
+            mapOf(
+                "projectId" to "oob-workbench-export",
+                "entityName" to "Note"
+            )
+        )
+
+        val export = store.exportProject("oob-workbench-export")
+        assertTrue(export["success"] == true)
+        val packageName = export["packageName"].toString()
+        val packageFile = root.resolve("projects/exports/$packageName")
+        assertTrue(packageFile.exists())
+
+        ZipFile(packageFile).use { zip ->
+            val manifestEntry = zip.getEntry("manifest.json")
+            assertTrue(manifestEntry != null)
+            val manifestText = zip.getInputStream(manifestEntry).bufferedReader().use { it.readText() }
+            @Suppress("UNCHECKED_CAST")
+            val manifest = gson.fromJson(manifestText, Map::class.java) as Map<String, Any?>
+            assertEquals("oob-project", manifest["source"])
+            val skills = manifest["skills"] as List<*>
+            val skill = skills.first() as Map<*, *>
+            assertEquals("oob-project", skill["skillId"])
+            assertEquals("skills/oob-project/SKILL.md", skill["path"])
+            assertTrue(zip.getEntry("skills/oob-project/SKILL.md") != null)
+        }
     }
 
     private fun executionCount(result: Map<String, Any?>, toolId: String): Int {

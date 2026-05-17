@@ -1,0 +1,61 @@
+{
+  "schema_version": "oob.reusable_function.v1",
+  "function_id": "open_settings_demo",
+  "name": "Open Settings",
+  "description": "Open Android Settings and wait for one second.",
+  "parameters": [],
+  "source": {
+    "kind": "sample",
+    "created_by": "omniflow_agent_kit"
+  },
+  "execution": {
+    "kind": "tool_sequence",
+    "runner": "oob_tool_sequence",
+    "entrypoint": "execute",
+    "capabilities": {
+      "scriptable_step_count": 2,
+      "model_free_step_count": 2,
+      "omniflow_step_count": 2,
+      "agent_step_count": 0,
+      "requires_agent_fallback": false
+    },
+    "steps": [
+      {
+        "id": "step_1",
+        "index": 0,
+        "title": "Open Android Settings",
+        "kind": "omniflow_action",
+        "executor": "omniflow",
+        "omniflow_action": "open_app",
+        "local_action": "open_app",
+        "model_free": true,
+        "scriptable": true,
+        "tool": "open_app",
+        "callable_tool": "open_app",
+        "args": {
+          "package_name": "com.android.settings"
+        }
+      },
+      {
+        "id": "step_2",
+        "index": 1,
+        "title": "Wait for Settings",
+        "kind": "omniflow_action",
+        "executor": "omniflow",
+        "omniflow_action": "wait",
+        "local_action": "wait",
+        "model_free": true,
+        "scriptable": true,
+        "tool": "wait",
+        "callable_tool": "wait",
+        "args": {
+          "duration_ms": 1000
+        }
+      }
+    ],
+    "step_count": 2,
+    "omniflow_step_count": 2,
+    "agent_step_count": 0,
+    "requires_agent_fallback": false
+  }
+}

@@ -27,3 +27,8 @@ testbot/build
 log.txt
 
 output/
+
+workspace/
+*.egg-info/
+__pycache__/
+*.py[cod]

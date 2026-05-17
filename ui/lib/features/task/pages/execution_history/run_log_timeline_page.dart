@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ui/features/task/pages/execution_history/run_log_reusable_function_converter.dart';
+import 'package:ui/features/task/run_log/run_log_reusable_function_converter.dart';
 import 'package:ui/features/task/pages/scheduled_tasks/widgets/schedule_task_sheet.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
@@ -199,6 +199,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
   List<Map<String, dynamic>> _cards = [];
   bool _isLoading = true;
   bool _isConvertingFunction = false;
+  bool _isReplayingRunLog = false;
   String? _error;
 
   @override
@@ -244,6 +245,26 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
         : l10n.runLogTimelineTitle;
     final List<Widget> actions = <Widget>[
       Tooltip(
+        message: _text(context, '执行 RunLog', 'Run RunLog'),
+        child: IconButton(
+          icon: _isReplayingRunLog
+              ? SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: palette.textPrimary,
+                  ),
+                )
+              : const Icon(Icons.play_arrow_rounded),
+          color: palette.textPrimary,
+          onPressed:
+              _cards.isEmpty || _isConvertingFunction || _isReplayingRunLog
+              ? null
+              : _executeCurrentRunLog,
+        ),
+      ),
+      Tooltip(
         message: _text(context, 'AI 转功能', 'Convert to function'),
         child: IconButton(
           icon: _isConvertingFunction
@@ -257,7 +278,8 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
                 )
               : const Icon(Icons.auto_awesome_rounded),
           color: palette.textPrimary,
-          onPressed: _cards.isEmpty || _isConvertingFunction
+          onPressed:
+              _cards.isEmpty || _isConvertingFunction || _isReplayingRunLog
               ? null
               : _convertToReusableFunction,
         ),
@@ -359,7 +381,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
         title: widget.title,
         payload: _payload,
         cards: _cards,
-        useAi: false,
+        useAi: true,
         useEnglish: _localeValue(context, zh: false, en: true),
       );
       if (!mounted) return;
@@ -382,6 +404,75 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       });
       final message = _text(context, '转换失败', 'Conversion failed');
       showToast('$message: $e', type: ToastType.error);
+    }
+  }
+
+  Future<void> _executeCurrentRunLog() async {
+    if (_cards.isEmpty || _isConvertingFunction || _isReplayingRunLog) {
+      return;
+    }
+    setState(() {
+      _isReplayingRunLog = true;
+    });
+    showToast(
+      _text(context, '正在准备并执行 RunLog...', 'Preparing and running RunLog...'),
+      type: ToastType.info,
+    );
+    final executionFailedText = _text(
+      context,
+      'RunLog 执行失败',
+      'RunLog execution failed',
+    );
+    final conversionFailedText = _text(
+      context,
+      'RunLog 转换失败',
+      'RunLog conversion failed',
+    );
+
+    try {
+      final convertResult =
+          await AssistsMessageService.convertInternalRunLogToOobFunction(
+        runId: widget.runId,
+        register: true,
+      );
+      final functionId = _firstNonBlank([
+        convertResult['created_function_id'],
+        convertResult['function_id'],
+      ]);
+      if (convertResult['success'] != true || functionId.isEmpty) {
+        final message = convertResult['error_message']?.toString().trim();
+        throw Exception(
+          message?.isNotEmpty == true ? message : conversionFailedText,
+        );
+      }
+      final spec = convertResult['function_spec'] is Map
+          ? Map<String, dynamic>.from(
+              (convertResult['function_spec'] as Map).map(
+                (key, value) => MapEntry(key.toString(), value),
+              ),
+            )
+          : const <String, dynamic>{};
+
+      final result = await AssistsMessageService.runOobReusableFunction(
+        functionId: functionId,
+        arguments: _defaultArgumentsForFunctionSpec(spec),
+      );
+      if (!mounted) return;
+      setState(() {
+        _isReplayingRunLog = false;
+      });
+      showToast(
+        result.success
+            ? _runLogReplaySuccessMessage(context, result)
+            : _runLogReplayFailureMessage(context, result),
+        type: result.success ? ToastType.success : ToastType.error,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isReplayingRunLog = false;
+      });
+      showToast('$executionFailedText: $e', type: ToastType.error);
     }
   }
 
@@ -1205,7 +1296,7 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
           'source_step_number': snapshot.stepNumber,
         },
         cards: [widget.card],
-        useAi: false,
+        useAi: true,
         useEnglish: _localeValue(context, zh: false, en: true),
       );
       if (!mounted) return;
@@ -1282,7 +1373,6 @@ class _ReusableFunctionSpecSheetState
     final palette = context.omniPalette;
     final isDark = context.isDarkTheme;
     final sheetHeight = MediaQuery.of(context).size.height * 0.55;
-    final scriptCall = _scriptCallJson;
 
     return GestureDetector(
       onTap: () => Navigator.of(context, rootNavigator: true).maybePop(),
@@ -1567,26 +1657,6 @@ class _ReusableFunctionSpecSheetState
                                 ),
                               ],
                             ),
-                            if (scriptCall.trim().isNotEmpty) ...[
-                              const SizedBox(height: 10),
-                              _SpecActionButton(
-                                icon: Icons.terminal_rounded,
-                                label: _text(
-                                  context,
-                                  '复制脚本调用 JSON',
-                                  'Copy script call JSON',
-                                ),
-                                onTap: () => _copyText(
-                                  context,
-                                  scriptCall,
-                                  _text(
-                                    context,
-                                    '已复制脚本调用 JSON',
-                                    'Script call JSON copied',
-                                  ),
-                                ),
-                              ),
-                            ],
                             const SizedBox(height: 14),
                             _DetailSection(
                               title: _text(
@@ -1607,18 +1677,6 @@ class _ReusableFunctionSpecSheetState
                               copyValue: spec.agentPrompt,
                               child: _JsonText(text: spec.agentPrompt),
                             ),
-                            if (scriptCall.trim().isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              _DetailSection(
-                                title: _text(
-                                  context,
-                                  'Script 调用形态',
-                                  'Script call shape',
-                                ),
-                                copyValue: scriptCall,
-                                child: _JsonText(text: scriptCall),
-                              ),
-                            ],
                             if (_apiCallJson.trim().isNotEmpty) ...[
                               const SizedBox(height: 12),
                               _DetailSection(
@@ -1821,18 +1879,6 @@ class _ReusableFunctionSpecSheetState
     }
   }
 
-  String get _scriptCallJson {
-    final scriptReuse = spec.json['script_reuse'];
-    if (scriptReuse is! Map) {
-      return '';
-    }
-    final callShape = scriptReuse['call_shape'];
-    if (callShape == null) {
-      return '';
-    }
-    return const JsonEncoder.withIndent('  ').convert(callShape);
-  }
-
   String get _registeredFunctionId {
     return _firstNonBlank([
       _importResult?.createdFunctionId,
@@ -1854,20 +1900,7 @@ class _ReusableFunctionSpecSheetState
   }
 
   Map<String, dynamic> get _defaultArguments {
-    final rawParameters = spec.json['parameters'];
-    if (rawParameters is! List) {
-      return const {};
-    }
-    final arguments = <String, dynamic>{};
-    for (final item in rawParameters) {
-      if (item is! Map) continue;
-      final name = (item['name'] ?? '').toString().trim();
-      if (name.isEmpty) continue;
-      final defaultValue = item['default'];
-      if (defaultValue == null) continue;
-      arguments[name] = defaultValue;
-    }
-    return arguments;
+    return _defaultArgumentsForFunctionSpec(spec.json);
   }
 
   Map<String, dynamic> _scheduleSuggestionData(String functionId) {
@@ -3025,6 +3058,55 @@ T _localeValue<T>(BuildContext context, {required T zh, required T en}) {
     en: en,
     locale: Localizations.maybeLocaleOf(context),
   );
+}
+
+Map<String, dynamic> _defaultArgumentsForFunctionSpec(
+  Map<String, dynamic> functionSpec,
+) {
+  final rawParameters = functionSpec['parameters'];
+  if (rawParameters is! List) {
+    return const {};
+  }
+  final arguments = <String, dynamic>{};
+  for (final item in rawParameters) {
+    if (item is! Map) continue;
+    final name = (item['name'] ?? '').toString().trim();
+    if (name.isEmpty) continue;
+    final defaultValue = item['default'];
+    if (defaultValue == null) continue;
+    arguments[name] = defaultValue;
+  }
+  return arguments;
+}
+
+String _runLogReplaySuccessMessage(
+  BuildContext context,
+  UtgManualRunResult result,
+) {
+  final status = result.terminalState['status']?.toString().trim() ?? '';
+  final taskId = result.terminalState['taskId']?.toString().trim() ?? '';
+  if (taskId.isNotEmpty) {
+    return _localeValue(
+      context,
+      zh: 'RunLog 已交给 Agent 继续执行：$taskId',
+      en: 'RunLog handed off to Agent: $taskId',
+    );
+  }
+  if (status == 'completed') {
+    return _text(context, 'RunLog 已本地执行完成', 'RunLog completed locally');
+  }
+  return _text(context, 'RunLog 已开始执行', 'RunLog execution started');
+}
+
+String _runLogReplayFailureMessage(
+  BuildContext context,
+  UtgManualRunResult result,
+) {
+  final error = result.errorMessage?.trim();
+  if (error != null && error.isNotEmpty) {
+    return error;
+  }
+  return _text(context, 'RunLog 执行失败', 'RunLog execution failed');
 }
 
 Color _successColor(BuildContext context) {

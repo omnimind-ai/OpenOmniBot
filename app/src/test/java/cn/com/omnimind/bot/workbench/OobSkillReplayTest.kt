@@ -10,7 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * End-to-end flow tests for oob.skill.v2 fixed replay.
+ * End-to-end flow tests for oob.reusable_function.v1 fixed replay.
  *
  * Tests cover: spec parsing, materializedSteps, executor classification,
  * canRunFullyWithOmniflow, and coordinate_hook guard.
@@ -47,6 +47,15 @@ class OobSkillReplayTest {
         return steps.isNotEmpty() && steps.all { isOmniflowStep(it) }
     }
 
+    private fun requiresAgentPlanning(step: Map<String, Any?>): Boolean {
+        val agentCall = step["agent_call"] as? Map<*, *>
+        val reason = agentCall?.get("reason")?.toString()
+            ?: step["reason"]?.toString()
+            ?: ""
+        return reason == "data_flow_tool_requires_live_context" ||
+            reason == "perception_only_step_without_recorded_actions"
+    }
+
     private fun firstNonBlank(vararg values: Any?): String {
         for (v in values) {
             val s = v?.toString()?.trim().orEmpty()
@@ -59,7 +68,7 @@ class OobSkillReplayTest {
 
     private val pureOmniflowSpec = """
     {
-      "schema_version": "oob.skill.v2",
+      "schema_version": "oob.reusable_function.v1",
       "function_id": "runlog_test001",
       "name": "打开微信给张三发消息",
       "description": "打开微信给张三发消息",
@@ -118,7 +127,7 @@ class OobSkillReplayTest {
 
     private val mixedSpec = """
     {
-      "schema_version": "oob.skill.v2",
+      "schema_version": "oob.reusable_function.v1",
       "function_id": "runlog_test002",
       "name": "搜索并打开",
       "description": "搜索并打开网页",
@@ -131,16 +140,22 @@ class OobSkillReplayTest {
             "omniflow_action": "open_app",
             "args": {"package_name": "com.android.chrome"}
           },
-          {
+            {
             "id": "step_2", "index": 1,
             "title": "搜索内容",
             "executor": "agent",
             "tool": "browser_use",
-            "callable_tool": "browser_use",
+            "callable_tool": "oob.agent.run",
+            "scriptable": false,
             "args": {"url": "https://google.com", "query": "test"},
             "agent_call": {
-              "tool": "browser_use",
-              "args": {"prompt": "在浏览器中搜索 test"}
+              "tool": "oob.agent.run",
+              "args": {
+                "prompt": "在浏览器中搜索 test",
+                "original_tool": "browser_use",
+                "original_args": {"url": "https://google.com", "query": "test"}
+              },
+              "reason": "data_flow_tool_requires_live_context"
             }
           }
         ],
@@ -152,7 +167,7 @@ class OobSkillReplayTest {
 
     private val noCoordHookSpec = """
     {
-      "schema_version": "oob.skill.v2",
+      "schema_version": "oob.reusable_function.v1",
       "function_id": "runlog_test003",
       "name": "返回桌面",
       "execution": {
@@ -174,9 +189,9 @@ class OobSkillReplayTest {
     // ── spec parsing ──────────────────────────────────────────────────────────
 
     @Test
-    fun `v2 spec has correct schema version`() {
+    fun `reusable function spec has correct schema version`() {
         val spec = specFromJson(pureOmniflowSpec)
-        assertEquals("oob.skill.v2", spec["schema_version"])
+        assertEquals("oob.reusable_function.v1", spec["schema_version"])
     }
 
     @Test
@@ -270,12 +285,17 @@ class OobSkillReplayTest {
 
         assertEquals("agent", agentStep["executor"])
         assertEquals("browser_use", agentStep["tool"])
-        assertEquals("browser_use", agentStep["callable_tool"])
+        assertEquals("oob.agent.run", agentStep["callable_tool"])
+        assertEquals(false, agentStep["scriptable"])
 
         val agentCall = agentStep["agent_call"] as? Map<*, *>
         assertNotNull(agentCall)
+        assertEquals("oob.agent.run", agentCall?.get("tool"))
+        assertEquals("data_flow_tool_requires_live_context", agentCall?.get("reason"))
         val agentArgs = agentCall?.get("args") as? Map<*, *>
         assertNotNull(agentArgs?.get("prompt"))
+        assertEquals("browser_use", agentArgs?.get("original_tool"))
+        assertTrue(requiresAgentPlanning(agentStep))
     }
 
     // ── source_context structure ───────────────────────────────────────────────

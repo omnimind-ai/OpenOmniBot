@@ -15,6 +15,7 @@ import cn.com.omnimind.bot.agent.tool.handlers.SystemToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.TerminalToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.ToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.VlmToolHandler
+import cn.com.omnimind.bot.agent.tool.handlers.WebSearchToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.WorkbenchToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandler
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
@@ -47,6 +48,7 @@ class AgentToolRouter(
         ImagePickerToolHandler(helper),
         privilegedHandler,
         terminalHandler,
+        WebSearchToolHandler(helper, workspaceManager),
         BrowserToolHandler(helper, workspaceManager),
         FileToolHandler(helper, workspaceManager),
         SkillsToolHandler(helper, workspaceManager),

@@ -55,6 +55,12 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
   final AgentStreamReducer _agentStreamReducer = const AgentStreamReducer();
   final Map<String, AgentStreamTaskState> _agentStreamStates =
       <String, AgentStreamTaskState>{};
+  static const Duration _agentConversationPersistDelay = Duration(
+    milliseconds: 350,
+  );
+  Timer? _agentConversationPersistTimer;
+  bool _agentConversationPersistInFlight = false;
+  bool _agentConversationPersistAgain = false;
 
   String? get currentDispatchTaskId;
 
@@ -109,6 +115,13 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
 
   // Agent 文本消息更新后交给具体页面决定是否补充额外结构化内容。
   void onAgentTextMessageUpdated(String messageId, {bool isFinal = true}) {}
+
+  @override
+  void dispose() {
+    _agentConversationPersistTimer?.cancel();
+    _agentConversationPersistTimer = null;
+    super.dispose();
+  }
 
   @protected
   Set<String> activeAgentStreamTaskIds() {
@@ -309,7 +322,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         isFinal: event.isFinal,
       ),
     );
-    _persistAgentConversationSafely();
+    _persistAgentConversationSafely(immediate: event.isFinal);
   }
 
   void _applyAgentToolStreamEvent(
@@ -348,7 +361,9 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         _finalizeRunningToolCardsForTask(taskId);
       }
     });
-    _persistAgentConversationSafely();
+    _persistAgentConversationSafely(
+      immediate: event.kind == AgentStreamEventKind.toolCompleted,
+    );
   }
 
   void _applyAgentClarifyStreamEvent(
@@ -400,7 +415,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     });
     clearAgentStreamSessionState(taskId: event.taskId);
     resetDispatchState();
-    _persistAgentConversationSafely();
+    _persistAgentConversationSafely(immediate: true);
   }
 
   void _applyAgentCompletedStreamEvent(
@@ -416,7 +431,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     });
     clearAgentStreamSessionState(taskId: event.taskId);
     resetDispatchState();
-    _persistAgentConversationSafely();
+    _persistAgentConversationSafely(immediate: true);
   }
 
   void _applyAgentErrorStreamEvent(
@@ -449,7 +464,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     });
     clearAgentStreamSessionState(taskId: event.taskId);
     resetDispatchState();
-    _persistAgentConversationSafely();
+    _persistAgentConversationSafely(immediate: true);
   }
 
   void _applyAgentPermissionStreamEvent(
@@ -542,7 +557,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     });
     clearAgentStreamSessionState(taskId: event.taskId);
     resetDispatchState();
-    _persistAgentConversationSafely();
+    _persistAgentConversationSafely(immediate: true);
   }
 
   Map<String, dynamic> _streamMetaFromEvent(AgentStreamEvent event) {
@@ -625,7 +640,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
 
     clearAgentStreamSessionState(taskId: taskId);
     resetDispatchState();
-    _persistAgentConversationSafely();
+    _persistAgentConversationSafely(immediate: true);
   }
 
   List<String> _resolveExecutionPermissionIds(List<String> missing) {
@@ -882,14 +897,38 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     return '';
   }
 
-  void _persistAgentConversationSafely() {
-    Future<void>.microtask(() async {
-      try {
-        await persistAgentConversation();
-      } catch (e) {
-        debugPrint('persistAgentConversation failed: $e');
-      }
+  void _persistAgentConversationSafely({bool immediate = false}) {
+    if (immediate) {
+      _agentConversationPersistTimer?.cancel();
+      _agentConversationPersistTimer = null;
+      unawaited(_runAgentConversationPersist());
+      return;
+    }
+    _agentConversationPersistTimer?.cancel();
+    _agentConversationPersistTimer = Timer(_agentConversationPersistDelay, () {
+      _agentConversationPersistTimer = null;
+      unawaited(_runAgentConversationPersist());
     });
+  }
+
+  Future<void> _runAgentConversationPersist() async {
+    if (!mounted) return;
+    if (_agentConversationPersistInFlight) {
+      _agentConversationPersistAgain = true;
+      return;
+    }
+    _agentConversationPersistInFlight = true;
+    try {
+      await persistAgentConversation();
+    } catch (e) {
+      debugPrint('persistAgentConversation failed: $e');
+    } finally {
+      _agentConversationPersistInFlight = false;
+      if (_agentConversationPersistAgain && mounted) {
+        _agentConversationPersistAgain = false;
+        _persistAgentConversationSafely();
+      }
+    }
   }
 
   void _upsertToolCard({

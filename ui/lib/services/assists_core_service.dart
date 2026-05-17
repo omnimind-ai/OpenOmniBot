@@ -2347,6 +2347,32 @@ class AssistsMessageService {
     return UtgFunctionMutationResult.fromMap(_jsonSafeDynamicMap(result));
   }
 
+  static Future<Map<String, dynamic>> convertInternalRunLogToOobFunction({
+    required String runId,
+    bool register = true,
+    String? functionId,
+    String? name,
+    String? description,
+  }) async {
+    final normalizedRunId = runId.trim();
+    if (normalizedRunId.isEmpty) {
+      throw Exception('runId 为空，无法转换 RunLog');
+    }
+    final result = await assistCore.invokeMethod(
+      'convertInternalRunLogToOobFunction',
+      {
+        'runId': normalizedRunId,
+        'register': register,
+        if (functionId != null && functionId.trim().isNotEmpty)
+          'functionId': functionId.trim(),
+        if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
+        if (description != null && description.trim().isNotEmpty)
+          'description': description.trim(),
+      },
+    );
+    return _jsonSafeDynamicMap(result);
+  }
+
   static Future<Map<String, dynamic>> listOobReusableFunctions({
     int limit = 100,
   }) async {

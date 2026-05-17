@@ -16,7 +16,7 @@ Do not add preset app flows. Prefer one generic Project runtime with Project Too
 4. `app/src/main/java/cn/com/omnimind/bot/workbench/WorkbenchToolboxBuilder.kt`
 5. `app/src/main/java/cn/com/omnimind/bot/workbench/executor/WorkbenchExecutor.kt`
 6. `app/src/main/java/cn/com/omnimind/bot/agent/tool/AgentToolDefinitions.kt`
-7. `app/src/main/assets/builtin_skills/oob-native-workbench/SKILL.md`
+7. `app/src/main/assets/builtin_skills/oob-project/SKILL.md`
 
 ## Control Path
 
@@ -180,7 +180,7 @@ Do not create a replacement Project for a feature change unless the user explici
 - `AgentToolDefinitions.kt`: Agent-facing control tool schemas.
 - `McpToolDefinitions.kt`: MCP-facing control tool schemas.
 - `McpPromptDefinitions.kt`: reusable MCP prompt instructions.
-- `app/src/main/assets/builtin_skills/oob-native-workbench/SKILL.md`: prompt contract for Agents.
+- `app/src/main/assets/builtin_skills/oob-project/SKILL.md`: prompt contract for Agents and the canonical Project lifecycle skill.
 - Flutter Workbench pages and services under `ui/lib/features/workbench/`.
 
 ## Verification

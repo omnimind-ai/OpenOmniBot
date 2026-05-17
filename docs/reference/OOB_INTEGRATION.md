@@ -6,6 +6,8 @@ This note defines the current Workbench boundary used by OOB Project creation, d
 
 OOB Workbench is an AI-product display layer. It is not the product being generated. Its job is to make an Agent result, workflow state, report, or dataset visible inside OOB, let the user interact with it, and let the Agent update the same surface quickly.
 
+Workbench Project is an OOB built-in core capability, not an independently installed plugin. The canonical Agent skill for Project lifecycle, distillation, Display/API design, review, and Project document maintenance is `oob-project`; plugins or installable skills may extend vertical workflows, but they do not own the Project runtime boundary.
+
 The target loop is:
 
 ```text

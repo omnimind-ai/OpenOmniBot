@@ -114,6 +114,14 @@ class AgentStreamEvent {
     required this.seq,
     required this.kind,
     required this.createdAtMs,
+    this.schemaVersion = '',
+    this.traceId = '',
+    this.runId = '',
+    this.spanId = '',
+    this.parentSpanId = '',
+    this.channel = '',
+    this.eventName = '',
+    this.status = '',
     this.entryId,
     this.roundIndex = 0,
     this.isFinal = false,
@@ -140,6 +148,14 @@ class AgentStreamEvent {
   final int seq;
   final AgentStreamEventKind kind;
   final int createdAtMs;
+  final String schemaVersion;
+  final String traceId;
+  final String runId;
+  final String spanId;
+  final String parentSpanId;
+  final String channel;
+  final String eventName;
+  final String status;
   final String? entryId;
   final int roundIndex;
   final bool isFinal;
@@ -167,9 +183,10 @@ class AgentStreamEvent {
         (key, value) => MapEntry(key.toString(), value),
       ),
     );
-    final kind = AgentStreamEventKind.fromValue((raw['kind'] ?? '').toString());
+    final eventName = (raw['event'] ?? raw['kind'] ?? '').toString();
+    final kind = AgentStreamEventKind.fromValue(eventName);
     if (kind == null) {
-      throw ArgumentError('Unknown agent stream event kind: ${raw['kind']}');
+      throw ArgumentError('Unknown agent stream event kind: $eventName');
     }
     final taskId = (raw['taskId'] ?? '').toString();
     if (taskId.trim().isEmpty) {
@@ -194,7 +211,17 @@ class AgentStreamEvent {
       seq: _asInt(raw['seq']) ?? 0,
       kind: kind,
       createdAtMs:
-          _asInt(raw['createdAt']) ?? DateTime.now().millisecondsSinceEpoch,
+          _asInt(raw['timestamp_ms']) ??
+          _asInt(raw['createdAt']) ??
+          DateTime.now().millisecondsSinceEpoch,
+      schemaVersion: (raw['schema_version'] ?? '').toString(),
+      traceId: (raw['trace_id'] ?? '').toString(),
+      runId: (raw['run_id'] ?? '').toString(),
+      spanId: (raw['span_id'] ?? '').toString(),
+      parentSpanId: (raw['parent_span_id'] ?? '').toString(),
+      channel: (raw['channel'] ?? '').toString(),
+      eventName: eventName,
+      status: (raw['status'] ?? '').toString(),
       entryId: raw['entryId']?.toString(),
       roundIndex: _asInt(raw['roundIndex']) ?? 0,
       isFinal: raw['isFinal'] == true,

@@ -176,10 +176,13 @@ data class WorkbenchOssSourceAsset(
  * Stores OOB Workbench projects and their registered Project Tools under the shared workspace.
  *
  * @param workspaceRoot Android-side workspace root that is bind-mounted as `/workspace` in Alpine.
+ * @param builtinWorkbenchSkillReader optional test hook for injecting the bundled Project skill
+ * body; production reads `builtin_skills/oob-project/SKILL.md` from Android assets.
  */
 class WorkbenchProjectStore(
     private val workspaceRoot: File,
-    private val appContext: Context? = null
+    private val appContext: Context? = null,
+    private val builtinWorkbenchSkillReader: (() -> String?)? = null
 ) {
     constructor(context: Context) : this(
         AgentWorkspaceManager.rootDirectory(context),
@@ -957,7 +960,7 @@ class WorkbenchProjectStore(
             - projectId: ${record.projectId}
             - name: ${record.name}
             - workspace: ${record.spacePath}
-            - skill: oob-native-workbench
+            - skill: oob-project
             - displays:
             $displays
             - project tools:
@@ -1951,13 +1954,13 @@ class WorkbenchProjectStore(
         val androidAssets = readAndroidAssets(record.projectId)
         val sourceAssets = readOssSources(record.projectId)
         val skillEntry = linkedMapOf<String, Any?>(
-            "skillId" to "oob-native-workbench",
+            "skillId" to "oob-project",
             "source" to "builtin_asset",
-            "path" to "skills/oob-native-workbench/SKILL.md"
+            "path" to "skills/oob-project/SKILL.md"
         )
         val manifest = linkedMapOf<String, Any?>(
             "formatVersion" to 1,
-            "source" to "oob-native-workbench",
+            "source" to "oob-project",
             "exportedAt" to nowIso(),
             "packageName" to packageName,
             "projectId" to record.projectId,
@@ -1993,7 +1996,7 @@ class WorkbenchProjectStore(
             readBuiltinWorkbenchSkill()?.let { skillBody ->
                 addTextZipEntry(
                     zip,
-                    "skills/oob-native-workbench/SKILL.md",
+                    "skills/oob-project/SKILL.md",
                     skillBody,
                     includedFiles
                 )
@@ -2122,7 +2125,7 @@ class WorkbenchProjectStore(
             "name" to record.name,
             "route" to displayRoute,
             "spacePath" to record.spacePath,
-            "skillId" to "oob-native-workbench",
+            "skillId" to "oob-project",
             "displays" to displays,
             "frontendHtml" to frontendHtml,
             "frontendFlutter" to frontendFlutter,
@@ -2157,7 +2160,7 @@ class WorkbenchProjectStore(
         val payload = linkedMapOf<String, Any?>(
             "project" to record.toPayload(),
             "generation" to linkedMapOf(
-                "skillId" to "oob-native-workbench",
+                "skillId" to "oob-project",
                 "prompt" to prompt,
                 "decomposition" to listOf(
                     "Project registry",
@@ -3711,9 +3714,10 @@ class WorkbenchProjectStore(
      * or if the asset is unavailable.
      */
     private fun readBuiltinWorkbenchSkill(): String? {
+        builtinWorkbenchSkillReader?.invoke()?.let { return it }
         val context = appContext ?: return null
         return runCatching {
-            context.assets.open("builtin_skills/oob-native-workbench/SKILL.md")
+            context.assets.open("builtin_skills/oob-project/SKILL.md")
                 .bufferedReader(Charsets.UTF_8)
                 .use { it.readText() }
         }.getOrNull()
@@ -4858,8 +4862,19 @@ class WorkbenchProjectStore(
             gson.fromJson<List<WorkbenchApiRecord>>(
                 apiRegistryFile.readText(),
                 apiRecordListType
-            ) ?: emptyList()
+            )?.map { normalizeApiRegistryRecord(it) } ?: emptyList()
         }.getOrElse { emptyList() }
+    }
+
+    private fun normalizeApiRegistryRecord(record: WorkbenchApiRecord): WorkbenchApiRecord {
+        val normalizedRun = normalizeProjectToolRun(record.run)
+        return record.copy(
+            inputSchema = normalizeProjectToolSchema(record.inputSchema),
+            outputSchema = normalizeProjectToolSchema(record.outputSchema),
+            executorKind = record.executorKind.takeIf { it.isNotBlank() }
+                ?: inferProjectToolExecutorKind(normalizedRun, record.apiId),
+            run = normalizedRun.ifEmpty { null }
+        )
     }
 
     private fun writeApiRegistry(records: List<WorkbenchApiRecord>) {

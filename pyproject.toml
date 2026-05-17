@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omniflow-agentkit"
+version = "0.1.0"
+description = "Dependency-free OmniFlow skill, MCP, and GUI-agent integration kit."
+readme = "docs/omniflow/PYTHON_SDK.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "OmniFlow" }
+]
+license = { text = "MIT" }
+dependencies = []
+
+[project.scripts]
+omniflow-agentkit = "omniflow_agentkit.__main__:main"
+
+[tool.setuptools]
+packages = ["omniflow_agentkit"]
+
+[tool.setuptools.package-data]
+omniflow_agentkit = ["assets/omniflow/**/*.md", "assets/omniflow/**/*.json"]

@@ -30,8 +30,8 @@ This inventory gives the next agent the shortest reliable map for the OOB Workbe
 
 ## Agent Skill / Documentation
 
-- `app/src/main/assets/builtin_skills/oob-native-workbench/SKILL.md`
-  - Bundled skill used by OOB Agent runtime for Project creation and backend/runtime rules.
+- `app/src/main/assets/builtin_skills/oob-project/SKILL.md`
+  - Canonical bundled skill used by OOB Agent runtime for Project creation, updates, distillation, Display/API design, and backend/runtime rules.
 - `docs/reference/OOB_INTEGRATION.md`
   - Stable integration note for the Flutter/native Workbench boundary.
 - `docs/reference/OOB_WORKBENCH_BACKEND_RUNTIME.md`

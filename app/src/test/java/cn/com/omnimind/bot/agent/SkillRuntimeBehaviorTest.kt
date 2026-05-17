@@ -82,6 +82,21 @@ class SkillRuntimeBehaviorTest {
     }
 
     @Test
+    fun resolveMatchesProjectDistillationRequestsToOobProjectSkill() {
+        val matches = SkillTriggerMatcher.resolveMatches(
+            userMessage = "把这个 GitHub 项目蒸馏成我们的 OOB Project",
+            entries = listOf(
+                entry(
+                    id = "oob-project",
+                    description = "OOB Workbench Project 完整生命周期总入口：新建 Project、更新、蒸馏、审查、HTML Display、Project Tool/API 设计、热更新、导出、PROJECT_SOUL/PROJECT_CONTEXT 维护。Use when the user asks to create, distill, modify, review, export, or maintain a persistent personal tool."
+                )
+            )
+        )
+
+        assertTrue(matches.any { it.entry.id == "oob-project" })
+    }
+
+    @Test
     fun buildOmitsDisabledAndUninstalledSkillsFromPromptIndex() {
         val prompt = AgentSystemPrompt.build(
             workspace = AgentWorkspaceDescriptor(

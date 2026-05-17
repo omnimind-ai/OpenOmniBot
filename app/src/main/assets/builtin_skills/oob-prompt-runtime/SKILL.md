@@ -66,12 +66,11 @@ Use these section ids unless there is a strong reason to add another:
 
 ## Workbench Project Integration
 
-Do not merge this skill into `oob-project-designer` or `oob-native-workbench`.
+Do not merge this skill into `oob-project`.
 
 Use this boundary:
 
-- `oob-project-designer` owns project intent extraction, API design, frontend/backend contracts, `PROJECT_SOUL.md`, and `PROJECT_CONTEXT.md`.
-- `oob-native-workbench` owns runtime display contracts, data binding, HTML skeletons, and Workbench tool usage.
+- `oob-project` owns Project intent extraction, API design, frontend/backend contracts, `PROJECT_SOUL.md`, `PROJECT_CONTEXT.md`, runtime display contracts, data binding, HTML skeletons, and Workbench tool usage.
 - `oob-prompt-runtime` owns how project context becomes bounded prompt sections for `run: {use: "agent"}`, scheduled project tasks, hot updates, and prompt dump debugging.
 
 For any Workbench Project agent task, the project-specific prompt material should enter through `project_context`, not by pasting full project docs into `run.prompt`. The `run.prompt` should stay as the task request: inputs, required tools, expected writes back to `workbench_api_call`, and completion signal.

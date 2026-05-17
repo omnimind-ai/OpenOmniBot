@@ -190,6 +190,10 @@ class AgentLlmStreamAccumulator(
         markers.forEach { marker ->
             val index = raw.indexOf(marker)
             if (index <= 0) return@forEach
+            // Guard: if the marker lands inside a JSON string value (odd number of
+            // unescaped quotes before it), the split point is invalid. This prevents
+            // incorrectly splitting on content like {"text": "see the {\"choices\":…}"}.
+            if (!isAtJsonTopLevel(raw, index)) return@forEach
             val prefix = raw.substring(0, index).trim()
             val suffix = raw.substring(index).trim()
             if (prefix.isEmpty() || suffix.isEmpty()) return@forEach
@@ -204,6 +208,23 @@ class AgentLlmStreamAccumulator(
             }
         }
         return null
+    }
+
+    /** Returns true if [position] in [text] is outside a JSON quoted string. */
+    private fun isAtJsonTopLevel(text: String, position: Int): Boolean {
+        var unescapedQuotes = 0
+        var i = 0
+        while (i < position) {
+            if (text[i] == '"') {
+                // Count backslashes immediately before this quote to detect escaping.
+                var backslashes = 0
+                var j = i - 1
+                while (j >= 0 && text[j] == '\\') { backslashes++; j-- }
+                if (backslashes % 2 == 0) unescapedQuotes++
+            }
+            i++
+        }
+        return unescapedQuotes % 2 == 0
     }
 
     private fun isStructuredChunk(raw: String): Boolean {

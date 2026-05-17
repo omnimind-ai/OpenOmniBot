@@ -32,7 +32,7 @@ void main() {
     expect(activity?.steps.map((step) => step.action), ['navigate', 'click']);
   });
 
-  test('does not compact a single tool call', () {
+  test('wraps a single tool call as a one-step Activity', () {
     final message = _toolMessage(
       id: 'task-2-tool-1',
       seq: 1,
@@ -44,8 +44,9 @@ void main() {
     final items = compactAgentProcessItems(<ChatMessageModel>[message]);
 
     expect(items, hasLength(1));
-    expect(items.single.message?.id, message.id);
-    expect(items.single.activity, isNull);
+    expect(items.single.activity, isNotNull);
+    expect(items.single.activity?.kind, AgentToolActivityKind.browser);
+    expect(items.single.activity?.stepCount, 1);
   });
 
   test('marks repeated failed browser action as retry', () {
@@ -140,10 +141,59 @@ void main() {
       ),
     ]);
 
+    // s2 has only one step — still surfaces as a single-step Activity.
     expect(items, hasLength(2));
     expect(items.first.activity?.kind, AgentToolActivityKind.terminal);
     expect(items.first.activity?.stepCount, 2);
-    expect(items.last.message?.id, 'task-4-tool-3');
+    expect(items.last.activity?.kind, AgentToolActivityKind.terminal);
+    expect(items.last.activity?.stepCount, 1);
+  });
+
+  test('keeps web search activity separate from browser activity', () {
+    final items = compactAgentProcessItems(<ChatMessageModel>[
+      _toolMessage(
+        id: 'task-7-tool-1',
+        seq: 1,
+        toolType: 'browser',
+        toolName: 'browser_use',
+        argsJson: '{"action":"navigate","url":"https://example.com"}',
+      ),
+      _toolMessage(
+        id: 'task-7-tool-2',
+        seq: 2,
+        toolType: 'browser',
+        toolName: 'browser_use',
+        argsJson: '{"action":"get_text","selector":"body"}',
+      ),
+      _toolMessage(
+        id: 'task-7-tool-3',
+        seq: 3,
+        toolType: 'research',
+        toolName: 'web_search',
+        argsJson: '{"query":"todo list app features"}',
+      ),
+      _toolMessage(
+        id: 'task-7-tool-4',
+        seq: 4,
+        toolType: 'research',
+        toolName: 'web_search',
+        argsJson: '{"query":"open source todo app github"}',
+      ),
+    ]);
+
+    expect(items, hasLength(2));
+    expect(items.first.activity?.kind, AgentToolActivityKind.browser);
+    expect(items.first.activity?.stepCount, 2);
+    expect(items.last.activity?.kind, AgentToolActivityKind.research);
+    expect(items.last.activity?.stepCount, 2);
+    expect(items.last.activity?.steps.map((step) => step.action), [
+      'search',
+      'search',
+    ]);
+    expect(items.last.activity?.steps.map((step) => step.target), [
+      'todo list app features',
+      'open source todo app github',
+    ]);
   });
 
   test('non-tool messages break activity compaction', () {
@@ -167,8 +217,13 @@ void main() {
       ),
     ]);
 
+    // A non-tool message breaks grouping — the two browser calls are separate
+    // single-step Activities rather than one merged group.
     expect(items, hasLength(3));
-    expect(items.where((item) => item.activity != null), isEmpty);
+    expect(items.where((item) => item.activity != null), hasLength(2));
+    expect(items[0].activity?.stepCount, 1);
+    expect(items[1].message, isNotNull); // thinking card
+    expect(items[2].activity?.stepCount, 1);
   });
 }
 

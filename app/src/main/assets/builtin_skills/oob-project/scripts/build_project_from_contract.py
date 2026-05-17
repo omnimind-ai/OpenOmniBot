@@ -819,7 +819,17 @@ def main():
     # Load contract
     try:
         if args.contract:
-            contract = json.loads(args.contract)
+            contract_text = args.contract.strip()
+            if contract_text and not contract_text.startswith(("{", "[")) and os.path.isfile(contract_text):
+                print(
+                    "WARN [input] --contract received a file path; reading it as --contract-file. "
+                    "Prefer --contract-file for file inputs.",
+                    file=sys.stderr,
+                )
+                with open(contract_text, encoding="utf-8") as f:
+                    contract = json.load(f)
+            else:
+                contract = json.loads(args.contract)
         else:
             with open(args.contract_file, encoding="utf-8") as f:
                 contract = json.load(f)

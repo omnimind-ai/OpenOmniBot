@@ -1,12 +1,12 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
-import cn.com.omnimind.baselib.runlog.InternalRunLogStore
 import cn.com.omnimind.bot.agent.AgentCallback
 import cn.com.omnimind.bot.agent.AgentExecutionEnvironment
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
 import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.agent.ToolExecutionResult
+import cn.com.omnimind.bot.runlog.OobRunLogReplayService
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
@@ -46,12 +46,16 @@ class WorkbenchToolHandler(
         "oob_command_list",
         "oob_command_delete",
         "oob_run_log_list",
-        "oob_run_log_get"
+        "oob_run_log_get",
+        "oob_run_log_convert"
     )
 
     private val workbenchProjectStore = WorkbenchProjectStore(helper.context)
     private val workspaceFunctionStore: WorkspaceFunctionStore by lazy {
         WorkspaceFunctionStore(AgentWorkspaceManager.rootDirectory(helper.context))
+    }
+    private val replayService: OobRunLogReplayService by lazy {
+        OobRunLogReplayService(helper.context, workspaceFunctionStore)
     }
 
     override suspend fun execute(
@@ -84,6 +88,7 @@ class WorkbenchToolHandler(
             "oob_command_delete" -> executeOobFunctionDelete(args, env)
             "oob_run_log_list" -> executeOobRunLogList(env)
             "oob_run_log_get" -> executeOobRunLogGet(args, env)
+            "oob_run_log_convert" -> executeOobRunLogConvert(args, env)
             else -> ToolExecutionResult.Error(toolCall.function.name, "Unknown workbench tool")
         }
     }
@@ -97,57 +102,23 @@ class WorkbenchToolHandler(
         env: AgentExecutionEnvironment
     ): ToolExecutionResult {
         val argsMap = helper.jsonObjectToMap(args)
-        val runId = argsMap["run_id"]?.toString()?.trim()
-            ?: return ToolExecutionResult.Error("oob_command_save", "run_id is required")
-
-        val record = InternalRunLogStore.timelinePayload(helper.context, runId)
-        if (record["success"] != true) {
-            return ToolExecutionResult.Error(
-                "oob_function_save",
-                record["error_message"]?.toString() ?: "Run not found: $runId"
-            )
+        val runId = firstNonBlank(argsMap["run_id"], argsMap["runId"])
+        if (runId.isEmpty()) {
+            return ToolExecutionResult.Error("oob_command_save", "run_id is required")
         }
-
-        // Reconstruct InternalRunLogRecord fields from the timeline payload
-        val cards = (record["cards"] as? List<*>)
-            ?.mapNotNull { it as? Map<*, *> }
-            ?.map { m -> m.entries.associate { (k, v) -> k.toString() to v } }
-            ?: emptyList()
-
-        val runRecord = cn.com.omnimind.baselib.runlog.InternalRunLogRecord(
-            runId = runId,
-            goal = record["goal"]?.toString().orEmpty(),
-            source = record["source"]?.toString().orEmpty(),
-            toolName = record["tool_name"]?.toString().orEmpty(),
-            operationDescription = argsMap["name"]?.toString()?.trim()
-                ?: record["operation_description"]?.toString().orEmpty(),
-            success = record["done_reason"]?.toString() != "cancelled",
-            cards = cards
-        )
 
         // Override function_id if caller provides one
         val overrideFunctionId = argsMap["function_id"]?.toString()?.trim()
+        val nameOverride = argsMap["name"]?.toString()?.trim()
         val descriptionOverride = argsMap["description"]?.toString()?.trim()
 
-        val result = workspaceFunctionStore.distillFromRun(helper.context, runRecord)
-
-        // Apply caller overrides after distillation
-        if (result["success"] == true) {
-            val functionId = result["function_id"]?.toString() ?: ""
-            if ((overrideFunctionId != null && overrideFunctionId != functionId)
-                || descriptionOverride != null) {
-                val spec = workspaceFunctionStore.get(functionId)
-                if (spec != null) {
-                    val updated = spec.toMutableMap()
-                    if (overrideFunctionId != null) updated["function_id"] = overrideFunctionId
-                    if (descriptionOverride != null) updated["description"] = descriptionOverride
-                    workspaceFunctionStore.register(updated)
-                    if (overrideFunctionId != null && overrideFunctionId != functionId) {
-                        workspaceFunctionStore.delete(functionId)
-                    }
-                }
-            }
-        }
+        val result = replayService.convertRunLog(
+            runId = runId,
+            register = true,
+            functionIdOverride = overrideFunctionId,
+            nameOverride = nameOverride,
+            descriptionOverride = descriptionOverride
+        )
 
         val payload = result + mapOf(
             "message" to "已保存为指令，可通过 function_id 直接调用。",
@@ -158,20 +129,8 @@ class WorkbenchToolHandler(
     }
 
     private fun executeOobFunctionList(env: AgentExecutionEnvironment): ToolExecutionResult {
-        val functions = workspaceFunctionStore.list()
-        val payload = mapOf(
-            "success" to true,
-            "count" to functions.size,
-            "functions" to functions.map { spec ->
-                mapOf(
-                    "function_id" to spec["function_id"],
-                    "name" to spec["name"],
-                    "description" to spec["description"],
-                    "step_count" to ((spec["execution"] as? Map<*, *>)
-                        ?.get("step_count") as? Number)?.toInt()
-                )
-            }
-        )
+        val payload = replayService.listFunctions()
+        val functions = (payload["functions"] as? List<*>) ?: emptyList<Any?>()
         val summary = if (helper.isEnglishLocale) "${functions.size} commands" else "${functions.size} 条指令"
         return contextResult("oob_command_list", summary, payload, true, env)
     }
@@ -181,16 +140,20 @@ class WorkbenchToolHandler(
         env: AgentExecutionEnvironment
     ): ToolExecutionResult {
         val argsMap = helper.jsonObjectToMap(args)
-        val functionId = argsMap["function_id"]?.toString()?.trim()
-            ?: return ToolExecutionResult.Error("oob_command_delete", "function_id is required")
-        val deleted = workspaceFunctionStore.delete(functionId)
+        val functionId = firstNonBlank(argsMap["function_id"], argsMap["functionId"])
+        if (functionId.isEmpty()) {
+            return ToolExecutionResult.Error("oob_command_delete", "function_id is required")
+        }
+        val payload = replayService.deleteFunction(functionId)
+        val deleted = payload["deleted"] == true || payload["success"] == true
         return contextResult("oob_command_delete",
             if (deleted) "已删除指令 $functionId" else "指令不存在",
-            mapOf("success" to deleted, "function_id" to functionId), deleted, env)
+            payload, deleted, env)
     }
 
     private fun executeOobRunLogList(env: AgentExecutionEnvironment): ToolExecutionResult {
-        val payload = InternalRunLogStore.listRuns(helper.context, limit = 50)
+        val payload = cn.com.omnimind.baselib.runlog.InternalRunLogStore
+            .listRuns(helper.context, limit = 50)
         return contextResult("oob_run_log_list", "${payload["count"]} runs", payload, true, env)
     }
 
@@ -199,13 +162,49 @@ class WorkbenchToolHandler(
         env: AgentExecutionEnvironment
     ): ToolExecutionResult {
         val argsMap = helper.jsonObjectToMap(args)
-        val runId = argsMap["run_id"]?.toString()?.trim()
-            ?: return ToolExecutionResult.Error("oob_run_log_get", "run_id is required")
-        val payload = InternalRunLogStore.timelinePayload(helper.context, runId)
+        val runId = firstNonBlank(argsMap["run_id"], argsMap["runId"])
+        if (runId.isEmpty()) {
+            return ToolExecutionResult.Error("oob_run_log_get", "run_id is required")
+        }
+        val payload = cn.com.omnimind.baselib.runlog.InternalRunLogStore
+            .timelinePayload(helper.context, runId)
         val success = payload["success"] == true
         return contextResult("oob_run_log_get",
             if (success) "Run ${runId.take(16)}…" else "Not found",
             payload, success, env)
+    }
+
+    private fun executeOobRunLogConvert(
+        args: JsonObject,
+        env: AgentExecutionEnvironment
+    ): ToolExecutionResult {
+        val argsMap = helper.jsonObjectToMap(args)
+        val runId = firstNonBlank(argsMap["run_id"], argsMap["runId"])
+        if (runId.isEmpty()) {
+            return ToolExecutionResult.Error("oob_run_log_convert", "run_id is required")
+        }
+        val register = when (val raw = argsMap["register"]) {
+            is Boolean -> raw
+            is String -> raw.equals("true", ignoreCase = true)
+            else -> false
+        }
+        val payload = replayService.convertRunLog(
+            runId = runId,
+            register = register,
+            functionIdOverride = argsMap["function_id"]?.toString(),
+            nameOverride = argsMap["name"]?.toString(),
+            descriptionOverride = argsMap["description"]?.toString()
+        )
+        val success = payload["success"] == true
+        val functionId = payload["function_id"]?.toString()?.takeIf { it.isNotBlank() }
+            ?: runId.take(16)
+        val summary = if (success) {
+            if (register) "RunLog converted and registered: $functionId"
+            else "RunLog converted: $functionId"
+        } else {
+            payload["error_message"]?.toString() ?: "RunLog convert failed"
+        }
+        return contextResult("oob_run_log_convert", summary, payload, success, env)
     }
 
     private suspend fun executeWorkbenchProjectCreate(
@@ -671,5 +670,13 @@ class WorkbenchToolHandler(
             success = success,
             workspaceId = env.workspaceDescriptor.id
         )
+    }
+
+    private fun firstNonBlank(vararg values: Any?): String {
+        for (value in values) {
+            val text = value?.toString()?.trim().orEmpty()
+            if (text.isNotEmpty()) return text
+        }
+        return ""
     }
 }

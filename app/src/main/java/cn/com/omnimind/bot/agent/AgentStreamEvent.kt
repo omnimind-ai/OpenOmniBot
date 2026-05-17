@@ -1,5 +1,8 @@
 package cn.com.omnimind.bot.agent
 
+const val AGENT_STREAM_EVENT_SCHEMA_VERSION = "oob.agent_event.v1"
+const val AGENT_STREAM_EVENT_CHANNEL = "agent_stream"
+
 data class AgentStreamEvent(
     val taskId: String,
     val seq: Long,
@@ -29,6 +32,15 @@ data class AgentStreamEvent(
         conversationMode: String
     ): Map<String, Any?> {
         val payload = linkedMapOf<String, Any?>(
+            "schema_version" to AGENT_STREAM_EVENT_SCHEMA_VERSION,
+            "trace_id" to taskId,
+            "run_id" to taskId,
+            "span_id" to spanId(),
+            "parent_span_id" to taskId,
+            "channel" to AGENT_STREAM_EVENT_CHANNEL,
+            "event" to kind,
+            "timestamp_ms" to createdAt,
+            "status" to status(),
             "taskId" to taskId,
             "conversationId" to conversationId,
             "conversationMode" to conversationMode,
@@ -59,5 +71,22 @@ data class AgentStreamEvent(
         missing?.takeIf { it.isNotEmpty() }?.let { payload["missing"] = it }
         payload.putAll(extras)
         return payload
+    }
+
+    private fun spanId(): String {
+        return entryId
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: "$taskId:$seq"
+    }
+
+    private fun status(): String {
+        return when (kind) {
+            "error" -> "error"
+            "completed" -> if (success == false) "error" else "ok"
+            "tool_completed" -> if (success == false) "error" else "ok"
+            "clarify_required", "permission_required" -> "blocked"
+            else -> if (isFinal) "ok" else "running"
+        }
     }
 }

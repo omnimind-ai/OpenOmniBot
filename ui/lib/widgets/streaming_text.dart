@@ -155,15 +155,15 @@ class _StreamingTextState extends State<StreamingText> {
 
     if (widget.enableMarkdown) {
       _notifyDisplayedTextChanged(widget.fullText.length);
-      final child = OmnibotMarkdownBody(
-        data: widget.fullText,
-        baseStyle: widget.style,
-        inlineResourcePlainStyle: true,
-        onResourceOpen: widget.onResourceOpen,
-        trailingInline: widget.trailing,
+      return _wrapSelectable(
+        _MemoizedMarkdownBody(
+          text: widget.fullText,
+          style: widget.style,
+          onResourceOpen: widget.onResourceOpen,
+          trailing: widget.trailing,
+        ),
+        widget.fullText,
       );
-
-      return _wrapSelectable(child, widget.fullText);
     }
 
     // ── 纯文本动画路径 ──
@@ -337,5 +337,101 @@ class _StreamingTextState extends State<StreamingText> {
         ),
       ),
     ];
+  }
+}
+
+/// Splits a streaming markdown response into a stable committed section and a
+/// live pending section. Committed paragraphs (everything before the last
+/// blank line) are rendered once and wrapped in [RepaintBoundary] so they are
+/// never repainted on subsequent token arrivals. Only the last (incomplete)
+/// paragraph rebuilds — O(last-paragraph) work per token instead of O(full text).
+///
+/// This mirrors the MemoizedMarkdownBlock pattern from the Vercel AI SDK.
+class _MemoizedMarkdownBody extends StatefulWidget {
+  const _MemoizedMarkdownBody({
+    required this.text,
+    required this.style,
+    this.onResourceOpen,
+    this.trailing,
+  });
+
+  final String text;
+  final TextStyle style;
+  final OmnibotResourceOpenCallback? onResourceOpen;
+  final Widget? trailing;
+
+  @override
+  State<_MemoizedMarkdownBody> createState() => _MemoizedMarkdownBodyState();
+}
+
+class _MemoizedMarkdownBodyState extends State<_MemoizedMarkdownBody> {
+  // Text committed to the stable section — only grows, never shrinks.
+  String _committedText = '';
+  // Cached widget for the committed section, rebuilt only when _committedText grows.
+  Widget? _committedWidget;
+
+  @override
+  void didUpdateWidget(_MemoizedMarkdownBody old) {
+    super.didUpdateWidget(old);
+    if (widget.text == old.text) return;
+
+    if (_committedText.isNotEmpty && !widget.text.startsWith(_committedText)) {
+      _committedText = '';
+      _committedWidget = null;
+    }
+
+    // Find the last blank-line boundary in the new text.
+    final breakIdx = widget.text.lastIndexOf('\n\n');
+    if (breakIdx > _committedText.length) {
+      // New paragraphs have completed — extend the committed section.
+      final newCommitted = widget.text.substring(0, breakIdx);
+      if (newCommitted != _committedText) {
+        _committedText = newCommitted;
+        _committedWidget = null; // rebuild committed on next frame
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = widget.text.length > _committedText.length
+        ? widget.text.substring(_committedText.length)
+        : '';
+
+    if (_committedText.isEmpty) {
+      // No committed section yet — render the whole text as pending.
+      return OmnibotMarkdownBody(
+        data: widget.text,
+        baseStyle: widget.style,
+        inlineResourcePlainStyle: true,
+        onResourceOpen: widget.onResourceOpen,
+        trailingInline: widget.trailing,
+      );
+    }
+
+    _committedWidget ??= RepaintBoundary(
+      child: OmnibotMarkdownBody(
+        data: _committedText,
+        baseStyle: widget.style,
+        inlineResourcePlainStyle: true,
+        onResourceOpen: widget.onResourceOpen,
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _committedWidget!,
+        if (pending.isNotEmpty)
+          OmnibotMarkdownBody(
+            data: pending,
+            baseStyle: widget.style,
+            inlineResourcePlainStyle: true,
+            onResourceOpen: widget.onResourceOpen,
+            trailingInline: widget.trailing,
+          ),
+      ],
+    );
   }
 }

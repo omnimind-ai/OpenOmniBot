@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.workbench
 
 import android.content.Context
+import cn.com.omnimind.bot.runlog.RunLogReusableFunctionCompiler
 import cn.com.omnimind.baselib.runlog.InternalRunLogRecord
 import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
 import cn.com.omnimind.baselib.util.OmniLog
@@ -107,130 +108,39 @@ class WorkspaceFunctionStore(private val workspaceRoot: File) {
     ): Map<String, Any?> {
         mirrorRunLog(record)
 
-        val steps = record.cards
-            .filter { card -> card["success"] != false }  // skip failed steps
-            .mapNotNull { card -> cardToStep(card) }
-            .filter { it.isNotEmpty() }
-
-        if (steps.isEmpty()) {
+        val spec = compileRunLogFunctionSpec(record) ?: run {
             return mapOf("success" to false, "reason" to "no_replayable_steps")
         }
 
-        val functionId = deriveCommandId(record)
-        val spec = linkedMapOf<String, Any?>(
-            "function_id" to functionId,
-            "name" to (record.operationDescription.ifBlank { record.goal }.take(80)),
-            "description" to record.goal,
-            "parameters" to emptyList<Any>(),
-            "execution" to linkedMapOf(
-                "steps" to steps,
-                "step_count" to steps.size
-            ),
-            "source" to linkedMapOf(
-                "run_id" to record.runId,
-                "goal" to record.goal,
-                "tool_name" to record.toolName,
-                "distilled_at" to System.currentTimeMillis().toString()
-            ),
-            "_oob_registry" to linkedMapOf(
-                "registered_at" to System.currentTimeMillis().toString(),
-                "updated_at" to System.currentTimeMillis().toString(),
-                "runner" to "oob_agent_reusable_function",
-                "storage" to "workspace"
-            )
-        )
+        val functionId = spec["function_id"]?.toString().orEmpty()
+            .ifEmpty { deriveCommandId(record) }
+        val storedSpec = if (functionId == spec["function_id"]) {
+            spec
+        } else {
+            linkedMapOf<String, Any?>().apply {
+                putAll(spec)
+                put("function_id", functionId)
+            }
+        }
 
-        register(spec)
+        register(storedSpec)
 
         // Also register in SharedPreferences so OobFunctionToolHandler finds it immediately
-        runCatching { OobReusableFunctionStore.register(context, spec) }
+        runCatching { OobReusableFunctionStore.register(context, storedSpec) }
 
         return mapOf(
             "success" to true,
             "function_id" to functionId,
-            "step_count" to steps.size,
-            "path" to functionFile(functionId).absolutePath
+            "step_count" to (
+                ((storedSpec["execution"] as? Map<*, *>)?.get("steps") as? List<*>)
+                    ?.size ?: 0
+                ),
+            "path" to functionFile(functionId).absolutePath,
         )
     }
 
-    // ── Card → Step conversion ────────────────────────────────────────────────
-
-    private fun cardToStep(card: Map<String, Any?>): Map<String, Any?> {
-        val toolName = (card["tool_name"] ?: card["toolName"])?.toString().orEmpty()
-        val stepIndex = (card["step_index"] as? Number)?.toInt() ?: 0
-        val title = card["title"]?.toString()?.ifBlank { toolName } ?: toolName
-        val argsJson = extractArgsJson(card)
-        val args = parseArgsJson(argsJson)
-        val stepId = "step_${stepIndex + 1}"
-
-        return when {
-            toolName in SKIP_TOOLS -> emptyMap()
-
-            toolName == "android_privileged_action" -> {
-                val action = (args["action"] ?: args["omniflow_action"])
-                    ?.toString()?.trim()?.lowercase().orEmpty()
-                if (action !in OMNIFLOW_ACTIONS) return emptyMap()
-                val stepArgs = args.filterKeys { it != "action" && it != "omniflow_action" }
-                linkedMapOf<String, Any?>(
-                    "id" to stepId,
-                    "title" to title,
-                    "executor" to "omniflow",
-                    "omniflow_action" to action,
-                    "local_action" to action,
-                    "model_free" to true,
-                    "args" to stepArgs,
-                    // Preserve source_context for coordinate remapping
-                    "source_context" to args["source_context"],
-                    "coordinate_hook" to if (action in COORDINATE_ACTIONS) "omniflow" else null
-                ).filterValues { it != null }
-            }
-
-            toolName in AGENT_TOOLS -> {
-                // Not deterministic — record as an agent step with original prompt context
-                linkedMapOf(
-                    "id" to stepId,
-                    "title" to title,
-                    "executor" to "agent",
-                    "agent_call" to linkedMapOf(
-                        "tool" to toolName,
-                        "args" to args
-                    ),
-                    "fallback" to linkedMapOf(
-                        "prompt" to "Re-execute: $title (original tool: $toolName, args: $argsJson)"
-                    )
-                )
-            }
-
-            else -> {
-                // Deterministic tool call — replay directly
-                linkedMapOf(
-                    "id" to stepId,
-                    "title" to title,
-                    "executor" to "tool",
-                    "callable_tool" to toolName,
-                    "tool" to toolName,
-                    "args" to args
-                )
-            }
-        }
-    }
-
-    private fun extractArgsJson(card: Map<String, Any?>): String {
-        // Try various field names where arguments might be stored
-        val toolCall = card["tool_call"] as? Map<*, *>
-        return (toolCall?.get("arguments")
-            ?: card["params"]
-            ?: card["arguments"]
-            ?: "{}")
-            .toString()
-    }
-
-    private fun parseArgsJson(json: String): Map<String, Any?> {
-        if (json.isBlank() || json == "{}") return emptyMap()
-        return runCatching {
-            @Suppress("UNCHECKED_CAST")
-            gson.fromJson(json, Map::class.java) as? Map<String, Any?> ?: emptyMap()
-        }.getOrElse { emptyMap() }
+    internal fun compileRunLogFunctionSpec(record: InternalRunLogRecord): Map<String, Any?>? {
+        return RunLogReusableFunctionCompiler.compile(record)
     }
 
     private fun deriveCommandId(record: InternalRunLogRecord): String {
@@ -251,23 +161,5 @@ class WorkspaceFunctionStore(private val workspaceRoot: File) {
 
     companion object {
         private const val TAG = "WorkspaceFunctionStore"
-
-        private val OMNIFLOW_ACTIONS = setOf(
-            "click", "long_press", "scroll", "type",
-            "open_app", "press_home", "press_back", "hot_key", "wait"
-        )
-        private val COORDINATE_ACTIONS = setOf("click", "long_press", "scroll")
-
-        // These tools produce live perceptual output — replay as agent steps
-        private val AGENT_TOOLS = setOf(
-            "vlm_task", "image_picker", "browser_use",
-            "android_privileged_action_screenshot", "screen_capture"
-        )
-
-        // These tools have no replay value
-        private val SKIP_TOOLS = setOf(
-            "notification_send", "calendar_event_create",
-            "skills_loaded", "status_update"
-        )
     }
 }

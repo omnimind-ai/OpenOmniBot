@@ -53,6 +53,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
   late final Animation<double> _opacity;
   late final Animation<double> _lift;
   bool _isNotifyingParentDuringAnimation = false;
+  final _compactor = AgentActivityCompactor();
 
   @override
   void initState() {
@@ -180,7 +181,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
     }
 
     final firstThinkingMessageId = _firstThinkingMessageId(processMessages);
-    final processItems = compactAgentProcessItems(processMessages);
+    final processItems = _compactor.compact(processMessages);
 
     return AnimatedBuilder(
       animation: _expandController,

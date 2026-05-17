@@ -110,14 +110,12 @@ class AgentStreamReducer {
 
     final previousThinkingEntryId = previousState.activeThinkingEntryId;
     final previousAssistantEntryId = previousState.activeAssistantEntryId;
-    final thinkingRounds = Map<String, int>.from(previousState.thinkingRounds);
-    final assistantSegments = Map<String, int>.from(
-      previousState.assistantSegments,
-    );
-    final toolCards = Map<String, int>.from(previousState.toolCards);
-    final activeToolEntryIds = Set<String>.from(
-      previousState.activeToolEntryIds,
-    );
+
+    // Lazily copied only in the branch that mutates them.
+    Map<String, int>? thinkingRounds;
+    Map<String, int>? assistantSegments;
+    Map<String, int>? toolCards;
+    Set<String>? activeToolEntryIds;
 
     var phase = previousState.phase;
     var thinkingStage = previousState.thinkingStage;
@@ -138,6 +136,7 @@ class AgentStreamReducer {
         if (event.entryId != null && event.entryId!.trim().isNotEmpty) {
           activeThinkingEntryId = event.entryId!.trim();
           final roundIndex = event.roundIndex <= 0 ? 1 : event.roundIndex;
+          thinkingRounds = Map<String, int>.from(previousState.thinkingRounds);
           isNewThinkingEntry =
               activeThinkingEntryId != previousThinkingEntryId &&
               !thinkingRounds.containsKey(activeThinkingEntryId);
@@ -153,6 +152,8 @@ class AgentStreamReducer {
         if (event.entryId != null && event.entryId!.trim().isNotEmpty) {
           activeAssistantEntryId = event.entryId!.trim();
           final roundIndex = event.roundIndex <= 0 ? 1 : event.roundIndex;
+          assistantSegments =
+              Map<String, int>.from(previousState.assistantSegments);
           isNewAssistantEntry =
               activeAssistantEntryId != previousAssistantEntryId &&
               !assistantSegments.containsKey(activeAssistantEntryId);
@@ -169,6 +170,8 @@ class AgentStreamReducer {
         activeThinkingEntryId = null;
         final entryId = resolveAgentToolCardId(event, raw: event.raw);
         if (entryId.isNotEmpty) {
+          toolCards = Map<String, int>.from(previousState.toolCards);
+          activeToolEntryIds = Set<String>.from(previousState.activeToolEntryIds);
           toolCards[entryId] = event.roundIndex;
           if (event.kind == AgentStreamEventKind.toolCompleted) {
             activeToolEntryIds.remove(entryId);
@@ -179,9 +182,10 @@ class AgentStreamReducer {
         browserSnapshot = event.browserSnapshot ?? browserSnapshot;
         break;
       case AgentStreamEventKind.workbenchProjectCard:
-        phase = AgentStreamPhase.tool;
-        thinkingStage = 2;
-        isDeepThinking = false;
+        // Display-injection event only. The workbench tool calls that produced
+        // this card have already gone through toolStarted/toolCompleted and
+        // activeToolEntryIds is already empty. Don't change phase here or the
+        // overlay capsule will show phase=tool with zero active tools.
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
         break;
@@ -191,7 +195,7 @@ class AgentStreamReducer {
         isDeepThinking = false;
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
-        activeToolEntryIds.clear();
+        activeToolEntryIds = const <String>{};
         break;
       case AgentStreamEventKind.error:
         phase = AgentStreamPhase.error;
@@ -199,7 +203,7 @@ class AgentStreamReducer {
         isDeepThinking = false;
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
-        activeToolEntryIds.clear();
+        activeToolEntryIds = const <String>{};
         break;
       case AgentStreamEventKind.clarifyRequired:
         phase = AgentStreamPhase.clarify;
@@ -207,7 +211,7 @@ class AgentStreamReducer {
         isDeepThinking = false;
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
-        activeToolEntryIds.clear();
+        activeToolEntryIds = const <String>{};
         break;
       case AgentStreamEventKind.permissionRequired:
         phase = AgentStreamPhase.permissionRequired;
@@ -215,7 +219,7 @@ class AgentStreamReducer {
         isDeepThinking = false;
         clearActiveThinkingEntryId = true;
         activeThinkingEntryId = null;
-        activeToolEntryIds.clear();
+        activeToolEntryIds = const <String>{};
         break;
     }
 

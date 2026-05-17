@@ -17,7 +17,7 @@ Last Updated: 2026-05-11
    - `app/src/main/java/cn/com/omnimind/bot/agent/tool/AgentToolDefinitions.kt`
    - `app/src/main/java/cn/com/omnimind/bot/mcp/McpToolDefinitions.kt`
    - `app/src/main/java/cn/com/omnimind/bot/mcp/McpPromptDefinitions.kt`
-   - `app/src/main/assets/builtin_skills/oob-native-workbench/SKILL.md`
+   - `app/src/main/assets/builtin_skills/oob-project/SKILL.md`
    - `ui/lib/features/workbench/`
 
 ## Current Workbench Focus

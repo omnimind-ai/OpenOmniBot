@@ -370,7 +370,7 @@ Before proposing or creating a Project:
 
 Before implementation:
 
-- [ ] Use `oob-project-designer` mechanics.
+- [ ] Use `oob-project` creation/update mechanics.
 - [ ] Create with HTML files by default.
 - [ ] Add `PROJECT_SOUL.md` immediately.
 - [ ] Do not create React dev-server dependency.

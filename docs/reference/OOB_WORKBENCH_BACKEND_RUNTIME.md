@@ -6,6 +6,8 @@ This document describes the current backend runtime for OOB Workbench Projects.
 
 `WorkbenchProjectStore` owns Project persistence under `/workspace/projects`.
 
+Workbench Project is an OOB built-in core capability. The canonical bundled skill is `oob-project`; runtime/export payloads should identify Project packages with that skill id and should not reference retired Project skill names.
+
 Each Project package contains:
 
 - `project.json`: canonical Project payload for UI, MCP resources, export, and debugging.

@@ -24,6 +24,19 @@ class AgentToolDefinitionsMusicTest {
     }
 
     @Test
+    fun `web search tool is exposed in static tools`() {
+        val toolNames = AgentToolDefinitions.staticTools()
+            .mapNotNull { definition ->
+                ((definition["function"] as? JsonObject)
+                    ?.get("name")
+                    ?.jsonPrimitive
+                    ?.contentOrNull)
+            }
+
+        assertTrue(toolNames.contains("web_search"))
+    }
+
+    @Test
     fun `workbench delete tool is exposed as control tool`() {
         val toolNames = AgentToolDefinitions.staticTools()
             .mapNotNull { definition ->
@@ -41,6 +54,12 @@ class AgentToolDefinitionsMusicTest {
         assertTrue(toolNames.contains("workbench_project_deactivate"))
         assertTrue(toolNames.contains("workbench_project_ingest_oss"))
         assertTrue(toolNames.contains("workbench_project_progress_get"))
+        assertTrue(toolNames.contains("oob_command_save"))
+        assertTrue(toolNames.contains("oob_command_list"))
+        assertTrue(toolNames.contains("oob_command_delete"))
+        assertTrue(toolNames.contains("oob_run_log_list"))
+        assertTrue(toolNames.contains("oob_run_log_get"))
+        assertTrue(toolNames.contains("oob_run_log_convert"))
     }
 
     @Test
@@ -100,6 +119,23 @@ class AgentToolDefinitionsMusicTest {
             "A concise title describing what this tool call is doing. It is shown to the user, should stay short, and should use the same language as the user.",
             toolTitle["description"]?.jsonPrimitive?.contentOrNull
         )
+    }
+
+    @Test
+    fun `english web search metadata is localized`() {
+        val webSearchTool = AgentToolDefinitions.staticTools(PromptLocale.EN_US)
+            .first { ((it["function"] as JsonObject)["name"]?.jsonPrimitive?.contentOrNull) == "web_search" }
+        val function = webSearchTool["function"] as JsonObject
+        val parameters = function["parameters"] as JsonObject
+        val properties = parameters["properties"] as JsonObject
+        val query = properties["query"] as JsonObject
+
+        assertEquals("Web Search", function["displayName"]?.jsonPrimitive?.contentOrNull)
+        assertTrue(
+            function["description"]?.jsonPrimitive?.contentOrNull
+                ?.contains("Run one web search") == true
+        )
+        assertEquals("Search query or question.", query["description"]?.jsonPrimitive?.contentOrNull)
     }
 
     @Test

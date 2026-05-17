@@ -351,6 +351,12 @@ String _activityLabel(BuildContext context, AgentToolActivityKind kind) {
         en: 'Browser activity',
         locale: locale,
       );
+    case AgentToolActivityKind.research:
+      return AppTextLocalizer.choose(
+        zh: '网页搜索',
+        en: 'Research activity',
+        locale: locale,
+      );
     case AgentToolActivityKind.terminal:
       return AppTextLocalizer.choose(
         zh: '终端操作',
@@ -390,6 +396,8 @@ String _toolTypeFor(AgentToolActivityKind kind) {
   switch (kind) {
     case AgentToolActivityKind.browser:
       return 'browser';
+    case AgentToolActivityKind.research:
+      return 'research';
     case AgentToolActivityKind.terminal:
       return 'terminal';
     case AgentToolActivityKind.workspace:

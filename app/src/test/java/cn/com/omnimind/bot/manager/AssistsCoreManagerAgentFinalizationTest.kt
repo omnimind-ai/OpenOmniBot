@@ -1,11 +1,39 @@
 package cn.com.omnimind.bot.manager
 
+import cn.com.omnimind.bot.agent.AgentStreamEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AssistsCoreManagerAgentFinalizationTest {
+    @Test
+    fun `agent stream event payload includes v1 trace envelope`() {
+        val payload = AgentStreamEvent(
+            taskId = "agent-task",
+            seq = 3L,
+            kind = "text_snapshot",
+            createdAt = 1234L,
+            entryId = "agent-task-text",
+            roundIndex = 1,
+            text = "hello"
+        ).toPayload(
+            conversationId = 42L,
+            conversationMode = "normal"
+        )
+
+        assertEquals("oob.agent_event.v1", payload["schema_version"])
+        assertEquals("agent-task", payload["trace_id"])
+        assertEquals("agent-task", payload["run_id"])
+        assertEquals("agent-task-text", payload["span_id"])
+        assertEquals("agent-task", payload["parent_span_id"])
+        assertEquals("agent_stream", payload["channel"])
+        assertEquals("text_snapshot", payload["event"])
+        assertEquals(1234L, payload["timestamp_ms"])
+        assertEquals("running", payload["status"])
+        assertEquals("text_snapshot", payload["kind"])
+    }
+
     @Test
     fun `keeps streamed assistant text when agent errors after visible output`() {
         val resolution = resolveAgentFinalErrorResolution(

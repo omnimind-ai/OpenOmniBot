@@ -181,6 +181,7 @@ object AgentToolDefinitions {
         "执行会话命令" to "Run Session Command",
         "读取会话输出" to "Read Session Output",
         "结束终端会话" to "Stop Terminal Session",
+        "网页搜索" to "Web Search",
         "浏览器操作" to "Browser Action",
         "读取文件" to "Read File",
         "写入文件" to "Write File",
@@ -274,6 +275,11 @@ object AgentToolDefinitions {
             "Stop an existing terminal session and clean up the corresponding tmux session. Call this after the stateful terminal task is complete.",
         "结束后等待工具结果，再回复用户。" to
             "Wait for the tool result after stopping the session before replying to the user.",
+        "用内置浏览器执行一次网页搜索，并返回搜索结果标题、URL、摘要和搜索页可读片段。用于调研、竞品/开源项目查找、事实核验；拿到候选 URL 后，若需要深读具体页面，再用 browser_use 打开目标页面。不要用它操作网页表单或点击页面。" to
+            "Run one web search through the built-in browser and return result titles, URLs, snippets, and a readable search-page excerpt. Use it for research, competitor or open-source discovery, and fact checking. After getting candidate URLs, use `browser_use` to open specific pages for deeper reading. Do not use it for form filling or page interaction.",
+        "搜索关键词或问题。" to "Search query or question.",
+        "返回结果数量上限，默认 5，范围 1-10。" to
+            "Maximum number of results to return. Default 5, range 1-10.",
         "控制一个最多 3 个标签页的离屏浏览器。不要用它打开 App deep link、omnibot:// 非 browser 资源或应用内路由。浏览器只支持访问 http(s) 页面，以及 omnibot://browser/... 资源文件。使用 navigate 打开页面，screenshot 查看当前视口截图（传 read_image=true 可让模型直接看到截图内容），click/type/hover 与元素交互，get_text/get_readable 抽取内容，scroll 导航长页面，scroll_and_collect 在一次调用中滚动并收集无限列表内容，find_elements 发现可交互元素，get_page_info 获取页面元信息，get_backbone 获取 DOM 骨架，execute_js 执行脚本，fetch 复用当前页面 session 下载资源并返回 omnibot://browser/... 产物，new_tab/close_tab/list_tabs 管理标签页，go_back/go_forward 浏览器前进后退，press_key 模拟键盘按键，wait_for_selector 等待元素出现，get_cookies 返回 cookie 摘要与可复用的 offload env 脚本路径，set_user_agent 兼容 desktop_safari/mobile_safari 入参但实际切换 Android Chrome 风格桌面/移动 UA。结果可能包含 riskChallengeDetected、riskChallengeKind、recommendedNextAction、throttleDelayMs；若 riskChallengeDetected=true，应停止自动交互/刷新并请用户手动接管。tool_title 必须是 5-10 个字的简洁摘要，并使用与用户相同的语言。" to
             "Control an off-screen browser with up to 3 tabs. Do not use it for app deep links, non-browser `omnibot://` resources, or in-app routes. The browser supports http(s) pages and `omnibot://browser/...` resources. Use navigate to open pages, screenshot to capture the current viewport (set read_image=true if the model should inspect the screenshot directly), click/type/hover for interaction, get_text/get_readable for extraction, scroll for long-page navigation, scroll_and_collect to collect infinite-list content in one call, find_elements to discover interactable elements, get_page_info for metadata, get_backbone for a DOM skeleton, execute_js for scripting, fetch to download resources with the current page session and return `omnibot://browser/...` artifacts, new_tab/close_tab/list_tabs for tab management, go_back/go_forward for navigation history, press_key to simulate keys, wait_for_selector to wait for elements, get_cookies for cookie summaries plus a reusable offload env script path, and set_user_agent to accept desktop_safari/mobile_safari for compatibility while actually switching Android Chrome-style desktop/mobile UAs. Results may include riskChallengeDetected, riskChallengeKind, recommendedNextAction, and throttleDelayMs; when riskChallengeDetected=true, stop automated interaction/reload attempts and ask the user to take over manually. `tool_title` must be a concise 5-10 word summary in the same language as the user.",
         "本次工具调用要做什么的简洁摘要，5-10 个字，展示给用户。" to
@@ -1153,6 +1159,35 @@ object AgentToolDefinitions {
                 }
                 putJsonArray("required") {
                     add("sessionId")
+                }
+            }
+        }
+    }
+
+    val webSearchTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "web_search")
+            put("displayName", "网页搜索")
+            put("toolType", "research")
+            put(
+                "description",
+                "用内置浏览器执行一次网页搜索，并返回搜索结果标题、URL、摘要和搜索页可读片段。用于调研、竞品/开源项目查找、事实核验；拿到候选 URL 后，若需要深读具体页面，再用 browser_use 打开目标页面。不要用它操作网页表单或点击页面。"
+            )
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("query") {
+                        put("type", "string")
+                        put("description", "搜索关键词或问题。")
+                    }
+                    putJsonObject("limit") {
+                        put("type", "integer")
+                        put("description", "返回结果数量上限，默认 5，范围 1-10。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("query")
                 }
             }
         }
@@ -2078,6 +2113,150 @@ object AgentToolDefinitions {
         }
     }
 
+    val oobCommandSaveTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_command_save")
+            put("displayName", "保存 RunLog 指令")
+            put("toolType", "workbench")
+            put("description", "把一个成功完成的 OOB RunLog 固化为可重放指令。指令会写入 Workspace commands 并同步为 Agent 可直接调用的 OOB Function。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("run_id") {
+                        put("type", "string")
+                        put("description", "要固化的 RunLog id。")
+                    }
+                    putJsonObject("function_id") {
+                        put("type", "string")
+                        put("description", "可选。指定稳定 function_id；不传时按 RunLog 自动派生。")
+                    }
+                    putJsonObject("name") {
+                        put("type", "string")
+                        put("description", "可选。指令显示名称。")
+                    }
+                    putJsonObject("description") {
+                        put("type", "string")
+                        put("description", "可选。指令说明。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("run_id")
+                }
+            }
+        }
+    }
+
+    val oobCommandListTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_command_list")
+            put("displayName", "列出 OOB 指令")
+            put("toolType", "workbench")
+            put("description", "列出本机和当前 Workspace 中已经注册的 OOB 可重放指令。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {}
+            }
+        }
+    }
+
+    val oobCommandDeleteTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_command_delete")
+            put("displayName", "删除 OOB 指令")
+            put("toolType", "workbench")
+            put("description", "从 Workspace 和本机注册表删除一个 OOB 可重放指令。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("function_id") {
+                        put("type", "string")
+                        put("description", "要删除的 function_id。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("function_id")
+                }
+            }
+        }
+    }
+
+    val oobRunLogListTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_run_log_list")
+            put("displayName", "列出 RunLog")
+            put("toolType", "workbench")
+            put("description", "列出 OOB 内部最近的 RunLogs，用于选择可固化或检查的历史执行。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {}
+            }
+        }
+    }
+
+    val oobRunLogGetTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_run_log_get")
+            put("displayName", "读取 RunLog")
+            put("toolType", "workbench")
+            put("description", "读取某个 OOB 内部 RunLog 的 timeline payload，包括 cards、工具参数和 replay 需要的上下文。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("run_id") {
+                        put("type", "string")
+                        put("description", "RunLog id。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("run_id")
+                }
+            }
+        }
+    }
+
+    val oobRunLogConvertTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_run_log_convert")
+            put("displayName", "转换 RunLog")
+            put("toolType", "workbench")
+            put("description", "把成功完成的 RunLog 转换为 oob.reusable_function.v1。register=false 时只返回 Function spec；register=true 时同时注册为可直接调用的 OOB 指令。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("run_id") {
+                        put("type", "string")
+                        put("description", "RunLog id。")
+                    }
+                    putJsonObject("register") {
+                        put("type", "boolean")
+                        put("description", "是否注册为指令。默认 false，确认要复用时设为 true。")
+                    }
+                    putJsonObject("function_id") {
+                        put("type", "string")
+                        put("description", "可选。注册时覆盖 function_id。")
+                    }
+                    putJsonObject("name") {
+                        put("type", "string")
+                        put("description", "可选。注册时覆盖显示名称。")
+                    }
+                    putJsonObject("description") {
+                        put("type", "string")
+                        put("description", "可选。注册时覆盖说明。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("run_id")
+                }
+            }
+        }
+    }
+
     val scheduleTaskCreateTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -2649,6 +2828,7 @@ object AgentToolDefinitions {
         terminalSessionExecTool,
         terminalSessionReadTool,
         terminalSessionStopTool,
+        webSearchTool,
         browserUseTool,
         fileReadTool,
         fileWriteTool,
@@ -2675,7 +2855,13 @@ object AgentToolDefinitions {
         workbenchProjectHotUpdateTool,
         workbenchProjectIngestAndroidTool,
         workbenchProjectIngestOssTool,
-        workbenchProjectProgressGetTool
+        workbenchProjectProgressGetTool,
+        oobCommandSaveTool,
+        oobCommandListTool,
+        oobCommandDeleteTool,
+        oobRunLogListTool,
+        oobRunLogGetTool,
+        oobRunLogConvertTool
     )
 
     private val scheduleToolDefinitions: List<JsonObject> = listOf(
