@@ -610,10 +610,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 320));
 
-    expect(find.text('执行过程'), findsOneWidget);
+    expect(find.text('步骤'), findsOneWidget);
     expect(find.text('已完成'), findsOneWidget);
-    expect(find.textContaining('1 段思考'), findsOneWidget);
-    expect(find.textContaining('1 个工具'), findsOneWidget);
+    expect(find.textContaining('2 步'), findsOneWidget);
     expect(find.text('最终回答'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('agent-run-avatar-task-1')),
@@ -628,7 +627,7 @@ void main() {
       find.byKey(const ValueKey('agent-run-process-task-1')),
       findsOneWidget,
     );
-    expect(find.byType(DeepThinkingCard), findsOneWidget);
+    expect(find.text('思考'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 120));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 320));
@@ -659,7 +658,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 320));
 
-    expect(find.text('执行过程'), findsOneWidget);
+    expect(find.text('步骤'), findsOneWidget);
     expect(find.text('最终回答'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -685,13 +684,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 320));
 
-    expect(find.text('Process'), findsOneWidget);
+    expect(find.text('Steps'), findsOneWidget);
     expect(find.text('Done'), findsOneWidget);
-    expect(find.textContaining('1 thought'), findsOneWidget);
-    expect(find.textContaining('1 tool'), findsOneWidget);
+    expect(find.textContaining('2 steps'), findsOneWidget);
+    expect(find.textContaining('1 thought'), findsNothing);
+    expect(find.textContaining('1 tool'), findsNothing);
     expect(find.textContaining('1 thoughts'), findsNothing);
     expect(find.textContaining('1 tools'), findsNothing);
-    expect(find.text('执行过程'), findsNothing);
+    expect(find.text('步骤'), findsNothing);
     expect(find.text('已完成'), findsNothing);
   });
 
@@ -717,7 +717,7 @@ void main() {
 
     expect(find.text('运行记录'), findsOneWidget);
     expect(find.text('已记录'), findsOneWidget);
-    expect(find.text('执行过程'), findsNothing);
+    expect(find.text('步骤'), findsNothing);
     expect(find.text('直接回答'), findsOneWidget);
     expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
     expect(find.byIcon(Icons.route_rounded), findsOneWidget);
@@ -824,13 +824,7 @@ void main() {
     await tester.tap(summaryToggle);
     await tester.pumpAndSettle();
 
-    final thinkingToggle = find.descendant(
-      of: find.byType(DeepThinkingCard),
-      matching: find.byType(InkWell),
-    );
-    expect(thinkingToggle, findsOneWidget);
-
-    await tester.tap(thinkingToggle);
+    await tester.tap(find.text('思考'));
     await tester.pumpAndSettle();
     expect(_thinkingDetailFinder(), findsOneWidget);
 
@@ -840,7 +834,7 @@ void main() {
 
     await tester.tap(summaryToggle);
     await tester.pumpAndSettle();
-    expect(find.byType(DeepThinkingCard), findsOneWidget);
+    expect(find.text('思考'), findsOneWidget);
     expect(_thinkingDetailFinder(), findsNothing);
   });
 
@@ -870,32 +864,12 @@ void main() {
 
     expect(find.byType(AgentToolActivityCard), findsOneWidget);
     expect(find.text('浏览器操作 · 2 步'), findsOneWidget);
-    expect(
-      tester
-          .widget<AnimatedCrossFade>(
-            find.descendant(
-              of: find.byType(AgentToolActivityCard),
-              matching: find.byType(AnimatedCrossFade),
-            ),
-          )
-          .crossFadeState,
-      CrossFadeState.showFirst,
-    );
+    expect(find.text('打开 example.com'), findsNothing);
+    expect(find.text('点击登录按钮'), findsNothing);
 
     await tester.tap(find.byType(AgentToolActivityCard));
     await tester.pumpAndSettle();
 
-    expect(
-      tester
-          .widget<AnimatedCrossFade>(
-            find.descendant(
-              of: find.byType(AgentToolActivityCard),
-              matching: find.byType(AnimatedCrossFade),
-            ),
-          )
-          .crossFadeState,
-      CrossFadeState.showSecond,
-    );
     expect(find.text('打开 example.com'), findsOneWidget);
     expect(find.text('点击登录按钮'), findsOneWidget);
   });
@@ -1098,7 +1072,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 32));
 
-    expect(find.text('执行过程'), findsOneWidget);
+    expect(find.text('步骤'), findsOneWidget);
     expect(find.text('进行中'), findsOneWidget);
     expect(find.byType(DeepThinkingCard), findsNothing);
     expect(
@@ -1111,7 +1085,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 320));
 
-    expect(find.byType(DeepThinkingCard), findsOneWidget);
+    expect(find.text('思考中'), findsOneWidget);
     expect(find.text('运行 git status'), findsOneWidget);
   });
 
@@ -1156,7 +1130,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 320));
 
-    expect(find.text('执行过程'), findsOneWidget);
+    expect(find.text('步骤'), findsOneWidget);
     expect(find.text('已完成'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('agent-run-process-task-1')),

@@ -3,7 +3,8 @@ import 'package:ui/features/home/pages/chat/utils/agent_activity_compactor.dart'
 import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
 import 'package:ui/features/home/pages/chat/widgets/agent_tool_activity_card.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
-import 'package:ui/features/home/pages/command_overlay/widgets/cards/card_widget_factory.dart';
+import 'package:ui/features/home/pages/command_overlay/widgets/cards/card_widget_factory.dart'
+    show OnBeforeTaskExecute, OnRequestAuthorize;
 import 'package:ui/features/home/pages/command_overlay/widgets/message_bubble.dart';
 import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
@@ -157,6 +158,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
               ? () => _openRunLog(context)
               : null,
           showToggle: hasProcessMessages,
+          showRunLogButton: isRunLogOnly,
         ),
         _buildAnimatedProcessSection(processMessages),
         ...visibleMessages.map(
@@ -198,7 +200,6 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
       return const SizedBox.shrink();
     }
 
-    final firstThinkingMessageId = _firstThinkingMessageId(processMessages);
     final processItems = _compactor.compact(processMessages);
 
     return AnimatedBuilder(
@@ -212,24 +213,32 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
               if (activity != null) {
                 return AgentToolActivityCard(
                   key: ValueKey(
-                    'agent-run-${widget.group.taskId}-${activity.id}',
+                    'agent-run-${widget.group.taskId}-${activity.id}-${widget.expanded}',
                   ),
                   activity: activity,
+                  compactSurface: true,
                   onLayoutChanged: widget.onStreamingTextLayoutChanged,
                 );
               }
               final message = item.message!;
-              final hideAvatar =
-                  firstThinkingMessageId != null &&
-                  message.id == firstThinkingMessageId;
+              if (_isThinkingProcessMessage(message)) {
+                return _AgentThinkingActivityRow(
+                  key: ValueKey(
+                    'agent-run-${widget.group.taskId}-${message.id}-${widget.expanded}',
+                  ),
+                  message: message,
+                  onLayoutChanged: widget.onStreamingTextLayoutChanged,
+                );
+              }
               return MessageBubble(
-                key: ValueKey('agent-run-${widget.group.taskId}-${message.id}'),
+                key: ValueKey(
+                  'agent-run-${widget.group.taskId}-${message.id}-${widget.expanded}',
+                ),
                 message: message,
                 onBeforeTaskExecute: widget.onBeforeTaskExecute,
                 onCancelTask: widget.onCancelTask,
                 enableThinkingCollapse: true,
                 thinkingAutoCollapseOnComplete: true,
-                showThinkingAvatarOverride: hideAvatar ? false : null,
                 parentScrollController: widget.parentScrollController,
                 onParentScrollHandoff: widget.onParentScrollHandoff,
                 onRequestAuthorize: widget.onRequestAuthorize,
@@ -239,7 +248,8 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
                 appearanceConfig: widget.appearanceConfig,
               );
             })
-            .toList(growable: false),
+            .toList(growable: false)
+            .cast<Widget>(),
       ),
       builder: (context, child) {
         final sizeFactor = _sizeFactor.value.clamp(0.0, 1.0);
@@ -262,15 +272,6 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
         );
       },
     );
-  }
-
-  String? _firstThinkingMessageId(List<ChatMessageModel> processMessages) {
-    for (final message in processMessages) {
-      if ((message.cardData?['type'] ?? '').toString() == 'deep_thinking') {
-        return message.id;
-      }
-    }
-    return null;
   }
 
   String _latestProcessSummary(List<ChatMessageModel> processMessages) {
@@ -312,6 +313,7 @@ class _AgentRunSummaryHeader extends StatelessWidget {
     required this.latestProcessSummary,
     required this.onTap,
     required this.showToggle,
+    required this.showRunLogButton,
   });
 
   final String taskId;
@@ -323,6 +325,7 @@ class _AgentRunSummaryHeader extends StatelessWidget {
   final String latestProcessSummary;
   final VoidCallback? onTap;
   final bool showToggle;
+  final bool showRunLogButton;
 
   @override
   Widget build(BuildContext context) {
@@ -330,8 +333,8 @@ class _AgentRunSummaryHeader extends StatelessWidget {
     final palette = context.omniPalette;
     final isRunLogOnly = !isActiveRun && !showToggle;
     final label = AppTextLocalizer.choose(
-      zh: isRunLogOnly ? '运行记录' : '执行过程',
-      en: isRunLogOnly ? 'RunLog' : 'Process',
+      zh: isRunLogOnly ? '运行记录' : '步骤',
+      en: isRunLogOnly ? 'RunLog' : 'Steps',
       locale: locale,
     );
     final statusLabel = isRunLogOnly
@@ -429,32 +432,34 @@ class _AgentRunSummaryHeader extends StatelessWidget {
                     },
                   ),
                 ),
-                const SizedBox(width: 6),
-                Tooltip(
-                  message: AppTextLocalizer.choose(
-                    zh: '查看 RunLog',
-                    en: 'View RunLog',
-                    locale: locale,
-                  ),
-                  child: InkResponse(
-                    onTap: () {
-                      final resolvedRunLogId = runLogId.trim().isEmpty
-                          ? taskId
-                          : runLogId.trim();
-                      showRunLogTimelineSheet(
-                        context,
-                        runId: resolvedRunLogId,
-                        title: 'RunLog',
-                      );
-                    },
-                    radius: 18,
-                    child: Icon(
-                      Icons.route_rounded,
-                      size: 16,
-                      color: labelColor,
+                if (showRunLogButton) ...[
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message: AppTextLocalizer.choose(
+                      zh: '查看 RunLog',
+                      en: 'View RunLog',
+                      locale: locale,
+                    ),
+                    child: InkResponse(
+                      onTap: () {
+                        final resolvedRunLogId = runLogId.trim().isEmpty
+                            ? taskId
+                            : runLogId.trim();
+                        showRunLogTimelineSheet(
+                          context,
+                          runId: resolvedRunLogId,
+                          title: 'RunLog',
+                        );
+                      },
+                      radius: 18,
+                      child: Icon(
+                        Icons.route_rounded,
+                        size: 16,
+                        color: labelColor,
+                      ),
                     ),
                   ),
-                ),
+                ],
                 if (showToggle) ...[
                   const SizedBox(width: 8),
                   AnimatedRotation(
@@ -478,20 +483,12 @@ class _AgentRunSummaryHeader extends StatelessWidget {
 
   String _summaryText(Locale locale) {
     final parts = <String>[];
-    if (thinkingCount > 0) {
+    final stepCount = thinkingCount + toolCount;
+    if (stepCount > 0) {
       parts.add(
         AppTextLocalizer.choose(
-          zh: '$thinkingCount 段思考',
-          en: '$thinkingCount ${thinkingCount == 1 ? 'thought' : 'thoughts'}',
-          locale: locale,
-        ),
-      );
-    }
-    if (toolCount > 0) {
-      parts.add(
-        AppTextLocalizer.choose(
-          zh: '$toolCount 个工具',
-          en: '$toolCount ${toolCount == 1 ? 'tool' : 'tools'}',
+          zh: '$stepCount 步',
+          en: '$stepCount ${stepCount == 1 ? 'step' : 'steps'}',
           locale: locale,
         ),
       );
@@ -501,6 +498,192 @@ class _AgentRunSummaryHeader extends StatelessWidget {
       parts.add(trimmed);
     }
     return parts.join(' · ');
+  }
+}
+
+class _AgentThinkingActivityRow extends StatefulWidget {
+  const _AgentThinkingActivityRow({
+    super.key,
+    required this.message,
+    this.onLayoutChanged,
+  });
+
+  final ChatMessageModel message;
+  final VoidCallback? onLayoutChanged;
+
+  @override
+  State<_AgentThinkingActivityRow> createState() =>
+      _AgentThinkingActivityRowState();
+}
+
+class _AgentThinkingActivityRowState extends State<_AgentThinkingActivityRow> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final cardData = widget.message.cardData ?? const <String, dynamic>{};
+    final content = (cardData['thinkingContent'] ?? '').toString().trim();
+    final stage = _asInt(cardData['stage']) ?? 1;
+    final isLoading =
+        _asBool(cardData['isLoading']) ?? (stage != 4 && stage != 5);
+    if (content.isEmpty && !isLoading) {
+      return const SizedBox.shrink();
+    }
+    final label = AppTextLocalizer.choose(
+      zh: isLoading ? '思考中' : '思考',
+      en: isLoading ? 'Thinking' : 'Thought',
+      locale: Localizations.localeOf(context),
+    );
+    final preview = _firstMeaningfulLine(content);
+    final statusColor = isLoading
+        ? palette.accentPrimary
+        : palette.textTertiary;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 2),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: content.isEmpty ? null : _toggleExpanded,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: statusColor.withValues(
+                          alpha: context.isDarkTheme ? 0.14 : 0.12,
+                        ),
+                      ),
+                      child: Center(
+                        child: isLoading
+                            ? SizedBox(
+                                width: 8,
+                                height: 8,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.4,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    statusColor,
+                                  ),
+                                ),
+                              )
+                            : Icon(
+                                Icons.psychology_alt_outlined,
+                                size: 11,
+                                color: statusColor,
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: palette.textSecondary,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              height: 1.1,
+                            ),
+                          ),
+                          if (!_expanded && preview.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Text(
+                                preview,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: palette.textTertiary,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.2,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (content.isNotEmpty)
+                      AnimatedRotation(
+                        turns: _expanded ? 0 : -0.25,
+                        duration: const Duration(milliseconds: 160),
+                        child: Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 16,
+                          color: palette.textTertiary,
+                        ),
+                      ),
+                  ],
+                ),
+                if (_expanded) _ThinkingDetail(content: content),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _toggleExpanded() {
+    setState(() {
+      _expanded = !_expanded;
+    });
+    widget.onLayoutChanged?.call();
+  }
+}
+
+class _ThinkingDetail extends StatelessWidget {
+  const _ThinkingDetail({required this.content});
+
+  final String content;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, left: 26),
+      child: Container(
+        constraints: const BoxConstraints(maxHeight: 220),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              color: palette.borderSubtle.withValues(alpha: 0.75),
+              width: 1,
+            ),
+          ),
+        ),
+        child: SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          padding: const EdgeInsets.only(left: 10, right: 2),
+          child: Text(
+            content,
+            style: TextStyle(
+              color: palette.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.w400,
+              height: 1.35,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -542,4 +725,53 @@ class _ProcessStatusPill extends StatelessWidget {
       ),
     );
   }
+}
+
+bool _isThinkingProcessMessage(ChatMessageModel message) {
+  return (message.cardData?['type'] ?? '').toString() == 'deep_thinking';
+}
+
+String _firstMeaningfulLine(String value) {
+  final line = value
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n')
+      .split('\n')
+      .map((item) => item.replaceAll(RegExp(r'\s+'), ' ').trim())
+      .firstWhere((item) => item.isNotEmpty, orElse: () => '');
+  if (line.length <= 96) {
+    return line;
+  }
+  return '${line.substring(0, 95).trimRight()}…';
+}
+
+int? _asInt(dynamic value) {
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    final asDouble = value.toDouble();
+    if (asDouble.isFinite && asDouble == asDouble.truncateToDouble()) {
+      return value.toInt();
+    }
+  }
+  if (value is String) {
+    return int.tryParse(value.trim());
+  }
+  return null;
+}
+
+bool? _asBool(dynamic value) {
+  if (value is bool) {
+    return value;
+  }
+  if (value is String) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized == 'true') {
+      return true;
+    }
+    if (normalized == 'false') {
+      return false;
+    }
+  }
+  return null;
 }

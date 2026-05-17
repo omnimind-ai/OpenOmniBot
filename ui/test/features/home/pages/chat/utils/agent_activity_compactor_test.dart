@@ -49,6 +49,26 @@ void main() {
     expect(items.single.activity?.stepCount, 1);
   });
 
+  test('wraps unknown codex tool type into generic activity', () {
+    final items = compactAgentProcessItems(<ChatMessageModel>[
+      _toolMessage(
+        id: 'task-9-tool-1',
+        seq: 1,
+        toolType: 'plan',
+        toolName: 'codex.plan',
+        summary: 'Review repository layout',
+      ),
+    ]);
+
+    expect(items, hasLength(1));
+    expect(items.single.activity?.kind, AgentToolActivityKind.generic);
+    expect(items.single.activity?.stepCount, 1);
+    expect(
+      items.single.activity?.steps.single.title,
+      'Review repository layout',
+    );
+  });
+
   test(
     'folded activity title prefers semantic target over placeholder text',
     () {

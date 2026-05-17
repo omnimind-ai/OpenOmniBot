@@ -13,6 +13,7 @@ enum AgentToolActivityKind {
   workspace,
   workbench,
   mcp,
+  generic,
 }
 
 class AgentToolCardIdentity {
@@ -204,7 +205,7 @@ class AgentToolCardPolicy {
     if (toolType == 'mcp') {
       return AgentToolActivityKind.mcp;
     }
-    return null;
+    return AgentToolActivityKind.generic;
   }
 
   static String toolTypeForKind(AgentToolActivityKind kind) {
@@ -215,6 +216,7 @@ class AgentToolCardPolicy {
       AgentToolActivityKind.workspace => 'workspace',
       AgentToolActivityKind.workbench => 'workbench',
       AgentToolActivityKind.mcp => 'mcp',
+      AgentToolActivityKind.generic => 'tool',
     };
   }
 
@@ -226,6 +228,7 @@ class AgentToolCardPolicy {
       AgentToolActivityKind.workspace => 'Workspace activity',
       AgentToolActivityKind.workbench => 'Workbench activity',
       AgentToolActivityKind.mcp => 'MCP activity',
+      AgentToolActivityKind.generic => 'Tool activity',
     };
   }
 
@@ -338,6 +341,14 @@ class AgentToolCardPolicy {
             : toolName;
       case AgentToolActivityKind.mcp:
         return toolName;
+      case AgentToolActivityKind.generic:
+        return firstNonBlank(<Object?>[
+          args['action'],
+          args['operation'],
+          cardData['action'],
+          toolName,
+          cardData['displayName'],
+        ]);
     }
   }
 
@@ -399,6 +410,18 @@ class AgentToolCardPolicy {
           cardData['summary'],
           cardData['progress'],
         ]);
+      case AgentToolActivityKind.generic:
+        return firstNonBlank(<Object?>[
+          args['path'],
+          args['filePath'],
+          args['file_path'],
+          args['query'],
+          args['url'],
+          args['command'],
+          args['cmd'],
+          cardData['summary'],
+          cardData['progress'],
+        ]);
     }
   }
 
@@ -443,6 +466,16 @@ class AgentToolCardPolicy {
           args['query'],
           args['url'],
         ]);
+      case AgentToolActivityKind.generic:
+        return firstNonBlank(<Object?>[
+          args['path'],
+          args['filePath'],
+          args['file_path'],
+          args['query'],
+          args['url'],
+          args['command'],
+          args['cmd'],
+        ]);
     }
   }
 
@@ -468,6 +501,7 @@ class AgentToolCardPolicy {
       case AgentToolActivityKind.workspace:
       case AgentToolActivityKind.workbench:
       case AgentToolActivityKind.mcp:
+      case AgentToolActivityKind.generic:
         return normalizeKey('$action|$target');
       case AgentToolActivityKind.terminal:
         return normalizeKey(
@@ -507,6 +541,19 @@ class AgentToolCardPolicy {
           cardData['server_name'],
         ]);
         return serverName.isEmpty ? '$taskId|mcp' : '$taskId|mcp|$serverName';
+      case AgentToolActivityKind.generic:
+        final toolType = firstNonBlank(<Object?>[
+          cardData['toolType'],
+          cardData['tool_type'],
+          'tool',
+        ]);
+        final toolName = firstNonBlank(<Object?>[
+          cardData['toolName'],
+          cardData['tool_name'],
+          cardData['displayName'],
+          cardData['display_name'],
+        ]);
+        return normalizeKey('$taskId|$toolType|$toolName');
     }
   }
 
