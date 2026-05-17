@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent ToolCard Display Redesign</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f8fb;
+        --surface: #ffffff;
+        --ink: #1f2937;
+        --muted: #64748b;
+        --line: #dbe4ef;
+        --accent: #2563eb;
+        --ok: #15803d;
+        --warn: #b45309;
+        --code: #0f172a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.6;
+      }
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 40px 24px 56px;
+      }
+      header {
+        margin-bottom: 28px;
+      }
+      h1 {
+        margin: 0 0 10px;
+        font-size: clamp(28px, 4vw, 44px);
+        line-height: 1.12;
+        letter-spacing: 0;
+      }
+      h2 {
+        margin: 0 0 14px;
+        font-size: 20px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      .subtitle {
+        max-width: 820px;
+        color: var(--muted);
+        font-size: 16px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+      section {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 20px;
+      }
+      .wide {
+        grid-column: 1 / -1;
+      }
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .step {
+        min-height: 96px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        background: #f8fbff;
+      }
+      .step strong {
+        display: block;
+        margin-bottom: 6px;
+      }
+      ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+      li + li {
+        margin-top: 8px;
+      }
+      code {
+        color: var(--code);
+        background: #eef2f7;
+        border-radius: 5px;
+        padding: 2px 5px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.92em;
+      }
+      .badge {
+        display: inline-block;
+        margin: 0 8px 8px 0;
+        padding: 4px 9px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        background: #f8fafc;
+        font-size: 13px;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .warn {
+        color: var(--warn);
+      }
+      @media (max-width: 840px) {
+        .grid,
+        .flow {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Agent ToolCard Display Redesign</h1>
+        <p class="subtitle">
+          本次优化只处理 toolcard 的显示投影问题，工具调用和 MCP 执行链路不变。核心改动是把 Chat 与 WebChat 的工具卡合并规则抽成共享投影层，避免 started / progress / completed 事件在 UI 中变成多个卡片、错位或丢失 terminal 输出。
+        </p>
+      </header>
+
+      <div class="grid">
+        <section>
+          <h2>参考项目</h2>
+          <ul>
+            <li>
+              <a href="https://v4.ai-sdk.dev/docs/ai-sdk-ui/stream-protocol">Vercel AI SDK UI Stream Protocol</a>：
+              工具调用与工具结果都携带 <code>toolCallId</code>，前端用同一个 ID 把调用生命周期投影成同一个 UI part。
+            </li>
+            <li>
+              <a href="https://docs.openhands.dev/sdk/arch/events">OpenHands Event System</a>：
+              采用 append-only event log，ActionEvent 和 ObservationEvent 分离，UI/服务从事件日志做只读投影。
+            </li>
+            <li>
+              <a href="https://github.com/cline/cline">Cline</a>：
+              将命令执行、浏览器自动化、MCP 工具使用呈现为任务过程的一部分，同时保留用户可追踪的工具输出与审批反馈。
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>设计原则</h2>
+          <p>
+            不再在各个 UI 分支里临时拼字段，而是统一为：
+          </p>
+          <span class="badge">事件不可变</span>
+          <span class="badge">投影可覆盖</span>
+          <span class="badge">同一工具调用只显示一张卡</span>
+          <span class="badge">terminal delta 追加</span>
+          <span class="badge">错误状态不覆盖输出</span>
+        </section>
+
+        <section class="wide">
+          <h2>落地链路</h2>
+          <div class="flow">
+            <div class="step">
+              <strong>1. Agent Event</strong>
+              <p><code>tool_started</code>、<code>tool_progress</code>、<code>tool_completed</code> 继续从端侧流入。</p>
+            </div>
+            <div class="step">
+              <strong>2. Identity</strong>
+              <p>按 <code>toolCallId</code>、<code>callId</code>、<code>cardId</code>、<code>toolTaskId</code>、<code>entryId</code> 建立别名集合。</p>
+            </div>
+            <div class="step">
+              <strong>3. Projection</strong>
+              <p><code>AgentToolCardProjection</code> 合并已有卡片，追加 terminal delta，保留 args/result/runlog 元数据。</p>
+            </div>
+            <div class="step">
+              <strong>4. Upsert</strong>
+              <p>Chat 与 WebChat 都只消费投影结果，更新同一个 <code>ChatMessageModel</code>。</p>
+            </div>
+            <div class="step">
+              <strong>5. Render</strong>
+              <p>现有 <code>AgentToolSummaryCard</code> 和 activity compactor 继续负责视觉呈现与详情面板。</p>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>修改文件</h2>
+          <ul>
+            <li><code>ui/lib/services/agent_tool_card_projection.dart</code> 新增共享工具卡投影服务。</li>
+            <li><code>ui/lib/features/home/pages/chat/services/chat_conversation_runtime_coordinator.dart</code> 主 Chat 链路改为消费共享投影。</li>
+            <li><code>ui/lib/webchat/web_chat_app.dart</code> WebChat 链路改为消费共享投影，修复 terminal delta 不显示。</li>
+            <li><code>ui/lib/features/home/pages/chat/mixins/agent_stream_handler.dart</code> 旧 mixin 链路同步规则。</li>
+            <li><code>ui/test/services/agent_tool_card_projection_test.dart</code> 增加投影层单测。</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>验收点</h2>
+          <ul>
+            <li class="ok">同一个工具调用的 started / progress / completed 最终只保留一个 toolcard。</li>
+            <li class="ok">progress 里的 <code>terminalOutputDelta</code> 会追加到现有 terminal 输出。</li>
+            <li class="ok">completed 事件即使换了 <code>entryId</code>，也会合并到占位卡，不再错位成新卡。</li>
+            <li class="ok">工具标题优先级稳定：<code>toolTitle</code>、args 中的 <code>tool_title</code>、display/tool name、summary。</li>
+            <li class="ok">失败状态统一归一为 <code>error</code>，不会把已有 assistant output 覆盖成错误泡。</li>
+          </ul>
+        </section>
+
+        <section class="wide">
+          <h2>已跑验证</h2>
+          <p>
+            <span class="badge ok">agent_tool_card_projection_test</span>
+            <span class="badge ok">chat_tool_activity_strip_test</span>
+            <span class="badge ok">agent_tool_summary_card_test</span>
+            <span class="badge ok">chat_conversation_runtime_coordinator_test</span>
+            <span class="badge ok">agent_activity_compactor_test</span>
+            <span class="badge ok">chat_message_list_test</span>
+            <span class="badge ok">agent_run_timeline_test</span>
+            <span class="badge ok">agent_stream_reducer_test</span>
+            <span class="badge ok">flutter analyze focused files</span>
+          </p>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

@@ -12,6 +12,7 @@ import 'package:ui/features/home/pages/chat/utils/deep_thinking_persistence.dart
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/models/conversation_model.dart';
+import 'package:ui/services/agent_tool_card_projection.dart';
 import 'package:ui/services/agent_stream_reducer.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/codex_event_reducer.dart';
@@ -199,7 +200,6 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       ChatConversationRuntimeCoordinator._();
 
   static const int _maxTerminalOutputChars = 64 * 1024;
-  static const int _maxTerminalOutputLines = 600;
   static const Duration _toolEventFlushDelay = Duration(milliseconds: 80);
   static const int _maxToolSummaryChars = 240;
   static const int _maxToolProgressChars = 240;
@@ -2162,18 +2162,11 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     );
     _upsertToolCard(
       runtime: runtime,
-      taskId: event.taskId,
-      cardId: cardId,
-      event: toolEvent,
-      status: event.kind == AgentStreamEventKind.toolCompleted
-          ? _resolveToolStatus(toolEvent)
-          : 'running',
-      summary: toolEvent.summary.isNotEmpty
-          ? toolEvent.summary
-          : AppTextLocalizer.choose(en: 'Calling tool', zh: '正在调用工具'),
-      progress: toolEvent.progress,
-      resultPreviewJson: toolEvent.resultPreviewJson,
-      rawResultJson: toolEvent.rawResultJson,
+      streamEvent: event,
+      defaultRunningSummary: AppTextLocalizer.choose(
+        en: 'Calling tool',
+        zh: '正在调用工具',
+      ),
       streamMeta: ensureAgentStreamMessageMeta(
         _streamMetaFromEvent(event),
         entryId: cardId,
@@ -3578,127 +3571,46 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
 
   void _upsertToolCard({
     required ChatConversationRuntimeState runtime,
-    required String taskId,
-    required String cardId,
-    required AgentToolEventData event,
-    required String status,
-    required String summary,
-    required String progress,
-    required String resultPreviewJson,
-    required String rawResultJson,
+    required AgentStreamEvent streamEvent,
+    required String defaultRunningSummary,
     Map<String, dynamic>? streamMeta,
   }) {
-    final index = runtime.messages.indexWhere(
-      (msg) =>
-          msg.id == cardId ||
-          (msg.cardData?['cardId'] ?? '').toString().trim() == cardId,
+    final projection = AgentToolCardProjection.projectStreamEvent(
+      event: streamEvent,
+      messages: runtime.messages,
+      defaultRunningSummary: defaultRunningSummary,
+      streamMeta: streamMeta,
+      maxTerminalOutputChars: _maxTerminalOutputChars,
+      maxSummaryChars: _maxToolSummaryChars,
+      maxProgressChars: _maxToolProgressChars,
+      maxPreviewJsonChars: _maxToolPreviewJsonChars,
+      maxRawResultJsonChars: _maxToolRawResultJsonChars,
     );
-    final existingCardData = index == -1
-        ? const <String, dynamic>{}
-        : Map<String, dynamic>.from(
-            runtime.messages[index].cardData ?? const {},
-          );
-    final existingTerminalOutput = (existingCardData['terminalOutput'] ?? '')
-        .toString();
-    final terminalOutput = event.toolType == 'terminal'
-        ? _resolveTerminalOutput(existing: existingTerminalOutput, event: event)
-        : '';
-    final runLogId = event.taskId.isNotEmpty
-        ? event.taskId
-        : (existingCardData['runLogId'] ?? '').toString();
-    final normalizedSummary = _compactToolField(
-      summary.isNotEmpty
-          ? summary
-          : (existingCardData['summary'] ?? '').toString(),
-      maxChars: _maxToolSummaryChars,
-    );
-    final normalizedProgress = _compactToolField(
-      progress.isNotEmpty
-          ? progress
-          : (existingCardData['progress'] ?? '').toString(),
-      maxChars: _maxToolProgressChars,
-    );
-    final normalizedResultPreviewJson = _compactToolJsonField(
-      resultPreviewJson.isNotEmpty
-          ? resultPreviewJson
-          : (existingCardData['resultPreviewJson'] ?? '').toString(),
-      maxChars: _maxToolPreviewJsonChars,
-    );
-    final normalizedRawResultJson = _compactToolJsonField(
-      rawResultJson.isNotEmpty
-          ? rawResultJson
-          : (existingCardData['rawResultJson'] ?? '').toString(),
-      maxChars: _maxToolRawResultJsonChars,
-    );
-    final cardData = {
-      'type': 'agent_tool_summary',
-      'taskId': taskId,
-      'runLogId': runLogId,
-      'run_id': runLogId,
-      'toolName': event.toolName,
-      'displayName': event.displayName,
-      'toolTitle': event.toolTitle.isNotEmpty
-          ? event.toolTitle
-          : (existingCardData['toolTitle'] ?? '').toString(),
-      'cardId': cardId,
-      'toolCallId': _firstNonEmpty([
-        event.toolCallId,
-        event.cardId,
-        existingCardData['toolCallId'],
-        existingCardData['tool_call_id'],
-      ]),
-      'toolType': event.toolType,
-      'serverName': event.serverName,
-      'status': status,
-      'summary': normalizedSummary,
-      'progress': normalizedProgress,
-      'argsJson': event.argsJson.isNotEmpty
-          ? event.argsJson
-          : (existingCardData['argsJson'] ?? '').toString(),
-      'resultPreviewJson': normalizedResultPreviewJson,
-      'rawResultJson': normalizedRawResultJson,
-      'terminalOutput': terminalOutput,
-      'terminalOutputDelta': event.terminalOutputDelta,
-      'terminalSessionId':
-          event.terminalSessionId ?? existingCardData['terminalSessionId'],
-      'terminalStreamState': event.terminalStreamState.isNotEmpty
-          ? event.terminalStreamState
-          : (existingCardData['terminalStreamState'] ?? '').toString(),
-      'workspaceId': event.workspaceId ?? existingCardData['workspaceId'],
-      'interruptedBy': event.interruptedBy ?? existingCardData['interruptedBy'],
-      'interruptionReason':
-          event.interruptionReason ?? existingCardData['interruptionReason'],
-      'artifacts': event.artifacts.isNotEmpty
-          ? event.artifacts
-          : (existingCardData['artifacts'] ?? const []),
-      'actions': event.actions.isNotEmpty
-          ? event.actions
-          : (existingCardData['actions'] ?? const []),
-      'success': event.success,
-      'showTerminalOutput': event.toolType == 'terminal',
-      'showRawResult': normalizedRawResultJson.isNotEmpty,
-      'showArtifactAction': event.artifacts.isNotEmpty,
-      'showScheduleAction': event.toolType == 'schedule',
-      'showAlarmAction': event.toolType == 'alarm',
-    };
+    if (projection == null) {
+      return;
+    }
 
-    if (index == -1) {
+    if (projection.isInsert) {
       runtime.messages.insert(
         0,
         ChatMessageModel.cardMessage(
-          cardData,
-          id: cardId,
-          streamMeta: ensureAgentStreamMessageMeta(streamMeta, entryId: cardId),
+          projection.cardData,
+          id: projection.cardId,
+          streamMeta: projection.streamMeta,
+        ).copyWith(
+          createAt: DateTime.fromMillisecondsSinceEpoch(
+            streamEvent.createdAtMs,
+          ),
         ),
       );
     } else {
-      runtime.messages[index] = runtime.messages[index].copyWith(
-        content: {'cardData': cardData, 'id': cardId},
-        streamMeta: ensureAgentStreamMessageMeta(
-          streamMeta ?? runtime.messages[index].streamMeta,
-          entryId: cardId,
-        ),
-      );
+      runtime.messages[projection.existingIndex] = runtime
+          .messages[projection.existingIndex]
+          .copyWith(
+            id: projection.cardId,
+            content: {'cardData': projection.cardData, 'id': projection.cardId},
+            streamMeta: projection.streamMeta,
+          );
     }
   }
 
@@ -3772,27 +3684,6 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     );
   }
 
-  String _resolveTerminalOutput({
-    required String existing,
-    required AgentToolEventData event,
-  }) {
-    if (event.terminalOutput.isNotEmpty) {
-      return _trimTerminalOutput(event.terminalOutput);
-    }
-    if (event.terminalOutputDelta.isNotEmpty) {
-      return _trimTerminalOutput(existing + event.terminalOutputDelta);
-    }
-    return existing;
-  }
-
-  String _resolveToolStatus(AgentToolEventData event) {
-    final normalized = event.status.trim().toLowerCase();
-    if (normalized.isNotEmpty) {
-      return normalized;
-    }
-    return event.success ? 'success' : 'error';
-  }
-
   void updateChatIslandDisplayLayer({
     required int conversationId,
     required String mode,
@@ -3844,41 +3735,6 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     runtime.browserSessionSnapshot = snapshot;
   }
 
-  String _trimTerminalOutput(String value) {
-    if (value.isEmpty) return value;
-
-    var candidate = value;
-    if (candidate.length > _maxTerminalOutputChars) {
-      candidate = candidate.substring(
-        candidate.length - _maxTerminalOutputChars,
-      );
-    }
-
-    final lines = candidate.split('\n');
-    if (lines.length > _maxTerminalOutputLines) {
-      candidate = lines
-          .sublist(lines.length - _maxTerminalOutputLines)
-          .join('\n');
-    }
-
-    final wasTrimmed =
-        candidate.length < value.length ||
-        lines.length > _maxTerminalOutputLines;
-    if (!wasTrimmed) {
-      return candidate;
-    }
-
-    final notice = AppTextLocalizer.choose(
-      en: '[Only the most recent terminal output is shown]\n',
-      zh: '[只显示最近的部分终端输出]\n',
-    );
-    final body = candidate.startsWith(notice)
-        ? candidate.substring(notice.length)
-        : candidate;
-    final remaining = _maxTerminalOutputChars - notice.length;
-    return '$notice${body.substring(body.length > remaining ? body.length - remaining : 0)}';
-  }
-
   void _scheduleToolEventFlush(
     ChatConversationRuntimeState runtime, {
     required bool immediate,
@@ -3897,22 +3753,6 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       runtime.toolEventFlushTimers.remove(key);
       notifyListeners();
     });
-  }
-
-  String _compactToolField(String value, {required int maxChars}) {
-    final normalized = value.trim();
-    if (normalized.length <= maxChars) {
-      return normalized;
-    }
-    return '${normalized.substring(0, maxChars - 1).trimRight()}…';
-  }
-
-  String _compactToolJsonField(String value, {required int maxChars}) {
-    final normalized = value.trim();
-    if (normalized.length <= maxChars) {
-      return normalized;
-    }
-    return normalized.substring(0, maxChars);
   }
 
   void _removeOpenClawWaitingCard(

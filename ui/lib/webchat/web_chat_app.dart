@@ -17,6 +17,7 @@ import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
+import 'package:ui/services/agent_tool_card_projection.dart';
 import 'package:ui/services/agent_stream_run_projection.dart';
 import 'package:ui/services/agent_stream_meta.dart';
 import 'package:ui/webchat/web_backends.dart';
@@ -65,97 +66,6 @@ class _WorkspaceBreadcrumbSegment {
   final String label;
   final String path;
   final bool isCurrent;
-}
-
-class _WebAgentToolEventData {
-  const _WebAgentToolEventData({
-    required this.toolName,
-    required this.displayName,
-    required this.toolType,
-    this.cardId = '',
-    this.toolCallId = '',
-    this.toolTitle = '',
-    this.serverName,
-    this.status = '',
-    this.argsJson = '',
-    this.progress = '',
-    this.summary = '',
-    this.resultPreviewJson = '',
-    this.rawResultJson = '',
-    this.terminalOutput = '',
-    this.terminalOutputDelta = '',
-    this.terminalSessionId,
-    this.terminalStreamState = '',
-    this.workspaceId,
-    this.interruptedBy,
-    this.interruptionReason,
-    this.artifacts = const [],
-    this.actions = const [],
-    this.success = true,
-  });
-
-  final String cardId;
-  final String toolCallId;
-  final String toolName;
-  final String displayName;
-  final String toolTitle;
-  final String toolType;
-  final String? serverName;
-  final String status;
-  final String argsJson;
-  final String progress;
-  final String summary;
-  final String resultPreviewJson;
-  final String rawResultJson;
-  final String terminalOutput;
-  final String terminalOutputDelta;
-  final String? terminalSessionId;
-  final String terminalStreamState;
-  final String? workspaceId;
-  final String? interruptedBy;
-  final String? interruptionReason;
-  final List<Map<String, dynamic>> artifacts;
-  final List<Map<String, dynamic>> actions;
-  final bool success;
-
-  factory _WebAgentToolEventData.fromMap(Map<dynamic, dynamic>? map) {
-    final raw = map ?? const {};
-    return _WebAgentToolEventData(
-      cardId: (raw['cardId'] ?? '').toString(),
-      toolCallId: (raw['toolCallId'] ?? raw['tool_call_id'] ?? '').toString(),
-      toolName: (raw['toolName'] ?? '').toString(),
-      displayName: (raw['displayName'] ?? raw['toolName'] ?? '').toString(),
-      toolTitle: (raw['toolTitle'] ?? '').toString(),
-      toolType: (raw['toolType'] ?? 'builtin').toString(),
-      serverName: raw['serverName']?.toString(),
-      status: (raw['status'] ?? '').toString(),
-      argsJson: (raw['argsJson'] ?? raw['args'] ?? '').toString(),
-      progress: (raw['progress'] ?? '').toString(),
-      summary: (raw['summary'] ?? '').toString(),
-      resultPreviewJson: (raw['resultPreviewJson'] ?? '').toString(),
-      rawResultJson: (raw['rawResultJson'] ?? '').toString(),
-      terminalOutput: (raw['terminalOutput'] ?? '').toString(),
-      terminalOutputDelta: (raw['terminalOutputDelta'] ?? '').toString(),
-      terminalSessionId: raw['terminalSessionId']?.toString(),
-      terminalStreamState: (raw['terminalStreamState'] ?? '').toString(),
-      workspaceId: raw['workspaceId']?.toString(),
-      interruptedBy: raw['interruptedBy']?.toString(),
-      interruptionReason: raw['interruptionReason']?.toString(),
-      artifacts: ((raw['artifacts'] as List?) ?? const [])
-          .whereType<Map>()
-          .map(
-            (item) => item.map((key, value) => MapEntry(key.toString(), value)),
-          )
-          .toList(),
-      actions: ((raw['actions'] as List?) ?? const [])
-          .whereType<Map>()
-          .map(
-            (item) => item.map((key, value) => MapEntry(key.toString(), value)),
-          )
-          .toList(),
-      success: raw['success'] != false,
-    );
-  }
 }
 
 class WebChatApp extends StatelessWidget {
@@ -1153,103 +1063,33 @@ class _WebChatHomeState extends State<_WebChatHome> {
 
   void _upsertWebToolCard(AgentStreamEvent event) {
     _finalizeWebThinkingCards(event.taskId);
-    final toolEvent = _WebAgentToolEventData.fromMap(event.raw);
-    final cardId = resolveAgentToolCardId(event, raw: event.raw);
-    if (cardId.isEmpty) {
+    final projection = AgentToolCardProjection.projectStreamEvent(
+      event: event,
+      messages: _messages,
+      defaultRunningSummary: AppTextLocalizer.choose(
+        en: 'Calling tool',
+        zh: '正在调用工具',
+      ),
+      streamMeta: buildAgentStreamMetaFromEvent(event),
+    );
+    if (projection == null) {
       return;
     }
-    final index = _messages.indexWhere(
-      (message) =>
-          message.id == cardId ||
-          (message.cardData?['cardId'] ?? '').toString().trim() == cardId,
-    );
-    final existingCardData = Map<String, dynamic>.from(
-      index == -1
-          ? const <String, dynamic>{}
-          : _messages[index].cardData ?? const <String, dynamic>{},
-    );
-    final status = event.kind == AgentStreamEventKind.toolCompleted
-        ? _resolveWebToolStatus(toolEvent)
-        : 'running';
-    final cardData = <String, dynamic>{
-      ...existingCardData,
-      'type': 'agent_tool_summary',
-      'taskId': event.taskId,
-      'toolName': toolEvent.toolName,
-      'displayName': toolEvent.displayName,
-      'toolTitle': toolEvent.toolTitle.isNotEmpty
-          ? toolEvent.toolTitle
-          : (existingCardData['toolTitle'] ?? '').toString(),
-      'cardId': cardId,
-      'toolCallId': _firstNonBlank([
-        toolEvent.toolCallId,
-        toolEvent.cardId,
-        existingCardData['toolCallId'],
-        existingCardData['tool_call_id'],
-      ]),
-      'toolType': toolEvent.toolType,
-      'serverName': toolEvent.serverName,
-      'status': status,
-      'summary': toolEvent.summary.isNotEmpty
-          ? toolEvent.summary
-          : (existingCardData['summary'] ?? '').toString(),
-      'progress': toolEvent.progress.isNotEmpty
-          ? toolEvent.progress
-          : (existingCardData['progress'] ?? '').toString(),
-      'argsJson': toolEvent.argsJson.isNotEmpty
-          ? toolEvent.argsJson
-          : (existingCardData['argsJson'] ?? '').toString(),
-      'resultPreviewJson': toolEvent.resultPreviewJson.isNotEmpty
-          ? toolEvent.resultPreviewJson
-          : (existingCardData['resultPreviewJson'] ?? '').toString(),
-      'rawResultJson': toolEvent.rawResultJson.isNotEmpty
-          ? toolEvent.rawResultJson
-          : (existingCardData['rawResultJson'] ?? '').toString(),
-      'terminalOutput': toolEvent.terminalOutput.isNotEmpty
-          ? toolEvent.terminalOutput
-          : (existingCardData['terminalOutput'] ?? '').toString(),
-      'terminalOutputDelta': toolEvent.terminalOutputDelta,
-      'terminalSessionId':
-          toolEvent.terminalSessionId ?? existingCardData['terminalSessionId'],
-      'terminalStreamState': toolEvent.terminalStreamState.isNotEmpty
-          ? toolEvent.terminalStreamState
-          : (existingCardData['terminalStreamState'] ?? '').toString(),
-      'workspaceId': toolEvent.workspaceId ?? existingCardData['workspaceId'],
-      'interruptedBy':
-          toolEvent.interruptedBy ?? existingCardData['interruptedBy'],
-      'interruptionReason':
-          toolEvent.interruptionReason ??
-          existingCardData['interruptionReason'],
-      'artifacts': toolEvent.artifacts.isNotEmpty
-          ? toolEvent.artifacts
-          : (existingCardData['artifacts'] ?? const []),
-      'actions': toolEvent.actions.isNotEmpty
-          ? toolEvent.actions
-          : (existingCardData['actions'] ?? const []),
-      'success': toolEvent.success,
-      'showTerminalOutput': toolEvent.toolType == 'terminal',
-      'showRawResult': toolEvent.rawResultJson.isNotEmpty,
-      'showArtifactAction': toolEvent.artifacts.isNotEmpty,
-      'showScheduleAction': toolEvent.toolType == 'schedule',
-      'showAlarmAction': toolEvent.toolType == 'alarm',
-    };
-    final streamMeta = ensureAgentStreamMessageMeta(
-      buildAgentStreamMetaFromEvent(event),
-      entryId: cardId,
-    );
-    if (index == -1) {
+    if (projection.isInsert) {
       _messages.add(
         ChatMessageModel.cardMessage(
-          cardData,
-          id: cardId,
-          streamMeta: streamMeta,
+          projection.cardData,
+          id: projection.cardId,
+          streamMeta: projection.streamMeta,
         ).copyWith(createAt: _eventCreatedAt(event)),
       );
     } else {
-      _messages[index] = _messages[index].copyWith(
-        content: {'cardData': cardData, 'id': cardId},
-        streamMeta: streamMeta,
-      );
+      _messages[projection.existingIndex] = _messages[projection.existingIndex]
+          .copyWith(
+            id: projection.cardId,
+            content: {'cardData': projection.cardData, 'id': projection.cardId},
+            streamMeta: projection.streamMeta,
+          );
     }
   }
 
@@ -1329,14 +1169,6 @@ class _WebChatHomeState extends State<_WebChatHome> {
     }
     return (message.streamMeta?['parentTaskId'] ?? '').toString().trim() ==
         taskId;
-  }
-
-  String _resolveWebToolStatus(_WebAgentToolEventData event) {
-    final normalized = event.status.trim().toLowerCase();
-    if (normalized.isNotEmpty) {
-      return normalized;
-    }
-    return event.success ? 'success' : 'error';
   }
 
   DateTime _eventCreatedAt(AgentStreamEvent event) {
@@ -3389,14 +3221,4 @@ class _ThinkingDotsState extends State<_ThinkingDots>
       },
     );
   }
-}
-
-String _firstNonBlank(Iterable<Object?> values) {
-  for (final value in values) {
-    final normalized = value?.toString().trim() ?? '';
-    if (normalized.isNotEmpty) {
-      return normalized;
-    }
-  }
-  return '';
 }
