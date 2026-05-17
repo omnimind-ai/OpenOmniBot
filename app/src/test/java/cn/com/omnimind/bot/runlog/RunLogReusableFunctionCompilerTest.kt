@@ -93,6 +93,31 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
+    fun `failed replay card does not suppress vlm fallback`() {
+        val spec = compile(
+            listOf(
+                card("vlm_task", mapOf("goal" to "Tap Open")),
+                card(
+                    "click",
+                    mapOf("target_description" to "Open", "x" to 120, "y" to 240),
+                    success = false,
+                ),
+            ),
+            runId = "run-vlm-failed-click",
+        )
+
+        val steps = stepsFrom(spec)
+        assertEquals(1, steps.size)
+        val step = steps.single()
+        assertEquals("vlm_task", step["tool"])
+        assertEquals("agent", step["executor"])
+        assertEquals(
+            "perception_only_step_without_recorded_actions",
+            (step["agent_call"] as Map<*, *>)["reason"],
+        )
+    }
+
+    @Test
     fun `data flow tools compile to agent steps`() {
         val spec = compile(
             listOf(
@@ -139,6 +164,43 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
+    fun `android privileged local action arguments are flattened for replay`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "android_privileged_action",
+                    mapOf(
+                        "action" to "tap",
+                        "arguments" to mapOf(
+                            "target_description" to "Open",
+                            "x" to 120,
+                            "y" to 240,
+                        ),
+                    ),
+                    beforeXml = SOURCE_XML,
+                ),
+            ),
+            runId = "run-privileged-click",
+        )
+
+        val step = stepsFrom(spec).single()
+        assertEquals("click", step["tool"])
+        assertEquals("click", step["omniflow_action"])
+        assertEquals("android_privileged_action", step["source_tool"])
+        assertEquals("omniflow", step["executor"])
+        assertEquals("omniflow", step["coordinate_hook"])
+        val args = step["args"] as Map<*, *>
+        assertEquals(120, (args["x"] as Number).toInt())
+        assertEquals(240, (args["y"] as Number).toInt())
+        assertFalse(args.containsKey("action"))
+        assertFalse(args.containsKey("arguments"))
+        assertEquals(
+            "click",
+            ((step["source_context"] as Map<*, *>)["action"] as Map<*, *>)["tool"],
+        )
+    }
+
+    @Test
     fun `args can come from direct args or nested tool call arguments`() {
         val spec = compile(
             listOf(
@@ -157,7 +219,10 @@ class RunLogReusableFunctionCompilerTest {
         assertEquals(2, steps.size)
         assertEquals("type", steps[0]["tool"])
         assertEquals("hello", (steps[0]["args"] as Map<*, *>)["content"])
-        assertEquals(500, ((steps[1]["args"] as Map<*, *>)["duration_ms"] as Number).toInt())
+        assertEquals(
+            500,
+            ((steps[1]["args"] as Map<*, *>)["duration_ms"] as Number).toInt(),
+        )
     }
 
     @Test
@@ -202,15 +267,17 @@ class RunLogReusableFunctionCompilerTest {
         toolName: String,
         args: Map<String, Any?>,
         beforeXml: String = "",
+        success: Boolean? = null,
     ): Map<String, Any?> {
         return linkedMapOf<String, Any?>(
             "tool_name" to toolName,
             "args" to args,
+            "success" to success,
             "before" to linkedMapOf(
                 "package_name" to "com.example",
                 "observation_xml" to beforeXml,
             ),
-        )
+        ).filterValues { it != null }
     }
 
     private fun stepsFrom(spec: Map<String, Any?>): List<Map<String, Any?>> {

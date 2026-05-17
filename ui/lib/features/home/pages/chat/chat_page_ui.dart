@@ -923,6 +923,15 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                     OmnibotWorkspaceProjectFrontends(
                       translucentSurfaces: backgroundActive,
                     ),
+                    Positioned(
+                      top: 14,
+                      right: 14,
+                      child: WorkspaceWorkbenchManagerButton(
+                        translucent: backgroundActive,
+                        onPressed: () =>
+                            GoRouterManager.push('/workbench/projects'),
+                      ),
+                    ),
                     _EdgeSwipeToChatZone(
                       onSwipedRight: () => unawaited(
                         _switchChatMode(ChatSurfaceMode.normal, syncPage: true),
@@ -930,28 +939,39 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                     ),
                   ],
                 )
-              : KeyedSubtree(
+              : Stack(
                   key: const ValueKey('chat-workspace-file-mode'),
-                  child: OmnibotWorkspaceBrowser(
-                    key: _workspaceBrowserKey,
-                    workspacePath: paths.rootPath,
-                    workspaceShellPath: paths.shellRootPath,
-                    initialDirectoryPath: _cachedWorkspaceDirectory(
-                      paths.rootPath,
+                  children: [
+                    OmnibotWorkspaceBrowser(
+                      key: _workspaceBrowserKey,
+                      workspacePath: paths.rootPath,
+                      workspaceShellPath: paths.shellRootPath,
+                      initialDirectoryPath: _cachedWorkspaceDirectory(
+                        paths.rootPath,
+                      ),
+                      onCurrentDirectoryChanged: _persistWorkspaceDirectory,
+                      translucentSurfaces: backgroundActive,
+                      showBreadcrumbHeader: true,
+                      showHeaderTitle: false,
+                      onCanGoUpChanged: (canGoUp) {
+                        if (_workspaceBrowserCanGoUp == canGoUp || !mounted) {
+                          return;
+                        }
+                        setState(() {
+                          _workspaceBrowserCanGoUp = canGoUp;
+                        });
+                      },
                     ),
-                    onCurrentDirectoryChanged: _persistWorkspaceDirectory,
-                    translucentSurfaces: backgroundActive,
-                    showBreadcrumbHeader: true,
-                    showHeaderTitle: false,
-                    onCanGoUpChanged: (canGoUp) {
-                      if (_workspaceBrowserCanGoUp == canGoUp || !mounted) {
-                        return;
-                      }
-                      setState(() {
-                        _workspaceBrowserCanGoUp = canGoUp;
-                      });
-                    },
-                  ),
+                    Positioned(
+                      top: 14,
+                      right: 14,
+                      child: WorkspaceWorkbenchManagerButton(
+                        translucent: backgroundActive,
+                        onPressed: () =>
+                            GoRouterManager.push('/workbench/projects'),
+                      ),
+                    ),
+                  ],
                 ),
         );
       },
@@ -1218,7 +1238,6 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               isPureChatToggleLocked: _isPureChatToggleLocked,
               showWorkspacePaneButton: showWorkspacePaneButton,
               onWorkspacePaneTap: onWorkspacePaneTap,
-              showProjectSurfaceButton: false,
             ),
             Expanded(child: conversationBody),
           ],

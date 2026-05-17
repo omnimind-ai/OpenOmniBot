@@ -59,6 +59,10 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
 
 - VLM-only logs must not become empty functions. Emit one `executor=agent` step with reason `perception_only_step_without_recorded_actions`.
 - If a VLM wrapper card is followed by concrete recorded actions, skip the perception wrapper and keep the recorded `omniflow` steps.
+- Failed recorded action cards must not count as concrete replay evidence; keep the
+  VLM fallback if the only local action failed.
+- `android_privileged_action` cards that wrap a supported local UI action should
+  flatten nested `arguments` into the emitted OmniFlow step args.
 - Keep parameter bindings aligned with actual `execution.steps` indexes after skipping wrapper cards.
 - For agent steps, bind runtime parameters into both `step.args` and `step.agent_call.args.original_args`.
 - AI normalization may rename and parameterize, but must not change executor policy. Normalize data-flow tools back to `executor=agent`.

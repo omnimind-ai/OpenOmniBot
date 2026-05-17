@@ -11,10 +11,15 @@ void main() {
       '<node bounds="[100,200][300,280]" clickable="true" text="Open"/>'
       '</hierarchy>';
 
-  Map<String, dynamic> card(String toolName, Map<String, dynamic> args) {
+  Map<String, dynamic> card(
+    String toolName,
+    Map<String, dynamic> args, {
+    bool? success,
+  }) {
     return {
       'tool_name': toolName,
       'args': args,
+      if (success != null) 'success': success,
       'before': {
         'package_name': 'com.example.app',
         'observation_xml': sourceXml,
@@ -265,6 +270,33 @@ void main() {
     );
   });
 
+  test('failed replay card does not suppress VLM fallback', () {
+    final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+      runId: 'run-vlm-failed-click',
+      title: 'Tap Open',
+      payload: const {'goal': 'Tap Open'},
+      cards: [
+        card('vlm_task', const {'goal': 'Tap Open'}),
+        card('click', const {
+          'target_description': 'Open',
+          'x': 120,
+          'y': 240,
+        }, success: false),
+      ],
+      useEnglish: true,
+    );
+
+    final steps = stepsFrom(spec);
+    expect(steps, hasLength(1));
+    final step = steps.single;
+    expect(step['tool'], 'vlm_task');
+    expect(step['executor'], 'agent');
+    expect(
+      (step['agent_call'] as Map)['reason'],
+      'perception_only_step_without_recorded_actions',
+    );
+  });
+
   test('keeps data-flow tools on agent replan instead of direct replay', () {
     final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
       runId: 'run-browser',
@@ -326,6 +358,37 @@ void main() {
         'provider_owned_replay_requires_omniflow',
       );
     }
+  });
+
+  test('flattens android privileged local action arguments for replay', () {
+    final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+      runId: 'run-privileged-click',
+      title: 'Tap Open through privileged action',
+      payload: const {'goal': 'Tap Open'},
+      cards: [
+        card('android_privileged_action', const {
+          'action': 'tap',
+          'arguments': {'target_description': 'Open', 'x': 120, 'y': 240},
+        }),
+      ],
+      useEnglish: true,
+    );
+
+    final step = stepsFrom(spec).single;
+    expect(step['tool'], 'click');
+    expect(step['omniflow_action'], 'click');
+    expect(step['source_tool'], 'android_privileged_action');
+    expect(step['executor'], 'omniflow');
+    expect(step['coordinate_hook'], 'omniflow');
+    final args = step['args'] as Map;
+    expect(args['x'], 120);
+    expect(args['y'], 240);
+    expect(args.containsKey('action'), isFalse);
+    expect(args.containsKey('arguments'), isFalse);
+    expect(
+      (step['source_context'] as Map)['action'],
+      containsPair('tool', 'click'),
+    );
   });
 
   test(

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/chat/chat_page_models.dart';
 import 'package:ui/features/home/pages/chat/services/chat_conversation_runtime_coordinator.dart';
+import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/ai_chat_service.dart';
 import 'package:ui/services/voice_playback_coordinator.dart';
@@ -521,6 +522,111 @@ void main() {
     expect(runtime.messages.single.text, '这是一段已经成功生成的正文。');
     expect(runtime.messages.single.isError, isFalse);
   });
+
+  test(
+    'keeps direct stream output attached to thinking when terminal error follows',
+    () async {
+      const conversationId = 10041;
+      const taskId = 'agent-task-direct-error-after-output';
+      var seq = 0;
+
+      Future<void> emitStream(Map<String, dynamic> payload) {
+        seq += 1;
+        final event = (payload['event'] ?? payload['kind']).toString();
+        final entryId = (payload['entryId'] ?? '').toString();
+        return emitPlatformEvent('onAgentStreamEvent', <String, dynamic>{
+          'schema_version': 'oob.agent_event.v1',
+          'trace_id': taskId,
+          'run_id': taskId,
+          'span_id': entryId.isEmpty ? '$taskId:$seq' : entryId,
+          'parent_span_id': taskId,
+          'channel': 'agent_stream',
+          'event': event,
+          'kind': event,
+          'status': event == 'error' ? 'error' : 'running',
+          'taskId': taskId,
+          'conversationId': conversationId,
+          'conversationMode': 'normal',
+          'seq': seq,
+          'createdAt': 123456,
+          'timestamp_ms': 123456,
+          ...payload,
+          if (entryId.isNotEmpty)
+            'streamMeta': <String, dynamic>{
+              'parentTaskId': taskId,
+              'entryId': entryId,
+              'kind': event,
+              'seq': seq,
+              'roundIndex': payload['roundIndex'] ?? 1,
+              'isFinal': payload['isFinal'] == true || event == 'error',
+            },
+        });
+      }
+
+      final runtime = coordinator.ensureRuntime(
+        conversationId: conversationId,
+        mode: kChatRuntimeModeNormal,
+      );
+      runtime.currentDispatchTaskId = taskId;
+      coordinator.registerTask(
+        taskId: taskId,
+        conversationId: conversationId,
+        mode: kChatRuntimeModeNormal,
+      );
+
+      await emitStream(<String, dynamic>{
+        'event': 'thinking_started',
+        'entryId': '$taskId-thinking-1',
+        'roundIndex': 1,
+        'thinking': '',
+        'stage': 1,
+      });
+      await emitStream(<String, dynamic>{
+        'event': 'thinking_snapshot',
+        'entryId': '$taskId-thinking-1',
+        'roundIndex': 1,
+        'thinking': '先分析上下文。',
+        'stage': 1,
+      });
+      await emitStream(<String, dynamic>{
+        'event': 'text_snapshot',
+        'entryId': '$taskId-text-1',
+        'roundIndex': 1,
+        'text': '已经输出给用户的正文。',
+        'isFinal': false,
+      });
+      await emitStream(<String, dynamic>{
+        'event': 'error',
+        'entryId': '$taskId-text-1',
+        'roundIndex': 1,
+        'error':
+            'Agent execution failed: length=140; regionStart=0; bytePairLength=138',
+        'persistAsError': false,
+      });
+
+      final textMessage = runtime.messages.firstWhere(
+        (message) => message.id == '$taskId-text-1',
+      );
+      expect(textMessage.text, '已经输出给用户的正文。');
+      expect(textMessage.isError, isFalse);
+      expect(textMessage.streamMeta?['kind'], 'error');
+      expect(textMessage.streamMeta?['isFinal'], isTrue);
+
+      final thinkingMessage = runtime.messages.firstWhere(
+        (message) => message.id == '$taskId-thinking-1',
+      );
+      expect(thinkingMessage.cardData?['thinkingContent'], '先分析上下文。');
+      expect(thinkingMessage.cardData?['isLoading'], isFalse);
+
+      final entries = buildAgentRunTimelineEntries(
+        List<ChatMessageModel>.from(runtime.messages),
+      );
+      expect(entries, hasLength(1));
+      final group = entries.single.group!;
+      expect(group.visibleMessagesNewestFirst.single.id, '$taskId-text-1');
+      expect(group.processMessagesNewestFirst.single.id, '$taskId-thinking-1');
+    },
+  );
 
   test(
     'shows an error bubble when agent fails before any visible text',

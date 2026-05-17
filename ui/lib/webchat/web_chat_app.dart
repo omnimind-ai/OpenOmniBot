@@ -1012,14 +1012,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
           );
           break;
         case AgentStreamEventKind.error:
-          didChange = _upsertWebAssistantMessage(
-            event,
-            text: event.text.trim().isNotEmpty
-                ? event.text
-                : event.errorMessage,
-            isFinal: true,
-            isError: true,
-          );
+          didChange = _upsertWebErrorMessage(event);
           break;
         case AgentStreamEventKind.completed:
           _finalizeWebThinkingCards(event.taskId);
@@ -1044,11 +1037,15 @@ class _WebChatHomeState extends State<_WebChatHome> {
     final cardId = (event.entryId ?? '').trim().isNotEmpty
         ? event.entryId!.trim()
         : '${event.taskId}-thinking';
-    _messages.removeWhere(
-      (message) =>
-          message.id != cardId &&
-          _isWebThinkingCardForTask(message, event.taskId),
-    );
+    final basePlaceholderId = '${event.taskId}-thinking-1';
+    _messages.removeWhere((message) {
+      if (cardId == basePlaceholderId || message.id != basePlaceholderId) {
+        return false;
+      }
+      return (message.cardData?['thinkingContent']?.toString() ?? '')
+          .trim()
+          .isEmpty;
+    });
     final index = _messages.indexWhere((message) => message.id == cardId);
     final existing = index == -1 ? null : _messages[index];
     final existingCardData = Map<String, dynamic>.from(
@@ -1057,7 +1054,11 @@ class _WebChatHomeState extends State<_WebChatHome> {
     final nextThinking = event.thinking.trim().isNotEmpty
         ? event.thinking
         : (existingCardData['thinkingContent'] ?? '').toString();
-    if (nextThinking.trim().isEmpty && existing == null) {
+    final isPlaceholderStart =
+        event.kind == AgentStreamEventKind.thinkingStarted;
+    if (nextThinking.trim().isEmpty &&
+        existing == null &&
+        !isPlaceholderStart) {
       return;
     }
     final startTime =
@@ -1095,7 +1096,13 @@ class _WebChatHomeState extends State<_WebChatHome> {
     required bool isFinal,
     bool isError = false,
   }) {
-    final messageId = (event.entryId ?? '').trim();
+    final explicitMessageId = (event.entryId ?? '').trim();
+    final fallbackMessageId = explicitMessageId.isEmpty
+        ? _resolveWebAssistantMessageId(event)
+        : '';
+    final messageId = explicitMessageId.isNotEmpty
+        ? explicitMessageId
+        : fallbackMessageId;
     final normalizedText = text.trim();
     if (messageId.isEmpty || normalizedText.isEmpty) {
       return false;
@@ -1136,6 +1143,75 @@ class _WebChatHomeState extends State<_WebChatHome> {
       streamMeta: streamMeta,
     );
     return true;
+  }
+
+  bool _upsertWebErrorMessage(AgentStreamEvent event) {
+    final persistAsError = event.raw['persistAsError'] == true;
+    final eventText = event.text.trim();
+    final fallbackError = event.errorMessage.trim().isNotEmpty
+        ? event.errorMessage
+        : AppTextLocalizer.choose(
+            en: "I can't generate a reply right now. Please try again.",
+            zh: '暂时无法生成回复，请重试。',
+          );
+    final existingIndex = _resolveWebAssistantMessageIndex(event);
+    final existingText = existingIndex == -1
+        ? ''
+        : (_messages[existingIndex].text ?? '').trim();
+
+    if (!persistAsError && existingText.isNotEmpty) {
+      return _upsertWebAssistantMessage(
+        event,
+        text: eventText.isNotEmpty ? eventText : existingText,
+        isFinal: true,
+        isError: false,
+      );
+    }
+
+    final resolvedText = eventText.isNotEmpty
+        ? eventText
+        : (existingText.isNotEmpty ? existingText : fallbackError);
+    return _upsertWebAssistantMessage(
+      event,
+      text: resolvedText,
+      isFinal: true,
+      isError: persistAsError || existingText.isEmpty,
+    );
+  }
+
+  int _resolveWebAssistantMessageIndex(AgentStreamEvent event) {
+    final entryId = (event.entryId ?? '').trim();
+    if (entryId.isNotEmpty) {
+      final directIndex = _messages.indexWhere(
+        (message) => message.id == entryId,
+      );
+      if (directIndex != -1) {
+        return directIndex;
+      }
+    }
+
+    var result = -1;
+    var newestSeq = -1;
+    for (var index = 0; index < _messages.length; index++) {
+      final message = _messages[index];
+      final ref = agentRunMessageRef(message);
+      if (ref == null || ref.taskId != event.taskId || !ref.isAssistantText) {
+        continue;
+      }
+      if (ref.sequence >= newestSeq) {
+        newestSeq = ref.sequence;
+        result = index;
+      }
+    }
+    return result;
+  }
+
+  String _resolveWebAssistantMessageId(AgentStreamEvent event) {
+    final index = _resolveWebAssistantMessageIndex(event);
+    if (index == -1) {
+      return '';
+    }
+    return _messages[index].id;
   }
 
   void _upsertWebToolCard(AgentStreamEvent event) {
@@ -1416,8 +1492,26 @@ class _WebChatHomeState extends State<_WebChatHome> {
       return _messages.reversed.toList();
     }
     final merged = <ChatMessageModel>[..._messages];
-    merged.sort((a, b) => a.createAt.compareTo(b.createAt));
+    merged.sort(_compareWebDisplayMessages);
     return merged;
+  }
+
+  int _compareWebDisplayMessages(
+    ChatMessageModel left,
+    ChatMessageModel right,
+  ) {
+    final timeCompare = left.createAt.compareTo(right.createAt);
+    if (timeCompare != 0) {
+      return timeCompare;
+    }
+    final leftSeq = agentRunSequence(left);
+    final rightSeq = agentRunSequence(right);
+    if (leftSeq != rightSeq) {
+      if (leftSeq < 0) return -1;
+      if (rightSeq < 0) return 1;
+      return leftSeq.compareTo(rightSeq);
+    }
+    return left.id.compareTo(right.id);
   }
 
   List<AgentRunTimelineEntry> _displayTimelineEntries() {

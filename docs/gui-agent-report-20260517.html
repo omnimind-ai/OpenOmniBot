@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OOB GUI Agent 调研与可用性优化报告</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #5e6a7d;
+      --line: #d9dee7;
+      --accent: #176b5d;
+      --accent-soft: #e6f4f1;
+      --warn: #9b5d00;
+      --warn-soft: #fff5df;
+      --bad: #a13b3b;
+      --bad-soft: #fff0f0;
+      --good: #176b3a;
+      --good-soft: #e8f6ed;
+      --code: #0f172a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(1120px, calc(100vw - 40px));
+      margin: 32px auto 56px;
+    }
+    header {
+      padding: 28px 30px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: 30px; }
+    h2 { font-size: 22px; margin-bottom: 14px; }
+    h3 { font-size: 17px; margin: 18px 0 8px; }
+    p { margin: 10px 0; }
+    a { color: #155fc1; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .meta {
+      color: var(--muted);
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 6px 18px;
+    }
+    section {
+      margin-top: 18px;
+      padding: 24px 26px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .tile {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      background: #fbfcfe;
+    }
+    .tile strong { display: block; font-size: 14px; margin-bottom: 4px; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      vertical-align: 1px;
+    }
+    .ok { color: var(--good); background: var(--good-soft); }
+    .warn { color: var(--warn); background: var(--warn-soft); }
+    .bad { color: var(--bad); background: var(--bad-soft); }
+    .info { color: var(--accent); background: var(--accent-soft); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      overflow-wrap: anywhere;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th { background: #f1f4f8; font-weight: 700; }
+    code {
+      color: var(--code);
+      background: #eef2f7;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    pre {
+      background: #111827;
+      color: #e5e7eb;
+      padding: 14px 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    ul { margin: 8px 0 0 20px; padding: 0; }
+    li { margin: 5px 0; }
+    .flow {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .flow div {
+      padding: 10px 12px;
+      border-left: 4px solid var(--accent);
+      background: #f6fbfa;
+      border-radius: 4px;
+    }
+    .small { color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>OOB GUI Agent 调研与可用性优化报告</h1>
+    <div class="meta">
+      <div>日期：2026-05-17</div>
+      <div>仓库：<code>/Users/wuzewen/Projects/Omni/OpenOmniBot</code></div>
+      <div>分支：<code>wzw-dev</code></div>
+      <div>真机闭环：待设备无障碍服务授权后复测</div>
+    </div>
+  </header>
+
+  <section>
+    <h2>结论摘要</h2>
+    <div class="grid">
+      <div class="tile"><strong>本次核心优化</strong>在实时 VLM 执行链路加入语义目标 grounding，把模型给出的点击/长按坐标与当前 Accessibility XML 中的可操作节点做语义和空间联合匹配，再将落点校正到目标中心。</div>
+      <div class="tile"><strong>可用性收益</strong>减少坐标偏移、缩放误差、按钮边缘点击、列表项父容器无文本等移动端常见失败；对无语义匹配的目标保持原坐标，不盲目吸附。</div>
+      <div class="tile"><strong>验证状态</strong><span class="badge ok">通过</span> Grounding、RunLog replay、Flutter converter 和 AgentKit MCP 单元验收。</div>
+      <div class="tile"><strong>剩余限制</strong><span class="badge warn">受限</span> 完整真实 GUI 自动点击闭环仍需要连接设备并启用 OOB 无障碍服务。</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>当前 OOB GUI Agent 逻辑</h2>
+    <p>当前代码里 GUI agent 主要有两条链路：实时 VLM 控制链路和 RunLog 可复用回放链路。</p>
+    <div class="flow">
+      <div><strong>实时链路</strong>：<code>VLMOperationService.executeTask</code> 初始化上下文、可选启动目标应用、按步循环执行，支持 <code>maxSteps</code> 上限、暂停检查、上下文压缩和执行 trace。</div>
+      <div><strong>每步执行</strong>：截屏和采集 XML，调用 <code>VLMClient</code> 流式请求模型，解析标准 tool call，映射坐标，做 XML 稳定性检查，再由 <code>ActionExecutor</code> 调用 <code>DeviceOperator</code> 点击、输入、滑动、返回、等待等动作。</div>
+      <div><strong>工具协议</strong>：<code>VLMToolDefinitions</code> 定义 click/type/scroll/long_press/open_app/press_back/wait/info/finished 等动作，约束坐标必须是标量，降低模型输出格式漂移。</div>
+      <div><strong>RunLog 链路</strong>：实时任务完成后写入内部 RunLog；<code>OobFunctionToolHandler</code> 优先走 deterministic Omniflow 回放，坐标重映射失败时再 fallback 到 <code>vlm_task</code>。</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>与 OmniFlow 的关系</h2>
+    <p>结论：本次优化和 OmniFlow 是上下游互补关系，不是两套互斥方案。</p>
+    <table>
+      <thead>
+        <tr>
+          <th>层级</th>
+          <th>当前 OOB 代码位置</th>
+          <th>职责</th>
+          <th>本次优化关系</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>实时 GUI Agent</td>
+          <td><code>assists/src/main/java/.../vlmserver/VLMOperationService.kt</code></td>
+          <td>看当前截图/XML，调用 VLM 选择下一步 click/type/scroll 等动作，并立即执行。</td>
+          <td><span class="badge ok">直接增强</span> 在执行前用 <code>ActionTargetGrounder</code> 校准 click/long_press 坐标。</td>
+        </tr>
+        <tr>
+          <td>RunLog 记录</td>
+          <td><code>VLMOperationTask.appendInternalRunLog</code>、<code>InternalRunLogStore</code></td>
+          <td>把实时 agent 的每步 action、参数、summary、前后上下文写成可追踪 timeline。</td>
+          <td><span class="badge ok">间接增强</span> RunLog 记录到的是校准后的坐标和 <code>[grounded:...]</code> summary，后续转换更干净。</td>
+        </tr>
+        <tr>
+          <td>OmniFlow / Reusable Function</td>
+          <td><code>app/src/main/java/.../runlog/</code>、<code>OobFunctionToolHandler.kt</code></td>
+          <td>把成功 RunLog 转成可复用 Function；回放时优先执行 deterministic local steps，失败再 fallback 到 Agent/VLM。</td>
+          <td><span class="badge info">可复用</span> 当前 OmniFlow 已有 <code>OmniflowStepExecutor.remapStepArgs</code> 基于 source/current XML 做 anchor projection；它解决“回放时页面变了”的问题。</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>所以边界应这样理解：</p>
+    <ul>
+      <li><strong>ActionTargetGrounder</strong>：用于“实时第一次执行”阶段，解决模型这一步给出的坐标不稳、按钮边缘、复合控件父容器无文本等问题。</li>
+      <li><strong>OmniFlow remap</strong>：用于“历史 RunLog 重放”阶段，解决录制页面和当前页面布局不同，需要从 source XML 投影到 current XML 的问题。</li>
+      <li>两者可以进一步统一为一个共享的 <code>GuiTargetResolver</code>：实时执行传入 <code>target_description + currentXml + rawPoint</code>，OmniFlow 回放传入 <code>sourceXml + currentXml + recordedPoint + target_description</code>。这样能避免 grounding 逻辑分叉。</li>
+    </ul>
+    <p class="small">当前仓库文档 <code>app/src/main/assets/omniflow/runlog/README.md</code> 也明确写了：OmniFlow 是从 RunLog 到 Function matching、execution 和 agent fallback 的 pipeline，不是单独的实时 GUI agent runtime 层。</p>
+  </section>
+
+  <section>
+    <h2>对标公开 GUI Agent 设计</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>来源</th>
+          <th>关键设计</th>
+          <th>对 OOB 的启发</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://developers.openai.com/api/docs/guides/tools-computer-use">OpenAI Computer Use</a></td>
+          <td>截图驱动的 observe-act loop：模型看截图、返回点击/输入/滚动等结构化动作，执行后回传新截图继续决策；同时建议隔离环境、allow list 和高影响动作 human-in-the-loop。</td>
+          <td>OOB 已有截图+工具调用循环，应继续补齐动作后验证、风险动作自动确认、任务级可观测指标。</td>
+        </tr>
+        <tr>
+          <td><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool">Anthropic Computer Use</a></td>
+          <td>提供截图、鼠标、键盘、沙箱环境和 agent loop；官方明确提示 beta 阶段存在延迟等限制，适合可信环境和后台任务。</td>
+          <td>OOB 移动端要把性能和权限状态纳入运行前诊断，避免用户以为 agent 卡死。</td>
+        </tr>
+        <tr>
+          <td><a href="https://www.microsoft.com/en-us/research/articles/omniparser-for-pure-vision-based-gui-agent/">Microsoft OmniParser</a></td>
+          <td>把屏幕截图解析为结构化 UI 元素，强调可交互区域检测、元素语义理解，以及把意图准确绑定到屏幕区域。</td>
+          <td>OOB 有 Accessibility XML 天然结构化信号，应该在执行前用语义目标校准 VLM 坐标。本次已落地。</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/google-research/android_world">Google AndroidWorld</a></td>
+          <td>Android GUI agent 通常每轮采集截图和 UI 元素，选择支持动作，执行并返回 done；动态任务和可靠 reward 用于评估泛化能力。</td>
+          <td>OOB 需要从“能跑”升级到“可量化可用”：记录任务成功率、步数、fallback 次数、误点率和权限失败率。</td>
+        </tr>
+        <tr>
+          <td><a href="https://arxiv.org/abs/2501.12326">ByteDance UI-TARS</a></td>
+          <td>统一动作建模、GUI grounding、多步 System-2 推理、里程碑识别、反思式在线 trace 迭代。</td>
+          <td>OOB 已有 summary、compactor 和 RunLog，可进一步做 post-action verifier 和从成功/失败 trace 中自动改进 grounding/replay 策略。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>主要问题与优先级</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>优先级</th>
+          <th>问题</th>
+          <th>影响</th>
+          <th>处理状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="badge bad">P0</span></td>
+          <td>模型坐标在执行前主要依赖数值映射，<code>target_description</code> 没有参与落点校准。</td>
+          <td>按钮边缘、截图缩放、屏幕分辨率差异、动态列表位置变化时容易误点。</td>
+          <td><span class="badge ok">已优化</span> 新增 <code>ActionTargetGrounder</code>。</td>
+        </tr>
+        <tr>
+          <td><span class="badge bad">P0</span></td>
+          <td>Android 页面常见“可点击父容器无文本、子 TextView 有文本”的结构。</td>
+          <td>只看可点击节点自身文本会漏匹配列表项、卡片按钮、复合控件。</td>
+          <td><span class="badge ok">已优化</span> grounding 合并子孙节点语义。</td>
+        </tr>
+        <tr>
+          <td><span class="badge warn">P1</span></td>
+          <td>已有执行前 XML 稳定性检查，但缺少动作后语义验证。</td>
+          <td>点击未生效、误跳页面、键盘遮挡等问题需要下一轮模型自救，成本高。</td>
+          <td><span class="badge info">建议后续</span> 增加 post-action verifier。</td>
+        </tr>
+        <tr>
+          <td><span class="badge warn">P1</span></td>
+          <td>高风险动作虽有 confirmation 工具，但没有统一风险策略拦截。</td>
+          <td>发送消息、支付、删除、提交表单等外部副作用动作不应只依赖模型自觉。</td>
+          <td><span class="badge info">建议后续</span> 增加 policy gate。</td>
+        </tr>
+        <tr>
+          <td><span class="badge warn">P1</span></td>
+          <td>缺少持续基准和真机任务集。</td>
+          <td>可用性提升难以量化，回归风险高。</td>
+          <td><span class="badge info">建议后续</span> 建立 AndroidWorld 风格 OOB smoke set。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>本次代码优化</h2>
+    <h3>1. 新增语义目标 Grounding</h3>
+    <p>新增 <code>assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/ActionTargetGrounder.kt</code>。它解析当前 Accessibility XML，抽取可操作节点的 bounds、text、content-desc、hint、resource-id、class 和子孙文本，然后对 click/long_press 执行如下策略：</p>
+    <ul>
+      <li>仅处理 click/long_press，scroll 和非坐标动作不改。</li>
+      <li>语义相似度和空间邻近度联合打分，目标必须有足够语义匹配，不做纯坐标吸附。</li>
+      <li>过滤过小区域和大面积容器，避免吸到整屏根节点。</li>
+      <li>命中后把坐标校正到目标节点中心，并把原因写入 summary：<code>[grounded:inside_target_centered]</code> 或 <code>[grounded:semantic_target_centered]</code>。</li>
+      <li>支持可点击父容器读取子孙文本，覆盖真实 Android 复合控件结构。</li>
+    </ul>
+
+    <h3>2. 接入实时执行链路</h3>
+    <p>在 <code>VLMOperationService.executeSingleStep</code> 中，坐标映射后、XML 稳定性检查前执行 <code>groundActionTarget(processedStep, beforeXml)</code>。这保证执行稳定性检查和真实点击使用的是已校准坐标。</p>
+
+    <h3>3. 编译阻塞修复</h3>
+    <p><code>app/src/main/java/cn/com/omnimind/bot/runlog/OmniflowStepExecutor.kt</code> 中 RunLog 滑动距离字段统一为 <code>Float</code>，避免 debug APK 编译失败。</p>
+
+    <h3>4. 单元测试</h3>
+    <p>新增 <code>assists/src/test/java/cn/com/omnimind/assists/task/vlmserver/ActionTargetGrounderTest.kt</code>，覆盖：</p>
+    <ul>
+      <li>“发送”按钮坐标校正到节点中心。</li>
+      <li>“删除”不应误吸附到“发送”。</li>
+      <li>“张三”长按目标校正。</li>
+      <li>“确认支付”可点击父容器依赖子 TextView 文本仍可命中。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>验证结果</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>验证项</th>
+          <th>命令/证据</th>
+          <th>结果</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Grounding 单元测试</td>
+          <td><code>./gradlew --no-daemon :assists:testDebugUnitTest --tests cn.com.omnimind.assists.task.vlmserver.ActionTargetGrounderTest</code></td>
+          <td><span class="badge ok">通过</span></td>
+        </tr>
+        <tr>
+          <td>RunLog replay native 对齐</td>
+          <td><code>./gradlew --no-daemon :app:testDevelopStandardDebugUnitTest --tests cn.com.omnimind.bot.runlog.RunLogReusableFunctionCompilerTest --tests cn.com.omnimind.bot.runlog.OmniflowStepExecutorTest</code></td>
+          <td><span class="badge ok">通过</span></td>
+        </tr>
+        <tr>
+          <td>Flutter RunLog converter</td>
+          <td><code>flutter test test/features/task/pages/execution_history/run_log_reusable_function_converter_test.dart</code></td>
+          <td><span class="badge ok">通过</span></td>
+        </tr>
+        <tr>
+          <td>AgentKit MCP 单元验收</td>
+          <td><code>python -m unittest tests/test_omniflow_agentkit.py</code></td>
+          <td><span class="badge ok">通过</span></td>
+        </tr>
+        <tr>
+          <td>完整 GUI 自动点击闭环</td>
+          <td>需要真机或模拟器、截图/无障碍权限和目标任务集。</td>
+          <td><span class="badge warn">待真机</span> 需先启用 OOB 无障碍服务。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>后续优化路线</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>阶段</th>
+          <th>目标</th>
+          <th>建议实现</th>
+          <th>可用性指标</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>短期</td>
+          <td>动作后验证</td>
+          <td>每次 click/type/scroll 后采集 XML 和截图，判断目标状态是否变化；未变化时重试 grounding 或请求 VLM 重新定位。</td>
+          <td>误点后自恢复率、平均额外步数。</td>
+        </tr>
+        <tr>
+          <td>短期</td>
+          <td>权限前置诊断</td>
+          <td>任务开始前检查无障碍、悬浮窗、截图权限、目标应用安装状态，失败时给出可操作提示。</td>
+          <td>权限类失败率、首步失败率。</td>
+        </tr>
+        <tr>
+          <td>中期</td>
+          <td>风险动作 policy gate</td>
+          <td>基于 action + target_description + 当前包名识别“发送、支付、删除、提交、发布、授权”等动作，强制走用户确认。</td>
+          <td>高风险动作未确认执行次数应为 0。</td>
+        </tr>
+        <tr>
+          <td>中期</td>
+          <td>RunLog 质量闭环</td>
+          <td>把 grounding 命中率、fallback 原因、post-action verifier 结果写入 RunLog，供回放和调试。</td>
+          <td>可回放成功率、fallback 次数。</td>
+        </tr>
+        <tr>
+          <td>长期</td>
+          <td>AndroidWorld 风格评测</td>
+          <td>维护 20-50 个真机/模拟器 smoke tasks，覆盖打开应用、搜索、填写表单、列表滚动、跨应用跳转、用户确认。</td>
+          <td>任务成功率、P50/P95 步数、P50/P95 耗时。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>参考资料</h2>
+    <ul>
+      <li><a href="https://developers.openai.com/api/docs/guides/tools-computer-use">OpenAI API: Computer use</a></li>
+      <li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool">Anthropic Claude API: Computer use tool</a></li>
+      <li><a href="https://www.microsoft.com/en-us/research/articles/omniparser-for-pure-vision-based-gui-agent/">Microsoft Research: OmniParser for pure vision-based GUI agent</a></li>
+      <li><a href="https://github.com/google-research/android_world">Google Research: AndroidWorld</a></li>
+      <li><a href="https://arxiv.org/abs/2501.12326">UI-TARS: Pioneering Automated GUI Interaction with Native Agents</a></li>
+    </ul>
+    <p class="small">说明：上述外部资料为 2026-05-17 调研时可访问的公开资料；报告中的实现结论以本仓库当前代码和本次本地验证为准。</p>
+  </section>
+</main>
+</body>
+</html>

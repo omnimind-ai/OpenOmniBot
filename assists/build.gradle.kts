@@ -51,4 +51,5 @@ dependencies {
     implementation(libs.work.runtime)
     implementation(libs.opencv)
     implementation(libs.bouncycastle)
+    testImplementation(libs.junit)
 }

@@ -784,6 +784,8 @@ class VLMOperationService(
                     else -> {}
                 }
 
+                processedStep = groundActionTarget(processedStep, beforeXml)
+
                 if (needsPreciseLocation(processedStep.action)) {
                     val afterXml = captureCurrentXml()
                     if (!isPageStableByXml(beforeXml, afterXml)) {
@@ -1079,6 +1081,30 @@ class VLMOperationService(
         }
 
         return step.copy(action = updatedAction)
+    }
+
+    private fun groundActionTarget(step: VLMStep, currentXml: String?): VLMStep {
+        if (step.action !is ClickAction && step.action !is LongPressAction) {
+            return step
+        }
+        val result = ActionTargetGrounder.ground(step.action, currentXml)
+        if (!result.applied) {
+            OmniLog.d(
+                Tag,
+                "Action grounding skipped: action=${step.action.name} reason=${result.reason} confidence=${result.confidence}"
+            )
+            return step
+        }
+        OmniLog.i(
+            Tag,
+            "Action grounding applied: action=${step.action.name} reason=${result.reason} confidence=${result.confidence} target=${result.targetLabel} (${result.originalX},${result.originalY})->(${result.groundedX},${result.groundedY})"
+        )
+        val groundingSummary = buildString {
+            append(step.summary)
+            if (isNotBlank()) append(" ")
+            append("[grounded:${result.reason}]")
+        }
+        return step.copy(action = result.action, summary = groundingSummary)
     }
 
     /**

@@ -100,6 +100,10 @@ Provider-owned agent:
 - Direct UI replay tries to execute a tool step without router.
 - Agent prompt has stale args after materialization.
 - Workspace command save uses different rules from Flutter conversion.
+- Failed local replay card is treated as concrete replay evidence and suppresses
+  the VLM fallback.
+- `android_privileged_action.arguments` stays nested and produces a model-free
+  click/swipe/type step without executable top-level args.
 - Regression where provider/exported Function uses canonical
   `input_text/swipe/press_key` while OOB only handles legacy
   `type/scroll/press_home/press_back`.
@@ -116,3 +120,6 @@ Provider-owned agent:
 - Command save distillation follows the same executor policy.
 - Provider canonical action names and aliases normalize to deterministic local
   replay actions.
+- Failed local action does not suppress VLM-only fallback.
+- `android_privileged_action` local UI wrappers flatten nested `arguments` into
+  executable step args.

@@ -26,15 +26,6 @@ const String _kChatAppBarModeMenuOpenIconAsset =
 const String _kChatAppBarPureChatIconAsset = 'assets/home/chat/pure_chat.svg';
 const String _kChatAppBarWorkspaceIconAsset =
     'assets/home/workspace_folder_icon.svg';
-const String _kChatAppBarProjectIconSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-    'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
-    'stroke-linecap="round" stroke-linejoin="round">'
-    '<rect width="7" height="9" x="3" y="3" rx="1"/>'
-    '<rect width="7" height="5" x="14" y="3" rx="1"/>'
-    '<rect width="7" height="9" x="14" y="12" rx="1"/>'
-    '<rect width="7" height="5" x="3" y="16" rx="1"/>'
-    '</svg>';
 
 const List<Color> _kDarkChatAccentGradient = <Color>[
   Color(0xFFAA9774),
@@ -93,9 +84,6 @@ class ChatAppBar extends StatelessWidget {
   final bool isPureChatToggleLocked;
   final bool showWorkspacePaneButton;
   final VoidCallback? onWorkspacePaneTap;
-  final bool showProjectSurfaceButton;
-  final bool isProjectSurfaceSelected;
-  final VoidCallback? onProjectSurfaceTap;
 
   const ChatAppBar({
     super.key,
@@ -136,9 +124,6 @@ class ChatAppBar extends StatelessWidget {
     this.isPureChatToggleLocked = true,
     this.showWorkspacePaneButton = false,
     this.onWorkspacePaneTap,
-    this.showProjectSurfaceButton = false,
-    this.isProjectSurfaceSelected = false,
-    this.onProjectSurfaceTap,
   });
 
   @override
@@ -157,8 +142,6 @@ class ChatAppBar extends StatelessWidget {
     const updateTint = Color(0xFFD4A017);
     final showWorkspaceButton =
         showWorkspacePaneButton && onWorkspacePaneTap != null;
-    final showProjectButton =
-        showProjectSurfaceButton && onProjectSurfaceTap != null;
     final appBarBackgroundColor = showSurfaceSwitcher
         ? palette.pageBackground
         : palette.surfacePrimary;
@@ -178,7 +161,6 @@ class ChatAppBar extends StatelessWidget {
                   _kChatAppBarAccessoryGap * 2;
               final rightActionCount =
                   (showAppUpdateIndicator ? 1 : 0) +
-                  (showProjectButton ? 1 : 0) +
                   (showWorkspaceButton ? 1 : 0) +
                   (showPureChatToggle ? 1 : 0);
               final rightReservedSpace =
@@ -327,18 +309,6 @@ class ChatAppBar extends StatelessWidget {
                               ),
                             ),
                           ),
-                        if (showProjectButton)
-                          SizedBox(
-                            width: _kChatAppBarRightActionSlotWidth,
-                            height: _kChatAppBarRightActionSlotWidth,
-                            child: Center(
-                              child: _ChatAppBarProjectButton(
-                                iconTint: iconTint,
-                                isSelected: isProjectSurfaceSelected,
-                                onTap: onProjectSurfaceTap!,
-                              ),
-                            ),
-                          ),
                         if (showPureChatToggle)
                           SizedBox(
                             width: _kChatAppBarRightActionSlotWidth,
@@ -448,47 +418,6 @@ class _ChatAppBarWorkspaceButton extends StatelessWidget {
               width: 20,
               height: 20,
               colorFilter: ColorFilter.mode(iconTint, BlendMode.srcIn),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ChatAppBarProjectButton extends StatelessWidget {
-  const _ChatAppBarProjectButton({
-    required this.iconTint,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  final Color iconTint;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final color = isSelected ? palette.accentPrimary : iconTint;
-    return Tooltip(
-      message: isSelected
-          ? AppTextLocalizer.choose(en: 'Show workspace', zh: '显示 workspace')
-          : AppTextLocalizer.choose(en: 'Show current project', zh: '显示当前项目'),
-      child: GestureDetector(
-        key: const ValueKey('chat-app-bar-project-surface-button'),
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          width: _kChatAppBarAccessoryButtonSize,
-          height: _kChatAppBarAccessoryButtonSize,
-          child: Center(
-            child: SvgPicture.string(
-              key: const ValueKey('chat-app-bar-project-surface-icon'),
-              _kChatAppBarProjectIconSvg,
-              width: 20,
-              height: 20,
-              colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
             ),
           ),
         ),

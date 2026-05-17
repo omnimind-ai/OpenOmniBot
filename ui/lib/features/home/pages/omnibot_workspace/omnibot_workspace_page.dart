@@ -4,7 +4,6 @@ import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/home/pages/omnibot_workspace/widgets/omnibot_workspace_browser.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
@@ -31,15 +30,6 @@ enum _OmnibotWorkspaceMode { work, project }
 const String _workspaceCachedModeKey = 'omnibot_workspace_cached_mode_v1';
 const String _workspaceCachedDirectoryKey =
     'omnibot_workspace_cached_directory_v1';
-const String _workspaceProjectManagerIconSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-    'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
-    'stroke-linecap="round" stroke-linejoin="round">'
-    '<rect width="7" height="9" x="3" y="3" rx="1"/>'
-    '<rect width="7" height="5" x="14" y="3" rx="1"/>'
-    '<rect width="7" height="9" x="14" y="12" rx="1"/>'
-    '<rect width="7" height="5" x="3" y="16" rx="1"/>'
-    '</svg>';
 
 class OmnibotWorkspacePage extends StatefulWidget {
   final String workspacePath;
@@ -64,7 +54,6 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
       GlobalKey<OmnibotWorkspaceBrowserState>();
   bool _browserCanGoUp = false;
   late _OmnibotWorkspaceMode _mode;
-  WorkbenchProject? _activeWorkbenchProject;
 
   @override
   void initState() {
@@ -122,13 +111,6 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
     );
   }
 
-  void _handleActiveProjectChanged(WorkbenchProject? project) {
-    final currentId = _activeWorkbenchProject?.projectId;
-    final nextId = project?.projectId;
-    if (currentId == nextId) return;
-    setState(() => _activeWorkbenchProject = project);
-  }
-
   String _normalizeWorkspacePath(String path) {
     final trimmed = path.trim();
     if (trimmed.length > 1 && trimmed.endsWith('/')) {
@@ -146,10 +128,6 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
     } else {
       GoRouterManager.pop();
     }
-  }
-
-  void _openWorkbenchConsole() {
-    GoRouterManager.push('/workbench/projects');
   }
 
   @override
@@ -193,61 +171,70 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
                           opacity: 0.68,
                         ),
                         onBackPressed: _handleBackPressed,
-                        actions: [
-                          Padding(
-                            padding: const EdgeInsets.only(right: 10),
-                            child: _WorkspaceProjectManagerChip(
-                              activeProject: _activeWorkbenchProject,
-                              onPressed: _openWorkbenchConsole,
-                            ),
-                          ),
-                        ],
                       ),
                       Expanded(
-                        child: IndexedStack(
-                          index: _mode == _OmnibotWorkspaceMode.project ? 1 : 0,
+                        child: Stack(
                           children: [
-                            TickerMode(
-                              enabled: _mode == _OmnibotWorkspaceMode.work,
-                              child: IgnorePointer(
-                                ignoring: _mode != _OmnibotWorkspaceMode.work,
-                                child: OmnibotWorkspaceBrowser(
-                                  key: _browserKey,
-                                  workspacePath: widget.workspacePath,
-                                  workspaceShellPath: widget.workspaceShellPath,
-                                  initialDirectoryPath:
-                                      _cachedWorkspaceDirectory(
-                                        widget.workspacePath,
+                            IndexedStack(
+                              index: _mode == _OmnibotWorkspaceMode.project
+                                  ? 1
+                                  : 0,
+                              children: [
+                                TickerMode(
+                                  enabled: _mode == _OmnibotWorkspaceMode.work,
+                                  child: IgnorePointer(
+                                    ignoring:
+                                        _mode != _OmnibotWorkspaceMode.work,
+                                    child: OmnibotWorkspaceBrowser(
+                                      key: _browserKey,
+                                      workspacePath: widget.workspacePath,
+                                      workspaceShellPath:
+                                          widget.workspaceShellPath,
+                                      initialDirectoryPath:
+                                          _cachedWorkspaceDirectory(
+                                            widget.workspacePath,
+                                          ),
+                                      onCurrentDirectoryChanged:
+                                          _persistWorkspaceDirectory,
+                                      enableSystemBackHandler: false,
+                                      translucentSurfaces: backgroundActive,
+                                      showBreadcrumbHeader: true,
+                                      showHeaderTitle: false,
+                                      onCanGoUpChanged: (canGoUp) {
+                                        if (_browserCanGoUp == canGoUp ||
+                                            !mounted) {
+                                          return;
+                                        }
+                                        setState(() {
+                                          _browserCanGoUp = canGoUp;
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                TickerMode(
+                                  enabled:
+                                      _mode == _OmnibotWorkspaceMode.project,
+                                  child: IgnorePointer(
+                                    ignoring:
+                                        _mode != _OmnibotWorkspaceMode.project,
+                                    child: OmnibotWorkspaceProjectFrontends(
+                                      key: const ValueKey(
+                                        'workspace-project-mode',
                                       ),
-                                  onCurrentDirectoryChanged:
-                                      _persistWorkspaceDirectory,
-                                  enableSystemBackHandler: false,
-                                  translucentSurfaces: backgroundActive,
-                                  showBreadcrumbHeader: true,
-                                  showHeaderTitle: false,
-                                  onCanGoUpChanged: (canGoUp) {
-                                    if (_browserCanGoUp == canGoUp ||
-                                        !mounted) {
-                                      return;
-                                    }
-                                    setState(() {
-                                      _browserCanGoUp = canGoUp;
-                                    });
-                                  },
+                                      translucentSurfaces: backgroundActive,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
-                            TickerMode(
-                              enabled: _mode == _OmnibotWorkspaceMode.project,
-                              child: IgnorePointer(
-                                ignoring:
-                                    _mode != _OmnibotWorkspaceMode.project,
-                                child: OmnibotWorkspaceProjectFrontends(
-                                  key: const ValueKey('workspace-project-mode'),
-                                  translucentSurfaces: backgroundActive,
-                                  onActiveProjectChanged:
-                                      _handleActiveProjectChanged,
-                                ),
+                            Positioned(
+                              top: 12,
+                              right: 12,
+                              child: WorkspaceWorkbenchManagerButton(
+                                translucent: backgroundActive,
+                                onPressed: () =>
+                                    GoRouterManager.push('/workbench/projects'),
                               ),
                             ),
                           ],
@@ -279,66 +266,9 @@ class _WorkspaceModeTitleBar extends StatelessWidget {
     return SizedBox(
       height: 44,
       child: Center(
-        child: OmnibotWorkspaceModeButton(
+        child: _WorkspaceTitleSwitch(
           projectModeEnabled: projectModeEnabled,
           onTap: onToggleMode,
-        ),
-      ),
-    );
-  }
-}
-
-class _WorkspaceProjectManagerChip extends StatelessWidget {
-  const _WorkspaceProjectManagerChip({
-    required this.activeProject,
-    required this.onPressed,
-  });
-
-  final WorkbenchProject? activeProject;
-  final VoidCallback onPressed;
-
-  String _projectName(WorkbenchProject project) {
-    final name = project.name.trim();
-    return name.isEmpty ? project.projectId : name;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final projectName = activeProject == null
-        ? null
-        : _projectName(activeProject!);
-    return Tooltip(
-      message: projectName == null
-          ? context.l10n.workbenchWorkspaceOpenProjectConsole
-          : context.l10n.workbenchActiveProjectChip(projectName),
-      child: Material(
-        color: palette.accentPrimary.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(999),
-          onTap: onPressed,
-          child: Container(
-            width: 32,
-            height: 32,
-            padding: const EdgeInsets.all(7),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: palette.accentPrimary.withValues(alpha: 0.36),
-              ),
-            ),
-            child: SvgPicture.string(
-              _workspaceProjectManagerIconSvg,
-              width: 18,
-              height: 18,
-              colorFilter: ColorFilter.mode(
-                palette.accentPrimary,
-                BlendMode.srcIn,
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -686,18 +616,7 @@ class OmnibotWorkspaceModeHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(
-            context.l10n.workbenchWorkspaceTitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: palette.textPrimary,
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(width: 8),
-          OmnibotWorkspaceModeButton(
+          _WorkspaceTitleSwitch(
             projectModeEnabled: projectModeEnabled,
             onTap: () => onChanged(!projectModeEnabled),
           ),
@@ -721,9 +640,8 @@ class OmnibotWorkspaceModeHeader extends StatelessWidget {
   }
 }
 
-class OmnibotWorkspaceModeButton extends StatelessWidget {
-  const OmnibotWorkspaceModeButton({
-    super.key,
+class _WorkspaceTitleSwitch extends StatelessWidget {
+  const _WorkspaceTitleSwitch({
     required this.projectModeEnabled,
     required this.onTap,
   });
@@ -734,42 +652,95 @@ class OmnibotWorkspaceModeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
-    final label = projectModeEnabled
-        ? context.l10n.workbenchWorkspaceProjectMode
-        : context.l10n.workbenchWorkspaceWorkMode;
     final icon = projectModeEnabled
         ? Icons.phone_android_rounded
         : Icons.folder_open_rounded;
-    return Material(
-      color: palette.accentPrimary.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
+    return Tooltip(
+      message: projectModeEnabled
+          ? context.l10n.workbenchWorkspaceWorkMode
+          : context.l10n.workbenchWorkspaceProjectMode,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(999),
-        onTap: onTap,
-        child: Container(
-          height: 28,
-          constraints: const BoxConstraints(minWidth: 76),
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          alignment: Alignment.center,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 14, color: palette.accentPrimary),
-              const SizedBox(width: 5),
-              Flexible(
-                child: Text(
-                  label,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onTap,
+          child: Container(
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            alignment: Alignment.center,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  context.l10n.workbenchWorkspaceTitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: palette.accentPrimary,
-                    fontSize: 11,
+                    color: palette.textPrimary,
+                    fontSize: 15,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 6),
+                Icon(icon, size: 16, color: palette.textSecondary),
+                const SizedBox(width: 2),
+                Icon(
+                  Icons.swap_horiz_rounded,
+                  size: 15,
+                  color: palette.textTertiary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class WorkspaceWorkbenchManagerButton extends StatelessWidget {
+  const WorkspaceWorkbenchManagerButton({
+    super.key,
+    required this.translucent,
+    required this.onPressed,
+  });
+
+  final bool translucent;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final background = backgroundSurfaceColor(
+      translucent: translucent,
+      baseColor: palette.surfacePrimary,
+      opacity: 0.82,
+    );
+    return Tooltip(
+      message: context.l10n.workbenchWorkspaceOpenProjectConsole,
+      child: Material(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        elevation: translucent ? 0 : 3,
+        shadowColor: Colors.black.withValues(alpha: 0.12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onPressed,
+          child: Container(
+            width: 38,
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: palette.borderSubtle),
+            ),
+            child: Icon(
+              Icons.tune_rounded,
+              size: 19,
+              color: palette.textSecondary,
+            ),
           ),
         ),
       ),

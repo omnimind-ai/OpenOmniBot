@@ -769,51 +769,6 @@ void main() {
     expect(tapCount, 1);
   });
 
-  testWidgets('shows project surface button with workbench icon', (
-    tester,
-  ) async {
-    var tapCount = 0;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: DefaultAssetBundle(
-          bundle: _SvgTestAssetBundle(),
-          child: Scaffold(
-            body: ChatAppBar(
-              onMenuTap: () {},
-              onCompanionTap: () {},
-              activeMode: ChatSurfaceMode.normal,
-              onModeChanged: (_) {},
-              activeModelId: 'gpt-5.4',
-              displayLayer: ChatIslandDisplayLayer.mode,
-              onDisplayLayerChanged: (_) {},
-              onTerminalEnvironmentTap: (_) {},
-              onTerminalTap: () {},
-              onBrowserTap: () {},
-              showProjectSurfaceButton: true,
-              onProjectSurfaceTap: () {
-                tapCount += 1;
-              },
-            ),
-          ),
-        ),
-      ),
-    );
-
-    final projectButton = find.byKey(
-      const ValueKey('chat-app-bar-project-surface-button'),
-    );
-
-    expect(projectButton, findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('chat-app-bar-project-surface-icon')),
-      findsOneWidget,
-    );
-
-    await tester.tap(projectButton);
-    await tester.pump();
-    expect(tapCount, 1);
-  });
-
   testWidgets('keeps swapped shortcuts clear of island on narrow screens', (
     tester,
   ) async {

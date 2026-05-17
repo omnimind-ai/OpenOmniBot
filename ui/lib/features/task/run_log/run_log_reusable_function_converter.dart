@@ -161,13 +161,14 @@ class RunLogReusableFunctionConverter {
         .toList(growable: false);
     final hasRecordedReplayStep = snapshots.any(
       (snapshot) =>
-          RunLogReplayPolicy.omniflowActionForToolName(snapshot.toolName) !=
-          null,
+          snapshot.success != false &&
+          _replayActionForSnapshot(snapshot) != null,
     );
 
     for (var index = 0; index < snapshots.length; index++) {
       final snapshot = snapshots[index];
-      final args = _jsonSafe(snapshot.args);
+      if (snapshot.success == false) continue;
+      final args = _replayArgsForSnapshot(snapshot);
       final shouldSkipPerceptionStep =
           RunLogReplayPolicy.isPerceptionTool(snapshot.toolName) &&
           hasRecordedReplayStep;
@@ -183,9 +184,7 @@ class RunLogReusableFunctionConverter {
         snapshot,
         skipPerceptionStep: shouldSkipPerceptionStep,
       );
-      final replayAction = RunLogReplayPolicy.omniflowActionForToolName(
-        snapshot.toolName,
-      );
+      final replayAction = _replayActionForSnapshot(snapshot);
       final modelFree = executor == 'omniflow';
       final emittedToolName = modelFree && replayAction != null
           ? replayAction
@@ -1089,6 +1088,9 @@ String _executorForSnapshot(
       !skipPerceptionStep) {
     return 'agent';
   }
+  if (_replayActionForSnapshot(snapshot) != null) {
+    return 'omniflow';
+  }
   return _executorForToolName(snapshot.toolName, snapshot.route);
 }
 
@@ -1186,7 +1188,9 @@ Map<String, dynamic>? _buildCoordinateHookMetadata({
   required _RunLogActionSnapshot snapshot,
   required dynamic args,
 }) {
-  if (!_usesCoordinateHook(snapshot.toolName)) {
+  final replayAction = _replayActionForSnapshot(snapshot);
+  if (replayAction == null ||
+      !RunLogReplayPolicy.isCoordinateAction(replayAction)) {
     return null;
   }
   // No source XML → no coordinate remapping possible; use original coordinates.
@@ -1194,9 +1198,6 @@ Map<String, dynamic>? _buildCoordinateHookMetadata({
     return null;
   }
   final argsMap = _asStringKeyMap(args);
-  final replayAction =
-      RunLogReplayPolicy.omniflowActionForToolName(snapshot.toolName) ??
-      snapshot.toolName;
   final sourceAction = <String, dynamic>{
     'tool': replayAction,
     if (_firstNonBlank([
@@ -1245,8 +1246,46 @@ Map<String, dynamic>? _buildCoordinateHookMetadata({
   };
 }
 
-bool _usesCoordinateHook(String toolName) {
-  return RunLogReplayPolicy.isCoordinateAction(toolName);
+String? _replayActionForSnapshot(_RunLogActionSnapshot snapshot) {
+  final direct = RunLogReplayPolicy.omniflowActionForToolName(
+    snapshot.toolName,
+  );
+  if (direct != null) {
+    return direct;
+  }
+  if (!_isAndroidPrivilegedAction(snapshot.toolName)) {
+    return null;
+  }
+  final argsMap = _asStringKeyMap(snapshot.args);
+  return RunLogReplayPolicy.omniflowActionForToolName(
+    _firstNonBlank([argsMap['action'], argsMap['omniflow_action']]),
+  );
+}
+
+dynamic _replayArgsForSnapshot(_RunLogActionSnapshot snapshot) {
+  final rawArgs = _jsonSafe(snapshot.args);
+  if (!_isAndroidPrivilegedAction(snapshot.toolName) ||
+      _replayActionForSnapshot(snapshot) == null) {
+    return rawArgs;
+  }
+  final argsMap = _asStringKeyMap(rawArgs);
+  final nestedArguments = _asStringKeyMap(argsMap['arguments']);
+  final flattened = <String, dynamic>{};
+  for (final entry in argsMap.entries) {
+    if (entry.key == 'action' ||
+        entry.key == 'omniflow_action' ||
+        entry.key == 'arguments') {
+      continue;
+    }
+    flattened[entry.key] = entry.value;
+  }
+  flattened.addAll(nestedArguments);
+  return flattened;
+}
+
+bool _isAndroidPrivilegedAction(String toolName) {
+  return RunLogReplayPolicy.normalizeToolName(toolName) ==
+      'android_privileged_action';
 }
 
 String _parameterBaseName(String key, String toolName) {
@@ -1481,6 +1520,9 @@ dynamic _extractResult(Map<String, dynamic> card) {
     card['toolResult'],
     card['execution_result'],
     card['executionResult'],
+    card['raw_result_json'],
+    card['rawResultJson'],
+    card['resultPreviewJson'],
     card['output'],
     card['error'],
     card['error_message'],

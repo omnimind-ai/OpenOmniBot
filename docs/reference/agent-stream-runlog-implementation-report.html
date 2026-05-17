@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Stream + RunLog 端侧优化实现报告</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --paper: #ffffff;
+      --ink: #17202a;
+      --muted: #5f6b7a;
+      --line: #d9dee7;
+      --accent: #2457c5;
+      --ok: #0f7b4f;
+      --warn: #9a5b00;
+      --code: #f0f3f7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.58 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(1120px, calc(100vw - 32px));
+      margin: 32px auto;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 30px;
+      box-shadow: 0 10px 30px rgba(20, 35, 60, 0.06);
+    }
+    h1, h2, h3 { line-height: 1.25; margin: 0 0 12px; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 20px; margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--line); }
+    h3 { font-size: 16px; margin-top: 18px; }
+    p { margin: 8px 0; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code);
+      border-radius: 5px;
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 14px 0 24px;
+      color: var(--muted);
+    }
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 10px;
+      background: #fbfcfe;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      margin: 18px 0;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfcfe;
+    }
+    .card strong { display: block; margin-bottom: 5px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 18px;
+      overflow-wrap: anywhere;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th { background: #eef2f8; }
+    ul { margin: 8px 0 12px 22px; padding: 0; }
+    li { margin: 4px 0; }
+    .ok { color: var(--ok); font-weight: 700; }
+    .warn { color: var(--warn); font-weight: 700; }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 8px;
+      margin: 14px 0;
+    }
+    .step {
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--accent);
+      background: #fbfcfe;
+      border-radius: 7px;
+      padding: 10px;
+    }
+    .small { color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Agent Stream + RunLog 端侧优化实现报告</h1>
+  <div class="meta">
+    <span class="pill">日期：2026-05-17</span>
+    <span class="pill">分支：wzw-dev</span>
+    <span class="pill">目标：流输出降载 + RunLog 可复用 + GUI Agent 外部接入</span>
+  </div>
+
+  <section>
+    <h2>结论</h2>
+    <p>
+      当前实现把 Agent 流输出、RunLog 收集、可复用 Function、OmniFlow 端侧执行和外部 GUI Agent MCP 触发拆成稳定的五层。
+      高频 token 和工具预览走合并与帧级批处理；结构化工具生命周期保序；RunLog 使用 append-only 事件流保证审计和恢复；
+      成功 RunLog 可以编译成本机可重放 Function，纯端侧动作优先走 model-free 执行，无法确定的感知和 data-flow 步骤保留 agent fallback。
+    </p>
+    <div class="summary">
+      <div class="card"><strong>端侧流优化</strong>LLM content/tool preview 做 conflation，Android 主线程按帧 flush，Flutter 只重绘变化区。</div>
+      <div class="card"><strong>RunLog 机制</strong>NDJSON 事件日志 + 节流 snapshot，timeline 可从 snapshot 后的事件重放恢复。</div>
+      <div class="card"><strong>Replay 机制</strong>RunLog card 编译为 <code>oob.reusable_function.v1</code>，OmniFlow action alias 统一成 canonical action。</div>
+      <div class="card"><strong>外部接入</strong>Python AgentKit 支持 repo probe、prompt bundle、MCP list/guard/run 验收。</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>参考了什么</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>参考来源</th>
+          <th>我们采纳的点</th>
+          <th>落地位置</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://ai-sdk.dev/docs/ai-sdk-core/generating-text">Vercel AI SDK streamText</a> / <a href="https://github.com/vercel/ai">vercel/ai</a></td>
+          <td>把文本、reasoning、tool-call、tool-result 当成 typed stream parts，而不是纯字符串拼接。</td>
+          <td><code>AgentLlmClient.kt</code>, <code>AgentStreamEvent.kt</code>, <code>agent_stream_handler.dart</code></td>
+        </tr>
+        <tr>
+          <td><a href="https://docs.langchain.com/oss/python/langchain/streaming">LangChain streaming modes</a> / <a href="https://github.com/langchain-ai/langchain">langchain</a></td>
+          <td>分离 progress/update/message/custom 类型，让 UI 可以按阶段消费，而不是每个 token 触发全量刷新。</td>
+          <td><code>AgentStreamEventBatcher.kt</code>, <code>AgentStreamReducer</code>, <code>AgentActivityCompactor</code></td>
+        </tr>
+        <tr>
+          <td><a href="https://opentelemetry.io/docs/concepts/signals/traces/">OpenTelemetry traces</a> / <a href="https://github.com/open-telemetry/opentelemetry-specification">otel specification</a></td>
+          <td>采用 <code>trace_id</code>, <code>span_id</code>, <code>parent_span_id</code>, <code>status</code>, <code>timestamp_ms</code> 这一类可关联字段。</td>
+          <td><code>AgentStreamEvent.toPayload()</code>, RunLog event schema</td>
+        </tr>
+        <tr>
+          <td><a href="https://developer.android.com/reference/android/view/Choreographer">Android Choreographer</a> + <a href="https://developer.android.com/reference/android/os/Trace">Android Trace</a></td>
+          <td>主线程流事件按 frame callback flush，并给关键路径加 trace section 方便端侧 profile。</td>
+          <td><code>AgentStreamEventBatcher.kt</code>, <code>InternalRunLogStore.kt</code></td>
+        </tr>
+        <tr>
+          <td><a href="https://api.flutter.dev/flutter/widgets/RepaintBoundary-class.html">Flutter RepaintBoundary</a> + <a href="https://docs.flutter.dev/perf/best-practices">Flutter performance best practices</a></td>
+          <td>将已完成 Markdown 段落固定成稳定 repaint boundary，只让最后一段随 token 更新。</td>
+          <td><code>streaming_text.dart</code>, <code>agent_activity_compactor.dart</code></td>
+        </tr>
+        <tr>
+          <td><a href="https://developer.android.com/reference/android/accessibilityservice/AccessibilityService">Android AccessibilityService</a> + <a href="https://developer.android.com/reference/android/view/accessibility/AccessibilityNodeInfo">AccessibilityNodeInfo</a></td>
+          <td>用当前 XML node 的 text/content-desc/resource-id/bounds 对 VLM 坐标做轻量语义 grounding。</td>
+          <td><code>ActionTargetGrounder.kt</code>, <code>VLMOperationService.kt</code></td>
+        </tr>
+        <tr>
+          <td><a href="https://modelcontextprotocol.io/specification/2025-06-18/server/tools">MCP tools</a> + <a href="https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle">MCP lifecycle</a></td>
+          <td>外部 agent 统一走 list/guard/run 工具调用，先 guard 再执行，可用 mock MCP 做验收。</td>
+          <td><code>omniflow_agentkit/mcp.py</code>, <code>scripts/omniflow_mock_mcp_server.py</code></td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/hchoi256/mobilegpt">mobilegpt</a>, <a href="https://github.com/MadeAgents/mobile-use">mobile-use</a>, <a href="https://github.com/mobile-next/mobile-mcp">mobile-mcp</a></td>
+          <td>覆盖 Python GUI agent、Android GUI automation、MCP-first mobile automation 三类外部项目接入形态。</td>
+          <td><code>RepoProbe</code>, <code>omniflow_acceptance_all_guiagents.sh</code>, <code>TESTED_PROJECTS.md</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>到底怎么实现</h2>
+    <h3>1. 流输出降载</h3>
+    <div class="flow">
+      <div class="step">LLM SSE chunk</div>
+      <div class="step">Accumulator 解析 text/reasoning/tool</div>
+      <div class="step">Content/tool preview conflation</div>
+      <div class="step">Android frame batcher</div>
+      <div class="step">Flutter reducer</div>
+      <div class="step">局部 repaint</div>
+    </div>
+    <ul>
+      <li><code>AgentLlmClient.kt</code> 使用 <code>AtomicReference</code> 存最新 content 和每个 tool index 的最新 preview，保证高频 token 不堆积成无限 lambda 队列。</li>
+      <li><code>AgentStreamEventBatcher.kt</code> 只对 <code>text_snapshot</code>, <code>thinking_snapshot</code>, 无 terminal delta 的 <code>tool_progress</code> 合并；<code>tool_started/tool_completed/error/completed</code> 保序。</li>
+      <li><code>streaming_text.dart</code> 把已完成段落提交为稳定 Markdown widget，pending 段落随 token 更新，减少整段回答反复 parse/render。</li>
+      <li><code>AgentActivityCompactor</code> 从全量重算改为 append-only 增量处理，工具卡片只保留同 card id 最新状态。</li>
+    </ul>
+
+    <h3>2. RunLog 收集和恢复</h3>
+    <ul>
+      <li><code>InternalRunLogStore.kt</code> 每个 run 同时有 pretty snapshot 和 <code>.events.ndjson</code> append log。</li>
+      <li>running card 高频 upsert 只追加事件，snapshot 以最小间隔写入；完成、失败、非 running 状态强制写 snapshot。</li>
+      <li>读取时先加载 snapshot，再应用 snapshot 之后的 event seq，解决进程退出或 snapshot 滞后导致的 timeline 丢失。</li>
+      <li><code>InternalRunLogStoreTest</code> 覆盖 snapshot 后继续 append event、timeline 可看到最新 running card。</li>
+    </ul>
+
+    <h3>3. RunLog 到 Function 的编译</h3>
+    <ul>
+      <li><code>RunLogReusableFunctionCompiler.kt</code> 从 card 的 <code>tool_call/function/args/before/observation</code> 提取步骤，输出 <code>oob.reusable_function.v1</code>。</li>
+      <li><code>RunLogReplayPolicy.kt</code> 维护 canonical action 和 alias：例如 <code>tap -> click</code>, <code>type_text -> input_text</code>, <code>scroll_* -> swipe</code>, <code>finish -> finished</code>。</li>
+      <li>失败 card 不参与“已有可回放动作”判断，避免失败 click 把 VLM-only fallback 跳过后生成空 Function。</li>
+      <li><code>android_privileged_action</code> 中的本地 UI action 会从 <code>arguments</code> 展平成端侧执行器需要的 <code>x/y/text/package_name</code> 等字段。</li>
+      <li>纯端侧 action 标记为 <code>executor=omniflow</code> 和 <code>model_free=true</code>；browser/search/memory/runlog 等 data-flow 工具保留 <code>executor=agent</code>。</li>
+      <li>provider-owned 图执行工具，例如 <code>go_to_node</code>, <code>click_node</code>, <code>call_function</code>，不降级成本地坐标脚本，统一标记为需要 OmniFlow/provider fallback。</li>
+      <li>Flutter 侧 <code>RunLogReplayPolicy</code> 与 Android asset <code>replay_policy.json</code> 有测试对齐，避免 UI 转换器和 native runner 分叉。</li>
+    </ul>
+
+    <h3>4. 端侧重放和坐标修正</h3>
+    <ul>
+      <li><code>OmniflowStepExecutor.kt</code> 支持 <code>click</code>, <code>long_press</code>, <code>scroll/swipe</code>, <code>type/input_text</code>, <code>open_app</code>, <code>press_key</code>, <code>wait</code>, <code>finished</code>。</li>
+      <li>如果有 source XML 和当前 XML，坐标动作通过 anchor projection 重新投影，避免录制时坐标在当前页面偏移。</li>
+      <li><code>ActionTargetGrounder.kt</code> 对实时 VLM click/long_press 做二次修正：先用目标描述匹配节点文本，再结合原坐标附近性，命中后点击节点中心。</li>
+      <li>低置信度、不相关目标、缺失 XML 时不强行改坐标，避免把 VLM 的原始意图破坏掉。</li>
+    </ul>
+
+    <h3>5. 外部 GUI Agent 接入</h3>
+    <ul>
+      <li><code>omniflow_agentkit</code> 提供 prompt bundle、repo probe、MCP list/guard/run CLI。</li>
+      <li><code>scripts/omniflow_mock_mcp_server.py</code> 提供无设备 mock MCP，验收外部 agent 是否真的能触发 <code>oob_function_run</code>。</li>
+      <li><code>omniflow_acceptance_all_guiagents.sh</code> 覆盖 mobilegpt、mobile-use、mobile-mcp 三类 repo，分别验证 Python skill + MCP 和 direct MCP 模式。</li>
+    </ul>
+
+    <h3>6. WebChat 直通流修正</h3>
+    <ul>
+      <li><code>web_chat_app.dart</code> 现在在 <code>thinking_started</code> 即创建空的 deep thinking 占位卡，避免 output 先落屏、thinking 后插入导致视觉顺序错乱。</li>
+      <li>同一 task 的多轮 thinking 不再互相删除，只清理升级到 <code>*-thinking-2</code> 等新轮次时遗留的空首轮占位。</li>
+      <li><code>error</code> 事件遵循 native 的 <code>persistAsError</code> 语义：已有用户可见 output 时保留正文，只把该消息标为 final；没有正文时才展示错误 bubble。</li>
+      <li>WebChat 消息排序从只按 <code>createAt</code> 改为 <code>createAt + stream seq</code>，解决同一毫秒内 thinking/text/tool/error 到达顺序不稳定的问题。</li>
+      <li>主聊天页新增直通 <code>onAgentStreamEvent</code> 回归测试，覆盖 thinking-start → thinking-snapshot → output → error 后仍归并为同一个 run。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>代码索引</h2>
+    <table>
+      <thead><tr><th>模块</th><th>文件</th><th>责任</th></tr></thead>
+      <tbody>
+        <tr><td>Agent stream</td><td><code>app/src/main/java/cn/com/omnimind/bot/agent/llm/AgentLlmClient.kt</code></td><td>LLM streaming chunk conflation 和 tool preview 合并。</td></tr>
+        <tr><td>Agent stream</td><td><code>app/src/main/java/cn/com/omnimind/bot/manager/AgentStreamEventBatcher.kt</code></td><td>按 Choreographer frame 批处理事件。</td></tr>
+        <tr><td>Flutter stream</td><td><code>ui/lib/widgets/streaming_text.dart</code></td><td>Markdown committed/pending 分段渲染。</td></tr>
+        <tr><td>RunLog</td><td><code>baselib/src/main/java/cn/com/omnimind/baselib/runlog/InternalRunLogStore.kt</code></td><td>事件日志、snapshot、timeline 恢复。</td></tr>
+        <tr><td>Replay</td><td><code>app/src/main/java/cn/com/omnimind/bot/runlog/RunLogReusableFunctionCompiler.kt</code></td><td>RunLog card 到 reusable Function spec 的编译。</td></tr>
+        <tr><td>Replay</td><td><code>app/src/main/java/cn/com/omnimind/bot/runlog/OmniflowStepExecutor.kt</code></td><td>本机 model-free action 执行和坐标重映射。</td></tr>
+        <tr><td>VLM</td><td><code>assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/ActionTargetGrounder.kt</code></td><td>当前 Accessibility XML 上的语义目标 grounding。</td></tr>
+        <tr><td>External</td><td><code>omniflow_agentkit/mcp.py</code></td><td>无依赖 JSON-RPC MCP client。</td></tr>
+        <tr><td>WebChat stream</td><td><code>ui/lib/webchat/web_chat_app.dart</code></td><td>WebChat 直通 Agent stream 的 thinking 占位、error 保正文、同毫秒 seq 排序。</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>验收标准</h2>
+    <ul>
+      <li><span class="ok">通过：</span>RunLog replay policy 在 Android asset、Android Kotlin、Flutter Dart 三处一致。</li>
+      <li><span class="ok">通过：</span>VLM-only 和 data-flow step 不被错误编译成本地直接重放。</li>
+      <li><span class="ok">通过：</span>canonical action alias 可以编译成 model-free OmniFlow step。</li>
+      <li><span class="ok">通过：</span>provider-owned graph/function step 会停留在 agent/provider fallback，不会误当成普通 tool replay。</li>
+      <li><span class="ok">通过：</span>失败的本地 replay card 不会吞掉 VLM fallback；<code>android_privileged_action.arguments</code> 会展平为可执行端侧参数。</li>
+      <li><span class="ok">通过：</span>ActionTargetGrounder 能把点击修正到匹配节点中心，低置信度不改动作。</li>
+      <li><span class="ok">通过：</span>AgentKit CLI 可通过 mock MCP 完成 list/guard/run。</li>
+      <li><span class="ok">通过：</span>直通 stream 在 error 后保留已输出正文，thinking 和 output 仍归并到同一个 Agent run。</li>
+      <li><span class="warn">待真机：</span>长流式回答 CPU/帧耗时、RunLog 大量 upsert 写入频率、真实设备 replay 触达率。</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

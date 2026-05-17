@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OmniFlow 外部 GUI Agent Function 触发验收报告</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1c1f24;
+      --muted: #636a73;
+      --line: #d9dee5;
+      --soft: #f4f6f8;
+      --panel: #ffffff;
+      --green: #16875a;
+      --green-soft: #e5f5ee;
+      --blue: #2865d9;
+      --blue-soft: #e8efff;
+      --amber: #a96412;
+      --amber-soft: #fff1dc;
+      --red: #b42318;
+      --shadow: 0 18px 44px rgba(28, 31, 36, 0.08);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #fbfcfd;
+      color: var(--ink);
+      letter-spacing: 0;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .shell {
+      min-height: 100svh;
+    }
+
+    .hero {
+      border-bottom: 1px solid var(--line);
+      background:
+        linear-gradient(120deg, rgba(40, 101, 217, 0.12), transparent 34%),
+        linear-gradient(90deg, #ffffff, #f7faf8 62%, #f2f6ff);
+    }
+
+    .hero-inner {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 56px 28px 42px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+      gap: 44px;
+      align-items: end;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 18px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--green);
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 0 6px var(--green-soft);
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 820px;
+      font-size: clamp(38px, 6vw, 74px);
+      line-height: 0.94;
+      letter-spacing: 0;
+    }
+
+    .summary {
+      max-width: 720px;
+      margin: 22px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.58;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(217, 222, 229, 0.92);
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 30px;
+      line-height: 1;
+    }
+
+    .metric span {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 34px 28px 64px;
+    }
+
+    section {
+      margin-top: 42px;
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    .section-copy {
+      margin: -4px 0 22px;
+      max-width: 760px;
+      color: var(--muted);
+      line-height: 1.56;
+    }
+
+    .status-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .status {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .status .label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status .value {
+      margin-top: 10px;
+      font-size: 18px;
+      font-weight: 750;
+    }
+
+    .value.pass {
+      color: var(--green);
+    }
+
+    .value.warn {
+      color: var(--amber);
+    }
+
+    .matrix {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .matrix th,
+    .matrix td {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    .matrix th {
+      background: #f7f9fb;
+      color: #3b4149;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .matrix tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 740;
+      white-space: nowrap;
+    }
+
+    .pill.green {
+      color: var(--green);
+      background: var(--green-soft);
+    }
+
+    .pill.blue {
+      color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .pill.amber {
+      color: var(--amber);
+      background: var(--amber-soft);
+    }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .stage {
+      position: relative;
+      min-height: 132px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    .stage:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      right: -8px;
+      top: 50%;
+      width: 16px;
+      height: 16px;
+      border-top: 2px solid var(--blue);
+      border-right: 2px solid var(--blue);
+      transform: translateY(-50%) rotate(45deg);
+      background: #fbfcfd;
+      z-index: 2;
+    }
+
+    .stage .num {
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .stage h3 {
+      margin: 12px 0 8px;
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+
+    .stage p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.48;
+    }
+
+    .commands {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    pre {
+      margin: 0;
+      overflow: auto;
+      border: 1px solid #cfd6de;
+      border-radius: 8px;
+      background: #111418;
+      color: #eef4f8;
+      padding: 18px;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      letter-spacing: 0;
+    }
+
+    .notes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .note {
+      border-left: 4px solid var(--blue);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 18px 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .note.warning {
+      border-left-color: var(--amber);
+    }
+
+    .note h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+    }
+
+    .note p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .footer {
+      margin-top: 44px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 900px) {
+      .hero-inner,
+      .commands,
+      .notes {
+        grid-template-columns: 1fr;
+      }
+
+      .status-row,
+      .pipeline {
+        grid-template-columns: 1fr;
+      }
+
+      .stage:not(:last-child)::after {
+        display: none;
+      }
+
+      .matrix {
+        display: block;
+        overflow-x: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="eyebrow"><span class="dot"></span> OmniFlow Agent Kit 验收报告</div>
+          <h1>外部 GUI Agent 已能触发已有 Function</h1>
+          <p class="summary">
+            验收在三个独立开源项目目录中完成：MobileGPT、mobile-use、mobile-mcp。
+            每个项目均通过安装后的 <code>omniflow-agentkit</code> 连接 MCP，完成 guard preflight，触发已有的
+            <code>open_settings_demo</code> Function，并验证 <code>RunLog -> Function</code> 注册和后台安装执行。
+          </p>
+        </div>
+        <div class="meta-grid" aria-label="summary metrics">
+          <div class="metric">
+            <strong>3/3</strong>
+            <span>外部项目触发 Function 成功</span>
+          </div>
+          <div class="metric">
+            <strong>6</strong>
+            <span>Agent Kit 单元测试通过</span>
+          </div>
+          <div class="metric">
+            <strong>allow</strong>
+            <span>guard decision for open_settings_demo</span>
+          </div>
+          <div class="metric">
+            <strong>可选</strong>
+            <span>Codex CLI 外部模拟需设置 OMNIFLOW_RUN_CODEX=1</span>
+          </div>
+          <div class="metric">
+            <strong>OK</strong>
+            <span>RunLog 转 Function 并注册成功</span>
+          </div>
+          <div class="metric">
+            <strong>BG</strong>
+            <span>后台安装型 Function 执行成功</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section>
+        <h2>结论</h2>
+        <div class="status-row">
+          <div class="status">
+            <div class="label">验收口径</div>
+            <div class="value pass">不是只读文档，而是实际触发</div>
+          </div>
+          <div class="status">
+            <div class="label">Function</div>
+            <div class="value">open_settings_demo</div>
+          </div>
+          <div class="status">
+            <div class="label">Run ID</div>
+            <div class="value">mock-run-open-settings-demo</div>
+          </div>
+          <div class="status">
+            <div class="label">Registered Function</div>
+            <div class="value">install_sample_apk_demo</div>
+          </div>
+          <div class="status">
+            <div class="label">Background Run ID</div>
+            <div class="value">mock-bg-install-run</div>
+          </div>
+          <div class="status">
+            <div class="label">Codex Sandbox</div>
+            <div class="value warn">需要本地 MCP 连接权限</div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>项目矩阵</h2>
+        <p class="section-copy">
+          三个项目都从自己的外部 repo 目录运行安装后的 wheel。MobileGPT 和 mobile-use 走
+          <code>python_skill_plus_mcp</code>，mobile-mcp 走 <code>direct_mcp</code>。
+        </p>
+        <table class="matrix">
+          <thead>
+            <tr>
+              <th>项目</th>
+              <th>目录</th>
+              <th>推荐模式</th>
+              <th>触发结果</th>
+              <th>注册/后台</th>
+              <th>Commit</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>MobileGPT</strong></td>
+              <td><code>/private/tmp/omniflow-probe-mobilegpt</code></td>
+              <td><span class="pill blue">python_skill_plus_mcp</span></td>
+              <td><span class="pill green">external_function_trigger=ok</span></td>
+              <td><span class="pill green">background_install_execution=ok</span></td>
+              <td><code>7945048e6c05849aff1633744cbdf653c58bece2</code></td>
+            </tr>
+            <tr>
+              <td><strong>mobile-use</strong></td>
+              <td><code>/private/tmp/omniflow-probe-mobile-use</code></td>
+              <td><span class="pill blue">python_skill_plus_mcp</span></td>
+              <td><span class="pill green">external_function_trigger=ok</span></td>
+              <td><span class="pill green">background_install_execution=ok</span></td>
+              <td><code>1c01bef9ce3bf8da71eb5712b869bc6dd3ed02b0</code></td>
+            </tr>
+            <tr>
+              <td><strong>mobile-mcp</strong></td>
+              <td><code>/private/tmp/omniflow-probe-mobile-mcp</code></td>
+              <td><span class="pill amber">direct_mcp</span></td>
+              <td><span class="pill green">external_function_trigger=ok</span></td>
+              <td><span class="pill green">background_install_execution=ok</span></td>
+              <td><code>8a2947a93cb1b660479aee8e354457623396aa6f</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>触发链路</h2>
+        <p class="section-copy">
+          验收重点是让另一个 GUI agent 从外部项目中触发 OOB 已有 Function。mock MCP 只替代宿主 OOB MCP，
+          工具名和调用顺序保持与正式合同一致。
+        </p>
+        <div class="pipeline">
+          <div class="stage">
+            <div class="num">01</div>
+            <h3>External Repo</h3>
+            <p>进入 MobileGPT、mobile-use 或 mobile-mcp 的独立目录。</p>
+          </div>
+          <div class="stage">
+            <div class="num">02</div>
+            <h3>Agent Kit</h3>
+            <p>安装 wheel，运行 <code>omniflow-agentkit</code> CLI。</p>
+          </div>
+          <div class="stage">
+            <div class="num">03</div>
+            <h3>MCP Guard</h3>
+            <p>调用 <code>oob_function_guard_check</code>，返回 <code>decision=allow</code>。</p>
+          </div>
+          <div class="stage">
+            <div class="num">04</div>
+            <h3>Register Function</h3>
+            <p>调用 <code>oob_run_log_convert</code>，注册 <code>install_sample_apk_demo</code>。</p>
+          </div>
+          <div class="stage">
+            <div class="num">05</div>
+            <h3>Background Run</h3>
+            <p>后台触发安装型 Function，返回 <code>mock-bg-install-run</code>。</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>可复跑命令</h2>
+        <div class="commands">
+          <pre><code>bash scripts/omniflow_acceptance_all_guiagents.sh
+
+# Expected:
+omniflow_mobilegpt_acceptance=ok
+omniflow_mobile_use_acceptance=ok
+omniflow_mobile_mcp_acceptance=ok
+runlog_function_register=ok
+background_install_execution=ok
+omniflow_all_guiagents_acceptance=ok</code></pre>
+          <pre><code>OMNIFLOW_RUN_CODEX=1 \
+bash scripts/omniflow_acceptance_mobilegpt.sh
+
+# Expected:
+codex_function_trigger=ok
+registered_function_id=install_sample_apk_demo
+background_run_id=mock-bg-install-run</code></pre>
+        </div>
+      </section>
+
+      <section>
+        <h2>验证明细</h2>
+        <div class="commands">
+          <pre><code>python3 -m unittest tests/test_omniflow_agentkit.py
+
+......
+Ran 6 tests in 0.003s
+OK</code></pre>
+          <pre><code>python3 -m omniflow_agentkit pack --no-docs
+python3 -m compileall -q omniflow_agentkit scripts/omniflow_mock_mcp_server.py
+git diff --check
+
+# All passed</code></pre>
+        </div>
+      </section>
+
+      <section>
+        <h2>注意事项</h2>
+        <div class="notes">
+          <div class="note">
+            <h3>正式接入面</h3>
+            <p>
+              外部 agent 应优先使用 MCP tools：<code>oob_function_list</code>、
+              <code>oob_run_log_convert</code>、<code>oob_function_guard_check</code>、
+              <code>oob_function_run</code>。
+              Skill 和 docs 负责激活条件与操作约束，不承担可信执行。
+            </p>
+          </div>
+          <div class="note warning">
+            <h3>Codex CLI Sandbox</h3>
+            <p>
+              <code>read-only</code> 和 <code>workspace-write</code> 会阻断 loopback MCP HTTP。
+              Codex 外部触发验收使用 <code>danger-full-access</code>，同时 prompt 明确禁止文件修改。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div class="footer">
+        <span>Generated from OmniFlow external GUI-agent acceptance runs.</span>
+        <span>Report date: 2026-05-17</span>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
