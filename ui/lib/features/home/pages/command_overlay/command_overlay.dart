@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/assists_core_service.dart';
@@ -33,6 +34,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
   final GlobalKey<ChatInputAreaState> _chatInputAreaKey =
       GlobalKey<ChatInputAreaState>();
   final GlobalKey _inputAreaKey = GlobalKey();
+  final List<ChatInputAttachment> _pendingAttachments = <ChatInputAttachment>[];
 
   bool _isPopupVisible = false;
   Map<String, dynamic>? _scheduleInfo;
@@ -417,21 +419,32 @@ class _CommandOverlayState extends State<CommandOverlay> {
 
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    final hasAttachments = _pendingAttachments.isNotEmpty;
+    if (text.isEmpty && !hasAttachments) return;
 
     final handledSlash = await _tryHandleSlashCommand(text);
     if (handledSlash) return;
 
+    final attachments = _pendingAttachments
+        .map((item) => item.toMap())
+        .toList();
+    if (attachments.isNotEmpty && mounted) {
+      setState(() => _pendingAttachments.clear());
+    }
     _inputFocusNode.unfocus();
     _messageController.clear();
 
-    _showChatSheet(initialMessage: text);
+    _showChatSheet(initialMessage: text, initialAttachments: attachments);
   }
 
-  void _showChatSheet({String? initialMessage}) {
+  void _showChatSheet({
+    String? initialMessage,
+    List<Map<String, dynamic>> initialAttachments = const [],
+  }) {
     _showChatSheetWithScene(
       ChatBotLaunchScene.normal,
       initialMessage: initialMessage,
+      initialAttachments: initialAttachments,
     );
   }
 
@@ -439,6 +452,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
   void _showChatSheetWithScene(
     ChatBotLaunchScene launchScene, {
     String? initialMessage,
+    List<Map<String, dynamic>> initialAttachments = const [],
   }) {
     showModalBottomSheet(
       context: context,
@@ -450,6 +464,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
       enableDrag: false,
       builder: (context) => ChatBotSheet(
         initialMessage: initialMessage,
+        initialAttachments: initialAttachments,
         launchScene: launchScene,
         openClawEnabled: _openClawEnabled,
       ),
@@ -471,6 +486,113 @@ class _CommandOverlayState extends State<CommandOverlay> {
     setState(() {
       _chatInputAreaHeight = height;
     });
+  }
+
+  Future<void> _pickAttachments() async {
+    var hiddenForPicker = false;
+    try {
+      hiddenForPicker = await ScreenDialogService.hideForExternalActivity();
+      if (hiddenForPicker) {
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      }
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.any,
+      );
+      if (result == null || result.files.isEmpty || !mounted) return;
+
+      setState(() {
+        for (final file in result.files) {
+          final path = file.path;
+          if (path == null || path.isEmpty) continue;
+          final exists = _pendingAttachments.any((item) => item.path == path);
+          if (exists) continue;
+          final displayName = file.name.trim().isNotEmpty
+              ? file.name.trim()
+              : _fileNameFromPath(path);
+          final extension = (file.extension ?? '').toLowerCase();
+          final mimeType = _mimeTypeFromExtension(path, extension: extension);
+          _pendingAttachments.add(
+            ChatInputAttachment(
+              id: '${path}_${DateTime.now().microsecondsSinceEpoch}',
+              name: displayName,
+              path: path,
+              size: file.size > 0 ? file.size : null,
+              mimeType: mimeType,
+              isImage: _isImageFilePath(path, mimeType: mimeType),
+            ),
+          );
+        }
+      });
+    } catch (e) {
+      showToast('添加附件失败：$e', type: ToastType.error);
+    } finally {
+      if (hiddenForPicker) {
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        await ScreenDialogService.restoreAfterExternalActivity();
+      }
+    }
+  }
+
+  void _removePendingAttachment(String id) {
+    if (!mounted) return;
+    setState(() {
+      _pendingAttachments.removeWhere((item) => item.id == id);
+    });
+  }
+
+  String _fileNameFromPath(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final segments = normalized.split('/');
+    if (segments.isEmpty) return path;
+    return segments.last.isEmpty ? path : segments.last;
+  }
+
+  bool _isImageFilePath(String path, {String? mimeType}) {
+    final normalizedMime = mimeType?.trim().toLowerCase();
+    if (normalizedMime != null && normalizedMime.startsWith('image/')) {
+      return true;
+    }
+    final lowerPath = path.toLowerCase();
+    return lowerPath.endsWith('.png') ||
+        lowerPath.endsWith('.jpg') ||
+        lowerPath.endsWith('.jpeg') ||
+        lowerPath.endsWith('.webp') ||
+        lowerPath.endsWith('.gif') ||
+        lowerPath.endsWith('.bmp') ||
+        lowerPath.endsWith('.heic') ||
+        lowerPath.endsWith('.heif');
+  }
+
+  String? _mimeTypeFromExtension(String path, {String extension = ''}) {
+    final ext = extension.isNotEmpty
+        ? extension
+        : _fileNameFromPath(path).split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'bmp':
+        return 'image/bmp';
+      case 'heic':
+        return 'image/heic';
+      case 'heif':
+        return 'image/heif';
+      case 'pdf':
+        return 'application/pdf';
+      case 'txt':
+        return 'text/plain';
+      case 'md':
+        return 'text/markdown';
+      default:
+        return null;
+    }
   }
 
   Widget _buildSlashCommandPanel() {
@@ -663,6 +785,10 @@ class _CommandOverlayState extends State<CommandOverlay> {
                       onLongPressOpenClaw: () =>
                           _showOpenClawCommandPanel(expand: true),
                       useFrostedGlass: true, // command_overlay 使用毛玻璃效果
+                      useAttachmentPickerForPlus: true,
+                      onPickAttachment: _pickAttachments,
+                      attachments: _pendingAttachments,
+                      onRemoveAttachment: _removePendingAttachment,
                     ),
                   ],
                 ),

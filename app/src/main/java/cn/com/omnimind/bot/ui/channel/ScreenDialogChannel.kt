@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.ui.channel
 
 import cn.com.omnimind.bot.util.AssistsUtil
+import cn.com.omnimind.uikit.loader.FloatingHalfScreenLoader
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +30,24 @@ class ScreenDialogChannel {
                     mainJob.launch {
                         withContext(Dispatchers.Main) { result.success("Success") }
                         AssistsUtil.UI.closeChatBotDialog()
+                    }
+                }
+
+                "hideForExternalActivity" -> {
+                    mainJob.launch {
+                        val hidden = withContext(Dispatchers.Main) {
+                            FloatingHalfScreenLoader.hideForExternalActivity()
+                        }
+                        result.success(hidden)
+                    }
+                }
+
+                "restoreAfterExternalActivity" -> {
+                    mainJob.launch {
+                        val restored = withContext(Dispatchers.Main) {
+                            FloatingHalfScreenLoader.restoreAfterExternalActivity()
+                        }
+                        result.success(restored)
                     }
                 }
 

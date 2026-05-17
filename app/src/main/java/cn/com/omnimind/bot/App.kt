@@ -22,6 +22,7 @@ import io.flutter.FlutterInjector
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineGroup
 import io.flutter.embedding.engine.dart.DartExecutor
+import io.flutter.plugins.GeneratedPluginRegistrant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -73,6 +74,7 @@ class App : BaseApplication() {
                 .setDartEntrypoint(dartEntrypoint)
 
             val engine = getFlutterEngineGroup().createAndRunEngine(options)
+            GeneratedPluginRegistrant.registerWith(engine)
 
             OmniLog.d(
                 "AppStartup",

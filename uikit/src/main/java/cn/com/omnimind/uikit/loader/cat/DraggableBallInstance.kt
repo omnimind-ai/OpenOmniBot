@@ -382,6 +382,14 @@ object DraggableBallInstance {
             instance.catDialogShowInfoView?.getShowInfoViewVisibility() ?: View.GONE
     }
 
+    fun hideForExternalActivity(): Boolean {
+        return getInstance()?.hideForExternalActivity() ?: false
+    }
+
+    fun restoreAfterExternalActivity(): Boolean {
+        return getInstance()?.restoreAfterExternalActivity() ?: false
+    }
+
     fun bringCatToFront() {
         getInstance()?.bringCatToFront()
     }

@@ -73,6 +73,13 @@ class DraggableBallLoader(
     var catDialogShowInfoViewParams: WindowManager.LayoutParams
     var moveToScreenAnimator: ValueAnimator? = null
     private val gestureDetector = GestureDetector(context, this)
+    private var hiddenForExternalActivity: Boolean = false
+    private var externalActivityCatVisibility: Int = View.VISIBLE
+    private var externalActivityDialogVisibility: Int = View.VISIBLE
+    private var externalActivityShowInfoVisibility: Int = View.GONE
+    private var externalActivityCatFlags: Int = WindowFlag.SCREEN_LOCK_FLAG
+    private var externalActivityDialogFlags: Int = WindowFlag.SCREEN_LOCK_FLAG
+    private var externalActivityShowInfoFlags: Int = WindowFlag.SCREEN_LOCK_FLAG
 
     // 记录 catDialogShowInfoView 的初始 Y 位置
 
@@ -467,6 +474,82 @@ class DraggableBallLoader(
         }
     }
 
+    fun hideForExternalActivity(): Boolean {
+        if (hiddenForExternalActivity) {
+            return true
+        }
+        val hasAttachedOverlay =
+            catView.isAttachedToWindow ||
+                catDialogLayoutView.isAttachedToWindow ||
+                catDialogShowInfoView.isAttachedToWindow
+        if (!hasAttachedOverlay) {
+            return false
+        }
+
+        externalActivityCatVisibility = catView.visibility
+        externalActivityDialogVisibility = catDialogLayoutView.visibility
+        externalActivityShowInfoVisibility = catDialogShowInfoView.visibility
+        externalActivityCatFlags = catViewLayoutParams.flags
+        externalActivityDialogFlags = catDialogLayoutViewLayoutParams.flags
+        externalActivityShowInfoFlags = catDialogShowInfoViewParams.flags
+
+        return try {
+            moveToScreenAnimator?.cancel()
+            catDialogShowInfoView.cancelAnimations()
+
+            catView.visibility = View.GONE
+            catDialogLayoutView.visibility = View.GONE
+            catDialogShowInfoView.visibility = View.GONE
+
+            catViewLayoutParams.flags = WindowFlag.SCREEN_UNLOCK_FLAG
+            catDialogLayoutViewLayoutParams.flags = WindowFlag.SCREEN_UNLOCK_FLAG
+            catDialogShowInfoViewParams.flags = WindowFlag.SCREEN_UNLOCK_FLAG
+
+            updateViewLayoutIfAttached(catView, catViewLayoutParams)
+            updateViewLayoutIfAttached(catDialogLayoutView, catDialogLayoutViewLayoutParams)
+            updateViewLayoutIfAttached(catDialogShowInfoView, catDialogShowInfoViewParams)
+
+            hiddenForExternalActivity = true
+            OmniLog.d(TAG, "hideForExternalActivity: draggable overlays hidden")
+            true
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "hideForExternalActivity failed: ${e.message}", e)
+            false
+        }
+    }
+
+    fun restoreAfterExternalActivity(): Boolean {
+        if (!hiddenForExternalActivity) {
+            return false
+        }
+        return try {
+            catViewLayoutParams.flags = externalActivityCatFlags
+            catDialogLayoutViewLayoutParams.flags = externalActivityDialogFlags
+            catDialogShowInfoViewParams.flags = externalActivityShowInfoFlags
+
+            updateViewLayoutIfAttached(catView, catViewLayoutParams)
+            updateViewLayoutIfAttached(catDialogLayoutView, catDialogLayoutViewLayoutParams)
+            updateViewLayoutIfAttached(catDialogShowInfoView, catDialogShowInfoViewParams)
+
+            catView.visibility = externalActivityCatVisibility
+            catDialogLayoutView.visibility = externalActivityDialogVisibility
+            catDialogShowInfoView.visibility = externalActivityShowInfoVisibility
+
+            hiddenForExternalActivity = false
+            OmniLog.d(TAG, "restoreAfterExternalActivity: draggable overlays restored")
+            true
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "restoreAfterExternalActivity failed: ${e.message}", e)
+            false
+        }
+    }
+
+    private fun updateViewLayoutIfAttached(view: View, params: WindowManager.LayoutParams) {
+        if (view.isAttachedToWindow) {
+            getWindowManager().updateViewLayout(view, params)
+        }
+    }
+
     fun destroy() {
         try {
             // 取消动画
@@ -479,6 +562,7 @@ class DraggableBallLoader(
             getWindowManager().removeView(catDialogLayoutView)
             getWindowManager().removeView(catDialogShowInfoView)
             isAttachedToWindow = false
+            hiddenForExternalActivity = false
             // 取消注册组件回调
             context.unregisterComponentCallbacks(this)
         } catch (e: Exception) {

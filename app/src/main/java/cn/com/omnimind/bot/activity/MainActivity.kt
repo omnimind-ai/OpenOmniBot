@@ -152,7 +152,23 @@ class MainActivity : FlutterActivity() {
         if (LocalModelFeature.onActivityResult(this, requestCode, resultCode, data)) {
             return
         }
+        if (isHalfScreenInitialized && halfScreenListenerImpl.onActivityResult(requestCode, resultCode, data)) {
+            return
+        }
         super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        if (isHalfScreenInitialized &&
+            halfScreenListenerImpl.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        ) {
+            return
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     override fun onResume() {
