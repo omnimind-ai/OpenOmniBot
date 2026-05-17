@@ -285,9 +285,6 @@ class _QuickPromptPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = prompt.resolveTitle(context);
-    final borderColor = accentColor.withValues(
-      alpha: context.isDarkTheme ? 0.28 : 0.18,
-    );
     final backgroundColor = accentColor.withValues(
       alpha: context.isDarkTheme ? 0.13 : 0.09,
     );
@@ -308,10 +305,6 @@ class _QuickPromptPill extends StatelessWidget {
             padding: EdgeInsets.symmetric(
               horizontal: compact ? 11 : 13,
               vertical: 6,
-            ),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: borderColor),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
