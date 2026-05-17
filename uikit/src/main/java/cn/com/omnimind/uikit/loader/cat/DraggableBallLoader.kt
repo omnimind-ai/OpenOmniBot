@@ -470,6 +470,8 @@ class DraggableBallLoader(
     fun destroy() {
         try {
             // 取消动画
+            catDialogShowInfoView.cancelAnimations()
+            moveToScreenAnimator?.cancel()
             catView.visibility = View.GONE
             catDialogLayoutView.visibility = View.GONE
             catDialogShowInfoView.visibility = View.GONE
