@@ -287,7 +287,12 @@ AgentRunTimelineGroup? _buildTimelineGroup(
     candidates.toList(growable: false)
       ..sort((left, right) => _compareNewestFirst(left, right)),
   );
-  if (taskMessages.isEmpty || (!isActive && taskMessages.length < 2)) {
+  if (taskMessages.isEmpty ||
+      (!isActive &&
+          taskMessages.length < 2 &&
+          taskMessages.every(
+            (message) => !_shouldKeepRunLogOnlyGroup(message),
+          ))) {
     return null;
   }
 
@@ -336,7 +341,8 @@ AgentRunTimelineGroup? _buildTimelineGroup(
       .where((message) => !visibleIds.contains(message.id))
       .toList(growable: false);
   final compactProcessMessages = _resolveProcessMessages(processMessages);
-  if (compactProcessMessages.isEmpty) {
+  if (compactProcessMessages.isEmpty &&
+      !_shouldKeepRunLogOnlyGroup(primaryVisibleMessage)) {
     return null;
   }
 
@@ -521,6 +527,17 @@ bool _isTerminalVisibleTextMessage(ChatMessageModel message) {
       kind == 'permission_required' ||
       kind == 'error' ||
       message.isError;
+}
+
+bool _shouldKeepRunLogOnlyGroup(ChatMessageModel message) {
+  final ref = agentRunMessageRef(message);
+  if (ref == null || !ref.isAssistantText) {
+    return false;
+  }
+  if (_runLogIdFromMessage(message).isNotEmpty) {
+    return true;
+  }
+  return _isTerminalVisibleTextMessage(message);
 }
 
 bool _isLegacyTextSnapshotFallbackCandidate(ChatMessageModel message) {

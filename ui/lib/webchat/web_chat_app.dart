@@ -1317,13 +1317,20 @@ class _WebChatHomeState extends State<_WebChatHome> {
       group,
       _expandedAgentRunTaskIds,
     );
-    final label = AppTextLocalizer.choose(en: 'Process', zh: '执行过程');
-    final statusLabel = group.isActiveRun
-        ? AppTextLocalizer.choose(en: 'Running', zh: '进行中')
-        : AppTextLocalizer.choose(en: 'Done', zh: '已完成');
     final summary = _agentRunGroupSummary(group);
     final processMessages = group.processMessagesOldestFirst;
     final visibleMessages = group.visibleMessagesOldestFirst;
+    final hasProcessMessages = processMessages.isNotEmpty;
+    final isRunLogOnly = !group.isActiveRun && !hasProcessMessages;
+    final label = AppTextLocalizer.choose(
+      en: isRunLogOnly ? 'RunLog' : 'Process',
+      zh: isRunLogOnly ? '运行记录' : '执行过程',
+    );
+    final statusLabel = isRunLogOnly
+        ? AppTextLocalizer.choose(en: 'Logged', zh: '已记录')
+        : group.isActiveRun
+        ? AppTextLocalizer.choose(en: 'Running', zh: '进行中')
+        : AppTextLocalizer.choose(en: 'Done', zh: '已完成');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1331,7 +1338,9 @@ class _WebChatHomeState extends State<_WebChatHome> {
         Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: () => _toggleAgentRunGroup(group.taskId),
+            onTap: hasProcessMessages
+                ? () => _toggleAgentRunGroup(group.taskId)
+                : null,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(2, 8, 2, 6),
@@ -1419,17 +1428,19 @@ class _WebChatHomeState extends State<_WebChatHome> {
                       },
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  AnimatedRotation(
-                    turns: expanded ? 0 : -0.25,
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOutCubic,
-                    child: const Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 18,
-                      color: _kSubtleText,
+                  if (hasProcessMessages) ...[
+                    const SizedBox(width: 4),
+                    AnimatedRotation(
+                      turns: expanded ? 0 : -0.25,
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      child: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 18,
+                        color: _kSubtleText,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

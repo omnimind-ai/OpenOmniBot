@@ -136,6 +136,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
   Widget build(BuildContext context) {
     final processMessages = widget.group.processMessagesOldestFirst;
     final visibleMessages = widget.group.visibleMessagesOldestFirst;
+    final hasProcessMessages = processMessages.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -149,7 +150,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
           thinkingCount: widget.group.thinkingCount,
           toolCount: widget.group.toolCount,
           latestProcessSummary: _latestProcessSummary(processMessages),
-          onTap: widget.onToggleExpanded,
+          onTap: hasProcessMessages ? widget.onToggleExpanded : null,
         ),
         _buildAnimatedProcessSection(processMessages),
         ...visibleMessages.map(
@@ -306,18 +307,21 @@ class _AgentRunSummaryHeader extends StatelessWidget {
   final int thinkingCount;
   final int toolCount;
   final String latestProcessSummary;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final locale = Localizations.localeOf(context);
     final palette = context.omniPalette;
+    final isRunLogOnly = !isActiveRun && onTap == null;
     final label = AppTextLocalizer.choose(
-      zh: '执行过程',
-      en: 'Process',
+      zh: isRunLogOnly ? '运行记录' : '执行过程',
+      en: isRunLogOnly ? 'RunLog' : 'Process',
       locale: locale,
     );
-    final statusLabel = isActiveRun
+    final statusLabel = isRunLogOnly
+        ? AppTextLocalizer.choose(zh: '已记录', en: 'Logged', locale: locale)
+        : isActiveRun
         ? AppTextLocalizer.choose(zh: '进行中', en: 'Running', locale: locale)
         : AppTextLocalizer.choose(zh: '已完成', en: 'Done', locale: locale);
     final summary = _summaryText(locale);
@@ -436,17 +440,19 @@ class _AgentRunSummaryHeader extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                AnimatedRotation(
-                  turns: expanded ? 0 : -0.25,
-                  duration: _AgentRunGroupMessageState._kToggleDuration,
-                  curve: Curves.easeInOutCubicEmphasized,
-                  child: Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    size: 18,
-                    color: labelColor,
+                if (onTap != null) ...[
+                  const SizedBox(width: 8),
+                  AnimatedRotation(
+                    turns: expanded ? 0 : -0.25,
+                    duration: _AgentRunGroupMessageState._kToggleDuration,
+                    curve: Curves.easeInOutCubicEmphasized,
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 18,
+                      color: labelColor,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),

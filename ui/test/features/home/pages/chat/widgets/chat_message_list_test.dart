@@ -657,6 +657,105 @@ void main() {
     expect(find.text('已完成'), findsNothing);
   });
 
+  testWidgets('text-only agent run keeps compact runlog entry', (tester) async {
+    final controller = ScrollController();
+    final messages = _buildTextOnlyAgentRunMessages(runLogId: null);
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        child: SizedBox(
+          width: 400,
+          height: 520,
+          child: ChatMessageList(
+            messages: messages,
+            scrollController: controller,
+            onBeforeTaskExecute: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(find.text('运行记录'), findsOneWidget);
+    expect(find.text('已记录'), findsOneWidget);
+    expect(find.text('执行过程'), findsNothing);
+    expect(find.text('直接回答'), findsOneWidget);
+    expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
+    expect(find.byIcon(Icons.route_rounded), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('agent-run-process-task-text-only')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('agent-run-summary-task-text-only')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('agent-run-process-task-text-only')),
+      findsNothing,
+    );
+    expect(find.text('直接回答'), findsOneWidget);
+  });
+
+  testWidgets('text-only runlog entry localizes in English', (tester) async {
+    final controller = ScrollController();
+    final messages = _buildTextOnlyAgentRunMessages(runLogId: null);
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        locale: const Locale('en'),
+        child: SizedBox(
+          width: 400,
+          height: 520,
+          child: ChatMessageList(
+            messages: messages,
+            scrollController: controller,
+            onBeforeTaskExecute: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(find.text('RunLog'), findsOneWidget);
+    expect(find.text('Logged'), findsOneWidget);
+    expect(find.text('运行记录'), findsNothing);
+    expect(find.text('已记录'), findsNothing);
+  });
+
+  testWidgets('text-only runlog entry stays stable on narrow width', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    final messages = _buildTextOnlyAgentRunMessages(runLogId: null);
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        locale: const Locale('en'),
+        child: SizedBox(
+          width: 180,
+          height: 520,
+          child: ChatMessageList(
+            messages: messages,
+            scrollController: controller,
+            onBeforeTaskExecute: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(find.text('RunLog'), findsOneWidget);
+    expect(find.text('Logged'), findsOneWidget);
+    expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('reopening run collapses thinking details by default again', (
     tester,
   ) async {
@@ -1280,6 +1379,29 @@ List<ChatMessageModel> _buildCompletedAgentRunMessages({bool isFinal = true}) {
       },
     ),
     ChatMessageModel.userMessage('用户问题', id: 'task-1-user'),
+  ];
+}
+
+List<ChatMessageModel> _buildTextOnlyAgentRunMessages({String? runLogId}) {
+  return <ChatMessageModel>[
+    ChatMessageModel(
+      id: 'task-text-only-text',
+      type: 1,
+      user: 2,
+      content: const <String, dynamic>{
+        'text': '直接回答',
+        'id': 'task-text-only-text',
+      },
+      streamMeta: <String, dynamic>{
+        'parentTaskId': 'task-text-only',
+        'kind': 'text_snapshot',
+        'seq': 10,
+        'entryId': 'task-text-only-text',
+        'isFinal': true,
+        if (runLogId != null) 'runLogId': runLogId,
+      },
+    ),
+    ChatMessageModel.userMessage('用户问题', id: 'task-text-only-user'),
   ];
 }
 

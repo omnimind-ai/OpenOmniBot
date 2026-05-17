@@ -43,6 +43,66 @@ void main() {
     );
   });
 
+  test('keeps runlog entry for text-only completed agent run', () {
+    final messages = <ChatMessageModel>[
+      _assistantMessage(
+        id: 'task-runlog-text',
+        text: '直接回答',
+        taskId: 'task-runlog',
+        kind: 'text_snapshot',
+        seq: 10,
+        isFinal: true,
+        runLogId: 'runlog-text-only',
+      ),
+      ChatMessageModel.userMessage('用户问题', id: 'user-runlog'),
+    ];
+
+    final entries = buildAgentRunTimelineEntries(messages);
+
+    expect(entries, hasLength(2));
+    final group = entries.first.group;
+    expect(group?.taskId, 'task-runlog');
+    expect(group?.runLogId, 'runlog-text-only');
+    expect(group?.processMessagesNewestFirst, isEmpty);
+    expect(group?.visibleMessagesNewestFirst.single.text, '直接回答');
+  });
+
+  test('keeps task-id runlog entry for text-only completed agent run', () {
+    final messages = <ChatMessageModel>[
+      _assistantMessage(
+        id: 'task-runlog-fallback-text',
+        text: '无工具调用的回答',
+        taskId: 'task-runlog-fallback',
+        kind: 'text_snapshot',
+        seq: 10,
+        isFinal: true,
+      ),
+      ChatMessageModel.userMessage('用户问题', id: 'user-runlog-fallback'),
+    ];
+
+    final entries = buildAgentRunTimelineEntries(messages);
+
+    expect(entries, hasLength(2));
+    final group = entries.first.group;
+    expect(group?.taskId, 'task-runlog-fallback');
+    expect(group?.runLogId, 'task-runlog-fallback');
+    expect(group?.processMessagesNewestFirst, isEmpty);
+    expect(group?.visibleMessagesNewestFirst.single.text, '无工具调用的回答');
+  });
+
+  test('keeps plain text-only answer ungrouped without agent run metadata', () {
+    final messages = <ChatMessageModel>[
+      ChatMessageModel.assistantMessage('普通回答', id: 'plain-text'),
+      ChatMessageModel.userMessage('用户问题', id: 'user-plain'),
+    ];
+
+    final entries = buildAgentRunTimelineEntries(messages);
+
+    expect(entries, hasLength(2));
+    expect(entries.first.group, isNull);
+    expect(entries.first.message?.text, '普通回答');
+  });
+
   test('groups in-flight process messages while task is active', () {
     final entries = buildAgentRunTimelineEntries(
       _buildCompletedRunMessages(isFinal: false),
@@ -452,6 +512,7 @@ ChatMessageModel _assistantMessage({
   required String kind,
   required int seq,
   bool? isFinal = false,
+  String? runLogId,
 }) {
   return ChatMessageModel(
     id: id,
@@ -464,6 +525,7 @@ ChatMessageModel _assistantMessage({
       'seq': seq,
       'entryId': id,
       if (isFinal != null) 'isFinal': isFinal,
+      if (runLogId != null) 'runLogId': runLogId,
     },
   );
 }
