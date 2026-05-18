@@ -712,6 +712,10 @@ internal object AgentConversationHistorySupport {
             terminalOutput,
             MAX_DISPLAY_TOOL_TERMINAL_CHARS
         )
+        val safeReasoningContent = trimText(
+            readReasoningContent(payload).orEmpty(),
+            MAX_STORAGE_MESSAGE_TEXT_CHARS
+        ).trim().takeIf { it.isNotBlank() }
         val payloadCompacted =
             safeArgsJson.length < AgentTextSanitizer.sanitizeUtf16(argsJson).trim().length ||
                 safeResultPreviewJson.length <
@@ -741,6 +745,7 @@ internal object AgentConversationHistorySupport {
                 payload["summary"]?.toString().orEmpty().ifEmpty { entry.summary },
                 MAX_TOOL_SUMMARY_CHARS
             ),
+            "reasoning_content" to safeReasoningContent,
             "progress" to trimText(
                 payload["progress"]?.toString().orEmpty(),
                 MAX_TOOL_SUMMARY_CHARS
@@ -865,6 +870,7 @@ internal object AgentConversationHistorySupport {
             "serverName" to cardData["serverName"],
             "status" to cardData["status"]?.toString()?.trim().orEmpty(),
             "summary" to cardData["summary"]?.toString()?.trim().orEmpty(),
+            "reasoning_content" to cardData["reasoning_content"]?.toString().orEmpty(),
             "progress" to cardData["progress"]?.toString()?.trim().orEmpty(),
             "args" to cardData["argsJson"]?.toString().orEmpty(),
             "argsJson" to cardData["argsJson"]?.toString().orEmpty(),
@@ -1116,6 +1122,10 @@ internal object AgentConversationHistorySupport {
             payload["summary"]?.toString().orEmpty().ifBlank { entry.summary },
             entry.entryType
         )
+        val safeReasoningContent = trimText(
+            readReasoningContent(payload).orEmpty(),
+            MAX_STORAGE_MESSAGE_TEXT_CHARS
+        ).trim().takeIf { it.isNotBlank() }
         val safePayload = linkedMapOf<String, Any?>(
             "taskId" to compactDisplayScalar(payload["taskId"]),
             "streamMeta" to compactDisplayStreamMeta(payload["streamMeta"]),
@@ -1132,6 +1142,7 @@ internal object AgentConversationHistorySupport {
             "toolType" to payload["toolType"]?.toString()?.trim().orEmpty().ifEmpty { "builtin" },
             "serverName" to compactDisplayScalar(payload["serverName"]),
             "status" to normalizedStatus,
+            "reasoning_content" to safeReasoningContent,
             "summary" to normalizedSummary.ifBlank { "工具调用结果已压缩保存" },
             "progress" to trimText(
                 payload["progress"]?.toString().orEmpty(),
@@ -1452,7 +1463,8 @@ internal object AgentConversationHistorySupport {
         if (encoded.length > MAX_STORAGE_ENTRY_PAYLOAD_CHARS) {
             return buildRecoveredTextEntry(
                 entry = entry.copy(summary = safeText),
-                originalPayloadLength = entry.payloadJson.length
+                originalPayloadLength = entry.payloadJson.length,
+                reasoningContent = safeReasoningContent
             )
         }
         return entry.copy(
@@ -1463,7 +1475,8 @@ internal object AgentConversationHistorySupport {
 
     private fun buildRecoveredTextEntry(
         entry: AgentConversationEntry,
-        originalPayloadLength: Int
+        originalPayloadLength: Int,
+        reasoningContent: String? = null
     ): AgentConversationEntry {
         val summary = normalizeStoredSummary(
             entry.summary.ifBlank { "历史消息内容过大，已压缩保存。" },
@@ -1477,6 +1490,22 @@ internal object AgentConversationHistorySupport {
             },
             MAX_STORAGE_MESSAGE_TEXT_CHARS
         )
+        val safeReasoningContent = if (
+            entry.entryType == AgentConversationHistoryRepository.ENTRY_TYPE_ASSISTANT_MESSAGE
+        ) {
+            fitReasoningContentToRecoveredTextPayload(
+                messageId = entry.entryId,
+                text = safeText,
+                isError = entry.status == AgentConversationHistoryRepository.STATUS_ERROR,
+                createdAt = entry.createdAt,
+                reasoningContent = trimText(
+                    reasoningContent.orEmpty(),
+                    MAX_STORAGE_MESSAGE_TEXT_CHARS
+                ).trim().takeIf { it.isNotBlank() }
+            )
+        } else {
+            null
+        }
         val payload = buildTextMessagePayload(
             messageId = entry.entryId,
             user = if (entry.entryType == AgentConversationHistoryRepository.ENTRY_TYPE_USER_MESSAGE) {
@@ -1486,6 +1515,7 @@ internal object AgentConversationHistorySupport {
             },
             text = safeText,
             attachments = emptyList(),
+            reasoningContent = safeReasoningContent,
             isError = entry.status == AgentConversationHistoryRepository.STATUS_ERROR,
             streamMeta = mapOf(
                 "payloadCompacted" to true,
@@ -1497,6 +1527,53 @@ internal object AgentConversationHistorySupport {
             summary = summary.ifBlank { safeText },
             payloadJson = gson.toJson(payload)
         )
+    }
+
+    private fun fitReasoningContentToRecoveredTextPayload(
+        messageId: String,
+        text: String,
+        isError: Boolean,
+        createdAt: Long,
+        reasoningContent: String?
+    ): String? {
+        val normalizedReasoning = reasoningContent?.trim()?.takeIf { it.isNotBlank() } ?: return null
+
+        fun encodedLength(candidate: String?): Int {
+            return gson.toJson(
+                buildTextMessagePayload(
+                    messageId = messageId,
+                    user = 2,
+                    text = text,
+                    attachments = emptyList(),
+                    reasoningContent = candidate,
+                    isError = isError,
+                    streamMeta = mapOf(
+                        "payloadCompacted" to true,
+                        "originalPayloadLength" to MAX_STORAGE_ENTRY_PAYLOAD_CHARS + 1
+                    ),
+                    createdAt = createdAt
+                )
+            ).length
+        }
+
+        if (encodedLength(normalizedReasoning) <= MAX_STORAGE_ENTRY_PAYLOAD_CHARS) {
+            return normalizedReasoning
+        }
+
+        var low = 0
+        var high = normalizedReasoning.length
+        var best: String? = null
+        while (low <= high) {
+            val mid = (low + high) ushr 1
+            val candidate = normalizedReasoning.take(mid).trimEnd().takeIf { it.isNotBlank() }
+            if (encodedLength(candidate) <= MAX_STORAGE_ENTRY_PAYLOAD_CHARS) {
+                best = candidate
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        return best
     }
 
     private fun normalizeStoredSummary(summary: String, entryType: String): String {

@@ -1,12 +1,12 @@
 # Omnibot App Update Worker
 
-Cloudflare Worker for public app update checks, authenticated release metadata management, and APK delivery through Cloudflare R2. Release metadata and aggregate check counters are stored in KV; APK files are stored in R2.
+Cloudflare Worker for public app update checks, authenticated release metadata management, and APK delivery through Cloudflare R2. Release metadata and APK files are stored in R2; no KV namespace is required.
 
 ## Routes
 
 - `GET /updates?currentVersion=0.5.0.3&edition=omniinfer&source=worker&includeBeta=true`
   - Public endpoint used by the Android app.
-  - Increments aggregate visit counters on every request.
+  - Reads release metadata from R2 without recording visit counters.
   - Returns `apkDownloadUrl` pointing at this Worker.
 - `GET /downloads/:tag/:asset`
   - Public APK download endpoint backed by R2.
@@ -27,29 +27,23 @@ Cloudflare Worker for public app update checks, authenticated release metadata m
   - Removes a tag so clients stop seeing a retracted package.
 - `GET /admin/releases`
   - Requires admin auth.
-- `GET /admin/stats`
-  - Requires admin auth.
 
 ## Deploy
 
-Create a KV namespace and an R2 bucket, bind them to the Worker, then configure the admin token.
+Create an R2 bucket, bind it to the Worker, then configure the admin token.
 
 Dashboard binding:
 
-- Resource type: `KV 命名空间`
-- Variable name: `APP_UPDATE_KV`
-- KV namespace: the namespace created for app updates
 - Resource type: `R2 bucket`
 - Variable name: `APP_UPDATE_BUCKET`
-- R2 bucket: the bucket that stores APK release files
+- R2 bucket: the bucket that stores APK files and release metadata
 
 Wrangler deployment:
 
 ```bash
-wrangler kv namespace create APP_UPDATE_KV
 wrangler r2 bucket create omnibot-app-updates
 cp wrangler.toml.example wrangler.toml
-# Put the created namespace id and bucket name in wrangler.toml.
+# Put the created bucket name in wrangler.toml.
 wrangler secret put ADMIN_TOKEN
 wrangler deploy
 ```

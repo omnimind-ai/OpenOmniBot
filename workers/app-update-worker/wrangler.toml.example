@@ -2,10 +2,6 @@ name = "omnibot-app-update-worker"
 main = "worker.js"
 compatibility_date = "2026-05-12"
 
-[[kv_namespaces]]
-binding = "APP_UPDATE_KV"
-id = "replace-with-your-kv-namespace-id"
-
 [[r2_buckets]]
 binding = "APP_UPDATE_BUCKET"
 bucket_name = "replace-with-your-r2-bucket-name"
@@ -14,6 +10,7 @@ bucket_name = "replace-with-your-r2-bucket-name"
 GITHUB_REPO = "omnimind-ai/OpenOmniBot"
 DEFAULT_SOURCE = "worker"
 R2_RELEASES_PREFIX = "releases"
+R2_METADATA_PREFIX = "metadata/releases"
 
 # Configure the admin token as a secret:
 # wrangler secret put ADMIN_TOKEN

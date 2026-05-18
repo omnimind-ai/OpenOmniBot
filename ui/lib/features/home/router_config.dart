@@ -17,6 +17,7 @@ import 'pages/edit_profile/edit_profile_page.dart';
 import 'pages/settings/workspace_memory_setting_page.dart';
 import 'pages/settings/background_setting_page.dart';
 import 'pages/settings/experience_misc_setting_page.dart';
+import 'pages/settings/home_setting_page.dart';
 import 'pages/settings/open_with_omnibot_setting_page.dart';
 import 'pages/settings/storage_usage_page.dart';
 import 'pages/omnibot_workspace/omnibot_artifact_preview_page.dart';
@@ -337,6 +338,16 @@ List<GoRoute> homeRoutes = [
       key: state.pageKey,
       name: 'home/experience_misc_setting',
       child: const ExperienceMiscSettingPage(),
+    ),
+  ),
+
+  GoRoute(
+    path: '/home/home_setting',
+    name: 'home/home_setting',
+    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
+      key: state.pageKey,
+      name: 'home/home_setting',
+      child: const HomeSettingPage(),
     ),
   ),
 

@@ -144,6 +144,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsVibrationSubtitle => '执行任务时，通过振动进行操作提醒';
 
   @override
+  String get settingsIndependentSendButtonTitle => '使用独立的发送按钮';
+
+  @override
+  String get settingsIndependentSendButtonSubtitle =>
+      '开启后，聊天页键盘回车为换行；关闭后，回车直接发送';
+
+  @override
   String get settingsAutoBackTitle => '任务完成后自动回聊天';
 
   @override

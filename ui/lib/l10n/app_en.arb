@@ -45,6 +45,8 @@
   "settingsAppearanceSubtitle": "Configure theme mode, language, shared background, chat font size, and text color",
   "settingsVibrationTitle": "Vibration Feedback",
   "settingsVibrationSubtitle": "Use vibration to signal task progress while executing",
+  "settingsIndependentSendButtonTitle": "Independent Send Button",
+  "settingsIndependentSendButtonSubtitle": "When enabled, Enter creates a new line; when disabled, Enter sends the message directly",
   "settingsAutoBackTitle": "Return to Chat After Tasks",
   "settingsAutoBackSubtitle": "When disabled, the task result page stays open after completion",
   "settingsHabitualHandTitle": "Dominant Hand",

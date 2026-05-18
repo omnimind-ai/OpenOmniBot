@@ -672,6 +672,14 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
   ) async {
     final existing = _findProviderModelOption(selection);
     if ((existing?.contextLimit ?? 0) > 0) {
+      final manualThreshold = StorageService.getManualModelContextThreshold(
+        selection.modelId,
+      );
+      if (manualThreshold != null &&
+          manualThreshold > 0 &&
+          manualThreshold != existing!.contextLimit) {
+        return existing.copyWith(contextLimit: manualThreshold);
+      }
       return existing;
     }
     final profile = _findProviderProfile(selection.providerProfileId);
@@ -694,7 +702,13 @@ mixin _ChatPageModelContextMixin on _ChatPageStateBase {
     if (enriched.isEmpty) {
       return existing;
     }
-    final resolved = enriched.first;
+    var resolved = enriched.first;
+    final manualThreshold = StorageService.getManualModelContextThreshold(
+      selection.modelId,
+    );
+    if (manualThreshold != null && manualThreshold > 0) {
+      resolved = resolved.copyWith(contextLimit: manualThreshold);
+    }
     if (!mounted || (resolved.contextLimit ?? 0) <= 0) {
       return resolved;
     }

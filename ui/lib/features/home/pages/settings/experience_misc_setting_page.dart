@@ -27,6 +27,7 @@ class _ExperienceMiscSettingPageState
   bool _hideFromRecentsEnabled = false;
   bool _vibrationEnabled = true;
   bool _autoBackToChatAfterTaskEnabled = true;
+  bool _useIndependentChatSendButton = true;
 
   @override
   void initState() {
@@ -37,6 +38,8 @@ class _ExperienceMiscSettingPageState
           defaultValue: true,
         ) ??
         true;
+    _useIndependentChatSendButton =
+        StorageService.isIndependentChatSendButtonEnabled();
     _loadHideFromRecentsState();
     _loadVibrationState();
     _loadAutoBackToChatAfterTaskState();
@@ -129,6 +132,20 @@ class _ExperienceMiscSettingPageState
     }
   }
 
+  Future<void> _onIndependentChatSendButtonChanged(bool value) async {
+    final saved = await StorageService.setIndependentChatSendButtonEnabled(
+      value,
+    );
+    if (!mounted) return;
+    if (!saved) {
+      showToast(context.l10n.settingsSaveFailed, type: ToastType.error);
+      return;
+    }
+    setState(() {
+      _useIndependentChatSendButton = value;
+    });
+  }
+
   Future<void> _onHabitualHandChanged(HabitualHand? value) async {
     if (value == null) {
       return;
@@ -158,6 +175,14 @@ class _ExperienceMiscSettingPageState
             },
           ),
           _SettingItem(
+            icon: Icons.home_outlined,
+            title: context.trLegacy('首页设置'),
+            subtitle: context.trLegacy('管理聊天首页问候语和快捷指令'),
+            onTap: () {
+              GoRouterManager.push('/home/home_setting');
+            },
+          ),
+          _SettingItem(
             icon: Icons.visibility_off_outlined,
             iconSvg: 'assets/home/hide_recents_setting_icon.svg',
             title: context.l10n.settingsHideRecentsTitle,
@@ -175,6 +200,15 @@ class _ExperienceMiscSettingPageState
             trailing: _buildSwitchTrailing(
               value: _vibrationEnabled,
               onToggle: _onVibrationChanged,
+            ),
+          ),
+          _SettingItem(
+            icon: Icons.keyboard_return_rounded,
+            title: context.l10n.settingsIndependentSendButtonTitle,
+            subtitle: context.l10n.settingsIndependentSendButtonSubtitle,
+            trailing: _buildSwitchTrailing(
+              value: _useIndependentChatSendButton,
+              onToggle: _onIndependentChatSendButtonChanged,
             ),
           ),
           _SettingItem(

@@ -50,7 +50,7 @@ OpenOmniBot is an on-device AI agent built with native Android Kotlin and Flutte
 <h2 id="quick-start">Quick Start</h2>
 
 <p align="center">
-  <img src="docs/tutorial/one.png" alt="Example" width="260" />
+  <img src="docs/tutorial/example.png" alt="Example" width="260" />
 </p>
 
 ### Configure the app
@@ -58,8 +58,8 @@ OpenOmniBot is an on-device AI agent built with native Android Kotlin and Flutte
 Open the settings page from the left sidebar:
 
 <p align="center">
-  <img src="docs/tutorial/two.png" alt="Configure AI capabilities" width="420" />
-  <img src="docs/tutorial/three.png" alt="Configure AI providers" width="260" />
+  <img src="docs/tutorial/two.png" alt="Configure AI capabilities" width="260" />
+  <img src="docs/tutorial/three.png" alt="Configure AI providers" width="420" />
 </p>
 
 Then open the scenario model settings:
@@ -199,8 +199,7 @@ Special thanks to these open-source projects:
   <tr>
     <td align="center">
       <img src="docs/pic/wechat.jpg" alt="WeChat Group" width="220"/><br/>
-      <b>WeChat Group</b><br/>
-      <a href="https://discord.gg/WnBvBXgykD">Join our Discord community</a>
     </td>
   </tr>
 </table>
+Join Discord: https://discord.gg/WnBvBXgykD

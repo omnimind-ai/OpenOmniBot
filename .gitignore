@@ -13,6 +13,7 @@ local.properties
 /misc
 
 .claude/
+.codex/
 .vscode/
 .agents/
 

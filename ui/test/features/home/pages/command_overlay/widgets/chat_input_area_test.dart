@@ -173,7 +173,7 @@ void main() {
     expect(selected, CodexPermissionMode.autoReview);
   });
 
-  testWidgets('large composer uses newline action for multiline input', (
+  testWidgets('large composer starts collapsed for empty unfocused input', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -184,7 +184,99 @@ void main() {
     final field = tester.widget<TextField>(find.byType(TextField));
     expect(field.keyboardType, TextInputType.multiline);
     expect(field.textInputAction, TextInputAction.newline);
-    expect(field.maxLines, 2);
+    expect(field.minLines, 1);
+    expect(field.maxLines, 3);
+  });
+
+  testWidgets('large composer expands when soft keyboard is visible', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildTestApp(contextUsageRatio: null, useLargeComposerStyle: true),
+    );
+    await tester.pump();
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.minLines, 2);
+    expect(field.maxLines, 3);
+    tester.view.resetViewInsets();
+  });
+
+  testWidgets('large composer collapses when keyboard hides while focused', (
+    tester,
+  ) async {
+    final focusNode = FocusNode();
+    await tester.pumpWidget(
+      _buildTestApp(
+        contextUsageRatio: null,
+        useLargeComposerStyle: true,
+        focusNode: focusNode,
+      ),
+    );
+    await tester.pump();
+
+    focusNode.requestFocus();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(tester.widget<TextField>(find.byType(TextField)).minLines, 2);
+
+    tester.view.resetViewInsets();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(focusNode.hasFocus, isTrue);
+    expect(tester.widget<TextField>(find.byType(TextField)).minLines, 1);
+  });
+
+  testWidgets('large composer starts collapsing while keyboard is closing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildTestApp(contextUsageRatio: null, useLargeComposerStyle: true),
+    );
+    await tester.pump();
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pump();
+    expect(tester.widget<TextField>(find.byType(TextField)).minLines, 2);
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    await tester.pump();
+    expect(tester.widget<TextField>(find.byType(TextField)).minLines, 1);
+    tester.view.resetViewInsets();
+  });
+
+  testWidgets('large composer resizes from bottom to keep actions anchored', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildTestApp(contextUsageRatio: null, useLargeComposerStyle: true),
+    );
+    await tester.pump();
+
+    final animatedSize = tester.widget<AnimatedSize>(find.byType(AnimatedSize));
+    expect(animatedSize.alignment, Alignment.bottomCenter);
+  });
+
+  testWidgets('large composer stays expanded for existing text without focus', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildTestApp(
+        contextUsageRatio: null,
+        useLargeComposerStyle: true,
+        initialText: 'draft',
+      ),
+    );
+    await tester.pump();
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.minLines, 2);
+    expect(field.maxLines, 3);
   });
 
   testWidgets('compact composer keeps send action', (tester) async {
@@ -207,14 +299,16 @@ Widget _buildTestApp({
   bool useLargeComposerStyle = false,
   CodexPermissionMode? codexPermissionMode,
   ValueChanged<CodexPermissionMode>? onCodexPermissionModeChanged,
+  String initialText = '',
+  FocusNode? focusNode,
 }) {
   return DefaultAssetBundle(
     bundle: _TestAssetBundle(),
     child: MaterialApp(
       home: Scaffold(
         body: ChatInputArea(
-          controller: TextEditingController(),
-          focusNode: FocusNode(),
+          controller: TextEditingController(text: initialText),
+          focusNode: focusNode ?? FocusNode(),
           isProcessing: false,
           onSendMessage: () {},
           onCancelTask: () {},

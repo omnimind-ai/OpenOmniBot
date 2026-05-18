@@ -368,6 +368,18 @@ abstract class AppLocalizations {
   /// **'执行任务时，通过振动进行操作提醒'**
   String get settingsVibrationSubtitle;
 
+  /// No description provided for @settingsIndependentSendButtonTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用独立的发送按钮'**
+  String get settingsIndependentSendButtonTitle;
+
+  /// No description provided for @settingsIndependentSendButtonSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启后，聊天页键盘回车为换行；关闭后，回车直接发送'**
+  String get settingsIndependentSendButtonSubtitle;
+
   /// No description provided for @settingsAutoBackTitle.
   ///
   /// In zh, this message translates to:

@@ -1195,6 +1195,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
 
     _removeLatestLoadingIfExists(runtime);
     _removeOpenClawWaitingCard(runtime, taskId);
+    final reasoningContent =
+        _normalizeReasoningContent(runtime.currentThinkingMessages[taskId]) ??
+        _normalizeReasoningContent(runtime.deepThinkingContent);
     _updateOrAddAiMessage(
       runtime,
       taskId,
@@ -1206,6 +1209,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       attachments: attachments,
       prefillTokensPerSecond: prefillTokensPerSecond,
       decodeTokensPerSecond: decodeTokensPerSecond,
+      reasoningContent: reasoningContent,
     );
     if (emitVoiceUpdate &&
         !isError &&
@@ -1272,6 +1276,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     Map<String, dynamic>? streamMeta,
     double? prefillTokensPerSecond,
     double? decodeTokensPerSecond,
+    String? reasoningContent,
   }) {
     final resolvedStreamMeta = ensureAgentStreamMessageMeta(
       streamMeta,
@@ -1303,6 +1308,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
           content: content,
           isError: isError,
           streamMeta: resolvedStreamMeta,
+          reasoningContent: _normalizeReasoningContent(reasoningContent),
         ),
       );
       return;
@@ -1332,6 +1338,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         entryId: messageId,
         isFinal: isFinal,
       ),
+      reasoningContent:
+          _normalizeReasoningContent(reasoningContent) ??
+          existing.reasoningContent,
     );
   }
 
@@ -1384,6 +1393,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         streamMeta: streamMeta,
         prefillTokensPerSecond: prefillTokensPerSecond,
         decodeTokensPerSecond: decodeTokensPerSecond,
+        reasoningContent: runtime.currentThinkingMessages[taskId],
       );
     }
     if (batch != null && (hasPendingFlush || isFinal)) {
@@ -2262,6 +2272,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         renderMarkdown: true,
         isFinal: true,
         streamMeta: _streamMetaFromEvent(event),
+        reasoningContent: event.thinking,
       );
     }
     _flushAgentThinkingBatchToCard(
@@ -2437,6 +2448,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         renderMarkdown: true,
         isFinal: true,
         streamMeta: _streamMetaFromEvent(event),
+        reasoningContent: event.thinking,
       );
     }
     _flushAgentThinkingBatchToCard(
@@ -2874,6 +2886,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     List<Map<String, dynamic>> attachments = const [],
     double? prefillTokensPerSecond,
     double? decodeTokensPerSecond,
+    String? reasoningContent,
   }) {
     final index = runtime.messages.indexWhere((msg) => msg.id == taskId);
     if (index == -1) {
@@ -2906,6 +2919,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
           isLoading: false,
           isError: isError,
           isSummarizing: isSummarizing,
+          reasoningContent: _normalizeReasoningContent(reasoningContent),
         ),
       );
       return;
@@ -2939,6 +2953,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       isLoading: false,
       isError: isError,
       isSummarizing: isSummarizing,
+      reasoningContent:
+          _normalizeReasoningContent(reasoningContent) ??
+          existing.reasoningContent,
     );
   }
 
@@ -3756,6 +3773,11 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       runtime.toolEventFlushTimers.remove(key);
       notifyListeners();
     });
+  }
+
+  String? _normalizeReasoningContent(String? value) {
+    final normalized = value?.trim() ?? '';
+    return normalized.isEmpty ? null : normalized;
   }
 
   void _removeOpenClawWaitingCard(

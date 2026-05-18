@@ -86,7 +86,7 @@ jobs:
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           elif [[ "$NORMALIZED_REF" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "track=stable" >> "$GITHUB_OUTPUT"
-            echo "draft=true" >> "$GITHUB_OUTPUT"
+            echo "draft=false" >> "$GITHUB_OUTPUT"
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           else
             echo "track=custom" >> "$GITHUB_OUTPUT"

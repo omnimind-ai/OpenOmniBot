@@ -22,6 +22,24 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
       ? ChatPageMode.codex
       : ChatPageMode.normal;
 
+  void _applyHomeQuickPrompt(HomeQuickPrompt prompt) {
+    _suppressNextOutsideTapKeyboardHide = true;
+    final text = prompt.resolvePrompt(context).trim();
+    if (text.isEmpty) {
+      return;
+    }
+    _messageController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _draftMessageByMode[_activeConversationMode] = text;
+    _handleSlashCommandInput();
+    if (!_inputFocusNode.hasFocus) {
+      _inputFocusNode.requestFocus();
+      SystemChannels.textInput.invokeMethod('TextInput.show');
+    }
+  }
+
   double _resolveNormalSurfaceComposerInset({
     required double inputBottomPadding,
     required double keyboardSpacer,
@@ -841,6 +859,11 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
       mode: mode,
       snapshot: toolActivitySnapshot,
     );
+    final bottomInset = MediaQuery.maybeOf(context)?.viewInsets.bottom ?? 0.0;
+    final liftEmptyGreeting =
+        mode == _activeMode &&
+        _emptyGreetingKeyboardLiftTracker.resolveForBuild(bottomInset);
+    final homeGreetingSettings = HomeGreetingSettingsService.notifier.value;
     return ChatMessageList(
       messages: resolvedMessages,
       activeAgentTaskIds: activeAgentTaskIds,
@@ -848,6 +871,12 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
       onExpandedAgentRunTaskIdsChanged: (taskIds) {
         _updateExpandedAgentRunTaskIds(mode, taskIds);
       },
+      showEmptyGreeting: homeGreetingSettings.greetingEnabled,
+      liftEmptyGreeting: liftEmptyGreeting,
+      emptyGreetingQuickPrompts: homeGreetingSettings.quickPrompts,
+      emptyGreetingPinnedQuickPromptIds:
+          homeGreetingSettings.pinnedQuickPromptIds,
+      onQuickPromptSelected: _applyHomeQuickPrompt,
       scrollController: _scrollControllerForMode(mode),
       bottomOverlayInset:
           bottomOverlayInset +
@@ -1717,7 +1746,8 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     final isHdPadLandscape = _isHdPadLandscapeForMediaQuery(mediaQuery);
     final bottomInset = mediaQuery.viewInsets.bottom;
     final viewPaddingBottom = mediaQuery.viewPadding.bottom;
-    final shouldLiftComposerForKeyboard = _inputFocusNode.hasFocus;
+    final shouldLiftComposerForKeyboard =
+        _inputFocusNode.hasFocus || _editingUserMessageId != null;
     final composerKeyboardLift = shouldLiftComposerForKeyboard
         ? bottomInset
         : 0.0;
@@ -1725,9 +1755,10 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         (viewPaddingBottom + edgeInset - composerKeyboardLift)
             .clamp(0.0, edgeInset)
             .toDouble();
-    final keyboardSpacer = shouldLiftComposerForKeyboard
-        ? composerKeyboardLift
-        : 0.0;
+    final keyboardSpacer = resolveChatComposerKeyboardSpacer(
+      shouldLiftComposerForKeyboard: shouldLiftComposerForKeyboard,
+      bottomInset: bottomInset,
+    );
     final commandPanelBottomOffset =
         (_popupMenuBottomOffset() + inputBottomPadding + keyboardSpacer + 6)
             .toDouble();
@@ -1962,6 +1993,15 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
             return success;
           }
 
+          final modelId = _activeConversationModelOverrideSelection?.modelId ??
+              _activeDispatchSceneSelection?.modelId;
+          if (modelId != null && modelId.isNotEmpty) {
+            await StorageService.setManualModelContextThreshold(
+              modelId,
+              nextThreshold,
+            );
+          }
+
           final updatedConversation = latestConversation.copyWith(
             promptTokenThreshold: nextThreshold,
           );
@@ -2133,6 +2173,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
       showToast('No content to send after editing', type: ToastType.warning);
       return;
     }
+    if (!await _ensureNormalChatModelConfigurationForSend()) {
+      return;
+    }
 
     _cancelUserMessageEditing();
     if (!mounted) return;
@@ -2210,6 +2253,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         ),
         type: ToastType.warning,
       );
+      return;
+    }
+    if (!await _ensureNormalChatModelConfigurationForSend()) {
       return;
     }
 

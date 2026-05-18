@@ -158,6 +158,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Use vibration to signal task progress while executing';
 
   @override
+  String get settingsIndependentSendButtonTitle => 'Independent Send Button';
+
+  @override
+  String get settingsIndependentSendButtonSubtitle =>
+      'When enabled, Enter creates a new line; when disabled, Enter sends the message directly';
+
+  @override
   String get settingsAutoBackTitle => 'Return to Chat After Tasks';
 
   @override

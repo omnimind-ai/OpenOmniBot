@@ -45,6 +45,8 @@
   "settingsAppearanceSubtitle": "配置主题模式、语言、共享背景图、聊天字号和文本颜色",
   "settingsVibrationTitle": "振动反馈",
   "settingsVibrationSubtitle": "执行任务时，通过振动进行操作提醒",
+  "settingsIndependentSendButtonTitle": "使用独立的发送按钮",
+  "settingsIndependentSendButtonSubtitle": "开启后，聊天页键盘回车为换行；关闭后，回车直接发送",
   "settingsAutoBackTitle": "任务完成后自动回聊天",
   "settingsAutoBackSubtitle": "关闭后，任务结束将停留在当前完成页面",
   "settingsHabitualHandTitle": "惯用手",

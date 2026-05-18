@@ -906,6 +906,10 @@ class MessageBubble extends StatelessWidget {
               minLines: 1,
               maxLines: 6,
               autofocus: true,
+              scrollPadding: EdgeInsets.only(
+                top: 24,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 96,
+              ),
               style: TextStyle(
                 color: visualProfile.primaryTextColor,
                 fontSize: _chatTextSize,

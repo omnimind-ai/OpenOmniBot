@@ -1547,11 +1547,12 @@ object HttpController {
             requestBodyJson = baseBody,
             apiBase = apiBase
         )
-        return if (DeepSeekProvider.shouldUseOfficialAdapter(protocolType, apiBase)) {
+        val protocolReadyBody = if (DeepSeekProvider.shouldUseOfficialAdapter(protocolType, apiBase)) {
             applyOfficialDeepSeekThinkingMode(localReadyBody)
         } else {
             localReadyBody
         }
+        return stripAnthropicOnlyFieldsForOpenAiCompatible(protocolReadyBody)
     }
 
     private fun applyLocalBackendMaxCompletionTokens(
@@ -1618,6 +1619,25 @@ object HttpController {
             updated.remove("reasoning_effort")
         }
         return KxJsonObject(updated).toString()
+    }
+
+    private fun stripAnthropicOnlyFieldsForOpenAiCompatible(requestBodyJson: String): String {
+        val payload = runCatching {
+            completionJson.parseToJsonElement(requestBodyJson)
+        }.getOrNull() ?: return requestBodyJson
+        return stripAnthropicOnlyFields(payload).toString()
+    }
+
+    private fun stripAnthropicOnlyFields(payload: JsonElement): JsonElement {
+        return when (payload) {
+            is KxJsonObject -> KxJsonObject(
+                payload
+                    .filterKeys { it != "cache_control" }
+                    .mapValues { (_, value) -> stripAnthropicOnlyFields(value) }
+            )
+            is KxJsonArray -> KxJsonArray(payload.map(::stripAnthropicOnlyFields))
+            else -> payload
+        }
     }
 
     private suspend fun postOpenAIStreamRequestAsFlow(

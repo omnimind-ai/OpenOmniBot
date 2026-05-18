@@ -58,6 +58,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
       TextEditingController();
   final TextEditingController _marketSearchController = TextEditingController();
   final TextEditingController _portController = TextEditingController();
+  final FocusNode _portFocusNode = FocusNode();
 
   StreamSubscription<MnnLocalEvent>? _eventSubscription;
   Timer? _pollTimer;
@@ -84,6 +85,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
       initialIndex: _tabIndexFromName(widget.initialTab),
     );
     _tabController.addListener(_handleTabChanged);
+    _portFocusNode.addListener(_handlePortFocusChanged);
     _eventSubscription = MnnLocalModelsService.eventStream.listen(_handleEvent);
     _bootstrap(preferredBackend: widget.initialBackend);
     _startPolling();
@@ -96,6 +98,9 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     _eventSubscription?.cancel();
     _tabController
       ..removeListener(_handleTabChanged)
+      ..dispose();
+    _portFocusNode
+      ..removeListener(_handlePortFocusChanged)
       ..dispose();
     _installedSearchController.dispose();
     _marketSearchController.dispose();
@@ -214,7 +219,10 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     }
   }
 
-  void _syncConfigControllers(MnnLocalConfig config) {
+  void _syncConfigControllers(MnnLocalConfig config, {bool force = false}) {
+    if (_portFocusNode.hasFocus && !force) {
+      return;
+    }
     final nextPort = config.apiPort.toString();
     if (_portController.text != nextPort) {
       _portController.text = nextPort;
@@ -461,16 +469,22 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     }
   }
 
-  Future<void> _savePortConfig({bool silent = false}) async {
+  Future<void> _savePortConfig({
+    bool silent = false,
+    bool restoreOnInvalid = true,
+  }) async {
     final text = _portController.text.trim();
     final port = int.tryParse(text);
     if (port == null || port <= 0) {
       if (!silent) {
         showToast(context.l10n.localModelsPortInvalid, type: ToastType.error);
       }
-      if (_config != null) {
-        _syncConfigControllers(_config!);
+      if (restoreOnInvalid && _config != null) {
+        _syncConfigControllers(_config!, force: true);
       }
+      return;
+    }
+    if (_config?.apiPort == port) {
       return;
     }
     try {
@@ -490,10 +504,31 @@ class _LocalModelsPageState extends State<LocalModelsPage>
 
   void _schedulePortSave() {
     _configSaveDebounce?.cancel();
+    final text = _portController.text.trim();
+    final port = int.tryParse(text);
+    if (port == null || port <= 0 || _config?.apiPort == port) {
+      return;
+    }
     _configSaveDebounce = Timer(
       const Duration(milliseconds: 500),
-      () => _savePortConfig(silent: true),
+      () => _savePortConfig(silent: true, restoreOnInvalid: false),
     );
+  }
+
+  void _handlePortFocusChanged() {
+    if (_portFocusNode.hasFocus) {
+      return;
+    }
+    _configSaveDebounce?.cancel();
+    final text = _portController.text.trim();
+    final port = int.tryParse(text);
+    if (port == null || port <= 0) {
+      if (_config != null) {
+        _syncConfigControllers(_config!);
+      }
+      return;
+    }
+    _savePortConfig(silent: true);
   }
 
   Future<void> _toggleAutoStart(bool value) async {
@@ -905,9 +940,13 @@ class _LocalModelsPageState extends State<LocalModelsPage>
       icon: icon,
       child: TextField(
         controller: controller,
+        focusNode: controller == _portController ? _portFocusNode : null,
         keyboardType: keyboardType,
         onChanged: onChanged,
         onSubmitted: onSubmitted,
+        onTapOutside: controller == _portController
+            ? (_) => _portFocusNode.unfocus()
+            : null,
         style: TextStyle(
           color: _primaryTextColor,
           fontWeight: FontWeight.w600,

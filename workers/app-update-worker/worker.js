@@ -1,9 +1,9 @@
 const DEFAULT_GITHUB_REPO = "omnimind-ai/OpenOmniBot";
 const DEFAULT_EDITIONS = ["omniinfer", "standard"];
 const DEFAULT_R2_RELEASES_PREFIX = "releases";
+const DEFAULT_R2_METADATA_PREFIX = "metadata/releases";
 const DOWNLOAD_ROUTE_PREFIX = "/downloads/";
 const ADMIN_RELEASE_ROUTE_PREFIX = "/admin/releases/";
-const STATS_KEY = "stats";
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
@@ -35,14 +35,13 @@ export default {
         return json({
           ok: true,
           service: "omnibot-app-update-worker",
-          storage: "kv+r2",
+          storage: "r2",
           routes: [
             "/updates",
             "/downloads/:tag/:asset",
             "/admin/releases",
             "/admin/releases/:tag",
             "/admin/releases/:tag/assets/:asset",
-            "/admin/stats",
           ],
         });
       }
@@ -80,11 +79,6 @@ export default {
         return handleDeleteRelease(decodeURIComponent(pathname.slice("/admin/releases/".length)), env);
       }
 
-      if (pathname === "/admin/stats" && request.method === "GET") {
-        requireAdmin(request, env);
-        return handleStats(env);
-      }
-
       return json({ ok: false, error: "Not found" }, 404);
     } catch (error) {
       const status = Number.isInteger(error.status) ? error.status : 500;
@@ -94,7 +88,6 @@ export default {
 };
 
 async function handleUpdateCheck(url, env) {
-  const kv = requireKv(env);
   const currentVersion = normalizeVersion(
     url.searchParams.get("currentVersion") ||
       url.searchParams.get("current_version") ||
@@ -106,14 +99,7 @@ async function handleUpdateCheck(url, env) {
   const source = normalizeSource(url.searchParams.get("source") || env.DEFAULT_SOURCE || "worker");
   const checkedAt = Date.now();
 
-  await recordCheck(kv, {
-    currentVersion: currentVersion || "unknown",
-    edition,
-    source,
-    checkedAt,
-  });
-
-  const releases = await loadReleases(kv);
+  const releases = await loadReleases(requireBucket(env), env);
   const selected = selectLatestRelease(releases, includeBeta);
   if (!selected) {
     return json(emptyUpdateResponse({ currentVersion, checkedAt, edition, source }));
@@ -143,15 +129,15 @@ async function handleUpdateCheck(url, env) {
 }
 
 async function handleListReleases(env) {
-  const releases = await loadReleases(requireKv(env), { includeDrafts: true });
+  const releases = await loadReleases(requireBucket(env), env, { includeDrafts: true });
   return json({ ok: true, releases });
 }
 
 async function handleUpsertRelease(request, env) {
-  const kv = requireKv(env);
+  const bucket = requireBucket(env);
   const body = await readJson(request);
   const release = normalizeRelease(body, env);
-  await kv.put(releaseKey(release.tag), JSON.stringify(release));
+  await bucket.put(releaseObjectKey(release.tag, env), JSON.stringify(release), releaseMetadataOptions(release));
   return json({ ok: true, release });
 }
 
@@ -352,41 +338,36 @@ async function handleDownloadAsset(request, url, env) {
 }
 
 async function handleDeleteRelease(rawTag, env) {
-  const kv = requireKv(env);
+  const bucket = requireBucket(env);
   const tag = normalizeTag(rawTag);
   if (!tag) {
     throw httpError(400, "tag is required");
   }
 
-  const key = releaseKey(tag);
-  const existing = await kv.get(key);
+  const key = releaseObjectKey(tag, env);
+  const existing = await bucket.head(key);
   const deleted = Boolean(existing);
   if (deleted) {
-    await kv.delete(key);
-    await recordDeletedTag(kv);
+    await bucket.delete(key);
   }
 
   return json({ ok: true, tag, deleted });
 }
 
-async function handleStats(env) {
-  const stats = (await requireKv(env).get(STATS_KEY, "json")) || defaultStats();
-  return json({ ok: true, stats });
-}
-
-async function loadReleases(kv, { includeDrafts = false } = {}) {
+async function loadReleases(bucket, env, { includeDrafts = false } = {}) {
   const releases = [];
   let cursor;
+  const prefix = `${normalizeMetadataPrefix(env.R2_METADATA_PREFIX)}/`;
 
   do {
-    const page = await kv.list({ prefix: "release:", cursor });
-    for (const key of page.keys) {
-      const release = await kv.get(key.name, "json");
+    const page = await bucket.list({ prefix, cursor });
+    for (const object of page.objects || []) {
+      const release = await readReleaseMetadata(bucket, object.key);
       if (release) {
         releases.push(release);
       }
     }
-    cursor = page.list_complete ? undefined : page.cursor;
+    cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
 
   return releases
@@ -396,32 +377,6 @@ async function loadReleases(kv, { includeDrafts = false } = {}) {
       if (versionOrder !== 0) return versionOrder;
       return (right.publishedAt || 0) - (left.publishedAt || 0);
     });
-}
-
-async function recordCheck(kv, { currentVersion, edition, source, checkedAt }) {
-  const day = new Date(checkedAt).toISOString().slice(0, 10);
-  const stats = (await kv.get(STATS_KEY, "json")) || defaultStats();
-  stats.totalChecks += 1;
-  stats.lastCheckedAt = checkedAt;
-  increment(stats.byDay, day);
-  increment(stats.byVersion, currentVersion);
-  increment(stats.byEdition, edition);
-  increment(stats.bySource, source);
-  await kv.put(STATS_KEY, JSON.stringify(stats));
-}
-
-async function recordDeletedTag(kv) {
-  const stats = (await kv.get(STATS_KEY, "json")) || defaultStats();
-  stats.deletedTags = (stats.deletedTags || 0) + 1;
-  stats.lastDeletedAt = Date.now();
-  await kv.put(STATS_KEY, JSON.stringify(stats));
-}
-
-function requireKv(env) {
-  if (!env.APP_UPDATE_KV) {
-    throw httpError(500, "APP_UPDATE_KV KV namespace binding is missing");
-  }
-  return env.APP_UPDATE_KV;
 }
 
 function requireBucket(env) {
@@ -607,6 +562,38 @@ function normalizeR2Prefix(raw) {
   return stringValue(raw).replace(/^\/+|\/+$/g, "") || DEFAULT_R2_RELEASES_PREFIX;
 }
 
+function releaseObjectKey(tag, env) {
+  return `${normalizeMetadataPrefix(env.R2_METADATA_PREFIX)}/${encodePathSegment(tag)}.json`;
+}
+
+function normalizeMetadataPrefix(raw) {
+  return stringValue(raw).replace(/^\/+|\/+$/g, "") || DEFAULT_R2_METADATA_PREFIX;
+}
+
+function releaseMetadataOptions(release) {
+  return {
+    httpMetadata: {
+      contentType: "application/json; charset=utf-8",
+    },
+    customMetadata: omitEmpty({
+      tag: release.tag,
+      version: release.version,
+      track: release.track,
+      publishedAt: release.publishedAt ? String(release.publishedAt) : "",
+    }),
+  };
+}
+
+async function readReleaseMetadata(bucket, key) {
+  const object = await bucket.get(key);
+  if (!object) return null;
+  try {
+    return JSON.parse(await object.text());
+  } catch {
+    return null;
+  }
+}
+
 function validateStoredAssetName(name) {
   const value = stringValue(name);
   if (!value || value.includes("/") || value.includes("\\") || value === "." || value === "..") {
@@ -781,28 +768,6 @@ function emptyUpdateResponse({ currentVersion, checkedAt, edition, source }) {
     source,
     assets: [],
   };
-}
-
-function defaultStats() {
-  return {
-    totalChecks: 0,
-    byDay: {},
-    byVersion: {},
-    byEdition: {},
-    bySource: {},
-    deletedTags: 0,
-    lastCheckedAt: 0,
-    lastDeletedAt: 0,
-  };
-}
-
-function increment(bucket, key) {
-  const safeKey = key || "unknown";
-  bucket[safeKey] = (bucket[safeKey] || 0) + 1;
-}
-
-function releaseKey(tag) {
-  return `release:${tag}`;
 }
 
 function stringValue(value) {
