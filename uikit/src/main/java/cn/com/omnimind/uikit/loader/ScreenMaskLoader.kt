@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import cn.com.omnimind.accessibility.service.AssistsService
+import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.uikit.view.data.WindowFlag
 import cn.com.omnimind.uikit.view.mask.BlockUserTouchMask
 
@@ -64,7 +65,19 @@ class ScreenMaskLoader(override val context: Service) :
             getInstance()?.destroy()
             INSTANCE = null
         }
+
+        fun hideForExternalActivity(): Boolean {
+            return getInstance()?.hideForExternalActivity() ?: false
+        }
+
+        fun restoreAfterExternalActivity(): Boolean {
+            return getInstance()?.restoreAfterExternalActivity() ?: false
+        }
     }
+
+    private var hiddenForExternalActivity = false
+    private var externalActivityLockFlag = WindowFlag.SCREEN_UNLOCK_FLAG
+    private var externalActivityVisibility = View.GONE
 
     override fun getParams(flagsValue: Int): WindowManager.LayoutParams {
         return WindowManager.LayoutParams().apply {
@@ -117,5 +130,52 @@ class ScreenMaskLoader(override val context: Service) :
         view.visibility = visibility
     }
 
+    fun hideForExternalActivity(): Boolean {
+        if (hiddenForExternalActivity) {
+            return true
+        }
+        if (!isAttachedToWindow || view.windowToken == null) {
+            return false
+        }
+
+        externalActivityLockFlag = lockFlag
+        externalActivityVisibility = visibility
+        lockFlag = WindowFlag.SCREEN_UNLOCK_FLAG
+        visibility = View.GONE
+
+        return try {
+            toLoad()
+            hiddenForExternalActivity = true
+            OmniLog.d(TAG, "Screen mask hidden for external activity")
+            true
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "hideForExternalActivity failed: ${e.message}", e)
+            false
+        }
+    }
+
+    fun restoreAfterExternalActivity(): Boolean {
+        if (!hiddenForExternalActivity) {
+            return false
+        }
+
+        lockFlag = externalActivityLockFlag
+        visibility = externalActivityVisibility
+
+        return try {
+            toLoad()
+            hiddenForExternalActivity = false
+            OmniLog.d(TAG, "Screen mask restored after external activity")
+            true
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "restoreAfterExternalActivity failed: ${e.message}", e)
+            false
+        }
+    }
+
+    override fun destroy() {
+        hiddenForExternalActivity = false
+        super.destroy()
+    }
 
 }

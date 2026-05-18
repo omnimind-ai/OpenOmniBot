@@ -78,6 +78,7 @@ object DraggableBallInstance {
         instance.catDialogShowInfoViewParams.height = h
         instance.catDialogShowInfoView.visibility = View.VISIBLE
         if (instance.isAttachedToWindow) {
+            instance.catDialogShowInfoView.cancelAnimations()
             instance.getWindowManager().removeView(instance.catDialogShowInfoView)
         }
         try {
@@ -113,6 +114,7 @@ object DraggableBallInstance {
             instance.catDialogShowInfoViewParams.height = h
             instance.catDialogShowInfoView.visibility = View.VISIBLE
             if (instance.isAttachedToWindow) {
+                instance.catDialogShowInfoView.cancelAnimations()
                 instance.getWindowManager().removeView(instance.catDialogShowInfoView)
             }
             try {
@@ -151,6 +153,7 @@ object DraggableBallInstance {
             instance.catDialogShowInfoViewParams.height = h
             instance.catDialogShowInfoView.visibility = View.VISIBLE
             if (instance.isAttachedToWindow) {
+                instance.catDialogShowInfoView.cancelAnimations()
                 instance.getWindowManager().removeView(instance.catDialogShowInfoView)
             }
             try {
@@ -183,6 +186,7 @@ object DraggableBallInstance {
         // 取消待执行的动画任务
         val instance = getInstance() ?: return
         CancelClickLoader.cancelIntercepting()
+        instance.catDialogShowInfoView.cancelAnimations()
         instance.catView.setViewState(DraggableViewState.DOING_TASK)
         instance.collapseMenu()
         instance.catDialogShowInfoView.pauseTask(
@@ -202,6 +206,7 @@ object DraggableBallInstance {
         // 取消待执行的动画任务
         val instance = getInstance() ?: return false
         CancelClickLoader.cancelIntercepting()
+        instance.catDialogShowInfoView.cancelAnimations()
         instance.catView.setViewState(DraggableViewState.DOING_TASK)
         instance.collapseMenu()
 
@@ -231,6 +236,7 @@ object DraggableBallInstance {
         val instance = getInstance() ?: return
         val catDialogShowInfoView = instance.catDialogShowInfoView
         val windowManager = instance.getWindowManager()
+        catDialogShowInfoView.cancelAnimations()
         instance.catView?.setViewState(DraggableViewState.MESSAGE)
         instance.catDialogLayoutView?.finishDoingTask(message)
         catDialogShowInfoView.finishDoingTask()
@@ -374,6 +380,14 @@ object DraggableBallInstance {
         instance.catDialogLayoutView?.visibility = View.VISIBLE
         instance.catDialogShowInfoView?.visibility =
             instance.catDialogShowInfoView?.getShowInfoViewVisibility() ?: View.GONE
+    }
+
+    fun hideForExternalActivity(): Boolean {
+        return getInstance()?.hideForExternalActivity() ?: false
+    }
+
+    fun restoreAfterExternalActivity(): Boolean {
+        return getInstance()?.restoreAfterExternalActivity() ?: false
     }
 
     fun bringCatToFront() {

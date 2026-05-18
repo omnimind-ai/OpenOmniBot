@@ -41,7 +41,19 @@ class CancelClickLoader(override val context: AccessibilityService) :
             getInstance()?.destroy()
             INSTANCE = null
         }
+
+        fun hideForExternalActivity(): Boolean {
+            return getInstance()?.hideForExternalActivity() ?: false
+        }
+
+        fun restoreAfterExternalActivity(): Boolean {
+            return getInstance()?.restoreAfterExternalActivity() ?: false
+        }
     }
+
+    private var hiddenForExternalActivity = false
+    private var externalActivityVisibility = View.GONE
+    private var externalActivityWasIntercepting = false
 
     override fun getParams(flagsValue: Int): WindowManager.LayoutParams {
         return WindowManager.LayoutParams().apply {
@@ -99,5 +111,55 @@ class CancelClickLoader(override val context: AccessibilityService) :
         }
     }
 
+    fun hideForExternalActivity(): Boolean {
+        if (hiddenForExternalActivity) {
+            return true
+        }
+        if (!isAttachedToWindow || view.windowToken == null) {
+            return false
+        }
+
+        externalActivityVisibility = view.visibility
+        externalActivityWasIntercepting = view.visibility == View.VISIBLE
+
+        return try {
+            load(WindowFlag.SCREEN_UNLOCK_FLAG)
+            view.visibility = View.GONE
+            hiddenForExternalActivity = true
+            OmniLog.d(TAG, "Cancel click mask hidden for external activity")
+            true
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "hideForExternalActivity failed: ${e.message}", e)
+            false
+        }
+    }
+
+    fun restoreAfterExternalActivity(): Boolean {
+        if (!hiddenForExternalActivity) {
+            return false
+        }
+
+        return try {
+            load(
+                if (externalActivityWasIntercepting) {
+                    WindowFlag.SCREEN_LOCK_FLAG
+                } else {
+                    WindowFlag.SCREEN_UNLOCK_FLAG
+                }
+            )
+            view.visibility = externalActivityVisibility
+            hiddenForExternalActivity = false
+            OmniLog.d(TAG, "Cancel click mask restored after external activity")
+            true
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "restoreAfterExternalActivity failed: ${e.message}", e)
+            false
+        }
+    }
+
+    override fun destroy() {
+        hiddenForExternalActivity = false
+        super.destroy()
+    }
 
 }

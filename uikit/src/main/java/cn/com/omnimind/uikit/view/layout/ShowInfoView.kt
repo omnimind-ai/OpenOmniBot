@@ -8,6 +8,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.WindowManager.InvalidDisplayException
 import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
 import android.widget.TextView
@@ -150,6 +151,7 @@ class ShowInfoView @JvmOverloads constructor(
         if (CatDialogStateData.viewState == CatDialogViewState.USER_INFO_HINT) {
             return
         }
+        clearAllAminAndDelay()
         CatDialogStateData.viewState = CatDialogViewState.USER_INFO
         delayTask.launch {
             delay(2000)
@@ -211,8 +213,10 @@ class ShowInfoView @JvmOverloads constructor(
                     val dongingAnimator = ValueAnimator.ofInt(1, 100).apply {
                         duration = 1000L // 动画时长 500ms
                         addUpdateListener { animation ->
-                            windowManager.updateViewLayout(
-                                catDialogShowInfoView, catDialogShowInfoViewParams
+                            updateOverlayLayoutIfAttached(
+                                windowManager,
+                                catDialogShowInfoView,
+                                catDialogShowInfoViewParams
                             )
                         }
                     }
@@ -357,8 +361,10 @@ class ShowInfoView @JvmOverloads constructor(
             val dongingAnimator = ValueAnimator.ofInt(1, 100).apply {
                 duration = 1000L // 动画时长 500ms
                 addUpdateListener { animation ->
-                    windowManager.updateViewLayout(
-                        catDialogShowInfoView, catDialogShowInfoViewLayoutParams
+                    updateOverlayLayoutIfAttached(
+                        windowManager,
+                        catDialogShowInfoView,
+                        catDialogShowInfoViewLayoutParams
                     )
                 }
             }
@@ -460,6 +466,7 @@ class ShowInfoView @JvmOverloads constructor(
     }
 
     fun finishDoingTask() {
+        clearAllAminAndDelay()
     }
 
     /**
@@ -490,6 +497,31 @@ class ShowInfoView @JvmOverloads constructor(
         readyDoingTaskAnimator = null
         delayTask = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
-}
 
+    override fun onDetachedFromWindow() {
+        clearAllAminAndDelay()
+        super.onDetachedFromWindow()
+    }
+
+    private fun updateOverlayLayoutIfAttached(
+        windowManager: WindowManager,
+        catDialogShowInfoView: CatDialogShowInfoView,
+        params: WindowManager.LayoutParams
+    ) {
+        if (!catDialogShowInfoView.isAttachedToWindow) {
+            readyDoingTaskAnimator?.cancel()
+            readyDoingTaskAnimator = null
+            return
+        }
+        try {
+            windowManager.updateViewLayout(catDialogShowInfoView, params)
+        } catch (e: IllegalArgumentException) {
+            readyDoingTaskAnimator?.cancel()
+            readyDoingTaskAnimator = null
+        } catch (e: InvalidDisplayException) {
+            readyDoingTaskAnimator?.cancel()
+            readyDoingTaskAnimator = null
+        }
+    }
+}
 

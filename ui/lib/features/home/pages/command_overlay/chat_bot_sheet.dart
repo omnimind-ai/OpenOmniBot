@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/models/agent_stream_event.dart';
@@ -32,6 +33,7 @@ import 'package:ui/widgets/ai_generated_badge.dart';
 import 'package:ui/constants/openclaw/openclaw_keys.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/features/home/pages/chat/mixins/agent_stream_handler.dart';
+import 'package:ui/theme/theme_context.dart';
 
 /// 聊天上下文存储的key
 const String kChatContextStorageKey = 'chat_context_for_summary';
@@ -51,6 +53,7 @@ enum ChatBotLaunchScene {
 
 class ChatBotSheet extends StatefulWidget {
   final String? initialMessage;
+  final List<Map<String, dynamic>> initialAttachments;
   final Map<String, dynamic>? initialScheduleInfo;
 
   /// 启动场景，用于控制是否加载之前保存的上下文
@@ -60,6 +63,7 @@ class ChatBotSheet extends StatefulWidget {
   const ChatBotSheet({
     super.key,
     this.initialMessage,
+    this.initialAttachments = const [],
     this.initialScheduleInfo,
     this.launchScene = ChatBotLaunchScene.normal,
     this.openClawEnabled,
@@ -82,6 +86,7 @@ class _ChatBotSheetState extends State<ChatBotSheet>
       GlobalKey<ChatInputAreaState>();
   final KeyboardInsetMotionTracker _emptyGreetingKeyboardLiftTracker =
       KeyboardInsetMotionTracker();
+  final List<ChatInputAttachment> _pendingAttachments = <ChatInputAttachment>[];
 
   late AiChatService _aiService;
   bool _isAiResponding = false;
@@ -302,10 +307,16 @@ class _ChatBotSheetState extends State<ChatBotSheet>
       _clearSavedContext();
       StorageService.remove(kChatResumeAfterAuthKey);
 
-      // 如果有初始消息，立即发送
-      if (widget.initialMessage != null && widget.initialMessage!.isNotEmpty) {
+      // 如果有初始文本或附件，立即发送
+      final hasInitialPayload =
+          (widget.initialMessage?.trim().isNotEmpty ?? false) ||
+          widget.initialAttachments.isNotEmpty;
+      if (hasInitialPayload) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _sendMessage(text: widget.initialMessage!);
+          _pendingAttachments
+            ..clear()
+            ..addAll(_chatInputAttachmentsFromMaps(widget.initialAttachments));
+          _sendMessage(text: widget.initialMessage ?? '');
         });
       }
 
@@ -966,6 +977,13 @@ class _ChatBotSheetState extends State<ChatBotSheet>
         _inputAreaHeight = height;
       });
     }
+  }
+
+  void _onInputHeightChanged(double height) {
+    if (height == _inputAreaHeight || !mounted) return;
+    setState(() {
+      _inputAreaHeight = height;
+    });
   }
 
   /// 添加loading消息
@@ -1678,7 +1696,7 @@ class _ChatBotSheetState extends State<ChatBotSheet>
 
     for (final message in recentMessages) {
       if (message.user == 1) {
-        final text = message.content?['text'] as String? ?? '';
+        final text = _buildMessageTextForModel(message);
         if (text.isNotEmpty) {
           history.insert(0, {'role': 'user', 'content': text});
         }
@@ -1706,15 +1724,22 @@ class _ChatBotSheetState extends State<ChatBotSheet>
     bool appendUserBubble = true,
   }) async {
     final messageText = text ?? _messageController.text.trim();
-    if (messageText.isEmpty || _isAiResponding) return;
+    final hasAttachments = _pendingAttachments.isNotEmpty;
+    if ((messageText.isEmpty && !hasAttachments) || _isAiResponding) return;
 
     final handledSlash = await _tryHandleSlashCommand(messageText);
     if (handledSlash) return;
 
     _inputFocusNode.unfocus();
+    final attachments = _pendingAttachments
+        .map((item) => item.toMap())
+        .toList();
+    if (attachments.isNotEmpty && mounted) {
+      setState(() => _pendingAttachments.clear());
+    }
     late final ({String userMessageId, String aiMessageId}) messageIds;
     if (appendUserBubble) {
-      messageIds = _addUserMessage(messageText);
+      messageIds = _addUserMessage(messageText, attachments: attachments);
       await _saveConversationToDb();
     } else {
       final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
@@ -1747,20 +1772,22 @@ class _ChatBotSheetState extends State<ChatBotSheet>
     }
   }
 
-  ({String userMessageId, String aiMessageId}) _addUserMessage(String text) {
+  ({String userMessageId, String aiMessageId}) _addUserMessage(
+    String text, {
+    List<Map<String, dynamic>> attachments = const [],
+  }) {
     final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
     final userMessageId = '$timestamp-user';
     final aiMessageId = '$timestamp-ai';
+    final content = <String, dynamic>{'text': text, 'id': userMessageId};
+    if (attachments.isNotEmpty) {
+      content['attachments'] = attachments;
+    }
 
     setState(() {
       _messages.insert(
         0,
-        ChatMessageModel(
-          id: userMessageId,
-          type: 1,
-          user: 1,
-          content: {'text': text, 'id': userMessageId},
-        ),
+        ChatMessageModel(id: userMessageId, type: 1, user: 1, content: content),
       );
       _messageController.clear();
       _isAiResponding = true;
@@ -1795,9 +1822,11 @@ class _ChatBotSheetState extends State<ChatBotSheet>
       _createThinkingCard(aiMessageId);
 
       final userMessage = _latestUserUtterance();
+      final attachments = _latestUserAgentAttachments();
       final success = await AssistsMessageService.createAgentTask(
         taskId: aiMessageId,
         userMessage: userMessage,
+        attachments: attachments,
         conversationId: _currentConversationId,
         conversationMode: ConversationMode.normal.storageValue,
       );
@@ -1824,13 +1853,233 @@ class _ChatBotSheetState extends State<ChatBotSheet>
   String _latestUserUtterance() {
     for (final message in _messages) {
       if (message.user == 1) {
-        final text = message.content?['text'] as String? ?? '';
+        final text = _buildMessageTextForModel(message);
         if (text.isNotEmpty) {
           return text;
         }
       }
     }
     return '';
+  }
+
+  List<Map<String, dynamic>> _latestUserAgentAttachments() {
+    for (final message in _messages) {
+      if (message.user != 1) continue;
+      final raw = message.content?['attachments'];
+      if (raw is! List) return const [];
+      return raw
+          .whereType<Map>()
+          .map((item) => item.map((k, v) => MapEntry(k.toString(), v)))
+          .where(_attachmentShouldSendToModel)
+          .toList();
+    }
+    return const [];
+  }
+
+  bool _attachmentShouldSendToModel(Map<String, dynamic> attachment) {
+    final raw = attachment['sendToModel'];
+    if (raw is bool) return raw;
+    if (raw is String) return raw.toLowerCase() != 'false';
+    return true;
+  }
+
+  String _buildMessageTextForModel(ChatMessageModel message) {
+    final text = message.content?['text'] as String? ?? '';
+    final attachments = _extractAttachmentList(message);
+    if (attachments.isEmpty) return text;
+
+    final pathHint = _buildAttachmentPathHint(attachments);
+    if (pathHint.isNotEmpty) {
+      if (text.trim().isEmpty) return pathHint;
+      return '$text\n$pathHint';
+    }
+
+    final names = attachments
+        .where((attachment) => !_isImageAttachmentMap(attachment))
+        .map(_resolveAttachmentName)
+        .where((name) => name.trim().isNotEmpty)
+        .map((name) => name.trim())
+        .toList();
+    if (names.isEmpty) return text;
+    final attachmentHint = '已附加附件：${names.join('、')}';
+    if (text.trim().isEmpty) return attachmentHint;
+    return '$text\n$attachmentHint';
+  }
+
+  List<Map<String, dynamic>> _extractAttachmentList(ChatMessageModel message) {
+    final raw = message.content?['attachments'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((item) => item.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  String _buildAttachmentPathHint(List<Map<String, dynamic>> attachments) {
+    final lines = attachments
+        .map((attachment) {
+          final promptPath = (attachment['promptPath'] as String? ?? '').trim();
+          if (promptPath.isEmpty) return '';
+          final name = _resolveAttachmentName(attachment);
+          return name.isEmpty ? '- $promptPath' : '- $name: $promptPath';
+        })
+        .where((line) => line.isNotEmpty)
+        .toList();
+    if (lines.isEmpty) return '';
+    return '已添加到 workspace，可通过以下路径读取：\n${lines.join('\n')}';
+  }
+
+  String _resolveAttachmentName(Map<String, dynamic> attachment) {
+    final name = (attachment['name'] as String? ?? '').trim();
+    if (name.isNotEmpty) return name;
+    final path = (attachment['path'] as String? ?? '').trim();
+    return path.isEmpty ? '' : _fileNameFromPath(path);
+  }
+
+  bool _isImageAttachmentMap(Map<String, dynamic> attachment) {
+    final explicit = attachment['isImage'];
+    if (explicit is bool && explicit) return true;
+    final mimeType = (attachment['mimeType'] as String? ?? '').toLowerCase();
+    if (mimeType.startsWith('image/')) return true;
+    final path = (attachment['path'] as String? ?? '').toLowerCase();
+    return _isImageFilePath(path, mimeType: mimeType);
+  }
+
+  Future<void> _pickAttachments() async {
+    var hiddenForPicker = false;
+    try {
+      hiddenForPicker = await ScreenDialogService.hideForExternalActivity();
+      if (hiddenForPicker) {
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      }
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.any,
+      );
+      if (result == null || result.files.isEmpty || !mounted) return;
+
+      setState(() {
+        for (final file in result.files) {
+          final path = file.path;
+          if (path == null || path.isEmpty) continue;
+          final exists = _pendingAttachments.any((item) => item.path == path);
+          if (exists) continue;
+          final displayName = file.name.trim().isNotEmpty
+              ? file.name.trim()
+              : _fileNameFromPath(path);
+          final extension = (file.extension ?? '').toLowerCase();
+          final mimeType = _mimeTypeFromExtension(path, extension: extension);
+          _pendingAttachments.add(
+            ChatInputAttachment(
+              id: '${path}_${DateTime.now().microsecondsSinceEpoch}',
+              name: displayName,
+              path: path,
+              size: file.size > 0 ? file.size : null,
+              mimeType: mimeType,
+              isImage: _isImageFilePath(path, mimeType: mimeType),
+            ),
+          );
+        }
+      });
+    } catch (e) {
+      _showSnackBar('添加附件失败：$e');
+    } finally {
+      if (hiddenForPicker) {
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        await ScreenDialogService.restoreAfterExternalActivity();
+      }
+    }
+  }
+
+  void _removePendingAttachment(String id) {
+    if (!mounted) return;
+    setState(() {
+      _pendingAttachments.removeWhere((item) => item.id == id);
+    });
+  }
+
+  List<ChatInputAttachment> _chatInputAttachmentsFromMaps(
+    List<Map<String, dynamic>> rawAttachments,
+  ) {
+    return rawAttachments
+        .map((item) {
+          final path = (item['path'] as String? ?? '').trim();
+          final name = (item['name'] as String? ?? '').trim();
+          final mimeType = item['mimeType'] as String?;
+          final size = item['size'];
+          return ChatInputAttachment(
+            id: (item['id'] as String? ?? '').trim().isNotEmpty
+                ? (item['id'] as String).trim()
+                : '${path}_${DateTime.now().microsecondsSinceEpoch}',
+            name: name.isNotEmpty ? name : _fileNameFromPath(path),
+            path: path,
+            size: size is int ? size : int.tryParse(size?.toString() ?? ''),
+            mimeType: mimeType,
+            isImage: item['isImage'] is bool
+                ? item['isImage'] as bool
+                : _isImageFilePath(path, mimeType: mimeType),
+            promptPath: item['promptPath'] as String?,
+            sendToModel: item['sendToModel'] is bool
+                ? item['sendToModel'] as bool
+                : true,
+          );
+        })
+        .where((item) => item.path.isNotEmpty)
+        .toList();
+  }
+
+  String _fileNameFromPath(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final segments = normalized.split('/');
+    if (segments.isEmpty) return path;
+    return segments.last.isEmpty ? path : segments.last;
+  }
+
+  bool _isImageFilePath(String path, {String? mimeType}) {
+    final normalizedMime = mimeType?.trim().toLowerCase();
+    if (normalizedMime != null && normalizedMime.startsWith('image/')) {
+      return true;
+    }
+    final lowerPath = path.toLowerCase();
+    return lowerPath.endsWith('.png') ||
+        lowerPath.endsWith('.jpg') ||
+        lowerPath.endsWith('.jpeg') ||
+        lowerPath.endsWith('.webp') ||
+        lowerPath.endsWith('.gif') ||
+        lowerPath.endsWith('.bmp') ||
+        lowerPath.endsWith('.heic') ||
+        lowerPath.endsWith('.heif');
+  }
+
+  String? _mimeTypeFromExtension(String path, {String extension = ''}) {
+    final ext = extension.isNotEmpty
+        ? extension
+        : _fileNameFromPath(path).split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'bmp':
+        return 'image/bmp';
+      case 'heic':
+        return 'image/heic';
+      case 'heif':
+        return 'image/heif';
+      case 'pdf':
+        return 'application/pdf';
+      case 'txt':
+        return 'text/plain';
+      case 'md':
+        return 'text/markdown';
+      default:
+        return null;
+    }
   }
 
   /// 处理 429 限流错误
@@ -2078,6 +2327,8 @@ class _ChatBotSheetState extends State<ChatBotSheet>
     final screenHeight = MediaQuery.of(context).size.height;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final inputAreaHeight = _inputAreaHeight > 0 ? _inputAreaHeight : 72.0;
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
     final liftEmptyGreeting = _emptyGreetingKeyboardLiftTracker.resolveForBuild(
       bottomInset,
     );
@@ -2111,14 +2362,20 @@ class _ChatBotSheetState extends State<ChatBotSheet>
               behavior: HitTestBehavior.translucent,
               onPointerDown: (event) => _handleOutsideTap(event.position),
               child: Container(
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF9FCFF), // #F9FCFF
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? palette.pageBackground
+                      : const Color(0xFFF9FCFF),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: Color(0x1A000000),
+                      color: isDark
+                          ? Colors.black.withValues(alpha: 0.28)
+                          : const Color(0x1A000000),
                       blurRadius: 20,
-                      offset: Offset(0, -4),
+                      offset: const Offset(0, -4),
                     ),
                   ],
                 ),
@@ -2145,7 +2402,9 @@ class _ChatBotSheetState extends State<ChatBotSheet>
                                 width: 100,
                                 height: 4,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFCCCCCC), // #CCCCCC
+                                  color: isDark
+                                      ? palette.borderStrong
+                                      : const Color(0xFFCCCCCC),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                               ),
@@ -2193,11 +2452,9 @@ class _ChatBotSheetState extends State<ChatBotSheet>
                                 : Alignment.center,
                             child: ChatEmptyGreeting(
                               compact: true,
-                              primaryTextColor: const Color(0xFF353E53),
-                              secondaryTextColor: const Color(0xFF71809B),
-                              accentColor: Theme.of(
-                                context,
-                              ).colorScheme.primary,
+                              primaryTextColor: palette.textPrimary,
+                              secondaryTextColor: palette.textSecondary,
+                              accentColor: palette.accentPrimary,
                               quickPrompts: homeGreetingSettings.quickPrompts,
                               pinnedQuickPromptIds:
                                   homeGreetingSettings.pinnedQuickPromptIds,
@@ -2312,13 +2569,21 @@ class _ChatBotSheetState extends State<ChatBotSheet>
   }
 
   Widget _buildVlmInfoPrompt() {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final promptAccentColor = isDark
+        ? palette.accentPrimary
+        : const Color(0xFF4F83FF);
+    final promptTextColor = isDark
+        ? palette.textPrimary
+        : const Color(0xFF1D3E7B);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFE8F2FF),
+        color: isDark ? palette.surfaceSecondary : const Color(0xFFE8F2FF),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF4F83FF)),
+        border: Border.all(color: promptAccentColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2330,13 +2595,12 @@ class _ChatBotSheetState extends State<ChatBotSheet>
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF1D3E7B),
-            ),
+            ).copyWith(color: promptTextColor),
           ),
           const SizedBox(height: 6),
           Text(
             _vlmInfoQuestion ?? '',
-            style: const TextStyle(fontSize: 13, color: Color(0xFF1D3E7B)),
+            style: TextStyle(fontSize: 13, color: promptTextColor),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -2391,6 +2655,17 @@ class _ChatBotSheetState extends State<ChatBotSheet>
 
   Widget _buildSlashCommandPanel() {
     final visible = _showSlashCommandPanel || _openClawPanelExpanded;
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final panelTextColor = isDark
+        ? palette.textPrimary
+        : const Color(0xFF1F2937);
+    final panelSecondaryTextColor = isDark
+        ? palette.textSecondary
+        : const Color(0xFF6B7280);
+    final panelAccentColor = isDark
+        ? palette.accentPrimary
+        : const Color(0xFF2563EB);
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
       transitionBuilder: (child, animation) {
@@ -2412,11 +2687,12 @@ class _ChatBotSheetState extends State<ChatBotSheet>
               margin: const EdgeInsets.fromLTRB(24, 0, 24, 6),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: isDark ? palette.surfacePrimary : Colors.white,
                 borderRadius: BorderRadius.circular(12),
+                border: isDark ? Border.all(color: palette.borderSubtle) : null,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.08),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -2426,12 +2702,12 @@ class _ChatBotSheetState extends State<ChatBotSheet>
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'OpenClaw 配置',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
+                            color: panelTextColor,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -2473,27 +2749,23 @@ class _ChatBotSheetState extends State<ChatBotSheet>
                       borderRadius: BorderRadius.circular(10),
                       child: Row(
                         children: [
-                          const Icon(
-                            Icons.link,
-                            size: 16,
-                            color: Color(0xFF2563EB),
-                          ),
+                          Icon(Icons.link, size: 16, color: panelAccentColor),
                           const SizedBox(width: 8),
-                          const Expanded(
+                          Expanded(
                             child: Text(
                               'OpenClaw',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
+                                color: panelTextColor,
                               ),
                             ),
                           ),
                           Text(
                             LegacyTextLocalizer.isEnglish ? 'Config' : '配置',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: Color(0xFF6B7280),
+                              color: panelSecondaryTextColor,
                             ),
                           ),
                         ],
@@ -2515,8 +2787,14 @@ class _ChatBotSheetState extends State<ChatBotSheet>
         onSendMessage: _sendMessage,
         onCancelTask: _onCancelTask,
         onPopupVisibilityChanged: _onPopupVisibilityChanged,
+        onInputHeightChanged: _onInputHeightChanged,
         openClawEnabled: _openClawEnabled,
         onToggleOpenClaw: _setOpenClawEnabled,
+        useLargeComposerStyle: true,
+        useAttachmentPickerForPlus: true,
+        onPickAttachment: _pickAttachments,
+        attachments: _pendingAttachments,
+        onRemoveAttachment: _removePendingAttachment,
       ),
     );
   }

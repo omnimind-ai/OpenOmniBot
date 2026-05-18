@@ -135,6 +135,15 @@ class CatDialogShowInfoView @JvmOverloads constructor(
         visibility = GONE
     }
 
+    fun cancelAnimations() {
+        showInfoView.clearAllAminAndDelay()
+    }
+
+    override fun onDetachedFromWindow() {
+        cancelAnimations()
+        super.onDetachedFromWindow()
+    }
+
 
     fun getShowInfoViewVisibility(): Int {
         return showInfoView.visibility

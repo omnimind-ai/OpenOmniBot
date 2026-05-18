@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/assists_core_service.dart';
@@ -9,6 +10,7 @@ import 'package:ui/services/screen_dialog_service.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/constants/openclaw/openclaw_keys.dart';
 import 'package:ui/features/home/pages/common/openclaw_connection_checker.dart';
+import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/data_parser.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/image/cached_image.dart';
@@ -32,6 +34,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
   final GlobalKey<ChatInputAreaState> _chatInputAreaKey =
       GlobalKey<ChatInputAreaState>();
   final GlobalKey _inputAreaKey = GlobalKey();
+  final List<ChatInputAttachment> _pendingAttachments = <ChatInputAttachment>[];
 
   bool _isPopupVisible = false;
   Map<String, dynamic>? _scheduleInfo;
@@ -167,12 +170,13 @@ class _CommandOverlayState extends State<CommandOverlay> {
   }
 
   Widget _buildOpenClawToggle() {
+    final palette = context.omniPalette;
+    final labelColor = context.isDarkTheme
+        ? palette.textSecondary
+        : const Color(0xFF666666);
     return Row(
       children: [
-        const Text(
-          'OpenClaw',
-          style: TextStyle(fontSize: 12, color: Color(0xFF666666)),
-        ),
+        Text('OpenClaw', style: TextStyle(fontSize: 12, color: labelColor)),
         const SizedBox(width: 8),
         Switch.adaptive(
           value: _openClawEnabled,
@@ -182,15 +186,12 @@ class _CommandOverlayState extends State<CommandOverlay> {
         const Spacer(),
         TextButton.icon(
           onPressed: _showOpenClawConfigDialog,
-          icon: const Icon(Icons.settings, size: 16, color: Color(0xFF666666)),
-          label: const Text(
-            '配置',
-            style: TextStyle(fontSize: 12, color: Color(0xFF666666)),
-          ),
+          icon: Icon(Icons.settings, size: 16, color: labelColor),
+          label: Text('配置', style: TextStyle(fontSize: 12, color: labelColor)),
           style: TextButton.styleFrom(
             visualDensity: VisualDensity.compact,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            foregroundColor: const Color(0xFF666666),
+            foregroundColor: labelColor,
           ),
         ),
       ],
@@ -418,21 +419,32 @@ class _CommandOverlayState extends State<CommandOverlay> {
 
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    final hasAttachments = _pendingAttachments.isNotEmpty;
+    if (text.isEmpty && !hasAttachments) return;
 
     final handledSlash = await _tryHandleSlashCommand(text);
     if (handledSlash) return;
 
+    final attachments = _pendingAttachments
+        .map((item) => item.toMap())
+        .toList();
+    if (attachments.isNotEmpty && mounted) {
+      setState(() => _pendingAttachments.clear());
+    }
     _inputFocusNode.unfocus();
     _messageController.clear();
 
-    _showChatSheet(initialMessage: text);
+    _showChatSheet(initialMessage: text, initialAttachments: attachments);
   }
 
-  void _showChatSheet({String? initialMessage}) {
+  void _showChatSheet({
+    String? initialMessage,
+    List<Map<String, dynamic>> initialAttachments = const [],
+  }) {
     _showChatSheetWithScene(
       ChatBotLaunchScene.normal,
       initialMessage: initialMessage,
+      initialAttachments: initialAttachments,
     );
   }
 
@@ -440,6 +452,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
   void _showChatSheetWithScene(
     ChatBotLaunchScene launchScene, {
     String? initialMessage,
+    List<Map<String, dynamic>> initialAttachments = const [],
   }) {
     showModalBottomSheet(
       context: context,
@@ -451,6 +464,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
       enableDrag: false,
       builder: (context) => ChatBotSheet(
         initialMessage: initialMessage,
+        initialAttachments: initialAttachments,
         launchScene: launchScene,
         openClawEnabled: _openClawEnabled,
       ),
@@ -474,8 +488,126 @@ class _CommandOverlayState extends State<CommandOverlay> {
     });
   }
 
+  Future<void> _pickAttachments() async {
+    var hiddenForPicker = false;
+    try {
+      hiddenForPicker = await ScreenDialogService.hideForExternalActivity();
+      if (hiddenForPicker) {
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      }
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.any,
+      );
+      if (result == null || result.files.isEmpty || !mounted) return;
+
+      setState(() {
+        for (final file in result.files) {
+          final path = file.path;
+          if (path == null || path.isEmpty) continue;
+          final exists = _pendingAttachments.any((item) => item.path == path);
+          if (exists) continue;
+          final displayName = file.name.trim().isNotEmpty
+              ? file.name.trim()
+              : _fileNameFromPath(path);
+          final extension = (file.extension ?? '').toLowerCase();
+          final mimeType = _mimeTypeFromExtension(path, extension: extension);
+          _pendingAttachments.add(
+            ChatInputAttachment(
+              id: '${path}_${DateTime.now().microsecondsSinceEpoch}',
+              name: displayName,
+              path: path,
+              size: file.size > 0 ? file.size : null,
+              mimeType: mimeType,
+              isImage: _isImageFilePath(path, mimeType: mimeType),
+            ),
+          );
+        }
+      });
+    } catch (e) {
+      showToast('添加附件失败：$e', type: ToastType.error);
+    } finally {
+      if (hiddenForPicker) {
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        await ScreenDialogService.restoreAfterExternalActivity();
+      }
+    }
+  }
+
+  void _removePendingAttachment(String id) {
+    if (!mounted) return;
+    setState(() {
+      _pendingAttachments.removeWhere((item) => item.id == id);
+    });
+  }
+
+  String _fileNameFromPath(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final segments = normalized.split('/');
+    if (segments.isEmpty) return path;
+    return segments.last.isEmpty ? path : segments.last;
+  }
+
+  bool _isImageFilePath(String path, {String? mimeType}) {
+    final normalizedMime = mimeType?.trim().toLowerCase();
+    if (normalizedMime != null && normalizedMime.startsWith('image/')) {
+      return true;
+    }
+    final lowerPath = path.toLowerCase();
+    return lowerPath.endsWith('.png') ||
+        lowerPath.endsWith('.jpg') ||
+        lowerPath.endsWith('.jpeg') ||
+        lowerPath.endsWith('.webp') ||
+        lowerPath.endsWith('.gif') ||
+        lowerPath.endsWith('.bmp') ||
+        lowerPath.endsWith('.heic') ||
+        lowerPath.endsWith('.heif');
+  }
+
+  String? _mimeTypeFromExtension(String path, {String extension = ''}) {
+    final ext = extension.isNotEmpty
+        ? extension
+        : _fileNameFromPath(path).split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'bmp':
+        return 'image/bmp';
+      case 'heic':
+        return 'image/heic';
+      case 'heif':
+        return 'image/heif';
+      case 'pdf':
+        return 'application/pdf';
+      case 'txt':
+        return 'text/plain';
+      case 'md':
+        return 'text/markdown';
+      default:
+        return null;
+    }
+  }
+
   Widget _buildSlashCommandPanel() {
     final visible = _showSlashCommandPanel || _openClawPanelExpanded;
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final panelTextColor = isDark
+        ? palette.textPrimary
+        : const Color(0xFF1F2937);
+    final panelSecondaryTextColor = isDark
+        ? palette.textSecondary
+        : const Color(0xFF6B7280);
+    final panelAccentColor = isDark
+        ? palette.accentPrimary
+        : const Color(0xFF2563EB);
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
       transitionBuilder: (child, animation) {
@@ -497,11 +629,12 @@ class _CommandOverlayState extends State<CommandOverlay> {
               margin: const EdgeInsets.fromLTRB(24, 0, 24, 6),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: isDark ? palette.surfacePrimary : Colors.white,
                 borderRadius: BorderRadius.circular(12),
+                border: isDark ? Border.all(color: palette.borderSubtle) : null,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.08),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -511,12 +644,12 @@ class _CommandOverlayState extends State<CommandOverlay> {
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'OpenClaw 配置',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
+                            color: panelTextColor,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -553,16 +686,16 @@ class _CommandOverlayState extends State<CommandOverlay> {
                       },
                       borderRadius: BorderRadius.circular(10),
                       child: Row(
-                        children: const [
-                          Icon(Icons.link, size: 16, color: Color(0xFF2563EB)),
-                          SizedBox(width: 8),
+                        children: [
+                          Icon(Icons.link, size: 16, color: panelAccentColor),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               'OpenClaw',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
+                                color: panelTextColor,
                               ),
                             ),
                           ),
@@ -570,7 +703,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
                             '配置',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Color(0xFF6B7280),
+                              color: panelSecondaryTextColor,
                             ),
                           ),
                         ],
@@ -651,7 +784,12 @@ class _CommandOverlayState extends State<CommandOverlay> {
                       onToggleOpenClaw: _setOpenClawEnabled,
                       onLongPressOpenClaw: () =>
                           _showOpenClawCommandPanel(expand: true),
+                      useLargeComposerStyle: true,
                       useFrostedGlass: true, // command_overlay 使用毛玻璃效果
+                      useAttachmentPickerForPlus: true,
+                      onPickAttachment: _pickAttachments,
+                      attachments: _pendingAttachments,
+                      onRemoveAttachment: _removePendingAttachment,
                     ),
                   ],
                 ),
