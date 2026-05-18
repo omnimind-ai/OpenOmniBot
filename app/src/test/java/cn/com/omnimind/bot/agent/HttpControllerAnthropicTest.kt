@@ -1,6 +1,10 @@
 package cn.com.omnimind.bot.agent
 
 import cn.com.omnimind.assists.controller.http.HttpController
+import cn.com.omnimind.baselib.llm.AssistantToolCall
+import cn.com.omnimind.baselib.llm.AssistantToolCallFunction
+import cn.com.omnimind.baselib.llm.ChatCompletionMessage
+import cn.com.omnimind.baselib.llm.ChatCompletionRequest
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.InputStreamReader
@@ -10,6 +14,8 @@ import java.net.ServerSocket
 import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.concurrent.thread
@@ -82,6 +88,53 @@ class HttpControllerAnthropicTest {
 
         val root = json.parseToJsonElement(payload).jsonObject
         assertFalse(root.containsKey("cache_control"))
+    }
+
+    @Test
+    fun `anthropic tool history includes assistant thinking block`() {
+        val payload = HttpController.convertToAnthropicRequestJson(
+            ChatCompletionRequest(
+                model = "claude-sonnet",
+                messages = listOf(
+                    ChatCompletionMessage(
+                        role = "user",
+                        content = JsonPrimitive("Check the weather")
+                    ),
+                    ChatCompletionMessage(
+                        role = "assistant",
+                        content = JsonPrimitive("I will check."),
+                        reasoningContent = "Need to call the weather tool",
+                        toolCalls = listOf(
+                            AssistantToolCall(
+                                id = "call_weather",
+                                function = AssistantToolCallFunction(
+                                    name = "get_weather",
+                                    arguments = """{"city":"Beijing"}"""
+                                )
+                            )
+                        )
+                    ),
+                    ChatCompletionMessage(
+                        role = "tool",
+                        toolCallId = "call_weather",
+                        content = JsonPrimitive("""{"temperature":"21C"}""")
+                    )
+                )
+            )
+        )
+
+        val root = json.parseToJsonElement(payload).jsonObject
+        val assistantContent = root["messages"]!!.jsonArray[1]
+            .jsonObject["content"]!!.jsonArray
+
+        assertEquals("thinking", assistantContent[0].jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals(
+            "Need to call the weather tool",
+            assistantContent[0].jsonObject["thinking"]!!.jsonPrimitive.content
+        )
+        assertEquals("text", assistantContent[1].jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals("tool_use", assistantContent[2].jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals("call_weather", assistantContent[2].jsonObject["id"]!!.jsonPrimitive.content)
     }
 
     @Test

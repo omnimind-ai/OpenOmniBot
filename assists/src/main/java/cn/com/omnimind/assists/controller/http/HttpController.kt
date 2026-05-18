@@ -666,6 +666,7 @@ object HttpController {
      *
      * 转换规则：
      * - system 消息合并提取到顶层 system 字段
+     * - assistant.reasoning_content → content[].type = "thinking"
      * - assistant 的 tool_calls → content[].type = "tool_use"
      * - tool role → user 消息，content[].type = "tool_result"
      * - tools[].function.parameters → tools[].input_schema
@@ -732,6 +733,7 @@ object HttpController {
                     val toolCalls = msg.toolCalls
                     if (!toolCalls.isNullOrEmpty()) {
                         val content = JSONArray()
+                        appendAnthropicThinkingBlock(content, msg.reasoningContent)
                         // optional text part
                         val textPart = msg.content?.let {
                             if (it is kotlinx.serialization.json.JsonPrimitive) it.content.trim() else null
@@ -817,6 +819,15 @@ object HttpController {
         }
 
         return applyAnthropicAutomaticCacheControl(obj.toString())
+    }
+
+    private fun appendAnthropicThinkingBlock(content: JSONArray, reasoningContent: String?) {
+        if (reasoningContent.isNullOrBlank()) return
+        content.put(
+            JSONObject()
+                .put("type", "thinking")
+                .put("thinking", reasoningContent)
+        )
     }
 
     private fun applyAnthropicAutomaticCacheControl(requestJson: String): String {
