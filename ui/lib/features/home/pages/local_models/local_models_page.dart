@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/mnn_local_models_service.dart';
+import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/app_text_styles.dart';
 import 'package:ui/theme/omni_theme_palette.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
-import 'package:ui/widgets/omni_segmented_slider.dart';
 import 'package:ui/widgets/settings_section_title.dart';
 
 enum _LocalModelsTab { service, market }
@@ -77,6 +77,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
   bool _serviceBusy = false;
   String _serviceBusyModelId = '';
   _PortTarget _selectedPortTarget = _PortTarget.local;
+  double _tabSwitcherDragDelta = 0;
 
   bool _importing = false;
   double _importProgress = 0.0;
@@ -271,6 +272,27 @@ class _LocalModelsPageState extends State<LocalModelsPage>
         _refreshMarket(silent: true);
         break;
     }
+  }
+
+  void _switchTab(_LocalModelsTab tab) {
+    if (_tabController.index == tab.index) return;
+    _tabController.animateTo(
+      tab.index,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _handleTabSwitcherDragEnd({double velocity = 0}) {
+    final shouldSwitchRight = (_tabSwitcherDragDelta + velocity * 0.015) > 0;
+    final shouldSwitch =
+        _tabSwitcherDragDelta.abs() > 14 || velocity.abs() > 250;
+    if (shouldSwitch) {
+      _switchTab(
+        shouldSwitchRight ? _LocalModelsTab.market : _LocalModelsTab.service,
+      );
+    }
+    _tabSwitcherDragDelta = 0;
   }
 
   Future<void> _refreshConfig({bool silent = false}) async {
@@ -2097,6 +2119,10 @@ class _LocalModelsPageState extends State<LocalModelsPage>
               if (!isCompleted && !isDownloading)
                 FilledButton.icon(
                   onPressed: () async {
+                    final downloadStartedToast = context.l10n
+                        .localModelsDownloadStartedToast(model.name);
+                    final downloadStartFailed =
+                        context.l10n.localModelsDownloadStartFailed;
                     debugPrint(
                       '[LocalModels] button: startDownload model=${model.id} (${model.name}), isPaused=$isPaused, isFailed=$isFailed',
                     );
@@ -2115,9 +2141,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                       );
                       if (mounted) {
                         showToast(
-                          context.l10n.localModelsDownloadStartedToast(
-                            model.name,
-                          ),
+                          downloadStartedToast,
                           type: ToastType.success,
                         );
                       }
@@ -2127,10 +2151,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                         '[LocalModels] button: startDownload error model=${model.id}, error=$e',
                       );
                       _refreshMarket(silent: true);
-                      showToast(
-                        context.l10n.localModelsDownloadStartFailed,
-                        type: ToastType.error,
-                      );
+                      showToast(downloadStartFailed, type: ToastType.error);
                     }
                   },
                   style: _filledButtonStyle(tone: _AccentTone.accent),
@@ -2151,6 +2172,10 @@ class _LocalModelsPageState extends State<LocalModelsPage>
               if (isDownloading)
                 OutlinedButton.icon(
                   onPressed: () async {
+                    final downloadPausedToast = context.l10n
+                        .localModelsDownloadPausedToast(model.name);
+                    final downloadPauseFailed =
+                        context.l10n.localModelsDownloadPauseFailed;
                     debugPrint(
                       '[LocalModels] button: pauseDownload model=${model.id} (${model.name})',
                     );
@@ -2168,12 +2193,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                         '[LocalModels] button: pauseDownload success model=${model.id}',
                       );
                       if (mounted) {
-                        showToast(
-                          context.l10n.localModelsDownloadPausedToast(
-                            model.name,
-                          ),
-                          type: ToastType.warning,
-                        );
+                        showToast(downloadPausedToast, type: ToastType.warning);
                       }
                       _refreshMarket(silent: true);
                     } catch (e) {
@@ -2181,10 +2201,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                         '[LocalModels] button: pauseDownload error model=${model.id}, error=$e',
                       );
                       _refreshMarket(silent: true);
-                      showToast(
-                        context.l10n.localModelsDownloadPauseFailed,
-                        type: ToastType.error,
-                      );
+                      showToast(downloadPauseFailed, type: ToastType.error);
                     }
                   },
                   style: _outlinedButtonStyle(tone: _AccentTone.warning),
@@ -2248,42 +2265,157 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     return AnimatedBuilder(
       animation: _tabController.animation!,
       builder: (context, _) {
-        final tabAnimationValue =
-            _tabController.animation?.value ?? _tabController.index.toDouble();
-        final options = <OmniSegmentedOption<_LocalModelsTab>>[
-          OmniSegmentedOption<_LocalModelsTab>(
-            value: _LocalModelsTab.service,
-            label: context.l10n.localModelsTabService,
-            icon: Icons.hub_rounded,
-            id: 'service',
-          ),
-          OmniSegmentedOption<_LocalModelsTab>(
-            value: _LocalModelsTab.market,
-            label: context.l10n.localModelsTabMarket,
-            icon: Icons.storefront_rounded,
-            id: 'market',
-          ),
-        ];
+        final double tabAnimationValue =
+            (_tabController.animation?.value ?? _tabController.index.toDouble())
+                .clamp(0.0, _LocalModelsTab.values.length - 1.0)
+                .toDouble();
+        final highlightedIndex = tabAnimationValue.round().clamp(
+          0,
+          _LocalModelsTab.values.length - 1,
+        );
         return Padding(
-          padding: const EdgeInsets.fromLTRB(18, 10, 18, 6),
-          child: OmniSegmentedSlider<_LocalModelsTab>(
-            key: const ValueKey('local-models-tab-slider'),
-            value:
-                _LocalModelsTab.values[tabAnimationValue.round().clamp(
-                  0,
-                  _LocalModelsTab.values.length - 1,
-                )],
-            options: options,
-            position: tabAnimationValue,
-            keyPrefix: 'local-models-tab',
-            onChanged: (nextTab) {
-              if (_tabController.index != nextTab.index) {
-                _tabController.animateTo(nextTab.index);
-              }
-            },
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+          child: Builder(
+            builder: (sliderContext) => GestureDetector(
+              key: const ValueKey('local-models-tab-switcher'),
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragUpdate: (details) {
+                _tabSwitcherDragDelta += details.delta.dx;
+              },
+              onHorizontalDragEnd: (details) {
+                _handleTabSwitcherDragEnd(
+                  velocity: details.primaryVelocity ?? 0,
+                );
+              },
+              onTapUp: (details) {
+                final box = sliderContext.findRenderObject() as RenderBox?;
+                if (box == null || !box.hasSize) return;
+                final local = box.globalToLocal(details.globalPosition);
+                _switchTab(
+                  local.dx >= box.size.width / 2
+                      ? _LocalModelsTab.market
+                      : _LocalModelsTab.service,
+                );
+              },
+              child: Container(
+                height: 40,
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: _isDarkTheme ? _palette.segmentTrack : Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: _isDarkTheme
+                        ? _palette.borderSubtle
+                        : AppColors.text10,
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    Align(
+                      alignment: Alignment.lerp(
+                        Alignment.centerLeft,
+                        Alignment.centerRight,
+                        tabAnimationValue,
+                      )!,
+                      child: FractionallySizedBox(
+                        widthFactor: 0.5,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 1),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(999),
+                            gradient: _isDarkTheme
+                                ? LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      _blend(
+                                        _palette.surfaceElevated,
+                                        _palette.accentPrimary,
+                                        0.18,
+                                      ),
+                                      _blend(
+                                        _palette.surfaceSecondary,
+                                        _palette.accentPrimary,
+                                        0.30,
+                                      ),
+                                    ],
+                                  )
+                                : const LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      Color(0xFF2DA5F0),
+                                      Color(0xFF1930D9),
+                                    ],
+                                  ),
+                            boxShadow: _isDarkTheme
+                                ? null
+                                : const [
+                                    BoxShadow(
+                                      color: Color(0x1F1930D9),
+                                      blurRadius: 10,
+                                      offset: Offset(0, 4),
+                                    ),
+                                  ],
+                            border: _isDarkTheme
+                                ? Border.all(color: _palette.borderSubtle)
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        _buildTabButton(
+                          label: context.l10n.localModelsTabService,
+                          tab: _LocalModelsTab.service,
+                          highlightedIndex: highlightedIndex,
+                        ),
+                        _buildTabButton(
+                          label: context.l10n.localModelsTabMarket,
+                          tab: _LocalModelsTab.market,
+                          highlightedIndex: highlightedIndex,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildTabButton({
+    required String label,
+    required _LocalModelsTab tab,
+    required int highlightedIndex,
+  }) {
+    final selected = highlightedIndex == tab.index;
+
+    return Expanded(
+      child: Center(
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          scale: selected ? 1 : 0.97,
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            style: TextStyle(
+              color: selected
+                  ? (_isDarkTheme ? _palette.textPrimary : Colors.white)
+                  : (_isDarkTheme ? _palette.textSecondary : AppColors.text70),
+              fontSize: 14,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              fontFamily: AppTextStyles.fontFamily,
+            ),
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+      ),
     );
   }
 
@@ -2370,9 +2502,9 @@ class _LocalModelsPageState extends State<LocalModelsPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: accentColor.withOpacity(0.12),
+        color: accentColor.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: accentColor.withOpacity(0.3)),
+        border: Border.all(color: accentColor.withValues(alpha: 0.3)),
       ),
       child: Text(
         value,
