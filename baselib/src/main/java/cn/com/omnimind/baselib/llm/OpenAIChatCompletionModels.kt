@@ -59,9 +59,18 @@ data class ChatCompletionMessage(
     val toolCalls: List<AssistantToolCall>? = null,
     @SerialName("reasoning_content")
     val reasoningContent: String? = null,
+    val thinking: ChatCompletionThinkingContentBlock? = null,
+    @SerialName("thinking_signature")
+    val thinkingSignature: String? = null,
     @SerialName("tool_call_id")
     val toolCallId: String? = null,
     val name: String? = null
+)
+
+@Serializable
+data class ChatCompletionThinkingContentBlock(
+    val thinking: String,
+    val signature: String? = null
 )
 
 @Serializable

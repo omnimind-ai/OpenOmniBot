@@ -11,6 +11,7 @@ import cn.com.omnimind.baselib.llm.AiRequestLogStore
 import cn.com.omnimind.baselib.llm.ChatCompletionMessage
 import cn.com.omnimind.baselib.llm.ChatCompletionRequest
 import cn.com.omnimind.baselib.llm.ChatCompletionStreamOptions
+import cn.com.omnimind.baselib.llm.ChatCompletionThinkingContentBlock
 import cn.com.omnimind.baselib.llm.DeepSeekProvider
 import cn.com.omnimind.baselib.database.DatabaseHelper
 import cn.com.omnimind.baselib.database.TokenUsageRecord
@@ -730,8 +731,12 @@ object HttpController {
             when (msg.role) {
                 "assistant" -> {
                     val toolCalls = msg.toolCalls
+                    val replayThinking = buildAnthropicThinkingBlock(msg)
                     if (!toolCalls.isNullOrEmpty()) {
                         val content = JSONArray()
+                        if (replayThinking != null) {
+                            content.put(replayThinking)
+                        }
                         // optional text part
                         val textPart = msg.content?.let {
                             if (it is kotlinx.serialization.json.JsonPrimitive) it.content.trim() else null
@@ -752,8 +757,17 @@ object HttpController {
                         messages.put(JSONObject().put("role", "assistant").put("content", content))
                     } else {
                         val content = convertContentToAnthropicFormat(msg.content)
-                        if (content != null) {
-                            messages.put(JSONObject().put("role", "assistant").put("content", content))
+                        if (replayThinking != null || content != null) {
+                            val mergedContent = JSONArray()
+                            if (replayThinking != null) {
+                                mergedContent.put(replayThinking)
+                            }
+                            appendAnthropicContentBlocks(mergedContent, content)
+                            messages.put(
+                                JSONObject()
+                                    .put("role", "assistant")
+                                    .put("content", mergedContent)
+                            )
                         }
                     }
                 }
@@ -1044,6 +1058,30 @@ object HttpController {
                         val index = json.optInt("index", 0)
                         val block = json.optJSONObject("content_block") ?: return
                         when (block.optString("type")) {
+                            "thinking" -> {
+                                val initialThinking = block.optString("thinking", "")
+                                if (initialThinking.isNotEmpty()) {
+                                    val chunk = buildOpenAIChunk(
+                                        deltaJson = JSONObject()
+                                            .put("reasoning_content", initialThinking)
+                                            .put(
+                                                "thinking",
+                                                JSONObject().put("thinking", initialThinking)
+                                            ),
+                                        finishReason = null
+                                    )
+                                    outer.onEvent(eventSource, id, type, chunk)
+                                }
+                                val initialSignature = block.optString("signature", "")
+                                if (initialSignature.isNotEmpty()) {
+                                    val chunk = buildOpenAIChunk(
+                                        deltaJson = JSONObject()
+                                            .put("thinking_signature", initialSignature),
+                                        finishReason = null
+                                    )
+                                    outer.onEvent(eventSource, id, type, chunk)
+                                }
+                            }
                             "tool_use" -> {
                                 toolUseBlocks[index] = JSONObject()
                                     .put("id", block.optString("id", "tool_$index"))
@@ -1107,7 +1145,22 @@ object HttpController {
                                 val thinking = delta.optString("thinking", "")
                                 if (thinking.isNotEmpty()) {
                                     val chunk = buildOpenAIChunk(
-                                        deltaJson = JSONObject().put("reasoning_content", thinking),
+                                        deltaJson = JSONObject()
+                                            .put("reasoning_content", thinking)
+                                            .put(
+                                                "thinking",
+                                                JSONObject().put("thinking", thinking)
+                                            ),
+                                        finishReason = null
+                                    )
+                                    outer.onEvent(eventSource, id, type, chunk)
+                                }
+                            }
+                            "signature_delta" -> {
+                                val signature = delta.optString("signature", "")
+                                if (signature.isNotEmpty()) {
+                                    val chunk = buildOpenAIChunk(
+                                        deltaJson = JSONObject().put("thinking_signature", signature),
                                         finishReason = null
                                     )
                                     outer.onEvent(eventSource, id, type, chunk)
@@ -1246,13 +1299,23 @@ object HttpController {
     ): ChatCompletionRequest {
         val disableThinking = reasoningEffort == "no"
         val chatMessages = messages.map { message ->
+            val reasoningContent = parseOptionalText(
+                message["reasoning_content"] ?: message["reasoningContent"]
+            )
+            val thinkingSignature = parseOptionalText(
+                message["thinking_signature"] ?: message["thinkingSignature"]
+            )
             ChatCompletionMessage(
                 role = message["role"]?.toString().orEmpty().ifBlank { "user" },
                 content = parseChatMessageContent(message["content"]),
                 toolCalls = parseAssistantToolCalls(message["tool_calls"] ?: message["toolCalls"]),
-                reasoningContent = parseOptionalText(
-                    message["reasoning_content"] ?: message["reasoningContent"]
+                reasoningContent = reasoningContent,
+                thinking = parseThinkingContentBlock(
+                    rawThinking = message["thinking"],
+                    rawSignature = message["thinking_signature"] ?: message["thinkingSignature"],
+                    fallbackReasoning = reasoningContent
                 ),
+                thinkingSignature = thinkingSignature,
                 toolCallId = parseOptionalText(message["tool_call_id"] ?: message["toolCallId"]),
                 name = parseOptionalText(message["name"])
             )
@@ -1321,6 +1384,45 @@ object HttpController {
         return normalized.takeIf { it.isNotEmpty() }
     }
 
+    private fun parseThinkingContentBlock(
+        rawThinking: Any?,
+        rawSignature: Any?,
+        fallbackReasoning: String?
+    ): ChatCompletionThinkingContentBlock? {
+        val signature = parseOptionalText(rawSignature)
+        val normalized = when (rawThinking) {
+            is Map<*, *> -> {
+                val thinkingText = parseOptionalText(
+                    rawThinking["thinking"] ?: rawThinking["text"] ?: rawThinking["content"]
+                )
+                if (thinkingText == null) {
+                    null
+                } else {
+                    ChatCompletionThinkingContentBlock(
+                        thinking = thinkingText,
+                        signature = parseOptionalText(rawThinking["signature"]) ?: signature
+                    )
+                }
+            }
+            else -> {
+                val thinkingText = parseOptionalText(rawThinking) ?: fallbackReasoning
+                thinkingText?.let {
+                    ChatCompletionThinkingContentBlock(
+                        thinking = it,
+                        signature = signature
+                    )
+                }
+            }
+        }
+        if (normalized != null) return normalized
+        return fallbackReasoning?.let { fallback ->
+            ChatCompletionThinkingContentBlock(
+                thinking = fallback,
+                signature = signature
+            )
+        }
+    }
+
     private fun parseContentBlocks(raw: List<*>): KxJsonArray {
         val blocks = mutableListOf<KxJsonObject>()
         raw.forEach { item ->
@@ -1354,6 +1456,26 @@ object HttpController {
                             )
                             if (imageUrl.isNotBlank()) {
                                 blocks.add(buildImageContent(imageUrl))
+                            }
+                        }
+                        "thinking" -> {
+                            val thinkingText = item["thinking"]?.toString()
+                                ?.trim()
+                                ?.takeIf { it.isNotEmpty() }
+                                ?: item["text"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                            if (thinkingText != null) {
+                                blocks.add(
+                                    buildJsonObject {
+                                        put("type", JsonPrimitive("thinking"))
+                                        put("thinking", JsonPrimitive(thinkingText))
+                                        item["signature"]?.toString()?.trim()
+                                            ?.takeIf { it.isNotEmpty() }
+                                            ?.let { put("signature", JsonPrimitive(it)) }
+                                        parseAnyToJsonElement(item["cache_control"])?.let {
+                                            put("cache_control", it)
+                                        }
+                                    }
+                                )
                             }
                         }
                     }
@@ -1628,13 +1750,90 @@ object HttpController {
 
     private fun stripAnthropicOnlyFields(payload: JsonElement): JsonElement {
         return when (payload) {
-            is KxJsonObject -> KxJsonObject(
-                payload
-                    .filterKeys { it != "cache_control" }
-                    .mapValues { (_, value) -> stripAnthropicOnlyFields(value) }
-            )
+            is KxJsonObject -> {
+                val isAssistantMessage = payload["role"]
+                    .let { it as? JsonPrimitive }
+                    ?.contentOrNull
+                    ?.trim()
+                    ?.equals("assistant", ignoreCase = true) == true
+                KxJsonObject(
+                    payload
+                        .filterKeys { key ->
+                            key != "cache_control" &&
+                                !(isAssistantMessage && (key == "thinking" || key == "thinking_signature"))
+                        }
+                        .mapValues { (_, value) -> stripAnthropicOnlyFields(value) }
+                )
+            }
             is KxJsonArray -> KxJsonArray(payload.map(::stripAnthropicOnlyFields))
             else -> payload
+        }
+    }
+
+    private fun appendAnthropicContentBlocks(target: JSONArray, content: Any?) {
+        when (content) {
+            null -> Unit
+            is JSONArray -> {
+                for (index in 0 until content.length()) {
+                    target.put(content.opt(index))
+                }
+            }
+            is JSONObject -> target.put(content)
+            else -> {
+                val text = content.toString().trim()
+                if (text.isNotEmpty()) {
+                    target.put(
+                        JSONObject()
+                            .put("type", "text")
+                            .put("text", text)
+                    )
+                }
+            }
+        }
+    }
+
+    private fun buildAnthropicThinkingBlock(message: ChatCompletionMessage): JSONObject? {
+        val thinkingBlock = parseThinkingBlock(message)
+        val thinkingText = thinkingBlock?.thinking?.trim().orEmpty()
+            .ifEmpty { message.reasoningContent?.trim().orEmpty() }
+        if (thinkingText.isEmpty()) return null
+
+        val signature = thinkingBlock?.signature?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: message.thinkingSignature?.trim()?.takeIf { it.isNotEmpty() }
+
+        return JSONObject()
+            .put("type", "thinking")
+            .put("thinking", thinkingText)
+            .apply {
+                if (signature != null) {
+                    put("signature", signature)
+                }
+            }
+    }
+
+    private fun parseThinkingBlock(message: ChatCompletionMessage): ChatCompletionThinkingContentBlock? {
+        message.thinking?.let { return it }
+        val contentObj = message.content as? KxJsonObject ?: return null
+        val raw = contentObj["thinking"] ?: return null
+        return when (raw) {
+            is JsonPrimitive -> raw.contentOrNull?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { ChatCompletionThinkingContentBlock(thinking = it) }
+            is KxJsonObject -> {
+                val thinking = (raw["thinking"] as? JsonPrimitive)?.contentOrNull
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: return null
+                val signature = (raw["signature"] as? JsonPrimitive)?.contentOrNull
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                ChatCompletionThinkingContentBlock(
+                    thinking = thinking,
+                    signature = signature
+                )
+            }
+            else -> null
         }
     }
 
@@ -2599,6 +2798,7 @@ object HttpController {
             is JSONObject -> when {
                 contentRaw.has("text") -> contentRaw.optString("text")
                 contentRaw.has("content") -> contentRaw.optString("content")
+                contentRaw.has("thinking") -> contentRaw.optString("thinking")
                 else -> ""
             }
             else -> ""

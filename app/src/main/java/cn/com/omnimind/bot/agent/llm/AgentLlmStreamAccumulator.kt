@@ -31,6 +31,8 @@ class AgentLlmStreamAccumulator(
 
     private val contentBuffer = StringBuilder()
     private val reasoningBuffer = StringBuilder()
+    private val thinkingSignatureBuffer = StringBuilder()
+    private var sawStructuredThinkingPayload = false
     private val inlineTextBuffer = StringBuilder()
     private val toolCallBuilders: SortedMap<Int, MutableToolCallBuilder> = TreeMap()
     private var providerError: StreamProviderError? = null
@@ -99,16 +101,23 @@ class AgentLlmStreamAccumulator(
             chunkHasPayload = appendTextPayload(root["text"]) || chunkHasPayload
             chunkHasPayload = appendTextPayload(root["message"]) || chunkHasPayload
             chunkHasPayload = appendTextPayload(root["output_text"]) || chunkHasPayload
-            appendReasoningPayload(root["reasoning_content"])
+            val hasThinkingPayload = appendThinkingPayload(root["thinking"])
+            if (!hasThinkingPayload) {
+                appendReasoningPayload(root["reasoning_content"])
+            }
             appendReasoningPayload(root["reasoning"])
-            appendReasoningPayload(root["thinking"])
+            appendThinkingSignaturePayload(root["thinking_signature"])
 
             val outputObj = root["output"] as? JsonObject
             if (outputObj != null) {
                 chunkHasPayload = appendTextPayload(outputObj["text"]) || chunkHasPayload
                 chunkHasPayload = appendTextPayload(outputObj["content"]) || chunkHasPayload
-                appendReasoningPayload(outputObj["reasoning_content"])
+                val outputHasThinkingPayload = appendThinkingPayload(outputObj["thinking"])
+                if (!outputHasThinkingPayload) {
+                    appendReasoningPayload(outputObj["reasoning_content"])
+                }
                 appendReasoningPayload(outputObj["reasoning"])
+                appendThinkingSignaturePayload(outputObj["thinking_signature"])
             }
         }
 
@@ -246,6 +255,9 @@ class AgentLlmStreamAccumulator(
 
         val content = AgentTextSanitizer.sanitizeUtf16(contentBuffer.toString())
         val reasoning = AgentTextSanitizer.sanitizeUtf16(reasoningBuffer.toString())
+        val thinkingSignature = AgentTextSanitizer.sanitizeUtf16(thinkingSignatureBuffer.toString())
+            .trim()
+            .takeIf { it.isNotBlank() }
         if (finishReasonIndicatesToolCall(finishReason) && toolCalls.isEmpty()) {
             throw IllegalStateException(
                 "finish_reason indicates tool call but no tool_calls parsed; finish_reason=${finishReason.orEmpty()}, last_chunk=$lastChunkPreview"
@@ -270,8 +282,15 @@ class AgentLlmStreamAccumulator(
                         includeReasoningInAssistantMessage ||
                             toolCalls.isNotEmpty() ||
                             finishReasonIndicatesToolCall(finishReason)
-                        )
-                }
+                    )
+                },
+                thinking = reasoning.takeIf { it.isNotBlank() }?.let { thinkingText ->
+                    ChatCompletionThinkingContentBlock(
+                        thinking = thinkingText,
+                        signature = thinkingSignature
+                    )
+                }?.takeIf { sawStructuredThinkingPayload },
+                thinkingSignature = thinkingSignature.takeIf { sawStructuredThinkingPayload }
             ),
             reasoning = reasoning,
             finishReason = finishReason,
@@ -346,9 +365,12 @@ class AgentLlmStreamAccumulator(
     private fun consumeMessageLike(message: JsonObject, isDelta: Boolean): Boolean {
         var hasPayload = false
         hasPayload = appendTextPayload(message["content"]) || hasPayload
-        appendReasoningPayload(message["reasoning_content"])
+        val hasThinkingPayload = appendThinkingPayload(message["thinking"])
+        if (!hasThinkingPayload) {
+            appendReasoningPayload(message["reasoning_content"])
+        }
         appendReasoningPayload(message["reasoning"])
-        appendReasoningPayload(message["thinking"])
+        appendThinkingSignaturePayload(message["thinking_signature"])
 
         val toolCalls = message["tool_calls"] as? JsonArray
         if (toolCalls != null) {
@@ -499,6 +521,26 @@ class AgentLlmStreamAccumulator(
         extractText(element)?.let { appendReasoningText(it) }
     }
 
+    private fun appendThinkingPayload(element: JsonElement?): Boolean {
+        var appended = false
+        extractThinkingText(element)?.let {
+            appendReasoningText(it)
+            appended = true
+        }
+        if (appended) {
+            sawStructuredThinkingPayload = true
+        }
+        extractThinkingSignature(element)?.let { appendThinkingSignatureText(it) }
+        return appended
+    }
+
+    private fun appendThinkingSignaturePayload(element: JsonElement?) {
+        extractText(element)?.let {
+            sawStructuredThinkingPayload = true
+            appendThinkingSignatureText(it)
+        }
+    }
+
     private fun appendTextPayload(element: JsonElement?): Boolean {
         val text = extractText(element) ?: return false
         appendTextChunk(text)
@@ -619,6 +661,23 @@ class AgentLlmStreamAccumulator(
             return
         }
         reasoningBuffer.append(text)
+    }
+
+    private fun appendThinkingSignatureText(text: String) {
+        if (text.isEmpty()) {
+            return
+        }
+        thinkingSignatureBuffer.append(text)
+    }
+
+    private fun extractThinkingText(element: JsonElement?): String? {
+        val obj = element as? JsonObject ?: return extractText(element)
+        return extractText(obj["thinking"]) ?: extractText(obj["text"]) ?: extractText(obj["content"])
+    }
+
+    private fun extractThinkingSignature(element: JsonElement?): String? {
+        val obj = element as? JsonObject ?: return null
+        return extractText(obj["signature"])
     }
 
     private fun extractText(element: JsonElement?): String? {

@@ -5,6 +5,7 @@ import cn.com.omnimind.baselib.llm.contentText as sharedContentText
 typealias ChatCompletionRequest = cn.com.omnimind.baselib.llm.ChatCompletionRequest
 typealias ChatCompletionStreamOptions = cn.com.omnimind.baselib.llm.ChatCompletionStreamOptions
 typealias ChatCompletionMessage = cn.com.omnimind.baselib.llm.ChatCompletionMessage
+typealias ChatCompletionThinkingContentBlock = cn.com.omnimind.baselib.llm.ChatCompletionThinkingContentBlock
 typealias ChatCompletionTool = cn.com.omnimind.baselib.llm.ChatCompletionTool
 typealias ChatCompletionFunction = cn.com.omnimind.baselib.llm.ChatCompletionFunction
 typealias AssistantToolCall = cn.com.omnimind.baselib.llm.AssistantToolCall

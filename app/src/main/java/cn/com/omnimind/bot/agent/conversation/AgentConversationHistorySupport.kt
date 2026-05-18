@@ -5,6 +5,7 @@ import cn.com.omnimind.baselib.database.AgentConversationEntryRecord
 import cn.com.omnimind.baselib.llm.AssistantToolCall
 import cn.com.omnimind.baselib.llm.AssistantToolCallFunction
 import cn.com.omnimind.baselib.llm.ChatCompletionMessage
+import cn.com.omnimind.baselib.llm.ChatCompletionThinkingContentBlock
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.serialization.json.JsonArray
@@ -70,12 +71,21 @@ internal object AgentConversationHistorySupport {
         text: String,
         attachments: List<Map<String, Any?>> = emptyList(),
         reasoningContent: String? = null,
+        thinkingContent: String? = null,
+        thinkingSignature: String? = null,
         isError: Boolean,
         streamMeta: Map<String, Any?>?,
         createdAt: Long
     ): Map<String, Any?> {
         val safeText = AgentTextSanitizer.sanitizeUtf16(text)
         val safeReasoning = AgentTextSanitizer.sanitizeUtf16(reasoningContent.orEmpty())
+            .trim()
+            .takeIf { it.isNotBlank() }
+        val safeThinking = AgentTextSanitizer.sanitizeUtf16(thinkingContent.orEmpty())
+            .trim()
+            .takeIf { it.isNotBlank() }
+            ?: safeReasoning
+        val safeThinkingSignature = AgentTextSanitizer.sanitizeUtf16(thinkingSignature.orEmpty())
             .trim()
             .takeIf { it.isNotBlank() }
         val historyAttachments = AgentImageAttachmentSupport
@@ -102,6 +112,18 @@ internal object AgentConversationHistorySupport {
         ).apply {
             if (user == 2 && safeReasoning != null) {
                 put("reasoning_content", safeReasoning)
+            }
+            if (user == 2 && safeThinking != null) {
+                put(
+                    "thinking",
+                    linkedMapOf<String, Any?>(
+                        "thinking" to safeThinking,
+                        "signature" to safeThinkingSignature
+                    ).filterValues { it != null }
+                )
+            }
+            if (user == 2 && safeThinkingSignature != null) {
+                put("thinking_signature", safeThinkingSignature)
             }
         }.filterValues { it != null }
     }
@@ -136,6 +158,32 @@ internal object AgentConversationHistorySupport {
                 ?: payload["reasoningContent"]?.toString()
                 ?: ""
         ).trim().takeIf { it.isNotBlank() }
+    }
+
+    private fun readThinkingSignature(payload: Map<String, Any?>): String? {
+        val thinkingMap = payload["thinking"] as? Map<*, *>
+        val signature = thinkingMap?.get("signature")
+            ?: payload["thinking_signature"]
+            ?: payload["thinkingSignature"]
+            ?: ""
+        return AgentTextSanitizer.sanitizeUtf16(signature.toString())
+            .trim()
+            .takeIf { it.isNotBlank() }
+    }
+
+    private fun readThinkingBlock(payload: Map<String, Any?>): ChatCompletionThinkingContentBlock? {
+        val thinkingMap = payload["thinking"] as? Map<*, *>
+        val thinkingText = AgentTextSanitizer.sanitizeUtf16(
+            (thinkingMap?.get("thinking")
+                ?: payload["thinking"]
+                ?: payload["reasoning_content"]
+                ?: payload["reasoningContent"]
+                ?: "").toString()
+        ).trim().takeIf { it.isNotBlank() } ?: return null
+        return ChatCompletionThinkingContentBlock(
+            thinking = thinkingText,
+            signature = readThinkingSignature(payload)
+        )
     }
 
     fun materializeRecord(record: AgentConversationEntryRecord): MaterializedEntry {
@@ -550,7 +598,9 @@ internal object AgentConversationHistorySupport {
             ChatCompletionMessage(
                 role = "assistant",
                 content = content,
-                reasoningContent = readReasoningContent(payload)
+                reasoningContent = readReasoningContent(payload),
+                thinking = readThinkingBlock(payload),
+                thinkingSignature = readThinkingSignature(payload)
             )
         )
     }
@@ -589,6 +639,8 @@ internal object AgentConversationHistorySupport {
         val assistantMessage = ChatCompletionMessage(
             role = "assistant",
             reasoningContent = readReasoningContent(payload),
+            thinking = readThinkingBlock(payload),
+            thinkingSignature = readThinkingSignature(payload),
             toolCalls = listOf(
                 AssistantToolCall(
                     id = toolCallId,
@@ -1433,6 +1485,16 @@ internal object AgentConversationHistorySupport {
         } else {
             null
         }
+        val safeThinkingSignature = if (
+            entry.entryType == AgentConversationHistoryRepository.ENTRY_TYPE_ASSISTANT_MESSAGE
+        ) {
+            trimText(
+                readThinkingSignature(payload).orEmpty(),
+                MAX_STORAGE_MESSAGE_TEXT_CHARS
+            ).trim().takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
         val safeStreamMeta = compactDisplayStreamMeta(payload["streamMeta"])
         val safeAttachments = compactDisplayList(content["attachments"])
         fun buildPayload(attachments: List<Map<String, Any?>>): Map<String, Any?> {
@@ -1446,6 +1508,8 @@ internal object AgentConversationHistorySupport {
                 text = safeText,
                 attachments = attachments,
                 reasoningContent = safeReasoningContent,
+                thinkingContent = safeReasoningContent,
+                thinkingSignature = safeThinkingSignature,
                 isError = parseBoolean(
                     payload["isError"],
                     default = entry.status == AgentConversationHistoryRepository.STATUS_ERROR
@@ -1464,7 +1528,8 @@ internal object AgentConversationHistorySupport {
             return buildRecoveredTextEntry(
                 entry = entry.copy(summary = safeText),
                 originalPayloadLength = entry.payloadJson.length,
-                reasoningContent = safeReasoningContent
+                reasoningContent = safeReasoningContent,
+                thinkingSignature = safeThinkingSignature
             )
         }
         return entry.copy(
@@ -1476,7 +1541,8 @@ internal object AgentConversationHistorySupport {
     private fun buildRecoveredTextEntry(
         entry: AgentConversationEntry,
         originalPayloadLength: Int,
-        reasoningContent: String? = null
+        reasoningContent: String? = null,
+        thinkingSignature: String? = null
     ): AgentConversationEntry {
         val summary = normalizeStoredSummary(
             entry.summary.ifBlank { "历史消息内容过大，已压缩保存。" },
@@ -1516,6 +1582,8 @@ internal object AgentConversationHistorySupport {
             text = safeText,
             attachments = emptyList(),
             reasoningContent = safeReasoningContent,
+            thinkingContent = safeReasoningContent,
+            thinkingSignature = thinkingSignature,
             isError = entry.status == AgentConversationHistoryRepository.STATUS_ERROR,
             streamMeta = mapOf(
                 "payloadCompacted" to true,
@@ -1546,6 +1614,7 @@ internal object AgentConversationHistorySupport {
                     text = text,
                     attachments = emptyList(),
                     reasoningContent = candidate,
+                    thinkingContent = candidate,
                     isError = isError,
                     streamMeta = mapOf(
                         "payloadCompacted" to true,

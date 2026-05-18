@@ -71,9 +71,19 @@ class HttpAgentLlmClient(
         onReasoningUpdate: (suspend (String) -> Unit)?,
         onContentUpdate: (suspend (String) -> Unit)?
     ): ChatCompletionTurn {
+        val requestRouteInfo = HttpController.resolveChatCompletionRouteInfo(
+            modelOrScene = request.model,
+            explicitApiBase = modelOverride?.apiBase,
+            explicitApiKey = modelOverride?.apiKey,
+            explicitModel = modelOverride?.modelId,
+            explicitProtocolType = modelOverride?.protocolType
+        )
         val modelCandidates = buildModelCandidates(request.model)
         val variants = buildRequestVariants(
-            sanitizeRequestForTarget(request)
+            sanitizeRequestForTarget(
+                request = request,
+                keepAssistantThinking = requestRouteInfo.protocolType == "anthropic"
+            )
         )
         var lastFailure: StreamRequestFailure? = null
 
@@ -411,19 +421,40 @@ class HttpAgentLlmClient(
         return variants
     }
 
-    private fun sanitizeRequestForTarget(request: ChatCompletionRequest): ChatCompletionRequest {
-        if (shouldPreserveAllAssistantReasoning()) {
-            return request
-        }
+    private fun sanitizeRequestForTarget(
+        request: ChatCompletionRequest,
+        keepAssistantThinking: Boolean
+    ): ChatCompletionRequest {
+        val preserveReasoning = shouldPreserveAllAssistantReasoning()
         val sanitizedMessages = request.messages.mapIndexed { index, message ->
-            if (
-                message.role != "assistant" ||
-                message.reasoningContent.isNullOrBlank() ||
+            if (message.role != "assistant") {
+                return@mapIndexed message
+            }
+            val hasAssistantReasoningPayload = !message.reasoningContent.isNullOrBlank() ||
+                message.thinking != null ||
+                !message.thinkingSignature.isNullOrBlank()
+            if (!hasAssistantReasoningPayload) {
+                return@mapIndexed message
+            }
+            val retainReasoning = preserveReasoning ||
                 shouldRetainAssistantReasoning(index, request.messages)
+            if (
+                !retainReasoning
             ) {
-                message
+                message.copy(
+                    reasoningContent = null,
+                    thinking = null,
+                    thinkingSignature = null
+                )
+            } else if (!keepAssistantThinking &&
+                (message.thinking != null || !message.thinkingSignature.isNullOrBlank())
+            ) {
+                message.copy(
+                    thinking = null,
+                    thinkingSignature = null
+                )
             } else {
-                message.copy(reasoningContent = null)
+                message
             }
         }
         return if (sanitizedMessages == request.messages) {
