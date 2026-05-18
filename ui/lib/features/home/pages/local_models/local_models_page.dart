@@ -1147,7 +1147,7 @@ class _LocalModelsPageState extends State<LocalModelsPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 76,
+            width: 48,
             child: Text(
               label,
               style: TextStyle(
@@ -1569,6 +1569,8 @@ class _LocalModelsPageState extends State<LocalModelsPage>
           const SizedBox(height: 12),
           _buildPortConfigField(config),
           const SizedBox(height: 12),
+          _buildLanAccessPanel(config),
+          const SizedBox(height: 12),
           FilledButton.icon(
             onPressed:
                 (!config.lanProxyRunning && selectedModelId == null) ||
@@ -1599,8 +1601,6 @@ class _LocalModelsPageState extends State<LocalModelsPage>
                   : context.trLegacy('开启局域网服务'),
             ),
           ),
-          const SizedBox(height: 12),
-          _buildLanAccessPanel(config),
           if (config.loadedModelId.isNotEmpty) ...[
             const SizedBox(height: 12),
             _buildInlineNotice(
