@@ -77,7 +77,7 @@ object OmniInferModelsManager {
 
     fun handleAppOpen() {
         if (shouldAutoStartOnAppOpen()) {
-            Thread({ startApiService(getActiveModelId()) }, "OmniInfer-autostart").start()
+            Thread({ startApiService(getActiveModelId(), exposeLan = false) }, "OmniInfer-autostart").start()
         }
     }
 
@@ -97,7 +97,7 @@ object OmniInferModelsManager {
             "availableSources" to listOf("ModelScope", "HuggingFace"),
             "loadedBackend" to OmniInferLocalRuntime.getLoadedBackend(),
             "loadedModelId" to OmniInferLocalRuntime.getLoadedModelId(),
-        )
+        ) + OmniInferLocalRuntime.getLanProxyState()
     }
 
     fun saveConfig(args: Map<*, *>): Map<String, Any?> {
@@ -105,6 +105,12 @@ object OmniInferModelsManager {
             val port = (value as? Number)?.toInt()
             if (port != null && port > 0) {
                 OmniInferLocalRuntime.setPort(port)
+            }
+        }
+        args["lanProxyPort"]?.let { value ->
+            val port = (value as? Number)?.toInt()
+            if (port != null && port > 0) {
+                OmniInferLocalRuntime.setLanProxyPort(port)
             }
         }
         args["activeModelId"]?.let { mmkv.encode(KEY_ACTIVE_MODEL_ID, it.toString()) }
@@ -508,18 +514,21 @@ object OmniInferModelsManager {
         }
     }
 
-    fun startApiService(modelId: String?): Map<String, Any?> {
+    fun startApiService(modelId: String?, exposeLan: Boolean = true): Map<String, Any?> {
         val resolvedModelId = modelId?.trim().orEmpty().ifBlank { getActiveModelId() }
         if (resolvedModelId.isBlank()) {
             return getConfig()
         }
         val modelFile = findModelFile(resolvedModelId) ?: return getConfig()
         mmkv.encode(KEY_ACTIVE_MODEL_ID, resolvedModelId)
-        OmniInferLocalRuntime.loadModel(
+        val loaded = OmniInferLocalRuntime.loadModel(
             modelId = resolvedModelId,
             modelPath = modelFile.absolutePath,
             backend = OmniInferLocalRuntime.BACKEND_LLAMA_CPP,
         )
+        if (loaded && exposeLan) {
+            OmniInferLocalRuntime.startLanProxy()
+        }
         emitConfigChanged()
         return getConfig()
     }
@@ -1003,5 +1012,3 @@ object OmniInferModelsManager {
         }
     }
 }
-
-

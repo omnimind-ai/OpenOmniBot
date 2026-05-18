@@ -70,7 +70,7 @@ object OmniInferMnnModelsManager {
 
     fun handleAppOpen() {
         if (shouldAutoStartOnAppOpen()) {
-            Thread({ startApiService(getActiveModelId()) }, "OmniInfer-autostart").start()
+            Thread({ startApiService(getActiveModelId(), exposeLan = false) }, "OmniInfer-autostart").start()
         }
     }
 
@@ -174,7 +174,7 @@ object OmniInferMnnModelsManager {
             "availableSources" to MnnModelSources.sourceList,
             "loadedBackend" to OmniInferLocalRuntime.getLoadedBackend(),
             "loadedModelId" to getLoadedModelId(),
-        )
+        ) + OmniInferLocalRuntime.getLanProxyState()
     }
 
     fun saveConfig(arguments: Map<*, *>): Map<String, Any?> {
@@ -185,6 +185,12 @@ object OmniInferMnnModelsManager {
             val port = (it as? Number)?.toInt()
             if (port != null && port > 0) {
                 OmniInferLocalRuntime.setPort(port)
+            }
+        }
+        arguments["lanProxyPort"]?.let {
+            val port = (it as? Number)?.toInt()
+            if (port != null && port > 0) {
+                OmniInferLocalRuntime.setLanProxyPort(port)
             }
         }
         arguments["activeModelId"]?.let {
@@ -203,7 +209,7 @@ object OmniInferMnnModelsManager {
         return getConfig()
     }
 
-    fun startApiService(modelId: String? = null): Map<String, Any?> {
+    fun startApiService(modelId: String? = null, exposeLan: Boolean = true): Map<String, Any?> {
         val targetModelId = modelId?.trim().orEmpty().ifBlank { getActiveModelId() }
         if (targetModelId.isBlank()) {
             OmniLog.w(TAG, "[startApiService] no modelId specified and no active model")
@@ -222,11 +228,14 @@ object OmniInferMnnModelsManager {
                 "fileSize=${resolved.fileSize}, vendor=${resolved.vendor}"
         )
         mmkv.encode(KEY_ACTIVE_MODEL_ID, resolved.id)
-        OmniInferLocalRuntime.loadModel(
+        val loaded = OmniInferLocalRuntime.loadModel(
             modelId = resolved.id,
             modelPath = resolved.configPath,
             backend = BACKEND_NAME,
         )
+        if (loaded && exposeLan) {
+            OmniInferLocalRuntime.startLanProxy()
+        }
         emitConfigChanged()
         return getConfig()
     }

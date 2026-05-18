@@ -67,9 +67,18 @@ object OmniInferLocalRuntime {
         }
     }
 
+    fun setLanProxyPort(port: Int): Map<String, Any?> {
+        val context = appContext ?: return getLanProxyState()
+        return OmniInferLanProxyManager.setPort(context, port, getPort()).toMap()
+    }
+
     fun getHost(): String = "127.0.0.1"
 
     fun getBaseUrl(): String = "http://${getHost()}:${getPort()}"
+
+    fun getLanProxyState(): Map<String, Any?> {
+        return OmniInferLanProxyManager.currentState(getPort()).toMap()
+    }
 
     fun isReady(): Boolean {
         syncProviderState()
@@ -146,9 +155,27 @@ object OmniInferLocalRuntime {
     }
 
     fun stop() {
+        OmniInferLanProxyManager.stop()
         OmniInferServer.stop()
         clearLoadedState()
         syncProviderState()
+    }
+
+    fun startLanProxy(): Boolean {
+        val context = appContext ?: return false
+        return runCatching {
+            OmniInferLanProxyManager.start(context, getPort())
+            true
+        }.getOrDefault(false)
+    }
+
+    fun stopLanProxy() {
+        OmniInferLanProxyManager.stop()
+    }
+
+    fun refreshLanProxyToken(): Map<String, Any?> {
+        val context = appContext ?: return getLanProxyState()
+        return OmniInferLanProxyManager.refreshToken(context).toMap()
     }
 
     fun handleAppOpen(context: Context) {

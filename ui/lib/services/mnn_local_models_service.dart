@@ -164,6 +164,13 @@ class MnnLocalConfig {
   final List<String> availableSources;
   final String loadedBackend;
   final String loadedModelId;
+  final bool lanProxyRunning;
+  final String lanHost;
+  final int lanProxyPort;
+  final String lanBaseUrl;
+  final String lanToken;
+  final String lanTargetBaseUrl;
+  final String lanProxyError;
 
   const MnnLocalConfig({
     required this.backend,
@@ -179,6 +186,13 @@ class MnnLocalConfig {
     required this.availableSources,
     required this.loadedBackend,
     required this.loadedModelId,
+    required this.lanProxyRunning,
+    required this.lanHost,
+    required this.lanProxyPort,
+    required this.lanBaseUrl,
+    required this.lanToken,
+    required this.lanTargetBaseUrl,
+    required this.lanProxyError,
   });
 
   factory MnnLocalConfig.fromMap(Map<dynamic, dynamic>? map) {
@@ -198,6 +212,13 @@ class MnnLocalConfig {
           .toList(),
       loadedBackend: _normalizeInferenceBackend(map?['loadedBackend']),
       loadedModelId: (map?['loadedModelId'] ?? '').toString(),
+      lanProxyRunning: map?['lanProxyRunning'] == true,
+      lanHost: (map?['lanHost'] ?? '').toString(),
+      lanProxyPort: (map?['lanProxyPort'] as num?)?.toInt() ?? 9100,
+      lanBaseUrl: (map?['lanBaseUrl'] ?? '').toString(),
+      lanToken: (map?['lanToken'] ?? '').toString(),
+      lanTargetBaseUrl: (map?['lanTargetBaseUrl'] ?? '').toString(),
+      lanProxyError: (map?['lanProxyError'] ?? '').toString(),
     );
   }
 }
@@ -282,14 +303,12 @@ class MnnLocalModelsService {
     String marketQuery = '',
     String marketCategory = 'llm',
   }) async {
-    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'getOverview',
-      {
-        'installedQuery': installedQuery,
-        'marketQuery': marketQuery,
-        'marketCategory': marketCategory.trim().toLowerCase(),
-      },
-    );
+    final result = await _channel
+        .invokeMethod<Map<dynamic, dynamic>>('getOverview', {
+          'installedQuery': installedQuery,
+          'marketQuery': marketQuery,
+          'marketCategory': marketCategory.trim().toLowerCase(),
+        });
     return MnnLocalOverviewPayload.fromMap(result);
   }
 
@@ -341,19 +360,19 @@ class MnnLocalModelsService {
   static Future<MnnLocalConfig> saveConfig({
     bool? autoStartOnAppOpen,
     int? apiPort,
+    int? lanProxyPort,
     String? activeModelId,
     String? downloadProvider,
   }) async {
-    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'saveConfig',
-      {
-        if (autoStartOnAppOpen != null)
-          'autoStartOnAppOpen': autoStartOnAppOpen,
-        if (apiPort != null) 'apiPort': apiPort,
-        if (activeModelId != null) 'activeModelId': activeModelId,
-        if (downloadProvider != null) 'downloadProvider': downloadProvider,
-      },
-    );
+    final result = await _channel
+        .invokeMethod<Map<dynamic, dynamic>>('saveConfig', {
+          if (autoStartOnAppOpen != null)
+            'autoStartOnAppOpen': autoStartOnAppOpen,
+          if (apiPort != null) 'apiPort': apiPort,
+          if (lanProxyPort != null) 'lanProxyPort': lanProxyPort,
+          if (activeModelId != null) 'activeModelId': activeModelId,
+          if (downloadProvider != null) 'downloadProvider': downloadProvider,
+        });
     return MnnLocalConfig.fromMap(result);
   }
 
@@ -380,10 +399,9 @@ class MnnLocalModelsService {
   static Future<Map<dynamic, dynamic>?> preloadModel({
     required String modelId,
   }) {
-    return _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'preloadModel',
-      {'modelId': modelId},
-    );
+    return _channel.invokeMethod<Map<dynamic, dynamic>>('preloadModel', {
+      'modelId': modelId,
+    });
   }
 
   static Future<MnnLocalConfig> stopApiService() async {
@@ -391,6 +409,20 @@ class MnnLocalModelsService {
       'stopApiService',
     );
     return MnnLocalConfig.fromMap(result);
+  }
+
+  static Future<MnnLocalConfig> stopLanProxy() async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'stopLanProxy',
+    );
+    return MnnLocalConfig.fromMap(result);
+  }
+
+  static Future<Map<String, dynamic>> refreshLanProxyToken() async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'refreshLanProxyToken',
+    );
+    return (result ?? {}).cast<String, dynamic>();
   }
 
   static Future<void> startDownload(String modelId) {
@@ -416,10 +448,9 @@ class MnnLocalModelsService {
   }
 
   static Future<String> setBackend(String backend) async {
-    final result = await _channel.invokeMethod<String>(
-      'setBackend',
-      {'backend': backend},
-    );
+    final result = await _channel.invokeMethod<String>('setBackend', {
+      'backend': backend,
+    });
     return _normalizeInferenceBackend(result ?? backend);
   }
 
