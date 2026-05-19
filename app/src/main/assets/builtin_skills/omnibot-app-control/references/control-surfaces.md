@@ -12,6 +12,7 @@
 - Flutter prefs: `/data/data/<package>/shared_prefs/FlutterSharedPreferences.xml`
 - Shared-open prefs: `/data/data/<package>/shared_prefs/shared_open_preferences.xml`
 - MMKV root: `/data/data/<package>/files/mmkv`
+- App control bridge: `content://<package>.appcontrol`
 
 `terminal_execute` can access app-private paths through the app-owned Alpine environment. `file_read` usually cannot read `/data/data/<package>` directly.
 

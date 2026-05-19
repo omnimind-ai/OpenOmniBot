@@ -24,8 +24,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class AgentToolRegistry(
     private val context: Context,
     discoveredServers: List<RemoteMcpDiscoveredServer>,
-    conversationMode: String = AgentConversationModePolicy.NORMAL_MODE,
-    resolvedSkills: List<ResolvedSkillContext> = emptyList()
+    conversationMode: String = AgentConversationModePolicy.NORMAL_MODE
 ) : AgentToolCatalog {
     data class RuntimeToolDescriptor(
         val name: String,
@@ -45,9 +44,6 @@ class AgentToolRegistry(
         val shizukuStatus = ShizukuCapabilityManager.get(context).getStatus()
         val runtimeDefinitions = mutableListOf<JsonObject>()
         runtimeDefinitions.addAll(AgentToolDefinitions.staticTools(locale))
-        if (shouldExposeAppControl(resolvedSkills)) {
-            runtimeDefinitions.add(AgentToolDefinitions.decorateToolDefinition(AgentToolDefinitions.appControlTool, locale))
-        }
         if (shizukuStatus.isGranted()) {
             val privilegedVisibleActions = shizukuStatus.availableActions.ifEmpty {
                 PrivilegedActionPolicy.visibleAgentActions(
@@ -227,14 +223,6 @@ class AgentToolRegistry(
         return discoveredServers.asSequence()
             .flatMap { it.tools.asSequence() }
             .firstOrNull { it.encodedToolName == toolName }
-    }
-
-    private fun shouldExposeAppControl(resolvedSkills: List<ResolvedSkillContext>): Boolean {
-        return resolvedSkills.any { skill ->
-            skill.skillId == "omnibot-app-control" ||
-                skill.frontmatter["name"] == "omnibot-app-control" ||
-                skill.metadata["id"] == "omnibot-app-control"
-        }
     }
 
     private fun toDynamicMcpToolDefinition(

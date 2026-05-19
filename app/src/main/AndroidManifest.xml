@@ -233,6 +233,10 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+        <provider
+            android:name="cn.com.omnimind.bot.agent.AppControlBridgeProvider"
+            android:authorities="${applicationId}.appcontrol"
+            android:exported="false" />
         <service
             android:name=".manager.OmniForegroundService"
             android:enabled="true"

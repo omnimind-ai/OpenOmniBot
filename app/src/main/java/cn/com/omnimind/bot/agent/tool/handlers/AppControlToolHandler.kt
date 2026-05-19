@@ -167,6 +167,15 @@ class AppControlToolHandler(
         }
     }
 
+    suspend fun executeControl(
+        args: JsonObject,
+        env: AgentExecutionEnvironment
+    ): Map<String, Any?> {
+        val action = stringArg(args, "action")?.lowercase(Locale.ROOT)
+            ?: throw IllegalArgumentException("action 不能为空")
+        return dispatch(action, stringArg(args, "target"), args, env)
+    }
+
     private fun knownSettings(): List<Map<String, Any?>> {
         return listOf(
             mapOf("target" to "theme", "storage" to "SharedPreferences", "values" to listOf("system", "light", "dark")),

@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import sqlite3
+import subprocess
 import sys
 import time
 import urllib.error
@@ -43,6 +44,7 @@ def paths(package=None):
     return {
         "package": pkg,
         "appData": str(app_dir),
+        "cache": str(app_dir / "cache"),
         "database": str(app_dir / "databases" / DB_NAME),
         "flutterPrefs": str(app_dir / "shared_prefs" / f"{FLUTTER_PREFS}.xml"),
         "workspaceAndroid": str(app_dir / "workspace"),
@@ -151,6 +153,16 @@ def should_redact(key):
 def format_value(key, value, redact=True):
     if redact and should_redact(key):
         return "***REDACTED***"
+    return value
+
+
+def redact_json_value(key, value):
+    if should_redact(key):
+        return "***REDACTED***"
+    if isinstance(value, dict):
+        return {child_key: redact_json_value(child_key, child_value) for child_key, child_value in value.items()}
+    if isinstance(value, list):
+        return [redact_json_value(key, item) for item in value]
     return value
 
 
@@ -599,6 +611,45 @@ def cmd_memory_append_daily(args):
     print(json.dumps({"appended": str(path)}, ensure_ascii=False, indent=2))
 
 
+def app_control_authority(package):
+    return f"{package}.appcontrol"
+
+
+def app_control_binary():
+    return shutil.which("content") or "/system/bin/content"
+
+
+def cmd_app_control(args):
+    pkg, app_dir = discover_app_dir(args.package)
+    payload = json.loads(args.payload)
+    if not isinstance(payload, dict):
+        raise SystemExit("Payload must be a JSON object.")
+    response_path = args.response_path or str(Path(app_dir) / "cache" / f"app_control_{int(time.time() * 1000)}.json")
+    payload["responsePath"] = response_path
+    uri = f"content://{app_control_authority(pkg)}"
+    cmd = [
+        app_control_binary(),
+        "call",
+        "--uri",
+        uri,
+        "--method",
+        "control",
+        "--arg",
+        json.dumps(payload, ensure_ascii=False),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise SystemExit(proc.stderr.strip() or proc.stdout.strip() or f"content call failed with code {proc.returncode}")
+    response_file = Path(response_path)
+    if not response_file.exists():
+        preview = proc.stdout.strip() or proc.stderr.strip()
+        raise SystemExit(f"Response file not found: {response_file}\n{preview}")
+    result = json.loads(response_file.read_text(encoding="utf-8"))
+    if not args.no_redact:
+        result = redact_json_value("root", result)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def probe_http_endpoint(url, timeout):
     request = urllib.request.Request(url, headers={"User-Agent": "omnibot-control/1.0"})
     try:
@@ -757,6 +808,12 @@ def build_parser():
     p.add_argument("--endpoint", action="append", help="Endpoint path to probe. Can be repeated.")
     p.add_argument("--timeout", type=float, default=1.0)
     p.set_defaults(func=cmd_local_model_probe)
+
+    p = sub.add_parser("app-control")
+    p.add_argument("payload", help="JSON object payload, for example '{\"action\":\"setting.list\"}'.")
+    p.add_argument("--response-path", help="Optional response file path. Defaults to app cache.")
+    p.add_argument("--no-redact", action="store_true")
+    p.set_defaults(func=cmd_app_control)
 
     return parser
 

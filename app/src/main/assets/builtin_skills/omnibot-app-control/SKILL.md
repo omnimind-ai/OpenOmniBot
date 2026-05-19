@@ -7,7 +7,7 @@ description: 软件设置控制、应用控制、本地模型服务控制、MCP 
 
 Use this skill for direct, local control of the Omnibot Android app. It merges chat history search with broader control over preferences, Room data, workspace files, service state, permissions, diagnostics, and local model configuration.
 
-When this skill is loaded, the agent runtime exposes the `app_control` native bridge tool for this turn. Prefer `app_control` for live settings, MMKV-backed values, MCP server state, and local model service start/stop; use the helper script for SQLite, workspace files, diagnostics, and offline app-private file work.
+Use the bundled helper script as the control bridge for live settings, MMKV-backed values, MCP server state, and local model service start/stop; use the helper script for SQLite, workspace files, diagnostics, and offline app-private file work.
 
 ## Safety Rules
 
@@ -19,10 +19,16 @@ When this skill is loaded, the agent runtime exposes the `app_control` native br
 
 ## First Step
 
-For live app settings and services, start by calling `app_control` with:
+For live app settings and services, start by calling the bridge with:
 
 ```json
 {"action":"setting.list"}
+```
+
+In practice this runs through the helper script bridge:
+
+```bash
+python3 <scriptsDir>/omnibot_control.py app-control '{"action":"setting.list"}'
 ```
 
 Run the helper once when you need direct app-private paths, SQLite, or workspace files:
@@ -123,6 +129,8 @@ For local model service state, this skill can inspect saved OmniInfer configurat
 ```bash
 python3 <scriptsDir>/omnibot_control.py local-model-probe
 python3 <scriptsDir>/omnibot_control.py local-model-probe --port 9099 --port 8080
+python3 <scriptsDir>/omnibot_control.py app-control '{"action":"local_model.state"}'
+python3 <scriptsDir>/omnibot_control.py app-control '{"action":"local_model.start","target":"local_model","value":{"modelId":"model-id"}}'
 ```
 
 Examples for diagnostics and app control:
