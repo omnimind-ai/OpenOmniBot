@@ -148,12 +148,20 @@ private object OmniInferLocalModelFeature : LocalModelFeatureDelegate {
                     val exposeLan = booleanArgument(arguments, "exposeLan")
                         ?: booleanArgument(arguments, "expose_lan")
                         ?: true
+                    val config = startCurrentApiService(modelId, exposeLan)
+                    val state = buildControlState()
+                    val success = config["success"] as? Boolean
+                        ?: localModelServerStarted(state)
                     mapOf(
-                        "success" to true,
+                        "success" to success,
                         "enabled" to true,
                         "backend" to OmniInferLocalRuntime.getSelectedBackend(),
-                        "config" to startCurrentApiService(modelId, exposeLan),
-                        "state" to buildControlState()
+                        "config" to config,
+                        "state" to state,
+                        "summary" to if (success) "已启动本地模型服务" else "本地模型服务未启动",
+                        "error" to if (success) "" else config["error"]?.toString().orEmpty().ifBlank {
+                            "local model server is not ready"
+                        }
                     )
                 }
                 "stop", "stop_api_service" -> mapOf(
@@ -221,6 +229,14 @@ private object OmniInferLocalModelFeature : LocalModelFeatureDelegate {
             "lanProxy" to OmniInferLocalRuntime.getLanProxyState(),
             "config" to currentConfig()
         )
+    }
+
+    private fun localModelServerStarted(state: Map<String, Any?>): Boolean {
+        val loadedBackend = state["loadedBackend"]?.toString().orEmpty()
+        val loadedModelId = state["loadedModelId"]?.toString().orEmpty()
+        return state["ready"] == true &&
+            loadedBackend == OmniInferLocalRuntime.getSelectedBackend() &&
+            loadedModelId.isNotBlank()
     }
 
     private fun currentConfig(): Map<String, Any?> {

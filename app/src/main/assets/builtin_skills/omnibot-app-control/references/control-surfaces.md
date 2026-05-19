@@ -10,6 +10,7 @@
 - Omnibot internal workspace: `/workspace/.omnibot`
 - SQLite database: `/data/data/<package>/databases/omnibot_cache_databaseoss`
 - Flutter prefs: `/data/data/<package>/shared_prefs/FlutterSharedPreferences.xml`
+- Shared-open prefs: `/data/data/<package>/shared_prefs/shared_open_preferences.xml`
 - MMKV root: `/data/data/<package>/files/mmkv`
 
 `terminal_execute` can access app-private paths through the app-owned Alpine environment. `file_read` usually cannot read `/data/data/<package>` directly.
@@ -33,6 +34,13 @@ Flutter `shared_preferences` keys are stored with a `flutter.` prefix in `Flutte
 | `app_background_config_v1` | `flutter.app_background_config_v1` | JSON string | see below |
 | `manual_model_context_thresholds` | `flutter.manual_model_context_thresholds` | JSON string | `{modelId: threshold}` |
 | `chat_terminal_environment_variables` | `flutter.chat_terminal_environment_variables` | JSON string | terminal env map |
+
+Native SharedPreferences used by setting pages:
+
+| Logical key | Prefs file | Type | Values |
+| --- | --- | --- | --- |
+| `image_open_mode` | `shared_open_preferences` | string | `default`, `workspace` |
+| `file_open_mode` | `shared_open_preferences` | string | `default`, `workspace` |
 
 `home_greeting_settings` shape:
 

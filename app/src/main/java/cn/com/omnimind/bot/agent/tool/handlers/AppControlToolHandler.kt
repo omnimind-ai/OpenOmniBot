@@ -16,6 +16,7 @@ import cn.com.omnimind.bot.agent.AgentExecutionEnvironment
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
 import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
+import cn.com.omnimind.bot.agent.AgentAlarmToolService
 import cn.com.omnimind.bot.agent.ToolExecutionResult
 import cn.com.omnimind.bot.agent.WorkspaceMemoryRollupScheduler
 import cn.com.omnimind.bot.localmodel.LocalModelFeature
@@ -23,6 +24,7 @@ import cn.com.omnimind.bot.mcp.McpServerManager
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
 import cn.com.omnimind.bot.mcp.RemoteMcpDiscoveryRegistry
 import cn.com.omnimind.bot.mcp.RemoteMcpServerConfig
+import cn.com.omnimind.bot.share.SharedOpenPreferenceStore
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.tencent.mmkv.MMKV
@@ -116,6 +118,11 @@ class AppControlToolHandler(
             "mcp.set_enabled" -> mcpSetEnabled(args)
             "mcp.refresh_token" -> mcpRefreshToken()
 
+            "shared_open.get", "open_with_omnibot.get" -> sharedOpenGet()
+            "shared_open.set", "open_with_omnibot.set" -> sharedOpenSet(args)
+            "alarm_settings.get", "alarm_sound.get", "alarm_sound_settings.get" -> alarmSoundSettingsGet()
+            "alarm_settings.set", "alarm_sound.set", "alarm_sound_settings.set" -> alarmSoundSettingsSet(args)
+
             "local_model.state" -> localModelControl("state", args)
             "local_model.get_config" -> localModelControl("get_config", args)
             "local_model.save_config" -> localModelControl("save_config", args)
@@ -171,6 +178,8 @@ class AppControlToolHandler(
             mapOf("target" to "agent_avatar", "storage" to "SharedPreferences", "keys" to listOf("agentAvatarIndex", "agentAvatarCustomImagePath")),
             mapOf("target" to "app_background", "storage" to "SharedPreferences JSON", "key" to "app_background_config_v1"),
             mapOf("target" to "home_greeting", "storage" to "SharedPreferences JSON", "key" to "home_greeting_settings"),
+            mapOf("target" to "alarm_sound_settings", "storage" to "AgentAlarmToolService", "values" to listOf("default", "local_mp3", "remote_mp3_url")),
+            mapOf("target" to "open_with_omnibot", "storage" to "SharedOpenPreferenceStore", "values" to listOf("default", "workspace")),
             mapOf("target" to "manual_model_context_thresholds", "storage" to "SharedPreferences JSON"),
             mapOf("target" to "chat_terminal_environment_variables", "storage" to "SharedPreferences JSON"),
             mapOf("target" to "vibration", "storage" to "MMKV", "key" to "app_vibrate", "type" to "boolean"),
@@ -206,6 +215,8 @@ class AppControlToolHandler(
             )
             "app_background" -> simpleSetting(target, readFlutterJson("app_background_config_v1"))
             "home_greeting" -> simpleSetting(target, readFlutterJson("home_greeting_settings"))
+            "alarm_settings", "alarm_sound", "alarm_sound_settings" -> alarmSoundSettingsGet()
+            "open_with_omnibot", "shared_open", "shared_open_mode" -> sharedOpenGet()
             "manual_model_context_thresholds" -> simpleSetting(target, readFlutterJson("manual_model_context_thresholds"))
             "chat_terminal_environment_variables" -> simpleSetting(target, readFlutterJson("chat_terminal_environment_variables"))
             "vibration", "app_vibrate" -> simpleSetting("vibration", MMKV.defaultMMKV().decodeBool("app_vibrate", true))
@@ -285,6 +296,8 @@ class AppControlToolHandler(
             }
             "app_background" -> setFlutterJsonSetting("app_background_config_v1", "app_background", args)
             "home_greeting" -> setFlutterJsonSetting("home_greeting_settings", "home_greeting", args)
+            "alarm_settings", "alarm_sound", "alarm_sound_settings" -> alarmSoundSettingsSet(args)
+            "open_with_omnibot", "shared_open", "shared_open_mode" -> sharedOpenSet(args)
             "manual_model_context_thresholds" ->
                 setFlutterJsonSetting("manual_model_context_thresholds", "manual_model_context_thresholds", args)
             "chat_terminal_environment_variables" ->
@@ -483,18 +496,87 @@ class AppControlToolHandler(
         "summary" to "已刷新本地 MCP 服务令牌"
     )
 
+    private fun sharedOpenGet(): Map<String, Any?> = mapOf(
+        "success" to true,
+        "target" to "open_with_omnibot",
+        "value" to SharedOpenPreferenceStore.getOpenModes(appContext),
+        "summary" to "已读取使用小万打开设置"
+    )
+
+    private fun sharedOpenSet(args: JsonObject): Map<String, Any?> {
+        val value = objectValue(args)
+        val imageMode = stringFromArgsOrMap(args, value, "imageMode", "image_mode", "image")
+        val fileMode = stringFromArgsOrMap(args, value, "fileMode", "file_mode", "file")
+        var changed = false
+        imageMode?.let {
+            SharedOpenPreferenceStore.setImageOpenMode(appContext, it)
+            changed = true
+        }
+        fileMode?.let {
+            SharedOpenPreferenceStore.setFileOpenMode(appContext, it)
+            changed = true
+        }
+
+        if (!changed) {
+            val mode = stringFromArgsOrMap(args, value, "mode", "openMode", "open_mode", "value")
+                ?: throw IllegalArgumentException("open_with_omnibot mode/value 不能为空")
+            when (stringFromArgsOrMap(args, value, "openTarget", "open_target", "mediaType", "media_type", "kind", "target")
+                ?.lowercase(Locale.ROOT)) {
+                "image", "images", "photo", "photos", "picture", "pictures" ->
+                    SharedOpenPreferenceStore.setImageOpenMode(appContext, mode)
+                "file", "files", "document", "documents" ->
+                    SharedOpenPreferenceStore.setFileOpenMode(appContext, mode)
+                else -> SharedOpenPreferenceStore.setOpenMode(appContext, mode)
+            }
+        }
+
+        return sharedOpenGet() + ("summary" to "已保存使用小万打开设置")
+    }
+
+    private fun alarmSoundSettingsGet(): Map<String, Any?> {
+        val settings = AgentAlarmToolService(appContext).getAlarmSettings()
+        return mapOf(
+            "success" to true,
+            "target" to "alarm_sound_settings",
+            "value" to settings,
+            "summary" to "已读取闹钟铃声设置"
+        )
+    }
+
+    private fun alarmSoundSettingsSet(args: JsonObject): Map<String, Any?> {
+        val value = objectValue(args)
+        val source = stringFromArgsOrMap(args, value, "source", "value")
+            ?: throw IllegalArgumentException("alarm_sound_settings source 不能为空")
+        val result = AgentAlarmToolService(appContext).saveAlarmSettings(
+            source = source,
+            localPath = stringFromArgsOrMap(args, value, "localPath", "local_path"),
+            remoteUrl = stringFromArgsOrMap(args, value, "remoteUrl", "remote_url")
+        )
+        return mapOf(
+            "success" to true,
+            "target" to "alarm_sound_settings",
+            "value" to mapOf(
+                "source" to result["source"],
+                "localPath" to result["localPath"],
+                "remoteUrl" to result["remoteUrl"]
+            ),
+            "summary" to (result["summary"] ?: "闹钟铃声设置已保存")
+        )
+    }
+
     private suspend fun localModelControl(
         action: String,
         args: JsonObject
     ): Map<String, Any?> {
         val argumentMap = helper.jsonObjectToMap(args)
         val result = LocalModelFeature.control(action, argumentMap)
+        val success = result["success"] != false
         return mapOf(
-            "success" to (result["success"] != false),
+            "success" to success,
             "target" to "local_model",
             "action" to action,
             "result" to result,
-            "summary" to "已执行本地模型控制"
+            "summary" to (result["summary"] ?: if (success) "已执行本地模型控制" else "本地模型控制失败")
         )
     }
 
@@ -668,7 +750,9 @@ class AppControlToolHandler(
     )
 
     private fun remoteMcpUpsert(args: JsonObject): Map<String, Any?> {
-        val raw = objectValue(args) ?: helper.jsonObjectToMap(args)
+        val raw = normalizeRemoteMcpMap(objectValue(args) ?: helper.jsonObjectToMap(args))
+        require(!stringFromMap(raw, "name").isNullOrBlank()) { "remote_mcp.name 不能为空" }
+        require(!stringFromMap(raw, "endpointUrl").isNullOrBlank()) { "remote_mcp.endpointUrl 不能为空" }
         val saved = RemoteMcpConfigStore.upsertServer(RemoteMcpServerConfig.fromMap(raw))
         RemoteMcpDiscoveryRegistry.invalidate(saved.id)
         return mapOf(
@@ -936,7 +1020,10 @@ class AppControlToolHandler(
     }
 
     private fun stringArg(args: JsonObject, key: String): String? {
-        return args[key]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+        return (args[key] as? kotlinx.serialization.json.JsonPrimitive)
+            ?.contentOrNull
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
     }
 
     private fun booleanArg(args: JsonObject, key: String): Boolean? {
@@ -1067,6 +1154,51 @@ class AppControlToolHandler(
             }
         }
         return emptyList()
+    }
+
+    private fun stringFromArgsOrMap(
+        args: JsonObject,
+        map: Map<String, Any?>?,
+        vararg keys: String
+    ): String? {
+        for (key in keys) {
+            stringArg(args, key)?.let { return it }
+            stringFromMap(map, key)?.let { return it }
+        }
+        return null
+    }
+
+    private fun stringFromMap(map: Map<String, Any?>?, vararg keys: String): String? {
+        if (map == null) return null
+        for (key in keys) {
+            val value = map[key]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            if (value != null) return value
+        }
+        return null
+    }
+
+    private fun normalizeRemoteMcpMap(raw: Map<String, Any?>): Map<String, Any?> {
+        val normalized = raw.toMutableMap()
+        copyFirstAlias(normalized, "id", "serverId", "server_id")
+        copyFirstAlias(normalized, "endpointUrl", "endpoint_url", "endpoint", "url", "baseUrl", "base_url")
+        copyFirstAlias(normalized, "bearerToken", "bearer_token", "token", "apiKey", "api_key")
+        copyFirstAlias(normalized, "lastHealth", "last_health")
+        copyFirstAlias(normalized, "lastError", "last_error")
+        copyFirstAlias(normalized, "toolCount", "tool_count")
+        copyFirstAlias(normalized, "lastSyncedAt", "last_synced_at")
+        parseBoolean(normalized["enabled"])?.let { normalized["enabled"] = it }
+        return normalized
+    }
+
+    private fun copyFirstAlias(target: MutableMap<String, Any?>, canonical: String, vararg aliases: String) {
+        if (!target[canonical]?.toString()?.trim().isNullOrEmpty()) return
+        for (alias in aliases) {
+            val value = target[alias] ?: continue
+            if (value.toString().trim().isNotEmpty()) {
+                target[canonical] = value
+                return
+            }
+        }
     }
 
     private fun profileFromMap(map: Map<String, Any?>): ModelProviderProfile {

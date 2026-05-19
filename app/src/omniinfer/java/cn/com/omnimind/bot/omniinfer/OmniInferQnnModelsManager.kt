@@ -183,12 +183,20 @@ object OmniInferQnnModelsManager {
         val targetModelId = modelId?.trim().orEmpty().ifBlank { getActiveModelId() }
         if (targetModelId.isBlank()) {
             OmniLog.w(TAG, "[startApiService] no modelId and no active model")
-            return getConfig()
+            return getConfig() + mapOf(
+                "success" to false,
+                "startSuccess" to false,
+                "error" to "No modelId specified and no active model"
+            )
         }
         val installed = scanInstalledModels().firstOrNull { it.modelId == targetModelId }
         if (installed == null) {
             OmniLog.w(TAG, "[startApiService] model not found: $targetModelId")
-            return getConfig()
+            return getConfig() + mapOf(
+                "success" to false,
+                "startSuccess" to false,
+                "error" to "Model not found: $targetModelId"
+            )
         }
         val marketModel = OmniInferQnnMarketRepository.findModel(targetModelId)
         val decoderVersion = marketModel?.entry?.decoderModelVersion ?: "qwen3"
@@ -205,7 +213,11 @@ object OmniInferQnnModelsManager {
             OmniInferLocalRuntime.startLanProxy()
         }
         emitConfigChanged()
-        return getConfig()
+        return getConfig() + mapOf(
+            "success" to loaded,
+            "startSuccess" to loaded,
+            "error" to if (loaded) "" else "Failed to load model: ${installed.modelId}"
+        )
     }
 
     fun ensureModelReady(modelId: String): Boolean {

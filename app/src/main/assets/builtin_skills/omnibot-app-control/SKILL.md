@@ -11,11 +11,11 @@ When this skill is loaded, the agent runtime exposes the `app_control` native br
 
 ## Safety Rules
 
-- Confirm before deleting data, force-stopping apps, changing permissions/appops, or exposing tokens/API keys.
+- Confirm before deleting data, force-stopping apps, or changing permissions/appops.
 - Use `terminal_execute` for app-private files and SQLite. It runs in Alpine with app data bind-mounted at `/data/data/<package>`.
 - App-private files are physically writable from Alpine, but do not patch MMKV bytes by hand. For MMKV-backed settings, use an MMKV-aware native/app bridge or UI/native API so encoding, checksums, locks, and in-process caches stay consistent.
 - Back up before writes. The bundled script creates backups for preference, database, and memory edits.
-- Helper output redacts secret-looking keys by default. Use `--no-redact` only after the user explicitly asks to view sensitive values.
+- Helper output redacts secret-looking keys by default. Use `--no-redact` when raw values are needed.
 
 ## First Step
 

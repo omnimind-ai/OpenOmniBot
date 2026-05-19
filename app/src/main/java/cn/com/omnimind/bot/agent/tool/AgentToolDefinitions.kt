@@ -1887,7 +1887,7 @@ object AgentToolDefinitions {
             put("toolType", "app_control")
             put(
                 "description",
-                "通过 Kotlin 原生桥直接读取或修改应用设置与服务状态。可控制设置页里的主题、语言、体验开关、头像、背景、模型服务商、场景模型、语音、MCP、本地模型服务、workspace 记忆等；也可用 prefs.* 和 mmkv.* 动作读写应用私有 SharedPreferences/MMKV。"
+                "通过 Kotlin 原生桥直接读取或修改应用设置与服务状态。可控制设置页里的主题、语言、体验开关、头像、背景、闹钟铃声、使用小万打开、模型服务商、场景模型、语音、MCP、本地模型服务、workspace 记忆等；也可用 prefs.* 和 mmkv.* 动作读写应用私有 SharedPreferences/MMKV。"
             )
             put(
                 "postToolRule",
@@ -1900,14 +1900,14 @@ object AgentToolDefinitions {
                         put("type", "string")
                         put(
                             "description",
-                            "控制动作。常用：setting.list/get/set，prefs.list/get/set/remove/json_merge，mmkv.list/get/set/remove/json_merge，mcp.state/set_enabled/refresh_token，local_model.state/get_config/save_config/set_backend/set_active_model/start/stop/list_installed，model_provider.list/get/save/set_editing/delete/replace，scene_model.list/save/clear/replace，scene_voice.get/set/reset，remote_mcp.list/upsert/delete/set_enabled，workspace_memory.embedding_get/embedding_set/rollup_get/rollup_set。"
+                            "控制动作。常用：setting.list/get/set，prefs.list/get/set/remove/json_merge，mmkv.list/get/set/remove/json_merge，mcp.state/set_enabled/refresh_token，shared_open.get/set，alarm_settings.get/set，local_model.state/get_config/save_config/set_backend/set_active_model/start/stop/list_installed，model_provider.list/get/save/set_editing/delete/replace，scene_model.list/save/clear/replace，scene_voice.get/set/reset，remote_mcp.list/upsert/delete/set_enabled，workspace_memory.embedding_get/embedding_set/rollup_get/rollup_set。"
                         )
                     }
                     putJsonObject("target") {
                         put("type", "string")
                         put(
                             "description",
-                            "setting.get/set 的设置项，如 theme、language、auto_back_to_chat_after_task、use_independent_chat_send_button、habitual_hand、hide_from_recents、agent_avatar、app_background、home_greeting、manual_model_context_thresholds、chat_terminal_environment_variables、vibration、companion_blocked_apps、model_provider、scene_model、scene_voice、mcp_server、remote_mcp、workspace_memory、local_model。"
+                            "setting.get/set 的设置项，如 theme、language、auto_back_to_chat_after_task、use_independent_chat_send_button、habitual_hand、hide_from_recents、agent_avatar、app_background、home_greeting、alarm_sound_settings、open_with_omnibot、manual_model_context_thresholds、chat_terminal_environment_variables、vibration、companion_blocked_apps、model_provider、scene_model、scene_voice、mcp_server、remote_mcp、workspace_memory、local_model。"
                         )
                     }
                     putJsonObject("key") {

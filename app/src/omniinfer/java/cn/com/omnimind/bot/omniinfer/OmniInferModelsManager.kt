@@ -517,9 +517,17 @@ object OmniInferModelsManager {
     fun startApiService(modelId: String?, exposeLan: Boolean = true): Map<String, Any?> {
         val resolvedModelId = modelId?.trim().orEmpty().ifBlank { getActiveModelId() }
         if (resolvedModelId.isBlank()) {
-            return getConfig()
+            return getConfig() + mapOf(
+                "success" to false,
+                "startSuccess" to false,
+                "error" to "No modelId specified and no active model"
+            )
         }
-        val modelFile = findModelFile(resolvedModelId) ?: return getConfig()
+        val modelFile = findModelFile(resolvedModelId) ?: return getConfig() + mapOf(
+            "success" to false,
+            "startSuccess" to false,
+            "error" to "Model not found: $resolvedModelId"
+        )
         mmkv.encode(KEY_ACTIVE_MODEL_ID, resolvedModelId)
         val loaded = OmniInferLocalRuntime.loadModel(
             modelId = resolvedModelId,
@@ -530,7 +538,11 @@ object OmniInferModelsManager {
             OmniInferLocalRuntime.startLanProxy()
         }
         emitConfigChanged()
-        return getConfig()
+        return getConfig() + mapOf(
+            "success" to loaded,
+            "startSuccess" to loaded,
+            "error" to if (loaded) "" else "Failed to load model: $resolvedModelId"
+        )
     }
 
     fun stopApiService(): Map<String, Any?> {
