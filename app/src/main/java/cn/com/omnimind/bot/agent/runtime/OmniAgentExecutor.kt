@@ -95,7 +95,8 @@ class OmniAgentExecutor(
             val toolRegistry = AgentToolRegistry(
                 context = context,
                 discoveredServers = discoveredServers,
-                conversationMode = conversationMode
+                conversationMode = conversationMode,
+                resolvedSkills = resolvedSkills
             )
             val initialMessages = buildInitialMessages(
                 promptSeed = historyRepository.buildPromptSeed(

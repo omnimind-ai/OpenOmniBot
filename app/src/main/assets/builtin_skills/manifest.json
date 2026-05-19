@@ -29,6 +29,16 @@
       "hasReferences": false,
       "hasAssets": false,
       "hasEvals": false
+    },
+    {
+      "id": "omnibot-app-control",
+      "name": "omnibot-app-control",
+      "description": "软件设置控制、应用控制、本地模型服务控制、MCP 服务、聊天历史搜索、会话管理、workspace 记忆、诊断。Use when the user asks to change Omnibot settings, control local services, search past chats, inspect local app state, archive/rename conversations, or troubleshoot app behavior.",
+      "assetPath": "builtin_skills/omnibot-app-control",
+      "hasScripts": true,
+      "hasReferences": true,
+      "hasAssets": false,
+      "hasEvals": false
     }
   ]
 }

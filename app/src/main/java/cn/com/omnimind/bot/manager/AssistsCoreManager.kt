@@ -1039,6 +1039,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             "file_search" -> AgentToolMeta("workspace", t("搜索文件", "Search Files"))
             "file_stat" -> AgentToolMeta("workspace", t("查看文件信息", "Inspect File"))
             "file_move" -> AgentToolMeta("workspace", t("移动文件", "Move File"))
+            "app_control" -> AgentToolMeta("app_control", t("应用控制", "App Control"))
             "schedule_task_create" -> AgentToolMeta("schedule", t("创建定时任务", "Create Scheduled Task"))
             "schedule_task_list" -> AgentToolMeta("schedule", t("查看定时任务", "List Scheduled Tasks"))
             "schedule_task_update" -> AgentToolMeta("schedule", t("修改定时任务", "Update Scheduled Task"))

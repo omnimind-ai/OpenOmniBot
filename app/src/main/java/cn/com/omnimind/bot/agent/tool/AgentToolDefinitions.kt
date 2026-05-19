@@ -1879,6 +1879,79 @@ object AgentToolDefinitions {
         }
     }
 
+    val appControlTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "app_control")
+            put("displayName", "应用控制")
+            put("toolType", "app_control")
+            put(
+                "description",
+                "通过 Kotlin 原生桥直接读取或修改应用设置与服务状态。可控制设置页里的主题、语言、体验开关、头像、背景、模型服务商、场景模型、语音、MCP、本地模型服务、workspace 记忆等；也可用 prefs.* 和 mmkv.* 动作读写应用私有 SharedPreferences/MMKV。"
+            )
+            put(
+                "postToolRule",
+                "读取工具结果中的 success、summary 和 result/state/config 后再继续。删除 prefs/mmkv/model_provider/remote_mcp 等持久数据时必须传 confirmed=true。"
+            )
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("action") {
+                        put("type", "string")
+                        put(
+                            "description",
+                            "控制动作。常用：setting.list/get/set，prefs.list/get/set/remove/json_merge，mmkv.list/get/set/remove/json_merge，mcp.state/set_enabled/refresh_token，local_model.state/get_config/save_config/set_backend/set_active_model/start/stop/list_installed，model_provider.list/get/save/set_editing/delete/replace，scene_model.list/save/clear/replace，scene_voice.get/set/reset，remote_mcp.list/upsert/delete/set_enabled，workspace_memory.embedding_get/embedding_set/rollup_get/rollup_set。"
+                        )
+                    }
+                    putJsonObject("target") {
+                        put("type", "string")
+                        put(
+                            "description",
+                            "setting.get/set 的设置项，如 theme、language、auto_back_to_chat_after_task、use_independent_chat_send_button、habitual_hand、hide_from_recents、agent_avatar、app_background、home_greeting、manual_model_context_thresholds、chat_terminal_environment_variables、vibration、companion_blocked_apps、model_provider、scene_model、scene_voice、mcp_server、remote_mcp、workspace_memory、local_model。"
+                        )
+                    }
+                    putJsonObject("key") {
+                        put("type", "string")
+                        put("description", "prefs.* 或 mmkv.* 的键名。Flutter SharedPreferences 可传未加 flutter. 前缀的业务键。")
+                    }
+                    putJsonObject("prefsName") {
+                        put("type", "string")
+                        put("description", "SharedPreferences 文件名，默认 FlutterSharedPreferences。")
+                    }
+                    putJsonObject("mmkvId") {
+                        put("type", "string")
+                        put("description", "MMKV 实例 ID，默认 default；本地模型配置可用 omniinfer_config。")
+                    }
+                    putJsonObject("valueType") {
+                        put("type", "string")
+                        put("description", "读写值类型：string、boolean、int、long、float、double、json、string-list。")
+                    }
+                    putJsonObject("value") {
+                        put(
+                            "description",
+                            "要写入的值。对象值可用于 JSON 设置、模型服务商、场景模型、语音、远程 MCP、本地模型配置等。"
+                        )
+                    }
+                    putJsonObject("patch") {
+                        put("type", "object")
+                        put("description", "对 JSON object 设置执行浅合并，例如 app_background 或 prefs/mmkv json_merge。")
+                    }
+                    putJsonObject("enabled") {
+                        put("type", "boolean")
+                        put("description", "开关类动作使用，例如 MCP、本地/远程服务、workspace 记忆。")
+                    }
+                    putJsonObject("confirmed") {
+                        put("type", "boolean")
+                        put("description", "删除或移除持久数据时必须为 true。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("action")
+                }
+            }
+        }
+    }
+
     val memorySearchTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {

@@ -34,6 +34,22 @@ interface LocalModelFeatureDelegate {
         apiBase: String?,
         modelId: String,
     ): Boolean = false
+
+    fun getControlState(): Map<String, Any?> = mapOf(
+        "enabled" to enabled,
+        "available" to enabled
+    )
+
+    suspend fun control(
+        action: String,
+        arguments: Map<String, Any?> = emptyMap(),
+    ): Map<String, Any?> = mapOf(
+        "success" to false,
+        "enabled" to enabled,
+        "available" to enabled,
+        "action" to action,
+        "error" to "local model control is not available in this build"
+    )
 }
 
 object LocalModelFeature {
@@ -100,5 +116,16 @@ object LocalModelFeature {
         } else {
             emptyList()
         }
+    }
+
+    fun getControlState(): Map<String, Any?> {
+        return delegate.getControlState()
+    }
+
+    suspend fun control(
+        action: String,
+        arguments: Map<String, Any?> = emptyMap(),
+    ): Map<String, Any?> {
+        return delegate.control(action, arguments)
     }
 }

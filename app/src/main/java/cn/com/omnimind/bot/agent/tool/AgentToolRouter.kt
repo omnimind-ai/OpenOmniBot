@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.agent
 
 import android.content.Context
+import cn.com.omnimind.bot.agent.tool.handlers.AppControlToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.BrowserToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.ContextToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.FileToolHandler
@@ -46,6 +47,7 @@ class AgentToolRouter(
         FileToolHandler(helper, workspaceManager),
         SkillsToolHandler(helper, workspaceManager),
         SystemToolHandler(helper, scheduleToolBridge, workspaceManager),
+        AppControlToolHandler(helper),
         MemoryToolHandler(helper),
         SubagentToolHandler(helper, scope)
     )
