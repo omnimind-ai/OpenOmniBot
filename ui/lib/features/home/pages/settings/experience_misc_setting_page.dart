@@ -183,6 +183,17 @@ class _ExperienceMiscSettingPageState
             },
           ),
           _SettingItem(
+            icon: Icons.route_outlined,
+            title: context.trLegacy('引导教程'),
+            subtitle: context.trLegacy('重新过一次配置引导'),
+            onTap: () {
+              GoRouterManager.push(
+                '/welcome/guide',
+                queryParams: const {'replay': 'true'},
+              );
+            },
+          ),
+          _SettingItem(
             icon: Icons.visibility_off_outlined,
             iconSvg: 'assets/home/hide_recents_setting_icon.svg',
             title: context.l10n.settingsHideRecentsTitle,

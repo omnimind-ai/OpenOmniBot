@@ -35,6 +35,8 @@ class LegacyTextLocalizer {
     '任务完成后自动回聊天': 'Return to Chat After Tasks',
     '杂项': 'Misc',
     '首页设置': 'Home Settings',
+    '引导教程': 'Setup Guide',
+    '重新过一次配置引导': 'Run the setup guide again',
     '首页问候': 'Home Greeting',
     '显示问候语': 'Show Greeting',
     '管理聊天首页问候语和快捷指令': 'Manage the chat home greeting and quick prompts',
@@ -54,6 +56,8 @@ class LegacyTextLocalizer {
     '固定到首页': 'Pin to Home',
     '取消固定': 'Unpin',
     '最多固定两个快捷指令': 'Pin up to two quick prompts',
+    '首页、引导教程、后台隐藏、闹钟、振动与打开方式':
+        'Home, setup guide, Hide from Recents, alarms, vibration, and open behavior',
     '首页、后台隐藏、闹钟、振动与打开方式':
         'Home, Hide from Recents, alarms, vibration, and open behavior',
     '闹钟、振动、自动回聊天与打开方式': 'Alarms, vibration, return-to-chat, and open behavior',

@@ -346,7 +346,7 @@ class _SettingsPageState extends State<SettingsPage> {
             icon: Icons.more_horiz_rounded,
             iconSvg: 'assets/home/misc_blocks_setting_icon.svg',
             title: context.trLegacy('杂项'),
-            subtitle: context.trLegacy('首页、后台隐藏、闹钟、振动与打开方式'),
+            subtitle: context.trLegacy('首页、引导教程、后台隐藏、闹钟、振动与打开方式'),
             onTap: () {
               GoRouterManager.push('/home/experience_misc_setting');
             },

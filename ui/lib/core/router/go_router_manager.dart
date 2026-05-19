@@ -29,6 +29,7 @@ class RouteOptions {
 /// GoRouter路由管理器
 class GoRouterManager {
   static const String homeRoute = '/home/chat';
+  static const String onboardingRoute = '/welcome/guide';
   static final GlobalKey<NavigatorState> _rootNavigatorKey =
       GlobalKey<NavigatorState>();
   static final GlobalKey<NavigatorState> _shellNavigatorKey =
@@ -185,14 +186,17 @@ class GoRouterManager {
 
     // Determine effective initial location with onboarding guard
     final welcomeCompleted =
-        StorageService.getBool(StorageKeys.welcomeCompleted,
-            defaultValue: false) ??
+        StorageService.getBool(
+          StorageKeys.welcomeCompleted,
+          defaultValue: false,
+        ) ??
         false;
     final requestedInitial = _initialRoute ?? homeRoute;
-    final effectiveInitial = (!welcomeCompleted &&
+    final effectiveInitial =
+        (!welcomeCompleted &&
             !requestedInitial.startsWith('/welcome') &&
             !_isSubEngine)
-        ? '/welcome/choice'
+        ? onboardingRoute
         : requestedInitial;
 
     return GoRouter(
@@ -201,27 +205,32 @@ class GoRouterManager {
       redirect: _isSubEngine
           ? null
           : (context, state) {
-              final completed = StorageService.getBool(
-                      StorageKeys.welcomeCompleted,
-                      defaultValue: false) ??
+              final completed =
+                  StorageService.getBool(
+                    StorageKeys.welcomeCompleted,
+                    defaultValue: false,
+                  ) ??
                   false;
               final location = state.matchedLocation;
               final isWelcomeRoute = location.startsWith('/welcome');
+              final isReplayOnboarding =
+                  (location == onboardingRoute ||
+                      location == '/welcome/choice') &&
+                  state.uri.queryParameters['replay'] == 'true';
+              final isOnboardingSideTrip =
+                  state.uri.queryParameters['fromOnboarding'] == 'true';
 
               // Not completed onboarding → redirect non-welcome routes
-              if (!completed && !isWelcomeRoute) {
-                return '/welcome/choice';
+              if (!completed && !isWelcomeRoute && !isOnboardingSideTrip) {
+                return onboardingRoute;
               }
               // Already completed → redirect welcome routes to home
-              if (completed && isWelcomeRoute) {
+              if (completed && isWelcomeRoute && !isReplayOnboarding) {
                 return homeRoute;
               }
               return null;
             },
-      observers: [
-        routeObserver,
-        if (kDebugMode) LoggingRouterObserver(),
-      ],
+      observers: [routeObserver, if (kDebugMode) LoggingRouterObserver()],
       routes: [
         GoRoute(
           path: '/',
