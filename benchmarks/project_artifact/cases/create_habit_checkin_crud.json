@@ -1,5 +1,6 @@
 {
-  "schema_version": "oob.project_benchmark_case.v1",
+  "schema_version": "project_artifact.case.v1",
+  "adapter": "oob_workbench",
   "id": "create_habit_checkin_crud",
   "title": "Create a habit check-in CRUD Project",
   "category": "create",

@@ -1,5 +1,6 @@
 {
-  "schema_version": "oob.project_benchmark_case.v1",
+  "schema_version": "project_artifact.case.v1",
+  "adapter": "oob_workbench",
   "id": "create_receipt_agent_project",
   "title": "Create an agent-backed receipt capture Project",
   "category": "create_agent",

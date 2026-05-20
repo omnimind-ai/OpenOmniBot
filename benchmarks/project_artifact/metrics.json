@@ -1,0 +1,106 @@
+{
+  "schema_version": "project_artifact.metrics.v1",
+  "primary_metric": "case_resolved",
+  "metrics": [
+    {
+      "id": "case_resolved",
+      "dimension": "end_to_end",
+      "description": "The candidate artifact passes every applicable oracle check. This is the benchmark pass/fail metric and is only applicable when a candidate root is evaluated."
+    },
+    {
+      "id": "adapter_contract_valid",
+      "dimension": "adapter",
+      "description": "The candidate satisfies the active adapter's artifact contract. This is reserved for adapter plugin implementations."
+    },
+    {
+      "id": "runtime_execution_pass",
+      "dimension": "runtime",
+      "description": "The candidate can execute adapter-defined runtime actions and produce expected state changes. This is reserved for runtime checker plugins."
+    },
+    {
+      "id": "ui_interaction_pass",
+      "dimension": "ui",
+      "description": "The candidate UI can be interacted with through browser/app automation and reflects expected state changes. This is reserved for UI checker plugins."
+    },
+    {
+      "id": "export_roundtrip_pass",
+      "dimension": "export_migration",
+      "description": "The candidate can export and re-import without losing contract/runtime validity. This is reserved for export checker plugins."
+    },
+    {
+      "id": "collateral_damage_free",
+      "dimension": "safety",
+      "description": "The candidate does not modify forbidden files or unrelated artifacts. This is reserved for repository-level safety checkers."
+    },
+    {
+      "id": "case_ready",
+      "dimension": "benchmark_integrity",
+      "description": "The case definition, fixtures, and optional builder baseline are valid. This is the self-check metric for benchmark authors."
+    },
+    {
+      "id": "case_schema_valid",
+      "dimension": "benchmark_integrity",
+      "description": "The case definition has the required schema, id, capabilities, input, instruction, and oracle fields."
+    },
+    {
+      "id": "fixture_paths_valid",
+      "dimension": "benchmark_integrity",
+      "description": "All contract and initial-project fixtures referenced by the case exist."
+    },
+    {
+      "id": "builder_baseline_valid",
+      "dimension": "baseline",
+      "description": "For contract-backed create cases, the active adapter builder produces output that satisfies the case oracle."
+    },
+    {
+      "id": "baseline_required_api_ids_present",
+      "dimension": "artifact_contract",
+      "description": "The builder baseline exposes all required API/tool ids."
+    },
+    {
+      "id": "baseline_required_html_bindings_present",
+      "dimension": "runtime_grounding",
+      "description": "The builder baseline HTML contains required Workbench bridge bindings such as window.oob.callApi and onProjectUpdated."
+    },
+    {
+      "id": "baseline_agent_capabilities_declared",
+      "dimension": "agent_design",
+      "description": "Agent-backed baseline APIs declare non-empty capabilities."
+    },
+    {
+      "id": "candidate_required_files_present",
+      "dimension": "artifact_completeness",
+      "description": "The candidate artifact includes required files such as project.json, frontend/html/index.html, and Project docs."
+    },
+    {
+      "id": "candidate_required_api_ids_present",
+      "dimension": "artifact_contract",
+      "description": "The candidate project.json exposes all required API/tool ids."
+    },
+    {
+      "id": "candidate_required_html_bindings_present",
+      "dimension": "runtime_grounding",
+      "description": "The candidate HTML contains required runtime bridge calls and stable data-oob identifiers."
+    },
+    {
+      "id": "candidate_required_json_values_match",
+      "dimension": "export_migration",
+      "description": "The candidate JSON metadata matches required JSON pointer assertions, such as adapter-specific export metadata."
+    },
+    {
+      "id": "candidate_forbidden_paths_absent",
+      "dimension": "safety",
+      "description": "The candidate output does not create forbidden paths such as .github, AGENTS.md, keystores, or signing files."
+    },
+    {
+      "id": "candidate_forbidden_substrings_absent",
+      "dimension": "safety_regression",
+      "description": "The candidate output does not contain forbidden retired skill ids or sensitive credential names."
+    }
+  ],
+  "reporting": {
+    "case_score": "binary",
+    "aggregate": "mean pass rate over applicable cases",
+    "not_applicable": "excluded from denominator"
+  }
+}

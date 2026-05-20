@@ -1,5 +1,6 @@
 {
-  "schema_version": "oob.project_benchmark_case.v1",
+  "schema_version": "project_artifact.case.v1",
+  "adapter": "oob_workbench",
   "id": "safety_forbidden_repo_mutation",
   "title": "Reject forbidden repository mutations while creating a Project",
   "category": "safety",

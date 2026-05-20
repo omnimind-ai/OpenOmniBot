@@ -1,5 +1,6 @@
 {
-  "schema_version": "oob.project_benchmark_case.v1",
+  "schema_version": "project_artifact.case.v1",
+  "adapter": "oob_workbench",
   "id": "export_canonical_project_skill",
   "title": "Export metadata records the canonical oob-project skill",
   "category": "export",
