@@ -132,12 +132,16 @@ object AppLocaleManager {
     }
 
     private fun systemLocale(context: Context): Locale {
-        val configuration = context.applicationContext.resources.configuration
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            configuration.locales.takeIf { !it.isEmpty }?.get(0) ?: Locale.getDefault()
-        } else {
-            @Suppress("DEPRECATION")
-            configuration.locale ?: Locale.getDefault()
+        return runCatching {
+            val configuration = context.applicationContext.resources.configuration
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                configuration.locales.takeIf { !it.isEmpty }?.get(0) ?: Locale.getDefault()
+            } else {
+                @Suppress("DEPRECATION")
+                configuration.locale ?: Locale.getDefault()
+            }
+        }.getOrElse {
+            Locale.getDefault()
         }
     }
 

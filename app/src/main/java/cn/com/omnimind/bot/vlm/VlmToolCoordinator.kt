@@ -105,6 +105,7 @@ object VlmToolCoordinator {
             status = TaskStatus.RUNNING,
             needSummary = needSummary
         )
+        taskState.vlmRequest = request
         taskState.message = "任务启动中"
 
         emitProgress(
@@ -186,7 +187,10 @@ object VlmToolCoordinator {
                 taskState.addChatMessage("[SYSTEM] Screen unlocked, starting task...")
                 taskState.status = TaskStatus.RUNNING
                 taskState.message = "屏幕已解锁，任务启动中"
-                val request = VlmTaskRequest(goal = taskState.goal, needSummary = taskState.needSummary)
+                val request = taskState.vlmRequest ?: VlmTaskRequest(
+                    goal = taskState.goal,
+                    needSummary = taskState.needSummary
+                )
                 val startResult = startVlmTaskInternal(
                     context,
                     request,

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
+import cn.com.omnimind.bot.agent.SkillIndexService
 import cn.com.omnimind.bot.terminal.EmbeddedTerminalRuntime
 import cn.com.omnimind.bot.workbench.executor.WorkbenchExecutor
 import cn.com.omnimind.bot.workbench.executor.WorkbenchExecutorRegistry
@@ -28,6 +29,7 @@ const val WORKBENCH_OSS_REPOSITORY_KIND = "oss_repo"
 const val WORKBENCH_OSS_GITHUB_KIND = "github_repo"
 const val WORKBENCH_OSS_LOCAL_KIND = "local_source"
 const val WORKBENCH_COLLECTION_EXECUTOR_KIND = "native_project_collection"
+private const val WORKBENCH_PROJECT_CAPABILITY_ENABLED_KEY = "projectCapabilityEnabled"
 const val WORKBENCH_WORKSPACE_PYTHON_EXECUTOR_KIND = "workspace_python_script"
 const val WORKBENCH_AGENT_TASK_EXECUTOR_KIND = "agent_task"
 const val WORKBENCH_HTML_RENDERER = "html_webview"
@@ -847,9 +849,14 @@ class WorkbenchProjectStore(
     @Synchronized
     fun activateProject(projectId: String): Map<String, Any?> {
         val record = findProject(projectId)
-        val manifest = activeProjectManifest(record, nowIso())
+        val manifest = activeProjectManifest(
+            record = record,
+            activatedAt = nowIso(),
+            projectCapabilityEnabled = true
+        )
         projectsRoot.mkdirs()
         activeProjectFile.writeText(gson.toJson(manifest))
+        syncProjectRelatedBuiltinSkillsEnabled(true)
         FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
             projectId = record.projectId,
             updatedPaths = listOf("active_project.json"),
@@ -874,7 +881,10 @@ class WorkbenchProjectStore(
         includeManifest: Boolean = true
     ): Map<String, Any?> {
         val activeProjectId = readActiveProjectId()
-        if (activeProjectId.isNullOrBlank()) {
+        if (
+            activeProjectId.isNullOrBlank() ||
+            !readActiveProjectCapabilityEnabled()
+        ) {
             return linkedMapOf("success" to true, "activeProject" to null, "project" to null)
         }
         val record = readProjectRegistry().firstOrNull { it.projectId == activeProjectId }
@@ -885,7 +895,11 @@ class WorkbenchProjectStore(
         return linkedMapOf(
             "success" to true,
             "activeProject" to if (includeManifest) {
-                activeProjectManifest(record, includeSources = includeSources)
+                activeProjectManifest(
+                    record,
+                    includeSources = includeSources,
+                    projectCapabilityEnabled = true
+                )
             } else {
                 projectIndexPayload(record)
             },
@@ -906,6 +920,7 @@ class WorkbenchProjectStore(
     fun deactivateProject(): Map<String, Any?> {
         val previousProjectId = readActiveProjectId()
         activeProjectFile.delete()
+        syncProjectRelatedBuiltinSkillsEnabled(false)
         FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
             projectId = previousProjectId.orEmpty(),
             updatedPaths = listOf("active_project.json"),
@@ -925,6 +940,7 @@ class WorkbenchProjectStore(
     @Synchronized
     fun activeProjectPromptContext(): String? {
         val activeProjectId = readActiveProjectId() ?: return null
+        if (!readActiveProjectCapabilityEnabled()) return null
         val record = readProjectRegistry().firstOrNull { it.projectId == activeProjectId }
             ?: run {
                 activeProjectFile.delete()
@@ -993,6 +1009,7 @@ class WorkbenchProjectStore(
         }
         if (readActiveProjectId() == record.projectId) {
             activeProjectFile.delete()
+            syncProjectRelatedBuiltinSkillsEnabled(false)
         }
         FlutterChatSyncBridge.dispatchWorkbenchProjectUpdated(
             projectId = record.projectId,
@@ -1035,6 +1052,7 @@ class WorkbenchProjectStore(
     @Synchronized
     fun activeToolbox(): Map<String, Any?>? {
         val activeProjectId = readActiveProjectId() ?: return null
+        if (!readActiveProjectCapabilityEnabled()) return null
         val record = readProjectRegistry().firstOrNull { it.projectId == activeProjectId }
             ?: run {
                 activeProjectFile.delete()
@@ -1052,6 +1070,7 @@ class WorkbenchProjectStore(
     @Synchronized
     fun activeMcpTools(): List<Map<String, Any?>> {
         val activeProjectId = readActiveProjectId() ?: return emptyList()
+        if (!readActiveProjectCapabilityEnabled()) return emptyList()
         val record = readProjectRegistry().firstOrNull { it.projectId == activeProjectId }
             ?: run {
                 activeProjectFile.delete()
@@ -1076,6 +1095,15 @@ class WorkbenchProjectStore(
         caller: String = "mcp_toolbox"
     ): Map<String, Any?> {
         val activeProjectId = readActiveProjectId()
+        if (activeProjectId != null && !readActiveProjectCapabilityEnabled()) {
+            return linkedMapOf(
+                "success" to false,
+                "toolName" to toolName,
+                "errorCode" to "TOOL_NOT_FOUND",
+                "errorMessage" to "No active OOB Project Toolbox is mounted."
+            )
+        }
+        activeProjectId
             ?: return linkedMapOf(
                 "success" to false,
                 "toolName" to toolName,
@@ -2111,7 +2139,8 @@ class WorkbenchProjectStore(
     private fun activeProjectManifest(
         record: WorkbenchProjectRecord,
         activatedAt: String? = null,
-        includeSources: Boolean = false
+        includeSources: Boolean = false,
+        projectCapabilityEnabled: Boolean = readActiveProjectCapabilityEnabled()
     ): Map<String, Any?> {
         val counts = apiExecutionCounts(record.projectId)
         val apis = projectApis(record.projectId)
@@ -2136,7 +2165,8 @@ class WorkbenchProjectStore(
             "sourceAssets" to readOssSources(record.projectId).map { it.toPayload() },
             "lastProgress" to lastProjectProgress(record.projectId),
             "lastError" to lastApiError(record.projectId),
-            "activatedAt" to (activatedAt ?: readActiveProjectActivatedAt())
+            "activatedAt" to (activatedAt ?: readActiveProjectActivatedAt()),
+            WORKBENCH_PROJECT_CAPABILITY_ENABLED_KEY to projectCapabilityEnabled
         )
     }
 
@@ -4812,6 +4842,15 @@ class WorkbenchProjectStore(
             ?: throw IllegalArgumentException("Workbench project not found: $projectId")
     }
 
+    private fun syncProjectRelatedBuiltinSkillsEnabled(enabled: Boolean) {
+        val context = appContext ?: return
+        runCatching {
+            val workspaceManager = AgentWorkspaceManager(context)
+            SkillIndexService(context, workspaceManager)
+                .setProjectRelatedBuiltinSkillsEnabled(enabled)
+        }
+    }
+
     private fun findApi(projectId: String, apiIdOrToolId: String): WorkbenchApiRecord {
         val normalized = apiIdOrToolId.trim()
         return projectApis(projectId).firstOrNull { api ->
@@ -4839,6 +4878,17 @@ class WorkbenchProjectStore(
             ) ?: return null
             payload["activatedAt"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
         }.getOrNull()
+    }
+
+    private fun readActiveProjectCapabilityEnabled(): Boolean {
+        if (!activeProjectFile.exists()) return false
+        return runCatching {
+            val payload = gson.fromJson<Map<String, Any?>>(
+                activeProjectFile.readText(),
+                mapType
+            ) ?: return false
+            payload[WORKBENCH_PROJECT_CAPABILITY_ENABLED_KEY] == true
+        }.getOrDefault(false)
     }
 
     private fun readProjectRegistry(): List<WorkbenchProjectRecord> {

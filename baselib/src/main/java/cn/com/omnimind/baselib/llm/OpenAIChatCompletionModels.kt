@@ -2,6 +2,7 @@ package cn.com.omnimind.baselib.llm
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -38,7 +39,9 @@ data class ChatCompletionRequest(
     val thinking: ChatCompletionThinking? = null,
     val audio: ChatCompletionAudioRequest? = null,
     @SerialName("response_format")
-    val responseFormat: JsonObject? = null
+    val responseFormat: JsonObject? = null,
+    @Transient
+    val modelOverride: String? = null
 )
 
 @Serializable

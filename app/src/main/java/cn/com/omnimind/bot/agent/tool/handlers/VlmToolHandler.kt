@@ -29,7 +29,9 @@ class VlmToolHandler(
         val goal: String,
         val packageName: String?,
         val needSummary: Boolean,
-        val startFromCurrent: Boolean
+        val startFromCurrent: Boolean,
+        val maxSteps: Int?,
+        val model: String?
     )
 
     data class VlmArgsSanitizeResult(
@@ -60,10 +62,19 @@ class VlmToolHandler(
         return try {
             helper.ensureRunActive()
             val goal = args["goal"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Missing goal")
-            val packageName = args["packageName"]?.jsonPrimitive?.contentOrNull
-            val needSummary = args["needSummary"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
-            val startFromCurrent = args["startFromCurrent"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
-            val rawArgs = VlmExecutionArgs(goal = goal, packageName = packageName?.takeIf { it.isNotBlank() }, needSummary = needSummary, startFromCurrent = startFromCurrent)
+            val packageName = firstString(args, "packageName", "package_name")
+            val needSummary = firstBoolean(args, "needSummary", "need_summary") ?: false
+            val startFromCurrent = firstBoolean(args, "startFromCurrent", "start_from_current", "skipGoHome", "skip_go_home") ?: false
+            val maxSteps = firstInt(args, "maxSteps", "max_steps")?.coerceIn(1, 64)
+            val model = firstString(args, "model", "modelId", "model_id")
+            val rawArgs = VlmExecutionArgs(
+                goal = goal,
+                packageName = packageName?.takeIf { it.isNotBlank() },
+                needSummary = needSummary,
+                startFromCurrent = startFromCurrent,
+                maxSteps = maxSteps,
+                model = model?.takeIf { it.isNotBlank() }
+            )
             val appNameToPackage = runtimeContextRepository.getAppNameToPackageMap()
             val detectedTargetPackage = detectTargetAppPackage(userMessage, appNameToPackage)
                 ?: detectTargetAppPackage(goal, appNameToPackage)
@@ -103,8 +114,8 @@ class VlmToolHandler(
                 context = helper.context,
                 request = VlmTaskRequest(
                     goal = safeArgs.goal,
-                    model = "scene.vlm.operation.primary",
-                    maxSteps = null,
+                    model = safeArgs.model,
+                    maxSteps = safeArgs.maxSteps,
                     packageName = if (safeArgs.startFromCurrent) null else safeArgs.packageName,
                     needSummary = safeArgs.needSummary,
                     skipGoHome = safeArgs.startFromCurrent,
@@ -179,7 +190,6 @@ class VlmToolHandler(
         var startFromCurrent = rawArgs.startFromCurrent
         var packageName = rawArgs.packageName?.trim()?.takeIf { it.isNotEmpty() }
         val reasons = mutableListOf<String>()
-        val explicitCurrentIntent = isExplicitCurrentPageIntent(userMessage) || isExplicitCurrentPageIntent(rawArgs.goal)
         val openAppIntent = isLikelyOpenAppIntent(userMessage) || isLikelyOpenAppIntent(rawArgs.goal)
         val detectedTargetPackage = detectTargetAppPackage(userMessage, appNameToPackage) ?: detectTargetAppPackage(rawArgs.goal, appNameToPackage)
         if (packageName == null && openAppIntent && detectedTargetPackage != null) {
@@ -189,11 +199,39 @@ class VlmToolHandler(
         val currentPackage = currentPackageName?.trim()?.takeIf { it.isNotEmpty() }
         val assistantPackage = helper.context.packageName
         val targetPackage = packageName ?: detectedTargetPackage
-        if (startFromCurrent && !explicitCurrentIntent) { startFromCurrent = false; reasons.add("start_from_current_without_current_intent") }
         if (startFromCurrent && openAppIntent) { startFromCurrent = false; reasons.add("open_app_should_not_start_from_current") }
         if (startFromCurrent && targetPackage != null && currentPackage != null && targetPackage != currentPackage) { startFromCurrent = false; reasons.add("target_package_differs_from_current_package") }
         if (startFromCurrent && currentPackage == assistantPackage && targetPackage != null && targetPackage != assistantPackage) { startFromCurrent = false; reasons.add("assistant_page_cannot_start_external_app_from_current") }
         return VlmArgsSanitizeResult(args = rawArgs.copy(packageName = packageName, startFromCurrent = startFromCurrent), reasons = reasons.distinct())
+    }
+
+    private fun firstInt(args: JsonObject, vararg keys: String): Int? {
+        for (key in keys) {
+            val primitive = args[key]?.jsonPrimitive ?: continue
+            val raw = primitive.contentOrNull?.trim().orEmpty()
+            val parsed = raw.toIntOrNull()
+                ?: raw.toDoubleOrNull()?.toInt()
+                ?: continue
+            return parsed
+        }
+        return null
+    }
+
+    private fun firstString(args: JsonObject, vararg keys: String): String? {
+        for (key in keys) {
+            val raw = args[key]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+            if (raw != null) return raw
+        }
+        return null
+    }
+
+    private fun firstBoolean(args: JsonObject, vararg keys: String): Boolean? {
+        for (key in keys) {
+            val primitive = args[key]?.jsonPrimitive ?: continue
+            primitive.booleanOrNull?.let { return it }
+            primitive.contentOrNull?.trim()?.toBooleanStrictOrNull()?.let { return it }
+        }
+        return null
     }
 
     private fun detectTargetAppPackage(text: String, appNameToPackage: Map<String, String>): String? {

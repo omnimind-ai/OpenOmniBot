@@ -313,13 +313,9 @@ class RunLogReusableFunctionCompilerTest {
         )
 
         val steps = stepsFrom(spec)
-        assertEquals(2, steps.size)
+        assertEquals(1, steps.size)
         assertEquals("type", steps[0]["tool"])
         assertEquals("hello", (steps[0]["args"] as Map<*, *>)["content"])
-        assertEquals(
-            500,
-            ((steps[1]["args"] as Map<*, *>)["duration_ms"] as Number).toInt(),
-        )
     }
 
     @Test

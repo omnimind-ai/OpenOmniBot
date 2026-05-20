@@ -184,6 +184,13 @@ object PromptTemplate {
                     "6. If the current task requires opening an app but the installed list lacks a clear package, do not guess; instead, use info/feedback to request more information or confirm by observing the UI."
                 )
             )
+            appendLine(
+                t(
+                    locale,
+                    "7. 不要输出停留、延时或空操作类动作；页面停留、加载和 XML 稳定判断由系统内部完成。若页面已经稳定，请选择一个可推进任务的语义动作：click、type、scroll、press_back、press_home、open_app、info、abort 或 finished。",
+                    "7. Do not output any idle, delay, or no-op action. Page settling, loading delay, and XML stability checks are handled internally. Once the page is stable, choose a semantic task-progressing action: click, type, scroll, press_back, press_home, open_app, info, abort, or finished."
+                )
+            )
         }.trim()
     }
 
@@ -233,8 +240,8 @@ object PromptTemplate {
             appendLine(
                 t(
                     locale,
-                    "若你判断下一步是点击、输入、滑动、返回、等待或结束，请直接使用对应工具。",
-                    "If the next step should be tap, type, scroll, go back, wait, or finish, call the matching tool directly."
+                    "若你判断下一步是点击、输入、滑动、返回或结束，请直接使用对应工具；不要使用停留、延时或空操作类动作，稳定停留由系统内部处理。",
+                    "If the next step should be tap, type, scroll, go back, or finish, call the matching tool directly. Do not use idle, delay, or no-op actions; stable settling is handled internally."
                 )
             )
             appendLine(

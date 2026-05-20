@@ -49,6 +49,42 @@ void main() {
     expect(items.single.activity?.stepCount, 1);
   });
 
+  test('refreshes activity when a tool card is updated in place', () {
+    final compactor = AgentActivityCompactor();
+    final firstItems = compactor.compact(<ChatMessageModel>[
+      _toolMessage(
+        id: 'task-2b-tool-1',
+        seq: 1,
+        toolType: 'browser',
+        toolName: 'browser_use',
+        argsJson: '{"action":"navigate","url":"https://example.com"}',
+        status: 'running',
+        summary: '正在打开页面',
+      ),
+    ]);
+
+    expect(firstItems.single.activity?.status, 'running');
+    expect(
+      firstItems.single.activity?.steps.single.title,
+      contains('example.com'),
+    );
+
+    final updatedItems = compactor.compact(<ChatMessageModel>[
+      _toolMessage(
+        id: 'task-2b-tool-1',
+        seq: 1,
+        toolType: 'browser',
+        toolName: 'browser_use',
+        argsJson: '{"action":"navigate","url":"https://example.com"}',
+        status: 'success',
+        summary: '页面已打开',
+      ),
+    ]);
+
+    expect(updatedItems.single.activity?.status, 'success');
+    expect(updatedItems.single.activity?.steps.single.status, 'success');
+  });
+
   test('wraps unknown codex tool type into generic activity', () {
     final items = compactAgentProcessItems(<ChatMessageModel>[
       _toolMessage(

@@ -76,11 +76,6 @@ class UiAutomationOmniflowActionBackend(
         settle()
     }
 
-    override suspend fun wait(durationMs: Long) {
-        delay(durationMs)
-        waitForIdle()
-    }
-
     override fun currentXml(): String? {
         waitForIdle()
         val root = automation.rootInActiveWindow ?: return null

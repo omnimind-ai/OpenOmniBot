@@ -62,4 +62,20 @@ class McpToolDefinitionsTest {
         assertTrue(properties.containsKey("replay"))
         assertTrue(properties.containsKey("reset_before_replay"))
     }
+
+    @Test
+    fun vlmTaskToolExposesDirectAndroidWorldControls() {
+        val tool = McpToolDefinitions.fixedTools.single {
+            it["name"] == "vlm_task"
+        }
+        val schema = tool["inputSchema"] as Map<*, *>
+        val properties = schema["properties"] as Map<*, *>
+
+        assertTrue(properties.containsKey("goal"))
+        assertTrue(properties.containsKey("model"))
+        assertTrue(properties.containsKey("packageName"))
+        assertTrue(properties.containsKey("maxSteps"))
+        assertTrue(properties.containsKey("startFromCurrent"))
+        assertTrue(properties.containsKey("needSummary"))
+    }
 }

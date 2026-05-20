@@ -47,7 +47,8 @@ together.
 - `executor=omniflow`: deterministic local replay only. Allowed actions are
   the OOB local set plus OmniFlow canonical aliases: `click`, `long_press`,
   `scroll`, `type`, `input_text`, `swipe`, `open_app`, `press_home`,
-  `press_back`, `press_key`, `hot_key`, `wait`, and `finished`. OOB-native
+  `press_back`, `press_key`, `hot_key`, and `finished`. Legacy `wait` cards are
+  skipped because page settling is handled internally by the replay backend. OOB-native
   OmniFlow graph/function commands such as `go_to_node`, `click_node`, and
   `call_tool` with `function_id` also use this executor and are dispatched by
   `OobFunctionToolHandler`.

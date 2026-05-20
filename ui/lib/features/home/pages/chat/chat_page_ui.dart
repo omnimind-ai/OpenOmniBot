@@ -1190,19 +1190,12 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                 ? ChatSurfaceMode.workspace
                 : ChatSurfaceMode.project,
             syncPage: true,
-            preferCachedWorkspaceMode: false,
           ),
         );
         return;
       }
 
-      unawaited(
-        _switchChatMode(
-          value,
-          syncPage: true,
-          preferCachedWorkspaceMode: false,
-        ),
-      );
+      unawaited(_switchChatMode(value, syncPage: true));
     }
 
     return Stack(
@@ -1993,7 +1986,8 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
             return success;
           }
 
-          final modelId = _activeConversationModelOverrideSelection?.modelId ??
+          final modelId =
+              _activeConversationModelOverrideSelection?.modelId ??
               _activeDispatchSceneSelection?.modelId;
           if (modelId != null && modelId.isNotEmpty) {
             await StorageService.setManualModelContextThreshold(

@@ -156,31 +156,33 @@ class ExecutionStepTile extends StatelessWidget {
         children: [
           // 参数列表
           if (params.isNotEmpty) ...[
-            ...params.entries.map((e) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${e.key}: ',
+            ...params.entries.map(
+              (e) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${e.key}: ',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        '${e.value}',
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: palette.textSecondary,
+                          color: palette.textPrimary,
                         ),
                       ),
-                      Expanded(
-                        child: Text(
-                          '${e.value}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: palette.textPrimary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 8),
           ],
 
@@ -188,7 +190,11 @@ class ExecutionStepTile extends StatelessWidget {
           Row(
             children: [
               if (step.durationMs != null) ...[
-                Icon(Icons.timer_outlined, size: 14, color: palette.textTertiary),
+                Icon(
+                  Icons.timer_outlined,
+                  size: 14,
+                  color: palette.textTertiary,
+                ),
                 const SizedBox(width: 4),
                 Text(
                   '${(step.durationMs! / 1000).toStringAsFixed(2)}s',
@@ -220,11 +226,17 @@ class ExecutionStepTile extends StatelessWidget {
                 TextButton(
                   onPressed: onCopyJson,
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: Text('Copy JSON', style: const TextStyle(fontSize: 11)),
+                  child: Text(
+                    'Copy JSON',
+                    style: const TextStyle(fontSize: 11),
+                  ),
                 ),
             ],
           ),
@@ -253,14 +265,14 @@ class ExecutionStepTile extends StatelessWidget {
         return l10n.executionActionScroll;
       case 'press_key':
         return l10n.executionActionPressKey;
-      case 'wait':
-        return l10n.executionActionWait;
       case 'finished':
         return l10n.executionActionFinished;
       case 'call_function':
         return l10n.executionActionCallFunction;
       default:
-        return actionType.trim().isEmpty ? l10n.executionActionDefault : actionType.trim();
+        return actionType.trim().isEmpty
+            ? l10n.executionActionDefault
+            : actionType.trim();
     }
   }
 

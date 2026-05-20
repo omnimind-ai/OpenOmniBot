@@ -1475,6 +1475,14 @@ class _WebChatHomeState extends State<_WebChatHome> {
         ),
       );
     }
+    if (group.outputSegmentCount > 0) {
+      parts.add(
+        AppTextLocalizer.choose(
+          en: '${group.outputSegmentCount} output ${group.outputSegmentCount == 1 ? 'segment' : 'segments'}',
+          zh: '${group.outputSegmentCount} 段输出',
+        ),
+      );
+    }
     if (group.visibleMessagesNewestFirst.isEmpty) {
       parts.add(AppTextLocalizer.choose(en: 'waiting for reply', zh: '等待回复'));
     }

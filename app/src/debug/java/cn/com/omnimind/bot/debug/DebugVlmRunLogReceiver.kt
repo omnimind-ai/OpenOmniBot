@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.debug
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Base64
 import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.baselib.llm.ModelProviderConfigStore
 import cn.com.omnimind.baselib.llm.SceneModelBindingStore
@@ -26,9 +27,14 @@ import java.io.File
 class DebugVlmRunLogReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val appContext = context.applicationContext
-        val goal = intent?.getStringExtra("goal")?.takeIf { it.isNotBlank() } ?: "打开 Settings"
+        val goal = intent.decodeBase64Extra("goalBase64")
+            ?: intent?.getStringExtra("goal")?.takeIf { it.isNotBlank() }
+            ?: "打开 Settings"
+        val startFromCurrent = intent?.getBooleanExtra("startFromCurrent", false) ?: false
+        val skipGoHome = intent?.getBooleanExtra("skipGoHome", startFromCurrent) ?: startFromCurrent
         val prelaunch = intent?.getBooleanExtra("prelaunch", true) ?: true
-        val packageName = if (prelaunch) {
+        val shouldPrelaunch = prelaunch && !startFromCurrent && !skipGoHome
+        val packageName = if (shouldPrelaunch) {
             intent?.getStringExtra("packageName")?.takeIf { it.isNotBlank() } ?: "com.android.settings"
         } else {
             null
@@ -40,7 +46,18 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
 
         scope.launch {
             val result = runCatching {
-                run(appContext, goal, packageName, maxSteps, register, profileId, modelId)
+                run(
+                    appContext,
+                    goal,
+                    packageName,
+                    maxSteps,
+                    register,
+                    profileId,
+                    modelId,
+                    shouldPrelaunch,
+                    startFromCurrent,
+                    skipGoHome,
+                )
             }.getOrElse { error ->
                 linkedMapOf<String, Any?>(
                     "success" to false,
@@ -63,6 +80,9 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
         register: Boolean,
         profileId: String,
         modelId: String,
+        prelaunch: Boolean,
+        startFromCurrent: Boolean,
+        skipGoHome: Boolean,
     ): Map<String, Any?> {
         if (!AssistsUtil.Core.isInitialized()) {
             AssistsUtil.Core.initCore(context)
@@ -74,9 +94,11 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
             context = context,
             request = VlmTaskRequest(
                 goal = goal,
-                packageName = packageName,
+                model = modelId.ifEmpty { null },
+                packageName = if (startFromCurrent || skipGoHome) null else packageName,
                 maxSteps = maxSteps,
                 needSummary = false,
+                skipGoHome = startFromCurrent || skipGoHome,
             ),
             scope = scope,
         )
@@ -100,6 +122,9 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
             "success" to (outcome.status == VlmToolOutcomeStatus.FINISHED && convert?.get("success") == true),
             "goal" to goal,
             "packageName" to packageName,
+            "prelaunch" to prelaunch,
+            "startFromCurrent" to startFromCurrent,
+            "skipGoHome" to skipGoHome,
             "configured_binding" to configuredBinding,
             "outcome" to outcome.toPayload(),
             "run_id" to runId,
@@ -149,6 +174,14 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
             delay(200L)
         }
         error("OOB accessibility service is not bound")
+    }
+
+    private fun Intent?.decodeBase64Extra(name: String): String? {
+        val raw = this?.getStringExtra(name)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching {
+            String(Base64.decode(raw, Base64.DEFAULT), Charsets.UTF_8).trim()
+                .takeIf { it.isNotEmpty() }
+        }.getOrNull()
     }
 
     companion object {

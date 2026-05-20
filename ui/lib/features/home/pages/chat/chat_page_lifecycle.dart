@@ -100,9 +100,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       _hasAppliedInitialSurfaceMode = false;
       final initialSurfaceMode = _requestedInitialSurfaceMode;
       if (initialSurfaceMode != null) {
-        unawaited(
-          _switchChatMode(initialSurfaceMode, preferCachedWorkspaceMode: false),
-        );
+        unawaited(_switchChatMode(initialSurfaceMode));
       }
     }
     if (_threadTargetChanged(oldWidget.threadTarget, widget.threadTarget)) {
@@ -271,12 +269,27 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     final initialSurfaceMode = !_hasAppliedInitialSurfaceMode
         ? _requestedInitialSurfaceMode
         : null;
+    var requestedWorkspaceProjectMode =
+        initialSurfaceMode == ChatSurfaceMode.project;
+    if (requestedWorkspaceProjectMode) {
+      final activeProject = await NativeWorkbenchProjectBackend()
+          .getActiveProject();
+      if (isStaleRequest()) return;
+      requestedWorkspaceProjectMode = activeProject != null;
+      if (!requestedWorkspaceProjectMode) {
+        showToast(
+          AppTextLocalizer.choose(
+            zh: '请先在 Project 中激活一个项目',
+            en: 'Activate a Project first',
+          ),
+          type: ToastType.warning,
+        );
+      }
+    }
     final targetSurfaceMode = initialSurfaceMode == ChatSurfaceMode.project
         ? ChatSurfaceMode.workspace
         : initialSurfaceMode ??
               _surfaceForConversationMode(effectiveTarget.mode);
-    final requestedWorkspaceProjectMode =
-        initialSurfaceMode == ChatSurfaceMode.project;
     final workspacePathsFuture =
         targetSurfaceMode == ChatSurfaceMode.workspace ||
             targetSurfaceMode == ChatSurfaceMode.project
@@ -798,13 +811,34 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   Future<void> _switchChatMode(
     ChatSurfaceMode targetMode, {
     bool syncPage = true,
-    bool preferCachedWorkspaceMode = true,
   }) async {
-    final requestedProjectMode =
-        targetMode == ChatSurfaceMode.project ||
-        (targetMode == ChatSurfaceMode.workspace &&
-            preferCachedWorkspaceMode &&
-            _cachedWorkspaceProjectModeEnabled());
+    final requestedProjectMode = targetMode == ChatSurfaceMode.project;
+    if (requestedProjectMode && _workspaceProjectModeRequestInFlight) {
+      return;
+    }
+    final requestId = ++_surfaceSwitchRequestId;
+    bool isStaleRequest() => !mounted || requestId != _surfaceSwitchRequestId;
+    if (requestedProjectMode) {
+      _workspaceProjectModeRequestInFlight = true;
+      try {
+        final activeProject = await NativeWorkbenchProjectBackend()
+            .getActiveProject();
+        if (isStaleRequest()) return;
+        if (activeProject == null) {
+          showToast(
+            AppTextLocalizer.choose(
+              zh: '请先在 Project 中激活一个项目',
+              en: 'Activate a Project first',
+            ),
+            type: ToastType.warning,
+          );
+          if (syncPage) _jumpToCurrentModePage();
+          return;
+        }
+      } finally {
+        _workspaceProjectModeRequestInFlight = false;
+      }
+    }
     final resolvedTargetMode = targetMode == ChatSurfaceMode.openclaw
         ? ChatSurfaceMode.normal
         : requestedProjectMode
@@ -818,8 +852,6 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       }
       return;
     }
-    final requestId = ++_surfaceSwitchRequestId;
-    bool isStaleRequest() => !mounted || requestId != _surfaceSwitchRequestId;
     if (!mounted) return;
     if (_activeSurfaceMode == resolvedTargetMode) {
       if (resolvedTargetMode == ChatSurfaceMode.workspace &&
@@ -830,7 +862,6 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
             _workspaceBrowserCanGoUp = false;
           }
         });
-        _persistWorkspaceProjectModeEnabled(requestedProjectMode);
       }
       if (syncPage) _jumpToCurrentModePage();
       if (resolvedTargetMode == ChatSurfaceMode.normal &&
@@ -864,7 +895,6 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
         );
         _isBrowserOverlayVisible = false;
       });
-      _persistWorkspaceProjectModeEnabled(requestedProjectMode);
       _hideSlashCommandPanel();
       if (syncPage) _jumpToCurrentModePage();
       return;
@@ -901,13 +931,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   @override
   void _handleModePageChanged(int pageIndex) {
     final targetMode = _surfaceForPageIndex(pageIndex);
-    unawaited(
-      _switchChatMode(
-        targetMode,
-        syncPage: false,
-        preferCachedWorkspaceMode: false,
-      ),
-    );
+    unawaited(_switchChatMode(targetMode, syncPage: false));
   }
 
   @override

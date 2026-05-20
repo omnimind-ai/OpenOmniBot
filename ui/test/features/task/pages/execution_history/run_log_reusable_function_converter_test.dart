@@ -50,8 +50,6 @@ void main() {
       case 'hot_key':
       case 'press_key':
         return {'key': 'ENTER'};
-      case 'wait':
-        return {'duration_ms': 1000};
       case 'finished':
         return {'content': 'done'};
       default:
@@ -118,7 +116,6 @@ void main() {
       'press_back',
       'press_key',
       'hot_key',
-      'wait',
       'finished',
     ];
 
@@ -159,6 +156,30 @@ void main() {
         expect(step.containsKey('coordinate_hook'), isFalse);
       }
     }
+  });
+
+  test('skips legacy wait cards during local conversion', () {
+    final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+      runId: 'run-wait-skip',
+      title: 'Skip wait',
+      payload: const {'goal': 'Skip wait'},
+      cards: [
+        card('click', const {'target_description': 'Open', 'x': 120, 'y': 240}),
+        card('wait', const {'duration_ms': 1000}),
+        card('type', const {'content': 'hello'}),
+      ],
+      useEnglish: true,
+    );
+
+    final steps = stepsFrom(spec);
+    expect(steps.map((step) => step['tool']), ['click', 'type']);
+    expect(steps.map((step) => step['id']), ['step_1', 'step_2']);
+    expect(
+      steps.any(
+        (step) => step['tool'] == 'wait' || step['source_tool'] == 'wait',
+      ),
+      isFalse,
+    );
   });
 
   test('normalizes Omniflow action aliases before export', () {

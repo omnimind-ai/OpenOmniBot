@@ -60,6 +60,7 @@ import 'package:ui/features/home/pages/chat/utils/agent_thinking_card_locator.da
 import 'package:ui/features/home/pages/chat/utils/codex_slash_commands.dart';
 import 'package:ui/features/home/pages/chat/utils/deep_thinking_persistence.dart';
 import 'package:ui/features/home/pages/chat/utils/keyboard_inset_motion_tracker.dart';
+import 'package:ui/features/workbench/services/workbench_project_service.dart';
 import 'package:ui/widgets/chat_drawer_gesture_guard.dart';
 
 // 导入 Mixins
@@ -360,8 +361,6 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       'chat_hd_pad_left_pane_width';
   static const String _hdPadRightPaneWidthStorageKey =
       'chat_hd_pad_right_pane_width';
-  static const String _workspaceCachedModeKey =
-      'omnibot_workspace_cached_mode_v1';
   static const String _workspaceCachedDirectoryKey =
       'omnibot_workspace_cached_directory_v1';
   static const Duration _normalSurfaceModelRevealDelay = Duration(
@@ -371,6 +370,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       GlobalKey<OmnibotWorkspaceBrowserState>();
   bool _workspaceBrowserCanGoUp = false;
   bool _workspaceProjectModeEnabled = false;
+  bool _workspaceProjectModeRequestInFlight = false;
   Future<OmnibotWorkspacePaths>? _workspacePathsLoadFuture;
   bool _hasAppliedInitialSurfaceMode = false;
   bool _hasInitializedHalfScreen = false;
@@ -459,19 +459,6 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       mode == ConversationMode.openclaw
       ? ChatSurfaceMode.openclaw
       : ChatSurfaceMode.normal;
-  bool _cachedWorkspaceProjectModeEnabled() {
-    return StorageService.getString(_workspaceCachedModeKey) == 'project';
-  }
-
-  void _persistWorkspaceProjectModeEnabled(bool enabled) {
-    unawaited(
-      StorageService.setString(
-        _workspaceCachedModeKey,
-        enabled ? 'project' : 'work',
-      ),
-    );
-  }
-
   String? _cachedWorkspaceDirectory(String rootPath) {
     final cached = StorageService.getString(
       _workspaceCachedDirectoryKey,
@@ -1891,7 +1878,6 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   Future<void> _switchChatMode(
     ChatSurfaceMode targetMode, {
     bool syncPage = true,
-    bool preferCachedWorkspaceMode = true,
   });
 
   void _handleModePageChanged(int pageIndex);

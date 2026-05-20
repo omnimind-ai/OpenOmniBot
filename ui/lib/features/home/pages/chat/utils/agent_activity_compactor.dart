@@ -67,19 +67,13 @@ class AgentToolActivityStep {
   final ChatMessageModel message;
 }
 
-/// Stateful wrapper around [compactAgentProcessItems] that skips recomputation
-/// when the message list has not grown since the last call (append-only).
-/// Own one instance per StatefulWidget that renders a process section.
-/// Incremental activity compactor — processes each message exactly once.
+/// Stateful wrapper around [compactAgentProcessItems].
 ///
-/// Owns one per [State] that renders a process section. On each call to
-/// [compact], only messages past [_processedCount] are visited; committed
-/// (flushed) items are never recomputed. The pending [_ActivityBuilder] for
-/// the current in-progress group caches its own output and only rebuilds
-/// when new candidates arrive, giving O(1) amortised cost per event.
+/// Own one instance per [State] that renders a process section. The input list
+/// is small, and stream updates often replace a card in place, so rebuild the
+/// compacted transcript whenever the visible message signature changes.
 class AgentActivityCompactor {
-  String? _firstMessageId;
-  int _processedCount = 0;
+  int? _lastSignature;
   final List<AgentProcessItem> _committed = [];
   _ActivityBuilder? _pending;
   List<AgentProcessItem> _cachedResult = const [];
@@ -90,32 +84,23 @@ class AgentActivityCompactor {
       return const [];
     }
 
-    // Detect list replacement (widget reused for a different group/task).
-    final firstId = messages.first.id;
-    if (firstId != _firstMessageId) {
-      _reset();
-      _firstMessageId = firstId;
+    final signature = _messagesSignature(messages);
+    if (signature == _lastSignature) {
+      return _cachedResult;
     }
 
-    if (messages.length == _processedCount) return _cachedResult;
-
-    // Defensive: list shrank — shouldn't happen with append-only data.
-    if (messages.length < _processedCount) {
-      _reset();
-      _firstMessageId = messages.first.id;
+    _committed.clear();
+    _pending = null;
+    for (final message in messages) {
+      _processOne(message);
     }
-
-    for (var i = _processedCount; i < messages.length; i++) {
-      _processOne(messages[i]);
-    }
-    _processedCount = messages.length;
+    _lastSignature = signature;
     _cachedResult = _buildResult();
     return _cachedResult;
   }
 
   void _reset() {
-    _firstMessageId = null;
-    _processedCount = 0;
+    _lastSignature = null;
     _committed.clear();
     _pending = null;
     _cachedResult = const [];
@@ -152,6 +137,43 @@ class AgentActivityCompactor {
     final builder = _pending;
     if (builder == null) return List.unmodifiable(_committed);
     return [..._committed, builder.buildItem()];
+  }
+
+  int _messagesSignature(List<ChatMessageModel> messages) {
+    return Object.hashAll(messages.map(_messageSignature));
+  }
+
+  int _messageSignature(ChatMessageModel message) {
+    final cardData = message.cardData;
+    return Object.hashAll(<Object?>[
+      message.id,
+      message.text,
+      message.isLoading,
+      message.isError,
+      message.reasoningContent,
+      message.streamMeta?['seq'],
+      message.streamMeta?['kind'],
+      message.streamMeta?['isFinal'],
+      if (cardData != null) ...<Object?>[
+        cardData['type'],
+        cardData['cardId'],
+        cardData['status'],
+        cardData['stage'],
+        cardData['isLoading'],
+        cardData['thinkingContent'],
+        cardData['toolType'],
+        cardData['toolName'],
+        cardData['toolTitle'],
+        cardData['displayName'],
+        cardData['summary'],
+        cardData['progress'],
+        cardData['argsJson'],
+        cardData['args'],
+        cardData['resultPreviewJson'],
+        cardData['rawResultJson'],
+        cardData['terminalOutput'],
+      ],
+    ]);
   }
 }
 

@@ -38,7 +38,7 @@ class OobSkillReplayTest {
         val modelFree = step["model_free"] == true
         val action = firstNonBlank(step["omniflow_action"], step["tool"], step["callable_tool"])
         val omniflowActions = setOf("click", "long_press", "scroll", "type",
-            "open_app", "press_home", "press_back", "hot_key", "wait")
+            "open_app", "press_home", "press_back", "hot_key")
         return executor == "omniflow" || (modelFree && action in omniflowActions)
     }
 

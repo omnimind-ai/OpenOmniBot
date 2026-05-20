@@ -287,7 +287,7 @@ open class VLMOperationTask(
             context = context,
             runId = id,
             success = report.success,
-            doneReason = if (report.success) "finished" else "error",
+            doneReason = report.doneReason ?: if (report.success) "finished" else "error",
             errorMessage = report.error
         )
     }
@@ -559,7 +559,7 @@ open class VLMOperationTask(
             is OpenAppAction -> "打开应用"
             is PressHomeAction -> "返回桌面"
             is PressBackAction -> "返回"
-            is WaitAction -> "等待"
+            is WaitAction -> "旧版停留"
             is RecordAction -> "记录信息"
             is FinishedAction -> "完成任务"
             is RequireUserChoiceAction -> "请求用户选择"
@@ -595,10 +595,7 @@ open class VLMOperationTask(
             is OpenAppAction -> linkedMapOf("package_name" to action.packageName)
             is PressHomeAction -> emptyMap()
             is PressBackAction -> emptyMap()
-            is WaitAction -> linkedMapOf(
-                "duration_ms" to action.durationMs,
-                "duration" to action.duration
-            )
+            is WaitAction -> emptyMap()
             is RecordAction -> linkedMapOf("content" to action.content)
             is FinishedAction -> linkedMapOf("content" to action.content)
             is RequireUserChoiceAction -> linkedMapOf(

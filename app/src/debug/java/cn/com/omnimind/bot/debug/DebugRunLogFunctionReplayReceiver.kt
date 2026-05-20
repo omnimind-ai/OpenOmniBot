@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.debug
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Base64
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
 import com.google.gson.GsonBuilder
@@ -21,9 +22,12 @@ class DebugRunLogFunctionReplayReceiver : BroadcastReceiver() {
         val functionId = intent?.getStringExtra("functionId")
             ?: intent?.getStringExtra("function_id")
             ?: ""
-        val name = intent?.getStringExtra("name").orEmpty()
-        val description = intent?.getStringExtra("description").orEmpty()
-        val goal = intent?.getStringExtra("goal").orEmpty()
+        val name = intent.decodeBase64Extra("nameBase64")
+            ?: intent?.getStringExtra("name").orEmpty()
+        val description = intent.decodeBase64Extra("descriptionBase64")
+            ?: intent?.getStringExtra("description").orEmpty()
+        val goal = intent.decodeBase64Extra("goalBase64")
+            ?: intent?.getStringExtra("goal").orEmpty()
         val shouldRun = intent?.getBooleanExtra("run", true) ?: true
 
         scope.launch {
@@ -87,5 +91,13 @@ class DebugRunLogFunctionReplayReceiver : BroadcastReceiver() {
         private const val TAG = "DebugRunLogFunctionReplayReceiver"
         private val gson = GsonBuilder().disableHtmlEscaping().create()
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    }
+
+    private fun Intent?.decodeBase64Extra(name: String): String? {
+        val raw = this?.getStringExtra(name)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching {
+            String(Base64.decode(raw, Base64.DEFAULT), Charsets.UTF_8).trim()
+                .takeIf { it.isNotEmpty() }
+        }.getOrNull()
     }
 }

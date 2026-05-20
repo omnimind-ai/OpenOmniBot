@@ -168,6 +168,7 @@ class RunLogReusableFunctionConverter {
     for (var index = 0; index < snapshots.length; index++) {
       final snapshot = snapshots[index];
       if (snapshot.success == false) continue;
+      if (RunLogReplayPolicy.shouldSkipTool(snapshot.toolName)) continue;
       final rawArgs = _replayArgsForSnapshot(snapshot);
       final args = _canonicalCallToolArgs(snapshot.toolName, rawArgs);
       final shouldSkipPerceptionStep =
@@ -535,7 +536,8 @@ Requirements:
 - You may refine parameters: abstract hard-coded user input, search terms, message text, URLs, and target objects into parameters; do not abstract coordinate x/y into user parameters.
 - Every parameter must include name/type/description/bindings/default. bindings must be a JSONPath string array pointing to execution.steps[*].args.
 - Preserve or improve step executor/model_free/scriptable/omniflow_action/callable_tool/agent_call/validation/fallback fields.
-- Keep model_free omniflow actions model-free; do not turn click/scroll/type/open_app/back/home/hot_key/wait into agent steps.
+- Keep model_free omniflow actions model-free; do not turn click/scroll/type/open_app/back/home/hot_key into agent steps.
+- Drop legacy wait cards. Page settling is handled internally by OmniFlow/VLM stability logic and must not become a replay step.
 - Keep data-flow and perception tools as executor=agent with callable_tool=oob.agent.run; do not turn browser_use/web_search/memory/oob_run_log tools into direct tool replay.
 - Output must be consumable by both the agent and the script runner.
 
@@ -556,7 +558,8 @@ $compact
 - 可以整理 parameters：把硬编码的用户输入、搜索词、消息文本、URL、目标对象抽象成参数；不要把坐标 x/y 抽象成用户参数。
 - 每个 parameter 必须包含 name/type/description/bindings/default，其中 bindings 是 JSONPath 字符串数组，指向 execution.steps[*].args。
 - 保留或优化每步的 executor/model_free/scriptable/omniflow_action/callable_tool/agent_call/validation/fallback 字段。
-- 保持 model_free omniflow 动作无模型执行，不要把 click/scroll/type/open_app/back/home/hot_key/wait 改成 agent 步骤。
+- 保持 model_free omniflow 动作无模型执行，不要把 click/scroll/type/open_app/back/home/hot_key 改成 agent 步骤。
+- 丢弃旧版 wait 卡片。页面停留由 OmniFlow/VLM 内部稳定逻辑处理，不能生成回放步骤。
 - 保持 data-flow 和感知工具为 executor=agent 且 callable_tool=oob.agent.run；不要把 browser_use/web_search/memory/oob_run_log 工具改成直接 tool replay。
 - 输出必须能被 agent 和 script 执行器共同消费。
 

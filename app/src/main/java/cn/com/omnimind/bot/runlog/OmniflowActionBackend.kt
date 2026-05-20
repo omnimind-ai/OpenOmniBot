@@ -33,10 +33,6 @@ interface OmniflowActionBackend {
 
     suspend fun pressHotKey(key: String)
 
-    suspend fun wait(durationMs: Long) {
-        delay(durationMs)
-    }
-
     fun currentXml(): String?
 
     fun currentPackageName(): String?

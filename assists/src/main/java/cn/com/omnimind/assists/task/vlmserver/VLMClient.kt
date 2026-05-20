@@ -33,8 +33,10 @@ class VLMClient {
         model: String = "scene.vlm.operation.primary",
         retryState: VLMToolCallRetryState? = null
     ): VLMRequestEnvelope {
-        val systemPrompt = PromptTemplate.buildSystemPrompt(sceneId = model)
-        val currentUserText = PromptTemplate.buildTurnUserPrompt(context, sceneId = model)
+        val sceneId = resolveVlmSceneId(model)
+        val modelOverride = resolveVlmModelOverride(model)
+        val systemPrompt = PromptTemplate.buildSystemPrompt(sceneId = sceneId)
+        val currentUserText = PromptTemplate.buildTurnUserPrompt(context, sceneId = sceneId)
         val historyMessages = conversationState.historyMessages()
         val messages = buildMessages(
             systemPrompt = systemPrompt,
@@ -52,7 +54,8 @@ class VLMClient {
 
         return VLMRequestEnvelope(
             request = ChatCompletionRequest(
-                model = model,
+                model = sceneId,
+                modelOverride = modelOverride,
                 messages = messages,
                 maxCompletionTokens = 2048,
                 temperature = 0.2,
@@ -74,6 +77,26 @@ class VLMClient {
             ModelSceneRegistry.ResponseParser.TEXT_CONTENT ->
                 VLMResult(false, null, "主 VLM parser 不支持 TEXT_CONTENT: $modelOrScene")
         }
+    }
+
+    fun resolveVlmSceneId(modelOrScene: String?): String {
+        val normalized = modelOrScene?.trim().orEmpty()
+        return if (isSceneId(normalized)) {
+            normalized
+        } else {
+            "scene.vlm.operation.primary"
+        }
+    }
+
+    fun resolveVlmModelOverride(modelOrScene: String?): String? {
+        val normalized = modelOrScene?.trim().orEmpty()
+        return normalized.takeIf {
+            it.isNotEmpty() && !isSceneId(it)
+        }
+    }
+
+    private fun isSceneId(value: String): Boolean {
+        return value.startsWith("scene.")
     }
 
     fun buildConversationRound(
@@ -349,7 +372,6 @@ class VLMClient {
             )
             "press_home" -> PressHomeAction()
             "press_back" -> PressBackAction()
-            "wait" -> buildWaitAction(args)
             "hot_key" -> HotKeyAction(
                 key = requireString(args, "key").uppercase()
             )
@@ -373,18 +395,6 @@ class VLMClient {
                 prompt = requireString(args, "prompt")
             )
             else -> throw IllegalArgumentException("Unsupported tool call: ${toolCall.function.name}")
-        }
-    }
-
-    private fun buildWaitAction(args: JsonObject): WaitAction {
-        val durationMs = optionalLong(args, "duration_ms")
-            ?: optionalFloat(args, "duration")?.let { seconds ->
-                (seconds * 1000f).toLong()
-            }
-        return if (durationMs != null) {
-            WaitAction(durationMs = durationMs)
-        } else {
-            throw IllegalArgumentException("Missing or invalid 'duration_ms'")
         }
     }
 
@@ -489,7 +499,6 @@ class VLMClient {
         "open_app",
         "press_home",
         "press_back",
-        "wait",
         "hot_key",
         "finished",
         "info",
@@ -559,11 +568,6 @@ class VLMClient {
 
     private fun optionalFloat(obj: JsonObject, key: String): Float? {
         return obj[key]?.jsonPrimitive?.contentOrNull?.toFloatOrNull()
-    }
-
-    private fun optionalLong(obj: JsonObject, key: String): Long? {
-        return obj[key]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
-            ?: obj[key]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.toLong()
     }
 
     private fun requireStringList(obj: JsonObject, key: String): List<String> {

@@ -169,7 +169,7 @@ object ModelSceneRegistry {
     },
     "thought": {
       "type": "string",
-      "description": "The agent's reasoning or decision-making process behind choosing the next action. Or decision making process after using wait action"
+      "description": "The agent's reasoning or decision-making process behind choosing the next action."
     },
     "action": {
       "type": "object",
@@ -236,14 +236,6 @@ object ModelSceneRegistry {
             "y": {"type": "number", "description": "Y coordinate of the long press (0-1000)."}
           },
           "required": ["name", "target_description", "x", "y"]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {"type": "string", "enum": ["wait"]},
-            "duration_ms": {"type": "integer", "description": "Duration to wait in milliseconds."}
-          },
-          "required": ["name", "duration_ms"]
         },
         {
           "type": "object",

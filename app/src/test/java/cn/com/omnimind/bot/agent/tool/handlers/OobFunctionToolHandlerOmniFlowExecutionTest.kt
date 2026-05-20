@@ -2,12 +2,28 @@ package cn.com.omnimind.bot.agent.tool.handlers
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.SharedPreferences
 import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
+import cn.com.omnimind.bot.agent.AgentCallback
+import cn.com.omnimind.bot.agent.AgentExecutionEnvironment
+import cn.com.omnimind.bot.agent.AgentToolExecutor
+import cn.com.omnimind.bot.agent.AgentToolRegistry
+import cn.com.omnimind.bot.agent.AgentWorkspaceDescriptor
+import cn.com.omnimind.bot.agent.AgentWorkspaceManager
+import cn.com.omnimind.bot.agent.AgentRuntimeContextRepository
+import cn.com.omnimind.bot.agent.ResolvedSkillContext
+import cn.com.omnimind.bot.agent.ToolExecutionResult
+import cn.com.omnimind.bot.agent.WorkspaceMemoryService
+import cn.com.omnimind.bot.agent.NoOpAgentRunControl
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
+import cn.com.omnimind.baselib.llm.AssistantToolCall
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -344,6 +360,122 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
         }
     }
 
+    @Test
+    fun `call_tool with vlm task delegates through router when available`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val handler = handler(context, WorkspaceFunctionStore(context.root))
+            val router = CapturingRouter()
+            handler.router = router
+            val spec = functionSpec(
+                functionId = "delegates_vlm",
+                steps = listOf(
+                    mapOf(
+                        "id" to "call_vlm",
+                        "title" to "Call VLM",
+                        "kind" to "tool_call",
+                        "executor" to "tool",
+                        "scriptable" to true,
+                        "tool" to "call_tool",
+                        "callable_tool" to "call_tool",
+                        "args" to mapOf(
+                            "tool_name" to "vlm_task",
+                            "arguments" to mapOf(
+                                "goal" to "open settings",
+                                "model" to "scene.vlm.operation.primary",
+                                "maxSteps" to 3,
+                                "startFromCurrent" to true,
+                            ),
+                        ),
+                    )
+                ),
+            )
+
+            val run = handler.runMaterializedFunction(
+                functionId = "delegates_vlm",
+                spec = spec,
+                materializedSpec = OobReusableFunctionStore.materialize(spec, emptyMap()),
+                toolHandle = cn.com.omnimind.bot.agent.NoOpAgentRunControl
+                    .beginToolExecution("call_tool", "test"),
+                env = FakeEnv(context),
+                allowAgentFallback = true,
+            )
+
+            assertEquals(true, run["success"])
+            assertEquals(true, run["delegated_tool_used"])
+            assertEquals(false, run["model_required"])
+            assertEquals("vlm_task", router.toolName)
+            assertEquals("open settings", router.args?.get("goal")?.jsonPrimitive?.contentOrNull)
+            assertEquals("scene.vlm.operation.primary", router.args?.get("model")?.jsonPrimitive?.contentOrNull)
+            assertEquals(3, router.args?.get("maxSteps")?.jsonPrimitive?.contentOrNull?.toInt())
+            assertEquals(true, router.args?.get("startFromCurrent")?.jsonPrimitive?.contentOrNull?.toBoolean())
+            val step = stepResults(run).single()
+            assertEquals("tool", step["executor"])
+            assertEquals("call_tool", step["delegated_from"])
+            assertEquals("vlm_task", step["tool"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `call_tool with vlm task delegates through router without callback`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val handler = handler(context, WorkspaceFunctionStore(context.root))
+            val router = CapturingRouter()
+            handler.router = router
+            val spec = functionSpec(
+                functionId = "direct_androidworld_vlm",
+                steps = listOf(
+                    mapOf(
+                        "id" to "androidworld_step",
+                        "title" to "AndroidWorld current page smoke",
+                        "kind" to "tool_call",
+                        "executor" to "tool",
+                        "scriptable" to true,
+                        "tool" to "call_tool",
+                        "callable_tool" to "call_tool",
+                        "args" to mapOf(
+                            "tool_name" to "vlm_task",
+                            "arguments" to mapOf(
+                                "goal" to "tap the visible OK button if present",
+                                "maxSteps" to 2,
+                                "startFromCurrent" to true,
+                                "needSummary" to false,
+                            ),
+                        ),
+                    )
+                ),
+            )
+
+            val run = handler.runMaterializedFunction(
+                functionId = "direct_androidworld_vlm",
+                spec = spec,
+                materializedSpec = OobReusableFunctionStore.materialize(spec, emptyMap()),
+                env = FakeEnv(context),
+                allowAgentFallback = true,
+            )
+
+            assertEquals(true, run["success"])
+            assertEquals(true, run["delegated_tool_used"])
+            assertEquals(false, run["model_required"])
+            assertEquals("vlm_task", router.toolName)
+            assertEquals(
+                "tap the visible OK button if present",
+                router.args?.get("goal")?.jsonPrimitive?.contentOrNull
+            )
+            assertEquals(2, router.args?.get("maxSteps")?.jsonPrimitive?.contentOrNull?.toInt())
+            assertEquals(true, router.args?.get("startFromCurrent")?.jsonPrimitive?.contentOrNull?.toBoolean())
+            val step = stepResults(run).single()
+            assertEquals("tool", step["executor"])
+            assertEquals("call_tool", step["delegated_from"])
+            assertEquals("vlm_task", step["tool"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
     private fun handler(
         context: Context,
         store: WorkspaceFunctionStore,
@@ -403,9 +535,151 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
 
     private class TempFilesContext : ContextWrapper(null) {
         val root: File = Files.createTempDirectory("oob-function-runner-test").toFile()
+        private val prefs = InMemoryPrefs()
 
         override fun getApplicationContext(): Context = this
 
         override fun getFilesDir(): File = root
+
+        override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences = prefs
+    }
+
+    private class InMemoryPrefs : SharedPreferences {
+        private val values = linkedMapOf<String, Any?>()
+
+        override fun getAll(): MutableMap<String, *> = LinkedHashMap(values)
+
+        override fun getString(key: String?, defValue: String?): String? =
+            values[key] as? String ?: defValue
+
+        override fun getStringSet(key: String?, defValues: MutableSet<String>?): MutableSet<String>? =
+            @Suppress("UNCHECKED_CAST")
+            (values[key] as? Set<String>)?.toMutableSet() ?: defValues
+
+        override fun getInt(key: String?, defValue: Int): Int =
+            values[key] as? Int ?: defValue
+
+        override fun getLong(key: String?, defValue: Long): Long =
+            values[key] as? Long ?: defValue
+
+        override fun getFloat(key: String?, defValue: Float): Float =
+            values[key] as? Float ?: defValue
+
+        override fun getBoolean(key: String?, defValue: Boolean): Boolean =
+            values[key] as? Boolean ?: defValue
+
+        override fun contains(key: String?): Boolean = values.containsKey(key)
+
+        override fun edit(): SharedPreferences.Editor = Editor()
+
+        override fun registerOnSharedPreferenceChangeListener(
+            listener: SharedPreferences.OnSharedPreferenceChangeListener?
+        ) = Unit
+
+        override fun unregisterOnSharedPreferenceChangeListener(
+            listener: SharedPreferences.OnSharedPreferenceChangeListener?
+        ) = Unit
+
+        private inner class Editor : SharedPreferences.Editor {
+            private val pending = linkedMapOf<String, Any?>()
+            private var clear = false
+
+            override fun putString(key: String?, value: String?): SharedPreferences.Editor =
+                apply { if (key != null) pending[key] = value }
+
+            override fun putStringSet(
+                key: String?,
+                values: MutableSet<String>?
+            ): SharedPreferences.Editor =
+                apply { if (key != null) pending[key] = values?.toSet() }
+
+            override fun putInt(key: String?, value: Int): SharedPreferences.Editor =
+                apply { if (key != null) pending[key] = value }
+
+            override fun putLong(key: String?, value: Long): SharedPreferences.Editor =
+                apply { if (key != null) pending[key] = value }
+
+            override fun putFloat(key: String?, value: Float): SharedPreferences.Editor =
+                apply { if (key != null) pending[key] = value }
+
+            override fun putBoolean(key: String?, value: Boolean): SharedPreferences.Editor =
+                apply { if (key != null) pending[key] = value }
+
+            override fun remove(key: String?): SharedPreferences.Editor =
+                apply { if (key != null) pending[key] = null }
+
+            override fun clear(): SharedPreferences.Editor =
+                apply { clear = true }
+
+            override fun commit(): Boolean {
+                apply()
+                return true
+            }
+
+            override fun apply() {
+                if (clear) values.clear()
+                pending.forEach { (key, value) ->
+                    if (value == null) values.remove(key) else values[key] = value
+                }
+            }
+        }
+    }
+
+    private class CapturingRouter : AgentToolExecutor {
+        var toolName: String = ""
+            private set
+        var args: JsonObject? = null
+            private set
+
+        override suspend fun execute(
+            toolCall: AssistantToolCall,
+            args: JsonObject,
+            runtimeDescriptor: AgentToolRegistry.RuntimeToolDescriptor,
+            env: AgentExecutionEnvironment,
+            callback: AgentCallback,
+            toolHandle: cn.com.omnimind.bot.agent.AgentToolExecutionHandle
+        ): ToolExecutionResult {
+            toolName = toolCall.function.name
+            this.args = args
+            return ToolExecutionResult.ContextResult(
+                toolName = toolName,
+                summaryText = "delegated",
+                previewJson = "{}",
+                rawResultJson = "{}",
+                success = true,
+            )
+        }
+    }
+
+    private class FakeEnv(
+        private val context: Context
+    ) : AgentExecutionEnvironment {
+        override val agentRunId: String = "test-run"
+        override val userMessage: String = "test"
+        override val attachments: List<Map<String, Any?>> = emptyList()
+        override val currentPackageName: String? = null
+        override val runtimeContextRepository: AgentRuntimeContextRepository =
+            AgentRuntimeContextRepository(context)
+        override val workspaceDescriptor: AgentWorkspaceDescriptor =
+            AgentWorkspaceDescriptor(
+                id = "test",
+                rootPath = context.filesDir.absolutePath,
+                androidRootPath = context.filesDir.absolutePath,
+                uriRoot = "content://test",
+                currentCwd = context.filesDir.absolutePath,
+                androidCurrentCwd = context.filesDir.absolutePath,
+                shellRootPath = context.filesDir.absolutePath,
+                retentionPolicy = "test",
+            )
+        override val resolvedSkills: List<ResolvedSkillContext> = emptyList()
+        override val failureLearningSkill: ResolvedSkillContext? = null
+        override val workspaceManager: AgentWorkspaceManager
+            get() = throw UnsupportedOperationException("unused in test")
+        override val workspaceMemoryService: WorkspaceMemoryService
+            get() = throw UnsupportedOperationException("unused in test")
+        override val conversationMode: String = "normal"
+        override val reasoningEffort: String? = null
+        override val terminalEnvironment: Map<String, String> = emptyMap()
+        override val runControl = NoOpAgentRunControl
     }
 }

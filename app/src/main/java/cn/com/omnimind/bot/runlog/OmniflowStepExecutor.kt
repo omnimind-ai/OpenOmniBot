@@ -138,11 +138,6 @@ object OmniflowStepExecutor {
                 action
             }
 
-            "wait" -> {
-                backend.wait(durationMs(args, defaultMs = 1000L))
-                "wait"
-            }
-
             "finished" -> "finished"
 
             else -> throw IllegalArgumentException("Unsupported omniflow action: $action")
@@ -303,7 +298,7 @@ object OmniflowStepExecutor {
     }
 
     private fun String.requiresAccessibility(): Boolean =
-        this != "open_app" && this != "wait" && this != "finished"
+        this != "open_app" && this != "finished"
 
     private data class Rect(
         val left: Float,

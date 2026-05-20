@@ -121,6 +121,66 @@ void main() {
     ]);
   });
 
+  test('keeps only latest active output visible and folds earlier output', () {
+    final messages = <ChatMessageModel>[
+      _assistantMessage(
+        id: 'task-active-text-2',
+        text: '第二段输出',
+        taskId: 'task-active',
+        kind: 'text_snapshot',
+        seq: 50,
+        isFinal: false,
+      ),
+      _cardMessage(
+        id: 'task-active-tool-2',
+        taskId: 'task-active',
+        kind: 'tool_completed',
+        seq: 40,
+        cardData: <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'status': 'success',
+          'toolType': 'workspace',
+          'toolTitle': '写入结果',
+        },
+      ),
+      _assistantMessage(
+        id: 'task-active-text-1',
+        text: '第一段输出',
+        taskId: 'task-active',
+        kind: 'text_snapshot',
+        seq: 30,
+        isFinal: false,
+      ),
+      _cardMessage(
+        id: 'task-active-tool-1',
+        taskId: 'task-active',
+        kind: 'tool_completed',
+        seq: 20,
+        cardData: <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'status': 'success',
+          'toolType': 'workspace',
+          'toolTitle': '读取页面',
+        },
+      ),
+      _thinkingCard(id: 'task-active-thinking', taskId: 'task-active', seq: 10),
+    ];
+
+    final group = buildAgentRunTimelineEntries(
+      messages,
+      activeTaskIds: const <String>{'task-active'},
+    ).single.group;
+
+    expect(group?.visibleMessagesNewestFirst.single.id, 'task-active-text-2');
+    expect(group?.outputSegmentCount, 1);
+    expect(group?.processMessagesOldestFirst.map((message) => message.id), [
+      'task-active-thinking',
+      'task-active-tool-1',
+      'task-active-text-1',
+      'task-active-tool-2',
+    ]);
+  });
+
   test('keeps active final snapshot inside the same running group', () {
     final entries = buildAgentRunTimelineEntries(
       _buildCompletedRunMessages(isFinal: true),

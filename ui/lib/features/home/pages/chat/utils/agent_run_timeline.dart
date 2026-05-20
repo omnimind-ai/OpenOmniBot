@@ -43,6 +43,10 @@ class AgentRunTimelineGroup {
       .where((message) => agentRunMessageRef(message)?.isToolCard ?? false)
       .length;
 
+  int get outputSegmentCount => processMessagesNewestFirst
+      .where((message) => agentRunMessageRef(message)?.isAssistantText ?? false)
+      .length;
+
   bool get isRunLogOnly => !isActiveRun && processMessagesNewestFirst.isEmpty;
 
   String get runLogId {
@@ -298,28 +302,31 @@ AgentRunTimelineGroup? _buildTimelineGroup(
     return null;
   }
 
-  // During active run: ALL assistant text is in the visible section (prevents
-  // reclassification jumps when a new round starts). Only thinking/tool cards
-  // go into the collapsible process section — matching the Claude.ai / Qwen
-  // pattern where process accumulates at top and text streams below.
+  // During active run: keep only the latest assistant output visible. Earlier
+  // output snapshots stay in the process section so expanded runs read as a
+  // chronological execution transcript instead of "all cards, then all text".
   if (isActive) {
-    final allTextMessages =
-        taskMessages
-            .where((m) => agentRunMessageRef(m)?.isAssistantText == true)
-            .toList(growable: false)
-          ..sort(
-            (a, b) => _compareNewestFirst(a, b),
-          ); // newest first for storage
-    final nonTextMessages = taskMessages
-        .where((m) => !(agentRunMessageRef(m)?.isAssistantText == true))
+    final primaryVisibleMessage = _resolvePrimaryVisibleMessage(
+      taskMessages,
+      isActive: true,
+    );
+    final visibleMessages = primaryVisibleMessage == null
+        ? const <ChatMessageModel>[]
+        : _resolveVisibleMessages(
+            taskMessages,
+            primaryVisibleMessage: primaryVisibleMessage,
+          );
+    final visibleIds = visibleMessages.map((message) => message.id).toSet();
+    final processMessages = taskMessages
+        .where((message) => !visibleIds.contains(message.id))
         .toList(growable: false);
-    final compactProcessMessages = _resolveProcessMessages(nonTextMessages);
-    if (allTextMessages.isEmpty && compactProcessMessages.isEmpty) {
+    final compactProcessMessages = _resolveProcessMessages(processMessages);
+    if (visibleMessages.isEmpty && compactProcessMessages.isEmpty) {
       return null;
     }
     return AgentRunTimelineGroup(
       taskId: taskId,
-      visibleMessagesNewestFirst: allTextMessages,
+      visibleMessagesNewestFirst: visibleMessages,
       processMessagesNewestFirst: compactProcessMessages,
       isActiveRun: true,
     );

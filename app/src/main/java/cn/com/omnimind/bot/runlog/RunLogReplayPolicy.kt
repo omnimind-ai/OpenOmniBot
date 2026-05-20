@@ -23,7 +23,6 @@ object RunLogReplayPolicy {
         "press_back",
         "press_key",
         "hot_key",
-        "wait",
         "finished",
     )
 
@@ -121,6 +120,7 @@ object RunLogReplayPolicy {
         "skills_loaded",
         "status_update",
         "assistant_response",
+        "wait",
     )
 
     fun normalizeToolName(toolName: String): String = toolName.trim().lowercase()

@@ -525,18 +525,26 @@ class VLMOperationService(
             stepIndex++
         }
 
+        val boundedMaxStepsSuccess = VLMTaskCompletionPolicy.shouldTreatMaxStepsAsBoundedSuccess(
+            normalizedMaxSteps = normalizedMaxSteps,
+            executionTrace = executionTrace,
+            lastError = lastError
+        )
         return TaskExecutionReport(
-            success = false,
+            success = boundedMaxStepsSuccess,
             goal = goal,
             totalSteps = executionTrace.size,
             executionTrace = executionTrace,
             finalContext = context,
-            error = lastError ?: "任务未完成",
-            summaryScreenshotList = summaryScreenshotList
+            error = if (boundedMaxStepsSuccess) {
+                null
+            } else {
+                lastError ?: "任务未完成"
+            },
+            summaryScreenshotList = summaryScreenshotList,
+            doneReason = if (boundedMaxStepsSuccess) "max_steps_reached" else "error"
         )
     }
-
-
 
     private fun updateContext(step: UIStep, context: UIContext): UIContext {
         return if (step.action is RecordAction) {
@@ -799,6 +807,7 @@ class VLMOperationService(
 
                     else -> {}
                 }
+                processedStep = groundActionTarget(processedStep, beforeXml)
 
                 if (needsPreciseLocation(processedStep.action)) {
                     val afterXml = captureCurrentXml()
@@ -1260,6 +1269,38 @@ class VLMOperationService(
     }
 }
 
+object VLMTaskCompletionPolicy {
+    fun shouldTreatMaxStepsAsBoundedSuccess(
+        normalizedMaxSteps: Int?,
+        executionTrace: List<UIStep>,
+        lastError: String?
+    ): Boolean {
+        if (normalizedMaxSteps == null || normalizedMaxSteps <= 0) return false
+        if (lastError != null || executionTrace.isEmpty()) return false
+        val completedSteps = executionTrace.count(::isSuccessfulBoundedAction)
+        return completedSteps > 0 && executionTrace.size >= normalizedMaxSteps
+    }
+
+    private fun isSuccessfulBoundedAction(step: UIStep): Boolean {
+        val result = step.result.orEmpty()
+        if (result.startsWith("执行失败") || result.contains("不支持的操作类型")) {
+            return false
+        }
+        return when (step.action) {
+            is ClickAction,
+            is LongPressAction,
+            is TypeAction,
+            is ScrollAction,
+            is OpenAppAction,
+            is PressHomeAction,
+            is PressBackAction,
+            is HotKeyAction,
+            is FinishedAction -> true
+            else -> false
+        }
+    }
+}
+
 data class VLMOperationResult(
     val success: Boolean,
     val step: UIStep?,
@@ -1277,5 +1318,6 @@ data class TaskExecutionReport(
     val finalContext: UIContext,
     val error: String?,
     val summaryScreenshotList: List<String>? = null,
-    val feedback: String? = null
+    val feedback: String? = null,
+    val doneReason: String? = null
 )

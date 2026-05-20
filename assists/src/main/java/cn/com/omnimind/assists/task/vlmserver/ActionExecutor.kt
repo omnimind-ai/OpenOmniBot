@@ -99,17 +99,6 @@ class ActionExecutor(
                 deviceOperator.goBack()
             }
 
-            is WaitAction -> {
-                val waitMs = action.durationMs ?: action.duration?.times(1000) ?: 1000L
-                kotlinx.coroutines.delay(waitMs)
-                OperationResult(
-                    success = true,
-                    message = "等待${waitMs}ms",
-                    data = null
-                )
-            }
-
-
             is RecordAction -> {
                 // 特殊处理：记录动作不调用设备，返回成功结果
                 OperationResult(

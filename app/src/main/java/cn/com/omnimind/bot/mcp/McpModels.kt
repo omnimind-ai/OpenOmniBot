@@ -65,6 +65,7 @@ data class TaskState(
     @Volatile var summaryUnavailable: Boolean = false,
     @Volatile var compileStatus: String = "",
     @Volatile var executionRoute: String = "",
+    @Volatile var vlmRequest: VlmTaskRequest? = null,
     val startTime: Long = System.currentTimeMillis(),
     @Volatile var stateChanged: Boolean = false
 ) {

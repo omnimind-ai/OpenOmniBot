@@ -31,7 +31,9 @@ class OobFunctionToolHandler(
     fun canRunFullyWithOmniflow(materializedSpec: Map<String, Any?>): Boolean {
         val steps = materializedSteps(materializedSpec)
         return steps.isNotEmpty() && steps.all { step ->
-            OmniflowStepExecutor.isOmniflowStep(step) || isOmniflowExecutionStep(step)
+            isSkippedLegacyStep(step) ||
+                OmniflowStepExecutor.isOmniflowStep(step) ||
+                isOmniflowExecutionStep(step)
         }
     }
 
@@ -245,6 +247,24 @@ class OobFunctionToolHandler(
             val callableTool = step["callable_tool"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 ?: step["tool"]?.toString()?.trim().orEmpty()
             val omniflowExecutionTool = omniflowExecutionToolForStep(step, callableTool)
+            if (RunLogReplayPolicy.shouldSkipTool(callableTool) ||
+                RunLogReplayPolicy.shouldSkipTool(omniflowExecutionTool) ||
+                RunLogReplayPolicy.shouldSkipTool(OmniflowStepExecutor.actionNameForStep(step))
+            ) {
+                stepResults += linkedMapOf<String, Any?>(
+                    "step_id" to stepId,
+                    "index" to index,
+                    "tool" to callableTool.ifEmpty { omniflowExecutionTool },
+                    "executor" to "omniflow",
+                    "skipped" to true,
+                    "success" to true,
+                    "summary" to "Skipped legacy non-semantic step",
+                    "started_at_ms" to stepStartedAtMs,
+                    "finished_at_ms" to stepStartedAtMs,
+                    "duration_ms" to 0L
+                )
+                continue
+            }
 
             if (callback != null) {
                 helper.reportToolProgress(
@@ -350,7 +370,7 @@ class OobFunctionToolHandler(
                 }
 
                 executor == "tool" && callableTool.isNotEmpty() && router != null &&
-                    env != null && callback != null && toolHandle != null -> {
+                    env != null -> {
                     delegatedToolUsed = true
                     executeToolStep(
                         step = step,
@@ -358,8 +378,9 @@ class OobFunctionToolHandler(
                         stepTitle = stepTitle,
                         callableTool = callableTool,
                         env = env,
-                        callback = callback,
-                        toolHandle = toolHandle,
+                        callback = callback ?: cn.com.omnimind.bot.agent.NoOpAgentCallback,
+                        toolHandle = toolHandle ?: cn.com.omnimind.bot.agent.NoOpAgentRunControl
+                            .beginToolExecution(callableTool, "${parentToolCallId ?: toolName}_$stepId"),
                         syntheticCallId = "${parentToolCallId ?: toolName}_$stepId"
                     )
                 }
@@ -384,8 +405,7 @@ class OobFunctionToolHandler(
                 else -> {
                     val agentTool = replayableAgentTool(step, callableTool)
                     if (!requiresAgentPlanning(step) &&
-                        agentTool.isNotEmpty() && router != null && env != null &&
-                        callback != null && toolHandle != null
+                        agentTool.isNotEmpty() && router != null && env != null
                     ) {
                         delegatedToolUsed = true
                         executeToolStep(
@@ -394,8 +414,9 @@ class OobFunctionToolHandler(
                             stepTitle = stepTitle,
                             callableTool = agentTool,
                             env = env,
-                            callback = callback,
-                            toolHandle = toolHandle,
+                            callback = callback ?: cn.com.omnimind.bot.agent.NoOpAgentCallback,
+                            toolHandle = toolHandle ?: cn.com.omnimind.bot.agent.NoOpAgentRunControl
+                                .beginToolExecution(agentTool, "${parentToolCallId ?: toolName}_$stepId"),
                             syntheticCallId = "${parentToolCallId ?: toolName}_$stepId"
                         ).also { result ->
                             (result as? LinkedHashMap<String, Any?>)
@@ -706,7 +727,7 @@ class OobFunctionToolHandler(
                 errorCode = "OOB_CALL_TOOL_RECURSION",
             )
         }
-        if (router != null && env != null && callback != null && toolHandle != null) {
+        if (router != null && env != null) {
             val delegatedStep = LinkedHashMap<String, Any?>().apply {
                 putAll(step)
                 put("tool", targetTool)
@@ -721,8 +742,9 @@ class OobFunctionToolHandler(
                         stepTitle = stepTitle,
                         callableTool = targetTool,
                         env = env,
-                        callback = callback,
-                        toolHandle = toolHandle,
+                        callback = callback ?: cn.com.omnimind.bot.agent.NoOpAgentCallback,
+                        toolHandle = toolHandle ?: cn.com.omnimind.bot.agent.NoOpAgentRunControl
+                            .beginToolExecution(targetTool, "${parentToolCallId ?: toolName}_$stepId"),
                         syntheticCallId = "${parentToolCallId ?: toolName}_$stepId",
                     )
                 )
@@ -946,6 +968,17 @@ class OobFunctionToolHandler(
                 ).isNotEmpty()
             }
             else -> false
+        }
+    }
+
+    private fun isSkippedLegacyStep(step: Map<String, Any?>): Boolean {
+        val names = listOf(
+            executionToolName(step),
+            OmniflowStepExecutor.actionNameForStep(step),
+            step["source_tool"]?.toString().orEmpty(),
+        )
+        return names.any { name ->
+            name.isNotBlank() && RunLogReplayPolicy.shouldSkipTool(name)
         }
     }
 

@@ -21,6 +21,10 @@ private const val SKILL_REGISTRY_FILE_NAME = ".skill_registry.json"
 private const val OFFICIAL_SKILLS_GITHUB_REPOSITORY_URL = "https://github.com/omnimind-ai/OmniBotSkills"
 private const val OFFICIAL_SKILLS_CNB_REPOSITORY_URL = "https://cnb.cool/o.a/OmniBotSkills"
 private const val OFFICIAL_SKILLS_DIRECTORY_NAME = "OmniBotSkills"
+private val PROJECT_RELATED_BUILTIN_SKILL_IDS = setOf(
+    "oob-project",
+    "oob-web-research"
+)
 private val RETIRED_BUILTIN_SKILL_IDS = setOf(
     "oob-native-" + "workbench",
     "oob-project-" + "designer",
@@ -144,6 +148,7 @@ private class BuiltinSkillAssetStore(
     fun seedMissingBuiltins(registryStore: SkillRegistryStore) {
         val registry = registryStore.read()
         var changed = removeRetiredBuiltins(registry)
+        val projectCapabilityEnabled = isProjectCapabilityEnabled()
         listBuiltins().forEach { builtin ->
             val targetDir = targetDirFor(builtin)
             val alreadyInstalled = targetDir.exists() && registry.containsKey(builtin.id)
@@ -153,11 +158,22 @@ private class BuiltinSkillAssetStore(
                     installBuiltinInternal(builtin)
                     changed = true
                 }
+                val current = registry[builtin.id]
+                if (
+                    builtin.id in PROJECT_RELATED_BUILTIN_SKILL_IDS &&
+                    current != null &&
+                    current.source == BUILTIN_SOURCE &&
+                    current.installState == INSTALL_STATE_INSTALLED &&
+                    current.enabled != projectCapabilityEnabled
+                ) {
+                    registry[builtin.id] = current.copy(enabled = projectCapabilityEnabled)
+                    changed = true
+                }
                 return@forEach
             }
             installBuiltinInternal(builtin)
             registry[builtin.id] = SkillRegistryEntry(
-                enabled = true,
+                enabled = defaultBuiltinEnabled(builtin.id, projectCapabilityEnabled),
                 source = BUILTIN_SOURCE,
                 installState = INSTALL_STATE_INSTALLED
             )
@@ -175,6 +191,31 @@ private class BuiltinSkillAssetStore(
             skillsRoot = workspaceManager.skillsRoot(),
             registry = registry
         )
+    }
+
+    private fun defaultBuiltinEnabled(
+        skillId: String,
+        projectCapabilityEnabled: Boolean = isProjectCapabilityEnabled()
+    ): Boolean {
+        return skillId !in PROJECT_RELATED_BUILTIN_SKILL_IDS || projectCapabilityEnabled
+    }
+
+    private fun isProjectCapabilityEnabled(): Boolean {
+        val activeProjectFile = File(
+            AgentWorkspaceManager.rootDirectory(context),
+            "projects/active_project.json"
+        )
+        if (!activeProjectFile.exists()) {
+            return false
+        }
+        return runCatching {
+            val payload = gson.fromJson<Map<String, Any?>>(
+                activeProjectFile.readText(),
+                object : TypeToken<Map<String, Any?>>() {}.type
+            ) ?: return false
+            payload["projectCapabilityEnabled"] == true &&
+                payload["projectId"]?.toString()?.trim()?.isNotEmpty() == true
+        }.getOrDefault(false)
     }
 
     private fun builtinSkillContentUnchanged(builtin: BuiltinSkillAsset, targetDir: File): Boolean {
@@ -195,7 +236,7 @@ private class BuiltinSkillAssetStore(
         registryStore.set(
             skillId,
             SkillRegistryEntry(
-                enabled = true,
+                enabled = defaultBuiltinEnabled(skillId),
                 source = BUILTIN_SOURCE,
                 installState = INSTALL_STATE_INSTALLED
             )
@@ -353,6 +394,29 @@ class SkillIndexService(
         return entry.copy(enabled = enabled)
     }
 
+    fun setProjectRelatedBuiltinSkillsEnabled(enabled: Boolean): List<SkillIndexEntry> {
+        seedBuiltinSkillsIfNeeded()
+        val registryStore = registryStore()
+        val registry = registryStore.read()
+        var changed = false
+        PROJECT_RELATED_BUILTIN_SKILL_IDS.forEach { skillId ->
+            val current = registry[skillId] ?: return@forEach
+            if (
+                current.source != BUILTIN_SOURCE ||
+                current.installState != INSTALL_STATE_INSTALLED ||
+                current.enabled == enabled
+            ) {
+                return@forEach
+            }
+            registry[skillId] = current.copy(enabled = enabled)
+            changed = true
+        }
+        if (changed) {
+            registryStore.write(registry)
+        }
+        return listSkillsForManagement().filter { it.id in PROJECT_RELATED_BUILTIN_SKILL_IDS }
+    }
+
     fun deleteSkill(skillId: String): Boolean {
         val entry = listSkillsForManagement().firstOrNull { it.id == skillId && it.installed }
             ?: return false
@@ -382,7 +446,7 @@ class SkillIndexService(
     fun installBuiltinSkill(skillId: String): SkillIndexEntry {
         val builtinStore = builtinStore()
         builtinStore.installBuiltin(skillId, registryStore())
-        return findInstalledSkill(skillId)
+        return findManagedInstalledSkill(skillId, includeDisabled = true)
             ?: throw IllegalStateException("安装内置 skill 后索引失败：$skillId")
     }
 

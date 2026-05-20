@@ -59,6 +59,14 @@ WORKFLOW:
                     "type" to "string",
                     "description" to "Optional: Target app package name (e.g., 'com.tencent.mm' for WeChat). If not specified, the agent will start from the current screen."
                 ),
+                "maxSteps" to mapOf(
+                    "type" to "integer",
+                    "description" to "Optional maximum execution steps. For AndroidWorld or acceptance tests, prefer 1-8. If the limit is reached after successful UI actions, the bounded run is returned as successful with the recorded actions."
+                ),
+                "startFromCurrent" to mapOf(
+                    "type" to "boolean",
+                    "description" to "Optional: set true to keep the current app/page and skip launching packageName."
+                ),
                 "needSummary" to mapOf(
                     "type" to "boolean",
                     "description" to "Optional: Set true for summarization/report tasks so the summary is generated and returned in the tool result. Default: false."

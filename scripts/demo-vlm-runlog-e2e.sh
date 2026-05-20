@@ -173,6 +173,10 @@ print("true" if data.get("success") is True else "false")
 '
 }
 
+base64_no_wrap() {
+  python3 -c 'import base64, sys; print(base64.b64encode(sys.stdin.buffer.read()).decode("ascii"))'
+}
+
 echo "== OOB VLM runlog E2E demo =="
 echo "device=$DEVICE_SERIAL"
 echo "package=$PACKAGE_NAME"
@@ -201,10 +205,11 @@ echo "== Prepare device =="
 sleep 1
 
 echo "== Phase 1: raw VLM -> runlog -> registered function =="
+goal_b64="$(printf '%s' "$GOAL" | base64_no_wrap)"
 "${ADB[@]}" shell am broadcast \
   -a cn.com.omnimind.bot.debug.RUN_VLM_RUNLOG \
   -n "$VLM_RECEIVER" \
-  --es goal "$GOAL" \
+  --es goalBase64 "$goal_b64" \
   --ez prelaunch false \
   --ei maxSteps "$MAX_STEPS" \
   --ez register true \
@@ -232,7 +237,7 @@ sleep 1
   -a cn.com.omnimind.bot.debug.RUN_OOB_FUNCTION \
   -n "$FUNCTION_RECEIVER" \
   --es function_id "$function_id" \
-  --es goal "$GOAL" >/dev/null
+  --es goalBase64 "$goal_b64" >/dev/null
 
 function_result="$(wait_for_result_file "$FUNCTION_RESULT_FILE" "function replay")"
 printf '%s\n' "$function_result"

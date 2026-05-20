@@ -3,7 +3,7 @@
 
 /// Compile kind 枚举
 enum CompileKind {
-  hit,  // 复用已有技能
+  hit, // 复用已有技能
   miss, // VLM 执行
   none, // 无 compile 信息
 }
@@ -48,18 +48,18 @@ class ExecutionStep {
     int index,
     Map<String, dynamic> action,
   ) {
-    final params = (action['params'] as Map<dynamic, dynamic>?)?.map(
+    final params =
+        (action['params'] as Map<dynamic, dynamic>?)?.map(
           (k, v) => MapEntry(k.toString(), v),
         ) ??
         {};
     return ExecutionStep(
       index: index,
       actionType: (action['type'] ?? '').toString(),
-      targetDescription: (params['target_description'] ??
-              params['targetDescription'] ??
-              '')
-          .toString()
-          .trim(),
+      targetDescription:
+          (params['target_description'] ?? params['targetDescription'] ?? '')
+              .toString()
+              .trim(),
       params: Map<String, dynamic>.from(params),
     );
   }
@@ -67,8 +67,10 @@ class ExecutionStep {
   /// 从 run_log step 创建
   factory ExecutionStep.fromRunLogStep(int index, Map<String, dynamic> step) {
     final toolCall = (step['tool_call'] as Map<dynamic, dynamic>?) ?? {};
-    final compileResult = (step['compile_result'] as Map<dynamic, dynamic>?) ?? {};
-    final params = (toolCall['params'] as Map<dynamic, dynamic>?)?.map(
+    final compileResult =
+        (step['compile_result'] as Map<dynamic, dynamic>?) ?? {};
+    final params =
+        (toolCall['params'] as Map<dynamic, dynamic>?)?.map(
           (k, v) => MapEntry(k.toString(), v),
         ) ??
         {};
@@ -88,12 +90,13 @@ class ExecutionStep {
     return ExecutionStep(
       index: index,
       actionType: (toolCall['name'] ?? step['action_type'] ?? '').toString(),
-      targetDescription: (params['target_description'] ??
-              params['targetDescription'] ??
-              step['action_description'] ??
-              '')
-          .toString()
-          .trim(),
+      targetDescription:
+          (params['target_description'] ??
+                  params['targetDescription'] ??
+                  step['action_description'] ??
+                  '')
+              .toString()
+              .trim(),
       params: Map<String, dynamic>.from(params),
       compileLabel: apiCompileLabel,
       compileKind: compileKind,
@@ -125,8 +128,6 @@ class ExecutionStep {
         return 'Scroll';
       case 'press_key':
         return 'Press Key';
-      case 'wait':
-        return 'Wait';
       case 'finished':
         return 'Finished';
       case 'call_function':
@@ -139,8 +140,9 @@ class ExecutionStep {
   /// 获取动作的简要描述
   String get summary {
     final parts = <String>[];
-    final packageName =
-        (params['package_name'] ?? params['packageName'] ?? '').toString().trim();
+    final packageName = (params['package_name'] ?? params['packageName'] ?? '')
+        .toString()
+        .trim();
     final text = (params['text'] ?? params['content'] ?? '').toString().trim();
     final key = (params['key'] ?? '').toString().trim();
     final direction = (params['direction'] ?? '').toString().trim();
@@ -209,11 +211,13 @@ class AssetRefs {
   factory AssetRefs.fromMap(Map<String, dynamic>? map) {
     if (map == null) return const AssetRefs();
     return AssetRefs(
-      xmlRefs: (map['xml_refs'] as List<dynamic>?)
+      xmlRefs:
+          (map['xml_refs'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
-      screenshotRefs: (map['screenshot_refs'] as List<dynamic>?)
+      screenshotRefs:
+          (map['screenshot_refs'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
@@ -268,15 +272,18 @@ class ExecutionDetail {
       return ExecutionStep.fromFunctionAction(e.key, action);
     }).toList();
 
-    final runStats = (func['run_stats'] as Map<dynamic, dynamic>?)?.map(
+    final runStats =
+        (func['run_stats'] as Map<dynamic, dynamic>?)?.map(
           (k, v) => MapEntry(k.toString(), v),
         ) ??
         {};
-    final assetRefsMap = (func['asset_refs'] as Map<dynamic, dynamic>?)?.map(
+    final assetRefsMap =
+        (func['asset_refs'] as Map<dynamic, dynamic>?)?.map(
           (k, v) => MapEntry(k.toString(), v),
         ) ??
         {};
-    final metadata = (func['metadata'] as Map<dynamic, dynamic>?)?.map(
+    final metadata =
+        (func['metadata'] as Map<dynamic, dynamic>?)?.map(
           (k, v) => MapEntry(k.toString(), v),
         ) ??
         {};
@@ -289,7 +296,8 @@ class ExecutionDetail {
       steps: steps,
       stats: ExecutionStats.fromMap(Map<String, dynamic>.from(runStats)),
       assetRefs: AssetRefs.fromMap(Map<String, dynamic>.from(assetRefsMap)),
-      sourceRunIds: (metadata['source_run_ids'] as List<dynamic>?)
+      sourceRunIds:
+          (metadata['source_run_ids'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
@@ -333,7 +341,4 @@ class ExecutionDetail {
   }
 }
 
-enum ExecutionDetailType {
-  function,
-  runLog,
-}
+enum ExecutionDetailType { function, runLog }

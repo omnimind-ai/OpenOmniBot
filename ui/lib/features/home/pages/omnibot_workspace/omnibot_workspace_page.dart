@@ -27,7 +27,6 @@ import 'package:ui/widgets/common_app_bar.dart';
 
 enum _OmnibotWorkspaceMode { work, project }
 
-const String _workspaceCachedModeKey = 'omnibot_workspace_cached_mode_v1';
 const String _workspaceCachedDirectoryKey =
     'omnibot_workspace_cached_directory_v1';
 
@@ -54,25 +53,15 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
       GlobalKey<OmnibotWorkspaceBrowserState>();
   bool _browserCanGoUp = false;
   late _OmnibotWorkspaceMode _mode;
+  bool _projectModeToggleInFlight = false;
 
   @override
   void initState() {
     super.initState();
-    _mode = widget.startInProjectMode
-        ? _OmnibotWorkspaceMode.project
-        : _cachedWorkspaceMode();
-    _persistWorkspaceMode(_mode);
-  }
-
-  _OmnibotWorkspaceMode _cachedWorkspaceMode() {
-    final cached = StorageService.getString(_workspaceCachedModeKey);
-    return cached == _OmnibotWorkspaceMode.project.name
-        ? _OmnibotWorkspaceMode.project
-        : _OmnibotWorkspaceMode.work;
-  }
-
-  void _persistWorkspaceMode(_OmnibotWorkspaceMode mode) {
-    unawaited(StorageService.setString(_workspaceCachedModeKey, mode.name));
+    _mode = _OmnibotWorkspaceMode.work;
+    if (widget.startInProjectMode) {
+      unawaited(_setWorkspaceMode(_OmnibotWorkspaceMode.project));
+    }
   }
 
   String? _cachedWorkspaceDirectory(String rootPath) {
@@ -97,17 +86,39 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
     );
   }
 
-  void _setWorkspaceMode(_OmnibotWorkspaceMode mode) {
+  Future<void> _setWorkspaceMode(_OmnibotWorkspaceMode mode) async {
     if (_mode == mode) return;
+    if (mode == _OmnibotWorkspaceMode.project) {
+      if (_projectModeToggleInFlight) return;
+      _projectModeToggleInFlight = true;
+      try {
+        final activeProject = await NativeWorkbenchProjectBackend()
+            .getActiveProject();
+        if (!mounted) return;
+        if (activeProject == null) {
+          showToast(
+            AppTextLocalizer.choose(
+              zh: '请先在 Project 中激活一个项目',
+              en: 'Activate a Project first',
+            ),
+            type: ToastType.warning,
+          );
+          return;
+        }
+      } finally {
+        _projectModeToggleInFlight = false;
+      }
+    }
     setState(() => _mode = mode);
-    _persistWorkspaceMode(mode);
   }
 
   void _toggleWorkspaceMode() {
-    _setWorkspaceMode(
-      _mode == _OmnibotWorkspaceMode.project
-          ? _OmnibotWorkspaceMode.work
-          : _OmnibotWorkspaceMode.project,
+    unawaited(
+      _setWorkspaceMode(
+        _mode == _OmnibotWorkspaceMode.project
+            ? _OmnibotWorkspaceMode.work
+            : _OmnibotWorkspaceMode.project,
+      ),
     );
   }
 
@@ -796,7 +807,7 @@ class _OmnibotWorkspaceProjectFrontendsState
     _service.addListener(_handleServiceChanged);
     _projectUpdateSub = AssistsMessageService.workbenchProjectUpdatedStream
         .listen(_handleWorkbenchProjectUpdated);
-    unawaited(_refreshAndEnsureActive());
+    unawaited(_refreshActiveProjectState());
   }
 
   @override
@@ -815,10 +826,7 @@ class _OmnibotWorkspaceProjectFrontendsState
     if (mounted) {
       setState(() {});
     }
-    widget.onActiveProjectChanged?.call(
-      _service.activeProject ??
-          (_service.projects.isEmpty ? null : _service.projects.first),
-    );
+    widget.onActiveProjectChanged?.call(_service.activeProject);
   }
 
   void _handleWorkbenchProjectUpdated(Map<String, dynamic> event) {
@@ -856,15 +864,8 @@ class _OmnibotWorkspaceProjectFrontendsState
     }
   }
 
-  Future<void> _refreshAndEnsureActive() async {
+  Future<void> _refreshActiveProjectState() async {
     await _service.refresh();
-    if (!mounted ||
-        _service.activeProject != null ||
-        _service.projects.isEmpty) {
-      widget.onActiveProjectChanged?.call(_service.activeProject);
-      return;
-    }
-    await _service.activateProject(_service.projects.first);
     if (mounted) {
       widget.onActiveProjectChanged?.call(_service.activeProject);
     }
@@ -1182,19 +1183,14 @@ $contextJson
     _editPromptFocusNode.unfocus();
   }
 
-  WorkbenchProject? _currentProject(List<WorkbenchProject> projects) {
-    final activeProject = _service.activeProject;
-    if (activeProject != null) {
-      return activeProject;
-    }
-    return projects.isEmpty ? null : projects.first;
+  WorkbenchProject? _currentProject() {
+    return _service.activeProject;
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final projects = _service.projects;
-    final project = _currentProject(projects);
+    final project = _currentProject();
     final display = project?.primaryDisplay;
     return Column(
       children: [

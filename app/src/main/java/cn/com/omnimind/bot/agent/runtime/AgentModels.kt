@@ -362,3 +362,34 @@ interface AgentCallback {
      */
     suspend fun onSkillsResolved(skills: List<Map<String, Any?>>) = Unit
 }
+
+object NoOpAgentCallback : AgentCallback {
+    override suspend fun onThinkingStart() = Unit
+
+    override suspend fun onThinkingUpdate(thinking: String) = Unit
+
+    override suspend fun onToolCallStart(
+        toolName: String,
+        toolCallId: String,
+        arguments: JsonObject
+    ) = Unit
+
+    override suspend fun onToolCallProgress(
+        toolName: String,
+        progress: String,
+        extras: Map<String, Any?>
+    ) = Unit
+
+    override suspend fun onToolCallComplete(
+        toolName: String,
+        result: ToolExecutionResult
+    ) = Unit
+
+    override suspend fun onChatMessage(message: String) = Unit
+
+    override suspend fun onComplete(result: AgentResult) = Unit
+
+    override suspend fun onError(error: String) = Unit
+
+    override suspend fun onPermissionRequired(missing: List<String>) = Unit
+}

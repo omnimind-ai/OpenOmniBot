@@ -162,6 +162,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
           expanded: widget.expanded,
           thinkingCount: widget.group.thinkingCount,
           toolCount: widget.group.toolCount,
+          outputSegmentCount: widget.group.outputSegmentCount,
           latestProcessSummary: _latestProcessSummary(context, processMessages),
           onTap: hasProcessMessages
               ? (directProcessAction ??
@@ -441,6 +442,7 @@ class _AgentRunSummaryHeader extends StatelessWidget {
     required this.expanded,
     required this.thinkingCount,
     required this.toolCount,
+    required this.outputSegmentCount,
     required this.latestProcessSummary,
     required this.onTap,
     required this.showToggle,
@@ -453,6 +455,7 @@ class _AgentRunSummaryHeader extends StatelessWidget {
   final bool expanded;
   final int thinkingCount;
   final int toolCount;
+  final int outputSegmentCount;
   final String latestProcessSummary;
   final VoidCallback? onTap;
   final bool showToggle;
@@ -627,6 +630,15 @@ class _AgentRunSummaryHeader extends StatelessWidget {
         AppTextLocalizer.choose(
           zh: '$stepCount 步',
           en: '$stepCount ${stepCount == 1 ? 'step' : 'steps'}',
+          locale: locale,
+        ),
+      );
+    }
+    if (outputSegmentCount > 0) {
+      parts.add(
+        AppTextLocalizer.choose(
+          zh: '$outputSegmentCount 段输出',
+          en: '$outputSegmentCount output ${outputSegmentCount == 1 ? 'segment' : 'segments'}',
           locale: locale,
         ),
       );

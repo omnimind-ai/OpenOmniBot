@@ -55,7 +55,6 @@ Omniflow:
 - `press_back`
 - `press_key`
 - `hot_key`
-- `wait`
 - `finished`
 
 Compatibility aliases from provider/exported OmniFlow assets are normalized
@@ -64,6 +63,8 @@ before execution: `tap/click_at/click_element -> click`,
 `presskey/key_event -> press_key`, `openapp/launch_app -> open_app`, and
 `finish/done/complete -> finished`. `source_context.page` and OOB's
 `source_context.src_ctx.page` are both valid coordinate remap inputs.
+Legacy `wait` cards are skipped during conversion because page settling is an
+internal backend concern, not a reusable Function step.
 
 Perception-only agent:
 

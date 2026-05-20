@@ -15,7 +15,6 @@ class RunLogReplayPolicy {
     'press_back',
     'press_key',
     'hot_key',
-    'wait',
     'finished',
   };
 
@@ -114,6 +113,7 @@ class RunLogReplayPolicy {
     'skills_loaded',
     'status_update',
     'assistant_response',
+    'wait',
   };
 
   static String normalizeToolName(String toolName) {

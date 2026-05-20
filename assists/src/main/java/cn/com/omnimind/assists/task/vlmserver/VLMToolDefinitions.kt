@@ -148,26 +148,6 @@ object VLMToolDefinitions {
             promptGuide = t(locale, "- press_back(): 返回上一级。", "- press_back(): Go back one level.")
         ),
         ToolSpec(
-            name = "wait",
-            description = t(locale, "等待界面稳定。", "Wait for the UI to stabilize."),
-            parameters = objectSchema(
-                properties = linkedMapOf(
-                    "duration_ms" to integerSchema(
-                        t(locale, "等待时长，单位毫秒。", "Wait duration in milliseconds.")
-                    ),
-                    "duration" to numberSchema(
-                        t(locale, "兼容字段：等待时长，单位秒。", "Compatibility field: wait duration in seconds.")
-                    )
-                ),
-                required = listOf("duration_ms")
-            ),
-            promptGuide = t(
-                locale,
-                "- wait(duration_ms): 等待指定毫秒数。若服务商兼容性较差，也可额外提供 duration(秒)。",
-                "- wait(duration_ms): Wait for the specified number of milliseconds. If provider compatibility is weak, you may also include duration in seconds."
-            )
-        ),
-        ToolSpec(
             name = "hot_key",
             description = t(locale, "发送一个受支持的快捷键。", "Send a supported hot key."),
             parameters = objectSchema(
@@ -309,8 +289,8 @@ object VLMToolDefinitions {
             append(
                 t(
                     locale,
-                    "注意：所有 function.arguments 必须是严格合法的 JSON object。坐标必须分别写入 x / y / x1 / y1 / x2 / y2 字段，不要写成 \"x\": 827, 76 这类非法格式。",
-                    "Important: every function.arguments value must be a strictly valid JSON object. Coordinates must be written into x / y / x1 / y1 / x2 / y2 as separate scalar fields. Do not emit invalid forms such as \"x\": 827, 76."
+                    "注意：所有 function.arguments 必须是严格合法的 JSON object。坐标必须分别写入 x / y / x1 / y1 / x2 / y2 字段，不要写成 \"x\": 827, 76 这类非法格式。不要返回停留、延时或空操作类动作；页面停留和稳定检测由系统内部处理。",
+                    "Important: every function.arguments value must be a strictly valid JSON object. Coordinates must be written into x / y / x1 / y1 / x2 / y2 as separate scalar fields. Do not emit invalid forms such as \"x\": 827, 76. Do not return idle, delay, or no-op actions; page settling and stability detection are handled internally."
                 )
             )
         }
@@ -368,9 +348,6 @@ object VLMToolDefinitions {
         val properties = propertiesFor(toolName)
         val requiredFields = requiredFieldsFor(toolName)
         requiredFields.forEach { field ->
-            if (toolName == "wait" && field == "duration_ms" && arguments["duration"] != null) {
-                return@forEach
-            }
             if (arguments[field] == null || arguments[field] is JsonNull) {
                 throw IllegalArgumentException("Tool $toolName missing required argument: $field")
             }

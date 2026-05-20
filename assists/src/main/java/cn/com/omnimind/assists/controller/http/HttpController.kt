@@ -469,7 +469,9 @@ object HttpController {
 
         val explicitBase = explicitApiBase?.let(::normalizeApiBase)
         val explicitKey = explicitApiKey?.trim()?.takeIf { it.isNotEmpty() }
-        val explicitResolvedModel = explicitModel?.trim()?.takeIf { it.isNotEmpty() }
+        val explicitResolvedModel = explicitModel
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() && !it.startsWith("scene.") }
         val explicitProtocol = explicitProtocolType
             ?.let(DeepSeekProvider::normalizeProtocolType)
         val providerConfig = if (explicitBase == null) {
@@ -2080,7 +2082,8 @@ object HttpController {
         chatRequest: ChatCompletionRequest
     ): SceneChatCompletionResponse {
         val resolved = resolveSceneRequest(
-            modelOrScene = chatRequest.model
+            modelOrScene = chatRequest.model,
+            explicitModel = chatRequest.modelOverride
         )
         logSceneProfile(resolved)
         OmniLog.i(
@@ -2099,7 +2102,8 @@ object HttpController {
         event: EventSourceListener
     ): SceneChatCompletionStreamHandle {
         val resolved = resolveSceneRequest(
-            modelOrScene = chatRequest.model
+            modelOrScene = chatRequest.model,
+            explicitModel = chatRequest.modelOverride
         )
         logSceneProfile(resolved)
         OmniLog.i(

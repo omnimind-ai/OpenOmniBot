@@ -38,12 +38,15 @@ object McpToolExecutors {
 
         val needSummaryArg = args?.get("needSummary") as? Boolean
         val shouldSummary = shouldEnableSummary(goal, needSummaryArg)
+        val startFromCurrent = boolArg(args, "startFromCurrent", "start_from_current", "skipGoHome", "skip_go_home")
 
         val request = VlmTaskRequest(
             goal = goal,
             model = args["model"] as? String,
-            packageName = args["packageName"] as? String,
-            needSummary = shouldSummary
+            maxSteps = intArg(args, "maxSteps", "max_steps")?.coerceIn(1, 64),
+            packageName = if (startFromCurrent) null else firstString(args, "packageName", "package_name"),
+            needSummary = shouldSummary,
+            skipGoHome = startFromCurrent
         )
 
         try {
@@ -57,6 +60,40 @@ object McpToolExecutors {
             OmniLog.e(TAG, "Error executing VLM task: ${e.message}")
             return@withContext McpResponseBuilder.buildErrorText("VLM task failed: ${e.message}")
         }
+    }
+
+    private fun firstString(args: Map<String, Any?>?, vararg keys: String): String? {
+        if (args == null) return null
+        return keys.asSequence()
+            .mapNotNull { key -> args[key]?.toString()?.trim()?.takeIf { it.isNotEmpty() } }
+            .firstOrNull()
+    }
+
+    private fun intArg(args: Map<String, Any?>?, vararg keys: String): Int? {
+        if (args == null) return null
+        for (key in keys) {
+            val raw = args[key] ?: continue
+            val parsed = when (raw) {
+                is Number -> raw.toInt()
+                is String -> raw.trim().toIntOrNull() ?: raw.trim().toDoubleOrNull()?.toInt()
+                else -> raw.toString().trim().toIntOrNull()
+            }
+            if (parsed != null) return parsed
+        }
+        return null
+    }
+
+    private fun boolArg(args: Map<String, Any?>?, vararg keys: String): Boolean {
+        if (args == null) return false
+        for (key in keys) {
+            val raw = args[key] ?: continue
+            when (raw) {
+                is Boolean -> return raw
+                is String -> raw.trim().toBooleanStrictOrNull()?.let { return it }
+                is Number -> return raw.toInt() != 0
+            }
+        }
+        return false
     }
     
     /**

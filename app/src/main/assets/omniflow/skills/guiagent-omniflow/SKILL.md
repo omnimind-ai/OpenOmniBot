@@ -112,7 +112,9 @@ block
 Defaults:
 
 - Allow deterministic local UI actions: click, long_press, scroll, type,
-  open_app, press_home, press_back, hot_key, wait.
+  open_app, press_home, press_back, hot_key.
+- Do not emit or preserve wait as a Function step. Page settling belongs to the
+  local stability backend.
 - Use Agent fallback for browser, web_search, memory, VLM-only, RunLog lookup,
   and Workbench query/list.
 - Require confirmation for shell exec, settings write, package force-stop,

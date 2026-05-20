@@ -12,7 +12,6 @@
     "press_back",
     "press_key",
     "hot_key",
-    "wait",
     "finished"
   ],
   "omniflow_action_aliases": {
@@ -101,7 +100,8 @@
     "calendar_event_create",
     "skills_loaded",
     "status_update",
-    "assistant_response"
+    "assistant_response",
+    "wait"
   ],
   "agent_step_reasons": {
     "perception": "perception_only_step_without_recorded_actions",
