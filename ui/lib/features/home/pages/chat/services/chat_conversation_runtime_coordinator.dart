@@ -3095,7 +3095,12 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     for (final event in incomingEvents) {
       addEvent(event);
     }
-    merged.sort((left, right) {
+    // 折叠流式累积事件: 同一个 subagent (按 subagentId 或 taskIndex 分组)
+    // 的同种流式 kind (thinking / message) 只保留 seq 最大的一条。
+    // Kotlin 端为了实现"实时滚动"效果会每 ~32 字符 emit 一次 thinking 事件,
+    // 每条 seq 都不同,id-based 去重保留不了它们。展开后会显示"每行字数递增"。
+    final folded = _foldStreamingSubagentEvents(merged);
+    folded.sort((left, right) {
       final leftSeq = _asInt(left['seq']);
       final rightSeq = _asInt(right['seq']);
       if (leftSeq != null && rightSeq != null && leftSeq != rightSeq) {
@@ -3110,7 +3115,54 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         left,
       ).compareTo(_subagentEventIdentity(right));
     });
-    return merged;
+    return folded;
+  }
+
+  static const Set<String> _streamingSubagentKinds = <String>{
+    'thinking',
+    'message',
+  };
+
+  List<Map<String, dynamic>> _foldStreamingSubagentEvents(
+    List<Map<String, dynamic>> events,
+  ) {
+    final latestByGroup = <String, Map<String, dynamic>>{};
+    final result = <Map<String, dynamic>>[];
+    for (final event in events) {
+      final kind = (event['kind'] ?? '').toString();
+      if (!_streamingSubagentKinds.contains(kind)) {
+        result.add(event);
+        continue;
+      }
+      final groupKey = _subagentStreamingGroupKey(event, kind);
+      final existing = latestByGroup[groupKey];
+      if (existing == null) {
+        latestByGroup[groupKey] = event;
+        continue;
+      }
+      final existingSeq = _asInt(existing['seq']) ?? -1;
+      final newSeq = _asInt(event['seq']) ?? -1;
+      if (newSeq >= existingSeq) {
+        latestByGroup[groupKey] = event;
+      }
+    }
+    result.addAll(latestByGroup.values);
+    return result;
+  }
+
+  String _subagentStreamingGroupKey(
+    Map<String, dynamic> event,
+    String kind,
+  ) {
+    final subagentId = (event['subagentId'] ?? '').toString().trim();
+    if (subagentId.isNotEmpty) {
+      return 'sub:$subagentId|$kind';
+    }
+    final taskIndex = event['taskIndex'];
+    if (taskIndex != null) {
+      return 'task:$taskIndex|$kind';
+    }
+    return 'global|$kind';
   }
 
   String _subagentEventIdentity(Map<String, dynamic> event) {
