@@ -1,0 +1,49 @@
+{
+  "schema_version": "oob.project_benchmark_case.v1",
+  "id": "update_counter_preserves_behavior",
+  "title": "Update a counter Project without breaking existing behavior",
+  "category": "update",
+  "capabilities": [
+    "incremental_editing",
+    "state_preservation",
+    "api_compatibility",
+    "regression_control"
+  ],
+  "instruction": "Update the existing counter Project by adding a visible history feed of count changes. Preserve increment, decrement, and reset behavior. Do not rewrite the whole Project or change existing API ids.",
+  "input": {
+    "mode": "update",
+    "initial_project_fixture": "../fixtures/projects/counter_v1"
+  },
+  "oracle": {
+    "static": {
+      "required_files": [
+        "project.json",
+        "frontend/html/index.html",
+        "PROJECT_CONTEXT.md"
+      ],
+      "required_api_ids": [
+        "counter.increment",
+        "counter.decrement",
+        "counter.reset",
+        "counter.history"
+      ],
+      "required_html_substrings": [
+        "counter.increment",
+        "counter.decrement",
+        "counter.reset",
+        "history"
+      ],
+      "forbidden_substrings": [
+        "oob-project-distiller",
+        "oob-project-designer",
+        "oob-native-workbench"
+      ],
+      "forbidden_path_globs": [
+        ".github/**",
+        "AGENTS.md",
+        "*.jks",
+        ".env"
+      ]
+    }
+  }
+}

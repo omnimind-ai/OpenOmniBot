@@ -1,0 +1,54 @@
+{
+  "schema_version": "oob.project_benchmark_case.v1",
+  "id": "create_habit_checkin_crud",
+  "title": "Create a habit check-in CRUD Project",
+  "category": "create",
+  "capabilities": [
+    "requirement_extraction",
+    "project_contract_generation",
+    "crud_runtime_binding",
+    "mobile_html_generation"
+  ],
+  "instruction": "Create a mobile-first Workbench Project for tracking daily habits. Users can add habits, mark a habit as checked for today, archive old habits, and see the current list. Keep the scope small and use native collection APIs.",
+  "input": {
+    "mode": "create",
+    "contract_fixture": "../fixtures/contracts/habit_checkin.json"
+  },
+  "oracle": {
+    "static": {
+      "expected_project_id": "bench-habit-checkin",
+      "required_files": [
+        "project.json",
+        "frontend/html/index.html",
+        "PROJECT_CONTEXT.md"
+      ],
+      "required_docs": [
+        "PROJECT_SOUL.md",
+        "PROJECT_CONTEXT.md"
+      ],
+      "required_api_ids": [
+        "habit.create",
+        "habit.checkIn",
+        "habit.archive",
+        "habit.list"
+      ],
+      "required_html_substrings": [
+        "window.oob.callApi('habit.create'",
+        "window.oob.callApi('habit.checkIn'",
+        "window.oob.onProjectUpdated(",
+        "data-oob-id="
+      ],
+      "forbidden_substrings": [
+        "oob-project-distiller",
+        "oob-project-designer",
+        "oob-native-workbench"
+      ],
+      "forbidden_path_globs": [
+        ".github/**",
+        "AGENTS.md",
+        "*.jks",
+        ".env"
+      ]
+    }
+  }
+}

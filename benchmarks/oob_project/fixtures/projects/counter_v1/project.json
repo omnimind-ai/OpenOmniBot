@@ -1,0 +1,49 @@
+{
+  "projectId": "bench-counter",
+  "name": "Counter",
+  "entityName": "Counter",
+  "apis": [
+    {
+      "toolId": "counter.increment",
+      "displayName": "Increment",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "run": {
+        "use": "native.collection.update"
+      }
+    },
+    {
+      "toolId": "counter.decrement",
+      "displayName": "Decrement",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "run": {
+        "use": "native.collection.update"
+      }
+    },
+    {
+      "toolId": "counter.reset",
+      "displayName": "Reset",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "run": {
+        "use": "native.collection.update"
+      }
+    }
+  ]
+}
