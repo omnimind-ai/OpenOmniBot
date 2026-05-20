@@ -225,6 +225,7 @@ void main() {
   ) async {
     const thinkingLine = 'SubAgent #1 思考：检查数据来源';
     const firstStatusLine = 'SubAgent #1 调用工具：file_search';
+    const resultLine = 'SubAgent #1 得到结果：完成摘要';
     const secondStatusLine = 'SubAgent #2 思考：整理最终摘要';
 
     await tester.pumpWidget(
@@ -261,6 +262,15 @@ void main() {
                   'id': 'subagent-event-3',
                   'seq': 3,
                   'createdAt': 30,
+                  'kind': 'subagent_completed',
+                  'summary': resultLine,
+                  'status': 'completed',
+                  'taskIndex': 0,
+                },
+                {
+                  'id': 'subagent-event-4',
+                  'seq': 4,
+                  'createdAt': 40,
                   'kind': 'thinking',
                   'summary': secondStatusLine,
                   'status': 'running',
@@ -274,14 +284,20 @@ void main() {
     );
 
     expect(find.text('分派子任务'), findsOneWidget);
-    expect(find.text(firstStatusLine), findsOneWidget);
+    expect(find.text(resultLine), findsOneWidget);
     expect(find.text(secondStatusLine), findsOneWidget);
     expect(find.text(thinkingLine), findsNothing);
+    expect(find.text(firstStatusLine), findsNothing);
 
-    await tester.tap(find.text(firstStatusLine));
+    await tester.tap(find.text(resultLine));
     await tester.pump(const Duration(milliseconds: 320));
 
-    expect(find.text(thinkingLine), findsOneWidget);
+    expect(find.text('检查数据来源'), findsOneWidget);
+    expect(find.text('file_search'), findsOneWidget);
+    expect(find.text('完成摘要'), findsOneWidget);
+    expect(find.text(thinkingLine), findsNothing);
+    expect(find.text(firstStatusLine), findsNothing);
+    expect(find.text(resultLine), findsOneWidget);
     expect(find.byIcon(Icons.psychology_alt_rounded), findsOneWidget);
     expect(find.byIcon(Icons.build_circle_outlined), findsOneWidget);
   });

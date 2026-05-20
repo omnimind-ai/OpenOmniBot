@@ -765,6 +765,7 @@ class _SubagentTimelineRow extends StatelessWidget {
         ? palette.textSecondary
         : const Color(0xFF5F7188);
     final icon = _iconForSubagentEvent(event.kind);
+    final detailText = _subagentTimelineDetailText(event);
 
     return IntrinsicHeight(
       child: Row(
@@ -793,7 +794,7 @@ class _SubagentTimelineRow extends StatelessWidget {
             child: Padding(
               padding: EdgeInsets.only(bottom: isLast ? 0 : 9),
               child: Text(
-                event.summary,
+                detailText,
                 style: TextStyle(
                   color: textColor,
                   fontSize: 11,
@@ -806,6 +807,54 @@ class _SubagentTimelineRow extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _subagentTimelineDetailText(_SubagentTimelineEvent event) {
+    final withoutAgentPrefix = event.summary
+        .replaceFirst(RegExp(r'^SubAgent(?: #\d+)?\s*'), '')
+        .trim();
+    final text = withoutAgentPrefix.isEmpty
+        ? event.summary.trim()
+        : withoutAgentPrefix;
+
+    String stripLabel(List<String> labels) {
+      var result = text;
+      for (final label in labels) {
+        result = result
+            .replaceFirst(
+              RegExp('^${RegExp.escape(label)}(?:\\s*[：:]\\s*|\\s+)'),
+              '',
+            )
+            .trim();
+      }
+      return result.isEmpty ? text : result;
+    }
+
+    switch (event.kind) {
+      case 'subagent_started':
+        return stripLabel(const ['开始', 'started']);
+      case 'thinking':
+        return stripLabel(const ['思考', 'thinking', 'Thinking']);
+      case 'tool_started':
+        return stripLabel(const [
+          '调用工具',
+          '工具调用',
+          'called tool',
+          'called tools',
+        ]);
+      case 'tool_progress':
+        return stripLabel(const ['工具进度', 'tool progress']);
+      case 'tool_completed':
+        return stripLabel(const ['工具完成', 'completed tool']);
+      case 'message':
+        return stripLabel(const ['输出', 'output']);
+      case 'subagent_completed':
+        return stripLabel(const ['得到结果', 'result']);
+      case 'subagent_failed':
+        return stripLabel(const ['失败', 'failed']);
+      default:
+        return text;
+    }
   }
 
   IconData _iconForSubagentEvent(String kind) {
