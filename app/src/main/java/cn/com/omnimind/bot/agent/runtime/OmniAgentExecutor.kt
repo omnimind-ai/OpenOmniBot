@@ -2,7 +2,11 @@ package cn.com.omnimind.bot.agent
 
 import android.content.Context
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
+import cn.com.omnimind.bot.agent.workspace.memory.LongTermMemoryIndex
+import cn.com.omnimind.bot.agent.workspace.memory.MemoryRetrievalPipeline
+import cn.com.omnimind.bot.agent.workspace.memory.TurnMemoryLoadTracker
 import cn.com.omnimind.bot.mcp.RemoteMcpDiscoveryRegistry
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.json.Json
@@ -73,6 +77,21 @@ class OmniAgentExecutor(
             val promptMemoryContext = runCatching {
                 memoryService.buildPromptContext()
             }.getOrNull()
+            val ltmIndex = runCatching {
+                LongTermMemoryIndex(workspaceManager)
+            }.getOrNull()
+            val memoryLoadTracker = TurnMemoryLoadTracker()
+            val prefetchedMemoryHits = if (ltmIndex != null) {
+                runCatching {
+                    MemoryRetrievalPipeline(memoryService, ltmIndex)
+                        .prefetchRelevant(userMessage, topK = 4)
+                }.getOrDefault(emptyList())
+            } else {
+                emptyList()
+            }
+            if (prefetchedMemoryHits.isNotEmpty()) {
+                memoryLoadTracker.markLoaded(prefetchedMemoryHits.map { it.id })
+            }
             val skillIndexService = SkillIndexService(context, workspaceManager)
             val skillLoader = SkillLoader(workspaceManager)
             val installedSkills = skillIndexService.listInstalledSkills()
@@ -110,7 +129,8 @@ class OmniAgentExecutor(
                     ?: workspaceManager.skillsRoot().absolutePath,
                 skillsRootAndroidPath = workspaceManager.skillsRoot().absolutePath,
                 resolvedSkills = resolvedSkills,
-                memoryContext = promptMemoryContext
+                memoryContext = promptMemoryContext,
+                prefetchedMemoryHits = prefetchedMemoryHits
             )
 
             val llmClient = HttpAgentLlmClient(
@@ -125,13 +145,31 @@ class OmniAgentExecutor(
                 reasoningEffort = reasoningEffort,
                 json = json
             )
+            val eventAdapter = AgentEventAdapter(json)
+            // Break the SubagentDispatcher ↔ AgentToolRouter cycle: hand the
+            // dispatcher a lazy reference to the router that we'll populate
+            // immediately after the router is constructed.
+            val routerRef = AtomicReference<AgentToolExecutor?>()
+            val catalogRef = AtomicReference<AgentToolCatalog?>(toolRegistry)
+            val subagentDispatcher = SubagentDispatcher(
+                llmClient = llmClient,
+                toolExecutorProvider = {
+                    routerRef.get() ?: error("subagent dispatcher invoked before router was bound")
+                },
+                parentCatalogProvider = {
+                    catalogRef.get() ?: error("subagent dispatcher missing parent catalog")
+                },
+                eventAdapter = eventAdapter,
+                model = agentModelScene
+            )
             toolRouter = AgentToolRouter(
                 context = context,
                 scope = scope,
                 scheduleToolBridge = scheduleToolBridge,
-                workspaceManager = workspaceManager
+                workspaceManager = workspaceManager,
+                subagentDispatcher = subagentDispatcher
             )
-            val eventAdapter = AgentEventAdapter(json)
+            routerRef.set(toolRouter)
             val orchestrator = AgentOrchestrator(
                 llmClient = llmClient,
                 toolRegistry = toolRegistry,
@@ -159,7 +197,9 @@ class OmniAgentExecutor(
                         conversationMode = conversationMode,
                         reasoningEffort = reasoningEffort,
                         terminalEnvironment = terminalEnvironment,
-                        runControl = runControl
+                        runControl = runControl,
+                        longTermMemoryIndex = ltmIndex,
+                        turnMemoryLoadTracker = memoryLoadTracker
                     )
                 )
             )
@@ -182,7 +222,8 @@ class OmniAgentExecutor(
         skillsRootShellPath: String,
         skillsRootAndroidPath: String,
         resolvedSkills: List<ResolvedSkillContext>,
-        memoryContext: WorkspaceMemoryPromptContext?
+        memoryContext: WorkspaceMemoryPromptContext?,
+        prefetchedMemoryHits: List<WorkspaceMemorySearchHit> = emptyList()
     ): List<cn.com.omnimind.baselib.llm.ChatCompletionMessage> {
         val historyMessages = promptSeed.historyMessages.toMutableList()
         if (historyMessages.lastOrNull()?.role == "user") {
@@ -205,8 +246,26 @@ class OmniAgentExecutor(
             )
         )
         messages.addAll(historyMessages)
+        buildPrefetchedMemoryAttachment(prefetchedMemoryHits)?.let { messages.add(it) }
         messages.add(buildCurrentUserMessage(userMessage, attachments))
         return messages
+    }
+
+    private fun buildPrefetchedMemoryAttachment(
+        hits: List<WorkspaceMemorySearchHit>
+    ): cn.com.omnimind.baselib.llm.ChatCompletionMessage? {
+        if (hits.isEmpty()) return null
+        val payload = buildString {
+            appendLine("[memory.prefetch] 与当前用户问题最相关的工作区记忆：")
+            hits.take(4).forEach { hit ->
+                val text = hit.text.replace(Regex("\\s+"), " ").trim().take(280)
+                appendLine("- (${hit.source}) $text")
+            }
+        }.trim()
+        return cn.com.omnimind.baselib.llm.ChatCompletionMessage(
+            role = "user",
+            content = JsonPrimitive(payload)
+        )
     }
 
     private fun buildCurrentUserMessage(

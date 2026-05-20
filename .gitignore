@@ -16,6 +16,7 @@ local.properties
 .codex/
 .vscode/
 .agents/
+claude-code-main
 
 skills-lock.json
 

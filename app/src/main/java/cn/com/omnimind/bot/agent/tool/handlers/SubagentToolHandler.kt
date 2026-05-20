@@ -1,26 +1,35 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
-import cn.com.omnimind.bot.agent.*
 import cn.com.omnimind.bot.agent.AgentCallback
 import cn.com.omnimind.bot.agent.AgentExecutionEnvironment
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
 import cn.com.omnimind.bot.agent.AgentToolRegistry
+import cn.com.omnimind.bot.agent.SubagentDispatcher
 import cn.com.omnimind.bot.agent.ToolExecutionResult
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.util.UUID
 
+/**
+ * `subagent_dispatch` — spawns one or more independent subagents and waits
+ * for all of them to finish, returning aggregated results to the parent.
+ *
+ * Backwards-compatible input shapes:
+ *   tasks: ["do thing A", "do thing B"]              ← old string array
+ *   tasks: [{profileId: "explorer", instruction: "..."}, ...]  ← new object form
+ *   tasks: [{instruction: "..."}, "plain string"]    ← mixed
+ *
+ * Optional top-level `defaultProfileId` (default "general") applies to any
+ * task that doesn't specify its own profileId.
+ */
 class SubagentToolHandler(
     private val helper: SharedHelper,
-    private val scope: CoroutineScope
+    private val dispatcher: SubagentDispatcher
 ) : ToolHandler {
     override val toolNames: Set<String> = setOf("subagent_dispatch")
 
@@ -32,50 +41,112 @@ class SubagentToolHandler(
         callback: AgentCallback,
         toolHandle: AgentToolExecutionHandle
     ): ToolExecutionResult {
-        return executeSubagentDispatch(args, env, callback)
-    }
-
-    private suspend fun executeSubagentDispatch(
-        args: JsonObject,
-        env: AgentExecutionEnvironment,
-        callback: AgentCallback
-    ): ToolExecutionResult {
         val toolName = "subagent_dispatch"
         return try {
-            val tasks = (args["tasks"] as? JsonArray).orEmpty()
-                .mapNotNull { item ->
-                    (item as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
-                }
-            require(tasks.isNotEmpty()) { "tasks 不能为空" }
+            val defaultProfileId = args["defaultProfileId"]
+                ?.jsonPrimitive?.contentOrNull?.trim()
+                ?.ifEmpty { null }
+                ?: "general"
+            val rawTasks = args["tasks"] as? JsonArray ?: JsonArray(emptyList())
+            val specs = rawTasks.mapNotNull { element ->
+                parseTaskSpec(element, defaultProfileId)
+            }
+            require(specs.isNotEmpty()) { "tasks 不能为空" }
             val concurrency = args["concurrency"]?.jsonPrimitive?.intOrNull?.coerceIn(1, 6) ?: 2
             val mergeInstruction = args["mergeInstruction"]?.jsonPrimitive?.contentOrNull?.trim()
-            helper.reportToolProgress(callback, toolName, "正在分派 ${tasks.size} 个子任务（并发 $concurrency）")
-            val workers = tasks.mapIndexed { index, task ->
-                scope.async(Dispatchers.Default) {
-                    helper.ensureRunActive()
-                    mapOf(
-                        "taskIndex" to index,
-                        "task" to task,
-                        "subagentId" to "subagent-${UUID.randomUUID().toString().take(8)}",
-                        "status" to "completed",
-                        "result" to "已完成子任务：$task"
-                    )
-                }
-            }
-            val results = workers.map { it.await() }.sortedBy { (it["taskIndex"] as? Int) ?: 0 }
+
+            helper.reportToolProgress(
+                callback,
+                toolName,
+                "正在分派 ${specs.size} 个子任务（并发 $concurrency）"
+            )
+
+            val results = dispatcher.dispatch(
+                parentEnv = env,
+                tasks = specs,
+                concurrency = concurrency
+            )
+
             val payload = linkedMapOf<String, Any?>(
                 "count" to results.size,
                 "concurrency" to concurrency,
                 "mergeInstruction" to mergeInstruction,
-                "results" to results
+                "results" to results.map { it.toPayload() }
             )
             val payloadJson = helper.encodeLocalizedPayload(payload)
+            val failed = results.count { it.status != "completed" }
+            val summary = if (failed > 0) {
+                "已完成 ${results.size - failed}/${results.size} 个 subagent 子任务（$failed 失败）。"
+            } else {
+                "已完成 ${results.size} 个 subagent 子任务。"
+            }
             ToolExecutionResult.ContextResult(
                 toolName = toolName,
-                summaryText = helper.localized("已完成 ${results.size} 个 subagent 子任务。"),
-                previewJson = payloadJson, rawResultJson = payloadJson, success = true
+                summaryText = helper.localized(summary),
+                previewJson = payloadJson,
+                rawResultJson = payloadJson,
+                success = failed == 0
             )
-        } catch (e: CancellationException) { throw e }
-        catch (e: Exception) { ToolExecutionResult.Error(toolName, helper.localized(e.message ?: "subagent dispatch failed")) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ToolExecutionResult.Error(
+                toolName,
+                helper.localized(e.message ?: "subagent dispatch failed")
+            )
+        }
+    }
+
+    private fun parseTaskSpec(
+        element: kotlinx.serialization.json.JsonElement,
+        defaultProfileId: String
+    ): SubagentDispatcher.SubagentTaskSpec? {
+        return when (element) {
+            is JsonPrimitive -> {
+                val text = element.contentOrNull?.trim().orEmpty()
+                if (text.isEmpty()) {
+                    null
+                } else {
+                    SubagentDispatcher.SubagentTaskSpec(
+                        profileId = defaultProfileId,
+                        instruction = text
+                    )
+                }
+            }
+            is JsonObject -> {
+                val instruction = element["instruction"]?.jsonPrimitive?.contentOrNull?.trim()
+                    .orEmpty()
+                if (instruction.isEmpty()) {
+                    // Tolerate alternative key "task" used by some legacy callers
+                    val fallback = element["task"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                    if (fallback.isEmpty()) return null
+                    return SubagentDispatcher.SubagentTaskSpec(
+                        profileId = (element["profileId"]?.jsonPrimitive?.contentOrNull
+                            ?.trim()?.ifEmpty { null }) ?: defaultProfileId,
+                        instruction = fallback,
+                        budgetRounds = element["budgetRounds"]?.jsonPrimitive?.intOrNull
+                    )
+                }
+                SubagentDispatcher.SubagentTaskSpec(
+                    profileId = (element["profileId"]?.jsonPrimitive?.contentOrNull
+                        ?.trim()?.ifEmpty { null }) ?: defaultProfileId,
+                    instruction = instruction,
+                    budgetRounds = element["budgetRounds"]?.jsonPrimitive?.intOrNull
+                )
+            }
+            else -> null
+        }
+    }
+
+    private fun SubagentDispatcher.SubagentRunResult.toPayload(): Map<String, Any?> {
+        return linkedMapOf(
+            "taskIndex" to taskIndex,
+            "subagentId" to subagentId,
+            "profileId" to profileId,
+            "status" to status,
+            "result" to finalContent,
+            "toolCalls" to toolCallSummaries,
+            "error" to errorMessage
+        )
     }
 }

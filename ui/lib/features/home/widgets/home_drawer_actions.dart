@@ -42,9 +42,16 @@ extension _HomeDrawerActions on HomeDrawerState {
   }
 
   void _openNewConversation() {
+    // `subagent` 模式是"计划任务执行体"的内部语义,从 HomeDrawer 加号按钮新建的对话
+    // 永远不应继承它(否则 subagent_dispatch / schedule_* / alarm_* / calendar_*
+    // 都会被 AgentConversationModePolicy 过滤掉)。chatOnly 保持继承,因为那是用户
+    // 主动选择的纯聊天模式。
+    final newMode = widget.newConversationMode == ConversationMode.subagent
+        ? ConversationMode.normal
+        : widget.newConversationMode;
     _openThreadTarget(
       ConversationThreadTarget.newConversation(
-        mode: widget.newConversationMode,
+        mode: newMode,
         requestKey: DateTime.now().microsecondsSinceEpoch.toString(),
       ),
     );

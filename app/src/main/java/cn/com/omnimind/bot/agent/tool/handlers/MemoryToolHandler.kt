@@ -45,13 +45,22 @@ class MemoryToolHandler(
                     require(query.isNotEmpty()) { "query 不能为空" }
                     val limit = args["limit"]?.jsonPrimitive?.intOrNull?.coerceIn(1, 20) ?: 8
                     val result = env.workspaceMemoryService.searchMemory(query, limit)
+                    val tracker = env.turnMemoryLoadTracker
+                    tracker?.markLoaded(result.hits.map { it.id })
                     val payload = linkedMapOf<String, Any?>(
                         "query" to result.query,
                         "usedEmbedding" to result.usedEmbedding,
                         "fallbackLexical" to result.fallbackLexical,
                         "count" to result.hits.size,
                         "hits" to result.hits.map { hit ->
-                            mapOf("id" to hit.id, "text" to hit.text, "source" to hit.source, "date" to hit.date, "score" to hit.score)
+                            mapOf(
+                                "id" to hit.id,
+                                "text" to hit.text,
+                                "source" to hit.source,
+                                "date" to hit.date,
+                                "score" to hit.score,
+                                "alreadyInContext" to (tracker?.isLoaded(hit.id) == true)
+                            )
                         }
                     )
                     val payloadJson = helper.encodeLocalizedPayload(payload)

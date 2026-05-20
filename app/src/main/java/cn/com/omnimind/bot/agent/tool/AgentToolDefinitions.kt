@@ -1972,6 +1972,29 @@ object AgentToolDefinitions {
         }
     }
 
+    val memoryLoadTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "memory_load")
+            put("displayName", "加载长期记忆")
+            put("toolType", "memory")
+            put("description", "按 slug 加载完整的长期记忆条目正文。slug 来自系统提示的记忆索引或上一次 `memory_search` 命中。同一轮内重复加载会被自动跳过。")
+            put("postToolRule", "读取后再决定是否需要进一步检索或写入。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("slug") {
+                        put("type", "string")
+                        put("description", "长期记忆条目 slug，例如 `langchain-7c2b8e90`。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("slug")
+                }
+            }
+        }
+    }
+
     val subagentDispatchTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -2056,7 +2079,8 @@ object AgentToolDefinitions {
         memorySearchTool,
         memoryWriteDailyTool,
         memoryUpsertLongTermTool,
-        memoryRollupDayTool
+        memoryRollupDayTool,
+        memoryLoadTool
     )
 
     private val subagentToolDefinitions: List<JsonObject> = listOf(
