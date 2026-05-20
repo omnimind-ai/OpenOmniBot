@@ -4,6 +4,11 @@ ProjectArtifactBench, or PABench, evaluates whether LLM agents can turn
 natural-language requirements into runnable, maintainable, and verifiable
 software project artifacts under executable contracts.
 
+This directory lives under `docs/omniflow/papers/exploration` because PABench is
+an OmniFlow research exploration artifact. It is meant to capture the evaluation
+protocol, case schema, checkers, and paper-facing framing for future scientific
+work, not product code for OB/OOB itself.
+
 The benchmark is runtime-agnostic by design. `oob_workbench` is the first
 adapter, because this repository already has an OOB Workbench runtime, Project
 builder, export metadata, and Project-mode regressions to test. Future adapters
@@ -19,8 +24,9 @@ The first version intentionally stays lightweight:
 - Programmatic checks for schema, fixtures, generated contract baseline output,
   static candidate artifacts, forbidden paths, and forbidden substrings.
 
-It is not a full Android or browser benchmark yet. The next step is to connect
-these cases to Workbench runtime execution and Playwright UI checks.
+The current runner includes zero-dependency runtime and HTML/UI smoke checks for
+the reference adapter. The next step is to connect these cases to stronger
+portable runtime execution and browser-level UI checks.
 
 ## Abstraction
 
@@ -41,13 +47,13 @@ under executable contracts?
 Validate the benchmark definitions and run builder baselines for creation cases:
 
 ```bash
-python3 benchmarks/project_artifact/run_benchmark.py
+python3 docs/omniflow/papers/exploration/pabench/run_benchmark.py
 ```
 
 Validate candidate outputs for the same five cases:
 
 ```bash
-python3 benchmarks/project_artifact/run_benchmark.py --candidate-root /path/to/results
+python3 docs/omniflow/papers/exploration/pabench/run_benchmark.py --candidate-root /path/to/results
 ```
 
 The candidate root should contain one directory per case id, for example:
@@ -67,19 +73,19 @@ The candidate root should contain one directory per case id, for example:
 Use JSONL output for CI ingestion:
 
 ```bash
-python3 benchmarks/project_artifact/run_benchmark.py --jsonl
+python3 docs/omniflow/papers/exploration/pabench/run_benchmark.py --jsonl
 ```
 
 Run only one adapter:
 
 ```bash
-python3 benchmarks/project_artifact/run_benchmark.py --adapter oob_workbench
+python3 docs/omniflow/papers/exploration/pabench/run_benchmark.py --adapter oob_workbench
 ```
 
 Debug one case:
 
 ```bash
-python3 benchmarks/project_artifact/run_benchmark.py --case create_habit_checkin_crud
+python3 docs/omniflow/papers/exploration/pabench/run_benchmark.py --case create_habit_checkin_crud
 ```
 
 The default run reports whether cases are `case_ready`: schemas, fixtures, and

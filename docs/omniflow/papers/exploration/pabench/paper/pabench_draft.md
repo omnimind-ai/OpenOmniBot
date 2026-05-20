@@ -214,7 +214,7 @@ All tracks must report tool access, model version, system prompt or prompt hash,
 
 The repository currently implements a seed version:
 
-- 5 cases under `benchmarks/project_artifact/cases`
+- 5 cases under `docs/omniflow/papers/exploration/pabench/cases`
 - `project_artifact.case.v1` schema
 - dependency-free runner
 - `oob_workbench` reference adapter documentation
@@ -233,7 +233,7 @@ The current seed cases cover:
 Current status:
 
 ```text
-python3 benchmarks/project_artifact/run_benchmark.py
+python3 docs/omniflow/papers/exploration/pabench/run_benchmark.py
 Summary: 5/5 cases ready
 ```
 

@@ -61,7 +61,7 @@ artifact must remain runnable and maintainable.
 5. Re-run:
 
 ```bash
-python3 benchmarks/project_artifact/run_benchmark.py --candidate-root <candidate-root>
+python3 docs/omniflow/papers/exploration/pabench/run_benchmark.py --candidate-root <candidate-root>
 ```
 
 6. Stop when `case_resolved` passes or when a true oracle ambiguity should be

@@ -9,13 +9,13 @@ contains plausible text.
 Self-check case definitions and adapter baselines:
 
 ```bash
-python3 benchmarks/project_artifact/run_benchmark.py
+python3 docs/omniflow/papers/exploration/pabench/run_benchmark.py
 ```
 
 Evaluate candidate artifacts:
 
 ```bash
-python3 benchmarks/project_artifact/run_benchmark.py --candidate-root /path/to/candidates
+python3 docs/omniflow/papers/exploration/pabench/run_benchmark.py --candidate-root /path/to/candidates
 ```
 
 Candidates must be laid out by case id:
@@ -32,13 +32,13 @@ Candidates must be laid out by case id:
 Use JSONL for dashboards or CI:
 
 ```bash
-python3 benchmarks/project_artifact/run_benchmark.py --candidate-root /path/to/candidates --jsonl
+python3 docs/omniflow/papers/exploration/pabench/run_benchmark.py --candidate-root /path/to/candidates --jsonl
 ```
 
 Debug one case:
 
 ```bash
-python3 benchmarks/project_artifact/run_benchmark.py \
+python3 docs/omniflow/papers/exploration/pabench/run_benchmark.py \
   --case create_habit_checkin_crud \
   --candidate-root /path/to/candidates
 ```

@@ -16,7 +16,16 @@ from typing import Any
 
 
 BENCH_ROOT = Path(__file__).resolve().parent
-REPO_ROOT = BENCH_ROOT.parents[1]
+
+
+def find_repo_root(start: Path) -> Path:
+    for path in [start, *start.parents]:
+        if (path / "settings.gradle.kts").is_file() and (path / "app").is_dir():
+            return path
+    raise RuntimeError(f"Cannot locate repository root from {start}")
+
+
+REPO_ROOT = find_repo_root(BENCH_ROOT)
 DEFAULT_CASES_DIR = BENCH_ROOT / "cases"
 DEFAULT_ADAPTER = "oob_workbench"
 CASE_SCHEMA_VERSION = "project_artifact.case.v1"

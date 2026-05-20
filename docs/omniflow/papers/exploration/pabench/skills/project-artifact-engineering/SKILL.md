@@ -89,7 +89,7 @@ Do not include oracle text or benchmark solution hints in the artifact.
 Run the benchmark runner when available:
 
 ```bash
-python3 benchmarks/project_artifact/run_benchmark.py --candidate-root <candidate-root>
+python3 docs/omniflow/papers/exploration/pabench/run_benchmark.py --candidate-root <candidate-root>
 ```
 
 Use the metric failures as repair guidance. The primary metric is
