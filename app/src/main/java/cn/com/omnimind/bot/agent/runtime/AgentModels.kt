@@ -263,6 +263,16 @@ interface AgentCallback {
         progress: String,
         extras: Map<String, Any?> = emptyMap()
     )
+
+    /**
+     * 外部执行器直接投递的工具卡事件。
+     *
+     * 用于 VLM/UTG 这类内部子执行器：RunLog 是事实来源，UI 只投影同一张 step card。
+     */
+    suspend fun onToolCardEvent(
+        kind: String,
+        payload: Map<String, Any?> = emptyMap()
+    ) = Unit
     
     /**
      * 工具调用完成

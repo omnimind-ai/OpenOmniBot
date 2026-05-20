@@ -73,6 +73,7 @@ Project Review
 - Errors are visible, not only logged to console.
 - User text is escaped before insertion into HTML.
 - Mobile tap targets are large enough and no horizontal scroll is required.
+- Fullscreen HTML does not overlap the status bar or gesture areas; use `viewport-fit=cover` plus the Project `base.css` safe-area padding.
 - `PROJECT_SOUL.md` and `PROJECT_CONTEXT.md` are updated when fields, rules, APIs, or display anchors change.
 
 ---

@@ -25,7 +25,7 @@ WebView serves from `frontend/html/` root. Relative links between pages work. No
 <html lang="zh">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title><!-- Project name --></title>
   <link rel="stylesheet" href="base.css">
   <style>
@@ -213,8 +213,35 @@ See `assets/base.css` for the full file. Key tokens and components:
   --success: #059669;
   --radius:  12px;
   --shadow:  0 1px 4px rgba(0,0,0,0.07);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+body {
+  padding:
+    calc(16px + var(--safe-top))
+    calc(16px + var(--safe-right))
+    calc(32px + var(--safe-bottom))
+    calc(16px + var(--safe-left));
 }
 ```
+
+Workbench injects the current App theme into every HTML Display:
+
+- `document.documentElement.dataset.oobColorScheme` is `"light"` or `"dark"`.
+- `window.oob.colorScheme()` returns the same current value.
+- `project.colorScheme` from `await window.oob.getProject()` is also `"light"` or `"dark"`.
+
+Use explicit selectors when a component needs mode-specific styling:
+
+```css
+html[data-oob-color-scheme="light"] .metric { color: #0D1117; }
+html[data-oob-color-scheme="dark"] .metric { color: #F2F2F7; }
+```
+
+The base CSS falls back to `prefers-color-scheme` only outside the OOB host. Inside Project mode, the injected value wins and follows the current App theme.
 
 **Component classes provided by base.css:**
 

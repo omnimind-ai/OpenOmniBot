@@ -91,6 +91,14 @@ object AssistsCore {
         return stateMachine?.provideUserInputToVLMTask(userInput) ?: false
     }
 
+    fun pauseVLMTask(): Boolean {
+        return stateMachine?.pauseVLMTask() ?: false
+    }
+
+    fun resumeVLMTask(): Boolean {
+        return stateMachine?.resumeVLMTask() ?: false
+    }
+
     fun appendVlmExternalMemory(memory: String): Boolean {
         return stateMachine?.appendVlmExternalMemory(memory) ?: false
     }

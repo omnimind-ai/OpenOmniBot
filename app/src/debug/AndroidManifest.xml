@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver
+            android:name=".debug.DebugVlmRunLogReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="cn.com.omnimind.bot.debug.RUN_VLM_RUNLOG" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".debug.DebugOobFunctionRunReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="cn.com.omnimind.bot.debug.RUN_OOB_FUNCTION" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".debug.DebugRunLogFunctionReplayReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="cn.com.omnimind.bot.debug.CONVERT_RUNLOG_AND_RUN_FUNCTION" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".debug.DebugModelProviderConfigReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="cn.com.omnimind.bot.debug.CONFIGURE_MODEL_PROVIDER" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

@@ -289,6 +289,9 @@ class _AgentRunMonitorOverlayState extends State<AgentRunMonitorOverlay> {
   @override
   Widget build(BuildContext context) {
     if (!_floatingOverlayEnabled) return const SizedBox.shrink();
+    if (_runs.isEmpty && _latestEvents.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return Positioned.fill(
       child: LayoutBuilder(
         builder: (context, constraints) {

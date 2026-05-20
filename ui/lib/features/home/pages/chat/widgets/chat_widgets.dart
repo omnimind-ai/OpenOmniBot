@@ -15,7 +15,6 @@ import '../utils/agent_run_timeline.dart';
 import '../../command_overlay/widgets/message_bubble.dart';
 import '../../command_overlay/widgets/chat_input_area.dart';
 import 'agent_run_group_message.dart';
-import 'chat_empty_greeting.dart';
 
 const String _kChatAppBarUpdateSparklesAsset =
     'assets/home/chat/update_sparkles.svg';
@@ -26,8 +25,6 @@ const String _kChatAppBarModeMenuClosedIconAsset =
 const String _kChatAppBarModeMenuOpenIconAsset =
     'assets/home/chat/mode_menu_open.svg';
 const String _kChatAppBarPureChatIconAsset = 'assets/home/chat/pure_chat.svg';
-const String _kChatAppBarWorkspaceIconAsset =
-    'assets/home/workspace_folder_icon.svg';
 
 const List<Color> _kDarkChatAccentGradient = <Color>[
   Color(0xFFAA9774),
@@ -142,8 +139,6 @@ class ChatAppBar extends StatelessWidget {
         ? _kChatAppBarPureChatIconAsset
         : _kChatAppBarAgentIconAsset;
     const updateTint = Color(0xFFD4A017);
-    final showWorkspaceButton =
-        showWorkspacePaneButton && onWorkspacePaneTap != null;
     final appBarBackgroundColor = showSurfaceSwitcher
         ? palette.pageBackground
         : palette.surfacePrimary;
@@ -163,7 +158,6 @@ class ChatAppBar extends StatelessWidget {
                   _kChatAppBarAccessoryGap * 2;
               final rightActionCount =
                   (showAppUpdateIndicator ? 1 : 0) +
-                  (showWorkspaceButton ? 1 : 0) +
                   (showPureChatToggle ? 1 : 0);
               final rightReservedSpace =
                   rightActionCount * _kChatAppBarRightActionSlotWidth +
@@ -300,17 +294,6 @@ class ChatAppBar extends StatelessWidget {
                               ),
                             ),
                           ),
-                        if (showWorkspaceButton)
-                          SizedBox(
-                            width: _kChatAppBarRightActionSlotWidth,
-                            height: _kChatAppBarRightActionSlotWidth,
-                            child: Center(
-                              child: _ChatAppBarWorkspaceButton(
-                                iconTint: iconTint,
-                                onTap: onWorkspacePaneTap!,
-                              ),
-                            ),
-                          ),
                         if (showPureChatToggle)
                           SizedBox(
                             width: _kChatAppBarRightActionSlotWidth,
@@ -388,40 +371,6 @@ class _ChatAppBarCompanionButton extends StatelessWidget {
                   height: 20,
                   colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
                 ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ChatAppBarWorkspaceButton extends StatelessWidget {
-  const _ChatAppBarWorkspaceButton({
-    required this.iconTint,
-    required this.onTap,
-  });
-
-  final Color iconTint;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: AppTextLocalizer.choose(en: 'Show workspace', zh: '显示工作区'),
-      child: GestureDetector(
-        key: const ValueKey('chat-app-bar-workspace-pane-button'),
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          width: _kChatAppBarAccessoryButtonSize,
-          height: _kChatAppBarAccessoryButtonSize,
-          child: Center(
-            child: SvgPicture.asset(
-              _kChatAppBarWorkspaceIconAsset,
-              width: 20,
-              height: 20,
-              colorFilter: ColorFilter.mode(iconTint, BlendMode.srcIn),
-            ),
-          ),
         ),
       ),
     );
@@ -1504,7 +1453,9 @@ class _ChatMessageListState extends State<ChatMessageList> {
     super.didUpdateWidget(oldWidget);
     _bindObservableMessages(widget.messages);
     _syncAgentRunExpansion();
-    if (oldWidget.scrollController != widget.scrollController) {
+    final scrollControllerChanged =
+        oldWidget.scrollController != widget.scrollController;
+    if (scrollControllerChanged) {
       _autoStickToLatest = true;
       _outerScrollWasUserDriven = false;
       _autoStickSuppressedUntil = null;
@@ -2085,50 +2036,36 @@ class _ChatMessageListState extends State<ChatMessageList> {
           break;
         }
       }
-      return ColoredBox(color: pageBackgroundColor, child: content);
-    }
-
-    String? latestUserMessageId;
-    final messageSource = _observableMessages ?? widget.messages;
-    final timelineEntries = buildAgentRunTimelineEntries(
-      List<ChatMessageModel>.from(messageSource),
-      activeTaskIds: widget.activeAgentTaskIds,
-    );
-    for (final item in messageSource) {
-      if (item.user == 1) {
-        latestUserMessageId = item.id;
-        break;
-      }
-    }
-    Widget listView = ListView.builder(
-      controller: widget.scrollController,
-      reverse: false,
-      physics: const ClampingScrollPhysics(),
-      clipBehavior: Clip.hardEdge,
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-      itemCount: timelineEntries.length,
-      itemBuilder: (context, index) {
-        final dataIndex = timelineEntries.length - 1 - index;
-        final entry = timelineEntries[dataIndex];
-        final isOldestEntry = dataIndex == timelineEntries.length - 1;
-        final needTopPadding = isOldestEntry && !entry.isUserMessage;
-        return _buildTimelineListRow(
-          messageSource: messageSource,
-          entry: entry,
-          latestUserMessageId: latestUserMessageId,
-          padding: EdgeInsets.only(top: needTopPadding ? 24.0 : 0.0),
-        );
-      },
-    );
-    content = ClipRect(
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: NotificationListener<ScrollNotification>(
-          onNotification: _handleListScrollNotification,
-          child: listView,
+      final listView = ListView.builder(
+        controller: widget.scrollController,
+        reverse: false,
+        physics: const ClampingScrollPhysics(),
+        clipBehavior: Clip.hardEdge,
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+        itemCount: timelineEntries.length,
+        itemBuilder: (context, index) {
+          final dataIndex = timelineEntries.length - 1 - index;
+          final entry = timelineEntries[dataIndex];
+          final isOldestEntry = dataIndex == timelineEntries.length - 1;
+          final needTopPadding = isOldestEntry && !entry.isUserMessage;
+          return _buildTimelineListRow(
+            messageSource: messageSource,
+            entry: entry,
+            latestUserMessageId: latestUserMessageId,
+            padding: EdgeInsets.only(top: needTopPadding ? 24.0 : 0.0),
+          );
+        },
+      );
+      content = ClipRect(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _handleListScrollNotification,
+            child: listView,
+          ),
         ),
-      ),
-    );
+      );
+    }
 
     final paddedContent = AnimatedPadding(
       duration: const Duration(milliseconds: 180),

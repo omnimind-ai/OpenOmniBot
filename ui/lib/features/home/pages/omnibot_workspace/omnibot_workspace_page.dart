@@ -913,8 +913,12 @@ class _OmnibotWorkspaceProjectFrontendsState
       if (project != null) 'projectId': project.projectId,
       if (display != null) 'displayId': display.id,
       if (route != null) 'route': route,
+      ...buildWorkbenchThemeProfile(context),
       'workbenchLayout': profile,
-      'visibleState': <String, Object?>{'workbenchLayout': profile},
+      'visibleState': <String, Object?>{
+        ...buildWorkbenchThemeProfile(context),
+        'workbenchLayout': profile,
+      },
     };
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -936,6 +940,7 @@ class _OmnibotWorkspaceProjectFrontendsState
     final flutter = project.frontendFlutter;
     final markdown = project.frontendMarkdown;
     final baseContext = buildWorkbenchVisibleFrontendContext(
+      context: context,
       project: project,
       display: display,
       source: 'workspace_project_toolbar_edit',

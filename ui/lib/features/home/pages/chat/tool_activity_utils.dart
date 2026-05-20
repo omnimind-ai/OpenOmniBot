@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/terminal_output_utils.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
@@ -425,12 +427,55 @@ class _CompletedAgentToolRun {
   final List<ChatMessageModel> messages;
 }
 
-String resolveAgentToolTitle(Map<String, dynamic> cardData) {
+String resolveAgentToolTitle(Map<String, dynamic> cardData, {Locale? locale}) {
+  final activityKind = tool_policy.AgentToolCardPolicy.activityKindFor(
+    cardData,
+  );
+  if (activityKind == tool_policy.AgentToolActivityKind.vlm) {
+    final args = _decodeJsonMap(
+      _firstNonBlank(<Object?>[cardData['argsJson'], cardData['args']]),
+    );
+    final action = tool_policy.AgentToolCardPolicy.actionFor(
+      activityKind!,
+      cardData,
+      args,
+    );
+    final target = tool_policy.AgentToolCardPolicy.targetFor(
+      activityKind,
+      cardData,
+      args,
+      action,
+    );
+    final semanticTitle = tool_policy.AgentToolCardPolicy.semanticTitleForStep(
+      kind: activityKind,
+      title: _firstNonBlank(<Object?>[
+        cardData[kAgentToolTitleField],
+        cardData['tool_title'],
+        cardData['summary'],
+        cardData['progress'],
+        cardData['displayName'],
+        cardData['toolName'],
+      ]),
+      action: action,
+      target: target,
+      cardData: cardData,
+      args: args,
+      isCurrent:
+          tool_policy.AgentToolCardPolicy.normalizeStatus(cardData['status']) ==
+          'running',
+    );
+    if (semanticTitle.isNotEmpty &&
+        !tool_policy.AgentToolCardPolicy.isPlaceholderText(semanticTitle)) {
+      return _compactToolText(semanticTitle, maxChars: _kToolCardTitleMaxChars);
+    }
+  }
+
   final explicit = (cardData[kAgentToolTitleField] ?? '').toString().trim();
   if (explicit.isNotEmpty &&
       !tool_policy.AgentToolCardPolicy.isPlaceholderText(explicit)) {
-    return AppTextLocalizer.text(
+    return _localizeToolUiText(
       _compactToolText(explicit, maxChars: _kToolCardTitleMaxChars),
+      locale: locale,
     );
   }
 
@@ -439,8 +484,9 @@ String resolveAgentToolTitle(Map<String, dynamic> cardData) {
   );
   if (fromArgs.isNotEmpty &&
       !tool_policy.AgentToolCardPolicy.isPlaceholderText(fromArgs)) {
-    return AppTextLocalizer.text(
+    return _localizeToolUiText(
       _compactToolText(fromArgs, maxChars: _kToolCardTitleMaxChars),
+      locale: locale,
     );
   }
 
@@ -457,10 +503,11 @@ String resolveAgentToolTitle(Map<String, dynamic> cardData) {
     final serverName = (cardData['serverName'] ?? '').toString().trim();
     if ((cardData['toolType'] ?? '').toString() == 'mcp' &&
         serverName.isNotEmpty) {
-      return '${AppTextLocalizer.text(_compactToolText(baseTitle, maxChars: _kToolCardTitleMaxChars))} · $serverName';
+      return '${_localizeToolUiText(_compactToolText(baseTitle, maxChars: _kToolCardTitleMaxChars), locale: locale)} · $serverName';
     }
-    return AppTextLocalizer.text(
+    return _localizeToolUiText(
       _compactToolText(baseTitle, maxChars: _kToolCardTitleMaxChars),
+      locale: locale,
     );
   }
 
@@ -469,11 +516,12 @@ String resolveAgentToolTitle(Map<String, dynamic> cardData) {
     cardData['progress'],
   ]);
   if (summary.isNotEmpty) {
-    return AppTextLocalizer.text(
+    return _localizeToolUiText(
       _compactToolText(summary, maxChars: _kToolCardTitleMaxChars),
+      locale: locale,
     );
   }
-  return AppTextLocalizer.text('工具调用');
+  return _localizeToolUiText('工具调用', locale: locale);
 }
 
 String resolveAgentToolTerminalOutput(Map<String, dynamic> cardData) {
@@ -484,7 +532,18 @@ String resolveAgentToolTerminalOutput(Map<String, dynamic> cardData) {
   );
 }
 
-String resolveAgentToolPreview(Map<String, dynamic> cardData) {
+String resolveAgentToolPreview(
+  Map<String, dynamic> cardData, {
+  Locale? locale,
+}) {
+  if ((cardData['toolType'] ?? '').toString() == 'thinking') {
+    final content = _nonPlaceholderText(cardData['thinkingContent']);
+    final preview = _firstMeaningfulLine(content);
+    if (preview.isNotEmpty) {
+      return preview;
+    }
+  }
+
   final toolType = (cardData['toolType'] ?? '').toString();
   if (toolType == 'terminal') {
     final output = resolveAgentToolTerminalOutput(cardData).trim();
@@ -506,87 +565,157 @@ String resolveAgentToolPreview(Map<String, dynamic> cardData) {
 
   final progress = _nonPlaceholderText(cardData['progress']);
   final summary = _nonPlaceholderText(cardData['summary']);
-  final title = resolveAgentToolTitle(cardData);
+  final title = resolveAgentToolTitle(cardData, locale: locale);
   if (progress.isNotEmpty && progress != title) {
-    return AppTextLocalizer.text(
+    return _localizeToolUiText(
       _compactToolText(progress, maxChars: _kToolCardPreviewMaxChars),
+      locale: locale,
     );
   }
   if (summary.isNotEmpty && summary != title) {
-    return AppTextLocalizer.text(
+    return _localizeToolUiText(
       _compactToolText(summary, maxChars: _kToolCardPreviewMaxChars),
+      locale: locale,
     );
   }
-  return resolveAgentToolStatusLabel(cardData);
+  return resolveAgentToolStatusLabel(cardData, locale: locale);
 }
 
-String resolveAgentToolStatusLabel(Map<String, dynamic> cardData) {
+String resolveAgentToolStatusLabel(
+  Map<String, dynamic> cardData, {
+  Locale? locale,
+}) {
   final explicitStatusLabel = (cardData['statusLabel'] ?? '').toString().trim();
   if (explicitStatusLabel.isNotEmpty) {
-    return AppTextLocalizer.text(explicitStatusLabel);
+    return _localizeToolUiText(explicitStatusLabel, locale: locale);
   }
   final status = tool_policy.AgentToolCardPolicy.normalizeStatus(
     cardData['status'],
   );
   final toolType = (cardData['toolType'] ?? 'builtin').toString();
+  final activityKind = tool_policy.AgentToolCardPolicy.activityKindFor(
+    cardData,
+  );
   if (status == 'timeout') {
-    return AppTextLocalizer.text('超时');
+    return _localizeToolUiText('超时', locale: locale);
   }
   if (status == 'interrupted') {
-    return AppTextLocalizer.text('中断');
+    return _localizeToolUiText('中断', locale: locale);
   }
   switch (status) {
     case 'success':
-      return AppTextLocalizer.text('成功');
+      return _localizeToolUiText('成功', locale: locale);
     case 'error':
-      return AppTextLocalizer.text('失败');
+      return _localizeToolUiText('失败', locale: locale);
     default:
-      if (toolType == 'terminal') return AppTextLocalizer.text('运行中');
-      if (toolType == 'browser') return AppTextLocalizer.text('浏览中');
+      if (toolType == 'terminal') {
+        return _localizeToolUiText('运行中', locale: locale);
+      }
+      if (toolType == 'thinking') {
+        return AppTextLocalizer.choose(
+          en: 'Thinking',
+          zh: '思考中',
+          locale: locale,
+        );
+      }
+      if (toolType == 'browser') {
+        return _localizeToolUiText('浏览中', locale: locale);
+      }
       if (toolType == 'research') {
-        return AppTextLocalizer.choose(en: 'Searching', zh: '搜索中');
+        return AppTextLocalizer.choose(
+          en: 'Searching',
+          zh: '搜索中',
+          locale: locale,
+        );
+      }
+      if (toolType == 'vlm' ||
+          toolType == 'mobile' ||
+          activityKind == tool_policy.AgentToolActivityKind.vlm) {
+        return AppTextLocalizer.choose(
+          en: 'Running',
+          zh: '执行中',
+          locale: locale,
+        );
       }
       if (toolType == 'workbench') {
-        return AppTextLocalizer.choose(en: 'Updating', zh: '处理中');
+        return AppTextLocalizer.choose(
+          en: 'Updating',
+          zh: '处理中',
+          locale: locale,
+        );
       }
-      if (toolType == 'mcp') return AppTextLocalizer.text('响应中');
-      if (toolType == 'memory') return AppTextLocalizer.text('处理中');
-      return AppTextLocalizer.text('执行中');
+      if (toolType == 'mcp') {
+        return _localizeToolUiText('响应中', locale: locale);
+      }
+      if (toolType == 'memory') {
+        return _localizeToolUiText('处理中', locale: locale);
+      }
+      return _localizeToolUiText('执行中', locale: locale);
   }
 }
 
-String resolveAgentToolTypeLabel(Map<String, dynamic> cardData) {
+String resolveAgentToolTypeLabel(
+  Map<String, dynamic> cardData, {
+  Locale? locale,
+}) {
   final explicitTypeLabel = (cardData['toolTypeLabel'] ?? '').toString().trim();
   if (explicitTypeLabel.isNotEmpty) {
-    return AppTextLocalizer.text(explicitTypeLabel);
+    return _localizeToolUiText(explicitTypeLabel, locale: locale);
+  }
+  final activityKind = tool_policy.AgentToolCardPolicy.activityKindFor(
+    cardData,
+  );
+  if (activityKind == tool_policy.AgentToolActivityKind.vlm) {
+    return AppTextLocalizer.choose(
+      en: 'Visual task',
+      zh: '视觉执行',
+      locale: locale,
+    );
   }
   switch ((cardData['toolType'] ?? '').toString()) {
     case 'terminal':
-      return AppTextLocalizer.text('终端');
+      return _localizeToolUiText('终端', locale: locale);
+    case 'thinking':
+      return AppTextLocalizer.choose(en: 'Thinking', zh: '思考', locale: locale);
     case 'browser':
-      return AppTextLocalizer.text('浏览器');
+      return _localizeToolUiText('浏览器', locale: locale);
     case 'research':
-      return AppTextLocalizer.choose(en: 'Research', zh: '搜索');
+      return AppTextLocalizer.choose(
+        en: 'Web search',
+        zh: '网页搜索',
+        locale: locale,
+      );
+    case 'vlm':
+    case 'mobile':
+      return AppTextLocalizer.choose(
+        en: 'Visual task',
+        zh: '视觉执行',
+        locale: locale,
+      );
     case 'workspace':
-      return AppTextLocalizer.text('工作区');
+      return _localizeToolUiText('工作区', locale: locale);
     case 'workbench':
-      return AppTextLocalizer.choose(en: 'Workbench', zh: '工作台');
+      return AppTextLocalizer.choose(
+        en: 'Workbench',
+        zh: '工作台',
+        locale: locale,
+      );
     case 'schedule':
-      return AppTextLocalizer.text('定时');
+      return _localizeToolUiText('定时', locale: locale);
     case 'alarm':
-      return AppTextLocalizer.text('提醒');
+      return _localizeToolUiText('提醒', locale: locale);
     case 'calendar':
-      return AppTextLocalizer.text('日历');
+      return _localizeToolUiText('日历', locale: locale);
     case 'memory':
-      return AppTextLocalizer.text('记忆');
+      return _localizeToolUiText('记忆', locale: locale);
     case 'skill':
       return 'Skill';
     case 'subagent':
-      return AppTextLocalizer.text('子任务');
+      return _localizeToolUiText('子任务', locale: locale);
     case 'mcp':
       return 'MCP';
     default:
-      return AppTextLocalizer.text('工具');
+      return _localizeToolUiText('工具调用', locale: locale);
   }
 }
 
@@ -699,7 +828,173 @@ String _prettifyToolName(String raw) {
   }
   final lower = normalized.toLowerCase();
   if (lower == 'calltool' || lower == 'call tool') {
-    return AppTextLocalizer.choose(en: 'Tool Call', zh: '工具调用');
+    return 'Tool call';
+  }
+  if (lower == 'vlm task' || lower == 'vlm') {
+    return 'Visual task';
   }
   return normalized;
+}
+
+String _localizeToolUiText(String value, {Locale? locale}) {
+  final text = value.trim();
+  if (text.isEmpty) {
+    return text;
+  }
+  switch (text) {
+    case 'Thinking':
+    case '思考':
+      return AppTextLocalizer.choose(en: 'Thinking', zh: '思考', locale: locale);
+    case 'Thought':
+      return AppTextLocalizer.choose(en: 'Thought', zh: '思考', locale: locale);
+    case 'Done':
+    case '已完成':
+    case '完成':
+    case '成功':
+      return AppTextLocalizer.choose(en: 'Done', zh: '已完成', locale: locale);
+    case 'Running':
+    case '运行中':
+    case '执行中':
+      return AppTextLocalizer.choose(en: 'Running', zh: '运行中', locale: locale);
+    case 'Thinking...':
+    case '思考中':
+      return AppTextLocalizer.choose(en: 'Thinking', zh: '思考中', locale: locale);
+    case 'Tool activity':
+    case 'Tool call':
+    case 'Tool Call':
+    case '工具':
+    case '工具调用':
+      return AppTextLocalizer.choose(
+        en: 'Tool call',
+        zh: '工具调用',
+        locale: locale,
+      );
+    case 'Browser activity':
+    case '浏览器操作':
+      return AppTextLocalizer.choose(
+        en: 'Browser activity',
+        zh: '浏览器操作',
+        locale: locale,
+      );
+    case 'Browser':
+    case '浏览器':
+      return AppTextLocalizer.choose(en: 'Browser', zh: '浏览器', locale: locale);
+    case 'Research activity':
+    case 'Web search':
+    case '网页搜索':
+      return AppTextLocalizer.choose(
+        en: 'Web search',
+        zh: '网页搜索',
+        locale: locale,
+      );
+    case 'Visual task':
+    case 'Visual Task':
+    case 'Device action':
+    case '视觉执行':
+    case '手机操作':
+      return AppTextLocalizer.choose(
+        en: 'Visual task',
+        zh: '视觉执行',
+        locale: locale,
+      );
+    case 'Terminal activity':
+    case '终端操作':
+      return AppTextLocalizer.choose(
+        en: 'Terminal activity',
+        zh: '终端操作',
+        locale: locale,
+      );
+    case 'Terminal':
+    case '终端':
+      return AppTextLocalizer.choose(en: 'Terminal', zh: '终端', locale: locale);
+    case 'Workspace activity':
+    case '工作区操作':
+      return AppTextLocalizer.choose(
+        en: 'Workspace activity',
+        zh: '工作区操作',
+        locale: locale,
+      );
+    case 'Workspace':
+    case '工作区':
+      return AppTextLocalizer.choose(
+        en: 'Workspace',
+        zh: '工作区',
+        locale: locale,
+      );
+    case 'Workbench activity':
+    case '工作台操作':
+      return AppTextLocalizer.choose(
+        en: 'Workbench activity',
+        zh: '工作台操作',
+        locale: locale,
+      );
+    case 'Workbench':
+    case '工作台':
+      return AppTextLocalizer.choose(
+        en: 'Workbench',
+        zh: '工作台',
+        locale: locale,
+      );
+    case 'MCP activity':
+    case 'MCP 操作':
+      return AppTextLocalizer.choose(
+        en: 'MCP activity',
+        zh: 'MCP 操作',
+        locale: locale,
+      );
+    case '失败':
+      return AppTextLocalizer.choose(en: 'Failed', zh: '失败', locale: locale);
+    case '超时':
+      return AppTextLocalizer.choose(en: 'Timed out', zh: '超时', locale: locale);
+    case '中断':
+      return AppTextLocalizer.choose(
+        en: 'Interrupted',
+        zh: '中断',
+        locale: locale,
+      );
+    case '浏览中':
+      return AppTextLocalizer.choose(en: 'Browsing', zh: '浏览中', locale: locale);
+    case '搜索中':
+      return AppTextLocalizer.choose(
+        en: 'Searching',
+        zh: '搜索中',
+        locale: locale,
+      );
+    case '处理中':
+      return AppTextLocalizer.choose(
+        en: 'Processing',
+        zh: '处理中',
+        locale: locale,
+      );
+    case '响应中':
+      return AppTextLocalizer.choose(
+        en: 'Responding',
+        zh: '响应中',
+        locale: locale,
+      );
+    case '定时':
+      return AppTextLocalizer.choose(en: 'Schedule', zh: '定时', locale: locale);
+    case '提醒':
+      return AppTextLocalizer.choose(en: 'Reminder', zh: '提醒', locale: locale);
+    case '日历':
+      return AppTextLocalizer.choose(en: 'Calendar', zh: '日历', locale: locale);
+    case '记忆':
+      return AppTextLocalizer.choose(en: 'Memory', zh: '记忆', locale: locale);
+    case '子任务':
+      return AppTextLocalizer.choose(en: 'Subtask', zh: '子任务', locale: locale);
+  }
+  return text;
+}
+
+String _firstMeaningfulLine(String value) {
+  final line = value
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n')
+      .split('\n')
+      .map((item) => item.replaceAll(RegExp(r'\s+'), ' ').trim())
+      .firstWhere((item) => item.isNotEmpty, orElse: () => '');
+  if (line.length <= _kToolCardPreviewMaxChars) {
+    return line;
+  }
+  return '${line.substring(0, _kToolCardPreviewMaxChars - 1).trimRight()}…';
 }

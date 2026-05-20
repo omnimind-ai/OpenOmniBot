@@ -89,6 +89,12 @@
     "runfunction",
     "executefunction"
   ],
+  "omniflow_tool_call_tools": [
+    "omniflow.call_tool",
+    "call_tool",
+    "oob_tool_call",
+    "calltool"
+  ],
   "provider_only_tools": [],
   "skip_tools": [
     "notification_send",

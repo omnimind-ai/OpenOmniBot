@@ -29,12 +29,48 @@ const String kChatRuntimeModeOpenClaw = 'openclaw';
 const String kChatRuntimeModeCodex = 'codex';
 const int _kStreamingTextChunkFlushThreshold = 5;
 const Duration _kStreamingTextFlushDelay = Duration(milliseconds: 80);
+final RegExp _markdownFenceLinePattern = RegExp(r'^[ \t]{0,3}(`{3,}|~{3,})');
 
 enum _StreamingTextStreamKind {
   pureChatReply,
   agentReply,
   pureChatThinking,
   agentThinking,
+}
+
+bool _endsInsideMarkdownFence(String text) {
+  var offset = 0;
+  String? fenceMarker;
+  var fenceLength = 0;
+
+  while (offset <= text.length) {
+    final newlineIndex = text.indexOf('\n', offset);
+    final lineEnd = newlineIndex == -1 ? text.length : newlineIndex;
+    var line = text.substring(offset, lineEnd);
+    if (line.endsWith('\r')) {
+      line = line.substring(0, line.length - 1);
+    }
+
+    final match = _markdownFenceLinePattern.firstMatch(line);
+    if (match != null) {
+      final marker = match.group(1)!;
+      final markerChar = marker[0];
+      if (fenceMarker == null) {
+        fenceMarker = markerChar;
+        fenceLength = marker.length;
+      } else if (markerChar == fenceMarker && marker.length >= fenceLength) {
+        fenceMarker = null;
+        fenceLength = 0;
+      }
+    }
+
+    if (newlineIndex == -1) {
+      break;
+    }
+    offset = newlineIndex + 1;
+  }
+
+  return fenceMarker != null;
 }
 
 class _StreamingTextBatchState {
@@ -56,11 +92,14 @@ class _StreamingTextBatchState {
   bool get reachedFlushThreshold =>
       pendingChunkCount >= _kStreamingTextChunkFlushThreshold;
 
-  /// 自上次 flush 以来的新增文本中是否包含换行符。
-  /// 遇到换行时立即 flush，确保 markdown 块级元素（段落、列表等）及时渲染。
-  bool get containsNewlineSinceFlush {
+  /// 自上次 flush 以来的新增文本中是否包含可安全立即刷新的换行。
+  ///
+  /// 普通 Markdown 换行仍会尽快显示；但 fenced code block 内的每一行都触发
+  /// Markdown 重排会让长代码流明显卡顿，所以代码块未闭合时只走批量/定时刷新。
+  bool get containsFlushableNewlineSinceFlush {
     if (latestText.length <= lastFlushedText.length) return false;
-    return latestText.indexOf('\n', lastFlushedText.length) >= 0;
+    if (latestText.indexOf('\n', lastFlushedText.length) < 0) return false;
+    return !_endsInsideMarkdownFence(latestText);
   }
 
   void stage(String nextText) {
@@ -1075,7 +1114,8 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       return state.reachedFlushThreshold;
     }
     state.stage(nextText);
-    return state.reachedFlushThreshold || state.containsNewlineSinceFlush;
+    return state.reachedFlushThreshold ||
+        state.containsFlushableNewlineSinceFlush;
   }
 
   String _visiblePureChatReplyText(

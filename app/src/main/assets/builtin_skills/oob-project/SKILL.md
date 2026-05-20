@@ -97,6 +97,7 @@ HTML 默认不负责多字段录入表单。用户明确要求“界面里直接
 - `native.collection.*` 调用后读 `result.project`。
 - `agent` 调用后等待 `window.oob.onProjectUpdated`。
 - `script` 调用后读 `result.outputs`。
+- 当前 Project 显示模式由宿主注入：`project.colorScheme` / `frontendContext.colorScheme` 为 `light` 或 `dark`。HTML 用 `html[data-oob-color-scheme="dark"]` / `html[data-oob-color-scheme="light"]` 或 `window.oob.colorScheme()` 区分浅色 / 深色模式，默认跟随当前 App 主题。
 
 完整 HTML 规则见 `references/frontend-guide.md` 和 `references/html-patterns.md`。
 

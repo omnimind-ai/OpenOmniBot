@@ -49,7 +49,7 @@ together.
   `scroll`, `type`, `input_text`, `swipe`, `open_app`, `press_home`,
   `press_back`, `press_key`, `hot_key`, `wait`, and `finished`. OOB-native
   OmniFlow graph/function commands such as `go_to_node`, `click_node`, and
-  `call_function` also use this executor and are dispatched by
+  `call_tool` with `function_id` also use this executor and are dispatched by
   `OobFunctionToolHandler`.
 - `executor=tool`: direct tool call only when a live `AgentToolRouter` exists and the tool output is not live data needed by later steps.
 - `executor=agent`: live planning or perception. Use for VLM-only cards, `browser_use`, `web_search`, memory lookup, RunLog lookup, and workbench list/query tools.

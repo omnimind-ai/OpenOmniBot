@@ -68,6 +68,7 @@ open class VLMOperationTask(
 
     // 用户主动暂停通道：用于用户点击"接管"按钮时暂停任务
     private val userPauseChannel = Channel<Unit>(Channel.Factory.CONFLATED)
+    private var manualTraceCardSeq: Int = 0
 
     // 总结Sheet准备就绪通道：用于等待ChatBotSheet加载完成后再推送总结
     private val summarySheetReadyChannel = Channel<Unit>(Channel.Factory.CONFLATED)
@@ -109,6 +110,12 @@ open class VLMOperationTask(
             },
             onPauseCheck = {
                 checkAndHandlePause()
+            },
+            onStepStarted = { stepIndex, step ->
+                handleVlmStepStarted(stepIndex, step)
+            },
+            onStepCompleted = { stepIndex, step, success, error ->
+                handleVlmStepCompleted(stepIndex, step, success, error)
             },
             isSubTask = isSubTask
 
@@ -195,7 +202,18 @@ open class VLMOperationTask(
                 OmniLog.e(Tag, "通知UI层失败: ${e.message}")
             }
         }
-        userPauseChannel.receive() // 阻塞等待用户点击继续
+        val recorder = taskContext?.let { ManualVlmTraceRecorder(it, id) }
+        val recorderStarted = recorder?.start() == true
+        val manualTraceResult = try {
+            userPauseChannel.receive() // 阻塞等待用户点击继续
+            recorder?.stop()
+        } catch (e: Exception) {
+            recorder?.stop()
+            throw e
+        }
+        if (recorderStarted && manualTraceResult != null) {
+            appendManualTrace(manualTraceResult)
+        }
         AccessibilityController.Companion.hideKeyboard()
         setStartWithNotShowReadFlag = true
         onTaskStarted()
@@ -256,11 +274,14 @@ open class VLMOperationTask(
     }
 
     private fun appendInternalRunLog(context: Context, report: TaskExecutionReport) {
-        val cards = report.executionTrace.mapIndexed { index, step ->
-            buildInternalRunLogCard(index, step)
-        }
-        if (cards.isNotEmpty()) {
-            InternalRunLogStore.appendCards(context, id, cards)
+        report.executionTrace.forEachIndexed { index, step ->
+            val cardId = vlmStepCardId(index)
+            InternalRunLogStore.upsertCard(
+                context = context,
+                runId = id,
+                cardId = cardId,
+                card = buildInternalRunLogCard(index, step)
+            )
         }
         InternalRunLogStore.finishRun(
             context = context,
@@ -271,7 +292,142 @@ open class VLMOperationTask(
         )
     }
 
-    private fun buildInternalRunLogCard(index: Int, step: UIStep): Map<String, Any?> {
+    private fun appendManualTrace(result: ManualVlmTraceResult) {
+        if (result.actions.isEmpty()) return
+        val context = taskContext ?: return
+        val cards = result.actions.map { action ->
+            manualTraceCardSeq += 1
+            buildManualRunLogCard(manualTraceCardSeq, action)
+        }
+        InternalRunLogStore.appendCards(context, id, cards)
+        if (result.summary.isNotBlank() && this::vlmOperationService.isInitialized) {
+            vlmOperationService.addExternalMemory(result.summary)
+        }
+        OmniLog.d(Tag, "已记录人工接管轨迹：${result.actionCount}步")
+    }
+
+    private fun buildManualRunLogCard(
+        index: Int,
+        action: ManualVlmRecordedAction
+    ): Map<String, Any?> {
+        val cardId = "$id-manual-$index"
+        val durationMs = (action.finishedAtMs - action.startedAtMs).coerceAtLeast(0L)
+        return linkedMapOf(
+            "card_id" to cardId,
+            "tool_call_id" to cardId,
+            "header" to linkedMapOf<String, Any?>(
+                "step_index" to index,
+                "title" to action.title,
+                "tool_name" to action.actionName,
+                "status" to "success",
+                "success" to true,
+                "duration_ms" to durationMs
+            ),
+            "step_index" to index,
+            "title" to action.title,
+            "summary" to action.summary,
+            "tool_name" to action.actionName,
+            "toolName" to action.actionName,
+            "tool_type" to "manual_recording",
+            "toolType" to "manual_recording",
+            "status" to "success",
+            "action_type" to action.actionName,
+            "success" to true,
+            "duration_ms" to durationMs,
+            "started_at_ms" to action.startedAtMs,
+            "finished_at_ms" to action.finishedAtMs,
+            "package_name" to action.packageName,
+            "compile_kind" to "manual_recording",
+            "source" to "human_takeover",
+            "tool_call" to linkedMapOf(
+                "id" to cardId,
+                "name" to action.actionName,
+                "arguments" to action.params
+            ),
+            "params" to action.params,
+            "result" to linkedMapOf(
+                "message" to action.summary,
+                "summary" to action.summary,
+                "source" to "human_takeover"
+            ),
+            "before" to linkedMapOf(
+                "observation_xml" to action.beforeXml,
+                "package_name" to action.packageName
+            ),
+            "after" to linkedMapOf(
+                "observation_xml" to action.afterXml,
+                "summary" to action.summary,
+                "package_name" to action.packageName
+            )
+        )
+    }
+
+    private fun handleVlmStepStarted(index: Int, step: UIStep) {
+        val context = taskContext ?: return
+        val cardId = vlmStepCardId(index)
+        val card = buildInternalRunLogCard(
+            index = index,
+            step = step,
+            status = "running",
+            successOverride = null
+        )
+        InternalRunLogStore.upsertCard(
+            context = context,
+            runId = id,
+            cardId = cardId,
+            card = card
+        )
+        notifyVlmToolEvent(
+            streamKind = "tool_started",
+            index = index,
+            card = card,
+            step = step,
+            status = "running",
+            success = null,
+            errorMessage = null
+        )
+    }
+
+    private fun handleVlmStepCompleted(
+        index: Int,
+        step: UIStep,
+        success: Boolean,
+        errorMessage: String?
+    ) {
+        val context = taskContext ?: return
+        val status = if (success) "success" else "error"
+        val cardId = vlmStepCardId(index)
+        val card = buildInternalRunLogCard(
+            index = index,
+            step = step,
+            status = status,
+            successOverride = success,
+            errorMessage = errorMessage
+        )
+        InternalRunLogStore.upsertCard(
+            context = context,
+            runId = id,
+            cardId = cardId,
+            card = card
+        )
+        notifyVlmToolEvent(
+            streamKind = "tool_completed",
+            index = index,
+            card = card,
+            step = step,
+            status = status,
+            success = success,
+            errorMessage = errorMessage
+        )
+    }
+
+    private fun buildInternalRunLogCard(
+        index: Int,
+        step: UIStep,
+        status: String = "success",
+        successOverride: Boolean? = null,
+        errorMessage: String? = null
+    ): Map<String, Any?> {
         val actionParams = actionParams(step.action)
         val durationMs = if (step.startedAtMs != null && step.finishedAtMs != null) {
             (step.finishedAtMs - step.startedAtMs).coerceAtLeast(0L)
@@ -279,32 +435,38 @@ open class VLMOperationTask(
             null
         }
         val title = step.thought.trim().ifEmpty { actionTitle(step.action) }
-        val success = step.action !is AbortAction
+        val success = successOverride ?: (step.action !is AbortAction)
+        val cardId = vlmStepCardId(index)
         val header = linkedMapOf<String, Any?>(
             "step_index" to index,
             "title" to title,
             "tool_name" to step.action.name,
+            "status" to status,
             "success" to success
         )
         durationMs?.let { header["duration_ms"] = it }
         return linkedMapOf(
-            "card_id" to "$id-vlm-${index + 1}",
-            "tool_call_id" to "$id-vlm-${index + 1}",
+            "card_id" to cardId,
+            "tool_call_id" to cardId,
             "header" to header,
             "step_index" to index,
             "title" to title,
             "summary" to step.summary,
             "tool_name" to step.action.name,
             "toolName" to step.action.name,
+            "tool_type" to "vlm",
+            "toolType" to "vlm",
+            "status" to status,
             "action_type" to step.action.name,
             "success" to success,
+            "error_message" to errorMessage,
             "duration_ms" to durationMs,
             "started_at_ms" to step.startedAtMs,
             "finished_at_ms" to step.finishedAtMs,
             "package_name" to step.packageName,
             "compile_kind" to "vlm_step",
             "tool_call" to linkedMapOf(
-                "id" to "$id-vlm-${index + 1}",
+                "id" to cardId,
                 "name" to step.action.name,
                 "arguments" to actionParams
             ),
@@ -324,6 +486,68 @@ open class VLMOperationTask(
                 "package_name" to step.packageName
             )
         )
+    }
+
+    private fun vlmStepCardId(index: Int): String = "$id-vlm-${index + 1}"
+
+    private fun notifyVlmToolEvent(
+        streamKind: String,
+        index: Int,
+        card: Map<String, Any?>,
+        step: UIStep,
+        status: String,
+        success: Boolean?,
+        errorMessage: String?
+    ) {
+        val actionParams = actionParams(step.action)
+        val argsJson = runCatching { JSONObject(actionParams).toString() }
+            .getOrDefault("{}")
+        val resultJson = runCatching {
+            JSONObject(
+                linkedMapOf<String, Any?>(
+                    "message" to step.result,
+                    "summary" to step.summary,
+                    "status" to status,
+                    "success" to success,
+                    "error_message" to errorMessage,
+                    "package_name" to step.packageName,
+                    "compile_kind" to "vlm_step"
+                ).filterValues { it != null }
+            ).toString()
+        }.getOrDefault("{}")
+        val cardId = vlmStepCardId(index)
+        val title = card["title"]?.toString()?.trim().orEmpty()
+        val summary = listOf(step.summary, step.result, title)
+            .firstOrNull { it?.trim()?.isNotEmpty() == true }
+            ?.trim()
+            .orEmpty()
+        val payload = linkedMapOf<String, Any?>(
+            "agentStreamKind" to streamKind,
+            "taskId" to id,
+            "runLogId" to id,
+            "run_id" to id,
+            "cardId" to cardId,
+            "toolCallId" to cardId,
+            "toolName" to step.action.name,
+            "displayName" to step.action.name,
+            "toolType" to "vlm",
+            "toolTitle" to title,
+            "status" to status,
+            "summary" to summary,
+            "progress" to summary,
+            "argsJson" to argsJson,
+            "args" to argsJson,
+            "resultPreviewJson" to if (streamKind == "tool_completed") resultJson else "",
+            "rawResultJson" to if (streamKind == "tool_completed") resultJson else "",
+            "success" to success,
+            "stepIndex" to index,
+            "compile_kind" to "vlm_step"
+        ).filterValues { it != null }
+        try {
+            onMessagePushListener?.onVlmToolEvent(payload)
+        } catch (e: Exception) {
+            OmniLog.e(Tag, "通知VLM步骤事件失败: ${e.message}")
+        }
     }
 
     private fun actionTitle(action: UIAction): String {

@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.runlog
 
 import cn.com.omnimind.baselib.runlog.InternalRunLogRecord
+import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
 import com.google.gson.Gson
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -166,8 +167,9 @@ class RunLogReusableFunctionCompilerTest {
         assertFalse(graph.containsKey("agent_call"))
 
         val function = steps[1]
-        assertEquals("call_function", function["tool"])
-        assertEquals("call_function", function["callable_tool"])
+        assertEquals("call_tool", function["tool"])
+        assertEquals("call_tool", function["callable_tool"])
+        assertEquals("call_function", function["source_tool"])
         assertEquals("omniflow", function["executor"])
         assertEquals("omniflow_function", function["kind"])
         assertEquals(true, function["model_free"])
@@ -186,6 +188,9 @@ class RunLogReusableFunctionCompilerTest {
         for (toolName in listOf(
             "go_to_node",
             "click_node",
+            "call_tool",
+            "omniflow.call_tool",
+            "oob_tool_call",
             "call_function",
             "omniflow.call_function",
             "oob_function_run",
@@ -206,6 +211,32 @@ class RunLogReusableFunctionCompilerTest {
         for (reason in listOf("provider_owned_replay_requires_omniflow")) {
             assertFalse(RunLogReplayPolicy.requiresAgentPlanningReason(reason))
         }
+    }
+
+    @Test
+    fun `generic call_tool without function id compiles to tool delegation`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "oob_tool_call",
+                    mapOf(
+                        "toolName" to "vlm_task",
+                        "arguments" to mapOf("goal" to "tap settings"),
+                    ),
+                ),
+            ),
+            runId = "run-call-tool",
+        )
+
+        val step = stepsFrom(spec).single()
+        assertEquals("call_tool", step["tool"])
+        assertEquals("call_tool", step["callable_tool"])
+        assertEquals("oob_tool_call", step["source_tool"])
+        assertEquals("tool", step["executor"])
+        assertEquals("tool_call", step["kind"])
+        assertFalse(step.containsKey("model_free"))
+        val args = step["args"] as? Map<*, *>
+        assertEquals("vlm_task", args?.get("tool_name"))
     }
 
     @Test
@@ -315,6 +346,95 @@ class RunLogReusableFunctionCompilerTest {
         assertEquals("finish", steps[3]["source_tool"])
     }
 
+    @Test
+    fun `manual takeover recorded actions compile to local replay steps`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf("target_description" to "Confirm", "x" to 540, "y" to 1600),
+                    beforeXml = SOURCE_XML,
+                    title = "人工点击 Confirm",
+                    compileKind = "manual_recording",
+                    source = "human_takeover",
+                ),
+                card(
+                    "input_text",
+                    mapOf("target_description" to "Search", "text" to "query"),
+                    beforeXml = SOURCE_XML,
+                    title = "人工输入文本",
+                    compileKind = "manual_recording",
+                    source = "human_takeover",
+                ),
+            ),
+            runId = "run-manual-takeover",
+        )
+
+        val steps = stepsFrom(spec)
+        assertEquals(listOf("click", "input_text"), steps.map { it["tool"] })
+        assertTrue(steps.all { it["executor"] == "omniflow" })
+        assertTrue(steps.all { it["model_free"] == true })
+        assertEquals("omniflow", steps[0]["coordinate_hook"])
+        assertEquals(
+            SOURCE_XML,
+            ((steps[0]["source_context"] as Map<*, *>)["src_ctx"] as Map<*, *>)["page"],
+        )
+        assertEquals("query", (steps[1]["args"] as Map<*, *>)["text"])
+    }
+
+    @Test
+    fun `text input run log infers callable parameter and materializes changed argument`() {
+        val spec = compile(
+            listOf(
+                card("input_text", mapOf("text" to "hello")),
+            ),
+            runId = "run-input-parameter",
+        )
+
+        val parameter = parametersFrom(spec).single()
+        assertEquals("input_text", parameter["name"])
+        assertEquals("string", parameter["type"])
+        assertEquals(false, parameter["required"])
+        assertEquals("hello", parameter["default"])
+        assertEquals(
+            listOf("$.execution.steps[0].args.text"),
+            parameter["bindings"],
+        )
+
+        val changed = OobReusableFunctionStore.materialize(
+            spec,
+            mapOf("input_text" to "world"),
+        )
+        assertEquals("world", (stepsFrom(changed).single()["args"] as Map<*, *>)["text"])
+
+        val defaulted = OobReusableFunctionStore.materialize(spec, emptyMap())
+        assertEquals("hello", (stepsFrom(defaulted).single()["args"] as Map<*, *>)["text"])
+    }
+
+    @Test
+    fun `pseudo tool dump titles are sanitized for reusable function steps`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "open_app",
+                    mapOf("package_name" to "com.android.settings"),
+                    title = """
+                        open_app
+                        ```html
+                        <arg_key>package_name</arg_key>
+                        <arg_value>com.android.settings</arg_value>
+                        </tool_call>
+                        ```
+                    """.trimIndent(),
+                ),
+            ),
+            runId = "run-pseudo-title",
+        )
+
+        val step = stepsFrom(spec).single()
+        assertEquals("open_app: com.android.settings", step["title"])
+    }
+
     private fun compile(
         cards: List<Map<String, Any?>>,
         runId: String,
@@ -334,11 +454,17 @@ class RunLogReusableFunctionCompilerTest {
         args: Map<String, Any?>,
         beforeXml: String = "",
         success: Boolean? = null,
+        title: String? = null,
+        compileKind: String? = null,
+        source: String? = null,
     ): Map<String, Any?> {
         return linkedMapOf<String, Any?>(
             "tool_name" to toolName,
+            "title" to title,
             "args" to args,
             "success" to success,
+            "compile_kind" to compileKind,
+            "source" to source,
             "before" to linkedMapOf(
                 "package_name" to "com.example",
                 "observation_xml" to beforeXml,
@@ -358,6 +484,15 @@ class RunLogReusableFunctionCompilerTest {
     private fun capabilitiesFrom(spec: Map<String, Any?>): Map<String, Any?> {
         val capabilities = (spec["execution"] as Map<*, *>)["capabilities"] as Map<*, *>
         return capabilities.entries.associate { (key, value) -> key.toString() to value }
+    }
+
+    private fun parametersFrom(spec: Map<String, Any?>): List<Map<String, Any?>> {
+        val parameters = spec["parameters"] as List<*>
+        return parameters.map { raw ->
+            (raw as Map<*, *>).entries.associate { (key, value) ->
+                key.toString() to value
+            }
+        }
     }
 
     @Suppress("UNCHECKED_CAST")

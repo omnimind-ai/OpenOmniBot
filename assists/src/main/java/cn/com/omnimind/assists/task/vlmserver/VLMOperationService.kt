@@ -30,6 +30,8 @@ class VLMOperationService(
     private val streamClient: VLMStreamClient,
     private val onInfoAction: suspend (String) -> String, // INFO动作回调：传入问题，返回用户答案
     private val onPauseCheck: suspend () -> Unit = {}, // 暂停检查回调：用于检测用户主动暂停
+    private val onStepStarted: suspend (Int, UIStep) -> Unit = { _, _ -> },
+    private val onStepCompleted: suspend (Int, UIStep, Boolean, String?) -> Unit = { _, _, _, _ -> },
     private val isSubTask: Boolean = false // 标识当前是否为子任务
 
 ) {
@@ -319,7 +321,12 @@ class VLMOperationService(
             }
             // === Context Compactor Logic (End) ===
 
-            val result = executeSingleStepWithTimeOut(context, useModel, summary)
+            val result = executeSingleStepWithTimeOut(
+                context = context,
+                useModel = useModel,
+                summary = summary,
+                stepIndex = stepIndex
+            )
             ensureTaskActive("after_single_step_$stepIndex")
 
             if (result.feedback != null) {
@@ -357,6 +364,7 @@ class VLMOperationService(
                 if (result.step != null) {
                     context = updateContext(result.step, context)
                     executionTrace.add(result.step)
+                    onStepCompleted(stepIndex, result.step, false, result.error)
                 }
                 lastError = result.error
 
@@ -499,6 +507,12 @@ class VLMOperationService(
                 }
             }
             if (step.action is AbortAction) {
+                onStepCompleted(
+                    stepIndex,
+                    step,
+                    false,
+                    "任务终止: ${(step.action as AbortAction).value}"
+                )
                 return TaskExecutionReport(
                     success = false,
                     goal = goal,
@@ -538,10 +552,11 @@ class VLMOperationService(
     suspend fun executeSingleStepWithTimeOut(
         context: UIContext,
         useModel: String = "scene.vlm.operation.primary",
-        summary: Boolean
+        summary: Boolean,
+        stepIndex: Int
     ): VLMOperationResult {
         return try {
-            executeSingleStep(context, useModel, summary)
+            executeSingleStep(context, useModel, summary, stepIndex)
         } catch (e: CancellationException) {
             throw e
         } catch (e: PrivacyBlockedException) {
@@ -569,7 +584,8 @@ class VLMOperationService(
     suspend fun executeSingleStep(
         context: UIContext,
         model: String = "scene.vlm.operation.primary",
-        summary: Boolean
+        summary: Boolean,
+        stepIndex: Int
     ): VLMOperationResult {
         // 内部传递都用 scene.xxx 格式，只在需要判断模型类型或发送请求时才解析
 
@@ -784,8 +800,6 @@ class VLMOperationService(
                     else -> {}
                 }
 
-                processedStep = groundActionTarget(processedStep, beforeXml)
-
                 if (needsPreciseLocation(processedStep.action)) {
                     val afterXml = captureCurrentXml()
                     if (!isPageStableByXml(beforeXml, afterXml)) {
@@ -806,6 +820,17 @@ class VLMOperationService(
                 safePauseCheck("before_action_${processedStep.action.name}_${stabilityAttempt}")
                 ensureTaskActive("before_action_dispatch_${processedStep.action.name}_$stabilityAttempt")
 
+                val actionStartedAtMs = System.currentTimeMillis()
+                val runningStep = UIStep(
+                    observation = processedStep.observation,
+                    thought = processedStep.thought,
+                    action = processedStep.action,
+                    summary = processedStep.summary,
+                    observationXml = beforeXml,
+                    packageName = AccessibilityController.Companion.getPackageName(),
+                    startedAtMs = actionStartedAtMs
+                )
+                onStepStarted(stepIndex, runningStep)
                 val executedStep = actionExecutor.act(
                     VLMStep(
                         observation = processedStep.observation,
@@ -814,8 +839,15 @@ class VLMOperationService(
                         summary = processedStep.summary
                     )
                 )
+                val actionFinishedAtMs = System.currentTimeMillis()
                 safePauseCheck("after_action_${processedStep.action.name}_${stabilityAttempt}")
-                val finalStep = executedStep.copy(summary = processedStep.summary)
+                val finalStep = executedStep.copy(
+                    summary = processedStep.summary,
+                    observationXml = beforeXml,
+                    packageName = AccessibilityController.Companion.getPackageName(),
+                    startedAtMs = actionStartedAtMs,
+                    finishedAtMs = actionFinishedAtMs
+                )
 
                 OmniLog.d(
                     Tag,
@@ -825,6 +857,12 @@ class VLMOperationService(
 
                 if (finalStep.result?.contains("不支持的操作类型") == true) {
                     parseFailureCount++
+                    onStepCompleted(
+                        stepIndex,
+                        finalStep,
+                        false,
+                        "不支持的操作类型: ${finalStep.result}"
+                    )
 
                     return VLMOperationResult(
                         success = false,
@@ -835,6 +873,7 @@ class VLMOperationService(
                 }
 
                 parseFailureCount = 0
+                onStepCompleted(stepIndex, finalStep, true, null)
                 sceneTurn?.let { completedTurn ->
                     conversationState.appendRound(
                         vlmClient.buildConversationRound(

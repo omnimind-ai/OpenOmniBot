@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show FlutterView;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -140,6 +141,8 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       ChatConversationRuntimeCoordinator.instance;
   final ChatConversationLifecycleGuard _conversationLifecycleGuard =
       ChatConversationLifecycleGuard();
+  final KeyboardInsetMotionTracker _emptyGreetingKeyboardLiftTracker =
+      KeyboardInsetMotionTracker();
   ConversationThreadTarget? _resolvedThreadTarget;
   SharedOpenDraftPayload? _stagedSharedOpenDraft;
   int? _stagedSharedOpenDraftExpiresAt;

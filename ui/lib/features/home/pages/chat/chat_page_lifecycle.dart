@@ -122,10 +122,19 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
 
   void _syncEmptyGreetingKeyboardLiftFromView() {
     if (!mounted) return;
-    final view = View.of(context);
+    final view = _safeViewForMetrics();
+    if (view == null) return;
     final bottomInset = view.viewInsets.bottom / view.devicePixelRatio;
     if (_emptyGreetingKeyboardLiftTracker.update(bottomInset)) {
       setState(() {});
+    }
+  }
+
+  FlutterView? _safeViewForMetrics() {
+    try {
+      return View.maybeOf(context);
+    } catch (_) {
+      return null;
     }
   }
 

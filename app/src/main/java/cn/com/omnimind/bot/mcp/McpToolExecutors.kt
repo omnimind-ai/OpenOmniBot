@@ -6,6 +6,8 @@ import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.vlm.VlmToolCoordinator
 import cn.com.omnimind.bot.vlm.VlmToolOutcome
 import cn.com.omnimind.bot.vlm.VlmToolOutcomeStatus
+import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
+import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 import cn.com.omnimind.bot.util.AssistsUtil
 import cn.com.omnimind.bot.webchat.AgentRunRequestNormalizer
 import cn.com.omnimind.bot.webchat.AgentRunService
@@ -336,14 +338,37 @@ object McpToolExecutors {
         args: Map<String, Any?>?
     ): Map<String, Any?> {
         val requestArgs = args ?: emptyMap()
-        val toolName = requestArgs["toolName"]?.toString()?.trim().orEmpty()
-        if (toolName.isEmpty()) {
-            return McpResponseBuilder.buildErrorText("Missing toolName")
-        }
         val toolArgs = (requestArgs["arguments"] as? Map<*, *>)
             ?.entries
             ?.associate { it.key.toString() to it.value }
             ?: emptyMap<String, Any?>()
+        val toolName = firstNonBlank(
+            requestArgs["toolName"],
+            requestArgs["tool_name"],
+            requestArgs["targetTool"],
+            requestArgs["target_tool"],
+            requestArgs["tool"],
+        )
+        val functionId = firstNonBlank(
+            requestArgs["function_id"],
+            requestArgs["functionId"],
+            requestArgs["oob_function_id"],
+            requestArgs["oobFunctionId"],
+            if (RunLogReplayPolicy.isOmniflowFunctionTool(toolName)) toolArgs["function_id"] else null,
+            if (RunLogReplayPolicy.isOmniflowFunctionTool(toolName)) toolArgs["functionId"] else null,
+        )
+        if (functionId.isNotEmpty()) {
+            return OobOmniFlowToolkitService(context).callFunction(
+                linkedMapOf(
+                    "function_id" to functionId,
+                    "arguments" to toolArgs,
+                    "goal" to requestArgs["goal"],
+                )
+            )
+        }
+        if (toolName.isEmpty()) {
+            return McpResponseBuilder.buildErrorText("Missing toolName or function_id")
+        }
         val goal = requestArgs["goal"]?.toString()?.trim().orEmpty()
         val prompt = buildString {
             appendLine("Call this OOB capability through the normal Agent tool chain.")
@@ -361,6 +386,14 @@ object McpToolExecutors {
                 "title" to "OOB Tool Call: $toolName"
             )
         )
+    }
+
+    private fun firstNonBlank(vararg values: Any?): String {
+        for (value in values) {
+            val text = value?.toString()?.trim().orEmpty()
+            if (text.isNotEmpty()) return text
+        }
+        return ""
     }
     
     private fun outcomeToMcpResponse(outcome: VlmToolOutcome): Map<String, Any?> {

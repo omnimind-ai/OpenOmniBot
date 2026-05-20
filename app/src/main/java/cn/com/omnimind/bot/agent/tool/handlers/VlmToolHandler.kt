@@ -111,7 +111,29 @@ class VlmToolHandler(
                     stepSkillGuidance = resolvedSkills.joinToString("\n\n") { it.stepGuidance() }
                 ),
                 scope = scope,
-                progressReporter = { progress, extras -> helper.reportToolProgress(callback, "vlm_task", progress, extras) }
+                progressReporter = { progress, extras ->
+                    val streamKind = (extras["agentStreamKind"] ?: extras["kind"])
+                        ?.toString()
+                        ?.trim()
+                        .orEmpty()
+                    if (
+                        streamKind == "tool_started" ||
+                        streamKind == "tool_progress" ||
+                        streamKind == "tool_completed"
+                    ) {
+                        callback.onToolCardEvent(
+                            streamKind,
+                            extras + mapOf("progress" to progress)
+                        )
+                    } else {
+                        helper.reportToolProgress(
+                            callback,
+                            "vlm_task",
+                            progress,
+                            extras
+                        )
+                    }
+                }
             )
             val payloadJson = helper.encodeLocalizedPayload(outcome.toPayload())
             when (outcome.status) {

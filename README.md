@@ -70,6 +70,14 @@ Then open the scenario model settings:
 
 Note: `Memory embedding` requires an embedding model. For the best overall experience, the other scenarios should use multimodal or vision-capable models whenever possible.
 
+For development devices and emulators, build, install, and launch the debug app with:
+
+```bash
+bash scripts/prepare-oob-device.sh --device <adb-serial>
+```
+
+Provider base URL, API key, and scene model bindings are configured at runtime from the app settings.
+
 <p align="center">
   <img src="docs/tutorial/five.png" alt="Alpine environment" width="260" />
 </p>

@@ -288,6 +288,12 @@ class AssistsCoreChannel {
                 "provideUserInputToVLMTask" -> {
                     assistsCoreManager!!.provideUserInputToVLMTask(call, result)
                 }
+                "pauseVLMTask" -> {
+                    assistsCoreManager!!.pauseVLMTask(call, result)
+                }
+                "resumeVLMTask" -> {
+                    assistsCoreManager!!.resumeVLMTask(call, result)
+                }
                 "notifySummarySheetReady" -> {
                     assistsCoreManager!!.notifySummarySheetReady(call, result)
                 }

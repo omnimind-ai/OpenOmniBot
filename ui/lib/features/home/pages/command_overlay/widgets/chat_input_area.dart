@@ -555,10 +555,19 @@ abstract class _ChatInputAreaStateBase extends State<ChatInputArea>
 
   void _syncKeyboardPhaseFromView() {
     if (!mounted) return;
-    final view = View.of(context);
+    final view = _safeViewForMetrics();
+    if (view == null) return;
     final bottomInset = view.viewInsets.bottom / view.devicePixelRatio;
     final keyboardPhase = _resolveKeyboardPhase(bottomInset);
     _updateComposerState(keyboardPhase: keyboardPhase);
+  }
+
+  FlutterView? _safeViewForMetrics() {
+    try {
+      return View.maybeOf(context);
+    } catch (_) {
+      return null;
+    }
   }
 
   _ComposerKeyboardPhase _resolveKeyboardPhase(double bottomInset) {

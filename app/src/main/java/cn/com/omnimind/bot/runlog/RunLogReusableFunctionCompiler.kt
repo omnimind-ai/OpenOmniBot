@@ -26,6 +26,7 @@ object RunLogReusableFunctionCompiler {
 
         if (steps.isEmpty()) return null
 
+        val parameters = inferParameters(steps)
         val now = System.currentTimeMillis().toString()
         val functionId = deriveFunctionId(record)
         val goal = record.goal.ifBlank { record.operationDescription }
@@ -36,14 +37,20 @@ object RunLogReusableFunctionCompiler {
             "function_id" to functionId,
             "name" to name,
             "description" to goal.ifBlank { name },
-            "parameters" to emptyList<Any>(),
+            "parameters" to parameters,
             "source" to linkedMapOf(
                 "kind" to "run_log",
                 "run_id" to record.runId,
                 "goal" to record.goal,
                 "tool_name" to record.toolName,
+                "card_count" to record.cards.size,
+                "replayable_card_count" to replayableCards.size,
                 "converted_at" to now,
                 "converter" to "native_run_log_reusable_function_compiler",
+                "parameter_inference" to linkedMapOf(
+                    "strategy" to "deterministic_input_text_bindings",
+                    "parameter_count" to parameters.size,
+                ),
             ),
             "execution" to linkedMapOf(
                 "kind" to "tool_sequence",
@@ -66,6 +73,73 @@ object RunLogReusableFunctionCompiler {
         )
     }
 
+    private fun inferParameters(steps: List<Map<String, Any?>>): List<Map<String, Any?>> {
+        val parameters = mutableListOf<Map<String, Any?>>()
+        val usedNames = mutableSetOf<String>()
+        steps.forEachIndexed { index, step ->
+            val tool = RunLogReplayPolicy.omniflowActionForToolName(
+                firstNonBlank(step["omniflow_action"], step["local_action"], step["tool"], step["callable_tool"])
+            ) ?: RunLogReplayPolicy.normalizeToolName(firstNonBlank(step["tool"], step["callable_tool"]))
+            if (tool !in INPUT_TEXT_ACTIONS) return@forEachIndexed
+            val args = asMap(step["args"])
+            val inputKey = INPUT_TEXT_ARG_KEYS.firstOrNull { key ->
+                args[key]?.toString()?.trim()?.isNotEmpty() == true
+            } ?: return@forEachIndexed
+            val defaultValue = args[inputKey]?.toString()?.takeIf { it.isNotBlank() } ?: return@forEachIndexed
+            val baseName = parameterNameForInputStep(step, index)
+            val name = uniqueParameterName(baseName, usedNames)
+            usedNames += name
+            parameters += linkedMapOf(
+                "name" to name,
+                "type" to "string",
+                "required" to false,
+                "default" to defaultValue,
+                "description" to "Text to input for step ${index + 1}: ${step["title"] ?: tool}",
+                "source" to linkedMapOf(
+                    "kind" to "run_log_argument",
+                    "step_id" to step["id"],
+                    "tool" to tool,
+                    "arg_key" to inputKey,
+                ),
+                "bindings" to listOf("$.execution.steps[$index].args.$inputKey"),
+            )
+        }
+        return parameters
+    }
+
+    private fun parameterNameForInputStep(step: Map<String, Any?>, index: Int): String {
+        val rawLabel = firstNonBlank(
+            step["parameter_name"],
+            step["input_name"],
+            step["title"],
+        )
+        val label = rawLabel
+            .lowercase()
+            .replace(Regex("[^a-z0-9]+"), "_")
+            .trim('_')
+            .take(32)
+        return when {
+            label.endsWith("_text") -> label
+            label.isNotBlank() -> "${label}_text"
+            index == 0 -> "input_text"
+            else -> "input_text_${index + 1}"
+        }
+    }
+
+    private fun uniqueParameterName(baseName: String, usedNames: Set<String>): String {
+        val normalized = baseName
+            .ifBlank { "input_text" }
+            .replace(Regex("_+"), "_")
+            .trim('_')
+            .ifBlank { "input_text" }
+        if (normalized !in usedNames) return normalized
+        var suffix = 2
+        while ("${normalized}_$suffix" in usedNames) {
+            suffix += 1
+        }
+        return "${normalized}_$suffix"
+    }
+
     private fun hasRecordedReplayStep(card: Map<String, Any?>): Boolean {
         val toolName = toolNameForCard(card)
         if (RunLogReplayPolicy.omniflowActionForToolName(toolName) != null) {
@@ -84,15 +158,19 @@ object RunLogReusableFunctionCompiler {
     ): Map<String, Any?>? {
         val toolName = toolNameForCard(card).ifBlank { "unknown_tool" }
         val normalizedToolName = RunLogReplayPolicy.normalizeToolName(toolName)
-        val title = firstNonBlank(
-            asMap(card["header"])["title"],
-            card["title"],
-            card["summary"],
-            card["operation_description"],
-            card["operationDescription"],
-            toolName,
-        )
         val args = jsonSafeMap(extractArgs(card))
+        val title = cleanStepTitle(
+            rawTitle = firstNonBlank(
+                asMap(card["header"])["title"],
+                card["title"],
+                card["summary"],
+                card["operation_description"],
+                card["operationDescription"],
+                toolName,
+            ),
+            toolName = normalizedToolName,
+            args = args,
+        )
         val result = jsonSafe(extractResult(card))
         val sourceContext = sourceContextForCard(card, args)
         val utg = jsonSafeMap(card["utg"])
@@ -103,7 +181,7 @@ object RunLogReusableFunctionCompiler {
             normalizedToolName == "android_privileged_action" -> {
                 val action = androidPrivilegedReplayAction(args) ?: return null
                 omniflowStep(
-                    title = title,
+                    title = cleanStepTitle(title, action, androidPrivilegedReplayArgs(args)),
                     replayAction = action,
                     sourceToolName = normalizedToolName,
                     args = androidPrivilegedReplayArgs(args),
@@ -116,7 +194,7 @@ object RunLogReusableFunctionCompiler {
                     RunLogReplayPolicy.omniflowActionForToolName(normalizedToolName)
                 )
                 omniflowStep(
-                    title = title,
+                    title = cleanStepTitle(title, replayAction, args),
                     replayAction = replayAction,
                     sourceToolName = normalizedToolName,
                     args = args,
@@ -181,6 +259,67 @@ object RunLogReusableFunctionCompiler {
         }
     }
 
+    private fun cleanStepTitle(
+        rawTitle: String,
+        toolName: String,
+        args: Map<String, Any?>,
+    ): String {
+        val compactRaw = rawTitle.trim().replace(Regex("\\s+"), " ")
+        val fallback = conciseActionTitle(toolName, args)
+        val isPseudoToolDump = rawTitle.contains("```") ||
+            rawTitle.contains("<arg_key>") ||
+            rawTitle.contains("</tool_call>") ||
+            rawTitle.contains("<tool_call") ||
+            rawTitle.lines().size > 2
+        return when {
+            isPseudoToolDump -> fallback
+            compactRaw.isNotBlank() -> compactRaw.take(120)
+            else -> fallback
+        }
+    }
+
+    private fun conciseActionTitle(
+        toolName: String,
+        args: Map<String, Any?>,
+    ): String {
+        val action = RunLogReplayPolicy.omniflowActionForToolName(toolName)
+            ?: RunLogReplayPolicy.normalizeToolName(toolName)
+        val target = firstNonBlank(
+            args["target_description"],
+            args["targetDescription"],
+            args["label"],
+            args["text"],
+            args["content"],
+            args["value"],
+        ).take(80)
+        return when (action) {
+            "open_app" -> {
+                val packageName = firstNonBlank(args["package_name"], args["packageName"])
+                if (packageName.isNotBlank()) "open_app: $packageName" else "open_app"
+            }
+            "click", "long_press" -> {
+                if (target.isNotBlank()) {
+                    "$action: $target"
+                } else {
+                    val x = firstNonBlank(args["x"], args["center_x"], args["centerX"])
+                    val y = firstNonBlank(args["y"], args["center_y"], args["centerY"])
+                    if (x.isNotBlank() && y.isNotBlank()) "$action: ($x, $y)" else action
+                }
+            }
+            "type", "input_text" -> if (target.isNotBlank()) "$action: $target" else action
+            "scroll", "swipe" -> {
+                val direction = firstNonBlank(args["direction"], args["scroll_direction"])
+                if (direction.isNotBlank()) "$action: $direction" else action
+            }
+            "press_key", "hot_key" -> {
+                val key = firstNonBlank(args["key"], args["hotkey"], args["hot_key"])
+                if (key.isNotBlank()) "$action: $key" else action
+            }
+            "finished" -> "finished"
+            else -> if (target.isNotBlank()) "$action: $target" else action.ifBlank { "step" }
+        }
+    }
+
     private fun omniflowExecutionStep(
         title: String,
         toolName: String,
@@ -190,20 +329,73 @@ object RunLogReusableFunctionCompiler {
         utg: Map<String, Any?> = emptyMap(),
     ): Map<String, Any?> {
         val isGraphTool = RunLogReplayPolicy.isOmniflowGraphTool(toolName)
+        val isFunctionTool = RunLogReplayPolicy.isOmniflowFunctionTool(toolName)
+        val isCallTool = RunLogReplayPolicy.isOmniflowToolCallTool(toolName)
+        val canonicalToolName = if (isFunctionTool || isCallTool) "call_tool" else toolName
+        val canonicalArgs = if (isFunctionTool || isCallTool) {
+            canonicalCallToolArgs(toolName, args)
+        } else {
+            args
+        }
+        val hasFunctionId = firstNonBlank(
+            canonicalArgs["function_id"],
+            canonicalArgs["functionId"],
+            canonicalArgs["oob_function_id"],
+            canonicalArgs["oobFunctionId"],
+        ).isNotEmpty()
+        val executor = if (isGraphTool || isFunctionTool || hasFunctionId) {
+            "omniflow"
+        } else {
+            "tool"
+        }
         return nullableMap(
             "title" to title,
-            "kind" to if (isGraphTool) "omniflow_graph" else "omniflow_function",
-            "executor" to "omniflow",
-            "model_free" to true,
+            "kind" to when {
+                isGraphTool -> "omniflow_graph"
+                isFunctionTool || hasFunctionId -> "omniflow_function"
+                else -> "tool_call"
+            },
+            "executor" to executor,
+            "model_free" to true.takeIf { executor == "omniflow" },
             "scriptable" to true,
-            "tool" to toolName,
-            "callable_tool" to toolName,
-            "args" to args,
+            "tool" to canonicalToolName,
+            "callable_tool" to canonicalToolName,
+            "source_tool" to toolName.takeIf { it != canonicalToolName },
+            "args" to canonicalArgs,
             "source_context" to sourceContext.takeIf { it.isNotEmpty() },
             "replay_engine" to if (isGraphTool) "omniflow_utg" else null,
             "utg" to utg.takeIf { it.isNotEmpty() },
             "observed_result" to result.takeUnless(::isEmptyJsonValue),
         )
+    }
+
+    private fun canonicalCallToolArgs(
+        toolName: String,
+        args: Map<String, Any?>,
+    ): Map<String, Any?> {
+        val normalizedTool = RunLogReplayPolicy.normalizeToolName(toolName)
+        return linkedMapOf<String, Any?>().apply {
+            putAll(args)
+            val functionId = firstNonBlank(
+                args["function_id"],
+                args["functionId"],
+                args["oob_function_id"],
+                args["oobFunctionId"],
+            )
+            if (functionId.isNotEmpty()) {
+                put("function_id", functionId)
+            }
+            val targetTool = firstNonBlank(
+                args["tool_name"],
+                args["toolName"],
+                args["target_tool"],
+                args["targetTool"],
+                args["tool"],
+            )
+            if (targetTool.isNotEmpty() && !RunLogReplayPolicy.isOmniflowFunctionTool(normalizedTool)) {
+                put("tool_name", targetTool)
+            }
+        }
     }
 
     private fun omniflowStep(
@@ -472,4 +664,7 @@ object RunLogReusableFunctionCompiler {
             else -> false
         }
     }
+
+    private val INPUT_TEXT_ACTIONS = setOf("type", "input_text")
+    private val INPUT_TEXT_ARG_KEYS = listOf("text", "content", "value")
 }

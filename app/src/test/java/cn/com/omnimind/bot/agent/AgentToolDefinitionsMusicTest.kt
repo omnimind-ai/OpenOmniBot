@@ -37,6 +37,19 @@ class AgentToolDefinitionsMusicTest {
     }
 
     @Test
+    fun `call tool wrapper is exposed in static tools`() {
+        val toolNames = AgentToolDefinitions.staticTools()
+            .mapNotNull { definition ->
+                ((definition["function"] as? JsonObject)
+                    ?.get("name")
+                    ?.jsonPrimitive
+                    ?.contentOrNull)
+            }
+
+        assertTrue(toolNames.contains("call_tool"))
+    }
+
+    @Test
     fun `workbench delete tool is exposed as control tool`() {
         val toolNames = AgentToolDefinitions.staticTools()
             .mapNotNull { definition ->

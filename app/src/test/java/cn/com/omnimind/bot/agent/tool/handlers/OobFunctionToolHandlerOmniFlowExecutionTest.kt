@@ -16,7 +16,7 @@ import org.junit.Test
 
 class OobFunctionToolHandlerOmniFlowExecutionTest {
     @Test
-    fun `call_function executes nested registered function locally`() = runBlocking {
+    fun `call_tool executes nested registered function locally by function id`() = runBlocking {
         val context = TempFilesContext()
         try {
             val store = WorkspaceFunctionStore(context.root)
@@ -34,8 +34,8 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
                         "executor" to "omniflow",
                         "model_free" to true,
                         "scriptable" to true,
-                        "tool" to "call_function",
-                        "callable_tool" to "call_function",
+                        "tool" to "call_tool",
+                        "callable_tool" to "call_tool",
                         "args" to mapOf("function_id" to "child_finished"),
                     )
                 ),
@@ -57,6 +57,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
             assertEquals(run["run_id"], run["audit_run_id"])
             val step = stepResults(run).single()
             assertEquals("omniflow_function", step["executor"])
+            assertEquals("call_tool", step["tool"])
             assertEquals("child_finished", step["nested_function_id"])
             assertTrue(step["nested_run_id"]?.toString()?.startsWith("omniflow_run_") == true)
             assertEquals(true, step["success"])
@@ -286,8 +287,8 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
                     mapOf(
                         "id" to "function",
                         "executor" to "omniflow",
-                        "tool" to "call_function",
-                        "callable_tool" to "call_function",
+                        "tool" to "call_tool",
+                        "callable_tool" to "call_tool",
                         "args" to mapOf("function_id" to "anything"),
                     ),
                 ),
@@ -295,6 +296,49 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
             val materialized = OobReusableFunctionStore.materialize(spec, emptyMap())
 
             assertTrue(handler.canRunFullyWithOmniflow(materialized))
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `call_tool without function id requires agent runner when router unavailable`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val spec = functionSpec(
+                functionId = "needs_router",
+                steps = listOf(
+                    mapOf(
+                        "id" to "call_vlm",
+                        "title" to "Call VLM",
+                        "kind" to "tool_call",
+                        "executor" to "tool",
+                        "scriptable" to true,
+                        "tool" to "call_tool",
+                        "callable_tool" to "call_tool",
+                        "args" to mapOf(
+                            "tool_name" to "vlm_task",
+                            "arguments" to mapOf("goal" to "tap settings"),
+                        ),
+                    )
+                ),
+            )
+
+            val handler = handler(context, WorkspaceFunctionStore(context.root))
+            val run = handler.runMaterializedFunction(
+                functionId = "needs_router",
+                spec = spec,
+                materializedSpec = OobReusableFunctionStore.materialize(spec, emptyMap()),
+                allowAgentFallback = true,
+            )
+
+            assertEquals(false, run["success"])
+            assertEquals(true, run["model_required"])
+            val step = stepResults(run).single()
+            assertEquals("agent", step["executor"])
+            assertEquals("tool", step["blocked_executor"])
+            assertEquals("vlm_task", step["tool"])
+            assertEquals(true, step["needs_agent"])
         } finally {
             context.root.deleteRecursively()
         }

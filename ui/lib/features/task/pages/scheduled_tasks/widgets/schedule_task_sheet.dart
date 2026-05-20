@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/models/scheduled_task.dart';
+import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:uuid/uuid.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
@@ -163,7 +165,6 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
-                        color: palette.textPrimary,
                       ),
                     ),
                   ),

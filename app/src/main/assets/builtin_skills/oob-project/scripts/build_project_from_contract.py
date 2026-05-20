@@ -307,9 +307,10 @@ def _build_to_view_item(fields: list) -> str:
     return "\n".join(lines)
 
 
-def _meta_fields_html(fields: list) -> str:
+def _meta_fields_html(fields: list, skip_fields: set[str] | None = None) -> str:
     """Generate card-meta line showing domain fields (excluding title/name)."""
-    display_fields = [f for f in fields if f["name"] not in ("title", "name")]
+    skip = skip_fields or set()
+    display_fields = [f for f in fields if f["name"] not in ("title", "name") and f["name"] not in skip]
     if not display_fields:
         return ""
     parts = []
@@ -328,10 +329,47 @@ def _meta_fields_html(fields: list) -> str:
     return ' <span class="card-meta-sep">·</span> '.join(parts)
 
 
-def _build_render_item(fields: list, archive_action_id: str | None) -> str:
-    meta_html = _meta_fields_html(fields)
+def _find_toggle_action(actions: list, fields: list) -> tuple[dict, str] | None:
+    """Find a small native update action suitable for a visible boolean toggle."""
+    boolean_fields = [f["name"] for f in fields if f.get("type") == "boolean"]
+    if not boolean_fields:
+        return None
+    for action in actions:
+        if action.get("executor") != "native.collection.update":
+            continue
+        inputs = action.get("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        for field_name in boolean_fields:
+            if field_name in inputs:
+                return action, field_name
+    return None
+
+
+def _build_render_item(
+    fields: list,
+    archive_action_id: str | None,
+    toggle_action: tuple[dict, str] | None,
+) -> str:
+    toggle_field = toggle_action[1] if toggle_action else None
+    meta_html = _meta_fields_html(fields, {toggle_field} if toggle_field else None)
     meta_line = (f'+ \'<div class="card-meta">\' + `{meta_html}` + \'</div>\''
                  if meta_html else "")
+
+    toggle_btn = ""
+    title_class = "'card-title'"
+    if toggle_action:
+        label = _field_label({"name": toggle_field})
+        toggle_btn = (
+            "+ '<button class=\"btn-toggle\" aria-label=\"切换"
+            + label
+            + "\" onclick=\"toggleItem(\\''+vi.id+'\\','+(!vi."
+            + toggle_field
+            + ") + ')\">' + (vi."
+            + toggle_field
+            + " ? '✓' : '') + '</button>'"
+        )
+        title_class = "'card-title' + (vi." + toggle_field + " ? ' card-title-done' : '')"
 
     archive_btn = ""
     if archive_action_id:
@@ -344,7 +382,8 @@ def _build_render_item(fields: list, archive_action_id: str | None) -> str:
         function renderItem(vi) {{
           return '<div class="card" data-oob-id="item-' + vi.id + '">'
             + '<div class="card-row">'
-            + '<span class="card-title">' + esc(vi.title) + '</span>'
+            {toggle_btn}
+            + '<span class="' + ({title_class}) + '">' + esc(vi.title) + '</span>'
             {archive_btn}
             + '</div>'
             {meta_line}
@@ -464,7 +503,7 @@ def _build_create_form_section(create_action: dict | None, fields: list) -> str:
         required_guard = (
             f"if ({required_keys_json}.some(function(k) {{ "
             "return inputs[k] === undefined || inputs[k] === null || inputs[k] === ''; "
-            "} })) { showError('请填写必填项'); return; }"
+            "})) { showError('请填写必填项'); return; }"
         )
     else:
         required_guard = (
@@ -524,6 +563,23 @@ def _build_archive_fn(archive_action: dict | None) -> str:
     """).strip()
 
 
+def _build_toggle_fn(toggle_action: tuple[dict, str] | None) -> str:
+    if not toggle_action:
+        return ""
+    action, field_name = toggle_action
+    action_id = action["id"]
+    field_json = json.dumps(field_name, ensure_ascii=False)
+    return textwrap.dedent(f"""
+        async function toggleItem(itemId, value) {{
+          const inputs = {{item_id: itemId}};
+          inputs[{field_json}] = Boolean(value);
+          const result = await window.oob.callApi('{action_id}', inputs);
+          if (!result.success) {{ showError(result.errorMessage || '操作失败'); return; }}
+          if (result.project) render(activeViewItems(result.project));
+        }}
+    """).strip()
+
+
 def _build_summary_js(fields: list, views: dict) -> str:
     """Generate JS that computes the summary stat shown in the header."""
     primary = views.get("primary", "")
@@ -558,10 +614,11 @@ def build_html(contract: dict, apis: list) -> str:
         (a for a in contract.get("actions", [])
          if a.get("executor") == "native.collection.create"), None
     )
+    toggle_action = _find_toggle_action(contract.get("actions", []), fields)
 
     to_view_item_js = _build_to_view_item(fields)
     render_item_js = _build_render_item(
-        fields, archive_action["id"] if archive_action else None
+        fields, archive_action["id"] if archive_action else None, toggle_action
     )
     # Agent-backed projects use a conversation button; pure CRUD uses one compact form.
     action_entry_html = (
@@ -569,6 +626,7 @@ def build_html(contract: dict, apis: list) -> str:
         if agent_actions else _build_create_form_section(create_action, fields)
     )
     archive_fn_js = _build_archive_fn(archive_action)
+    toggle_fn_js = _build_toggle_fn(toggle_action)
     summary_js = _build_summary_js(fields, views)
 
     # Summary stat label for header
@@ -592,8 +650,22 @@ def build_html(contract: dict, apis: list) -> str:
           <link rel="stylesheet" href="base.css">
           <style>
             * {{ -webkit-tap-highlight-color: transparent; }}
+            :root {{ color-scheme: light dark; }}
             input, button, select {{ -webkit-appearance: none; }}
             .card-meta-sep {{ color: var(--border); margin: 0 4px; }}
+            .card-title-done {{ color: var(--muted); text-decoration: line-through; }}
+            .btn-toggle {{
+              flex: 0 0 auto;
+              width: 28px;
+              height: 28px;
+              border-radius: 50%;
+              border: 1px solid var(--border);
+              background: var(--accent-bg);
+              color: var(--accent);
+              font-weight: 800;
+              line-height: 1;
+              cursor: pointer;
+            }}
             #action-bar {{ margin-bottom: 8px; }}
           </style>
         </head>
@@ -648,6 +720,7 @@ def build_html(contract: dict, apis: list) -> str:
         }}
 
         {archive_fn_js}
+        {toggle_fn_js}
 
         window.addEventListener('load', async function() {{
           showStatus('加载中…');

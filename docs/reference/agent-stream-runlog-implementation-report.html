@@ -172,8 +172,8 @@
         </tr>
         <tr>
           <td><a href="https://modelcontextprotocol.io/specification/2025-06-18/server/tools">MCP tools</a> + <a href="https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle">MCP lifecycle</a></td>
-          <td>外部 agent 统一走 list/guard/run 工具调用，先 guard 再执行，可用 mock MCP 做验收。</td>
-          <td><code>omniflow_agentkit/mcp.py</code>, <code>scripts/omniflow_mock_mcp_server.py</code></td>
+          <td>外部 agent 统一走真实 OOB MCP 的 list/guard/run 工具调用，先 guard 再执行。</td>
+          <td><code>omniflow_agentkit/mcp.py</code>, <code>scripts/omniflow_acceptance_external_repo.sh</code></td>
         </tr>
         <tr>
           <td><a href="https://github.com/hchoi256/mobilegpt">mobilegpt</a>, <a href="https://github.com/MadeAgents/mobile-use">mobile-use</a>, <a href="https://github.com/mobile-next/mobile-mcp">mobile-mcp</a></td>
@@ -232,7 +232,7 @@
     <h3>5. 外部 GUI Agent 接入</h3>
     <ul>
       <li><code>omniflow_agentkit</code> 提供 prompt bundle、repo probe、MCP list/guard/run CLI。</li>
-      <li><code>scripts/omniflow_mock_mcp_server.py</code> 提供无设备 mock MCP，验收外部 agent 是否真的能触发 <code>oob_function_run</code>。</li>
+      <li><code>scripts/omniflow_acceptance_external_repo.sh</code> 连接真实 OOB MCP，验收外部 agent 是否真的能触发 <code>oob_function_run</code>。</li>
       <li><code>omniflow_acceptance_all_guiagents.sh</code> 覆盖 mobilegpt、mobile-use、mobile-mcp 三类 repo，分别验证 Python skill + MCP 和 direct MCP 模式。</li>
     </ul>
 
@@ -275,7 +275,7 @@
       <li><span class="ok">通过：</span>provider-owned graph/function step 会停留在 agent/provider fallback，不会误当成普通 tool replay。</li>
       <li><span class="ok">通过：</span>失败的本地 replay card 不会吞掉 VLM fallback；<code>android_privileged_action.arguments</code> 会展平为可执行端侧参数。</li>
       <li><span class="ok">通过：</span>ActionTargetGrounder 能把点击修正到匹配节点中心，低置信度不改动作。</li>
-      <li><span class="ok">通过：</span>AgentKit CLI 可通过 mock MCP 完成 list/guard/run。</li>
+      <li><span class="ok">通过：</span>AgentKit CLI 可通过真实 OOB MCP 完成 list/guard/run。</li>
       <li><span class="ok">通过：</span>共享投影层单测覆盖 error 不覆盖已有 output、无 output 才生成错误 bubble、同毫秒按 seq 排序、空首轮 thinking 占位清理。</li>
       <li><span class="ok">通过：</span>直通 stream 在 error 后保留已输出正文，thinking 和 output 仍归并到同一个 Agent run。</li>
       <li><span class="warn">待真机：</span>长流式回答 CPU/帧耗时、RunLog 大量 upsert 写入频率、真实设备 replay 触达率。</li>

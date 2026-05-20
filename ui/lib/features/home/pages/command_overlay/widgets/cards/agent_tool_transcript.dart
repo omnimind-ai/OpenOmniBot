@@ -2,29 +2,47 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/terminal_output_utils.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/agent_tool_card_policy.dart';
+import 'package:ui/theme/theme_context.dart';
+import 'package:ui/utils/ui.dart';
 
 const BorderRadius _kTranscriptSurfaceRadius = BorderRadius.all(
-  Radius.circular(20),
+  Radius.circular(8),
 );
+const double _kToolDetailFontSize = 12;
 const ValueKey<String> kAgentToolDetailSheetKey = ValueKey<String>(
   'agent-tool-detail-sheet',
 );
+const ValueKey<String> kAgentToolDetailCopyButtonKey = ValueKey<String>(
+  'agent-tool-detail-copy',
+);
+const ValueKey<String> kAgentToolDetailOutputPanelKey = ValueKey<String>(
+  'agent-tool-detail-output-panel',
+);
+
+enum AgentToolTranscriptTextStyle { plain, monospace }
 
 class AgentToolTranscript {
   const AgentToolTranscript({
-    required this.promptLine,
-    required this.outputText,
+    required this.inputText,
+    required this.resultText,
     required this.previewText,
-    required this.isTerminal,
+    this.resultTextStyle = AgentToolTranscriptTextStyle.plain,
   });
 
-  final String promptLine;
-  final String outputText;
+  final String inputText;
+  final String resultText;
   final String previewText;
-  final bool isTerminal;
+  final AgentToolTranscriptTextStyle resultTextStyle;
+
+  String get promptLine => inputText;
+  String get outputText => resultText;
+  bool get resultIsMonospace =>
+      resultTextStyle == AgentToolTranscriptTextStyle.monospace;
 }
 
 AgentToolTranscript buildAgentToolTranscript(
@@ -32,27 +50,34 @@ AgentToolTranscript buildAgentToolTranscript(
   int maxOutputLines = 28,
   int maxPreviewLines = 2,
   int maxPreviewChars = 220,
+  Locale? locale,
 }) {
   final toolType = (cardData['toolType'] ?? '').toString().trim();
-  final isTerminal = toolType == 'terminal';
-  final promptLine = isTerminal
+  final usesTerminalPayload = toolType == 'terminal';
+  final promptLine = usesTerminalPayload
       ? _buildTerminalPromptLine(cardData)
       : _buildToolPromptLine(cardData);
-  final outputText = isTerminal
+  final outputText = usesTerminalPayload
       ? _buildTerminalOutputText(cardData)
-      : _buildStructuredOutputText(cardData, maxOutputLines: maxOutputLines);
+      : _buildStructuredOutputText(
+          cardData,
+          maxOutputLines: maxOutputLines,
+          locale: locale,
+        );
   final previewText = _buildPreviewText(
     outputText,
-    isTerminal: isTerminal,
+    preferTail: usesTerminalPayload,
     maxLines: maxPreviewLines,
     maxChars: maxPreviewChars,
   );
 
   return AgentToolTranscript(
-    promptLine: promptLine,
-    outputText: outputText,
+    inputText: promptLine,
+    resultText: outputText,
     previewText: previewText,
-    isTerminal: isTerminal,
+    resultTextStyle: usesTerminalPayload
+        ? AgentToolTranscriptTextStyle.monospace
+        : AgentToolTranscriptTextStyle.plain,
   );
 }
 
@@ -64,6 +89,7 @@ Future<void> showAgentToolDetailDialog(
     context: context,
     useRootNavigator: false,
     builder: (dialogContext) {
+      final palette = dialogContext.omniPalette;
       return Dialog(
         elevation: 0,
         backgroundColor: Colors.transparent,
@@ -74,20 +100,27 @@ Future<void> showAgentToolDetailDialog(
             maxWidth: 520,
           ),
           decoration: BoxDecoration(
-            color: kTerminalSurfaceBlack,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: const [
+            color: palette.surfacePrimary,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: palette.borderSubtle),
+            boxShadow: [
               BoxShadow(
-                color: kTerminalSurfaceShadow,
-                blurRadius: 32,
-                offset: Offset(0, 20),
+                color: palette.shadowColor.withValues(alpha: 0.24),
+                blurRadius: 26,
+                offset: const Offset(0, 14),
               ),
             ],
           ),
-          child: _AgentToolDetailContent(
-            cardData: cardData,
-            headerPadding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
-            scrollPadding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Material(
+              color: palette.surfacePrimary,
+              child: _AgentToolDetailContent(
+                cardData: cardData,
+                headerPadding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
+                bodyPadding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+              ),
+            ),
           ),
         ),
       );
@@ -121,28 +154,8 @@ IconData resolveAgentToolStatusIcon(String status, String toolType) {
   return AgentToolCardPolicy.statusIcon(status, toolType);
 }
 
-TextSpan _buildDetailTextSpan(AgentToolTranscript transcript) {
-  final promptStyle = const TextStyle(
-    color: Color(0xFFF4F7FB),
-    fontSize: 12,
-    fontFamily: 'monospace',
-    fontWeight: FontWeight.w600,
-    height: 1.45,
-  );
-  final outputStyle = const TextStyle(
-    color: Color(0xFFB9F7C9),
-    fontSize: 12,
-    fontFamily: 'monospace',
-    height: 1.45,
-  );
-  final children = <InlineSpan>[
-    TextSpan(text: transcript.promptLine, style: promptStyle),
-  ];
-  if (transcript.outputText.trim().isNotEmpty) {
-    children.add(const TextSpan(text: '\n'));
-    children.add(AnsiTextSpanBuilder.build(transcript.outputText, outputStyle));
-  }
-  return TextSpan(children: children);
+TextSpan _buildOutputTextSpan(String outputText, TextStyle outputStyle) {
+  return AnsiTextSpanBuilder.build(outputText, outputStyle);
 }
 
 String _buildTerminalPromptLine(Map<String, dynamic> cardData) {
@@ -218,6 +231,7 @@ String _buildTerminalOutputText(Map<String, dynamic> cardData) {
 String _buildStructuredOutputText(
   Map<String, dynamic> cardData, {
   required int maxOutputLines,
+  Locale? locale,
 }) {
   final status = (cardData['status'] ?? '').toString().trim();
   final summary = (cardData['summary'] ?? '').toString().trim();
@@ -254,7 +268,7 @@ String _buildStructuredOutputText(
     _appendUniqueLine(lines, progress);
     _appendUniqueLine(lines, summary);
     if (lines.isEmpty) {
-      lines.add(resolveAgentToolStatusLabel(cardData));
+      lines.add(resolveAgentToolStatusLabel(cardData, locale: locale));
     }
   }
 
@@ -264,7 +278,7 @@ String _buildStructuredOutputText(
 
 String _buildPreviewText(
   String outputText, {
-  required bool isTerminal,
+  required bool preferTail,
   required int maxLines,
   required int maxChars,
 }) {
@@ -276,7 +290,7 @@ String _buildPreviewText(
   if (lines.isEmpty) {
     return '';
   }
-  final selected = isTerminal
+  final selected = preferTail
       ? lines.sublist(math.max(0, lines.length - maxLines))
       : lines.take(maxLines).toList(growable: false);
   final preview = selected.join('\n');
@@ -663,32 +677,6 @@ String _formatBytes(int value) {
   return '$value B';
 }
 
-class _TerminalTrafficLights extends StatelessWidget {
-  const _TerminalTrafficLights();
-
-  @override
-  Widget build(BuildContext context) {
-    Widget dot(Color color) {
-      return Container(
-        width: 8,
-        height: 8,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      );
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        dot(const Color(0xFFFF5F57)),
-        const SizedBox(width: 5),
-        dot(const Color(0xFFFEBB2E)),
-        const SizedBox(width: 5),
-        dot(const Color(0xFF28C840)),
-      ],
-    );
-  }
-}
-
 class _AgentToolDetailSheetFrame extends StatefulWidget {
   const _AgentToolDetailSheetFrame({required this.cardData});
 
@@ -701,13 +689,41 @@ class _AgentToolDetailSheetFrame extends StatefulWidget {
 
 class _AgentToolDetailSheetFrameState
     extends State<_AgentToolDetailSheetFrame> {
-  static const double _minHeightFactor = 0.36;
-  static const double _maxHeightFactor = 0.94;
+  static const double _minHeightFactor = 0.30;
+  static const double _maxHeightFactor = 0.88;
 
   double? _heightFactor;
 
-  double _initialHeightFactor(double viewportHeight) {
-    return viewportHeight < 720 ? 0.72 : 0.62;
+  double _initialHeightFactor(BuildContext context) {
+    final viewportHeight = MediaQuery.sizeOf(context).height;
+    final locale = Localizations.localeOf(context);
+    final transcript = buildAgentToolTranscript(
+      widget.cardData,
+      maxOutputLines: 80,
+      maxPreviewLines: 4,
+      maxPreviewChars: 420,
+      locale: locale,
+    );
+    final outputLineCount = transcript.outputText
+        .split('\n')
+        .where((line) => line.trim().isNotEmpty)
+        .length;
+    final commandLineBudget = math.min(
+      4,
+      math.max(1, (transcript.promptLine.length / 42).ceil()),
+    );
+
+    var factor = viewportHeight < 720 ? 0.50 : 0.38;
+    if (commandLineBudget >= 3 || outputLineCount > 8) {
+      factor += 0.05;
+    }
+    if (outputLineCount > 24) {
+      factor += 0.10;
+    }
+    if (outputLineCount > 56) {
+      factor += 0.12;
+    }
+    return factor.clamp(_minHeightFactor, _maxHeightFactor).toDouble();
   }
 
   void _handleDragUpdate(DragUpdateDetails details, double availableHeight) {
@@ -716,9 +732,7 @@ class _AgentToolDetailSheetFrameState
     }
     final delta = details.primaryDelta ?? details.delta.dy;
     setState(() {
-      final current =
-          _heightFactor ??
-          _initialHeightFactor(MediaQuery.sizeOf(context).height);
+      final current = _heightFactor ?? _initialHeightFactor(context);
       _heightFactor = (current - delta / availableHeight).clamp(
         _minHeightFactor,
         _maxHeightFactor,
@@ -735,9 +749,9 @@ class _AgentToolDetailSheetFrameState
           mediaQuery.padding.top -
           mediaQuery.viewInsets.bottom,
     );
-    final heightFactor =
-        _heightFactor ?? _initialHeightFactor(mediaQuery.size.height);
-    const borderRadius = BorderRadius.vertical(top: Radius.circular(24));
+    final heightFactor = _heightFactor ?? _initialHeightFactor(context);
+    final palette = context.omniPalette;
+    const borderRadius = BorderRadius.vertical(top: Radius.circular(20));
 
     return SafeArea(
       top: false,
@@ -750,21 +764,22 @@ class _AgentToolDetailSheetFrameState
           height: availableHeight * heightFactor,
           width: double.infinity,
           child: DecoratedBox(
-            decoration: const BoxDecoration(
-              color: kTerminalSurfaceBlack,
+            decoration: BoxDecoration(
+              color: palette.surfacePrimary,
               borderRadius: borderRadius,
+              border: Border(top: BorderSide(color: palette.borderSubtle)),
               boxShadow: [
                 BoxShadow(
-                  color: kTerminalSurfaceShadow,
-                  blurRadius: 32,
-                  offset: Offset(0, -8),
+                  color: palette.shadowColor.withValues(alpha: 0.24),
+                  blurRadius: 24,
+                  offset: const Offset(0, -8),
                 ),
               ],
             ),
             child: ClipRRect(
               borderRadius: borderRadius,
               child: Material(
-                color: kTerminalSurfaceBlack,
+                color: palette.surfacePrimary,
                 child: Column(
                   children: [
                     GestureDetector(
@@ -779,7 +794,9 @@ class _AgentToolDetailSheetFrameState
                             width: 42,
                             height: 4,
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.24),
+                              color: palette.textTertiary.withValues(
+                                alpha: 0.32,
+                              ),
                               borderRadius: BorderRadius.circular(999),
                             ),
                           ),
@@ -790,7 +807,7 @@ class _AgentToolDetailSheetFrameState
                       child: _AgentToolDetailContent(
                         cardData: widget.cardData,
                         headerPadding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
-                        scrollPadding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+                        bodyPadding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
                       ),
                     ),
                   ],
@@ -808,64 +825,106 @@ class _AgentToolDetailContent extends StatelessWidget {
   const _AgentToolDetailContent({
     required this.cardData,
     required this.headerPadding,
-    required this.scrollPadding,
+    required this.bodyPadding,
   });
 
   final Map<String, dynamic> cardData;
   final EdgeInsetsGeometry headerPadding;
-  final EdgeInsetsGeometry scrollPadding;
+  final EdgeInsetsGeometry bodyPadding;
 
   @override
   Widget build(BuildContext context) {
+    final locale = Localizations.localeOf(context);
+    final palette = context.omniPalette;
     final transcript = buildAgentToolTranscript(
       cardData,
       maxOutputLines: 80,
       maxPreviewLines: 4,
       maxPreviewChars: 420,
+      locale: locale,
     );
-    final title = resolveAgentToolTitle(cardData);
-    final typeLabel = resolveAgentToolTypeLabel(cardData);
+    final title = resolveAgentToolTitle(cardData, locale: locale);
+    final typeLabel = resolveAgentToolTypeLabel(cardData, locale: locale);
     final status = (cardData['status'] ?? 'running').toString();
-    final statusLabel = resolveAgentToolStatusLabel(cardData);
-    final detailSpan = _buildDetailTextSpan(transcript);
+    final statusLabel = resolveAgentToolStatusLabel(cardData, locale: locale);
+    final copyText = _buildDetailCopyText(transcript);
+    final accentColor = AgentToolCardPolicy.activityColorForCard(cardData);
 
-    final inputChips = _buildInputChips(cardData);
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: headerPadding,
           child: Row(
             children: [
-              const _TerminalTrafficLights(),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFFF2F7FF),
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
+              Container(
+                width: 3,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: accentColor,
+                  borderRadius: BorderRadius.circular(999),
                 ),
               ),
               const SizedBox(width: 10),
-              _DialogMetaTag(label: typeLabel),
-              const SizedBox(width: 6),
-              _DialogStatusTag(status: status, label: statusLabel),
+              _ToolKindGlyph(cardData: cardData, color: accentColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: palette.textPrimary,
+                        fontSize: _kToolDetailFontSize,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        _DetailMetaPill(label: typeLabel, color: accentColor),
+                        _DetailStatusPill(status: status, label: statusLabel),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _CopyTranscriptButton(text: copyText),
             ],
           ),
         ),
-        if (inputChips.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
-            child: Wrap(spacing: 6, runSpacing: 4, children: inputChips),
-          ),
         Expanded(
-          child: SingleChildScrollView(
-            padding: scrollPadding,
-            child: SelectableText.rich(detailSpan),
+          child: Padding(
+            padding: bodyPadding,
+            child: _DetailTranscriptPanel(
+              inputLabel: AppTextLocalizer.choose(
+                zh: '输入',
+                en: 'Input',
+                locale: locale,
+              ),
+              resultLabel: AppTextLocalizer.choose(
+                zh: '结果',
+                en: 'Result',
+                locale: locale,
+              ),
+              emptyResultLabel: AppTextLocalizer.choose(
+                zh: '暂无结果',
+                en: 'No result yet',
+                locale: locale,
+              ),
+              inputText: transcript.promptLine,
+              resultText: transcript.outputText,
+              accentColor: accentColor,
+              resultTextStyle: transcript.resultTextStyle,
+            ),
           ),
         ),
       ],
@@ -873,134 +932,320 @@ class _AgentToolDetailContent extends StatelessWidget {
   }
 }
 
-List<Widget> _buildInputChips(Map<String, dynamic> cardData) {
-  const skipKeys = {
-    'tool_title',
-    'toolTitle',
-    'tool_call_id',
-    'workingDirectory',
-    'cwd',
+class _ToolKindGlyph extends StatelessWidget {
+  const _ToolKindGlyph({required this.cardData, required this.color});
+
+  final Map<String, dynamic> cardData;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final kind =
+        AgentToolCardPolicy.activityKindFor(cardData) ??
+        AgentToolActivityKind.generic;
+    final background = context.isDarkTheme
+        ? Color.alphaBlend(
+            color.withValues(alpha: 0.16),
+            palette.surfaceElevated,
+          )
+        : color.withValues(alpha: 0.10);
+    return Container(
+      width: 26,
+      height: 26,
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Icon(_iconForToolKind(kind), size: 15, color: color),
+    );
+  }
+}
+
+IconData _iconForToolKind(AgentToolActivityKind kind) {
+  return switch (kind) {
+    AgentToolActivityKind.thinking => Icons.psychology_alt_outlined,
+    AgentToolActivityKind.browser => Icons.public_rounded,
+    AgentToolActivityKind.research => Icons.travel_explore_rounded,
+    AgentToolActivityKind.vlm => Icons.touch_app_rounded,
+    AgentToolActivityKind.terminal => Icons.terminal_rounded,
+    AgentToolActivityKind.workspace => Icons.folder_open_rounded,
+    AgentToolActivityKind.workbench => Icons.dashboard_customize_rounded,
+    AgentToolActivityKind.mcp => Icons.extension_rounded,
+    AgentToolActivityKind.generic => Icons.build_rounded,
   };
-  final args = _decodeJsonMap((cardData['argsJson'] ?? '').toString());
-  if (args.isEmpty) return const [];
-  final chips = <Widget>[];
-  for (final entry in args.entries) {
-    final key = entry.key.trim();
-    if (key.isEmpty || skipKeys.contains(key)) continue;
-    final rawVal = entry.value;
-    if (rawVal == null) continue;
-    String display;
-    if (rawVal is String) {
-      final s = rawVal.trim();
-      if (s.isEmpty) continue;
-      display = s.length > 60 ? '${s.substring(0, 60)}…' : s;
-    } else if (rawVal is bool || rawVal is num) {
-      display = rawVal.toString();
-    } else {
-      final s = rawVal.toString();
-      display = s.length > 60 ? '${s.substring(0, 60)}…' : s;
-    }
-    chips.add(_InputChip(label: key, value: display));
-    if (chips.length >= 8) break;
-  }
-  return chips;
 }
 
-class _InputChip extends StatelessWidget {
-  const _InputChip({required this.label, required this.value});
-  final String label;
-  final String value;
+class _CopyTranscriptButton extends StatelessWidget {
+  const _CopyTranscriptButton({required this.text});
+
+  final String text;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0E1B2A),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFF1F3450)),
-      ),
-      child: RichText(
-        text: TextSpan(
-          children: [
-            TextSpan(
-              text: '$label: ',
-              style: const TextStyle(
-                color: Color(0xFF5B8DB8),
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                height: 1.3,
-              ),
-            ),
-            TextSpan(
-              text: value,
-              style: const TextStyle(
-                color: Color(0xFFB8CFE8),
-                fontSize: 11,
-                fontWeight: FontWeight.w400,
-                height: 1.3,
-              ),
-            ),
-          ],
+    final enabled = text.trim().isNotEmpty;
+    final locale = Localizations.localeOf(context);
+    final palette = context.omniPalette;
+    return Tooltip(
+      message: AppTextLocalizer.text('复制', locale: locale),
+      child: IconButton(
+        key: kAgentToolDetailCopyButtonKey,
+        constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        icon: Icon(
+          Icons.content_copy_rounded,
+          size: 16,
+          color: enabled
+              ? palette.textSecondary
+              : palette.textTertiary.withValues(alpha: 0.56),
         ),
+        onPressed: enabled
+            ? () async {
+                await Clipboard.setData(ClipboardData(text: text));
+                showToast(
+                  AppTextLocalizer.text('已复制工具输出'),
+                  type: ToastType.success,
+                );
+              }
+            : null,
       ),
     );
   }
 }
 
-class _DialogMetaTag extends StatelessWidget {
-  const _DialogMetaTag({required this.label});
+class _DetailTranscriptPanel extends StatelessWidget {
+  const _DetailTranscriptPanel({
+    required this.inputLabel,
+    required this.resultLabel,
+    required this.emptyResultLabel,
+    required this.inputText,
+    required this.resultText,
+    required this.accentColor,
+    required this.resultTextStyle,
+  });
 
-  final String label;
+  final String inputLabel;
+  final String resultLabel;
+  final String emptyResultLabel;
+  final String inputText;
+  final String resultText;
+  final Color accentColor;
+  final AgentToolTranscriptTextStyle resultTextStyle;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+    final palette = context.omniPalette;
+    final normalizedInput = inputText.trim();
+    final normalizedResult = resultText.trimRight();
+    final panelColor = context.isDarkTheme
+        ? Color.alphaBlend(
+            accentColor.withValues(alpha: 0.05),
+            palette.surfaceSecondary,
+          )
+        : palette.previewFallback;
+    final outputStyle = TextStyle(
+      color: palette.textSecondary,
+      fontSize: _kToolDetailFontSize,
+      fontFamily: resultTextStyle == AgentToolTranscriptTextStyle.monospace
+          ? 'monospace'
+          : null,
+      letterSpacing: 0,
+      height: 1.42,
+    );
+    final inputStyle = outputStyle.copyWith(
+      color: palette.textPrimary,
+      fontFamily: 'monospace',
+      fontWeight: FontWeight.w500,
+      height: 1.35,
+    );
+
+    return DecoratedBox(
+      key: kAgentToolDetailOutputPanelKey,
       decoration: BoxDecoration(
-        color: const Color(0xFF152133),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFF273752)),
+        color: panelColor,
+        borderRadius: _kTranscriptSurfaceRadius,
+        border: Border.all(color: palette.borderSubtle),
       ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Color(0xFF9FB1C8),
-          fontSize: 9.2,
-          fontWeight: FontWeight.w700,
-          height: 1,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: Scrollbar(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _TranscriptSectionLabel(
+                      label: inputLabel,
+                      accentColor: accentColor,
+                    ),
+                    const SizedBox(height: 7),
+                    SelectableText(
+                      normalizedInput,
+                      maxLines: 4,
+                      style: inputStyle,
+                    ),
+                    const SizedBox(height: 12),
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: palette.borderSubtle,
+                    ),
+                    const SizedBox(height: 10),
+                    _TranscriptSectionLabel(
+                      label: resultLabel,
+                      accentColor: accentColor,
+                    ),
+                    const SizedBox(height: 7),
+                    normalizedResult.isEmpty
+                        ? Text(
+                            emptyResultLabel,
+                            style: outputStyle.copyWith(
+                              color: palette.textTertiary,
+                              fontFamily: null,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          )
+                        : SelectableText.rich(
+                            _buildOutputTextSpan(normalizedResult, outputStyle),
+                          ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _DialogStatusTag extends StatelessWidget {
-  const _DialogStatusTag({required this.status, required this.label});
+class _TranscriptSectionLabel extends StatelessWidget {
+  const _TranscriptSectionLabel({
+    required this.label,
+    required this.accentColor,
+  });
+
+  final String label;
+  final Color accentColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    return Row(
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: accentColor.withValues(alpha: 0.82),
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 7),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: palette.textTertiary,
+              fontSize: _kToolDetailFontSize,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0,
+              height: 1,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DetailMetaPill extends StatelessWidget {
+  const _DetailMetaPill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final background = context.isDarkTheme
+        ? Color.alphaBlend(
+            color.withValues(alpha: 0.11),
+            palette.surfaceElevated,
+          )
+        : color.withValues(alpha: 0.08);
+    return _DetailPill(
+      label: label,
+      foreground: Color.lerp(palette.textSecondary, color, 0.38)!,
+      background: background,
+      borderColor: color.withValues(alpha: 0.18),
+    );
+  }
+}
+
+class _DetailStatusPill extends StatelessWidget {
+  const _DetailStatusPill({required this.status, required this.label});
 
   final String status;
   final String label;
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.omniPalette;
     final color = resolveAgentToolStatusColor(status);
+    final background = context.isDarkTheme
+        ? Color.alphaBlend(
+            color.withValues(alpha: 0.12),
+            palette.surfaceElevated,
+          )
+        : color.withValues(alpha: 0.10);
+    return _DetailPill(
+      label: label,
+      foreground: Color.lerp(palette.textSecondary, color, 0.52)!,
+      background: background,
+      borderColor: color.withValues(alpha: 0.22),
+    );
+  }
+}
+
+class _DetailPill extends StatelessWidget {
+  const _DetailPill({
+    required this.label,
+    required this.foreground,
+    required this.background,
+    required this.borderColor,
+  });
+
+  final String label;
+  final Color foreground;
+  final Color background;
+  final Color borderColor;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
+      constraints: const BoxConstraints(maxWidth: 148),
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
+        color: background,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.32)),
+        border: Border.all(color: borderColor),
       ),
       child: Text(
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: color.withValues(alpha: 0.96),
-          fontSize: 9.2,
-          fontWeight: FontWeight.w700,
+          color: foreground,
+          fontSize: _kToolDetailFontSize,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0,
           height: 1,
         ),
       ),
@@ -1008,16 +1253,10 @@ class _DialogStatusTag extends StatelessWidget {
   }
 }
 
-BoxDecoration buildAgentToolTranscriptDecoration() {
-  return BoxDecoration(
-    color: kTerminalSurfaceBlackElevated,
-    borderRadius: _kTranscriptSurfaceRadius,
-    boxShadow: const [
-      BoxShadow(
-        color: kTerminalSurfaceShadow,
-        blurRadius: 18,
-        offset: Offset(0, 8),
-      ),
-    ],
-  );
+String _buildDetailCopyText(AgentToolTranscript transcript) {
+  return <String>[
+    transcript.promptLine,
+    if (transcript.outputText.trim().isNotEmpty)
+      transcript.outputText.trimRight(),
+  ].join('\n').trim();
 }

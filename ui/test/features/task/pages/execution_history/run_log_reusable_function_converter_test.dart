@@ -15,11 +15,13 @@ void main() {
     String toolName,
     Map<String, dynamic> args, {
     bool? success,
+    dynamic result,
   }) {
     return {
       'tool_name': toolName,
       'args': args,
       if (success != null) 'success': success,
+      if (result != null) 'result': result,
       'before': {
         'package_name': 'com.example.app',
         'observation_xml': sourceXml,
@@ -91,6 +93,10 @@ void main() {
     expect(
       _stringSet(policy['omniflow_function_tools']),
       RunLogReplayPolicy.omniflowFunctionTools,
+    );
+    expect(
+      _stringSet(policy['omniflow_tool_call_tools']),
+      RunLogReplayPolicy.omniflowToolCallTools,
     );
     expect(
       _stringSet(policy['provider_only_tools']),
@@ -343,7 +349,7 @@ void main() {
     );
   });
 
-  test('keeps omniflow graph and function tools on local tool replay', () {
+  test('keeps graph tools and canonicalizes function calls to call_tool', () {
     final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
       runId: 'run-omniflow-tools',
       title: 'OmniFlow tool replay',
@@ -357,17 +363,101 @@ void main() {
 
     final steps = stepsFrom(spec);
     expect(steps, hasLength(2));
-    expect(steps[0]['executor'], 'tool');
+    expect(steps[0]['executor'], 'omniflow');
+    expect(steps[0]['kind'], 'omniflow_graph');
+    expect(steps[0]['model_free'], isTrue);
     expect(steps[0]['scriptable'], isTrue);
     expect(steps[0]['callable_tool'], 'go_to_node');
     expect((steps[0]['tool_binding'] as Map)['kind'], 'omniflow_graph');
     expect(steps[0].containsKey('agent_call'), isFalse);
 
-    expect(steps[1]['executor'], 'tool');
+    expect(steps[1]['executor'], 'omniflow');
+    expect(steps[1]['kind'], 'omniflow_function');
+    expect(steps[1]['model_free'], isTrue);
     expect(steps[1]['scriptable'], isTrue);
-    expect(steps[1]['callable_tool'], 'call_function');
+    expect(steps[1]['tool'], 'call_tool');
+    expect(steps[1]['callable_tool'], 'call_tool');
+    expect(steps[1]['source_tool'], 'call_function');
     expect((steps[1]['tool_binding'] as Map)['kind'], 'omniflow_function');
     expect(steps[1].containsKey('agent_call'), isFalse);
+  });
+
+  test(
+    'keeps generic call_tool as compact tool delegation when no function id',
+    () {
+      final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+        runId: 'run-call-tool',
+        title: 'Call a live tool',
+        payload: const {'goal': 'Call a live tool'},
+        cards: [
+          card('oob_tool_call', const {
+            'toolName': 'vlm_task',
+            'arguments': {'goal': 'Tap Settings'},
+          }),
+        ],
+        useEnglish: true,
+      );
+
+      final step = stepsFrom(spec).single;
+      expect(step['executor'], 'tool');
+      expect(step['kind'], 'tool_call');
+      expect(step['tool'], 'call_tool');
+      expect(step['callable_tool'], 'call_tool');
+      expect(step['source_tool'], 'oob_tool_call');
+      expect(step.containsKey('model_free'), isFalse);
+      expect((step['args'] as Map)['tool_name'], 'vlm_task');
+    },
+  );
+
+  test('compacts oversized observed result in local conversion draft', () {
+    final largeText = List.filled(600, '0123456789').join();
+    final resultItems = [
+      for (var index = 0; index < 25; index++)
+        {
+          'index': index,
+          'text': largeText,
+          'deep': {
+            'a': {
+              'b': {
+                'c': {'d': 'too deep'},
+              },
+            },
+          },
+        },
+    ];
+    final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+      runId: 'run-large-result',
+      title: 'Read page text',
+      payload: const {'goal': 'Read page text'},
+      cards: [
+        card(
+          'web_search',
+          const {'query': 'large page'},
+          result: {
+            'page_text': largeText,
+            'items': resultItems,
+            for (var index = 0; index < 45; index++) 'meta_$index': index,
+          },
+        ),
+      ],
+      useEnglish: true,
+    );
+
+    final observed = stepsFrom(spec).single['observed_result'] as Map;
+    final encoded = jsonEncode(observed);
+
+    expect(encoded.length, lessThan(60000));
+    expect(encoded, isNot(contains(largeText)));
+    expect(observed['page_text'], contains('[truncated'));
+    expect(observed['__truncated__'], isTrue);
+    expect(observed['__omitted_entry_count__'], 7);
+    final items = observed['items'] as List;
+    expect(items, hasLength(21));
+    expect((items.last as Map)['__omitted_item_count__'], 5);
+    expect(
+      (((items.first as Map)['deep'] as Map)['a'] as Map)['__truncated__'],
+      isTrue,
+    );
   });
 
   test('flattens android privileged local action arguments for replay', () {
@@ -465,6 +555,27 @@ void main() {
       expect(capabilities['requires_agent_fallback'], isTrue);
     },
   );
+
+  test('AI normalization keeps a tool-safe fallback function id', () {
+    final fallback = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+      runId: 'run-safe-id',
+      title: 'Replay safe id',
+      payload: const {'goal': 'Replay safe id'},
+      cards: [
+        card('click', const {'x': 120, 'y': 240}),
+      ],
+      useEnglish: true,
+    );
+    final aiJson = {...fallback, 'function_id': '打开 微信.bad id'};
+
+    final normalized =
+        RunLogReusableFunctionConverter.normalizeAiJsonForTesting(
+          aiJson.cast<String, dynamic>(),
+          fallback,
+        );
+
+    expect(normalized['function_id'], fallback['function_id']);
+  });
 }
 
 Set<String> _stringSet(Object? value) {

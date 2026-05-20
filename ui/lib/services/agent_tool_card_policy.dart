@@ -7,8 +7,10 @@ import 'package:ui/models/chat_message_model.dart';
 const String kAgentToolSummaryCardType = 'agent_tool_summary';
 
 enum AgentToolActivityKind {
+  thinking,
   browser,
   research,
+  vlm,
   terminal,
   workspace,
   workbench,
@@ -183,26 +185,53 @@ class AgentToolCardPolicy {
   static AgentToolActivityKind? activityKindFor(Map<String, dynamic> cardData) {
     final toolType = (cardData['toolType'] ?? '').toString().trim();
     final toolName = (cardData['toolName'] ?? '').toString().trim();
+    final toolTypeLower = toolType.toLowerCase();
+    final toolNameLower = toolName.toLowerCase();
 
-    if (toolType == 'browser' || toolName == 'browser_use') {
+    if (toolTypeLower == 'thinking' || toolNameLower == 'deep_thinking') {
+      return AgentToolActivityKind.thinking;
+    }
+    if (toolTypeLower == 'browser' || toolNameLower == 'browser_use') {
       return AgentToolActivityKind.browser;
     }
-    if (toolType == 'research' ||
-        toolName == 'web_search' ||
-        toolName == 'vlm_task' ||
-        toolName == 'image_picker') {
+    final compileKind = firstNonBlank(<Object?>[
+      cardData['compile_kind'],
+      cardData['compileKind'],
+    ]).toLowerCase();
+    final selectionSource = firstNonBlank(<Object?>[
+      cardData['selection_source'],
+      cardData['selectionSource'],
+    ]).toLowerCase();
+    final toolTypeSnake = (cardData['tool_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+
+    if (toolTypeLower == 'vlm' ||
+        toolTypeLower == 'mobile' ||
+        toolTypeSnake == 'vlm' ||
+        toolNameLower == 'vlm_task' ||
+        compileKind == 'vlm_step' ||
+        compileKind == 'vlm' ||
+        selectionSource == 'vlm') {
+      return AgentToolActivityKind.vlm;
+    }
+    if (toolTypeLower == 'research' ||
+        toolNameLower == 'web_search' ||
+        toolNameLower == 'image_picker') {
       return AgentToolActivityKind.research;
     }
-    if (toolType == 'terminal' || toolName.startsWith('terminal_')) {
+    if (toolTypeLower == 'terminal' || toolNameLower.startsWith('terminal_')) {
       return AgentToolActivityKind.terminal;
     }
-    if (toolType == 'workspace' || toolName.startsWith('file_')) {
+    if (toolTypeLower == 'workspace' || toolNameLower.startsWith('file_')) {
       return AgentToolActivityKind.workspace;
     }
-    if (toolType == 'workbench' || toolName.startsWith('workbench_')) {
+    if (toolTypeLower == 'workbench' ||
+        toolNameLower.startsWith('workbench_')) {
       return AgentToolActivityKind.workbench;
     }
-    if (toolType == 'mcp') {
+    if (toolTypeLower == 'mcp') {
       return AgentToolActivityKind.mcp;
     }
     return AgentToolActivityKind.generic;
@@ -210,8 +239,10 @@ class AgentToolCardPolicy {
 
   static String toolTypeForKind(AgentToolActivityKind kind) {
     return switch (kind) {
+      AgentToolActivityKind.thinking => 'thinking',
       AgentToolActivityKind.browser => 'browser',
       AgentToolActivityKind.research => 'research',
+      AgentToolActivityKind.vlm => 'vlm',
       AgentToolActivityKind.terminal => 'terminal',
       AgentToolActivityKind.workspace => 'workspace',
       AgentToolActivityKind.workbench => 'workbench',
@@ -220,10 +251,32 @@ class AgentToolCardPolicy {
     };
   }
 
+  static Color activityColor(AgentToolActivityKind kind) {
+    return switch (kind) {
+      AgentToolActivityKind.thinking => const Color(0xFF8B5CF6),
+      AgentToolActivityKind.browser => const Color(0xFF2563EB),
+      AgentToolActivityKind.research => const Color(0xFF7C3AED),
+      AgentToolActivityKind.vlm => const Color(0xFFDB2777),
+      AgentToolActivityKind.terminal => const Color(0xFF0F9F6E),
+      AgentToolActivityKind.workspace => const Color(0xFFD97706),
+      AgentToolActivityKind.workbench => const Color(0xFF0891B2),
+      AgentToolActivityKind.mcp => const Color(0xFF4F46E5),
+      AgentToolActivityKind.generic => const Color(0xFF64748B),
+    };
+  }
+
+  static Color activityColorForCard(Map<String, dynamic> cardData) {
+    return activityColor(
+      activityKindFor(cardData) ?? AgentToolActivityKind.generic,
+    );
+  }
+
   static String activityKindLabel(AgentToolActivityKind kind) {
     return switch (kind) {
+      AgentToolActivityKind.thinking => 'Thinking',
       AgentToolActivityKind.browser => 'Browser activity',
       AgentToolActivityKind.research => 'Research activity',
+      AgentToolActivityKind.vlm => 'Visual task',
       AgentToolActivityKind.terminal => 'Terminal activity',
       AgentToolActivityKind.workspace => 'Workspace activity',
       AgentToolActivityKind.workbench => 'Workbench activity',
@@ -286,6 +339,9 @@ class AgentToolCardPolicy {
     // Folded activity rows should answer "what is happening to what?".
     // Humans scan the object first (command/path/query/url), then operation.
     if (explicitTitle.isNotEmpty && !isPlaceholderText(explicitTitle)) {
+      if (kind == AgentToolActivityKind.vlm && meaningfulTarget.isNotEmpty) {
+        return meaningfulTarget;
+      }
       return explicitTitle;
     }
     if (isCurrent && meaningfulTarget.isNotEmpty) {
@@ -323,10 +379,28 @@ class AgentToolCardPolicy {
     }
     final toolName = (cardData['toolName'] ?? '').toString().trim();
     switch (kind) {
+      case AgentToolActivityKind.thinking:
+        return firstNonBlank(<Object?>[
+          cardData['summary'],
+          cardData['progress'],
+          cardData['thinkingContent'],
+          toolName,
+        ]);
       case AgentToolActivityKind.browser:
         return toolName == 'browser_use' ? 'browser' : toolName;
       case AgentToolActivityKind.research:
         return toolName == 'web_search' ? 'search' : toolName;
+      case AgentToolActivityKind.vlm:
+        if (toolName.isNotEmpty && toolName != 'vlm_task') {
+          return toolName;
+        }
+        return firstNonBlank(<Object?>[
+          args['action_type'],
+          args['actionType'],
+          args['action'],
+          args['operation'],
+          toolName,
+        ]);
       case AgentToolActivityKind.terminal:
         return toolName.startsWith('terminal_')
             ? toolName.substring('terminal_'.length)
@@ -359,6 +433,12 @@ class AgentToolCardPolicy {
     String action,
   ) {
     switch (kind) {
+      case AgentToolActivityKind.thinking:
+        return firstNonBlank(<Object?>[
+          cardData['thinkingContent'],
+          cardData['summary'],
+          cardData['progress'],
+        ]);
       case AgentToolActivityKind.browser:
         return firstNonBlank(<Object?>[
           args['url'],
@@ -375,6 +455,25 @@ class AgentToolCardPolicy {
           args['imagePath'],
           args['image_path'],
           args['source'],
+          cardData['summary'],
+          cardData['progress'],
+        ]);
+      case AgentToolActivityKind.vlm:
+        return firstNonBlank(<Object?>[
+          args['target_description'],
+          args['targetDescription'],
+          args['content'],
+          args['text'],
+          args['prompt'],
+          args['value'],
+          args['package_name'],
+          args['packageName'],
+          args['key'],
+          args['goal'],
+          args['duration_ms'],
+          args['durationMs'],
+          args['duration'],
+          coordinates(args),
           cardData['summary'],
           cardData['progress'],
         ]);
@@ -430,6 +529,8 @@ class AgentToolCardPolicy {
     Map<String, dynamic> args,
   ) {
     switch (kind) {
+      case AgentToolActivityKind.thinking:
+        return firstNonBlank(<Object?>[args['text'], args['content']]);
       case AgentToolActivityKind.browser:
         return firstNonBlank(<Object?>[
           args['url'],
@@ -444,6 +545,23 @@ class AgentToolCardPolicy {
           args['imagePath'],
           args['image_path'],
           args['source'],
+        ]);
+      case AgentToolActivityKind.vlm:
+        return firstNonBlank(<Object?>[
+          args['target_description'],
+          args['targetDescription'],
+          args['content'],
+          args['text'],
+          args['prompt'],
+          args['value'],
+          args['package_name'],
+          args['packageName'],
+          args['key'],
+          args['goal'],
+          args['duration_ms'],
+          args['durationMs'],
+          args['duration'],
+          coordinates(args),
         ]);
       case AgentToolActivityKind.terminal:
         return firstNonBlank(<Object?>[args['command'], args['cmd']]);
@@ -496,8 +614,11 @@ class AgentToolCardPolicy {
     String target,
   ) {
     switch (kind) {
+      case AgentToolActivityKind.thinking:
+        return normalizeKey('thinking|$target');
       case AgentToolActivityKind.browser:
       case AgentToolActivityKind.research:
+      case AgentToolActivityKind.vlm:
       case AgentToolActivityKind.workspace:
       case AgentToolActivityKind.workbench:
       case AgentToolActivityKind.mcp:
@@ -517,10 +638,14 @@ class AgentToolCardPolicy {
     Map<String, dynamic> args,
   ) {
     switch (kind) {
+      case AgentToolActivityKind.thinking:
+        return '$taskId|thinking';
       case AgentToolActivityKind.browser:
         return '$taskId|browser';
       case AgentToolActivityKind.research:
         return '$taskId|research';
+      case AgentToolActivityKind.vlm:
+        return '$taskId|vlm';
       case AgentToolActivityKind.terminal:
         final sessionId = firstNonBlank(<Object?>[
           cardData['terminalSessionId'],
@@ -709,6 +834,12 @@ class AgentToolCardPolicy {
       card?['taskId'],
       card?['taskID'],
       message?.streamMeta?['parentTaskId'],
+      message?.streamMeta?['runLogId'],
+      message?.streamMeta?['run_id'],
+      card?['runLogId'],
+      card?['run_id'],
+      card?['toolTaskId'],
+      card?['tool_task_id'],
     ]);
     return value.isEmpty ? null : value;
   }
@@ -804,6 +935,9 @@ class AgentToolCardPolicy {
     }
     if (toolType == 'browser') {
       return Icons.language_rounded;
+    }
+    if (toolType == 'vlm' || toolType == 'mobile') {
+      return Icons.touch_app_rounded;
     }
     if (toolType == 'calendar') {
       return Icons.calendar_month_rounded;

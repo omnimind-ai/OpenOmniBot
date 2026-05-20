@@ -96,6 +96,70 @@ object OobReusableFunctionStore {
     }
 
     @Synchronized
+    fun recordRun(
+        context: Context,
+        functionId: String,
+        success: Boolean,
+        runId: String? = null,
+        runner: String? = null,
+        stepCount: Int? = null,
+        errorMessage: String? = null
+    ): Map<String, Any?> {
+        val normalized = functionId.trim()
+        if (normalized.isEmpty()) {
+            return linkedMapOf("success" to false, "error_message" to "function_id is empty")
+        }
+        val existing = get(context, normalized)
+            ?: return linkedMapOf(
+                "success" to false,
+                "function_id" to normalized,
+                "error_message" to "function not found"
+            )
+        val key = "$SPEC_PREFIX$normalized"
+        val now = System.currentTimeMillis().toString()
+        val existingRegistry = existing["_oob_registry"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+        val existingStats = existingRegistry["run_stats"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+        val runCount = intValue(existingStats["run_count"]) + 1
+        val successCount = intValue(existingStats["success_count"]) + if (success) 1 else 0
+        val failCount = intValue(existingStats["fail_count"]) + if (success) 0 else 1
+        val lastRun = linkedMapOf<String, Any?>(
+            "run_id" to runId?.trim().orEmpty(),
+            "success" to success,
+            "runner" to runner?.trim().orEmpty(),
+            "step_count" to stepCount,
+            "error_message" to errorMessage?.trim().orEmpty(),
+            "created_at" to now
+        )
+        val runStats = linkedMapOf<String, Any?>(
+            "run_count" to runCount,
+            "success_count" to successCount,
+            "fail_count" to failCount,
+            "last_run_at" to now,
+            "last_success" to success,
+            "last_run" to lastRun
+        )
+        val updatedRegistry = linkedMapOf<String, Any?>().apply {
+            existingRegistry.forEach { (key, value) ->
+                if (key != null) put(key.toString(), sanitizeValue(value))
+            }
+            put("updated_at", now)
+            put("runner", existingRegistry["runner"] ?: RUNNER)
+            put("run_stats", runStats)
+        }
+        val updated = linkedMapOf<String, Any?>().apply {
+            putAll(existing)
+            put("_oob_registry", updatedRegistry)
+        }
+        prefs(context).edit().putString(key, gson.toJson(updated)).apply()
+        return linkedMapOf(
+            "success" to true,
+            "function_id" to normalized,
+            "run_stats" to runStats,
+            "last_run" to lastRun
+        )
+    }
+
+    @Synchronized
     fun delete(context: Context, functionId: String): Boolean {
         val normalized = functionId.trim()
         if (normalized.isEmpty()) return false
@@ -370,20 +434,55 @@ object OobReusableFunctionStore {
         val steps = execution?.get("steps") as? List<*>
         val parameters = spec["parameters"] as? List<*> ?: emptyList<Any?>()
         val registry = spec["_oob_registry"] as? Map<*, *>
+        val source = spec["source"] as? Map<*, *>
+        val runStats = registry?.get("run_stats") as? Map<*, *>
         return linkedMapOf(
             "function_id" to spec["function_id"],
             "name" to spec["name"],
             "description" to spec["description"],
             "step_count" to (steps?.size ?: 0),
+            "card_count" to (
+                intValue(source?.get("card_count"))
+                    .takeIf { it > 0 }
+                    ?: intValue(source?.get("replayable_card_count"))
+                    .takeIf { it > 0 }
+                    ?: (steps?.size ?: 0)
+                ),
             "parameter_names" to parameters.mapNotNull { raw ->
                 (raw as? Map<*, *>)?.get("name")?.toString()?.takeIf { it.isNotBlank() }
+            },
+            "step_summaries" to (steps ?: emptyList<Any?>()).mapIndexedNotNull { index, rawStep ->
+                val step = rawStep as? Map<*, *> ?: return@mapIndexedNotNull null
+                linkedMapOf(
+                    "index" to index,
+                    "id" to step["id"],
+                    "title" to step["title"],
+                    "kind" to step["kind"],
+                    "executor" to step["executor"],
+                    "tool" to (
+                        step["omniflow_action"]
+                            ?: step["local_action"]
+                            ?: step["callable_tool"]
+                            ?: step["tool"]
+                        )
+                )
             },
             "function_kind" to "oob_reusable_function",
             "asset_state" to "native_local",
             "runner" to RUNNER,
             "registered_at" to registry?.get("registered_at"),
             "updated_at" to registry?.get("updated_at"),
-            "source_run_ids" to sourceRunIds(spec)
+            "source_run_ids" to sourceRunIds(spec),
+            "run_stats" to sanitizeValue(runStats ?: emptyMap<Any?, Any?>()),
+            "last_run" to sanitizeValue(runStats?.get("last_run") ?: emptyMap<Any?, Any?>())
         )
+    }
+
+    private fun intValue(value: Any?): Int {
+        return when (value) {
+            is Number -> value.toInt()
+            is String -> value.trim().toIntOrNull() ?: 0
+            else -> 0
+        }
     }
 }

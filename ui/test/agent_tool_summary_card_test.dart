@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_summary_card.dart';
@@ -84,6 +85,13 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: Scaffold(
           body: AgentToolSummaryCard(
             cardData: {
@@ -122,6 +130,13 @@ void main() {
   testWidgets('tool card opens detail sheet when tapped', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: Scaffold(
           body: Center(
             child: AgentToolSummaryCard(
@@ -149,6 +164,59 @@ void main() {
     final sheet = find.byKey(kAgentToolDetailSheetKey);
     expect(sheet, findsOneWidget);
     expect(
+      find.descendant(of: sheet, matching: find.text('输入')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('结果')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('终端')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('已完成')),
+      findsWidgets,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('Terminal')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('Command')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('Output')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('Input')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('Result')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: sheet,
+        matching: find.byKey(kAgentToolDetailCopyButtonKey),
+      ),
+      findsOneWidget,
+    );
+    final outputPanel = tester.widget<DecoratedBox>(
+      find.descendant(
+        of: sheet,
+        matching: find.byKey(kAgentToolDetailOutputPanelKey),
+      ),
+    );
+    expect(
+      (outputPanel.decoration as BoxDecoration).color,
+      isNot(kTerminalSurfaceBlack),
+    );
+    expect(
       find.descendant(
         of: sheet,
         matching: find.textContaining('git status', findRichText: true),
@@ -163,10 +231,78 @@ void main() {
   });
 
   testWidgets(
+    'non-terminal tool detail uses the same generic input/result shell',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: const Locale('zh'),
+          supportedLocales: const [Locale('zh'), Locale('en')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
+          home: Scaffold(
+            body: Center(
+              child: AgentToolSummaryCard(
+                cardData: {
+                  'status': 'success',
+                  'displayName': '读取文件',
+                  'toolTitle': '查看 README',
+                  'toolName': 'file_read',
+                  'toolType': 'workspace',
+                  'argsJson': jsonEncode({'path': '/workspace/README.md'}),
+                  'resultPreviewJson': jsonEncode({
+                    'path': '/workspace/README.md',
+                    'content': 'hello',
+                  }),
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('查看 README'));
+      await tester.pumpAndSettle();
+
+      final sheet = find.byKey(kAgentToolDetailSheetKey);
+      expect(sheet, findsOneWidget);
+      expect(
+        find.descendant(of: sheet, matching: find.text('输入')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: sheet, matching: find.text('结果')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: sheet, matching: find.text('工作区')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: sheet, matching: find.text('命令')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: sheet, matching: find.text('输出')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
     'interrupted status shows stopped state without loading spinner',
     (tester) async {
       await tester.pumpWidget(
         MaterialApp(
+          locale: const Locale('zh'),
+          supportedLocales: const [Locale('zh'), Locale('en')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
           home: Scaffold(
             body: AgentToolSummaryCard(
               cardData: {
@@ -191,6 +327,13 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: Scaffold(
           body: AgentToolSummaryCard(
             cardData: {
@@ -214,6 +357,13 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: Scaffold(
           body: AgentToolSummaryCard(
             cardData: {
@@ -240,6 +390,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: Scaffold(
           body: AgentToolSummaryCard(
             cardData: {
@@ -262,5 +419,71 @@ void main() {
     final title = tester.widget<Text>(find.text('同步索引'));
     expect(title.style?.color, customTextColor);
     expect(title.style?.fontSize, 12);
+  });
+
+  testWidgets('VLM tool card uses visual task label and target title', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        home: Scaffold(
+          body: AgentToolSummaryCard(
+            cardData: {
+              'status': 'running',
+              'toolType': 'vlm',
+              'toolName': 'click',
+              'toolTitle': '点击 设置按钮',
+              'summary': '点击 设置按钮',
+              'argsJson': jsonEncode({
+                'target_description': '设置按钮',
+                'x': 120,
+                'y': 240,
+              }),
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('设置按钮'), findsOneWidget);
+    expect(find.text('视觉执行'), findsOneWidget);
+    expect(find.text('网页搜索'), findsNothing);
+  });
+
+  testWidgets('VLM wrapper card localizes without explicit toolType', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        home: Scaffold(
+          body: AgentToolSummaryCard(
+            cardData: {
+              'status': 'running',
+              'toolName': 'vlm_task',
+              'compile_kind': 'vlm',
+              'argsJson': jsonEncode({'goal': '打开设置'}),
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('打开设置'), findsOneWidget);
+    expect(find.text('视觉执行'), findsOneWidget);
+    expect(find.text('Tool call'), findsNothing);
   });
 }

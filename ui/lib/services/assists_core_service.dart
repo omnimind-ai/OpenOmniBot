@@ -2597,6 +2597,26 @@ class AssistsMessageService {
     }
   }
 
+  static Future<bool> pauseVLMTask() async {
+    try {
+      final result = await assistCore.invokeMethod<bool>('pauseVLMTask');
+      return result == true;
+    } on PlatformException catch (e) {
+      print('暂停VLM任务失败: ${e.message}');
+      return false;
+    }
+  }
+
+  static Future<bool> resumeVLMTask() async {
+    try {
+      final result = await assistCore.invokeMethod<bool>('resumeVLMTask');
+      return result == true;
+    } on PlatformException catch (e) {
+      print('恢复VLM任务失败: ${e.message}');
+      return false;
+    }
+  }
+
   /// 通知原生层ChatBotSheet已准备好接收总结
   static Future<bool> notifySummarySheetReady() async {
     try {

@@ -44,6 +44,10 @@ def is_writeback_api(api):
     return run_use(api) in {"native.collection.create", "native.collection.update"}
 
 
+def is_html_optional_api(api):
+    return run_use(api) in {"native.collection.list", "native.collection.get"}
+
+
 def validate(html: str, registered_apis: list) -> list:
     errors = []
     api_specs = normalize_api_specs(registered_apis)
@@ -74,7 +78,7 @@ def validate(html: str, registered_apis: list) -> list:
     html_optional_ids = {
         api["toolId"]
         for api in api_specs
-        if has_called_agent_entry and is_writeback_api(api)
+        if is_html_optional_api(api) or (has_called_agent_entry and is_writeback_api(api))
     }
     for api_id in sorted(set(registered_api_ids) - called_ids - html_optional_ids):
         errors.append(f"WARN [api] '{api_id}' registered but never called in HTML")
@@ -104,6 +108,8 @@ def validate(html: str, registered_apis: list) -> list:
     # ── Mobile minimum ────────────────────────────────────────────────────────
     if "viewport-fit=cover" not in html:
         errors.append("WARN [mobile] viewport-fit=cover missing")
+    if "base.css" not in html and "safe-area-inset-top" not in html:
+        errors.append("WARN [mobile] safe-area padding missing")
 
     return errors
 

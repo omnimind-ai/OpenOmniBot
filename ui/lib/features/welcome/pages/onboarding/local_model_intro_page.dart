@@ -202,13 +202,15 @@ class _LocalModelIntroPageState extends State<LocalModelIntroPage>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 ShaderMask(
-                                  shaderCallback: (bounds) =>
-                                      LinearGradient(
+                                  shaderCallback: (bounds) => LinearGradient(
                                     colors: context.isDarkTheme
                                         ? [
                                             palette.accentPrimary,
-                                            Color.lerp(palette.accentPrimary,
-                                                palette.textPrimary, 0.3)!,
+                                            Color.lerp(
+                                              palette.accentPrimary,
+                                              palette.textPrimary,
+                                              0.3,
+                                            )!,
                                           ]
                                         : const [
                                             Color(0xFF1930D9),
@@ -222,7 +224,7 @@ class _LocalModelIntroPageState extends State<LocalModelIntroPage>
                                       fontWeight: FontWeight.w800,
                                       color: Colors.white,
                                       height: 1.2,
-                                      letterSpacing: -0.5,
+                                      letterSpacing: 0,
                                     ),
                                   ),
                                 ),
@@ -346,10 +348,16 @@ class _LocalModelIntroPageState extends State<LocalModelIntroPage>
                       text: context.trText('浏览模型市场'),
                       gradientColors: context.isDarkTheme
                           ? [
-                              Color.lerp(palette.surfaceElevated,
-                                  palette.accentPrimary, 0.55)!,
-                              Color.lerp(palette.surfaceSecondary,
-                                  palette.accentPrimary, 0.70)!,
+                              Color.lerp(
+                                palette.surfaceElevated,
+                                palette.accentPrimary,
+                                0.55,
+                              )!,
+                              Color.lerp(
+                                palette.surfaceSecondary,
+                                palette.accentPrimary,
+                                0.70,
+                              )!,
                             ]
                           : const [Color(0xFF1930D9), Color(0xFF2DA5F0)],
                       onTap: () async {

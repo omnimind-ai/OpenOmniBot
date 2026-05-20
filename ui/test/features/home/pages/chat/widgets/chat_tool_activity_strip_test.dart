@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/chat/widgets/chat_tool_activity_strip.dart';
@@ -47,6 +49,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: Scaffold(
           body: ChatCommandActivityStrip(
             commands: commands,
@@ -631,6 +640,13 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          locale: const Locale('zh'),
+          supportedLocales: const [Locale('zh'), Locale('en')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
           home: Scaffold(body: ChatToolActivityStrip(messages: messages)),
         ),
       );
@@ -654,14 +670,13 @@ void main() {
       final historyRowHeight = tester
           .getSize(find.byType(ToolActivityRow).last)
           .height;
-      final terminalTypeRight = tester.getTopRight(find.text('终端')).dx;
-      final workspaceTypeRight = tester.getTopRight(find.text('工作区')).dx;
       final runningTagRight = tester.getTopRight(find.text('运行中')).dx;
-      final successTagRight = tester.getTopRight(find.text('成功')).dx;
+      final successTagRight = tester.getTopRight(find.text('已完成')).dx;
 
-      expect(rowHeight, closeTo(32, 0.1));
+      expect(rowHeight, closeTo(38, 0.1));
       expect(historyRowHeight, closeTo(rowHeight, 0.1));
-      expect(terminalTypeRight, closeTo(workspaceTypeRight, 1));
+      expect(find.text('终端'), findsNothing);
+      expect(find.text('工作区'), findsNothing);
       expect(runningTagRight, closeTo(successTagRight, 1));
     },
   );
@@ -688,6 +703,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: Scaffold(
           body: ChatToolActivityStrip(messages: messages, runningOnly: true),
         ),
@@ -736,6 +758,13 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          locale: const Locale('zh'),
+          supportedLocales: const [Locale('zh'), Locale('en')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
           home: Scaffold(body: ChatToolActivityStrip(messages: messages)),
         ),
       );
@@ -786,6 +815,13 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          locale: const Locale('zh'),
+          supportedLocales: const [Locale('zh'), Locale('en')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
           home: Scaffold(body: ChatToolActivityStrip(messages: messages)),
         ),
       );
@@ -829,6 +865,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: Scaffold(body: ChatToolActivityStrip(messages: messages)),
       ),
     );
@@ -879,11 +922,11 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.descendant(of: sheet, matching: find.text('成功')),
+      find.descendant(of: sheet, matching: find.text('已完成')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: sheet, matching: find.textContaining('终端 · 成功')),
+      find.descendant(of: sheet, matching: find.textContaining('终端操作 · 已完成')),
       findsNothing,
     );
   });
@@ -918,6 +961,13 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          locale: const Locale('zh'),
+          supportedLocales: const [Locale('zh'), Locale('en')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
           home: Scaffold(
             body: ChatToolActivityStrip(
               messages: messages,
@@ -960,6 +1010,120 @@ void main() {
     },
   );
 
+  testWidgets('active tool row opens detail even when history can expand', (
+    tester,
+  ) async {
+    final messages = [
+      ChatMessageModel.cardMessage({
+        'type': 'agent_tool_summary',
+        'status': 'running',
+        'toolType': 'browser',
+        'toolName': 'browser_use',
+        'toolTitle': '打开控制台',
+        'summary': '正在浏览',
+        'argsJson': jsonEncode({'url': 'https://example.com'}),
+      }),
+      ChatMessageModel.cardMessage({
+        'type': 'agent_tool_summary',
+        'status': 'success',
+        'toolType': 'terminal',
+        'toolName': 'terminal_execute',
+        'toolTitle': '查看日志',
+        'summary': '终端执行完成',
+        'argsJson': jsonEncode({'command': 'tail app.log'}),
+        'terminalOutput': 'line 1',
+      }),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        home: Scaffold(body: ChatToolActivityStrip(messages: messages)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(kChatToolActivityToggleKey), findsOneWidget);
+
+    await tester.tap(find.text('打开控制台'));
+    await tester.pumpAndSettle();
+
+    final sheet = find.byKey(kAgentToolDetailSheetKey);
+    expect(
+      find.descendant(of: sheet, matching: find.text('打开控制台')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('查看日志')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('tool detail sheet exposes copy action for prompt and output', (
+    tester,
+  ) async {
+    String? clipboardText;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            final data = Map<dynamic, dynamic>.from(call.arguments as Map);
+            clipboardText = data['text'] as String?;
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: TextButton(
+                onPressed: () => showAgentToolDetailSheet(
+                  context,
+                  cardData: {
+                    'type': 'agent_tool_summary',
+                    'status': 'success',
+                    'toolType': 'terminal',
+                    'toolName': 'terminal_execute',
+                    'toolTitle': '查看日志',
+                    'argsJson': jsonEncode({'command': 'tail app.log'}),
+                    'terminalOutput': 'line 1\nline 2',
+                  },
+                ),
+                child: const Text('open'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.content_copy_rounded));
+    await tester.pump();
+
+    expect(clipboardText, contains(r'$ tail app.log'));
+    expect(clipboardText, contains('line 2'));
+  });
+
   testWidgets('running active tool shows stop button and taps stop only', (
     tester,
   ) async {
@@ -990,6 +1154,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: StatefulBuilder(
           builder: (context, setState) {
             return Scaffold(
@@ -1045,6 +1216,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: Scaffold(
           body: ChatToolActivityStrip(
             messages: messages,
@@ -1104,6 +1282,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: Scaffold(body: ChatToolActivityStrip(messages: messages)),
       ),
     );
@@ -1162,7 +1347,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.descendant(of: sheet, matching: find.text('成功')),
+      find.descendant(of: sheet, matching: find.text('已完成')),
       findsOneWidget,
     );
   });
@@ -1188,6 +1373,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: Scaffold(body: ChatToolActivityStrip(messages: messages)),
       ),
     );
@@ -1250,6 +1442,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: Scaffold(
           body: ChatToolActivityStrip(
             messages: messages,
@@ -1292,6 +1491,13 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          locale: const Locale('zh'),
+          supportedLocales: const [Locale('zh'), Locale('en')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
           home: Scaffold(
             body: Stack(
               children: [
@@ -1317,6 +1523,14 @@ void main() {
       final previewTopRight = tester.getTopRight(
         find.byKey(kChatToolActivityPreviewKey),
       );
+      final previewSurface = tester.widget<PhysicalModel>(
+        find
+            .descendant(
+              of: find.byKey(kChatToolActivityPreviewKey),
+              matching: find.byType(PhysicalModel),
+            )
+            .first,
+      );
       final barTopLeft = tester.getTopLeft(find.byKey(kChatToolActivityBarKey));
       final titleTopLeft = tester.getTopLeft(find.text('检查 git 状态'));
       final barSize = tester.getSize(find.byKey(kChatToolActivityBarKey));
@@ -1329,7 +1543,9 @@ void main() {
       expect(barTopLeft.dx, closeTo(72, 0.1));
       expect(barSize.width, closeTo(240, 0.1));
       expect(titleTopLeft.dx, greaterThan(previewTopRight.dx - 12));
+      expect(previewSurface.color, isNot(const Color(0xFF06080C)));
       expect(barShape.color, const Color(0xFFF9FCFF));
+      expect(find.text('输入'), findsOneWidget);
       expect(find.text('运行中'), findsOneWidget);
       expect(find.text('1/2'), findsNothing);
     },
@@ -1358,6 +1574,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: StatefulBuilder(
           builder: (context, setState) {
             return Scaffold(
@@ -1420,6 +1643,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
         home: Scaffold(
           body: Stack(
             children: [

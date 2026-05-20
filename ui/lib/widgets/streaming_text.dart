@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/utils/ui.dart';
+import 'package:ui/widgets/chat_drawer_gesture_guard.dart';
 import 'package:ui/widgets/omnibot_markdown_body.dart';
 import 'package:ui/widgets/omnibot_resource_widgets.dart';
 
@@ -364,11 +365,29 @@ class _MemoizedMarkdownBody extends StatefulWidget {
   State<_MemoizedMarkdownBody> createState() => _MemoizedMarkdownBodyState();
 }
 
+final RegExp _markdownFenceLinePattern = RegExp(
+  r'^[ \t]{0,3}(`{3,}|~{3,})([^\r\n]*)$',
+);
+
+class _OpenMarkdownFenceSegment {
+  const _OpenMarkdownFenceSegment({
+    required this.prefix,
+    required this.info,
+    required this.code,
+  });
+
+  final String prefix;
+  final String info;
+  final String code;
+}
+
 class _MemoizedMarkdownBodyState extends State<_MemoizedMarkdownBody> {
   // Text committed to the stable section — only grows, never shrinks.
   String _committedText = '';
   // Cached widget for the committed section, rebuilt only when _committedText grows.
   Widget? _committedWidget;
+  String? _cachedOpenFencePrefixText;
+  Widget? _cachedOpenFencePrefixWidget;
 
   @override
   void didUpdateWidget(_MemoizedMarkdownBody old) {
@@ -380,8 +399,10 @@ class _MemoizedMarkdownBodyState extends State<_MemoizedMarkdownBody> {
       _committedWidget = null;
     }
 
-    // Find the last blank-line boundary in the new text.
-    final breakIdx = widget.text.lastIndexOf('\n\n');
+    // Commit only at markdown-safe boundaries. Blank lines inside an open code
+    // fence are not safe split points because the next render would parse the
+    // code tail as regular markdown.
+    final breakIdx = _lastStableMarkdownBoundary(widget.text);
     if (breakIdx > _committedText.length) {
       // New paragraphs have completed — extend the committed section.
       final newCommitted = widget.text.substring(0, breakIdx);
@@ -399,6 +420,10 @@ class _MemoizedMarkdownBodyState extends State<_MemoizedMarkdownBody> {
         : '';
 
     if (_committedText.isEmpty) {
+      final openFence = _splitOpenMarkdownFence(widget.text);
+      if (openFence != null) {
+        return _buildOpenFenceBody(openFence);
+      }
       // No committed section yet — render the whole text as pending.
       return OmnibotMarkdownBody(
         data: widget.text,
@@ -423,15 +448,232 @@ class _MemoizedMarkdownBodyState extends State<_MemoizedMarkdownBody> {
       mainAxisSize: MainAxisSize.min,
       children: [
         _committedWidget!,
-        if (pending.isNotEmpty)
-          OmnibotMarkdownBody(
-            data: pending,
-            baseStyle: widget.style,
-            inlineResourcePlainStyle: true,
-            onResourceOpen: widget.onResourceOpen,
-            trailingInline: widget.trailing,
-          ),
+        if (pending.isNotEmpty) _buildPendingBody(pending),
       ],
+    );
+  }
+
+  Widget _buildPendingBody(String pending) {
+    final openFence = _splitOpenMarkdownFence(pending);
+    if (openFence != null) {
+      return _buildOpenFenceBody(openFence);
+    }
+    return OmnibotMarkdownBody(
+      data: pending,
+      baseStyle: widget.style,
+      inlineResourcePlainStyle: true,
+      onResourceOpen: widget.onResourceOpen,
+      trailingInline: widget.trailing,
+    );
+  }
+
+  Widget _buildOpenFenceBody(_OpenMarkdownFenceSegment segment) {
+    final children = <Widget>[];
+    if (segment.prefix.isNotEmpty) {
+      children.add(_buildCachedOpenFencePrefix(segment.prefix));
+    }
+    children.add(
+      _StreamingOpenCodeBlock(
+        code: segment.code,
+        info: segment.info,
+        style: widget.style,
+        trailing: widget.trailing,
+      ),
+    );
+    if (children.length == 1) {
+      return children.first;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
+    );
+  }
+
+  Widget _buildCachedOpenFencePrefix(String prefix) {
+    if (_cachedOpenFencePrefixText != prefix ||
+        _cachedOpenFencePrefixWidget == null) {
+      _cachedOpenFencePrefixText = prefix;
+      _cachedOpenFencePrefixWidget = RepaintBoundary(
+        child: OmnibotMarkdownBody(
+          data: prefix,
+          baseStyle: widget.style,
+          inlineResourcePlainStyle: true,
+          onResourceOpen: widget.onResourceOpen,
+        ),
+      );
+    }
+    return _cachedOpenFencePrefixWidget!;
+  }
+
+  int _lastStableMarkdownBoundary(String text) {
+    var offset = 0;
+    var lastBoundary = -1;
+    String? fenceMarker;
+    var fenceLength = 0;
+
+    while (offset <= text.length) {
+      final newlineIndex = text.indexOf('\n', offset);
+      final lineEnd = newlineIndex == -1 ? text.length : newlineIndex;
+      final lineBoundary = newlineIndex == -1 ? text.length : newlineIndex + 1;
+      var line = text.substring(offset, lineEnd);
+      if (line.endsWith('\r')) {
+        line = line.substring(0, line.length - 1);
+      }
+
+      var closedFence = false;
+      final match = _markdownFenceLinePattern.firstMatch(line);
+      if (match != null) {
+        final marker = match.group(1)!;
+        final markerChar = marker[0];
+        if (fenceMarker == null) {
+          fenceMarker = markerChar;
+          fenceLength = marker.length;
+        } else if (markerChar == fenceMarker && marker.length >= fenceLength) {
+          fenceMarker = null;
+          fenceLength = 0;
+          closedFence = true;
+        }
+      }
+
+      if (closedFence) {
+        lastBoundary = lineBoundary;
+      } else if (fenceMarker == null && line.trim().isEmpty) {
+        lastBoundary = lineBoundary;
+      }
+
+      if (newlineIndex == -1) {
+        break;
+      }
+      offset = newlineIndex + 1;
+    }
+
+    return lastBoundary;
+  }
+
+  _OpenMarkdownFenceSegment? _splitOpenMarkdownFence(String text) {
+    var offset = 0;
+    String? fenceMarker;
+    var fenceLength = 0;
+    var openingStart = -1;
+    var codeStart = -1;
+    var info = '';
+
+    while (offset <= text.length) {
+      final newlineIndex = text.indexOf('\n', offset);
+      final lineEnd = newlineIndex == -1 ? text.length : newlineIndex;
+      var line = text.substring(offset, lineEnd);
+      if (line.endsWith('\r')) {
+        line = line.substring(0, line.length - 1);
+      }
+
+      final match = _markdownFenceLinePattern.firstMatch(line);
+      if (match != null) {
+        final marker = match.group(1)!;
+        final markerChar = marker[0];
+        if (fenceMarker == null) {
+          fenceMarker = markerChar;
+          fenceLength = marker.length;
+          openingStart = offset;
+          codeStart = newlineIndex == -1 ? text.length : newlineIndex + 1;
+          info = (match.group(2) ?? '').trim();
+        } else if (markerChar == fenceMarker && marker.length >= fenceLength) {
+          fenceMarker = null;
+          fenceLength = 0;
+          openingStart = -1;
+          codeStart = -1;
+          info = '';
+        }
+      }
+
+      if (newlineIndex == -1) {
+        break;
+      }
+      offset = newlineIndex + 1;
+    }
+
+    if (fenceMarker == null || openingStart < 0 || codeStart < 0) {
+      return null;
+    }
+    return _OpenMarkdownFenceSegment(
+      prefix: text.substring(0, openingStart),
+      info: info,
+      code: text.substring(codeStart),
+    );
+  }
+}
+
+class _StreamingOpenCodeBlock extends StatelessWidget {
+  const _StreamingOpenCodeBlock({
+    required this.code,
+    required this.info,
+    required this.style,
+    this.trailing,
+  });
+
+  final String code;
+  final String info;
+  final TextStyle style;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final codeStyle = style.copyWith(
+      fontFamily: 'monospace',
+      backgroundColor: Colors.transparent,
+      color: theme.colorScheme.onSurfaceVariant,
+      fontSize: ((style.fontSize ?? 14) * 0.92).toDouble(),
+      height: 1.45,
+    );
+    final label = info.trim();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (label.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    label,
+                    style: style.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.72,
+                      ),
+                      fontSize: ((style.fontSize ?? 14) * 0.78).toDouble(),
+                      height: 1.2,
+                    ),
+                  ),
+                ),
+              ChatDrawerGestureGuard(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Text(
+                    code.isEmpty ? ' ' : code,
+                    style: codeStyle,
+                    softWrap: false,
+                  ),
+                ),
+              ),
+              if (trailing != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: trailing,
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

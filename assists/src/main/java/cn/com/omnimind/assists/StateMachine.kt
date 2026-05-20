@@ -122,6 +122,14 @@ class StateMachine() {
         return taskManager?.provideUserInputToVLMTask(userInput) ?: false
     }
 
+    fun pauseVLMTask(): Boolean {
+        return taskManager?.pauseVLMTask() ?: false
+    }
+
+    fun resumeVLMTask(): Boolean {
+        return taskManager?.resumeVLMTask() ?: false
+    }
+
     fun appendVlmExternalMemory(memory: String): Boolean {
         return taskManager?.appendVlmExternalMemory(memory) ?: false
     }

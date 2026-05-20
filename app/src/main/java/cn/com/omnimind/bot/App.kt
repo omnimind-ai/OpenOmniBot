@@ -39,6 +39,14 @@ class App : BaseApplication() {
 
         private var flutterEngineGroup: FlutterEngineGroup? = null
         private var cachedMainEngine: FlutterEngine? = null
+        private const val DEFAULT_PROVIDER_PROFILE_ID = "dashboard-local"
+        private const val DEFAULT_PROVIDER_PROFILE_NAME = "Dashboard Local"
+        private val DEFAULT_PROVIDER_SCENES = listOf(
+            "scene.dispatch.model",
+            "scene.vlm.operation.primary",
+            "scene.compactor.context",
+            "scene.compactor.context.chat"
+        )
 
         fun getFlutterEngineGroup(): FlutterEngineGroup {
             if (flutterEngineGroup == null) {
@@ -158,14 +166,6 @@ class App : BaseApplication() {
         )
     }
 
-    /**
-     * Seeds local model-provider config from install-time BuildConfig values.
-     *
-     * The OOB install script injects an OpenAI-compatible base URL, API key, and model id into
-     * debug builds. On a fresh device this writes the normal provider/profile and scene-binding
-     * stores, so Agent/VLM paths can start without manual key entry. Empty values and release builds
-     * are ignored.
-     */
     private fun seedDefaultModelProviderFromBuildConfigIfNeeded() {
         if (!BuildConfig.DEBUG) return
         val baseUrl = BuildConfig.DEFAULT_MODEL_PROVIDER_BASE_URL.trim()
@@ -174,18 +174,13 @@ class App : BaseApplication() {
         if (baseUrl.isEmpty() || apiKey.isEmpty() || modelId.isEmpty()) return
 
         val profile = ModelProviderConfigStore.saveProfile(
-            id = "dashboard-local",
-            name = "Dashboard Local",
+            id = DEFAULT_PROVIDER_PROFILE_ID,
+            name = DEFAULT_PROVIDER_PROFILE_NAME,
             baseUrl = baseUrl,
             apiKey = apiKey,
             protocolType = "openai_compatible"
         )
-        listOf(
-            "scene.dispatch.model",
-            "scene.vlm.operation.primary",
-            "scene.compactor.context",
-            "scene.compactor.context.chat"
-        ).forEach { sceneId ->
+        DEFAULT_PROVIDER_SCENES.forEach { sceneId ->
             SceneModelBindingStore.saveBinding(
                 sceneId = sceneId,
                 providerProfileId = profile.id,
@@ -203,14 +198,6 @@ class App : BaseApplication() {
         )
     }
 
-    /**
-     * Mirrors the debug install model id into Flutter's provider-model cache.
-     *
-     * @param profileId Provider profile id that owns the seeded model. It must match the native
-     * scene binding profile id so the Flutter settings and chat model picker can resolve it.
-     * @param modelId OpenAI-compatible model id injected by the install script. Existing entries
-     * are preserved and the model is only appended when missing.
-     */
     private fun seedFlutterManualModelId(profileId: String, modelId: String) {
         val normalizedProfileId = profileId.trim()
         val normalizedModelId = modelId.trim()

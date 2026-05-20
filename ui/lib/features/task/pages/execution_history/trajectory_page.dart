@@ -847,7 +847,10 @@ class _TrajectoryPageState extends State<TrajectoryPage>
 
   Widget _buildRunLogAction() {
     return Tooltip(
-      message: _text(context, '查看 RunLog', 'View RunLog'),
+      message: AppTextLocalizer.text(
+        '查看执行记录',
+        locale: Localizations.localeOf(context),
+      ),
       child: IconButton(
         icon: const Icon(Icons.route_rounded),
         color: context.omniPalette.textPrimary,

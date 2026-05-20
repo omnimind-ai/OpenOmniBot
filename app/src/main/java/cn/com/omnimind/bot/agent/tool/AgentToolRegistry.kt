@@ -3,12 +3,16 @@ package cn.com.omnimind.bot.agent
 import android.content.Context
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.i18n.LocalizedText
+import cn.com.omnimind.baselib.i18n.PromptLocale
 import cn.com.omnimind.baselib.shizuku.PrivilegedActionPolicy
 import cn.com.omnimind.baselib.shizuku.ShizukuBackend
 import cn.com.omnimind.baselib.shizuku.ShizukuCapabilityManager
 import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.bot.agent.config.AgentToolFeatureStore
 import cn.com.omnimind.bot.mcp.RemoteMcpDiscoveredServer
 import cn.com.omnimind.bot.mcp.RemoteMcpToolDescriptor
+import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
+import cn.com.omnimind.bot.runlog.OobRunLogReplayService
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -41,11 +45,14 @@ class AgentToolRegistry(
     override val toolsForModel: List<ChatCompletionTool>
 
     init {
-        val locale = AppLocaleManager.resolvePromptLocale(context)
-        val shizukuStatus = ShizukuCapabilityManager.get(context).getStatus()
+        val locale = runCatching { AppLocaleManager.resolvePromptLocale(context) }
+            .getOrDefault(AppLocaleManager.currentPromptLocale())
+        val shizukuStatus = runCatching { ShizukuCapabilityManager.get(context).getStatus() }
+            .onFailure { OmniLog.w(tag, "resolve shizuku status failed: ${it.message}") }
+            .getOrNull()
         val runtimeDefinitions = mutableListOf<JsonObject>()
         runtimeDefinitions.addAll(AgentToolDefinitions.staticTools(locale))
-        if (shizukuStatus.isGranted()) {
+        if (shizukuStatus?.isGranted() == true) {
             val privilegedVisibleActions = shizukuStatus.availableActions.ifEmpty {
                 PrivilegedActionPolicy.visibleAgentActions(
                     if (shizukuStatus.backend == ShizukuBackend.ROOT) {
@@ -92,16 +99,22 @@ class AgentToolRegistry(
         discoveredServers.flatMap { it.tools }.forEach { tool ->
             runtimeDefinitions.add(toDynamicMcpToolDefinition(tool, locale))
         }
+        runtimeDefinitions.addAll(oobFunctionToolDefinitions(locale))
 
         runtimeDefinitions.addAll(dynamicDefinitions)
 
         val filteredDefinitions = AgentConversationModePolicy
             .filterToolDefinitionsForConversationMode(runtimeDefinitions, conversationMode)
 
-        toolsForModel = filteredDefinitions.mapNotNull { definition ->
-            val function = definition["function"] as? JsonObject ?: return@mapNotNull null
+        val toolsByName = linkedMapOf<String, ChatCompletionTool>()
+        filteredDefinitions.forEach { definition ->
+            val function = definition["function"] as? JsonObject ?: return@forEach
             val name = function["name"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
-            if (name.isBlank()) return@mapNotNull null
+            if (name.isBlank()) return@forEach
+            if (!MODEL_TOOL_NAME_REGEX.matches(name)) {
+                OmniLog.w(tag, "skip invalid model tool name: $name")
+                return@forEach
+            }
             val description = function["description"]?.jsonPrimitive?.contentOrNull.orEmpty()
             val parameters = (function["parameters"] as? JsonObject) ?: JsonObject(emptyMap())
             val displayName = function["displayName"]?.jsonPrimitive?.contentOrNull?.trim()
@@ -119,7 +132,7 @@ class AgentToolRegistry(
                 serverName = serverName,
                 remoteTool = findRemoteTool(name, discoveredServers)
             )
-            ChatCompletionTool(
+            toolsByName[name] = ChatCompletionTool(
                 function = ChatCompletionFunction(
                     name = name,
                     description = description,
@@ -127,6 +140,7 @@ class AgentToolRegistry(
                 )
             )
         }
+        toolsForModel = toolsByName.values.toList()
     }
 
     override fun runtimeDescriptor(toolName: String): RuntimeToolDescriptor {
@@ -230,7 +244,7 @@ class AgentToolRegistry(
 
     private fun toDynamicMcpToolDefinition(
         tool: RemoteMcpToolDescriptor,
-        locale: cn.com.omnimind.baselib.i18n.PromptLocale
+        locale: PromptLocale
     ): JsonObject {
         return AgentToolDefinitions.decorateToolDefinition(buildJsonObject {
             put("type", JsonPrimitive("function"))
@@ -255,6 +269,51 @@ class AgentToolRegistry(
         }, locale)
     }
 
+    private fun oobFunctionToolDefinitions(locale: PromptLocale): List<JsonObject> {
+        if (!AgentToolFeatureStore.isOobFunctionAsToolEnabled(context)) {
+            return emptyList()
+        }
+        return runCatching {
+            OobRunLogReplayService(context)
+                .listFunctionSpecs(MAX_OOB_FUNCTION_TOOLS)
+                .mapNotNull { spec -> toOobFunctionToolDefinition(spec, locale) }
+        }.onFailure {
+            OmniLog.w(tag, "load oob function tools failed: ${it.message}")
+        }.getOrDefault(emptyList())
+    }
+
+    private fun toOobFunctionToolDefinition(
+        spec: Map<String, Any?>,
+        locale: PromptLocale
+    ): JsonObject? {
+        val functionId = spec["function_id"]?.toString()?.trim().orEmpty()
+        if (functionId.isEmpty()) return null
+        if (!MODEL_TOOL_NAME_REGEX.matches(functionId)) {
+            OmniLog.w(tag, "skip invalid oob function tool name: $functionId")
+            return null
+        }
+        val displayName = spec["name"]?.toString()?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: functionId
+        val description = spec["description"]?.toString()?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: displayName
+        val parameters = mapToJsonElement(
+            OobFunctionSchemaBuilder.inputSchema(spec)
+        ) as? JsonObject ?: JsonObject(emptyMap())
+
+        return AgentToolDefinitions.decorateToolDefinition(buildJsonObject {
+            put("type", JsonPrimitive("function"))
+            put("function", buildJsonObject {
+                put("name", JsonPrimitive(functionId))
+                put("displayName", JsonPrimitive(displayName))
+                put("toolType", JsonPrimitive("oob_function"))
+                put("description", JsonPrimitive(description))
+                put("parameters", parameters)
+            })
+        }, locale)
+    }
+
     private fun mapToJsonElement(value: Any?): JsonElement {
         return when (value) {
             null -> JsonNull
@@ -269,5 +328,10 @@ class AgentToolRegistry(
             is Number -> JsonPrimitive(value)
             else -> JsonPrimitive(value.toString())
         }
+    }
+
+    private companion object {
+        const val MAX_OOB_FUNCTION_TOOLS = 50
+        val MODEL_TOOL_NAME_REGEX = Regex("^[A-Za-z0-9_-]{1,64}$")
     }
 }

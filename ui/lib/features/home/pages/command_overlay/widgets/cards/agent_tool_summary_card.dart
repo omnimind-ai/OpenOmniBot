@@ -22,11 +22,12 @@ class AgentToolSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final locale = Localizations.localeOf(context);
     final status = (cardData['status'] ?? 'running').toString();
-    final title = resolveAgentToolTitle(cardData);
-    final statusLabel = resolveAgentToolStatusLabel(cardData);
-    final preview = resolveAgentToolPreview(cardData);
-    final typeLabel = resolveAgentToolTypeLabel(cardData);
+    final title = resolveAgentToolTitle(cardData, locale: locale);
+    final statusLabel = resolveAgentToolStatusLabel(cardData, locale: locale);
+    final preview = resolveAgentToolPreview(cardData, locale: locale);
+    final typeLabel = resolveAgentToolTypeLabel(cardData, locale: locale);
     final statusColor = resolveAgentToolStatusColor(status);
     final runLogRef = AgentToolCardPolicy.runLogRef(cardData);
     final palette = context.omniPalette;
@@ -90,7 +91,10 @@ class AgentToolSummaryCard extends StatelessWidget {
                           context,
                           runId: runLogRef.runLogId,
                           cardId: runLogRef.cardId,
-                          title: resolveAgentToolTitle(cardData),
+                          title: resolveAgentToolTitle(
+                            cardData,
+                            locale: locale,
+                          ),
                         ),
                       );
                     } else if (runLogRef.hasRunLog) {
@@ -98,7 +102,10 @@ class AgentToolSummaryCard extends StatelessWidget {
                         showRunLogTimelineSheet(
                           context,
                           runId: runLogRef.runLogId,
-                          title: resolveAgentToolTitle(cardData),
+                          title: resolveAgentToolTitle(
+                            cardData,
+                            locale: locale,
+                          ),
                         ),
                       );
                     } else {
@@ -127,6 +134,7 @@ class AgentToolSummaryCard extends StatelessWidget {
                               color: titleColor,
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
+                              letterSpacing: 0,
                               height: 1.15,
                             ),
                           ),
@@ -145,8 +153,9 @@ class AgentToolSummaryCard extends StatelessWidget {
                             status == 'running' ? typeLabel : statusLabel,
                             style: TextStyle(
                               color: statusTagTextColor,
-                              fontSize: 10,
+                              fontSize: 12,
                               fontWeight: FontWeight.w600,
+                              letterSpacing: 0,
                               height: 1,
                             ),
                           ),

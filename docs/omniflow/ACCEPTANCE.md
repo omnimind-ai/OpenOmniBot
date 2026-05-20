@@ -79,9 +79,9 @@ Before running it:
 
 1. Install and launch the develop APK on a device or emulator. For a new
    device, use:
-   `OMNIMIND_API_KEY=<key> bash scripts/prepare-oob-device.sh --device <serial>`.
-   The script seeds the default provider as
-   `http://cloud.omnimind.com.cn/v1` without printing the key.
+   `bash scripts/prepare-oob-device.sh --device <serial>`.
+   Configure provider base URL, API key, and scene model bindings from the app
+   settings before running model-backed checks.
 2. Enable the OOB Accessibility service.
 3. Open OOB Settings, enable MCP Server, and copy the token.
 4. Keep the device unlocked and on a stable screen.

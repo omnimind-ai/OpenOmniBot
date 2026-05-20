@@ -1,7 +1,6 @@
 package cn.com.omnimind.bot.runlog
 
 import android.content.Context
-import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import kotlinx.coroutines.delay
@@ -200,7 +199,8 @@ class OobOmniFlowExplorer(
 
     suspend fun explore(args: Map<String, Any?>?): Map<String, Any?> {
         val options = optionsFrom(args)
-        if (!AccessibilityController.initController()) {
+        val backend = OmniflowActionRuntime.backend
+        if (!backend.isReady()) {
             return errorPayload(
                 code = "ACCESSIBILITY_NOT_READY",
                 message = "Accessibility service is not ready"
@@ -208,9 +208,7 @@ class OobOmniFlowExplorer(
         }
 
         if (options.packageName.isNotEmpty()) {
-            AccessibilityController.launchApplication(options.packageName) { x, y ->
-                AccessibilityController.clickCoordinate(x, y)
-            }
+            backend.launchApplication(options.packageName)
             delay(options.settleDelayMs)
         }
 
@@ -384,17 +382,18 @@ class OobOmniFlowExplorer(
     )
 
     private suspend fun executeCandidate(candidate: UtgActionCandidate) {
+        val backend = OmniflowActionRuntime.backend
         when (candidate.action) {
-            ACTION_CLICK -> AccessibilityController.clickCoordinate(
+            ACTION_CLICK -> backend.click(
                 candidate.bounds.centerX,
                 candidate.bounds.centerY
             )
-            ACTION_SCROLL -> AccessibilityController.scrollCoordinate(
+            ACTION_SCROLL -> backend.scroll(
                 x = candidate.bounds.centerX,
                 y = candidate.bounds.centerY,
                 direction = scrollDirection(candidate.scrollDirection),
                 distance = candidate.scrollDistancePx.coerceAtLeast(DEFAULT_SCROLL_DISTANCE_PX),
-                duration = candidate.scrollDurationMs.coerceAtLeast(DEFAULT_SCROLL_DURATION_MS),
+                durationMs = candidate.scrollDurationMs.coerceAtLeast(DEFAULT_SCROLL_DURATION_MS),
             )
             else -> throw IllegalArgumentException("Unsupported UTG action: ${candidate.action}")
         }
@@ -405,26 +404,26 @@ class OobOmniFlowExplorer(
         backSteps: Int,
         settleDelayMs: Long,
     ) {
-        if (!AccessibilityController.initController()) return
+        val backend = OmniflowActionRuntime.backend
+        if (!backend.isReady()) return
         repeat(backSteps.coerceIn(0, MAX_RESET_BACK_STEPS)) {
-            AccessibilityController.goBack()
+            backend.pressHotKey("BACK")
             delay(settleDelayMs)
         }
         if (targetPackageName.isNotBlank()) {
-            AccessibilityController.launchApplication(targetPackageName) { x, y ->
-                AccessibilityController.clickCoordinate(x, y)
-            }
+            backend.launchApplication(targetPackageName)
             delay(settleDelayMs)
         }
     }
 
     private fun captureSnapshot(): UtgPageSnapshot? {
-        val xml = AccessibilityController.getCaptureScreenShotXml(true)?.trim().orEmpty()
+        val backend = OmniflowActionRuntime.backend
+        val xml = backend.currentXml()?.trim().orEmpty()
         if (xml.isEmpty()) return null
         return parseSnapshot(
             xml = xml,
-            packageName = AccessibilityController.getPackageName().orEmpty(),
-            activityName = AccessibilityController.getCurrentActivity().orEmpty()
+            packageName = backend.currentPackageName().orEmpty(),
+            activityName = backend.currentActivityName().orEmpty()
         )
     }
 

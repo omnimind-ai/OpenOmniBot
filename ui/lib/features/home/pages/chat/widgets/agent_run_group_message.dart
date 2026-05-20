@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/chat/utils/agent_activity_compactor.dart';
 import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
 import 'package:ui/features/home/pages/chat/widgets/agent_tool_activity_card.dart';
-import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
+import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart'
+    show showAgentToolDetailSheet;
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/card_widget_factory.dart'
     show OnBeforeTaskExecute, OnRequestAuthorize;
 import 'package:ui/features/home/pages/command_overlay/widgets/message_bubble.dart';
@@ -10,6 +12,7 @@ import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.d
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/agent_avatar_service.dart';
+import 'package:ui/services/agent_tool_card_policy.dart' as tool_policy;
 import 'package:ui/services/app_background_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/widgets/agent_avatar.dart';
@@ -49,12 +52,18 @@ class AgentRunGroupMessage extends StatefulWidget {
 class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
     with SingleTickerProviderStateMixin {
   static const Duration _kToggleDuration = Duration(milliseconds: 260);
+  static const double _compactProcessMaxWidthFactor = 0.76;
+  static const double _compactProcessMaxWidth = 360;
+  static const double _compactProcessMinWidth = 148;
+  static const double _processFontSize = 12;
+  static const double _thinkingFontSize = 11;
 
   late final AnimationController _expandController;
   late final Animation<double> _sizeFactor;
   late final Animation<double> _opacity;
   late final Animation<double> _lift;
   bool _isNotifyingParentDuringAnimation = false;
+  bool _expandThinkingOnNextOpen = false;
   final _compactor = AgentActivityCompactor();
 
   @override
@@ -139,6 +148,8 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
     final visibleMessages = widget.group.visibleMessagesOldestFirst;
     final hasProcessMessages = processMessages.isNotEmpty;
     final isRunLogOnly = widget.group.isRunLogOnly;
+    final directProcessAction = _resolveDirectProcessAction(processMessages);
+    final showProcessToggle = hasProcessMessages && directProcessAction == null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -151,13 +162,14 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
           expanded: widget.expanded,
           thinkingCount: widget.group.thinkingCount,
           toolCount: widget.group.toolCount,
-          latestProcessSummary: _latestProcessSummary(processMessages),
+          latestProcessSummary: _latestProcessSummary(context, processMessages),
           onTap: hasProcessMessages
-              ? widget.onToggleExpanded
+              ? (directProcessAction ??
+                    () => _toggleProcessSection(processMessages))
               : isRunLogOnly
               ? () => _openRunLog(context)
               : null,
-          showToggle: hasProcessMessages,
+          showToggle: showProcessToggle,
           showRunLogButton: isRunLogOnly,
         ),
         _buildAnimatedProcessSection(processMessages),
@@ -184,7 +196,101 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
     final runLogId = widget.group.runLogId.trim().isEmpty
         ? widget.group.taskId
         : widget.group.runLogId.trim();
-    showRunLogTimelineSheet(context, runId: runLogId, title: 'RunLog');
+    showRunLogTimelineSheet(context, runId: runLogId);
+  }
+
+  VoidCallback? _resolveDirectProcessAction(
+    List<ChatMessageModel> processMessages,
+  ) {
+    if (widget.expanded || processMessages.isEmpty) {
+      return null;
+    }
+    final processItems = _compactor.compact(processMessages);
+    if (processItems.length != 1) {
+      return null;
+    }
+    final item = processItems.single;
+    final activity = item.activity;
+    if (activity != null) {
+      if (activity.stepCount > 1 &&
+          activity.kind == AgentToolActivityKind.vlm) {
+        return null;
+      }
+      final step = activity.steps.last;
+      final cardData = step.message.cardData;
+      if (cardData == null ||
+          (cardData['type'] ?? '').toString() != kAgentToolSummaryCardType) {
+        return null;
+      }
+      return () => _openSingleActivityStep(context, step);
+    }
+    final message = item.message!;
+    final cardData = message.cardData;
+    if ((cardData?['type'] ?? '').toString() == 'deep_thinking') {
+      final content = (cardData?['thinkingContent'] ?? '').toString().trim();
+      if (content.isEmpty) {
+        return null;
+      }
+      return () {
+        setState(() {
+          _expandThinkingOnNextOpen = true;
+        });
+        widget.onToggleExpanded();
+      };
+    }
+    if (cardData != null &&
+        (cardData['type'] ?? '').toString() == kAgentToolSummaryCardType) {
+      return () => showAgentToolDetailSheet(context, cardData: cardData);
+    }
+    return null;
+  }
+
+  void _openSingleActivityStep(
+    BuildContext context,
+    AgentToolActivityStep step,
+  ) {
+    final cardData = step.message.cardData ?? const <String, dynamic>{};
+    final kind = tool_policy.AgentToolCardPolicy.activityKindFor(cardData);
+    final runLogRef = tool_policy.AgentToolCardPolicy.runLogRef(
+      cardData,
+      message: step.message,
+    );
+    if (kind == tool_policy.AgentToolActivityKind.vlm && runLogRef.hasStep) {
+      showRunLogStepDetailSheet(
+        context,
+        runId: runLogRef.runLogId,
+        cardId: runLogRef.cardId,
+        title: resolveAgentToolTitle(
+          cardData,
+          locale: Localizations.localeOf(context),
+        ),
+      );
+      return;
+    }
+    showAgentToolDetailSheet(context, cardData: cardData);
+  }
+
+  void _toggleProcessSection(List<ChatMessageModel> processMessages) {
+    if (!widget.expanded && _hasThinkingContent(processMessages)) {
+      setState(() {
+        _expandThinkingOnNextOpen = true;
+      });
+    }
+    widget.onToggleExpanded();
+  }
+
+  bool _hasThinkingContent(List<ChatMessageModel> processMessages) {
+    for (final message in processMessages) {
+      final cardData = message.cardData;
+      if ((cardData?['type'] ?? '').toString() != 'deep_thinking') {
+        continue;
+      }
+      final content = (cardData?['thinkingContent'] ?? '').toString().trim();
+      if (content.isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Widget _buildAnimatedProcessSection(List<ChatMessageModel> processMessages) {
@@ -201,6 +307,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
     }
 
     final processItems = _compactor.compact(processMessages);
+    final singleProcessItem = processItems.length == 1;
 
     return AnimatedBuilder(
       animation: _expandController,
@@ -208,31 +315,51 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
         key: ValueKey('agent-run-process-${widget.group.taskId}'),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: processItems
-            .map((item) {
+            .asMap()
+            .entries
+            .map((entry) {
+              final index = entry.key;
+              final item = entry.value;
               final activity = item.activity;
               if (activity != null) {
                 return AgentToolActivityCard(
                   key: ValueKey(
-                    'agent-run-${widget.group.taskId}-${activity.id}-${widget.expanded}',
+                    'agent-run-${widget.group.taskId}-activity-$index-${activity.id}-${widget.expanded}',
                   ),
                   activity: activity,
                   compactSurface: true,
+                  initiallyExpanded:
+                      singleProcessItem &&
+                      activity.stepCount > 1 &&
+                      activity.kind == AgentToolActivityKind.vlm,
                   onLayoutChanged: widget.onStreamingTextLayoutChanged,
                 );
               }
               final message = item.message!;
               if (_isThinkingProcessMessage(message)) {
+                final initiallyExpanded = _expandThinkingOnNextOpen;
+                if (initiallyExpanded) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted || !_expandThinkingOnNextOpen) {
+                      return;
+                    }
+                    setState(() {
+                      _expandThinkingOnNextOpen = false;
+                    });
+                  });
+                }
                 return _AgentThinkingActivityRow(
                   key: ValueKey(
-                    'agent-run-${widget.group.taskId}-${message.id}-${widget.expanded}',
+                    'agent-run-${widget.group.taskId}-thinking-$index-${message.id}-${widget.expanded}',
                   ),
                   message: message,
+                  initiallyExpanded: initiallyExpanded,
                   onLayoutChanged: widget.onStreamingTextLayoutChanged,
                 );
               }
               return MessageBubble(
                 key: ValueKey(
-                  'agent-run-${widget.group.taskId}-${message.id}-${widget.expanded}',
+                  'agent-run-${widget.group.taskId}-process-message-$index-${message.id}-${widget.expanded}',
                 ),
                 message: message,
                 onBeforeTaskExecute: widget.onBeforeTaskExecute,
@@ -274,12 +401,16 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
     );
   }
 
-  String _latestProcessSummary(List<ChatMessageModel> processMessages) {
+  String _latestProcessSummary(
+    BuildContext context,
+    List<ChatMessageModel> processMessages,
+  ) {
+    final locale = Localizations.localeOf(context);
     for (final message in processMessages.reversed) {
       final cardData = message.cardData;
       final cardType = (cardData?['type'] ?? '').toString();
       if (cardType == kAgentToolSummaryCardType && cardData != null) {
-        final title = resolveAgentToolTitle(cardData).trim();
+        final title = resolveAgentToolTitle(cardData, locale: locale).trim();
         if (title.isNotEmpty) {
           return title;
         }
@@ -331,12 +462,20 @@ class _AgentRunSummaryHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final locale = Localizations.localeOf(context);
     final palette = context.omniPalette;
-    final isRunLogOnly = !isActiveRun && !showToggle;
+    final isRunLogOnly = showRunLogButton;
     final label = AppTextLocalizer.choose(
-      zh: isRunLogOnly ? '运行记录' : '步骤',
-      en: isRunLogOnly ? 'RunLog' : 'Steps',
+      zh: '步骤',
+      en: 'Steps',
       locale: locale,
     );
+    if (isRunLogOnly) {
+      return _RunLogOnlySummaryHeader(
+        taskId: taskId,
+        runLogId: runLogId,
+        label: label,
+        onTap: onTap,
+      );
+    }
     final statusLabel = isRunLogOnly
         ? AppTextLocalizer.choose(zh: '已记录', en: 'Logged', locale: locale)
         : isActiveRun
@@ -391,10 +530,12 @@ class _AgentRunSummaryHeader extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize:
+                                    _AgentRunGroupMessageState._processFontSize,
                                 fontWeight: FontWeight.w600,
                                 color: labelColor,
                                 fontFamily: 'PingFang SC',
+                                letterSpacing: 0,
                               ),
                             ),
                           ),
@@ -412,9 +553,11 @@ class _AgentRunSummaryHeader extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontSize: 11,
+                                  fontSize: _AgentRunGroupMessageState
+                                      ._processFontSize,
                                   fontWeight: FontWeight.w500,
                                   color: palette.textTertiary,
+                                  letterSpacing: 0,
                                   height: 1.1,
                                 ),
                               ),
@@ -435,11 +578,7 @@ class _AgentRunSummaryHeader extends StatelessWidget {
                 if (showRunLogButton) ...[
                   const SizedBox(width: 6),
                   Tooltip(
-                    message: AppTextLocalizer.choose(
-                      zh: '查看 RunLog',
-                      en: 'View RunLog',
-                      locale: locale,
-                    ),
+                    message: AppTextLocalizer.text('查看执行记录', locale: locale),
                     child: InkResponse(
                       onTap: () {
                         final resolvedRunLogId = runLogId.trim().isEmpty
@@ -448,7 +587,6 @@ class _AgentRunSummaryHeader extends StatelessWidget {
                         showRunLogTimelineSheet(
                           context,
                           runId: resolvedRunLogId,
-                          title: 'RunLog',
                         );
                       },
                       radius: 18,
@@ -501,14 +639,124 @@ class _AgentRunSummaryHeader extends StatelessWidget {
   }
 }
 
+class _RunLogOnlySummaryHeader extends StatelessWidget {
+  const _RunLogOnlySummaryHeader({
+    required this.taskId,
+    required this.runLogId,
+    required this.label,
+    required this.onTap,
+  });
+
+  final String taskId;
+  final String runLogId;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = Localizations.localeOf(context);
+    final palette = context.omniPalette;
+    final labelColor = palette.textTertiary;
+    final statusLabel = AppTextLocalizer.choose(
+      zh: '无可展开步骤',
+      en: 'No steps',
+      locale: locale,
+    );
+    final resolvedRunLogId = runLogId.trim().isEmpty ? taskId : runLogId.trim();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 1),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          splashColor: palette.accentPrimary.withValues(alpha: 0.06),
+          highlightColor: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(2, 2, 2, 2),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                ValueListenableBuilder<AgentAvatarState>(
+                  valueListenable: AgentAvatarService.avatarStateNotifier,
+                  builder: (context, state, _) {
+                    return AgentAvatarCircle(
+                      key: ValueKey('agent-run-avatar-$taskId'),
+                      state: state,
+                      size: 24,
+                    );
+                  },
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: _AgentRunGroupMessageState._processFontSize,
+                          fontWeight: FontWeight.w600,
+                          color: labelColor,
+                          fontFamily: 'PingFang SC',
+                          letterSpacing: 0,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          statusLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize:
+                                _AgentRunGroupMessageState._processFontSize,
+                            fontWeight: FontWeight.w500,
+                            color: palette.textTertiary,
+                            letterSpacing: 0,
+                            height: 1.1,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Tooltip(
+                  message: AppTextLocalizer.text('查看执行记录', locale: locale),
+                  child: InkResponse(
+                    onTap: () {
+                      showRunLogTimelineSheet(context, runId: resolvedRunLogId);
+                    },
+                    radius: 18,
+                    child: Icon(
+                      Icons.route_rounded,
+                      size: 16,
+                      color: labelColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _AgentThinkingActivityRow extends StatefulWidget {
   const _AgentThinkingActivityRow({
     super.key,
     required this.message,
+    this.initiallyExpanded = false,
     this.onLayoutChanged,
   });
 
   final ChatMessageModel message;
+  final bool initiallyExpanded;
   final VoidCallback? onLayoutChanged;
 
   @override
@@ -517,7 +765,7 @@ class _AgentThinkingActivityRow extends StatefulWidget {
 }
 
 class _AgentThinkingActivityRowState extends State<_AgentThinkingActivityRow> {
-  bool _expanded = false;
+  late bool _expanded = widget.initiallyExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -537,105 +785,123 @@ class _AgentThinkingActivityRowState extends State<_AgentThinkingActivityRow> {
     );
     final preview = _firstMeaningfulLine(content);
     final statusColor = isLoading
-        ? palette.accentPrimary
+        ? const Color(0xFF8B5CF6)
         : palette.textTertiary;
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 2, bottom: 2),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: content.isEmpty ? null : _toggleExpanded,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 18,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: statusColor.withValues(
-                          alpha: context.isDarkTheme ? 0.14 : 0.12,
-                        ),
-                      ),
-                      child: Center(
-                        child: isLoading
-                            ? SizedBox(
-                                width: 8,
-                                height: 8,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 1.4,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    statusColor,
-                                  ),
-                                ),
-                              )
-                            : Icon(
-                                Icons.psychology_alt_outlined,
-                                size: 11,
-                                color: statusColor,
-                              ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: palette.textSecondary,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              height: 1.1,
-                            ),
-                          ),
-                          if (!_expanded && preview.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 3),
-                              child: Text(
-                                preview,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: palette.textTertiary,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w500,
-                                  height: 1.2,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (content.isNotEmpty)
-                      AnimatedRotation(
-                        turns: _expanded ? 0 : -0.25,
-                        duration: const Duration(milliseconds: 160),
-                        child: Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          size: 16,
-                          color: palette.textTertiary,
-                        ),
-                      ),
-                  ],
-                ),
-                if (_expanded) _ThinkingDetail(content: content),
-              ],
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxWidth =
+              (constraints.maxWidth *
+                      _AgentRunGroupMessageState._compactProcessMaxWidthFactor)
+                  .clamp(
+                    _AgentRunGroupMessageState._compactProcessMinWidth,
+                    _AgentRunGroupMessageState._compactProcessMaxWidth,
+                  )
+                  .toDouble();
+          return ConstrainedBox(
+            key: ValueKey('agent-thinking-activity-row-${widget.message.id}'),
+            constraints: BoxConstraints(
+              minWidth: _AgentRunGroupMessageState._compactProcessMinWidth,
+              maxWidth: maxWidth,
             ),
-          ),
-        ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: content.isEmpty ? null : _toggleExpanded,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(2, 4, 4, 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: isLoading
+                                  ? SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 1.4,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              statusColor,
+                                            ),
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.psychology_alt_outlined,
+                                      size: 13,
+                                      color: statusColor,
+                                    ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: statusColor,
+                                      fontSize: _AgentRunGroupMessageState
+                                          ._thinkingFontSize,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 0,
+                                      height: 1.15,
+                                    ),
+                                  ),
+                                  if (!_expanded && preview.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Text(
+                                        preview,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: palette.textTertiary,
+                                          fontSize: _AgentRunGroupMessageState
+                                              ._thinkingFontSize,
+                                          fontWeight: FontWeight.w500,
+                                          letterSpacing: 0,
+                                          height: 1.2,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            if (content.isNotEmpty)
+                              AnimatedRotation(
+                                turns: _expanded ? 0 : -0.25,
+                                duration: const Duration(milliseconds: 160),
+                                child: Icon(
+                                  Icons.keyboard_arrow_down_rounded,
+                                  size: 16,
+                                  color: palette.textTertiary,
+                                ),
+                              ),
+                          ],
+                        ),
+                        if (_expanded) _ThinkingDetail(content: content),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -674,10 +940,12 @@ class _ThinkingDetail extends StatelessWidget {
           child: Text(
             content,
             style: TextStyle(
-              color: palette.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w400,
-              height: 1.35,
+              color: palette.textTertiary,
+              fontSize: _AgentRunGroupMessageState._thinkingFontSize,
+              fontWeight: FontWeight.w500,
+              fontStyle: FontStyle.italic,
+              letterSpacing: 0,
+              height: 1.28,
               fontFamily: 'monospace',
             ),
           ),
@@ -716,9 +984,10 @@ class _ProcessStatusPill extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontSize: 10,
+            fontSize: _AgentRunGroupMessageState._processFontSize,
             fontWeight: FontWeight.w600,
             color: color,
+            letterSpacing: 0,
             height: 1,
           ),
         ),

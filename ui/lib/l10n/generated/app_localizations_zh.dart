@@ -391,6 +391,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatToolCalling => '正在调用工具';
 
   @override
+  String get chatToolOutputCopied => '已复制工具输出';
+
+  @override
+  String get chatViewRunLogTooltip => '查看执行记录';
+
+  @override
   String get chatFallbackReply => '暂时无法生成回复，请重试。';
 
   @override
@@ -488,7 +494,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get memoryLongTermTitle => '长期记忆';
 
   @override
-  String get memoryCommandsTitle => '指令';
+  String get memoryCommandsTitle => 'Function';
 
   @override
   String get memoryNoShortTerm => '还没有短期记忆';

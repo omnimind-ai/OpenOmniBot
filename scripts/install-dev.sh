@@ -75,6 +75,6 @@ echo "Installing APK (~${APK_SIZE_MB} MB) → $DEVICE_NAME"
 $ADB install -r "$APK"
 echo ""
 echo "Done. Launching app..."
-$ADB shell am start -n cn.com.omnimind.bot.develop/cn.com.omnimind.bot.ui.MainActivity \
+$ADB shell monkey -p cn.com.omnimind.bot.debug -c android.intent.category.LAUNCHER 1 \
   >/dev/null 2>&1 || true
-echo "  → cn.com.omnimind.bot.develop"
+echo "  → cn.com.omnimind.bot.debug"

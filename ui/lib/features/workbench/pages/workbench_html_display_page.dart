@@ -65,7 +65,16 @@ const String _kViewportScript = '''
 const String _kBridgeScript = '''
 (function () {
   if (window.oob && window.oob.__installed) return;
+  var _colorScheme = 'light';
   var _updateCallbacks = [];
+  function _applyColorScheme(colorScheme) {
+    var scheme = colorScheme === 'dark' ? 'dark' : 'light';
+    _colorScheme = scheme;
+    try {
+      document.documentElement.setAttribute('data-oob-color-scheme', scheme);
+      document.documentElement.style.colorScheme = scheme;
+    } catch(e) {}
+  }
   function _callNative(handlerName, args) {
     return new Promise(function(resolve, reject) {
       function invoke() {
@@ -94,6 +103,7 @@ const String _kBridgeScript = '''
   var _pendingTasks = {};
   window.oob = {
     __installed: true,
+    colorScheme: function() { return _colorScheme; },
     callApi: function(apiId, inputs) {
       return _callNative('oobCallApi', [apiId, inputs || {}]).then(function(result) {
         // Agent tasks return {success:true, outputs:{status:'pending', taskId:..., conversationId:...}}
@@ -129,6 +139,7 @@ const String _kBridgeScript = '''
     onProjectUpdated: function(callback) {
       if (typeof callback === 'function') _updateCallbacks.push(callback);
     },
+    __setColorScheme: _applyColorScheme,
     __dispatchUpdate: function(project) {
       // Clear pending task timers when an update arrives.
       Object.keys(_pendingTasks).forEach(function(id) {
@@ -140,6 +151,7 @@ const String _kBridgeScript = '''
       });
     }
   };
+  _applyColorScheme(window.__oobInitialColorScheme || 'light');
 })();
 ''';
 
@@ -309,6 +321,7 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
   String? _currentHtmlFile;
   Uri? _currentHtmlUri;
   bool? _wideCanvasSettingsApplied;
+  String _lastColorScheme = 'light';
   bool _floatingPromptExpanded = false;
   bool _submittingFloatingPrompt = false;
   Map<String, Object?>? _latestLayoutProfile;
@@ -916,17 +929,40 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
     await _safeEvaluateJavascript(js);
   }
 
+  String _currentColorScheme() {
+    if (!mounted) return _lastColorScheme;
+    final colorScheme = Theme.of(context).brightness == Brightness.dark
+        ? 'dark'
+        : 'light';
+    _lastColorScheme = colorScheme;
+    return colorScheme;
+  }
+
+  Map<String, Object?> _currentThemeProfile() {
+    final colorScheme = _currentColorScheme();
+    return <String, Object?>{
+      'colorScheme': colorScheme,
+      'isDarkMode': colorScheme == 'dark',
+    };
+  }
+
+  Future<void> _dispatchColorScheme() async {
+    final js =
+        'window.oob && window.oob.__setColorScheme && '
+        'window.oob.__setColorScheme(${jsonEncode(_currentColorScheme())});';
+    await _safeEvaluateJavascript(js);
+  }
+
   String _htmlWithBridgeBootstrap(String html) {
+    final themeBootstrap =
+        '<script>window.__oobInitialColorScheme=${jsonEncode(_currentColorScheme())};</script>';
+    final bootstrap = '$themeBootstrap\n$_kBridgeBootstrapTag';
     final headMatch = RegExp(
       r'<head(\s[^>]*)?>',
       caseSensitive: false,
     ).firstMatch(html);
     if (headMatch != null) {
-      return html.replaceRange(
-        headMatch.end,
-        headMatch.end,
-        '\n$_kBridgeBootstrapTag',
-      );
+      return html.replaceRange(headMatch.end, headMatch.end, '\n$bootstrap');
     }
     final htmlMatch = RegExp(
       r'<html(\s[^>]*)?>',
@@ -936,10 +972,10 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
       return html.replaceRange(
         htmlMatch.end,
         htmlMatch.end,
-        '\n<head>\n$_kBridgeBootstrapTag</head>\n',
+        '\n<head>\n$bootstrap</head>\n',
       );
     }
-    return '<!doctype html><html><head>\n$_kBridgeBootstrapTag</head><body>$html</body></html>';
+    return '<!doctype html><html><head>\n$bootstrap</head><body>$html</body></html>';
   }
 
   // ── bridge handlers ────────────────────────────────────────────────────────
@@ -989,6 +1025,7 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
       'renderer': 'html_webview',
       'selectedElement': selection,
       'mode': 'html_webview',
+      ..._currentThemeProfile(),
     });
   }
 
@@ -1008,6 +1045,7 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
     final display = _currentDisplay(project);
     final html = project.frontendHtml;
     final base = buildWorkbenchVisibleFrontendContext(
+      context: context,
       project: project,
       display: display,
       source: 'workbench_html_floating_input',
@@ -1028,6 +1066,7 @@ class _WorkbenchHtmlDisplayPageState extends State<WorkbenchHtmlDisplayPage>
       ...base,
       'renderer': 'html_webview',
       'mode': 'html_webview',
+      ..._currentThemeProfile(),
       'frontendContextKind': 'floating_input',
       if (_latestLayoutProfile != null) 'workbenchLayout': _latestLayoutProfile,
     };
@@ -1237,6 +1276,7 @@ $contextJson
       'name': project.name,
       'route': project.route,
       'displayId': widget._displayId ?? project.primaryDisplay.id,
+      ..._currentThemeProfile(),
       'pageSpec': project.pageSpec,
       'frontendHtml': project.frontendHtml,
       'tools': _bridgeTools(project),
@@ -1251,6 +1291,7 @@ $contextJson
     return {
       'projectId': project.projectId,
       'name': project.name,
+      ..._currentThemeProfile(),
       'tools': _bridgeTools(project),
       'items': _bridgeItems(project),
     };
@@ -1325,7 +1366,11 @@ $contextJson
                     ? null
                     : '/workbench/html?projectId=${project.projectId}',
               );
-              final content = Column(
+              unawaited(_dispatchColorScheme());
+              final viewPadding = MediaQuery.viewPaddingOf(context);
+              final isFullscreenHtml =
+                  !widget._embedded && hasHtml && project != null;
+              final contentColumn = Column(
                 children: [
                   if (_loader.loading || _webViewLoading)
                     const LinearProgressIndicator(minHeight: 2),
@@ -1346,6 +1391,12 @@ $contextJson
                   ),
                 ],
               );
+              final content = widget._embedded || isFullscreenHtml
+                  ? contentColumn
+                  : Padding(
+                      padding: EdgeInsets.only(top: viewPadding.top),
+                      child: contentColumn,
+                    );
               if (widget._embedded || !hasHtml || project == null) {
                 return content;
               }
@@ -1354,16 +1405,16 @@ $contextJson
                 children: [
                   content,
                   Positioned(
-                    left: 8 + MediaQuery.viewPaddingOf(context).left,
-                    top: 6 + MediaQuery.viewPaddingOf(context).top,
+                    left: 8 + viewPadding.left,
+                    top: 6 + viewPadding.top,
                     child: _HtmlFullscreenChrome(onBack: _handleBack),
                   ),
                   Positioned(
-                    left: 12 + MediaQuery.viewPaddingOf(context).left,
-                    right: 12 + MediaQuery.viewPaddingOf(context).right,
+                    left: 12 + viewPadding.left,
+                    right: 12 + viewPadding.right,
                     bottom:
                         12 +
-                        MediaQuery.viewPaddingOf(context).bottom +
+                        viewPadding.bottom +
                         MediaQuery.viewInsetsOf(context).bottom,
                     child: _HtmlFloatingPromptCard(
                       expanded: _floatingPromptExpanded,
@@ -1742,7 +1793,7 @@ class _HtmlFloatingPromptCard extends StatelessWidget {
       en: 'Send edit request',
       locale: Localizations.localeOf(context),
     );
-    final background = palette.surfacePrimary.withValues(alpha: 0.97);
+    final background = palette.surfacePrimary;
     final activeStatus = status;
     final statusColor = activeStatus == null
         ? palette.accentPrimary
@@ -1760,7 +1811,8 @@ class _HtmlFloatingPromptCard extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 360),
           child: Material(
-            color: Colors.transparent,
+            color: background,
+            borderRadius: BorderRadius.circular(999),
             child: InkWell(
               onTap: submitting ? null : onExpand,
               borderRadius: BorderRadius.circular(999),
@@ -1771,13 +1823,6 @@ class _HtmlFloatingPromptCard extends StatelessWidget {
                   color: background,
                   borderRadius: BorderRadius.circular(999),
                   border: border,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.14),
-                      blurRadius: 18,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1814,8 +1859,7 @@ class _HtmlFloatingPromptCard extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
         child: Material(
-          color: Colors.transparent,
-          elevation: 12,
+          color: background,
           borderRadius: BorderRadius.circular(8),
           child: Container(
             padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
@@ -1823,13 +1867,6 @@ class _HtmlFloatingPromptCard extends StatelessWidget {
               color: background,
               borderRadius: BorderRadius.circular(8),
               border: border,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.16),
-                  blurRadius: 22,
-                  offset: const Offset(0, 10),
-                ),
-              ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,

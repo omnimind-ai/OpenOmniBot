@@ -19,7 +19,7 @@ import kotlin.math.roundToInt
  * The service deliberately keeps the first version fixed and local: Functions
  * are registered in OOB stores, recall is deterministic, and execution runs
  * through the existing OOB replay dispatcher. External OmniFlow can replace this
- * class later behind the same `recall -> call_function -> ingest_run_log`
+ * class later behind the same `recall -> call_tool(function_id) -> ingest_run_log`
  * contract.
  */
 class OobOmniFlowToolkitService(
@@ -127,6 +127,15 @@ class OobOmniFlowToolkitService(
             allowAgentFallback = true
         )
         val success = runPayload["success"] == true && runPayload["model_required"] != true
+        OobReusableFunctionStore.recordRun(
+            context = context,
+            functionId = functionId,
+            success = success,
+            runId = runPayload["run_id"]?.toString(),
+            runner = runPayload["runner"]?.toString(),
+            stepCount = intArg(runPayload["step_count"], defaultValue = 0),
+            errorMessage = runPayload["error_message"]?.toString()
+        )
         val fallback = !success || decision == "needs_agent"
         val fallbackReason = when {
             runPayload["error_code"] != null -> runPayload["error_code"]?.toString()
@@ -440,6 +449,15 @@ class OobOmniFlowToolkitService(
             arguments = arguments,
             allowAgentFallback = continueWithAgent || decision == "needs_agent"
         )
+        OobReusableFunctionStore.recordRun(
+            context = context,
+            functionId = functionId,
+            success = runPayload["success"] == true,
+            runId = runPayload["run_id"]?.toString(),
+            runner = runPayload["runner"]?.toString(),
+            stepCount = intArg(runPayload["step_count"], defaultValue = 0),
+            errorMessage = runPayload["error_message"]?.toString()
+        )
         return linkedMapOf<String, Any?>(
             "success" to (runPayload["success"] == true),
             "run_id" to runPayload["run_id"],
@@ -594,12 +612,15 @@ class OobOmniFlowToolkitService(
         val normalizedId = normalizeText(functionId)
         val normalizedName = normalizeText(name)
         val normalizedDescription = normalizeText(description)
+        val normalizedSourceGoal = normalizeText(source["goal"]?.toString().orEmpty())
         var score = when {
             normalizedGoal == normalizedId -> 1.0
             normalizedGoal == normalizedName && normalizedName.isNotEmpty() -> 0.99
             normalizedGoal == normalizedDescription && normalizedDescription.isNotEmpty() -> 0.96
+            normalizedGoal == normalizedSourceGoal && normalizedSourceGoal.isNotEmpty() -> 0.98
             normalizedId.contains(normalizedGoal) || normalizedGoal.contains(normalizedId) -> 0.92
             normalizedName.contains(normalizedGoal) || normalizedGoal.contains(normalizedName) -> 0.90
+            normalizedSourceGoal.contains(normalizedGoal) || normalizedGoal.contains(normalizedSourceGoal) -> 0.90
             else -> tokenOverlapScore(goal, corpus)
         }
         var reason = when {
@@ -656,28 +677,7 @@ class OobOmniFlowToolkitService(
     }
 
     private fun inputSchema(spec: Map<String, Any?>): Map<String, Any?> {
-        val explicit = mapArg(spec["inputSchema"]).ifEmpty { mapArg(spec["input_schema"]) }
-        if (explicit.isNotEmpty()) return explicit
-        val parameters = listArg(spec["parameters"])
-        val properties = linkedMapOf<String, Any?>()
-        val required = mutableListOf<String>()
-        parameters.forEach { raw ->
-            val parameter = (raw as? Map<*, *>)?.let(::stringMap) ?: return@forEach
-            val name = parameter["name"]?.toString()?.trim().orEmpty()
-            if (name.isEmpty()) return@forEach
-            val type = parameter["type"]?.toString()?.trim()?.ifEmpty { "string" } ?: "string"
-            val property = linkedMapOf<String, Any?>("type" to jsonSchemaType(type))
-            parameter["description"]?.toString()?.takeIf { it.isNotEmpty() }?.let {
-                property["description"] = it
-            }
-            properties[name] = property
-            if (boolArg(parameter["required"])) required += name
-        }
-        return linkedMapOf(
-            "type" to "object",
-            "properties" to properties,
-            "required" to required
-        )
+        return OobFunctionSchemaBuilder.inputSchema(spec)
     }
 
     private fun isNoArgumentFunction(spec: Map<String, Any?>): Boolean {
@@ -829,15 +829,6 @@ class OobOmniFlowToolkitService(
 
     private fun roundScore(value: Double): Double =
         ((value.coerceIn(0.0, 1.0) * 1000.0).roundToInt() / 1000.0)
-
-    private fun jsonSchemaType(type: String): String =
-        when (type.lowercase()) {
-            "int", "integer" -> "integer"
-            "number", "float", "double" -> "number"
-            "bool", "boolean" -> "boolean"
-            "array", "object" -> type.lowercase()
-            else -> "string"
-        }
 
     private fun firstNonBlank(vararg values: Any?): String {
         for (value in values) {

@@ -3,13 +3,14 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE_ROOT="${OMNIFLOW_ACCEPTANCE_ROOT:-/private/tmp/omniflow-acceptance-all}"
+PYTHON_BIN="${OMNIFLOW_PYTHON:-python3}"
 
 now_ms() {
-  python3 -c 'import time; print(int(time.time() * 1000))'
+  "$PYTHON_BIN" -c 'import time; print(int(time.time() * 1000))'
 }
 
 print_all_timing_summary() {
-  BASE_ROOT="$BASE_ROOT" python3 - <<'PY'
+  BASE_ROOT="$BASE_ROOT" "$PYTHON_BIN" - <<'PY'
 from pathlib import Path
 import os
 

@@ -71,6 +71,14 @@ OpenOmniBot 是一个基于 Android 原生 Kotlin 与 Flutter 构建的端侧 AI
 
 说明：除了 `Memory embedding` 强制需要嵌入模型之外，其他场景为了获得更好的体验，建议优先使用多模态或视觉模型。
 
+开发设备或模拟器可以用脚本构建、安装并启动 debug 应用：
+
+```bash
+bash scripts/prepare-oob-device.sh --device <adb-serial>
+```
+
+Provider base URL、API key 和场景模型绑定改为在应用设置中运行时配置。
+
 <p align="center">
   <img src="docs/tutorial/alpine.jpg" alt="Alpine 环境" width="260" />
 </p>

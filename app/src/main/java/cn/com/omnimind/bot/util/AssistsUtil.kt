@@ -244,6 +244,14 @@ class AssistsUtil {
             return AssistsCore.provideUserInputToVLMTask(userInput)
         }
 
+        fun pauseVLMTask(): Boolean {
+            return AssistsCore.pauseVLMTask()
+        }
+
+        fun resumeVLMTask(): Boolean {
+            return AssistsCore.resumeVLMTask()
+        }
+
         fun appendVlmExternalMemory(memory: String): Boolean {
             return AssistsCore.appendVlmExternalMemory(memory)
         }

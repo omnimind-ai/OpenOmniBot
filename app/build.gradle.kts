@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-fun prop(name: String): String {
+fun prop(name: String, defaultValue: String = ""): String {
     val fromProject = (project.findProperty(name) as String?)?.trim().orEmpty()
     if (fromProject.isNotEmpty()) {
         return fromProject
@@ -16,17 +16,27 @@ fun prop(name: String): String {
     if (fromEnv.isNotEmpty()) {
         return fromEnv
     }
-    return when (name) {
-        "OMNIBOT_DEFAULT_MODEL_PROVIDER_BASE_URL" ->
-            "https://dashscope.aliyuncs.com/compatible-mode/v1"
-        "OMNIBOT_DEFAULT_MODEL_PROVIDER_API_KEY" ->
-            System.getenv("DASHSCOPE_API_KEY")?.trim().orEmpty()
-        "OMNIBOT_DEFAULT_MODEL_PROVIDER_MODEL_ID" ->
-            System.getenv("OPENAI_MODEL")?.trim()?.takeIf { it.isNotEmpty() }
-                ?: "qwen-vl-max-latest"
-        else -> ""
-    }
+    return defaultValue
 }
+
+fun envValue(name: String): String = System.getenv(name)?.trim().orEmpty()
+
+fun quotedBuildConfigString(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+val defaultModelProviderBaseUrl = prop(
+    "OMNIBOT_DEFAULT_MODEL_PROVIDER_BASE_URL",
+    prop("OMNIMIND_API_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+)
+val defaultModelProviderApiKeyEnv = prop("OMNIMIND_API_KEY_ENV", "DASHSCOPE_API_KEY")
+val defaultModelProviderApiKey = prop(
+    "OMNIBOT_DEFAULT_MODEL_PROVIDER_API_KEY",
+    envValue(defaultModelProviderApiKeyEnv).ifEmpty { envValue("OMNIMIND_API_KEY") }
+)
+val defaultModelProviderModelId = prop(
+    "OMNIBOT_DEFAULT_MODEL_PROVIDER_MODEL_ID",
+    prop("OMNIMIND_MODEL", prop("OPENAI_MODEL", "qwen-vl-max-latest"))
+)
 
 val flutterWebBuildDir = rootProject.file("ui/build/web")
 val flutterWebAssetsRootDir = layout.buildDirectory.dir("generated/omnibot_assets").get().asFile
@@ -88,7 +98,23 @@ android {
         minSdk = 29
         targetSdk = 34
         versionCode = 1
-        versionName = "0.5.1.2"
+        versionName = "0.5.0.6"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "DEFAULT_MODEL_PROVIDER_BASE_URL",
+            quotedBuildConfigString(defaultModelProviderBaseUrl)
+        )
+        buildConfigField(
+            "String",
+            "DEFAULT_MODEL_PROVIDER_API_KEY",
+            quotedBuildConfigString(defaultModelProviderApiKey)
+        )
+        buildConfigField(
+            "String",
+            "DEFAULT_MODEL_PROVIDER_MODEL_ID",
+            quotedBuildConfigString(defaultModelProviderModelId)
+        )
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a"))
@@ -102,9 +128,6 @@ android {
         create("develop") {
             dimension = "version"
             buildConfigField("String", "BASE_URL", "\"${prop("OMNIBOT_BASE_URL")}\"")
-            buildConfigField("String", "DEFAULT_MODEL_PROVIDER_BASE_URL", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_BASE_URL")}\"")
-            buildConfigField("String", "DEFAULT_MODEL_PROVIDER_API_KEY", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_API_KEY")}\"")
-            buildConfigField("String", "DEFAULT_MODEL_PROVIDER_MODEL_ID", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_MODEL_ID")}\"")
             buildConfigField("String", "APP_UPDATE_WORKER_URL", "\"${prop("OMNIBOT_UPDATE_WORKER_URL")}\"")
             resValue("bool", "is_accessibility_tool", "true")
         }
@@ -112,9 +135,6 @@ android {
         create("production") {
             dimension = "version"
             buildConfigField("String", "BASE_URL", "\"${prop("OMNIBOT_BASE_URL")}\"")
-            buildConfigField("String", "DEFAULT_MODEL_PROVIDER_BASE_URL", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_BASE_URL")}\"")
-            buildConfigField("String", "DEFAULT_MODEL_PROVIDER_API_KEY", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_API_KEY")}\"")
-            buildConfigField("String", "DEFAULT_MODEL_PROVIDER_MODEL_ID", "\"${prop("OMNIBOT_DEFAULT_MODEL_PROVIDER_MODEL_ID")}\"")
             buildConfigField("String", "APP_UPDATE_WORKER_URL", "\"${prop("OMNIBOT_UPDATE_WORKER_URL")}\"")
             resValue("bool", "is_accessibility_tool", "true")
         }
@@ -266,6 +286,8 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.ktor.server.call.logging)
     testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest )
 }

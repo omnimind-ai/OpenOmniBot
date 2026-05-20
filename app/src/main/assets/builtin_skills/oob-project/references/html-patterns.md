@@ -2,6 +2,14 @@
 
 Target: Android WebView, phone portrait, 360–430dp. Static files in `frontend/html/`.
 
+Project mode injects the current App theme into HTML:
+
+- `html[data-oob-color-scheme="light"]` / `html[data-oob-color-scheme="dark"]`
+- `window.oob.colorScheme()`
+- `project.colorScheme` from `window.oob.getProject()`
+
+Use those values for light/dark-specific UI. The injected value follows the current App theme and should take precedence over raw `prefers-color-scheme`.
+
 ---
 
 ## Complete Skeleton
@@ -11,7 +19,7 @@ Target: Android WebView, phone portrait, 360–430dp. Static files in `frontend/
 <html lang="zh">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title><!-- project name --></title>
   <link rel="stylesheet" href="base.css">
   <style>/* project-specific overrides only */</style>

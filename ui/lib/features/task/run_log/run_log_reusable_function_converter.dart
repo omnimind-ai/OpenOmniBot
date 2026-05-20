@@ -168,7 +168,8 @@ class RunLogReusableFunctionConverter {
     for (var index = 0; index < snapshots.length; index++) {
       final snapshot = snapshots[index];
       if (snapshot.success == false) continue;
-      final args = _replayArgsForSnapshot(snapshot);
+      final rawArgs = _replayArgsForSnapshot(snapshot);
+      final args = _canonicalCallToolArgs(snapshot.toolName, rawArgs);
       final shouldSkipPerceptionStep =
           RunLogReplayPolicy.isPerceptionTool(snapshot.toolName) &&
           hasRecordedReplayStep;
@@ -182,13 +183,14 @@ class RunLogReusableFunctionConverter {
       final stepId = 'step_${executionIndex + 1}';
       final executor = _executorForSnapshot(
         snapshot,
+        args: args,
         skipPerceptionStep: shouldSkipPerceptionStep,
       );
       final replayAction = _replayActionForSnapshot(snapshot);
       final modelFree = executor == 'omniflow';
       final emittedToolName = modelFree && replayAction != null
           ? replayAction
-          : snapshot.toolName;
+          : _canonicalToolNameForStep(snapshot.toolName, args);
       final scriptable = executor != 'agent';
       final coordinateHook = _buildCoordinateHookMetadata(
         snapshot: snapshot,
@@ -209,11 +211,16 @@ class RunLogReusableFunctionConverter {
         args: args,
         result: snapshot.result,
       );
+      final observedResult = _compactObservedResult(snapshot.result);
       steps.add({
         'id': stepId,
         'index': executionIndex,
         if (executionIndex != index) 'source_index': index,
-        'kind': _stepKindForToolName(emittedToolName, snapshot.route),
+        'kind': _stepKindForToolName(
+          emittedToolName,
+          snapshot.route,
+          args: args,
+        ),
         'title': snapshot.title.isNotEmpty ? snapshot.title : emittedToolName,
         if (summary.isNotEmpty) 'summary': summary,
         'tool': emittedToolName,
@@ -237,12 +244,13 @@ class RunLogReusableFunctionConverter {
         'tool_binding': {
           'kind': executor == 'agent'
               ? 'agent_replan'
-              : executor == 'omniflow'
-              ? 'omniflow_action'
               : RunLogReplayPolicy.isOmniflowGraphTool(emittedToolName)
               ? 'omniflow_graph'
-              : RunLogReplayPolicy.isOmniflowFunctionTool(emittedToolName)
+              : RunLogReplayPolicy.isOmniflowFunctionTool(emittedToolName) ||
+                    _callToolFunctionId(args).isNotEmpty
               ? 'omniflow_function'
+              : executor == 'omniflow'
+              ? 'omniflow_action'
               : 'oob_agent_tool',
           'name': emittedToolName,
           if (executor == 'agent') 'callable_tool': 'oob.agent.run',
@@ -263,8 +271,8 @@ class RunLogReusableFunctionConverter {
         if (snapshot.durationMs != null) 'duration_ms': snapshot.durationMs,
         if (snapshot.packageName.isNotEmpty)
           'package_name': snapshot.packageName,
-        if (!_isEmptyJsonValue(snapshot.result))
-          'observed_result': snapshot.result,
+        if (!_isEmptyJsonValue(observedResult))
+          'observed_result': observedResult,
         if (snapshot.beforeSummary.isNotEmpty)
           'before_state': snapshot.beforeSummary,
         if (snapshot.afterSummary.isNotEmpty)
@@ -521,7 +529,7 @@ Requirements:
 - Output exactly one JSON object. Do not use Markdown and do not explain.
 - The first non-whitespace character must be "{" and the last non-whitespace character must be "}".
 - Do not wrap the JSON in code fences. Do not include comments, prose, XML, YAML, or bullet lists.
-- Keep schema_version = "oob.reusable_function.v1".
+- Keep schema_version = "oob.reusable_function.v1" and keep function_id exactly unchanged.
 - Preserve execution.steps order, tool names, and key args. Do not invent tools that do not exist.
 - You may rewrite name/description to make it a clearer reusable function name.
 - You may refine parameters: abstract hard-coded user input, search terms, message text, URLs, and target objects into parameters; do not abstract coordinate x/y into user parameters.
@@ -542,7 +550,7 @@ $compact
 - 只能输出一个 JSON object，不要 Markdown，不要解释。
 - 第一个非空白字符必须是 "{"，最后一个非空白字符必须是 "}"。
 - 不要使用代码块，不要包含注释、说明文字、XML、YAML 或列表解释。
-- 保持 schema_version = "oob.reusable_function.v1"。
+- 保持 schema_version = "oob.reusable_function.v1"，并保持 function_id 完全不变。
 - 保留 execution.steps 的顺序、工具名和关键 args，不要编造不存在的工具。
 - 可以重写 name/description，使其更像可复用功能名。
 - 可以整理 parameters：把硬编码的用户输入、搜索词、消息文本、URL、目标对象抽象成参数；不要把坐标 x/y 抽象成用户参数。
@@ -570,7 +578,7 @@ Repair the model output into exactly one valid JSON object.
 Hard requirements:
 - Return raw JSON only. The first non-whitespace character must be "{" and the last must be "}".
 - Do not use Markdown, code fences, comments, or explanations.
-- Keep schema_version = "oob.reusable_function.v1".
+- Keep schema_version = "oob.reusable_function.v1" and keep function_id exactly unchanged.
 - If the invalid output is unusable, return a valid improved version of the fallback JSON.
 
 Invalid output:
@@ -586,7 +594,7 @@ $fallback
 硬性要求：
 - 只返回原始 JSON。第一个非空白字符必须是 "{"，最后一个必须是 "}"。
 - 不要 Markdown、代码块、注释或解释。
-- 保持 schema_version = "oob.reusable_function.v1"。
+- 保持 schema_version = "oob.reusable_function.v1"，并保持 function_id 完全不变。
 - 如果原输出不可用，就基于 fallback JSON 返回一个合法的优化版本。
 
 无效输出：
@@ -603,10 +611,10 @@ $fallback
   ) {
     final normalized = Map<String, dynamic>.from(aiJson);
     normalized['schema_version'] = 'oob.reusable_function.v1';
-    normalized['function_id'] = _firstNonBlank([
-      normalized['function_id'],
-      fallback['function_id'],
-    ]);
+    normalized['function_id'] = _normalizeFunctionId(
+      _firstNonBlank([fallback['function_id'], normalized['function_id']]),
+      fallback: _firstNonBlank([fallback['function_id']]),
+    );
     normalized['source'] = _mergeMaps(
       _asStringKeyMap(fallback['source']),
       _asStringKeyMap(normalized['source']),
@@ -1075,17 +1083,75 @@ String _jsonPathSuffix(List<String> segments) {
   return safeSegments.join('.');
 }
 
-String _stepKindForToolName(String toolName, String route) {
+String _canonicalToolNameForStep(String toolName, dynamic args) {
+  if (RunLogReplayPolicy.isOmniflowFunctionTool(toolName) ||
+      RunLogReplayPolicy.isOmniflowToolCallTool(toolName)) {
+    return 'call_tool';
+  }
+  return toolName;
+}
+
+Map<String, dynamic> _canonicalCallToolArgs(String toolName, dynamic args) {
+  final normalizedTool = RunLogReplayPolicy.normalizeToolName(toolName);
+  if (!RunLogReplayPolicy.isOmniflowFunctionTool(normalizedTool) &&
+      !RunLogReplayPolicy.isOmniflowToolCallTool(normalizedTool)) {
+    final safe = _jsonSafe(args);
+    return safe is Map<String, dynamic> ? safe : _asStringKeyMap(safe);
+  }
+  final mapped = Map<String, dynamic>.from(_asStringKeyMap(args));
+  final functionId = _firstNonBlank([
+    mapped['function_id'],
+    mapped['functionId'],
+    mapped['oob_function_id'],
+    mapped['oobFunctionId'],
+  ]);
+  if (functionId.isNotEmpty) {
+    mapped['function_id'] = functionId;
+  }
+  final targetTool = _firstNonBlank([
+    mapped['tool_name'],
+    mapped['toolName'],
+    mapped['target_tool'],
+    mapped['targetTool'],
+    mapped['tool'],
+  ]);
+  if (targetTool.isNotEmpty &&
+      !RunLogReplayPolicy.isOmniflowFunctionTool(normalizedTool)) {
+    mapped['tool_name'] = targetTool;
+  }
+  return mapped;
+}
+
+String _callToolFunctionId(dynamic args) {
+  final mapped = _asStringKeyMap(args);
+  return _firstNonBlank([
+    mapped['function_id'],
+    mapped['functionId'],
+    mapped['oob_function_id'],
+    mapped['oobFunctionId'],
+  ]);
+}
+
+String _stepKindForToolName(String toolName, String route, {dynamic args}) {
+  if (RunLogReplayPolicy.isOmniflowToolCallTool(toolName)) {
+    return _callToolFunctionId(args).isNotEmpty
+        ? 'omniflow_function'
+        : 'tool_call';
+  }
   final executor = _executorForToolName(toolName, route);
-  return executor == 'agent'
-      ? 'agent_call'
-      : executor == 'omniflow'
-      ? 'omniflow_action'
-      : 'tool_call';
+  if (executor == 'agent') return 'agent_call';
+  if (RunLogReplayPolicy.isOmniflowGraphTool(toolName)) {
+    return 'omniflow_graph';
+  }
+  if (RunLogReplayPolicy.isOmniflowFunctionTool(toolName)) {
+    return 'omniflow_function';
+  }
+  return executor == 'omniflow' ? 'omniflow_action' : 'tool_call';
 }
 
 String _executorForSnapshot(
   _RunLogActionSnapshot snapshot, {
+  required dynamic args,
   required bool skipPerceptionStep,
 }) {
   if (RunLogReplayPolicy.isPerceptionTool(snapshot.toolName) &&
@@ -1094,6 +1160,9 @@ String _executorForSnapshot(
   }
   if (_replayActionForSnapshot(snapshot) != null) {
     return 'omniflow';
+  }
+  if (RunLogReplayPolicy.isOmniflowToolCallTool(snapshot.toolName)) {
+    return _callToolFunctionId(args).isNotEmpty ? 'omniflow' : 'tool';
   }
   return _executorForToolName(snapshot.toolName, snapshot.route);
 }
@@ -1105,6 +1174,9 @@ String _executorForToolName(String toolName, String route) {
     return 'agent';
   }
   if (RunLogReplayPolicy.omniflowActionForToolName(normalizedTool) != null) {
+    return 'omniflow';
+  }
+  if (RunLogReplayPolicy.isOmniflowExecutionTool(normalizedTool)) {
     return 'omniflow';
   }
   if (normalizedRoute == 'miss' || normalizedRoute == 'vlm') {
@@ -1534,6 +1606,80 @@ dynamic _extractResult(Map<String, dynamic> card) {
   return _decodeJsonIfNeeded(value);
 }
 
+const int _observedResultStringLimit = 2000;
+const int _observedResultListLimit = 20;
+const int _observedResultMapLimit = 40;
+const int _observedResultMaxDepth = 4;
+
+dynamic _compactObservedResult(dynamic value) {
+  return _compactObservedJson(_jsonSafe(value), depth: 0);
+}
+
+dynamic _compactObservedJson(dynamic value, {required int depth}) {
+  if (value == null || value is num || value is bool) {
+    return value;
+  }
+  if (value is String) {
+    return _compactObservedString(value);
+  }
+  if (depth >= _observedResultMaxDepth) {
+    return const <String, dynamic>{
+      '__truncated__': true,
+      'reason': 'max_depth',
+    };
+  }
+  if (value is Map) {
+    final result = <String, dynamic>{};
+    var count = 0;
+    var omittedCount = 0;
+    for (final entry in value.entries) {
+      if (count < _observedResultMapLimit) {
+        result[entry.key.toString()] = _compactObservedJson(
+          entry.value,
+          depth: depth + 1,
+        );
+      } else {
+        omittedCount++;
+      }
+      count++;
+    }
+    if (omittedCount > 0) {
+      result['__truncated__'] = true;
+      result['__omitted_entry_count__'] = omittedCount;
+    }
+    return result;
+  }
+  if (value is Iterable) {
+    final result = <dynamic>[];
+    var count = 0;
+    var omittedCount = 0;
+    for (final item in value) {
+      if (count < _observedResultListLimit) {
+        result.add(_compactObservedJson(item, depth: depth + 1));
+      } else {
+        omittedCount++;
+      }
+      count++;
+    }
+    if (omittedCount > 0) {
+      result.add({
+        '__truncated__': true,
+        '__omitted_item_count__': omittedCount,
+      });
+    }
+    return result;
+  }
+  return _compactObservedString(value.toString());
+}
+
+String _compactObservedString(String value) {
+  if (value.length <= _observedResultStringLimit) {
+    return value;
+  }
+  final head = value.substring(0, _observedResultStringLimit).trimRight();
+  return '$head... [truncated, original_length=${value.length}]';
+}
+
 Map<String, dynamic>? _extractJsonObject(String raw) {
   final text = raw.trim();
   if (text.isEmpty) {
@@ -1629,7 +1775,20 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
       'unknown_tool',
     ]);
     final route = _firstNonBlank([merged['route'], fallbackStep['route']]);
-    final inferredExecutor = _executorForToolName(toolName, route);
+    final normalizedArgs = _canonicalCallToolArgs(
+      toolName,
+      merged['args'] ?? fallbackStep['args'],
+    );
+    final canonicalToolName = _canonicalToolNameForStep(
+      toolName,
+      normalizedArgs,
+    );
+    final isCallTool =
+        RunLogReplayPolicy.isOmniflowToolCallTool(toolName) ||
+        RunLogReplayPolicy.isOmniflowToolCallTool(canonicalToolName);
+    final inferredExecutor = isCallTool
+        ? (_callToolFunctionId(normalizedArgs).isNotEmpty ? 'omniflow' : 'tool')
+        : _executorForToolName(toolName, route);
     final executor = switch (inferredExecutor) {
       'omniflow' => 'omniflow',
       'agent' => 'agent',
@@ -1652,7 +1811,7 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
         : '';
     final emittedToolName = executor == 'omniflow' && replayAction.isNotEmpty
         ? replayAction
-        : toolName;
+        : canonicalToolName;
     final modelFree =
         executor == 'omniflow' ||
         (executor != 'agent' &&
@@ -1670,11 +1829,7 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
         ? 'oob.agent.run'
         : executor == 'omniflow' && replayAction.isNotEmpty
         ? replayAction
-        : _firstNonBlank([
-            merged['callable_tool'],
-            fallbackStep['callable_tool'],
-            toolName,
-          ]);
+        : canonicalToolName;
     final fallback = _mergeMaps(
       _asStringKeyMap(fallbackStep['fallback']),
       _asStringKeyMap(merged['fallback']),
@@ -1704,7 +1859,11 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
         'step_${index + 1}',
       ]),
       'index': _asInt(merged['index']) ?? index,
-      'kind': _stepKindForToolName(emittedToolName, route),
+      'kind': _stepKindForToolName(
+        emittedToolName,
+        route,
+        args: normalizedArgs,
+      ),
       'tool': emittedToolName,
       'callable_tool': callableTool,
       if (emittedToolName != toolName) 'source_tool': toolName,
@@ -1712,7 +1871,7 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
       'scriptable': scriptable,
       if (modelFree) 'model_free': true,
       if (replayAction.isNotEmpty) 'omniflow_action': replayAction,
-      'args': _jsonSafe(merged['args'] ?? fallbackStep['args']),
+      'args': _jsonSafe(normalizedArgs),
       'tool_binding': _mergeMaps(
         _mergeMaps(
           _asStringKeyMap(fallbackStep['tool_binding']),
@@ -1721,12 +1880,13 @@ List<dynamic> _normalizeExecutionSteps(dynamic value, dynamic fallback) {
         {
           'kind': executor == 'agent'
               ? 'agent_replan'
-              : executor == 'omniflow'
-              ? 'omniflow_action'
               : RunLogReplayPolicy.isOmniflowGraphTool(emittedToolName)
               ? 'omniflow_graph'
-              : RunLogReplayPolicy.isOmniflowFunctionTool(emittedToolName)
+              : RunLogReplayPolicy.isOmniflowFunctionTool(emittedToolName) ||
+                    _callToolFunctionId(normalizedArgs).isNotEmpty
               ? 'omniflow_function'
+              : executor == 'omniflow'
+              ? 'omniflow_action'
               : 'oob_agent_tool',
           'name': emittedToolName,
           if (executor == 'agent') 'callable_tool': 'oob.agent.run',
@@ -2053,6 +2213,24 @@ String _normalizeFunctionName(String value, {required String fallback}) {
     return fallback;
   }
   return normalized.length <= 60 ? normalized : normalized.substring(0, 60);
+}
+
+String _normalizeFunctionId(String value, {required String fallback}) {
+  final trimmed = value.trim();
+  if (RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(trimmed)) {
+    return trimmed;
+  }
+  final normalized = trimmed
+      .replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_')
+      .replaceAll(RegExp(r'_+'), '_')
+      .replaceAll(RegExp(r'^[_-]+|[_-]+$'), '');
+  if (normalized.isEmpty) {
+    return fallback.trim().isNotEmpty ? fallback.trim() : 'oob_function';
+  }
+  final safe = RegExp(r'^[A-Za-z]').hasMatch(normalized)
+      ? normalized
+      : 'oob_$normalized';
+  return safe.length <= 64 ? safe : safe.substring(0, 64);
 }
 
 String _compactId(String value) {

@@ -36,4 +36,9 @@ interface OnMessagePushListener {
      */
     fun onVlmTaskResult(result: VlmTaskTerminalResult) {}
 
+    /**
+     * VLM任务单步工具事件。payload 使用 canonical 字段，展示层负责本地化。
+     */
+    fun onVlmToolEvent(event: Map<String, Any?>) {}
+
 }

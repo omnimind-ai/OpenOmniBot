@@ -38,7 +38,7 @@ Use Direct MCP mode if these tools exist:
 
 ```text
 omniflow.recall
-omniflow.call_function
+omniflow.call_tool
 omniflow.ingest_run_log
 omniflow.explore_replay
 ```
@@ -59,10 +59,10 @@ the in-app Agent to use OmniFlow UI/native capabilities.
 
 1. `omniflow.recall(goal, current_package?, current_node_id?, k?)`
 2. If `decision=hit` and the hit has no required arguments, call
-   `omniflow.call_function(function_id, {})`.
+   `omniflow.call_tool({function_id, arguments: {}})`.
 3. If candidates are returned, choose one, fill arguments from `inputSchema`,
-   then call `omniflow.call_function(function_id, arguments)`.
-4. If recall misses or call_function returns `fallback=true`, continue with the
+   then call `omniflow.call_tool({function_id, arguments})`.
+4. If recall misses or call_tool returns `fallback=true`, continue with the
    host agent's normal planner.
 
 ### Write Back a RunLog

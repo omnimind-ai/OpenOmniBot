@@ -842,6 +842,18 @@ abstract class AppLocalizations {
   /// **'正在调用工具'**
   String get chatToolCalling;
 
+  /// No description provided for @chatToolOutputCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'已复制工具输出'**
+  String get chatToolOutputCopied;
+
+  /// No description provided for @chatViewRunLogTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看执行记录'**
+  String get chatViewRunLogTooltip;
+
   /// No description provided for @chatFallbackReply.
   ///
   /// In zh, this message translates to:
@@ -1031,7 +1043,7 @@ abstract class AppLocalizations {
   /// No description provided for @memoryCommandsTitle.
   ///
   /// In zh, this message translates to:
-  /// **'指令'**
+  /// **'Function'**
   String get memoryCommandsTitle;
 
   /// No description provided for @memoryNoShortTerm.

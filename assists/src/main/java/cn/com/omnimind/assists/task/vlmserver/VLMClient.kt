@@ -1,6 +1,7 @@
 package cn.com.omnimind.assists.task.vlmserver
 
 import cn.com.omnimind.baselib.llm.AssistantToolCall
+import cn.com.omnimind.baselib.llm.AssistantToolCallFunction
 import cn.com.omnimind.baselib.llm.ChatCompletionMessage
 import cn.com.omnimind.baselib.llm.ChatCompletionRequest
 import cn.com.omnimind.baselib.llm.ChatCompletionStreamOptions
@@ -19,10 +20,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 class VLMClient {
-    companion object {
-        private const val TAG = "VLMClient"
-    }
-
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -126,6 +123,17 @@ class VLMClient {
         )
         val toolCalls = response.turn.message.toolCalls.orEmpty()
         if (toolCalls.isEmpty()) {
+            val fallbackToolCall = parseTextToolCall(content)
+            if (fallbackToolCall != null) {
+                return parseSingleToolCall(
+                    toolCall = fallbackToolCall,
+                    metadata = metadata,
+                    thinking = thinking,
+                    content = content,
+                    reasoning = response.turn.reasoning,
+                    source = "text_tool_call"
+                )
+            }
             return VLMResult(
                 success = false,
                 step = null,
@@ -142,9 +150,33 @@ class VLMClient {
             )
         }
 
+        return parseSingleToolCall(
+            toolCall = toolCalls.first(),
+            metadata = metadata,
+            thinking = thinking,
+            content = content,
+            reasoning = response.turn.reasoning,
+            source = "tool_calls"
+        )
+    }
+
+    private fun parseSingleToolCall(
+        toolCall: AssistantToolCall,
+        metadata: StepMetadataPayload,
+        thinking: VLMThinkingContext,
+        content: String,
+        reasoning: String,
+        source: String
+    ): VLMResult {
         return try {
-            val action = parseActionFromToolCall(toolCalls.first())
-            val thought = metadata.thought.ifBlank { response.turn.reasoning.ifBlank { content } }
+            val action = parseActionFromToolCall(toolCall)
+            val thought = metadata.thought.ifBlank { reasoning.ifBlank { content } }
+            if (source != "tool_calls") {
+                OmniLog.w(
+                    TAG,
+                    "Parsed VLM fallback $source as ${toolCall.function.name}: ${preview(content)}"
+                )
+            }
             VLMResult(
                 success = true,
                 step = VLMStep(
@@ -160,7 +192,7 @@ class VLMClient {
             VLMResult(
                 success = false,
                 step = null,
-                error = "Failed to parse tool_calls response: ${e.message}",
+                error = "Failed to parse $source response: ${e.message}",
                 thinking = thinking,
                 shouldRetryForToolCall = true
             )
@@ -360,6 +392,157 @@ class VLMClient {
         return VLMToolArgumentParser.parse(toolName, rawArguments)
     }
 
+    private fun parseTextToolCall(content: String): AssistantToolCall? {
+        val normalized = content.trim()
+        if (normalized.isEmpty()) return null
+        return parseJsonTextToolCall(normalized)
+            ?: parseTaggedJsonTextToolCall(normalized)
+            ?: parseHtmlArgTextToolCall(normalized)
+    }
+
+    private fun parseJsonTextToolCall(content: String): AssistantToolCall? {
+        val candidates = buildList {
+            val toolCallBody = TOOL_CALL_TAG_REGEX.find(content)?.groups?.get(1)?.value?.trim()
+            if (!toolCallBody.isNullOrEmpty()) add(toolCallBody)
+            extractTopLevelObject(content)?.let(::add)
+        }
+        candidates.forEach { candidate ->
+            val parsed = runCatching {
+                json.parseToJsonElement(candidate) as? JsonObject
+            }.getOrNull() ?: return@forEach
+            val name = parsed["name"]?.jsonPrimitive?.contentOrNull?.trim()
+                ?: parsed["function"]?.jsonPrimitive?.contentOrNull?.trim()
+                ?: return@forEach
+            val args = parsed["arguments"]?.let { arguments ->
+                when (arguments) {
+                    is JsonObject -> arguments.toString()
+                    is JsonPrimitive -> arguments.contentOrNull.orEmpty()
+                    else -> arguments.toString()
+                }
+            } ?: "{}"
+            return buildFallbackToolCall(name, args)
+        }
+        return null
+    }
+
+    private fun parseTaggedJsonTextToolCall(content: String): AssistantToolCall? {
+        val name = Regex("""(?i)<(?:function|tool|name)\s*=\s*name>\s*([^<\s]+)""")
+            .find(content)
+            ?.groups
+            ?.get(1)
+            ?.value
+            ?.trim()
+            ?: return null
+        val args = Regex("""(?is)<(?:function|tool|arguments)\s*=\s*arguments>\s*(.*?)\s*</(?:function|tool|arguments)>""")
+            .find(content)
+            ?.groups
+            ?.get(1)
+            ?.value
+            ?.trim()
+            ?: "{}"
+        return buildFallbackToolCall(name, args)
+    }
+
+    private fun parseHtmlArgTextToolCall(content: String): AssistantToolCall? {
+        val closeTagIndex = content.indexOf("</tool_call>", ignoreCase = true)
+        if (closeTagIndex < 0) return null
+        val prefix = content.take(closeTagIndex)
+        val name = toolNames()
+            .firstOrNull { toolName ->
+                Regex("""(?<![A-Za-z0-9_])${Regex.escape(toolName)}(?![A-Za-z0-9_])""")
+                    .containsMatchIn(prefix)
+            }
+            ?: return null
+        val args = buildJsonObject {
+            ARG_PAIR_REGEX.findAll(content).forEach { match ->
+                val key = match.groups[1]?.value?.trim().orEmpty()
+                val value = match.groups[2]?.value?.trim().orEmpty()
+                if (key.isNotEmpty()) {
+                    put(key, JsonPrimitive(value))
+                }
+            }
+        }
+        return buildFallbackToolCall(name, args.toString())
+    }
+
+    private fun buildFallbackToolCall(name: String, arguments: String): AssistantToolCall? {
+        val normalizedName = normalizeToolName(name) ?: return null
+        return AssistantToolCall(
+            id = "text_tool_call",
+            function = AssistantToolCallFunction(
+                name = normalizedName,
+                arguments = arguments.trim().ifEmpty { "{}" }
+            )
+        )
+    }
+
+    private fun normalizeToolName(name: String): String? {
+        val normalized = name.trim().removePrefix("functions.").removePrefix("function.").trim()
+        return toolNames().firstOrNull { it == normalized }
+    }
+
+    private fun toolNames(): Set<String> = setOf(
+        "click",
+        "type",
+        "scroll",
+        "long_press",
+        "open_app",
+        "press_home",
+        "press_back",
+        "wait",
+        "hot_key",
+        "finished",
+        "info",
+        "feedback",
+        "abort",
+        "require_user_choice",
+        "require_user_confirmation"
+    )
+
+    private fun extractTopLevelObject(raw: String): String? {
+        val start = raw.indexOf('{')
+        if (start < 0) return null
+        var depth = 0
+        var inString = false
+        var stringQuote = '\u0000'
+        var escaped = false
+
+        for (index in start until raw.length) {
+            val ch = raw[index]
+            if (inString) {
+                if (escaped) {
+                    escaped = false
+                    continue
+                }
+                when (ch) {
+                    '\\' -> escaped = true
+                    stringQuote -> inString = false
+                }
+                continue
+            }
+
+            when (ch) {
+                '"', '\'' -> {
+                    inString = true
+                    stringQuote = ch
+                }
+                '{' -> depth += 1
+                '}' -> {
+                    depth -= 1
+                    if (depth == 0) {
+                        return raw.substring(start, index + 1)
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun preview(raw: String, maxLen: Int = 240): String {
+        val normalized = raw.replace(Regex("\\s+"), " ").trim()
+        return if (normalized.length <= maxLen) normalized else normalized.take(maxLen) + "..."
+    }
+
     private fun requireString(obj: JsonObject, key: String): String {
         return obj[key]?.jsonPrimitive?.content?.trim()?.takeIf { it.isNotEmpty() }
             ?: throw IllegalArgumentException("Missing or empty '$key'")
@@ -414,5 +597,13 @@ class VLMClient {
                 }
             )
         }
+    }
+
+    private companion object {
+        private const val TAG = "VLMClient"
+        private val TOOL_CALL_TAG_REGEX = Regex("""(?is)<tool_call>\s*(.*?)\s*</tool_call>""")
+        private val ARG_PAIR_REGEX = Regex(
+            """(?is)<arg_key>\s*([^<]+?)\s*</arg_key>\s*<arg_value>\s*(.*?)\s*(?=</arg_value>|</tool_call>|```|$)(?:</arg_value>)?"""
+        )
     }
 }

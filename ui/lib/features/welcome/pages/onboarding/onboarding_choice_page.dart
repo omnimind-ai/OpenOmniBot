@@ -169,7 +169,7 @@ class _OnboardingChoicePageState extends ConsumerState<OnboardingChoicePage>
                                 fontWeight: FontWeight.w800,
                                 color: Colors.white,
                                 height: 1.4,
-                                letterSpacing: -0.5,
+                                letterSpacing: 0,
                               ),
                             ),
                           ),
@@ -262,9 +262,7 @@ class _OnboardingChoicePageState extends ConsumerState<OnboardingChoicePage>
                             OnboardingChoiceCard(
                               svgIcon: _kDeviceSvg,
                               title: context.trText('本地模型'),
-                              subtitle: context.trText(
-                                '在设备上运行本地 AI，离线可用，隐私安全',
-                              ),
+                              subtitle: context.trText('在设备上运行本地 AI，离线可用，隐私安全'),
                               completed: state.localModelReady,
                               onTap: () =>
                                   GoRouterManager.push('/welcome/local_intro'),

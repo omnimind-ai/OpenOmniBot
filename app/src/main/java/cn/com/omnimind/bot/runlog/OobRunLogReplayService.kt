@@ -99,13 +99,22 @@ class OobRunLogReplayService(
     }
 
     fun registerFunctionSpec(functionSpec: Map<String, Any?>): Map<String, Any?> {
-        val spec = sanitizeMap(functionSpec)
-        val functionId = functionIdFromSpec(spec)
-        if (functionId.isEmpty()) {
+        val rawSpec = sanitizeMap(functionSpec)
+        val rawFunctionId = functionIdFromSpec(rawSpec)
+        if (rawFunctionId.isEmpty()) {
             return errorPayload(
                 code = "FUNCTION_ID_EMPTY",
                 message = "function_id is required"
             )
+        }
+        val functionId = normalizeFunctionId(rawFunctionId)
+        val spec = if (functionId == rawFunctionId) {
+            rawSpec
+        } else {
+            linkedMapOf<String, Any?>().apply {
+                putAll(rawSpec)
+                put("function_id", functionId)
+            }
         }
         val alreadyExists = workspaceFunctionStore.canHandle(functionId) ||
             OobReusableFunctionStore.get(context, functionId) != null
@@ -136,6 +145,7 @@ class OobRunLogReplayService(
                 AgentToolFeatureStore.isOobFunctionAsToolEnabled(context),
             "workspace" to workspaceResult,
             "registry" to registryResult,
+            "normalized_from_function_id" to rawFunctionId.takeIf { it != functionId },
             "source_run_ids" to sourceRunIds(spec)
         )
     }
@@ -158,7 +168,17 @@ class OobRunLogReplayService(
         val byId = linkedMapOf<String, Map<String, Any?>>()
         workspaceFunctionStore.list(safeLimit).forEach { spec ->
             val functionId = functionIdFromSpec(spec)
-            if (functionId.isNotEmpty()) byId[functionId] = sanitizeMap(spec)
+            if (functionId.isNotEmpty()) {
+                val merged = linkedMapOf<String, Any?>().apply {
+                    putAll(sanitizeMap(spec))
+                    val registry = OobReusableFunctionStore.get(context, functionId)
+                        ?.get("_oob_registry")
+                    if (registry is Map<*, *>) {
+                        put("_oob_registry", sanitizeMap(registry))
+                    }
+                }
+                byId[functionId] = sanitizeMap(merged)
+            }
         }
         val summaries = (OobReusableFunctionStore.list(context, safeLimit)["functions"] as? List<*>)
             ?: emptyList<Any?>()
@@ -295,6 +315,7 @@ class OobRunLogReplayService(
         descriptionOverride: String?,
     ): Map<String, Any?> {
         val functionId = functionIdOverride?.trim()?.takeIf { it.isNotEmpty() }
+            ?.let(::normalizeFunctionId)
         val name = nameOverride?.trim()?.takeIf { it.isNotEmpty() }
         val description = descriptionOverride?.trim()?.takeIf { it.isNotEmpty() }
         if (functionId == null && name == null && description == null) return spec
@@ -308,6 +329,24 @@ class OobRunLogReplayService(
 
     private fun functionIdFromSpec(spec: Map<String, Any?>): String =
         spec["function_id"]?.toString()?.trim().orEmpty()
+
+    private fun normalizeFunctionId(value: String): String {
+        val trimmed = value.trim()
+        if (FUNCTION_ID_REGEX.matches(trimmed)) return trimmed
+        val normalized = trimmed
+            .lowercase()
+            .replace(Regex("[^a-z0-9_-]+"), "_")
+            .replace(Regex("_+"), "_")
+            .trim('_', '-')
+        val prefixed = when {
+            normalized.isEmpty() -> "oob_function"
+            normalized.first().isLetter() -> normalized
+            else -> "oob_$normalized"
+        }
+        return prefixed.take(MAX_FUNCTION_ID_LENGTH).trim('_', '-').ifBlank {
+            "oob_function"
+        }
+    }
 
     private fun sourceRunIds(spec: Map<String, Any?>): List<String> {
         val source = spec["source"] as? Map<*, *>
@@ -324,16 +363,41 @@ class OobRunLogReplayService(
         val steps = execution?.get("steps") as? List<*> ?: emptyList<Any?>()
         val parameters = spec["parameters"] as? List<*> ?: emptyList<Any?>()
         val registry = spec["_oob_registry"] as? Map<*, *>
+        val source = spec["source"] as? Map<*, *>
+        val runStats = registry?.get("run_stats") as? Map<*, *>
         return linkedMapOf(
             "function_id" to spec["function_id"],
             "name" to spec["name"],
             "description" to spec["description"],
             "step_count" to (execution?.get("step_count") ?: steps.size),
+            "card_count" to (
+                intValue(source?.get("card_count"))
+                    .takeIf { it > 0 }
+                    ?: intValue(source?.get("replayable_card_count"))
+                    .takeIf { it > 0 }
+                    ?: steps.size
+                ),
             "omniflow_step_count" to execution?.get("omniflow_step_count"),
             "agent_step_count" to execution?.get("agent_step_count"),
             "requires_agent_fallback" to execution?.get("requires_agent_fallback"),
             "parameter_names" to parameters.mapNotNull { raw ->
                 (raw as? Map<*, *>)?.get("name")?.toString()?.takeIf { it.isNotBlank() }
+            },
+            "step_summaries" to steps.mapIndexedNotNull { index, rawStep ->
+                val step = rawStep as? Map<*, *> ?: return@mapIndexedNotNull null
+                linkedMapOf(
+                    "index" to index,
+                    "id" to step["id"],
+                    "title" to step["title"],
+                    "kind" to step["kind"],
+                    "executor" to step["executor"],
+                    "tool" to (
+                        step["omniflow_action"]
+                            ?: step["local_action"]
+                            ?: step["callable_tool"]
+                            ?: step["tool"]
+                        )
+                )
             },
             "function_kind" to "oob_reusable_function",
             "asset_state" to "native_local",
@@ -341,8 +405,18 @@ class OobRunLogReplayService(
             "registered_at" to registry?.get("registered_at"),
             "updated_at" to registry?.get("updated_at"),
             "source_run_ids" to sourceRunIds(spec),
-            "source" to spec["source"]
+            "source" to spec["source"],
+            "run_stats" to sanitizeValue(runStats ?: emptyMap<Any?, Any?>()),
+            "last_run" to sanitizeValue(runStats?.get("last_run") ?: emptyMap<Any?, Any?>())
         )
+    }
+
+    private fun intValue(value: Any?): Int {
+        return when (value) {
+            is Number -> value.toInt()
+            is String -> value.trim().toIntOrNull() ?: 0
+            else -> 0
+        }
     }
 
     private fun errorPayload(
@@ -378,6 +452,8 @@ class OobRunLogReplayService(
     }
 
     companion object {
+        private const val MAX_FUNCTION_ID_LENGTH = 64
+        private val FUNCTION_ID_REGEX = Regex("^[A-Za-z0-9_-]{1,$MAX_FUNCTION_ID_LENGTH}$")
         private const val TAG = "OobRunLogReplayService"
     }
 }

@@ -70,6 +70,10 @@ class RunLogReplayPolicy {
     'omniflow.recall',
     'omniflow.ingest_run_log',
     'workbench_api_list',
+    'oob_function_list',
+    'oob_function_get',
+    'oob_function_register',
+    'oob_function_guard_check',
     'oob_run_log_list',
     'oob_run_log_get',
     'oob_run_log_convert',
@@ -87,11 +91,19 @@ class RunLogReplayPolicy {
   static const omniflowFunctionTools = <String>{
     'omniflow.call_function',
     'call_function',
+    'oob_function_run',
     'run_function',
     'execute_function',
     'callfunction',
     'runfunction',
     'executefunction',
+  };
+
+  static const omniflowToolCallTools = <String>{
+    'omniflow.call_tool',
+    'call_tool',
+    'oob_tool_call',
+    'calltool',
   };
 
   static const providerOnlyTools = <String>{};
@@ -140,8 +152,14 @@ class RunLogReplayPolicy {
     return omniflowFunctionTools.contains(normalizeToolName(toolName));
   }
 
+  static bool isOmniflowToolCallTool(String toolName) {
+    return omniflowToolCallTools.contains(normalizeToolName(toolName));
+  }
+
   static bool isOmniflowExecutionTool(String toolName) {
-    return isOmniflowGraphTool(toolName) || isOmniflowFunctionTool(toolName);
+    return isOmniflowGraphTool(toolName) ||
+        isOmniflowFunctionTool(toolName) ||
+        isOmniflowToolCallTool(toolName);
   }
 
   static bool isAgentTool(String toolName) {

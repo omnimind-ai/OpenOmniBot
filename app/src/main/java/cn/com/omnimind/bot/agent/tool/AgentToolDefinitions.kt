@@ -211,6 +211,17 @@ object AgentToolDefinitions {
         "沉淀长期记忆" to "Upsert Long-Term Memory",
         "整理当日记忆" to "Roll Up Daily Memory",
         "分派子任务" to "Dispatch Subtasks",
+        "调用工具" to "Call Tool",
+        "统一调用一个 OOB 工具，或通过 function_id 调用已保存的本地 Function。适合需要把 Function 和 VLM、网页、终端、文件、记忆等 AI/系统能力组合起来时使用。" to
+            "Call one OOB tool, or run a saved local Function by function_id. Use it to compose Functions with VLM, web, terminal, file, memory, and other AI/system capabilities.",
+        "目标工具名，例如 vlm_task、web_search、terminal_execute。传 function_id 时可留空。" to
+            "Target tool name, for example vlm_task, web_search, or terminal_execute. Leave empty when function_id is provided.",
+        "已保存 Function 的 id。传入后会走本地 Function runner，而不是单独的 call_function 工具。" to
+            "Saved Function id. When provided, this uses the local Function runner instead of a separate call_function tool.",
+        "传给目标工具或 Function 的参数对象。" to
+            "Arguments object passed to the target tool or Function.",
+        "可选自然语言目标，用于记录或需要规划的工具。" to
+            "Optional natural-language goal for tracing or tools that require planning.",
         "查询设备已安装应用列表。需要应用包名或确认应用是否已安装时优先调用。" to
             "Query the list of apps installed on the device. Prefer this when you need an app package name or need to confirm whether an app is installed.",
         "可选关键词，可匹配应用名或包名。" to
@@ -552,6 +563,40 @@ object AgentToolDefinitions {
                     putJsonObject("timezone") {
                         put("type", "string")
                         put("description", "可选 IANA 时区，例如 Asia/Shanghai、America/Los_Angeles。默认使用系统时区。")
+                    }
+                }
+            }
+        }
+    }
+
+    val callToolTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "call_tool")
+            put("displayName", "调用工具")
+            put("toolType", "builtin")
+            put(
+                "description",
+                "统一调用一个 OOB 工具，或通过 function_id 调用已保存的本地 Function。适合需要把 Function 和 VLM、网页、终端、文件、记忆等 AI/系统能力组合起来时使用。"
+            )
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("tool_name") {
+                        put("type", "string")
+                        put("description", "目标工具名，例如 vlm_task、web_search、terminal_execute。传 function_id 时可留空。")
+                    }
+                    putJsonObject("function_id") {
+                        put("type", "string")
+                        put("description", "已保存 Function 的 id。传入后会走本地 Function runner，而不是单独的 call_function 工具。")
+                    }
+                    putJsonObject("arguments") {
+                        put("type", "object")
+                        put("description", "传给目标工具或 Function 的参数对象。")
+                    }
+                    putJsonObject("goal") {
+                        put("type", "string")
+                        put("description", "可选自然语言目标，用于记录或需要规划的工具。")
                     }
                 }
             }
@@ -2819,6 +2864,7 @@ object AgentToolDefinitions {
     private val builtinToolDefinitions: List<JsonObject> = listOf(
         contextAppsQueryTool,
         contextTimeNowTool,
+        callToolTool,
         vlmTaskTool,
         imagePickerTool,
         notificationSendTool,

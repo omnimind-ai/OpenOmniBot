@@ -242,6 +242,8 @@ object McpRoutes {
             "file_transfer" -> McpToolExecutors.executeFileTransfer(args)
             "agent_run" -> McpToolExecutors.executeAgentRun(context, args)
             "oob_tool_call" -> McpToolExecutors.executeOobToolCall(context, args)
+            "omniflow.call_tool" -> McpToolExecutors.executeOobToolCall(context, args)
+            "call_tool" -> McpToolExecutors.executeOobToolCall(context, args)
             "omniflow.recall" -> omniflowToolkit.recall(args)
             "omniflow.call_function" -> omniflowToolkit.callFunction(args)
             "omniflow.ingest_run_log" -> omniflowToolkit.ingestRunLog(args)

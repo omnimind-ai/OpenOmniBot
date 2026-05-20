@@ -1,4 +1,4 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
 
 Map<String, Object?> buildWorkbenchLayoutProfile({
@@ -33,7 +33,17 @@ Map<String, Object?> buildWorkbenchLayoutProfile({
     if (project != null) 'projectId': project.projectId,
     if (display != null) 'displayId': display.id,
     if (route != null && route.trim().isNotEmpty) 'route': route.trim(),
+    ...buildWorkbenchThemeProfile(context),
     'measuredAtMillis': DateTime.now().millisecondsSinceEpoch,
+  };
+}
+
+Map<String, Object?> buildWorkbenchThemeProfile(BuildContext context) {
+  final brightness = Theme.of(context).brightness;
+  final colorScheme = brightness == Brightness.dark ? 'dark' : 'light';
+  return <String, Object?>{
+    'colorScheme': colorScheme,
+    'isDarkMode': brightness == Brightness.dark,
   };
 }
 
@@ -52,6 +62,7 @@ bool workbenchLayoutProfilesEquivalent(
     'screenWidthDp',
     'screenHeightDp',
     'orientation',
+    'colorScheme',
   ];
   for (final key in keys) {
     if (a[key] != b[key]) return false;

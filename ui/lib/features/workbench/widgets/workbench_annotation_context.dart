@@ -1,5 +1,7 @@
+import 'package:flutter/widgets.dart';
 import 'package:ui/features/workbench/models/workbench_models.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart';
+import 'package:ui/features/workbench/widgets/workbench_layout_profile.dart';
 
 String workbenchRouteForDisplay(
   WorkbenchProject project,
@@ -16,6 +18,7 @@ String workbenchRouteForDisplay(
 }
 
 Map<String, Object?> buildWorkbenchAnnotationFrontendContext({
+  required Map<String, Object?> themeProfile,
   required WorkbenchProject project,
   required WorkbenchDisplaySpec display,
   required WorkbenchAnnotationPayload payload,
@@ -23,20 +26,24 @@ Map<String, Object?> buildWorkbenchAnnotationFrontendContext({
   String source = 'workbench_annotation_canvas',
   String fallbackRoute = '/workbench/project',
 }) {
-  return payload.toFrontendContext(
-    projectId: project.projectId,
-    displayId: display.id,
-    route: workbenchRouteForDisplay(
-      project,
-      display,
-      fallbackRoute: fallbackRoute,
+  return {
+    ...payload.toFrontendContext(
+      projectId: project.projectId,
+      displayId: display.id,
+      route: workbenchRouteForDisplay(
+        project,
+        display,
+        fallbackRoute: fallbackRoute,
+      ),
+      source: source,
+      visibleState: _visibleStateForProject(project, display, themeProfile),
     ),
-    source: source,
-    visibleState: _visibleStateForProject(project, display),
-  );
+    ...themeProfile,
+  };
 }
 
 Map<String, Object?> buildWorkbenchVisibleFrontendContext({
+  required BuildContext context,
   required WorkbenchProject project,
   required WorkbenchDisplaySpec display,
   String source = 'workbench_flutter_display',
@@ -52,8 +59,13 @@ Map<String, Object?> buildWorkbenchVisibleFrontendContext({
       fallbackRoute: fallbackRoute,
     ),
     'source': source,
+    ...buildWorkbenchThemeProfile(context),
     'visibleState': {
-      ..._visibleStateForProject(project, display),
+      ..._visibleStateForProject(
+        project,
+        display,
+        buildWorkbenchThemeProfile(context),
+      ),
       ...extraVisibleState,
     },
   };
@@ -62,12 +74,14 @@ Map<String, Object?> buildWorkbenchVisibleFrontendContext({
 Map<String, Object?> _visibleStateForProject(
   WorkbenchProject project,
   WorkbenchDisplaySpec display,
+  Map<String, Object?> themeProfile,
 ) {
   final common = <String, Object?>{
     'projectName': project.name,
     'displayTitle': display.label,
     'displayKind': display.kind,
     'displayRoute': display.route,
+    ...themeProfile,
     'hasMarkdown': project.frontendMarkdown.isNotEmpty,
     'markdownEntryFile': project.frontendMarkdown['entryFile']?.toString(),
     'apiIds': project.tools.map((tool) => tool.id).toList(growable: false),

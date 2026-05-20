@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
@@ -55,14 +56,15 @@ class _RunLogListPageState extends State<RunLogListPage> {
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: palette.pageBackground,
       appBar: CommonAppBar(
-        title: _text(context, 'RunLog', 'RunLog'),
+        title: l10n.executionHistoryTitle,
         primary: true,
         actions: [
           Tooltip(
-            message: _text(context, '刷新', 'Refresh'),
+            message: l10n.localModelsRefresh,
             child: IconButton(
               icon: const Icon(Icons.refresh_rounded),
               color: palette.textPrimary,
@@ -76,13 +78,17 @@ class _RunLogListPageState extends State<RunLogListPage> {
   }
 
   Widget _buildBody(BuildContext context) {
+    final l10n = context.l10n;
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_error != null) {
       return _RunLogEmptyState(
         icon: Icons.error_outline_rounded,
-        title: _text(context, 'RunLog 加载失败', 'Failed to load RunLog'),
+        title: AppTextLocalizer.text(
+          '加载运行日志失败',
+          locale: Localizations.localeOf(context),
+        ),
         subtitle: _error!,
         actionLabel: _text(context, '重试', 'Retry'),
         onAction: _load,
@@ -93,13 +99,13 @@ class _RunLogListPageState extends State<RunLogListPage> {
     if (runs.isEmpty) {
       return _RunLogEmptyState(
         icon: Icons.route_outlined,
-        title: _text(context, '暂无 RunLog', 'No RunLogs yet'),
+        title: l10n.executionHistoryEmpty,
         subtitle: _text(
           context,
           '执行一次 Agent 或 VLM 任务后会出现在这里。',
-          'RunLogs will appear here after an Agent or VLM task.',
+          'Execution records will appear here after an Agent or VLM task.',
         ),
-        actionLabel: _text(context, '刷新', 'Refresh'),
+        actionLabel: l10n.localModelsRefresh,
         onAction: _load,
       );
     }
@@ -130,7 +136,7 @@ class _RunLogListPageState extends State<RunLogListPage> {
       '/task/run_log_timeline',
       extra: {
         'runId': run.runId,
-        'title': _titleForRun(run),
+        'title': _titleForRun(context, run),
         if (widget.baseUrl != null && widget.baseUrl!.trim().isNotEmpty)
           'baseUrl': widget.baseUrl!.trim(),
       },
@@ -147,13 +153,13 @@ class _RunLogListItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
-    final title = _titleForRun(run);
+    final l10n = context.l10n;
+    final title = _titleForRun(context, run);
     final statusColor = run.success
         ? _successColor(context)
         : _errorColor(context);
     final meta = [
-      if (run.stepCount > 0)
-        _text(context, '${run.stepCount} 步', '${run.stepCount} steps'),
+      if (run.stepCount > 0) l10n.runLogTimelineStepCount(run.stepCount),
       if (run.toolName.trim().isNotEmpty) run.toolName.trim(),
       if (run.compileStatus.trim().isNotEmpty) run.compileStatus.trim(),
       if (_formatDuration(run.durationMs).isNotEmpty)
@@ -309,14 +315,15 @@ class _RunLogEmptyState extends StatelessWidget {
   }
 }
 
-String _titleForRun(UtgRunLogSummary run) {
-  return _firstNonBlank([
+String _titleForRun(BuildContext context, UtgRunLogSummary run) {
+  final title = _firstNonBlank([
     run.goal,
     run.operationDescription,
     run.compileSummary,
     run.selectorLabel,
     run.runId,
   ]);
+  return title.isEmpty ? context.l10n.runLogTimelineUnknown : title;
 }
 
 String _timeLabel(UtgRunLogSummary run) {
@@ -358,7 +365,7 @@ String _firstNonBlank(Iterable<Object?> values) {
       return text;
     }
   }
-  return 'RunLog';
+  return '';
 }
 
 String _text(BuildContext context, String zh, String en) {

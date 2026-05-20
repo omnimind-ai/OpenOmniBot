@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show FlutterView;
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
@@ -22,7 +23,6 @@ import 'package:ui/features/home/pages/chat/utils/agent_thinking_card_locator.da
 import 'package:ui/features/home/pages/chat/utils/deep_thinking_persistence.dart';
 import 'package:ui/features/home/pages/chat/utils/keyboard_inset_motion_tracker.dart';
 import 'package:ui/features/home/pages/chat/widgets/agent_run_group_message.dart';
-import 'package:ui/features/home/pages/chat/widgets/chat_empty_greeting.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/services/voice_playback_coordinator.dart';
 import 'package:ui/services/screen_dialog_service.dart';
@@ -923,10 +923,19 @@ class _ChatBotSheetState extends State<ChatBotSheet>
 
   void _syncEmptyGreetingKeyboardLiftFromView() {
     if (!mounted) return;
-    final view = View.of(context);
+    final view = _safeViewForMetrics();
+    if (view == null) return;
     final bottomInset = view.viewInsets.bottom / view.devicePixelRatio;
     if (_emptyGreetingKeyboardLiftTracker.update(bottomInset)) {
       setState(() {});
+    }
+  }
+
+  FlutterView? _safeViewForMetrics() {
+    try {
+      return View.maybeOf(context);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -2353,6 +2362,10 @@ class _ChatBotSheetState extends State<ChatBotSheet>
 
   Widget _buildMessageList() {
     if (_messages.isEmpty) {
+      final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+      final liftEmptyGreeting = _emptyGreetingKeyboardLiftTracker
+          .resolveForBuild(bottomInset);
+      final emptyStateBottomInset = liftEmptyGreeting ? bottomInset : 0.0;
       // 使用 GestureDetector 阻止手势穿透到原生层
       return GestureDetector(
         onVerticalDragUpdate: (_) {},
@@ -2424,28 +2437,28 @@ class _ChatBotSheetState extends State<ChatBotSheet>
           );
         }
 
-          final group = entry.group!;
-          return Padding(
-            padding: padding,
-            child: RepaintBoundary(
-              child: AgentRunGroupMessage(
-                key: ValueKey('overlay-agent-run-${group.taskId}'),
-                group: group,
-                expanded: _agentRunExpansionTracker.isGroupExpanded(
-                  group,
-                  _expandedAgentRunTaskIds,
-                ),
-                onToggleExpanded: () => _toggleAgentRunGroup(group.taskId),
-                onBeforeTaskExecute: _handleBeforeTaskExecute,
-                onCancelTask: _onCancelTaskFromCard,
-                parentScrollController: _messageScrollController,
-                onParentScrollHandoff: _handleParentScrollHandoff,
-                onStreamingTextLayoutChanged: _handleStreamingTextLayoutChanged,
+        final group = entry.group!;
+        return Padding(
+          padding: padding,
+          child: RepaintBoundary(
+            child: AgentRunGroupMessage(
+              key: ValueKey('overlay-agent-run-${group.taskId}'),
+              group: group,
+              expanded: _agentRunExpansionTracker.isGroupExpanded(
+                group,
+                _expandedAgentRunTaskIds,
               ),
+              onToggleExpanded: () => _toggleAgentRunGroup(group.taskId),
+              onBeforeTaskExecute: _handleBeforeTaskExecute,
+              onCancelTask: _onCancelTaskFromCard,
+              parentScrollController: _messageScrollController,
+              onParentScrollHandoff: _handleParentScrollHandoff,
+              onStreamingTextLayoutChanged: _handleStreamingTextLayoutChanged,
             ),
-          );
-        },
-      );
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildVlmInfoPrompt() {

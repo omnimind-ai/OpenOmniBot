@@ -262,6 +262,8 @@ object InternalRunLogStore {
             "operation_description" to record.operationDescription,
             "started_at" to formatTime(record.startedAtMs),
             "finished_at" to record.finishedAtMs?.let(::formatTime).orEmpty(),
+            "run_finished" to (record.finishedAtMs != null),
+            "run_success" to (record.success == true),
             "duration_ms" to durationMs(record),
             "step_count" to record.cards.size,
             "event_seq" to record.eventSeq,

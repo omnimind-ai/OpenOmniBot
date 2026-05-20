@@ -17,6 +17,7 @@ import 'package:ui/features/workbench/models/workbench_models.dart';
 import 'package:ui/features/workbench/services/workbench_project_service.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_context.dart';
 import 'package:ui/features/workbench/widgets/workbench_annotation_overlay.dart';
+import 'package:ui/features/workbench/widgets/workbench_layout_profile.dart';
 import 'package:ui/utils/data_parser.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/image/cached_image.dart';
@@ -449,7 +450,10 @@ class _CommandOverlayState extends State<CommandOverlay> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _conversationPanelError = AppTextLocalizer.choose(en: 'Failed to load conversations', zh: '对话加载失败');
+        _conversationPanelError = AppTextLocalizer.choose(
+          en: 'Failed to load conversations',
+          zh: '对话加载失败',
+        );
         _conversationSummariesLoading = false;
       });
       debugPrint('加载悬浮窗对话摘要失败: $error');
@@ -464,7 +468,10 @@ class _CommandOverlayState extends State<CommandOverlay> {
     );
     if (!opened) {
       AppToast.show(
-        AppTextLocalizer.choose(en: 'Failed to open conversation', zh: '无法打开对话'),
+        AppTextLocalizer.choose(
+          en: 'Failed to open conversation',
+          zh: '无法打开对话',
+        ),
       );
     } else {
       unawaited(AppStateService.dismissFloatingOverlay());
@@ -490,7 +497,10 @@ class _CommandOverlayState extends State<CommandOverlay> {
   }
 
   String _conversationMeta(ConversationModel conversation) {
-    final count = AppTextLocalizer.choose(en: '${conversation.messageCount} messages', zh: '${conversation.messageCount} 条消息');
+    final count = AppTextLocalizer.choose(
+      en: '${conversation.messageCount} messages',
+      zh: '${conversation.messageCount} 条消息',
+    );
     return '${conversation.mode.displayLabel} · ${conversation.timeDisplay} · $count';
   }
 
@@ -584,6 +594,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
     WorkbenchAnnotationPayload payload,
     String prompt,
   ) async {
+    final themeProfile = buildWorkbenchThemeProfile(context);
     try {
       final backend = NativeWorkbenchProjectBackend();
       final project = await backend.getActiveProject();
@@ -595,6 +606,7 @@ class _CommandOverlayState extends State<CommandOverlay> {
         );
         return {
           ...buildWorkbenchAnnotationFrontendContext(
+            themeProfile: themeProfile,
             project: project,
             display: display,
             payload: payload,
@@ -616,11 +628,13 @@ class _CommandOverlayState extends State<CommandOverlay> {
         displayId: 'current-screen',
         route: 'current_screen',
         source: 'xiaowan_floating_annotation_canvas',
-        visibleState: const {
+        visibleState: {
           'origin': 'xiaowan_floating_window',
           'activeProjectAvailable': false,
+          ...themeProfile,
         },
       ),
+      ...themeProfile,
       'screenshotSummary':
           'VLM should inspect the current screen screenshot together with drawingPaths. The Flutter client does not classify the shape or target UI.',
     };
@@ -740,7 +754,10 @@ $contextJson
     };
     if (annotationAttachment == null) {
       AppToast.show(
-        AppTextLocalizer.choose(en: 'Screenshot capture failed; sending red strokes as fallback.', zh: '截图合成失败，先用红线坐标兜底发送。'),
+        AppTextLocalizer.choose(
+          en: 'Screenshot capture failed; sending red strokes as fallback.',
+          zh: '截图合成失败，先用红线坐标兜底发送。',
+        ),
       );
     }
     if (!mounted) return false;
@@ -979,7 +996,10 @@ $contextJson
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  AppTextLocalizer.choose(en: 'Conversation summaries', zh: '对话摘要'),
+                  AppTextLocalizer.choose(
+                    en: 'Conversation summaries',
+                    zh: '对话摘要',
+                  ),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,

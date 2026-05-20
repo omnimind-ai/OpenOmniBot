@@ -66,6 +66,7 @@ import cn.com.omnimind.bot.agent.AgentAiCapabilityConfigSync
 import cn.com.omnimind.bot.agent.config.AgentToolFeatureStore
 import cn.com.omnimind.bot.agent.AgentConversationContextCompactor
 import cn.com.omnimind.bot.agent.AgentImageAttachmentSupport
+import cn.com.omnimind.bot.agent.AGENT_STREAM_EVENT_SCHEMA_VERSION
 import cn.com.omnimind.bot.agent.AgentStreamEvent
 import cn.com.omnimind.bot.agent.AgentTextSanitizer
 import cn.com.omnimind.bot.agent.AgentModelOverride
@@ -507,6 +508,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     private val agentStreamEventBatcher = AgentStreamEventBatcher { batch ->
         invokeFlutterEventSafely("onAgentStreamEventBatch", batch)
     }
+    private val vlmStreamSeqByTask = mutableMapOf<String, Long>()
 
     init {
         registerSharedInstance(this)
@@ -1355,7 +1357,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         return when (toolName) {
             "context_apps_query" -> AgentToolMeta("builtin", t("查询已安装应用", "Query Installed Apps"))
             "context_time_now" -> AgentToolMeta("builtin", t("查询当前时间", "Query Current Time"))
-            "vlm_task" -> AgentToolMeta("builtin", t("视觉执行", "Vision Task"))
+            "vlm_task" -> AgentToolMeta("vlm", t("视觉执行", "Visual Task"))
             "web_search" -> AgentToolMeta("research", t("网页搜索", "Web Search"))
             "browser_use" -> AgentToolMeta("browser", t("浏览器操作", "Browser Action"))
             "android_privileged_action" -> AgentToolMeta("privileged", t("安卓高级动作", "Android Privileged Action"))
@@ -1937,6 +1939,34 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
+    fun pauseVLMTask(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            val success = AssistsUtil.Core.pauseVLMTask()
+            mainJob.launch(Dispatchers.Main) {
+                result.success(success)
+            }
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "暂停VLM任务失败: ${e.message}")
+            mainJob.launch(Dispatchers.Main) {
+                result.error("PAUSE_VLM_TASK_ERROR", e.message, null)
+            }
+        }
+    }
+
+    fun resumeVLMTask(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            val success = AssistsUtil.Core.resumeVLMTask()
+            mainJob.launch(Dispatchers.Main) {
+                result.success(success)
+            }
+        } catch (e: Exception) {
+            OmniLog.e(TAG, "恢复VLM任务失败: ${e.message}")
+            mainJob.launch(Dispatchers.Main) {
+                result.error("RESUME_VLM_TASK_ERROR", e.message, null)
+            }
+        }
+    }
+
     /**
      * 通知VLM任务总结Sheet已准备就绪
      */
@@ -2398,6 +2428,99 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
+    override fun onVlmToolEvent(event: Map<String, Any?>) {
+        dispatchVlmToolStreamEvent(event)
+    }
+
+    private fun nextVlmStreamSeq(taskId: String): Long {
+        return synchronized(vlmStreamSeqByTask) {
+            val next = (vlmStreamSeqByTask[taskId] ?: 0L) + 1L
+            vlmStreamSeqByTask[taskId] = next
+            next
+        }
+    }
+
+    private fun dispatchVlmToolStreamEvent(
+        event: Map<String, Any?>,
+        boundTaskId: String? = null
+    ) {
+        val taskId = boundTaskId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: event["taskId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: event["runLogId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return
+        val cardId = listOf(
+            event["cardId"],
+            event["toolCallId"],
+            event["tool_call_id"]
+        ).firstNotNullOfOrNull { raw ->
+            raw?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        } ?: return
+        val streamKind = event["agentStreamKind"]?.toString()?.trim()
+            ?: event["kind"]?.toString()?.trim()
+            ?: "tool_progress"
+        val normalizedKind = when (streamKind) {
+            "tool_started", "tool_progress", "tool_completed" -> streamKind
+            else -> "tool_progress"
+        }
+        val roundIndex = event["stepIndex"]?.toString()?.toIntOrNull()?.plus(1) ?: 1
+        val success = when (val raw = event["success"]) {
+            is Boolean -> raw
+            is String -> raw.equals("true", ignoreCase = true)
+            else -> null
+        }
+        val extras = linkedMapOf<String, Any?>(
+            "cardId" to cardId,
+            "toolCallId" to cardId,
+            "toolName" to (event["toolName"] ?: "vlm_task"),
+            "displayName" to (event["displayName"] ?: event["toolName"] ?: "vlm_task"),
+            "toolType" to "vlm",
+            "runLogId" to (event["runLogId"] ?: event["run_id"] ?: taskId),
+            "run_id" to (event["run_id"] ?: event["runLogId"] ?: taskId),
+            "status" to (event["status"] ?: if (normalizedKind == "tool_completed") "success" else "running")
+        ).apply {
+            putAll(event)
+            put("cardId", cardId)
+            put("toolCallId", cardId)
+            put("toolType", "vlm")
+        }
+        val seq = nextVlmStreamSeq(taskId)
+        val payload = sanitizeInteropMap(
+            AgentStreamEvent(
+                taskId = taskId,
+                seq = seq,
+                kind = normalizedKind,
+                createdAt = System.currentTimeMillis(),
+                entryId = cardId,
+                roundIndex = roundIndex,
+                isFinal = normalizedKind == "tool_completed",
+                success = success,
+                extras = extras
+            ).toPayload(
+                conversationId = null,
+                conversationMode = "agent"
+            ) + mapOf(
+                "streamMeta" to linkedMapOf<String, Any?>(
+                    "schema_version" to AGENT_STREAM_EVENT_SCHEMA_VERSION,
+                    "trace_id" to taskId,
+                    "run_id" to taskId,
+                    "span_id" to cardId,
+                    "parent_span_id" to taskId,
+                    "seq" to seq,
+                    "roundIndex" to roundIndex,
+                    "kind" to normalizedKind,
+                    "parentTaskId" to taskId,
+                    "runLogId" to (event["runLogId"] ?: event["run_id"] ?: taskId),
+                    "entryId" to cardId,
+                    "isFinal" to (normalizedKind == "tool_completed")
+                )
+            )
+        )
+        agentStreamEventBatcher.enqueue(payload)
+        if (normalizedKind == "tool_completed") {
+            agentStreamEventBatcher.flushNow()
+        }
+    }
+
     fun createVLMOperationTask(
         call: MethodCall, result: MethodChannel.Result,
     ) {
@@ -2424,6 +2547,10 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             )
                         )
                     }
+                }
+
+                override fun onVlmToolEvent(event: Map<String, Any?>) {
+                    dispatchVlmToolStreamEvent(event, boundTaskId = taskId)
                 }
             }
         }
@@ -2779,6 +2906,15 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     }
                 )
                 val started = startErrorCode == null && startResult == "SUCCESS"
+                OobReusableFunctionStore.recordRun(
+                    context = context,
+                    functionId = functionId,
+                    success = started,
+                    runId = taskId,
+                    runner = runPayload["runner"]?.toString() ?: "oob_mixed_runner",
+                    stepCount = stepResults.size,
+                    errorMessage = startErrorMessage
+                )
                 withContext(Dispatchers.Main) {
                     result.success(linkedMapOf(
                         "success" to started,
@@ -2809,6 +2945,16 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
             // All steps executed locally.
             val localSuccess = runPayload["success"] != false
+            OobReusableFunctionStore.recordRun(
+                context = context,
+                functionId = functionId,
+                success = localSuccess,
+                runId = runPayload["run_id"]?.toString(),
+                runner = runPayload["runner"]?.toString() ?: "oob_mixed_runner",
+                stepCount = (runPayload["step_count"] as? Number)?.toInt()
+                    ?: stepResults.size,
+                errorMessage = runPayload["error_message"]?.toString()
+            )
             withContext(Dispatchers.Main) {
                 result.success(linkedMapOf(
                     "success" to localSuccess,
@@ -7016,6 +7162,63 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 entryId = entryId.takeIf { it.isNotBlank() },
                 roundIndex = roundIndex,
                 extras = payload
+            )
+        }
+
+        override suspend fun onToolCardEvent(
+            kind: String,
+            payload: Map<String, Any?>
+        ) {
+            val streamKind = when (kind.trim()) {
+                "tool_started", "tool_progress", "tool_completed" -> kind.trim()
+                else -> "tool_progress"
+            }
+            val entryId = listOf(
+                payload["cardId"],
+                payload["toolCallId"],
+                payload["tool_call_id"],
+                payload["callId"],
+                payload["call_id"]
+            ).firstNotNullOfOrNull { raw ->
+                raw?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            } ?: return
+            val roundIndex = currentToolRoundIndex()
+            val normalizedPayload = sanitizeInteropMap(
+                linkedMapOf<String, Any?>().apply {
+                    putAll(payload)
+                    put("cardId", entryId)
+                    put("toolCallId", entryId)
+                    put("toolType", payload["toolType"] ?: "vlm")
+                }
+            )
+            val status = normalizedPayload["status"]?.toString()?.trim()
+                ?: if (streamKind == "tool_completed") {
+                    if (normalizedPayload["success"] == false) {
+                        AgentConversationHistoryRepository.STATUS_ERROR
+                    } else {
+                        AgentConversationHistoryRepository.STATUS_SUCCESS
+                    }
+                } else {
+                    AgentConversationHistoryRepository.STATUS_RUNNING
+                }
+            val success = normalizedPayload["success"] != false
+            upsertToolEvent(
+                entryId = entryId,
+                roundIndex = roundIndex,
+                payload = normalizedPayload,
+                streamKind = streamKind,
+                fallbackStatus = status,
+                fallbackSummary = normalizedPayload["summary"]?.toString()
+                    ?: normalizedPayload["progress"]?.toString()
+                    ?: this@AssistsCoreManager.t("正在执行手机操作", "Running device action")
+            )
+            sendStreamEvent(
+                kind = streamKind,
+                entryId = entryId,
+                roundIndex = roundIndex,
+                isFinal = streamKind == "tool_completed",
+                success = if (streamKind == "tool_completed") success else null,
+                extras = normalizedPayload
             )
         }
 

@@ -719,7 +719,7 @@ void main() {
     expect(rootSurface.color, appBarContext.omniPalette.pageBackground);
   });
 
-  testWidgets('shows workspace restore button before the right mode menu', (
+  testWidgets('does not show workspace restore button in the top bar', (
     tester,
   ) async {
     var tapCount = 0;
@@ -757,16 +757,12 @@ void main() {
     final modeMenu = find.byKey(
       const ValueKey('chat-app-bar-pure-chat-button'),
     );
-    final workspaceRect = tester.getRect(workspaceButton);
     final islandRect = tester.getRect(island);
     final modeMenuRect = tester.getRect(modeMenu);
 
-    expect(workspaceButton, findsOneWidget);
-    expect(islandRect.right, lessThan(workspaceRect.left));
-    expect(workspaceRect.right, lessThanOrEqualTo(modeMenuRect.left));
-
-    await tester.tap(workspaceButton);
-    expect(tapCount, 1);
+    expect(workspaceButton, findsNothing);
+    expect(islandRect.right, lessThanOrEqualTo(modeMenuRect.left));
+    expect(tapCount, 0);
   });
 
   testWidgets('keeps swapped shortcuts clear of island on narrow screens', (

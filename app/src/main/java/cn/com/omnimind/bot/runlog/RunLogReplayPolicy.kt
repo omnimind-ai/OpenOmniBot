@@ -102,6 +102,13 @@ object RunLogReplayPolicy {
         "executefunction",
     )
 
+    val omniflowToolCallTools: Set<String> = setOf(
+        "omniflow.call_tool",
+        "call_tool",
+        "oob_tool_call",
+        "calltool",
+    )
+
     /**
      * Backward-compatible contract field. These tools used to be provider-only,
      * but OOB now has a native execution layer for OmniFlow graph/function calls.
@@ -141,8 +148,13 @@ object RunLogReplayPolicy {
     fun isOmniflowFunctionTool(toolName: String): Boolean =
         normalizeToolName(toolName) in omniflowFunctionTools
 
+    fun isOmniflowToolCallTool(toolName: String): Boolean =
+        normalizeToolName(toolName) in omniflowToolCallTools
+
     fun isOmniflowExecutionTool(toolName: String): Boolean =
-        isOmniflowGraphTool(toolName) || isOmniflowFunctionTool(toolName)
+        isOmniflowGraphTool(toolName) ||
+            isOmniflowFunctionTool(toolName) ||
+            isOmniflowToolCallTool(toolName)
 
     fun isAgentTool(toolName: String): Boolean =
         isPerceptionTool(toolName) || isDataFlowTool(toolName) || isProviderOnlyTool(toolName)

@@ -57,14 +57,14 @@ List<GoRoute> taskRoutes = [
         title:
             params['title']?.toString() ??
             state.uri.queryParameters['title'] ??
-            'RunLog',
+            '',
         baseUrl:
             params['baseUrl']?.toString() ??
             state.uri.queryParameters['baseUrl'],
       );
     },
   ),
-  // 指令库页面
+  // Function library page
   GoRoute(
     path: '/task/command_library',
     name: 'task/command_library',

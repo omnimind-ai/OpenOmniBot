@@ -257,21 +257,39 @@ BEHAVIOR:
 
     val oobToolCallTool = mapOf(
         "name" to "oob_tool_call",
-        "description" to """Call any OOB capability through the normal in-app Agent runtime. Use this as a generic bridge when a Project Tool needs VLM, files, terminal/Alpine, UI automation, memory, schedules, or another OOB tool that is not a simple local data action.""".trimIndent(),
+        "description" to """Call any OOB capability through the normal in-app Agent runtime, or run a saved OOB Function by function_id. Use this as the generic bridge when a Project Tool needs VLM, files, terminal/Alpine, UI automation, memory, schedules, or another OOB tool.""".trimIndent(),
         "inputSchema" to mapOf(
             "type" to "object",
             "properties" to mapOf(
-                "toolName" to mapOf("type" to "string", "description" to "OOB or MCP tool name, for example vlm_task or file_transfer."),
+                "toolName" to mapOf("type" to "string", "description" to "OOB or MCP tool name, for example vlm_task or file_transfer. Leave empty when function_id is provided."),
+                "tool_name" to mapOf("type" to "string", "description" to "Snake-case alias for toolName."),
+                "function_id" to mapOf("type" to "string", "description" to "Optional saved OOB Function id. When provided, OOB runs the Function locally."),
+                "functionId" to mapOf("type" to "string", "description" to "Camel-case alias for function_id."),
                 "arguments" to mapOf("type" to "object", "description" to "Arguments to pass to the requested tool."),
                 "goal" to mapOf("type" to "string", "description" to "Optional natural-language goal when the tool requires planning or composition.")
-            ),
-            "required" to listOf("toolName")
+            )
+        )
+    )
+
+    val omniflowCallToolTool = mapOf(
+        "name" to "omniflow.call_tool",
+        "description" to """Call one OmniFlow/OOB tool. Pass function_id to run a saved local Function; pass toolName/tool_name plus arguments for VLM, web, terminal, files, memory, schedules, or other OOB tools. This replaces omniflow.call_function for new clients.""".trimIndent(),
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "toolName" to mapOf("type" to "string", "description" to "Target OOB/MCP tool name, for example vlm_task, web_search, or terminal_execute."),
+                "tool_name" to mapOf("type" to "string", "description" to "Snake-case alias for toolName."),
+                "function_id" to mapOf("type" to "string", "description" to "Saved Function id returned by omniflow.recall or Function library."),
+                "functionId" to mapOf("type" to "string", "description" to "Camel-case alias for function_id."),
+                "arguments" to mapOf("type" to "object", "description" to "Parameter values for the target tool or Function."),
+                "goal" to mapOf("type" to "string", "description" to "Optional original task goal for tracing.")
+            )
         )
     )
 
     val omniflowRecallTool = mapOf(
         "name" to "omniflow.recall",
-        "description" to """Recall reusable OOB Functions for a goal and current app/page scope. This only returns a direct hit or ranked candidates; parameterized Functions must be selected and filled by the calling agent before `omniflow.call_function`.""".trimIndent(),
+        "description" to """Recall reusable OOB Functions for a goal and current app/page scope. This only returns a direct hit or ranked candidates; parameterized Functions must be selected and filled by the calling agent before `omniflow.call_tool` with function_id.""".trimIndent(),
         "inputSchema" to mapOf(
             "type" to "object",
             "properties" to mapOf(
@@ -505,7 +523,7 @@ This is the MCP control entry for Project creation. It writes the normal Workben
             agentRunTool,
             oobToolCallTool,
             omniflowRecallTool,
-            omniflowCallFunctionTool,
+            omniflowCallToolTool,
             omniflowIngestRunLogTool,
             omniflowExploreReplayTool,
             oobFunctionListTool,

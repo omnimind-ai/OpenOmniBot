@@ -84,6 +84,10 @@ def is_writeback_api(api):
     return run_use(api) in {"native.collection.create", "native.collection.update"}
 
 
+def is_html_optional_api(api):
+    return run_use(api) in {"native.collection.list", "native.collection.get"}
+
+
 def check_has_pattern(html, pattern, label):
     found = bool(re.search(pattern, html))
     return ("PASS" if found else "FAIL", label, "" if found else f"not found: {pattern}")
@@ -184,7 +188,7 @@ def run(project_path):
     html_optional_ids = {
         api.get("toolId") or api.get("apiId")
         for api in apis
-        if has_called_agent_entry and is_writeback_api(api)
+        if is_html_optional_api(api) or (has_called_agent_entry and is_writeback_api(api))
     }
     unused = registered_tool_ids - called_ids - html_optional_ids
     if unused:

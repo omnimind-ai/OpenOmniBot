@@ -182,6 +182,7 @@
 
     .matrix {
       width: 100%;
+      table-layout: fixed;
       border-collapse: collapse;
       overflow: hidden;
       border: 1px solid var(--line);
@@ -197,6 +198,7 @@
       text-align: left;
       vertical-align: top;
       font-size: 14px;
+      overflow-wrap: anywhere;
     }
 
     .matrix th {
@@ -219,7 +221,7 @@
       border-radius: 999px;
       font-size: 12px;
       font-weight: 740;
-      white-space: nowrap;
+      white-space: normal;
     }
 
     .pill.green {
@@ -450,15 +452,15 @@
             <span>guard decision for settings_click_path_demo</span>
           </div>
           <div class="metric">
-            <strong>11.937s</strong>
+            <strong>12.662s</strong>
             <span>三项目完整验收总耗时</span>
           </div>
           <div class="metric">
-            <strong>0.699s</strong>
+            <strong>1.062s</strong>
             <span>非 Function 最慢步骤：MobileGPT wheel_build</span>
           </div>
           <div class="metric">
-            <strong>166ms</strong>
+            <strong>140ms</strong>
             <span>最慢真实 direct run function runner</span>
           </div>
         </div>
@@ -479,7 +481,7 @@
           </div>
           <div class="status">
             <div class="label">Run ID</div>
-            <div class="value">mock-run-settings-click-path-demo</div>
+            <div class="value">&lt;real-run-id&gt;</div>
           </div>
           <div class="status">
             <div class="label">Function Steps</div>
@@ -491,7 +493,7 @@
           </div>
           <div class="status">
             <div class="label">Background Run ID</div>
-            <div class="value">mock-run-install-sample-apk-demo</div>
+            <div class="value">&lt;real-run-id&gt;</div>
           </div>
           <div class="status">
             <div class="label">Codex Sandbox</div>
@@ -499,7 +501,7 @@
           </div>
           <div class="status">
             <div class="label">MCP Function 调用</div>
-            <div class="value pass">direct runner 154-166ms</div>
+            <div class="value pass">direct runner 137-140ms</div>
           </div>
         </div>
       </section>
@@ -554,9 +556,9 @@
         <h2>详细时间统计</h2>
         <p class="section-copy">
           时间来自各外部项目验收目录的 <code>timing.tsv</code>，单位为 wall-clock 毫秒。
-          三项目批量验收总耗时 <strong>11.937s</strong>；项目内部统计的总耗时分别为
-          MobileGPT <strong>4.127s</strong>、mobile-use <strong>3.787s</strong>、mobile-mcp <strong>3.819s</strong>。
-          批量脚本外层观测值分别是 4.175s、3.836s、3.867s，差异来自 shell 包装开销。
+          三项目批量验收总耗时 <strong>12.662s</strong>；项目内部统计的总耗时分别为
+          MobileGPT <strong>4.778s</strong>、mobile-use <strong>3.808s</strong>、mobile-mcp <strong>3.834s</strong>。
+          批量脚本外层观测值分别是 4.833s、3.876s、3.884s，差异来自 shell 包装开销。
         </p>
         <table class="matrix">
           <thead>
@@ -572,26 +574,26 @@
           <tbody>
             <tr>
               <td><strong>MobileGPT</strong></td>
-              <td><code>4.175s</code> 外层 / <code>4.127s</code> 内部</td>
-              <td><code>wheel_build</code> <strong>0.699s</strong> <span class="muted">16.9%</span></td>
-              <td><code>venv_create</code> <strong>0.646s</strong> <span class="muted">15.6%</span></td>
-              <td><code>75-258ms</code></td>
+              <td><code>4.833s</code> 外层 / <code>4.778s</code> 内部</td>
+              <td><code>wheel_build</code> <strong>1.062s</strong> <span class="muted">22.2%</span></td>
+              <td><code>venv_create</code> <strong>0.980s</strong> <span class="muted">20.5%</span></td>
+              <td><code>139-140ms</code> runner</td>
               <td>wheel 构建和环境创建仍慢于 Function runner。</td>
             </tr>
             <tr>
               <td><strong>mobile-use</strong></td>
-              <td><code>3.836s</code> 外层 / <code>3.787s</code> 内部</td>
-              <td><code>venv_create</code> <strong>0.650s</strong> <span class="muted">17.2%</span></td>
-              <td><code>wheel_build</code> <strong>0.593s</strong> <span class="muted">15.7%</span></td>
-              <td><code>75-245ms</code></td>
+              <td><code>3.876s</code> 外层 / <code>3.808s</code> 内部</td>
+              <td><code>venv_create</code> <strong>0.661s</strong> <span class="muted">17.4%</span></td>
+              <td><code>wheel_build</code> <strong>0.579s</strong> <span class="muted">15.2%</span></td>
+              <td><code>134-139ms</code> runner</td>
               <td>Python 环境创建和 wheel 构建占主导。</td>
             </tr>
             <tr>
               <td><strong>mobile-mcp</strong></td>
-              <td><code>3.867s</code> 外层 / <code>3.819s</code> 内部</td>
-              <td><code>venv_create</code> <strong>0.644s</strong> <span class="muted">16.9%</span></td>
-              <td><code>wheel_build</code> <strong>0.588s</strong> <span class="muted">15.4%</span></td>
-              <td><code>75-259ms</code></td>
+              <td><code>3.884s</code> 外层 / <code>3.834s</code> 内部</td>
+              <td><code>venv_create</code> <strong>0.664s</strong> <span class="muted">17.3%</span></td>
+              <td><code>wheel_build</code> <strong>0.608s</strong> <span class="muted">15.9%</span></td>
+              <td><code>130-137ms</code> runner</td>
               <td>环境准备慢于 MCP Function 调用。</td>
             </tr>
           </tbody>
@@ -604,16 +606,17 @@
           脚本现在会从 MCP 返回 JSON 中读取 <code>result.timing.runner_duration_ms</code> 和
           <code>result.step_results[*].duration_ms</code>，并写入 <code>timing.tsv</code>。
           其中 <code>canonical_call_function_*</code> 前缀来自 <code>mcp-call-function</code>/<code>omniflow.call_function</code>，
-          表示 Function runner 内部执行耗时，不包含 CLI 启动、HTTP 往返、JSON 序列化等外层成本。
-          脚本还会额外输出 <code>timing_canonical_function_slowest_runner</code> 和
-          <code>timing_canonical_function_slowest_step</code>，用于直接定位真实 replay 的瓶颈。
+          <code>function_run_existing_*</code> 前缀来自 direct <code>mcp-run-function</code>/<code>oob_function_run</code>。
+          两者都表示 Function runner 内部执行耗时，不包含 CLI 启动、HTTP 往返、JSON 序列化等外层成本。
+          最新批量验收中，canonical 最慢 runner 是 MobileGPT <strong>139ms</strong>，
+          direct 最慢 runner 是 MobileGPT <strong>140ms</strong>。
         </p>
         <table class="matrix">
           <thead>
             <tr>
               <th>项目</th>
               <th>Function</th>
-              <th>外层 MCP 命令</th>
+              <th>公开入口</th>
               <th>Runner 内部耗时</th>
               <th>最耗时 Step</th>
               <th>写入字段</th>
@@ -623,31 +626,55 @@
             <tr>
               <td><strong>MobileGPT</strong></td>
               <td><code>settings_click_path_demo</code></td>
-              <td><code>mcp_call_function=258ms</code></td>
-              <td><strong>166ms</strong></td>
-              <td><code>click step 6=34ms</code></td>
+              <td><code>omniflow.call_function</code></td>
+              <td><strong>139ms</strong></td>
+              <td><code>click step 6=29ms</code></td>
               <td><code>canonical_call_function_runner</code></td>
             </tr>
             <tr>
               <td><strong>mobile-use</strong></td>
               <td><code>settings_click_path_demo</code></td>
-              <td><code>mcp_call_function=233ms</code></td>
-              <td><strong>154ms</strong></td>
-              <td><code>click step 2=31ms</code></td>
+              <td><code>omniflow.call_function</code></td>
+              <td><strong>134ms</strong></td>
+              <td><code>click step 6=29ms</code></td>
               <td><code>canonical_call_function_runner</code></td>
             </tr>
             <tr>
               <td><strong>mobile-mcp</strong></td>
               <td><code>settings_click_path_demo</code></td>
-              <td><code>mcp_call_function=253ms</code></td>
-              <td><strong>162ms</strong></td>
-              <td><code>click step 6=34ms</code></td>
+              <td><code>omniflow.call_function</code></td>
+              <td><strong>130ms</strong></td>
+              <td><code>click step 2=26ms</code></td>
               <td><code>canonical_call_function_runner</code></td>
             </tr>
             <tr>
               <td><strong>MobileGPT</strong></td>
+              <td><code>settings_click_path_demo</code></td>
+              <td><code>oob_function_run</code></td>
+              <td><strong>140ms</strong></td>
+              <td><code>click step 6=29ms</code></td>
+              <td><code>function_run_existing_runner</code></td>
+            </tr>
+            <tr>
+              <td><strong>mobile-use</strong></td>
+              <td><code>settings_click_path_demo</code></td>
+              <td><code>oob_function_run</code></td>
+              <td><strong>139ms</strong></td>
+              <td><code>click step 6=29ms</code></td>
+              <td><code>function_run_existing_runner</code></td>
+            </tr>
+            <tr>
+              <td><strong>mobile-mcp</strong></td>
+              <td><code>settings_click_path_demo</code></td>
+              <td><code>oob_function_run</code></td>
+              <td><strong>137ms</strong></td>
+              <td><code>click step 2=26ms</code></td>
+              <td><code>function_run_existing_runner</code></td>
+            </tr>
+            <tr>
+              <td><strong>MobileGPT</strong></td>
               <td><code>install_sample_apk_demo</code></td>
-              <td><code>mcp_call_ingested_function=88ms</code></td>
+              <td><code>omniflow.call_function</code></td>
               <td><strong>12ms</strong></td>
               <td><code>package_install=12ms</code></td>
               <td><code>canonical_ingested_function_runner</code></td>
@@ -655,7 +682,7 @@
             <tr>
               <td><strong>mobile-use</strong></td>
               <td><code>install_sample_apk_demo</code></td>
-              <td><code>mcp_call_ingested_function=89ms</code></td>
+              <td><code>omniflow.call_function</code></td>
               <td><strong>12ms</strong></td>
               <td><code>package_install=12ms</code></td>
               <td><code>canonical_ingested_function_runner</code></td>
@@ -663,7 +690,7 @@
             <tr>
               <td><strong>mobile-mcp</strong></td>
               <td><code>install_sample_apk_demo</code></td>
-              <td><code>mcp_call_ingested_function=88ms</code></td>
+              <td><code>omniflow.call_function</code></td>
               <td><strong>12ms</strong></td>
               <td><code>package_install=12ms</code></td>
               <td><code>canonical_ingested_function_runner</code></td>
@@ -677,7 +704,7 @@
         <p class="section-copy">
           <code>settings_click_path_demo</code> 是本轮新的实际验收 Function：7 个 step，4 个 click。
           下表来自 canonical <code>omniflow.call_function</code> 的真实 <code>step_results[*].duration_ms</code>。
-          最耗时的是第 6 步 click，MobileGPT 和 mobile-mcp 均为 <strong>34ms</strong>。
+          最耗时的是第 6 步 click，MobileGPT 和 mobile-use 均为 <strong>29ms</strong>。
         </p>
         <table class="matrix">
           <thead>
@@ -691,13 +718,38 @@
             </tr>
           </thead>
           <tbody>
-            <tr><td><code>0</code></td><td><code>open_app</code></td><td>18ms</td><td>18ms</td><td>15ms</td><td>打开 Android Settings。</td></tr>
-            <tr><td><code>1</code></td><td><code>click</code></td><td>24ms</td><td>19ms</td><td>24ms</td><td>点击 Network & internet。</td></tr>
-            <tr><td><code>2</code></td><td><code>click</code></td><td>31ms</td><td>31ms</td><td>27ms</td><td>点击 Internet。</td></tr>
-            <tr><td><code>3</code></td><td><code>type</code></td><td>21ms</td><td>21ms</td><td>21ms</td><td>输入 demo query。</td></tr>
-            <tr><td><code>4</code></td><td><code>click</code></td><td>27ms</td><td>26ms</td><td>27ms</td><td>点击搜索结果。</td></tr>
-            <tr><td><code>5</code></td><td><code>wait</code></td><td>11ms</td><td>14ms</td><td>14ms</td><td>等待页面稳定。</td></tr>
-            <tr><td><code>6</code></td><td><code>click</code></td><td><strong>34ms</strong></td><td>25ms</td><td><strong>34ms</strong></td><td>点击 Back，当前最慢 step。</td></tr>
+            <tr><td><code>0</code></td><td><code>open_app</code></td><td>15ms</td><td>15ms</td><td>15ms</td><td>打开 Android Settings。</td></tr>
+            <tr><td><code>1</code></td><td><code>click</code></td><td>20ms</td><td>20ms</td><td>20ms</td><td>点击 Network & internet。</td></tr>
+            <tr><td><code>2</code></td><td><code>click</code></td><td>26ms</td><td>26ms</td><td>26ms</td><td>点击 Internet。</td></tr>
+            <tr><td><code>3</code></td><td><code>type</code></td><td>15ms</td><td>15ms</td><td>15ms</td><td>输入 demo query。</td></tr>
+            <tr><td><code>4</code></td><td><code>click</code></td><td>23ms</td><td>23ms</td><td>20ms</td><td>点击搜索结果。</td></tr>
+            <tr><td><code>5</code></td><td><code>wait</code></td><td>11ms</td><td>11ms</td><td>11ms</td><td>等待页面稳定。</td></tr>
+            <tr><td><code>6</code></td><td><code>click</code></td><td><strong>29ms</strong></td><td><strong>29ms</strong></td><td>26ms</td><td>点击 Back，当前 canonical 最慢 step。</td></tr>
+          </tbody>
+        </table>
+        <p class="section-copy" style="margin-top: 22px;">
+          下表来自 direct <code>mcp-run-function</code>/<code>oob_function_run</code> 的同一 Function。
+          该路径用于外部 agent 明确要求直接 replay、读取 guard 与 step timing 的场景。
+        </p>
+        <table class="matrix">
+          <thead>
+            <tr>
+              <th>Step</th>
+              <th>Action</th>
+              <th>MobileGPT</th>
+              <th>mobile-use</th>
+              <th>mobile-mcp</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>0</code></td><td><code>open_app</code></td><td>15ms</td><td>15ms</td><td>15ms</td><td>打开 Android Settings。</td></tr>
+            <tr><td><code>1</code></td><td><code>click</code></td><td>18ms</td><td>20ms</td><td>20ms</td><td>点击 Network & internet。</td></tr>
+            <tr><td><code>2</code></td><td><code>click</code></td><td>26ms</td><td>23ms</td><td>26ms</td><td>点击 Internet。</td></tr>
+            <tr><td><code>3</code></td><td><code>type</code></td><td>18ms</td><td>18ms</td><td>18ms</td><td>输入 demo query。</td></tr>
+            <tr><td><code>4</code></td><td><code>click</code></td><td>23ms</td><td>23ms</td><td>23ms</td><td>点击搜索结果。</td></tr>
+            <tr><td><code>5</code></td><td><code>wait</code></td><td>11ms</td><td>11ms</td><td>11ms</td><td>等待页面稳定。</td></tr>
+            <tr><td><code>6</code></td><td><code>click</code></td><td><strong>29ms</strong></td><td><strong>29ms</strong></td><td>25ms</td><td>点击 Back，当前 direct 最慢 step。</td></tr>
           </tbody>
         </table>
       </section>
@@ -705,10 +757,11 @@
       <section>
         <h2>最耗时步骤</h2>
         <p class="section-copy">
-          不包含 Codex CLI 时，最慢步骤是 <code>MobileGPT wheel_build=0.699s</code>；
+          不包含 Codex CLI 时，最慢步骤是 <code>MobileGPT wheel_build=1.062s</code>；
           跨项目看，<code>venv_create</code> 与 <code>wheel_build</code> 是主要耗时来源。
-          真实 direct replay 中最慢 runner 是 <code>MobileGPT function_run_existing_runner=166ms</code>，
-          最慢 step 是 <code>function_run_existing_step_6_click=34ms</code>。
+          真实 direct replay 中最慢 runner 是 <code>MobileGPT function_run_existing_runner=140ms</code>，
+          最慢 step 是 <code>MobileGPT function_run_existing_step_6_click=29ms</code>；
+          canonical replay 中最慢 runner 是 <code>MobileGPT canonical_call_function_runner=139ms</code>。
         </p>
         <table class="matrix">
           <thead>
@@ -727,9 +780,9 @@
               <td>MobileGPT</td>
               <td><code>wheel_build</code></td>
               <td class="bar-cell">
-                <div class="duration"><strong>0.699s</strong><span class="duration-bar hot"><span style="width: 100%"></span></span></div>
+                <div class="duration"><strong>1.062s</strong><span class="duration-bar hot"><span style="width: 100%"></span></span></div>
               </td>
-              <td>16.9%</td>
+              <td>22.2%</td>
               <td>SDK wheel 构建，当前非 Function 最大瓶颈。</td>
             </tr>
             <tr>
@@ -737,49 +790,49 @@
               <td>MobileGPT</td>
               <td><code>venv_create</code></td>
               <td class="bar-cell">
-                <div class="duration"><strong>0.646s</strong><span class="duration-bar warn"><span style="width: 92%"></span></span></div>
+                <div class="duration"><strong>0.980s</strong><span class="duration-bar warn"><span style="width: 92%"></span></span></div>
               </td>
-              <td>15.6%</td>
+              <td>20.5%</td>
               <td>创建隔离 Python 环境。</td>
             </tr>
             <tr>
               <td><strong>3</strong></td>
-              <td>mobile-use</td>
+              <td>mobile-mcp</td>
               <td><code>venv_create</code></td>
               <td class="bar-cell">
-                <div class="duration"><strong>0.650s</strong><span class="duration-bar warn"><span style="width: 93%"></span></span></div>
+                <div class="duration"><strong>0.664s</strong><span class="duration-bar warn"><span style="width: 63%"></span></span></div>
               </td>
-              <td>17.2%</td>
+              <td>17.3%</td>
               <td>创建隔离 Python 环境。</td>
             </tr>
             <tr>
               <td><strong>4</strong></td>
-              <td>mobile-mcp</td>
+              <td>mobile-use</td>
               <td><code>venv_create</code></td>
               <td class="bar-cell">
-                <div class="duration"><strong>0.644s</strong><span class="duration-bar warn"><span style="width: 92%"></span></span></div>
+                <div class="duration"><strong>0.661s</strong><span class="duration-bar warn"><span style="width: 62%"></span></span></div>
               </td>
-              <td>16.9%</td>
+              <td>17.4%</td>
               <td>环境创建仍是主要开销。</td>
             </tr>
             <tr>
               <td><strong>5</strong></td>
-              <td>mobile-use</td>
+              <td>mobile-mcp</td>
               <td><code>wheel_build</code></td>
               <td class="bar-cell">
-                <div class="duration"><strong>0.593s</strong><span class="duration-bar warn"><span style="width: 85%"></span></span></div>
+                <div class="duration"><strong>0.608s</strong><span class="duration-bar warn"><span style="width: 57%"></span></span></div>
               </td>
-              <td>15.7%</td>
+              <td>15.9%</td>
               <td>SDK wheel 构建耗时。</td>
             </tr>
             <tr>
               <td><strong>6</strong></td>
-              <td>mobile-mcp</td>
+              <td>mobile-use</td>
               <td><code>wheel_build</code></td>
               <td class="bar-cell">
-                <div class="duration"><strong>0.588s</strong><span class="duration-bar warn"><span style="width: 84%"></span></span></div>
+                <div class="duration"><strong>0.579s</strong><span class="duration-bar warn"><span style="width: 55%"></span></span></div>
               </td>
-              <td>15.4%</td>
+              <td>15.2%</td>
               <td>打包成本高于任意单次 MCP 调用。</td>
             </tr>
             <tr>
@@ -787,9 +840,9 @@
               <td>MobileGPT</td>
               <td><code>cli_probe_repo</code></td>
               <td class="bar-cell">
-                <div class="duration"><strong>0.500s</strong><span class="duration-bar"><span style="width: 72%"></span></span></div>
+                <div class="duration"><strong>0.508s</strong><span class="duration-bar"><span style="width: 48%"></span></span></div>
               </td>
-              <td>12.1%</td>
+              <td>10.6%</td>
               <td>仓库探测比 Function 执行本身更慢。</td>
             </tr>
           </tbody>
@@ -856,21 +909,22 @@
             </tr>
           </thead>
           <tbody>
-            <tr><td><code>repo_prepare</code></td><td>准备外部 repo</td><td>15ms</td><td>14ms</td><td>15ms</td></tr>
-            <tr><td><code>wheel_build</code></td><td>构建 omniflow-agentkit wheel</td><td><strong>699ms</strong></td><td><strong>593ms</strong></td><td><strong>588ms</strong></td></tr>
-            <tr><td><code>venv_create</code></td><td>创建隔离虚拟环境</td><td><strong>646ms</strong></td><td><strong>650ms</strong></td><td><strong>644ms</strong></td></tr>
-            <tr><td><code>wheel_install</code></td><td>安装 wheel 到外部项目 venv</td><td>263ms</td><td>238ms</td><td>234ms</td></tr>
-            <tr><td><code>mock_mcp_start</code></td><td>启动 mock OOB MCP server</td><td>132ms</td><td>131ms</td><td>131ms</td></tr>
-            <tr><td><code>sdk_import_probe</code></td><td>Python SDK import 与 repo probe API</td><td>72ms</td><td>61ms</td><td>60ms</td></tr>
-            <tr><td><code>cli_probe_repo</code></td><td>CLI 仓库探测</td><td>500ms</td><td>358ms</td><td>356ms</td></tr>
-            <tr><td><code>cli_prompt_build</code></td><td>生成给 GUI agent 的 prompt</td><td>70ms</td><td>64ms</td><td>64ms</td></tr>
-            <tr><td><code>mcp_recall</code></td><td>语义召回 Function</td><td>81ms</td><td>77ms</td><td>80ms</td></tr>
-            <tr><td><code>mcp_call_function</code></td><td>canonical 触发 7-step click Function</td><td>247ms</td><td>245ms</td><td>259ms</td></tr>
-            <tr><td><code>canonical_call_function_runner</code></td><td>canonical Function runner 内部耗时</td><td><strong>161ms</strong></td><td><strong>158ms</strong></td><td><strong>167ms</strong></td></tr>
-            <tr><td><code>mcp_ingest_runlog</code></td><td>canonical 注册 RunLog</td><td>77ms</td><td>76ms</td><td>81ms</td></tr>
-            <tr><td><code>mcp_call_ingested_function</code></td><td>canonical 触发注册后的 Function</td><td>85ms</td><td>88ms</td><td>90ms</td></tr>
-            <tr><td><code>verify_canonical_mcp</code></td><td>校验 canonical API 输出</td><td>26ms</td><td>26ms</td><td>26ms</td></tr>
-            <tr><td><code>total</code></td><td>项目内部记录总耗时</td><td><strong>4127ms</strong></td><td><strong>3787ms</strong></td><td><strong>3819ms</strong></td></tr>
+            <tr><td><code>repo_prepare</code></td><td>准备外部 repo</td><td>28ms</td><td>14ms</td><td>16ms</td></tr>
+            <tr><td><code>wheel_build</code></td><td>构建 omniflow-agentkit wheel</td><td><strong>1062ms</strong></td><td><strong>579ms</strong></td><td><strong>608ms</strong></td></tr>
+            <tr><td><code>venv_create</code></td><td>创建隔离虚拟环境</td><td><strong>980ms</strong></td><td><strong>661ms</strong></td><td><strong>664ms</strong></td></tr>
+            <tr><td><code>wheel_install</code></td><td>安装 wheel 到外部项目 venv</td><td>275ms</td><td>246ms</td><td>252ms</td></tr>
+            <tr><td><code>real_mcp_probe</code></td><td>探测真实 OOB MCP server</td><td>125ms</td><td>125ms</td><td>121ms</td></tr>
+            <tr><td><code>sdk_import_probe</code></td><td>Python SDK import 与 repo probe API</td><td>82ms</td><td>61ms</td><td>64ms</td></tr>
+            <tr><td><code>cli_probe_repo</code></td><td>CLI 仓库探测</td><td>508ms</td><td>348ms</td><td>385ms</td></tr>
+            <tr><td><code>cli_prompt_build</code></td><td>生成给 GUI agent 的 prompt</td><td>65ms</td><td>64ms</td><td>62ms</td></tr>
+            <tr><td><code>mcp_recall</code></td><td>语义召回 Function</td><td>76ms</td><td>75ms</td><td>78ms</td></tr>
+            <tr><td><code>mcp_call_function</code></td><td>canonical 触发 7-step click Function</td><td>已通过</td><td>已通过</td><td>已通过</td></tr>
+            <tr><td><code>canonical_call_function_runner</code></td><td>canonical Function runner 内部耗时</td><td><strong>139ms</strong></td><td><strong>134ms</strong></td><td><strong>130ms</strong></td></tr>
+            <tr><td><code>function_run_existing_runner</code></td><td>direct Function runner 内部耗时</td><td><strong>140ms</strong></td><td><strong>139ms</strong></td><td><strong>137ms</strong></td></tr>
+            <tr><td><code>mcp_ingest_runlog</code></td><td>canonical 注册 RunLog</td><td>79ms</td><td>78ms</td><td>82ms</td></tr>
+            <tr><td><code>mcp_call_ingested_function</code></td><td>canonical 触发注册后的 Function</td><td>86ms</td><td>88ms</td><td>88ms</td></tr>
+            <tr><td><code>verify_canonical_mcp</code></td><td>校验 canonical API 输出</td><td>26ms</td><td>28ms</td><td>27ms</td></tr>
+            <tr><td><code>total</code></td><td>项目内部记录总耗时</td><td><strong>4778ms</strong></td><td><strong>3808ms</strong></td><td><strong>3834ms</strong></td></tr>
           </tbody>
         </table>
       </section>
@@ -878,8 +932,8 @@
       <section>
         <h2>工具覆盖</h2>
         <p class="section-copy">
-          本轮补齐的不是文档描述，而是外部 agent 可直接调用的 canonical 工具面。
-          Function 召回、确定执行、RunLog ingest 后再执行，都进入同一 MCP/CLI 链路。
+          本轮补齐的不是文档描述，而是外部 agent 可直接调用的 canonical 与 direct 工具面。
+          Function 召回、确定执行、RunLog ingest 后再执行，以及显式 Function/RunLog 管理，都进入同一 MCP/CLI 链路。
         </p>
         <table class="matrix">
           <thead>
@@ -913,7 +967,37 @@
               <td><strong>触发 ingest 后 Function</strong></td>
               <td><code>mcp-call-function install_sample_apk_demo</code></td>
               <td><code>omniflow.call_function</code></td>
-              <td><span class="pill green">mock-run-install-sample-apk-demo</span></td>
+              <td><span class="pill green">&lt;real-run-id&gt;</span></td>
+            </tr>
+            <tr>
+              <td><strong>Direct Function list/get</strong></td>
+              <td><code>mcp-list-functions</code> / <code>mcp-get-function</code></td>
+              <td><code>oob_function_list</code> / <code>oob_function_get</code></td>
+              <td><span class="pill green">direct_function_list/get=ok</span></td>
+            </tr>
+            <tr>
+              <td><strong>Direct guard preflight</strong></td>
+              <td><code>mcp-guard-check settings_click_path_demo</code></td>
+              <td><code>oob_function_guard_check</code></td>
+              <td><span class="pill green">direct_guard_check=ok</span></td>
+            </tr>
+            <tr>
+              <td><strong>Direct 触发已有 Function</strong></td>
+              <td><code>mcp-run-function settings_click_path_demo</code></td>
+              <td><code>oob_function_run</code></td>
+              <td><span class="pill green">7 steps / 4 clicks / 137-140ms</span></td>
+            </tr>
+            <tr>
+              <td><strong>Direct RunLog list/get/convert</strong></td>
+              <td><code>mcp-list-runlogs</code> / <code>mcp-get-runlog</code> / <code>mcp-convert-runlog</code></td>
+              <td><code>oob_run_log_list</code> / <code>oob_run_log_get</code> / <code>oob_run_log_convert</code></td>
+              <td><span class="pill green">direct_runlog_convert=ok</span></td>
+            </tr>
+            <tr>
+              <td><strong>Direct 后台安装执行</strong></td>
+              <td><code>mcp-run-function install_sample_apk_demo --execution-mode background --confirmed</code></td>
+              <td><code>oob_function_run</code></td>
+              <td><span class="pill green">background_install_execution=ok</span></td>
             </tr>
           </tbody>
         </table>
@@ -923,7 +1007,7 @@
         <h2>触发链路</h2>
         <p class="section-copy">
           验收重点是让另一个 GUI agent 从外部项目中触发 OOB 已有 Function，并能把 RunLog 注册为新的 Function。
-          mock MCP 只替代宿主 OOB MCP，工具名和调用顺序保持与正式合同一致。
+          验收脚本只连接真实宿主 OOB MCP，工具名和调用顺序保持与正式合同一致。
         </p>
         <div class="pipeline">
           <div class="stage">
@@ -962,7 +1046,8 @@
       <section>
         <h2>可复跑命令</h2>
         <div class="commands">
-          <pre><code>bash scripts/omniflow_acceptance_all_guiagents.sh
+          <pre><code>OMNIFLOW_PYTHON=/Users/wuzewen/miniconda3/bin/python \
+bash scripts/omniflow_acceptance_all_guiagents.sh
 
 # Expected:
 omniflow_mobilegpt_acceptance=ok
@@ -971,6 +1056,9 @@ omniflow_mobile_mcp_acceptance=ok
 canonical_click_step_count=4
 canonical_ingest_runlog=ok
 canonical_call_ingested_function=ok
+direct_run_function=ok
+direct_click_step_count=4
+direct_runlog_convert=ok
 omniflow_all_guiagents_acceptance=ok</code></pre>
           <pre><code>OMNIFLOW_RUN_CODEX=1 \
 bash scripts/omniflow_acceptance_mobilegpt.sh
@@ -978,21 +1066,22 @@ bash scripts/omniflow_acceptance_mobilegpt.sh
 # Expected:
 codex_function_trigger=ok
 triggered_function_id=settings_click_path_demo
-ingested_function_run_id=mock-run-install-sample-apk-demo</code></pre>
+ingested_function_run_id=&lt;real-run-id&gt;</code></pre>
         </div>
       </section>
 
       <section>
         <h2>验证明细</h2>
         <div class="commands">
-          <pre><code>python3 -m unittest tests/test_omniflow_agentkit.py
+          <pre><code>env PYTHONPATH=. pytest -q tests/test_omniflow_agentkit.py
 
-......
-Ran 6 tests in 0.003s
-OK</code></pre>
-          <pre><code>python3 -m omniflow_agentkit pack --no-docs
-python3 -m compileall -q omniflow_agentkit scripts/omniflow_mock_mcp_server.py
-git diff --check
+6 passed</code></pre>
+          <pre><code>python3 -m py_compile \
+  omniflow_agentkit/__main__.py \
+  omniflow_agentkit/mcp.py \
+  omniflow_agentkit/kit.py
+bash -n scripts/omniflow_acceptance_external_repo.sh
+bash -n scripts/omniflow_acceptance_all_guiagents.sh
 
 # All passed</code></pre>
         </div>
@@ -1013,14 +1102,14 @@ git diff --check
           <pre><code>{
   "success": true,
   "function_id": "settings_click_path_demo",
-  "run_id": "mock-run-settings-click-path-demo",
-  "runner": "mock_mcp_runner",
-  "timing": {"runner_duration_ms": 166},
+  "run_id": "&lt;real-run-id&gt;",
+  "runner": "oob_omniflow_replay",
+  "timing": {"runner_duration_ms": 140},
   "step_results": [
-    {"index": 1, "type": "click", "duration_ms": 24},
-    {"index": 2, "type": "click", "duration_ms": 31},
-    {"index": 4, "type": "click", "duration_ms": 27},
-    {"index": 6, "type": "click", "duration_ms": 34}
+    {"index": 1, "type": "click", "duration_ms": 18},
+    {"index": 2, "type": "click", "duration_ms": 26},
+    {"index": 4, "type": "click", "duration_ms": 23},
+    {"index": 6, "type": "click", "duration_ms": 29}
   ]
 }</code></pre>
         </div>
@@ -1033,8 +1122,9 @@ git diff --check
             <h3>正式接入面</h3>
             <p>
               外部 agent 应优先使用 canonical MCP tools：<code>omniflow.recall</code>、
-              <code>omniflow.call_function</code>、<code>omniflow.ingest_run_log</code>。
-              旧 OOB 本地工具名只作为内部兼容/分类层保留，不作为公开 agent toolkit 合同。
+              <code>omniflow.call_function</code>、<code>omniflow.ingest_run_log</code>；
+              也可以使用公开 direct tools：<code>oob_function_*</code> 与 <code>oob_run_log_*</code>。
+              direct run 主要用于外部 agent 明确要求 replay、guard preflight 和 step timing 的场景。
               Skill 和 docs 负责激活条件与操作约束，不承担可信执行。
             </p>
           </div>

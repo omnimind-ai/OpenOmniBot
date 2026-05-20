@@ -115,7 +115,14 @@ object VlmToolCoordinator {
             mapOf("summary" to "正在启动视觉执行任务")
         )
 
-        val startResult = startVlmTaskInternal(context, request, taskId, taskState, scope)
+        val startResult = startVlmTaskInternal(
+            context,
+            request,
+            taskId,
+            taskState,
+            scope,
+            progressReporter
+        )
         if (startResult.isFailure) {
             val error = startResult.exceptionOrNull()?.message ?: "Unknown error"
             taskState.status = TaskStatus.ERROR
@@ -180,7 +187,14 @@ object VlmToolCoordinator {
                 taskState.status = TaskStatus.RUNNING
                 taskState.message = "屏幕已解锁，任务启动中"
                 val request = VlmTaskRequest(goal = taskState.goal, needSummary = taskState.needSummary)
-                val startResult = startVlmTaskInternal(context, request, taskId, taskState, scope)
+                val startResult = startVlmTaskInternal(
+                    context,
+                    request,
+                    taskId,
+                    taskState,
+                    scope,
+                    progressReporter
+                )
                 if (startResult.isFailure) {
                     val error = startResult.exceptionOrNull()?.message ?: "Unknown error"
                     taskState.status = TaskStatus.ERROR
@@ -339,7 +353,8 @@ object VlmToolCoordinator {
         payload: VlmTaskRequest,
         taskId: String,
         taskState: TaskState,
-        scope: CoroutineScope
+        scope: CoroutineScope,
+        progressReporter: VlmToolProgressReporter
     ): Result<Unit> {
         val deferred = CompletableDeferred<Result<Unit>>()
         mainHandler.post {
@@ -351,7 +366,12 @@ object VlmToolCoordinator {
                         model = payload.model,
                         maxSteps = payload.maxSteps,
                         packageName = payload.packageName,
-                        onMessagePushListener = buildListener(taskId, taskState, scope),
+                        onMessagePushListener = buildListener(
+                            taskId,
+                            taskState,
+                            scope,
+                            progressReporter
+                        ),
                         needSummary = payload.needSummary ?: false,
                         skipGoHome = payload.skipGoHome,
                         stepSkillGuidance = payload.stepSkillGuidance,
@@ -372,7 +392,8 @@ object VlmToolCoordinator {
     private fun buildListener(
         taskId: String,
         taskState: TaskState,
-        scope: CoroutineScope
+        scope: CoroutineScope,
+        progressReporter: VlmToolProgressReporter
     ): OnMessagePushListener {
         return object : OnMessagePushListener {
             override suspend fun onChatMessage(taskID: String, content: String, type: String?) {
@@ -415,6 +436,37 @@ object VlmToolCoordinator {
                 taskState.message = "等待用户输入"
                 taskState.addChatMessage("[AGENT QUESTION] $question")
                 taskState.markStateChanged()
+            }
+
+            override fun onVlmToolEvent(event: Map<String, Any?>) {
+                val summary = listOf(
+                    event["summary"],
+                    event["progress"],
+                    event["toolTitle"],
+                    event["toolName"]
+                ).firstNotNullOfOrNull { raw ->
+                    raw?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                }.orEmpty()
+                if (summary.isNotBlank()) {
+                    taskState.message = summary
+                    taskState.markStateChanged()
+                }
+                scope.launch {
+                    progressReporter(
+                        summary.ifBlank { "视觉任务执行中" },
+                        linkedMapOf<String, Any?>().apply {
+                            putAll(event)
+                            put(
+                                "agentStreamKind",
+                                event["agentStreamKind"]?.toString()
+                                    ?: event["kind"]?.toString()
+                                    ?: "tool_progress"
+                            )
+                            put("vlmTaskId", taskId)
+                            put("runLogId", event["runLogId"] ?: taskId)
+                        }
+                    )
+                }
             }
 
             override fun onVlmTaskResult(result: VlmTaskTerminalResult) {

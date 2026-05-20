@@ -2951,10 +2951,14 @@ class _WebChatHomeState extends State<_WebChatHome> {
           ),
         );
       case tool_policy.kAgentToolSummaryCardType:
+        final locale = Localizations.localeOf(context);
         final status = (cardData['status'] ?? 'running').toString();
-        final title = resolveAgentToolTitle(cardData);
-        final statusLabel = resolveAgentToolStatusLabel(cardData);
-        final typeLabel = resolveAgentToolTypeLabel(cardData);
+        final title = resolveAgentToolTitle(cardData, locale: locale);
+        final statusLabel = resolveAgentToolStatusLabel(
+          cardData,
+          locale: locale,
+        );
+        final typeLabel = resolveAgentToolTypeLabel(cardData, locale: locale);
         final color = switch (status) {
           'success' => const Color(0xFF2F8F4E),
           'error' => const Color(0xFFFF6464),
@@ -3018,6 +3022,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
                         color: _kPrimaryText,
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
+                        letterSpacing: 0,
                         height: 1.15,
                       ),
                     ),
@@ -3036,8 +3041,9 @@ class _WebChatHomeState extends State<_WebChatHome> {
                       status == 'running' ? typeLabel : statusLabel,
                       style: TextStyle(
                         color: color,
-                        fontSize: 10,
+                        fontSize: 12,
                         fontWeight: FontWeight.w600,
+                        letterSpacing: 0,
                         height: 1,
                       ),
                     ),

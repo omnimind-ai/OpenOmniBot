@@ -2,17 +2,13 @@ package cn.com.omnimind.bot.agent
 
 import android.content.Context
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
-import cn.com.omnimind.baselib.i18n.PromptLocale
-import cn.com.omnimind.bot.agent.config.AgentToolFeatureStore
 import cn.com.omnimind.bot.mcp.RemoteMcpDiscoveryRegistry
-import cn.com.omnimind.bot.runlog.OobRunLogReplayService
 import cn.com.omnimind.bot.workbench.WorkbenchDisplayLayoutContext
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -101,18 +97,10 @@ class OmniAgentExecutor(
             )
             callback.onSkillsResolved(resolvedSkills.map { it.toCallbackPayload() })
             val discoveredServers = RemoteMcpDiscoveryRegistry.discoverEnabledServers()
-            val oobFunctionDefinitions = if (AgentToolFeatureStore.isOobFunctionAsToolEnabled(context)) {
-                runCatching {
-                    OobRunLogReplayService(context)
-                        .listFunctionSpecs(limit = 50)
-                        .mapNotNull { spec -> buildOobToolDefinition(spec, promptLocale) }
-                }.getOrElse { emptyList() }
-            } else emptyList()
             val toolRegistry = AgentToolRegistry(
                 context = context,
                 discoveredServers = discoveredServers,
-                conversationMode = conversationMode,
-                dynamicDefinitions = oobFunctionDefinitions
+                conversationMode = conversationMode
             )
             val initialMessages = buildInitialMessages(
                 promptSeed = historyRepository.buildPromptSeed(
@@ -351,67 +339,5 @@ class OmniAgentExecutor(
             }
         }
         return ""
-    }
-
-    private fun buildOobToolDefinition(
-        spec: Map<String, Any?>,
-        locale: PromptLocale
-    ): JsonObject? {
-        val functionId = spec["function_id"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-            ?: return null
-        val displayName = spec["name"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-            ?: functionId
-        val description = spec["description"]?.toString().orEmpty()
-        val parameters = spec["parameters"] as? List<*> ?: emptyList<Any?>()
-
-        return AgentToolDefinitions.decorateToolDefinition(
-            buildJsonObject {
-                put("type", JsonPrimitive("function"))
-                put("function", buildJsonObject {
-                    put("name", JsonPrimitive(functionId))
-                    put("displayName", JsonPrimitive(displayName))
-                    put("toolType", JsonPrimitive("oob_function"))
-                    put("description", JsonPrimitive(
-                        description.ifBlank { "OOB reusable function: $displayName" }
-                    ))
-                    put("parameters", buildJsonObject {
-                        put("type", JsonPrimitive("object"))
-                        put("properties", buildJsonObject {
-                            for (rawParam in parameters) {
-                                val param = rawParam as? Map<*, *> ?: continue
-                                val pName = param["name"]?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: continue
-                                put(pName, buildJsonObject {
-                                    put("type", JsonPrimitive(
-                                        param["type"]?.toString() ?: "string"
-                                    ))
-                                    put("description", JsonPrimitive(
-                                        param["description"]?.toString() ?: pName
-                                    ))
-                                    if (param.containsKey("default")) {
-                                        put("default", JsonPrimitive(
-                                            param["default"]?.toString() ?: ""
-                                        ))
-                                    }
-                                })
-                            }
-                        })
-                        // required: only params where required=true and no default
-                        put("required", buildJsonArray {
-                            for (rawParam in parameters) {
-                                val param = rawParam as? Map<*, *> ?: continue
-                                val pName = param["name"]?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: continue
-                                val isRequired = when (val r = param["required"]) {
-                                    is Boolean -> r
-                                    is String -> r.equals("true", ignoreCase = true)
-                                    else -> false
-                                }
-                                val hasDefault = param.containsKey("default")
-                                if (isRequired && !hasDefault) add(JsonPrimitive(pName))
-                            }
-                        })
-                    })
-                })
-            }, locale
-        )
     }
 }

@@ -1,0 +1,973 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>wzw-dev vs main 功能差异报告</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #111315;
+      --muted: #606b75;
+      --soft: #87919c;
+      --paper: #f5f7f8;
+      --surface: #ffffff;
+      --surface-alt: #eef3f2;
+      --line: #d9e0e3;
+      --dark: #101412;
+      --dark-soft: #d9e8e3;
+      --teal: #0f766e;
+      --teal-soft: #d9f1ee;
+      --amber: #b45309;
+      --amber-soft: #fff3d8;
+      --rose: #be123c;
+      --rose-soft: #ffe1e8;
+      --blue: #1d4ed8;
+      --blue-soft: #dce9ff;
+      --shadow: 0 24px 70px rgba(10, 16, 18, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+      letter-spacing: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.65;
+    }
+
+    a {
+      color: inherit;
+      text-decoration-color: rgba(15, 118, 110, 0.35);
+      text-underline-offset: 3px;
+    }
+
+    code {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f8fafb;
+      padding: 0.08rem 0.35rem;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.88em;
+      color: #25313a;
+    }
+
+    .hero {
+      min-height: 78svh;
+      display: grid;
+      align-items: end;
+      background: var(--dark);
+      color: #f7fbfa;
+      padding: 56px clamp(22px, 5vw, 72px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0 0;
+      height: 11px;
+      background: var(--teal);
+    }
+
+    .hero-inner {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #93d5ce;
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 26px;
+      height: 2px;
+      background: #93d5ce;
+      display: inline-block;
+    }
+
+    h1 {
+      max-width: 960px;
+      margin: 18px 0 18px;
+      font-size: clamp(44px, 8vw, 104px);
+      line-height: 0.98;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 840px;
+      margin: 0 0 32px;
+      color: var(--dark-soft);
+      font-size: clamp(17px, 2vw, 24px);
+      line-height: 1.55;
+      font-weight: 650;
+    }
+
+    .branch-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      max-width: 920px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    .branch-item {
+      background: rgba(255, 255, 255, 0.055);
+      padding: 16px 18px;
+      min-width: 0;
+    }
+
+    .branch-item span {
+      display: block;
+      color: #9fb1ad;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .branch-item strong {
+      display: block;
+      margin-top: 5px;
+      color: #ffffff;
+      font-size: 15px;
+      word-break: break-word;
+    }
+
+    main {
+      width: min(1180px, calc(100% - 44px));
+      margin: 0 auto;
+    }
+
+    section {
+      padding: 72px 0 0;
+    }
+
+    .section-title {
+      margin: 0 0 14px;
+      font-size: clamp(28px, 4vw, 48px);
+      line-height: 1.1;
+      font-weight: 900;
+    }
+
+    .section-note {
+      max-width: 780px;
+      margin: 0 0 28px;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .summary-band {
+      margin-top: -42px;
+      position: relative;
+      z-index: 3;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+
+    .metric {
+      padding: 22px;
+      border-right: 1px solid var(--line);
+    }
+
+    .metric:last-child {
+      border-right: 0;
+    }
+
+    .metric .value {
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .metric .label {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .verdict {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 28px;
+      align-items: stretch;
+    }
+
+    .statement {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      padding: clamp(24px, 4vw, 42px);
+      box-shadow: var(--shadow);
+    }
+
+    .statement h2 {
+      margin: 0 0 14px;
+      font-size: clamp(28px, 4vw, 50px);
+      line-height: 1.12;
+      font-weight: 900;
+    }
+
+    .statement p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .rail {
+      display: grid;
+      gap: 12px;
+    }
+
+    .rail-item {
+      display: grid;
+      grid-template-columns: 124px 1fr;
+      gap: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      padding: 18px;
+    }
+
+    .rail-item strong {
+      color: var(--teal);
+      font-size: 14px;
+    }
+
+    .rail-item p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 30px;
+    }
+
+    .flow-step {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      padding: 16px;
+      min-height: 124px;
+      position: relative;
+    }
+
+    .flow-step::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -10px;
+      width: 10px;
+      height: 1px;
+      background: var(--line);
+    }
+
+    .flow-step:last-child::after {
+      display: none;
+    }
+
+    .flow-step span {
+      color: var(--soft);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .flow-step strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 16px;
+      line-height: 1.35;
+    }
+
+    .flow-step p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .matrix {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+
+    .matrix th,
+    .matrix td {
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+      padding: 18px;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    .matrix th {
+      background: var(--dark);
+      color: #f7fbfa;
+      font-size: 13px;
+      text-transform: uppercase;
+    }
+
+    .matrix tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .matrix td:first-child {
+      width: 20%;
+      font-weight: 850;
+      color: var(--ink);
+    }
+
+    .matrix td:nth-child(2) {
+      width: 27%;
+      color: var(--muted);
+    }
+
+    .matrix td:nth-child(3) {
+      width: 33%;
+    }
+
+    .matrix td:nth-child(4) {
+      width: 20%;
+      color: var(--muted);
+    }
+
+    .tag {
+      display: inline-block;
+      margin: 0 6px 6px 0;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: var(--teal-soft);
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .tag.amber {
+      background: var(--amber-soft);
+      color: var(--amber);
+    }
+
+    .tag.rose {
+      background: var(--rose-soft);
+      color: var(--rose);
+    }
+
+    .tag.blue {
+      background: var(--blue-soft);
+      color: var(--blue);
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .feature {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 22px;
+    }
+
+    .feature h3 {
+      margin: 0 0 10px;
+      font-size: 20px;
+      line-height: 1.25;
+    }
+
+    .feature p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .feature ul,
+    .notes ul {
+      margin: 0;
+      padding-left: 20px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .feature li,
+    .notes li {
+      margin: 6px 0;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .compare-panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 22px;
+    }
+
+    .compare-panel h3 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+
+    .compare-panel p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .compare-panel.main {
+      border-top: 5px solid var(--soft);
+    }
+
+    .compare-panel.dev {
+      border-top: 5px solid var(--teal);
+    }
+
+    .artifact-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .artifact {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: center;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+
+    .artifact strong {
+      font-size: 14px;
+    }
+
+    .artifact span {
+      color: var(--muted);
+      font-size: 13px;
+      text-align: right;
+    }
+
+    .notes {
+      background: #fcf7eb;
+      border: 1px solid #f0dca9;
+      border-radius: 8px;
+      padding: 22px;
+    }
+
+    .notes h3 {
+      margin: 0 0 10px;
+      font-size: 19px;
+    }
+
+    footer {
+      margin-top: 78px;
+      padding: 36px 0 46px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) {
+      .hero {
+        min-height: 72svh;
+        padding: 40px 22px;
+      }
+
+      .branch-strip,
+      .summary-band,
+      .verdict,
+      .flow,
+      .feature-grid,
+      .split {
+        grid-template-columns: 1fr;
+      }
+
+      .summary-band {
+        margin-top: -24px;
+      }
+
+      .metric {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .metric:last-child {
+        border-bottom: 0;
+      }
+
+      .rail-item {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .flow-step {
+        min-height: auto;
+      }
+
+      .flow-step::after {
+        display: none;
+      }
+
+      .matrix {
+        display: block;
+        overflow-x: auto;
+      }
+
+      .matrix th,
+      .matrix td {
+        min-width: 190px;
+      }
+
+      .artifact {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .artifact span {
+        text-align: left;
+      }
+    }
+
+    @media print {
+      body {
+        background: #ffffff;
+      }
+
+      .hero {
+        min-height: auto;
+        padding: 32px;
+      }
+
+      .summary-band,
+      .statement,
+      .matrix {
+        box-shadow: none;
+      }
+
+      section {
+        padding-top: 42px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow">Functional Diff Report</div>
+      <h1>wzw-dev 对 main 的核心功能差异</h1>
+      <p class="lead">
+        结论：<strong>wzw-dev</strong> 不是一次普通 UI 或 bugfix 分支，它把 OOB 从“聊天 + 单次手机操作”推进到“可生成 Project、可沉淀指令、可回放执行、可被外部 GUI Agent 调用”的完整产品闭环。
+      </p>
+      <div class="branch-strip" aria-label="对比基准">
+        <div class="branch-item">
+          <span>Base</span>
+          <strong>origin/main @ 5520fbac2e65</strong>
+        </div>
+        <div class="branch-item">
+          <span>Compare</span>
+          <strong>wzw-dev @ 7871ed070706</strong>
+        </div>
+        <div class="branch-item">
+          <span>Generated</span>
+          <strong>2026-05-18</strong>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="summary-band" aria-label="差异摘要">
+      <div class="metric">
+        <div class="value">106</div>
+        <div class="label">非 merge 提交</div>
+      </div>
+      <div class="metric">
+        <div class="value">353</div>
+        <div class="label">核心源码/文档文件变化</div>
+      </div>
+      <div class="metric">
+        <div class="value">86k+</div>
+        <div class="label">核心路径新增代码与文档行</div>
+      </div>
+      <div class="metric">
+        <div class="value">5</div>
+        <div class="label">主要产品能力域</div>
+      </div>
+    </div>
+
+    <section>
+      <div class="verdict">
+        <div class="statement">
+          <h2>一句话给别人讲</h2>
+          <p>
+            main 还是以通用 AI 助手、手机自动化、聊天和基础工具为主；wzw-dev 增加了 Workbench Project、OmniFlow 可复用指令、RunLog 回放、外部 MCP 调用和更清晰的 Agent 执行展示，目标是让一次成功的 Agent 工作可以被看见、保存、复用和分享。
+          </p>
+        </div>
+        <div class="rail">
+          <div class="rail-item">
+            <strong>产品重心</strong>
+            <p>从“完成一次任务”转向“沉淀成用户可持续使用的小工具和自动化能力”。</p>
+          </div>
+          <div class="rail-item">
+            <strong>技术边界</strong>
+            <p>把 Project、Function、RunLog、MCP、GUI replay 拆成稳定运行时，而不是只靠对话过程临时拼接。</p>
+          </div>
+          <div class="rail-item">
+            <strong>外部价值</strong>
+            <p>其他 GUI Agent 可以通过 OmniFlow kit/MCP 复用 OOB 记录下来的手机执行能力。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="section-title">从一次 Agent 任务到可复用资产</h2>
+      <p class="section-note">
+        wzw-dev 新增的核心闭环可以理解成下面这条产品链路。它解释了为什么这不是单点功能，而是一个新平台层。
+      </p>
+      <div class="flow" aria-label="wzw-dev 功能链路">
+        <div class="flow-step">
+          <span>01</span>
+          <strong>用户提出需求</strong>
+          <p>从 Home/聊天进入 Project 创建、手机操作、网页研究或工具调用。</p>
+        </div>
+        <div class="flow-step">
+          <span>02</span>
+          <strong>Agent 执行并记录</strong>
+          <p>过程通过统一 stream 事件、tool card、RunLog 和 VLM trace 留痕。</p>
+        </div>
+        <div class="flow-step">
+          <span>03</span>
+          <strong>生成 Project 或 Function</strong>
+          <p>结果可以成为可视化 Project，也可以把成功路径转成可复用指令。</p>
+        </div>
+        <div class="flow-step">
+          <span>04</span>
+          <strong>安全回放和热更新</strong>
+          <p>OmniFlow guard 判断 allow、needs_agent、needs_confirmation 或 block。</p>
+        </div>
+        <div class="flow-step">
+          <span>05</span>
+          <strong>外部 Agent 调用</strong>
+          <p>MCP 暴露 recall、call_function、ingest_run_log 和 Project Toolbox。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="section-title">功能差异矩阵</h2>
+      <p class="section-note">
+        下表按用户能感知到的能力来比，不展开底层重构细节。
+      </p>
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th>能力域</th>
+            <th>当前 main</th>
+            <th>wzw-dev 新增/增强</th>
+            <th>对外说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Workbench Project</td>
+            <td>没有稳定的 Project 容器；Agent 输出更多停留在聊天、工作区文件或一次性页面。</td>
+            <td>
+              <span class="tag">Project 创建</span>
+              <span class="tag">激活/打开</span>
+              <span class="tag">热更新</span>
+              <span class="tag">导出</span>
+              <br>
+              新增 Project runtime、Project 管理页、active Project 嵌入、Project Tool/API、HTML/Markdown/Flutter/default display 渲染路径。
+            </td>
+            <td>一句话生成一个可持续使用的个人工具，后续还能继续改。</td>
+          </tr>
+          <tr>
+            <td>RunLog 到可复用指令</td>
+            <td>执行历史主要用于回看；成功路径不能稳定沉淀为可调用资产。</td>
+            <td>
+              <span class="tag amber">RunLog timeline</span>
+              <span class="tag amber">Command Library</span>
+              <span class="tag amber">Function schema</span>
+              <br>
+              新增内部 RunLog store、timeline 页面、RunLog 转 Function、指令库列表/执行/删除。
+            </td>
+            <td>“做过一次”的手机任务可以保存为“以后再跑”的指令。</td>
+          </tr>
+          <tr>
+            <td>OmniFlow 回放</td>
+            <td>偏向实时 Agent/VLM 执行，重复任务仍依赖模型重新判断。</td>
+            <td>
+              <span class="tag rose">Guard policy</span>
+              <span class="tag rose">本地确定性 replay</span>
+              <span class="tag rose">Agent fallback</span>
+              <br>
+              新增 <code>oob.reusable_function.v1</code>、OmniflowStepExecutor、RunLogReplayPolicy、OobFunctionToolHandler。
+            </td>
+            <td>安全、低风险步骤可直接回放；需要实时判断的步骤回退给 Agent。</td>
+          </tr>
+          <tr>
+            <td>MCP / 外部 GUI Agent</td>
+            <td>MCP 更多是应用内 Agent 和工具入口，外部 agent 复用 OOB 执行资产的边界不完整。</td>
+            <td>
+              <span class="tag blue">omniflow.recall</span>
+              <span class="tag blue">omniflow.call_function</span>
+              <span class="tag blue">omniflow.ingest_run_log</span>
+              <span class="tag blue">omniflow.explore_replay</span>
+              <br>
+              同时提供 <code>oob_function_*</code>、<code>oob_run_log_*</code>、动态 Project Toolbox 和 Agent Kit 文档。
+            </td>
+            <td>MobileGPT、mobile-use、mobile-mcp 等外部项目可通过 MCP 触发 OOB 指令。</td>
+          </tr>
+          <tr>
+            <td>Agent 执行展示</td>
+            <td>工具调用容易形成大量碎片卡片；长任务过程不够容易读。</td>
+            <td>
+              <span class="tag">统一事件 envelope</span>
+              <span class="tag">批量 stream</span>
+              <span class="tag">活动聚合卡</span>
+              <br>
+              新增 AgentStreamEventBatcher、AgentStreamReducer、AgentActivityCompactor、AgentToolActivityCard 和运行中 Agent 悬浮监控。
+            </td>
+            <td>用户看到的是“Agent 正在做什么”，不是一串低层工具日志。</td>
+          </tr>
+          <tr>
+            <td>VLM / GUI 自动化</td>
+            <td>VLM 负责实时看屏和操作，重放与路径抽取能力有限。</td>
+            <td>
+              <span class="tag amber">Trace recording</span>
+              <span class="tag amber">UTG explore</span>
+              <span class="tag amber">Coordinate grounding</span>
+              <br>
+              新增 ActionTargetGrounder、TraceRecordingDeviceOperator、OobOmniFlowExplorer，并把 source_context 和 coordinate_hook 写入 replay step。
+            </td>
+            <td>手机 GUI 操作可以更稳定地记录、抽取路径，并成为可 replay 的 Function。</td>
+          </tr>
+          <tr>
+            <td>内置技能和产品说明</td>
+            <td>技能体系存在，但没有完整覆盖 Project/OmniFlow 生命周期。</td>
+            <td>
+              <span class="tag blue">oob-project</span>
+              <span class="tag blue">oob-prompt-runtime</span>
+              <span class="tag blue">guiagent-omniflow</span>
+              <br>
+              新增 Project 生命周期、HTML Display、Backend/API、蒸馏、审查、OmniFlow function spec 与外部接入说明。
+            </td>
+            <td>这让 Agent 和外部团队能按同一套产品规则创建、修改、审查 Project。</td>
+          </tr>
+          <tr>
+            <td>本地化和验收</td>
+            <td>部分文案仍依赖源码文本，新增大功能的中英文覆盖不完整。</td>
+            <td>
+              <span class="tag">AppTextLocalizer</span>
+              <span class="tag">ARB 扩展</span>
+              <span class="tag">验收脚本</span>
+              <br>
+              Workbench、RunLog、OmniFlow、Agent stream 等新增界面有中英文文案和对应单元/验收测试。
+            </td>
+            <td>更适合给外部用户、评审和跨语言演示使用。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2 class="section-title">核心功能展开</h2>
+      <p class="section-note">
+        如果只向业务或产品同学解释，建议聚焦这五块。
+      </p>
+      <div class="feature-grid">
+        <article class="feature">
+          <h3>1. Workbench Project：从聊天输出变成持久工具</h3>
+          <p>
+            wzw-dev 把 Project 作为 OOB 内置核心能力：Project 有自己的数据、展示、业务 API、日志、导出包和活跃状态。
+          </p>
+          <ul>
+            <li>支持 <code>workbench_project_create/list/get/update/open/activate/export/delete</code> 等控制面能力。</li>
+            <li>HTML WebView 成为默认富展示路径，同时保留 Markdown、Flutter eval 和通用 Project Display。</li>
+            <li>支持 hot update：用户在页面上说“改这里”，Agent 带着当前前端上下文迭代同一个 Project。</li>
+            <li>支持 OSS/Android 资产导入，为“把现有项目蒸馏成 OOB Project”铺路。</li>
+          </ul>
+        </article>
+
+        <article class="feature">
+          <h3>2. OmniFlow：把成功执行沉淀成可复用 Function</h3>
+          <p>
+            这是 wzw-dev 最重要的自动化能力：不是每次都让模型重新规划，而是把成功 RunLog 转成结构化 Function。
+          </p>
+          <ul>
+            <li>Function schema 固定为 <code>oob.reusable_function.v1</code>，包含参数、执行步骤、来源和 guard 元数据。</li>
+            <li>低风险 UI 动作走本地 replay；浏览器、搜索、记忆、VLM-only 等步骤标记为 Agent fallback。</li>
+            <li>危险动作有 guard：本地 UI replay 允许，shell/设置/安装/权限类需要确认，重启/格式化等阻断。</li>
+            <li>指令库让用户直接查看、执行和删除已保存 Function。</li>
+          </ul>
+        </article>
+
+        <article class="feature">
+          <h3>3. RunLog 与执行历史：从日志变成产品入口</h3>
+          <p>
+            main 里的执行历史更像记录；wzw-dev 让它成为 replay 和审计入口。
+          </p>
+          <ul>
+            <li>新增 <code>InternalRunLogStore</code>，统一保存 Agent/VLM/工具执行过程。</li>
+            <li>新增 RunLog 列表、时间线、步骤详情、token/耗时等展示。</li>
+            <li>RunLog 可转换成 Function，并可通过 UI、Agent tool 或 MCP 再次执行。</li>
+            <li>文本型 Agent run 也会保留 RunLog，避免只包含工具步骤才可追踪。</li>
+          </ul>
+        </article>
+
+        <article class="feature">
+          <h3>4. Agent Stream UI：长任务更可读</h3>
+          <p>
+            wzw-dev 用统一事件流重做 Agent 过程展示，让聊天页、悬浮窗、RunLog timeline 共享同一套投影。
+          </p>
+          <ul>
+            <li>后端输出 <code>oob.agent_event.v1</code> 事件 envelope，包含 trace/run/span/channel/status 等字段。</li>
+            <li>Native 侧按帧批量发送 stream 事件，降低高频 token 和工具进度带来的 UI 压力。</li>
+            <li>前端用 reducer 和 compactor 把浏览器、终端、Workbench、MCP 等调用聚合成活动卡。</li>
+            <li>新增运行中 Agent 悬浮监控，能看到活动状态并处理停止/展开等操作。</li>
+          </ul>
+        </article>
+
+        <article class="feature">
+          <h3>5. 外部接入：OOB 能力可以被别的 Agent 调用</h3>
+          <p>
+            wzw-dev 不只服务 App 内部。OmniFlow kit 明确给外部 GUI Agent 一套接入契约和验收方式。
+          </p>
+          <ul>
+            <li>MCP 暴露 canonical 工具：<code>omniflow.recall</code>、<code>omniflow.call_function</code>、<code>omniflow.ingest_run_log</code>、<code>omniflow.explore_replay</code>。</li>
+            <li>外部可以 list/get/register/guard/run Function，也能 list/get/convert RunLog。</li>
+            <li>文档和脚本覆盖 MobileGPT、mobile-use、mobile-mcp 这类外部项目验收。</li>
+            <li>Project Toolbox 让 active Project 的业务动作也能通过 MCP 动态暴露。</li>
+          </ul>
+        </article>
+
+        <article class="feature">
+          <h3>6. GUI replay 基础：VLM 操作更容易复现</h3>
+          <p>
+            wzw-dev 在 VLM/Accessibility 层补了可记录、可 grounding、可探索的基础设施。
+          </p>
+          <ul>
+            <li>记录每次 VLM task 的原始操作 trace，用于后续 RunLog/Function 物化。</li>
+            <li>UTG explorer 从 Accessibility XML 中抽取可 replay 路径。</li>
+            <li>coordinate hook 和 source_context 帮助点击坐标在新页面上下文中重新定位。</li>
+            <li>截图 fallback、Assists rebind、VLM compile metadata 等稳定性也有加强。</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="section-title">main 和 wzw-dev 的定位差异</h2>
+      <div class="split">
+        <div class="compare-panel main">
+          <h3>main：通用 AI 助手主线</h3>
+          <p>
+            当前 main 更像稳定的 Omnibot 基线：聊天、Agent、手机 VLM 操作、基础工具、设置、历史和现有 Flutter UI。它能完成一次任务，但“任务完成之后如何沉淀成资产”的产品链路还不完整。
+          </p>
+        </div>
+        <div class="compare-panel dev">
+          <h3>wzw-dev：Project + OmniFlow 平台层</h3>
+          <p>
+            wzw-dev 叠加了一层面向持续使用的产品基础设施：Project 管理可视化结果，RunLog 记录过程，Function 复用成功路径，OmniFlow/MCP 让内部和外部 Agent 都能安全调用。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="section-title">关键入口和证据文件</h2>
+      <p class="section-note">
+        下面这些文件可以作为评审或交接时的入口。报告中的结论主要来自这些模块和文档。
+      </p>
+      <div class="artifact-list">
+        <div class="artifact">
+          <strong><a href="reference/OOB_INTEGRATION.md">docs/reference/OOB_INTEGRATION.md</a></strong>
+          <span>Workbench Project 产品边界、Display 规则、Project Tool/MCP 边界</span>
+        </div>
+        <div class="artifact">
+          <strong><a href="reference/OOB_WORKBENCH_BACKEND_RUNTIME.md">docs/reference/OOB_WORKBENCH_BACKEND_RUNTIME.md</a></strong>
+          <span>Project runtime 文件结构、创建、热更新、导出、source ingest</span>
+        </div>
+        <div class="artifact">
+          <strong><a href="omniflow/README.md">docs/omniflow/README.md</a></strong>
+          <span>OmniFlow 的产品边界、外部访问模式、安全规则和代码地图</span>
+        </div>
+        <div class="artifact">
+          <strong><a href="omniflow/FUNCTION_SPEC.md">docs/omniflow/FUNCTION_SPEC.md</a></strong>
+          <span>可复用 Function schema、executor 类型、guard 元数据</span>
+        </div>
+        <div class="artifact">
+          <strong><a href="reference/agent-stream-pipeline.md">docs/reference/agent-stream-pipeline.md</a></strong>
+          <span>Agent stream 从 LLM token 到活动卡的完整展示链路</span>
+        </div>
+        <div class="artifact">
+          <strong><code>app/src/main/java/cn/com/omnimind/bot/runlog/</code></strong>
+          <span>OmniFlow executor、RunLog replay、Function compiler、MCP toolkit service</span>
+        </div>
+        <div class="artifact">
+          <strong><code>ui/lib/features/workbench/</code></strong>
+          <span>Project manager、HTML/Markdown/Flutter/default display、Project service</span>
+        </div>
+        <div class="artifact">
+          <strong><code>ui/lib/features/task/pages/execution_history/</code></strong>
+          <span>RunLog 列表、timeline、Command Library</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="notes">
+        <h3>报告口径</h3>
+        <ul>
+          <li>本报告以已提交的 Git ref 为准：<code>origin/main @ 5520fbac2e65</code> 对比 <code>wzw-dev @ 7871ed070706</code>。</li>
+          <li>本地 <code>main</code> 分支落后于 <code>origin/main</code>，所以这里用已 fetch 的 <code>origin/main</code> 代表“当前 main”。</li>
+          <li>当前工作区存在未提交改动，本报告未把这些改动计入统计和结论，以避免把未入分支的内容算进 wzw-dev。</li>
+          <li>完整 diff 中包含第三方或构建产物噪声；功能分析聚焦 <code>app</code>、<code>assists</code>、<code>baselib</code>、<code>ui</code>、<code>uikit</code>、<code>docs</code>、<code>scripts</code> 等核心路径。</li>
+          <li>wzw-dev 已合入当前 main 的最新修复；报告只描述 wzw-dev 相对 main 多出来的功能能力。</li>
+        </ul>
+      </div>
+    </section>
+
+    <footer>
+      Generated in repository <code>OpenOmniBot</code>. Suggested external wording: wzw-dev is the branch that turns OOB into a persistent Project and replayable automation platform, while main remains the current assistant baseline.
+    </footer>
+  </main>
+</body>
+</html>

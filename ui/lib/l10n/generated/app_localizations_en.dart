@@ -420,6 +420,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatToolCalling => 'Calling tool';
 
   @override
+  String get chatToolOutputCopied => 'Copied tool output';
+
+  @override
+  String get chatViewRunLogTooltip => 'View Run Log';
+
+  @override
   String get chatFallbackReply =>
       'I can\'t generate a reply right now. Please try again.';
 
@@ -524,7 +530,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get memoryLongTermTitle => 'Long-term Memory';
 
   @override
-  String get memoryCommandsTitle => 'Commands';
+  String get memoryCommandsTitle => 'Functions';
 
   @override
   String get memoryNoShortTerm => 'No short-term memory yet';

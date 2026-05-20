@@ -237,6 +237,86 @@ void main() {
     ]);
   });
 
+  test('compacts VLM steps as visual activity instead of research', () {
+    final items = compactAgentProcessItems(<ChatMessageModel>[
+      _toolMessage(
+        id: 'task-vlm-tool-1',
+        seq: 1,
+        toolType: 'vlm',
+        toolName: 'click',
+        argsJson: '{"target_description":"设置按钮","x":120,"y":240}',
+        status: 'success',
+        summary: '点击 设置按钮',
+      ),
+      _toolMessage(
+        id: 'task-vlm-tool-2',
+        seq: 2,
+        toolType: 'vlm',
+        toolName: 'type',
+        argsJson: '{"content":"hello"}',
+        status: 'running',
+        summary: '输入文本',
+      ),
+    ]);
+
+    expect(items, hasLength(1));
+    final activity = items.single.activity;
+    expect(activity?.kind, AgentToolActivityKind.vlm);
+    expect(activity?.title, 'hello');
+    expect(activity?.status, 'running');
+    expect(activity?.stepCount, 2);
+    expect(activity?.steps.map((step) => step.action), ['click', 'type']);
+    expect(activity?.steps.map((step) => step.target), ['设置按钮', 'hello']);
+  });
+
+  test('compacts VLM runlog cards even when taskId is absent', () {
+    final items = compactAgentProcessItems(<ChatMessageModel>[
+      ChatMessageModel.cardMessage(
+        const <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'status': 'success',
+          'toolType': 'vlm',
+          'toolName': 'click',
+          'cardId': 'run-vlm-step-1',
+          'runLogId': 'run-vlm',
+          'argsJson': '{"target_description":"设置按钮"}',
+        },
+        id: 'run-vlm-step-1',
+        streamMeta: const <String, dynamic>{
+          'runLogId': 'run-vlm',
+          'entryId': 'run-vlm-step-1',
+          'kind': 'tool_completed',
+          'seq': 1,
+        },
+      ),
+      ChatMessageModel.cardMessage(
+        const <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'status': 'running',
+          'toolName': 'vlm_task',
+          'cardId': 'run-vlm-step-2',
+          'run_id': 'run-vlm',
+          'compile_kind': 'vlm',
+          'argsJson': '{"goal":"打开设置"}',
+        },
+        id: 'run-vlm-step-2',
+        streamMeta: const <String, dynamic>{
+          'run_id': 'run-vlm',
+          'entryId': 'run-vlm-step-2',
+          'kind': 'tool_progress',
+          'seq': 2,
+        },
+      ),
+    ]);
+
+    expect(items, hasLength(1));
+    final activity = items.single.activity;
+    expect(activity?.kind, AgentToolActivityKind.vlm);
+    expect(activity?.taskId, 'run-vlm');
+    expect(activity?.stepCount, 2);
+    expect(activity?.steps.map((step) => step.target), ['设置按钮', '打开设置']);
+  });
+
   test('non-tool messages break activity compaction', () {
     final thinking = ChatMessageModel.cardMessage(<String, dynamic>{
       'type': 'deep_thinking',

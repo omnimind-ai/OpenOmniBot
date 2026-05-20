@@ -96,14 +96,18 @@ OOB-native OmniFlow execution:
 - `go_to_node`
 - `click_node`
 - `node_click`
+- `omniflow.call_tool`
+- `call_tool`
+- `oob_tool_call`
 - `omniflow.call_function`
 - `call_function`
 - `oob_function_run`
 
-These compile to `executor=omniflow`, not `executor=agent`. Graph tools execute
-embedded `path`/UTG edge data through the local primitive action executor.
-Function tools resolve another registered OOB Function and execute it
-recursively in `OobFunctionToolHandler`.
+Graph tools and `call_tool` entries with `function_id` compile to
+`executor=omniflow`, not `executor=agent`. Graph tools execute embedded
+`path`/UTG edge data through the local primitive action executor. `call_tool`
+without `function_id` delegates to the live tool router when available. Legacy
+`call_function` names are accepted only for compatibility.
 
 ## Known Failure Modes
 
@@ -120,7 +124,7 @@ recursively in `OobFunctionToolHandler`.
 - Regression where provider/exported Function uses canonical
   `input_text/swipe/press_key` while OOB only handles legacy
   `type/scroll/press_home/press_back`.
-- OmniFlow `go_to_node/click_node/call_function` accidentally becomes
+- OmniFlow `go_to_node/click_node/call_tool(function_id)` accidentally becomes
   `executor=agent` or `executor=tool` instead of local `executor=omniflow`.
 
 ## Required Test Cases
