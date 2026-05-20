@@ -1,6 +1,5 @@
 package cn.com.omnimind.bot.runlog
 
-import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import kotlinx.coroutines.delay
 import org.w3c.dom.Element
@@ -65,8 +64,9 @@ object OmniflowStepExecutor {
         if (action !in RunLogReplayPolicy.omniflowActions) {
             throw IllegalArgumentException("Unsupported omniflow action: $action")
         }
-        if (action.requiresAccessibility() && !AccessibilityController.initController()) {
-            throw IllegalStateException("Accessibility controller is not ready")
+        val backend = OmniflowActionRuntime.backend
+        if (action.requiresAccessibility() && !backend.isReady()) {
+            throw IllegalStateException("OmniFlow action backend is not ready")
         }
         val remapResult = remapStepArgs(step)
         if (action in RunLogReplayPolicy.coordinateActions && shouldUseCoordinateHook(step)) {
@@ -84,7 +84,7 @@ object OmniflowStepExecutor {
                     ?: throw IllegalArgumentException("click requires x")
                 val y = numberArg(args, "y", "center_y", "centerY")?.toFloat()
                     ?: throw IllegalArgumentException("click requires y")
-                AccessibilityController.clickCoordinate(x, y)
+                backend.click(x, y)
                 "click"
             }
 
@@ -93,22 +93,22 @@ object OmniflowStepExecutor {
                     ?: throw IllegalArgumentException("long_press requires x")
                 val y = numberArg(args, "y", "center_y", "centerY")?.toFloat()
                     ?: throw IllegalArgumentException("long_press requires y")
-                AccessibilityController.longClickCoordinate(
+                backend.longPress(
                     x = x,
                     y = y,
-                    duration = durationMs(args, defaultMs = 1000L)
+                    durationMs = durationMs(args, defaultMs = 1000L)
                 )
                 "long_press"
             }
 
             "scroll", "swipe" -> {
                 val swipe = swipeSpec(args)
-                AccessibilityController.scrollCoordinate(
+                backend.scroll(
                     x = swipe.x,
                     y = swipe.y,
                     direction = swipe.direction,
                     distance = swipe.distance,
-                    duration = durationMs(args, defaultMs = 1500L)
+                    durationMs = durationMs(args, defaultMs = 1500L)
                 )
                 action
             }
@@ -116,16 +116,14 @@ object OmniflowStepExecutor {
             "type", "input_text" -> {
                 val text = stringArg(args, "content", "text", "value")
                     ?: throw IllegalArgumentException("$action requires content")
-                AccessibilityController.inputTextToFocusedNode(text)
+                backend.inputTextToFocusedNode(text)
                 action
             }
 
             "open_app" -> {
                 val packageName = stringArg(args, "package_name", "packageName")
                     ?: throw IllegalArgumentException("open_app requires package_name")
-                AccessibilityController.launchApplication(packageName) { x, y ->
-                    AccessibilityController.clickCoordinate(x, y)
-                }
+                backend.launchApplication(packageName)
                 "open_app"
             }
 
@@ -136,12 +134,12 @@ object OmniflowStepExecutor {
                         "press_back" -> "BACK"
                         else -> throw IllegalArgumentException("$action requires key")
                     }
-                AccessibilityController.pressHotKey(key)
+                backend.pressHotKey(key)
                 action
             }
 
             "wait" -> {
-                delay(durationMs(args, defaultMs = 1000L))
+                backend.wait(durationMs(args, defaultMs = 1000L))
                 "wait"
             }
 
@@ -189,7 +187,7 @@ object OmniflowStepExecutor {
                 meta = mapOf("applied" to false, "reason" to "missing_source_xml", "algorithm" to "anchor_projection")
             )
         }
-        val currentXml = AccessibilityController.getCaptureScreenShotXml(true)?.trim().orEmpty()
+        val currentXml = OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
         if (currentXml.isEmpty()) {
             return StepArgsResult(
                 args,
@@ -286,7 +284,7 @@ object OmniflowStepExecutor {
     }
 
     private fun currentRootCenter(): Pair<Float, Float>? {
-        val currentXml = AccessibilityController.getCaptureScreenShotXml(true)
+        val currentXml = OmniflowActionRuntime.backend.currentXml()
             ?.trim()
             .orEmpty()
         if (currentXml.isEmpty()) return null
@@ -305,7 +303,7 @@ object OmniflowStepExecutor {
     }
 
     private fun String.requiresAccessibility(): Boolean =
-        this != "wait" && this != "finished"
+        this != "open_app" && this != "wait" && this != "finished"
 
     private data class Rect(
         val left: Float,
@@ -790,9 +788,16 @@ object OmniflowStepExecutor {
             val factory = DocumentBuilderFactory.newInstance().apply {
                 isNamespaceAware = false
                 isValidating = false
-                setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-                setFeature("http://xml.org/sax/features/external-general-entities", false)
-                setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+                isExpandEntityReferences = false
+                runCatching {
+                    setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+                }
+                runCatching {
+                    setFeature("http://xml.org/sax/features/external-general-entities", false)
+                }
+                runCatching {
+                    setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+                }
             }
             val builder = factory.newDocumentBuilder()
             builder.parse(InputSource(StringReader(xml))).documentElement

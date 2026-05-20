@@ -1,9 +1,11 @@
 package cn.com.omnimind.assists.controller.accessibility
 
 import BaseApplication
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Handler
@@ -262,18 +264,77 @@ class AccessibilityController() {
             packageName: String, doClickInvoke: suspend (x: Float, y: Float) -> Unit
         ) {
             checkAccessibilityPermissions()
-            actionController?.launchApplication(packageName)
-            OmniLog.d("[Omni] Running", "before awaitStability")
-            PageStabilityDetector.awaitStability()
-            OmniLog.d("[Omni] Running", "after awaitStability")
+            val controller = actionController
+                ?: throw IllegalStateException("Accessibility action controller is not ready")
+
+            controller.launchApplication(packageName)
+            OmniLog.d("[Omni] Running", "before awaitTargetPackage")
+            awaitTargetPackage(packageName)
+            OmniLog.d("[Omni] Running", "after awaitTargetPackage")
 
             if (getPackageName() == packageName) {
                 return
             }
+
             OmniLog.w(
                 TAG,
-                "launchApplication did not reach target package after stability wait: $packageName"
+                "launchApplication did not reach target package through accessibility action, trying launcher intent: $packageName"
             )
+            if (launchApplicationByIntent(packageName)) {
+                awaitTargetPackage(packageName)
+                if (getPackageName() == packageName) {
+                    return
+                }
+            }
+
+            val currentPackage = getPackageName().orEmpty()
+            val currentActivity = getCurrentActivity().orEmpty()
+            val message =
+                "launchApplication did not reach target package after stability wait: " +
+                    "target=$packageName current=$currentPackage activity=$currentActivity"
+            OmniLog.w(
+                TAG,
+                message
+            )
+            throw IllegalStateException(message)
+        }
+
+        private suspend fun launchApplicationByIntent(packageName: String): Boolean =
+            withContext(Dispatchers.Main) {
+                val appContext = BaseApplication.instance
+                val startContext = BaseApplication.foregroundActivity ?: appContext
+                val launchIntent = appContext.packageManager.getLaunchIntentForPackage(packageName)
+                    ?: return@withContext false
+                return@withContext try {
+                    launchIntent.addFlags(
+                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    )
+                    if (startContext !is Activity) {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    OmniLog.d(
+                        TAG,
+                        "launchApplicationByIntent startContext=${startContext.javaClass.simpleName} target=$packageName"
+                    )
+                    startContext.startActivity(launchIntent)
+                    true
+                } catch (e: Exception) {
+                    OmniLog.e(TAG, "launchApplicationByIntent failed: ${e.message}", e)
+                    false
+                }
+            }
+
+        private suspend fun awaitTargetPackage(packageName: String, timeoutMs: Long = 3000L) {
+            val startedAt = System.currentTimeMillis()
+            while (System.currentTimeMillis() - startedAt < timeoutMs) {
+                if (getPackageName() == packageName) {
+                    return
+                }
+                delay(150)
+            }
+            PageStabilityDetector.awaitStability()
         }
 
         suspend fun captureScreenshotImage(
