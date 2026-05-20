@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.mcp
 
 import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.bot.mcp.koog.KoogMcpClient
 import java.util.concurrent.ConcurrentHashMap
 
 object RemoteMcpDiscoveryRegistry {
@@ -34,7 +35,7 @@ object RemoteMcpDiscoveryRegistry {
             return cached.server
         }
         return try {
-            val tools = RemoteMcpClient.listTools(config)
+            val tools = KoogMcpClient.listTools(config)
             val updatedConfig = RemoteMcpConfigStore.updateDiscoveryStatus(
                 serverId = config.id,
                 health = RemoteMcpHealth.HEALTHY,
@@ -66,10 +67,10 @@ object RemoteMcpDiscoveryRegistry {
     fun invalidate(serverId: String? = null) {
         if (serverId == null) {
             cache.clear()
-            RemoteMcpClient.invalidateSession()
+            KoogMcpClient.invalidateSession()
             return
         }
         cache.remove(serverId)
-        RemoteMcpClient.invalidateSession(serverId)
+        KoogMcpClient.invalidateSession(serverId)
     }
 }

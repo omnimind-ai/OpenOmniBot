@@ -240,6 +240,10 @@ dependencies {
     implementation(libs.ktor.serialization.gson)
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.ktor.server.call.logging)
+    // Koog AI agent framework — used by cn.com.omnimind.bot.agent.koog adapters
+    implementation(libs.koog.agents)
+    // MCP Kotlin SDK 0.12.0 — replaces hand-rolled JSON-RPC client in cn.com.omnimind.bot.mcp.koog
+    implementation(libs.mcp.kotlin.sdk.client)
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest )

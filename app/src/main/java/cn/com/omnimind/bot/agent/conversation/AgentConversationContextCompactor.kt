@@ -1,30 +1,36 @@
 package cn.com.omnimind.bot.agent
 
-import cn.com.omnimind.assists.controller.http.HttpController
 import cn.com.omnimind.baselib.llm.AssistantToolCall
 import cn.com.omnimind.baselib.llm.ChatCompletionMessage
+import cn.com.omnimind.baselib.llm.ChatCompletionRequest
+import cn.com.omnimind.baselib.llm.ChatCompletionStreamOptions
+import cn.com.omnimind.baselib.llm.contentText
 import cn.com.omnimind.baselib.util.OmniLog
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
+import cn.com.omnimind.bot.agent.koog.KoogAgentLlmClient
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
-import okhttp3.Response
-import okhttp3.sse.EventSource
-import okhttp3.sse.EventSourceListener
-import java.util.concurrent.atomic.AtomicBoolean
 
-open class AgentConversationContextCompactor(
+/**
+ * Runs LLM-driven context compaction against the conversation history. Replaces the original
+ * messages in the model's context window with a concise summary so the agent can keep going past
+ * the prompt-token threshold.
+ *
+ * Implementation note: the actual summarization LLM call now goes through Koog's
+ * [KoogAgentLlmClient] (OpenAI-compatible `executeStreaming` against the configured baseUrl) —
+ * the legacy hand-rolled `HttpController.postLLMStreamRequestWithContextAsFlow` SSE path has been
+ * removed. Surrounding orchestration (token threshold lookup, candidate selection, persistence,
+ * UI callbacks) is unchanged.
+ */
+class AgentConversationContextCompactor(
     private val historyRepository: AgentConversationHistoryRepository,
     private val modelScene: String = DEFAULT_AGENT_MODEL_SCENE,
     private val modelOverride: AgentModelOverride? = null,
     private val reasoningEffort: String? = null,
-    private val json: Json = Json {
+    private val json: kotlinx.serialization.json.Json = kotlinx.serialization.json.Json {
         ignoreUnknownKeys = true
         isLenient = true
         encodeDefaults = true
@@ -42,6 +48,7 @@ open class AgentConversationContextCompactor(
         const val DEFAULT_PROMPT_TOKEN_THRESHOLD = 128_000
         const val DEFAULT_AGENT_MODEL_SCENE = "scene.dispatch.model"
         private const val TAG = "AgentConversationContextCompactor"
+        private const val COMPACTION_MAX_TOKENS = 4096
         private val EPHEMERAL_CACHE_CONTROL = mapOf("type" to "ephemeral")
         private const val COMPACTION_REQUEST_PROMPT = """
 You are a context compaction engine. Your summary will REPLACE the original messages in the conversation context window — the agent will rely on it to continue working. Write the summary in the same language the user used in the conversation.
@@ -156,7 +163,7 @@ Do NOT translate or alter code snippets, file paths, identifiers, or error messa
         }
     }
 
-    open suspend fun resolvePromptTokenThreshold(conversationId: Long?): Int {
+    suspend fun resolvePromptTokenThreshold(conversationId: Long?): Int {
         if (conversationId == null || conversationId <= 0L) {
             return DEFAULT_PROMPT_TOKEN_THRESHOLD
         }
@@ -165,7 +172,7 @@ Do NOT translate or alter code snippets, file paths, identifiers, or error messa
         return storedThreshold.coerceAtLeast(1)
     }
 
-    open suspend fun compactIfNeeded(
+    suspend fun compactIfNeeded(
         conversationId: Long?,
         conversationMode: String,
         promptTokens: Int?,
@@ -234,7 +241,7 @@ Do NOT translate or alter code snippets, file paths, identifiers, or error messa
         }
     }
 
-    open suspend fun compactConversationContext(
+    suspend fun compactConversationContext(
         conversationId: Long,
         conversationMode: String
     ): CompactionOutcome {
@@ -299,80 +306,62 @@ Do NOT translate or alter code snippets, file paths, identifiers, or error messa
 
     private suspend fun requestCompactedSummary(
         messages: List<Map<String, Any>>
-    ): String = withContext(Dispatchers.IO) {
-        val completed = AtomicBoolean(false)
-        val result = CompletableDeferred<String>()
-        val accumulator = AgentLlmStreamAccumulator(json)
-        var eventSource: EventSource? = null
-
-        fun completeStream(source: EventSource? = null) {
-            if (!completed.compareAndSet(false, true)) return
-            runCatching {
-                accumulator.buildTurn().message.contentText().trim()
-            }.onSuccess { summary ->
-                result.complete(summary)
-            }.onFailure { error ->
-                result.completeExceptionally(error)
-            }
-            source?.cancel()
+    ): String {
+        val ccMessages = messages.mapNotNull(::mapToChatCompletionMessage)
+        if (ccMessages.isEmpty()) {
+            OmniLog.w(TAG, "no convertible compaction messages — returning empty summary")
+            return ""
         }
-
-        val listener = object : EventSourceListener() {
-            override fun onEvent(
-                eventSource: EventSource,
-                id: String?,
-                type: String?,
-                data: String
-            ) {
-                if (completed.get()) return
-                runCatching {
-                    val done = accumulator.consume(data)
-                    if (done) {
-                        completeStream(eventSource)
-                    }
-                }.onFailure { error ->
-                    if (completed.compareAndSet(false, true)) {
-                        result.completeExceptionally(error)
-                    }
-                }
-            }
-
-            override fun onClosed(eventSource: EventSource) {
-                completeStream(eventSource)
-            }
-
-            override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                if (!completed.compareAndSet(false, true)) return
-                val reason = buildString {
-                    append(t?.message?.trim().orEmpty())
-                    val responseBody = runCatching { response?.body?.string() }.getOrNull()
-                        ?.trim()
-                        .orEmpty()
-                    if (responseBody.isNotEmpty()) {
-                        if (isNotEmpty()) append(" ")
-                        append(responseBody.take(500))
-                    }
-                }.trim().ifEmpty { "unknown compaction stream failure" }
-                result.completeExceptionally(IllegalStateException(reason))
-            }
-        }
-
-        try {
-            eventSource = HttpController.postLLMStreamRequestWithContextAsFlow(
-                model = modelScene,
-                messages = messages,
-                event = listener,
-                enableThinking = false,
-                explicitApiBase = modelOverride?.apiBase,
-                explicitApiKey = modelOverride?.apiKey,
-                explicitModel = modelOverride?.modelId,
-                explicitProtocolType = modelOverride?.protocolType,
-                reasoningEffort = reasoningEffort
-            )
-            result.await()
-        } finally {
-            eventSource?.cancel()
-        }
+        val request = ChatCompletionRequest(
+            messages = ccMessages,
+            model = modelOverride?.modelId?.takeIf { it.isNotBlank() } ?: modelScene,
+            maxCompletionTokens = COMPACTION_MAX_TOKENS,
+            stream = true,
+            streamOptions = ChatCompletionStreamOptions(includeUsage = false),
+            enableThinking = false,
+            reasoningEffort = reasoningEffort
+        )
+        val turn = KoogAgentLlmClient(modelOverride = modelOverride).streamTurn(request)
+        return turn.message.contentText().trim()
     }
 
+    private fun mapToChatCompletionMessage(raw: Map<String, Any>): ChatCompletionMessage? {
+        val role = raw["role"]?.toString()?.trim().orEmpty()
+        if (role.isEmpty()) return null
+        val content: JsonElement? = when (val rawContent = raw["content"]) {
+            null -> null
+            is String -> JsonPrimitive(rawContent)
+            is List<*> -> JsonArray(rawContent.mapNotNull { item ->
+                when (item) {
+                    is Map<*, *> -> anyMapToJsonObject(item)
+                    is String -> JsonObject(mapOf("type" to JsonPrimitive("text"), "text" to JsonPrimitive(item)))
+                    else -> null
+                }
+            })
+            is Map<*, *> -> anyMapToJsonObject(rawContent)
+            else -> JsonPrimitive(rawContent.toString())
+        }
+        return ChatCompletionMessage(role = role, content = content)
+    }
+
+    private fun anyMapToJsonObject(map: Map<*, *>): JsonObject {
+        return JsonObject(
+            map.entries.mapNotNull { (k, v) ->
+                val key = k?.toString() ?: return@mapNotNull null
+                key to anyToJsonElement(v)
+            }.toMap()
+        )
+    }
+
+    private fun anyToJsonElement(value: Any?): JsonElement {
+        return when (value) {
+            null -> JsonPrimitive(null as String?)
+            is String -> JsonPrimitive(value)
+            is Boolean -> JsonPrimitive(value)
+            is Number -> JsonPrimitive(value)
+            is Map<*, *> -> anyMapToJsonObject(value)
+            is List<*> -> JsonArray(value.map { anyToJsonElement(it) })
+            else -> JsonPrimitive(value.toString())
+        }
+    }
 }

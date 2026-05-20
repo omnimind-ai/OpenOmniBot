@@ -6,8 +6,8 @@ import cn.com.omnimind.bot.agent.AgentExecutionEnvironment
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
 import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.ToolExecutionResult
-import cn.com.omnimind.bot.mcp.RemoteMcpClient
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
+import cn.com.omnimind.bot.mcp.koog.KoogMcpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -48,10 +48,11 @@ class McpToolHandler(
             )
             val config = RemoteMcpConfigStore.getServer(remoteTool.serverId)
                 ?: throw IllegalStateException("Remote MCP server not found")
-            val result = RemoteMcpClient.callTool(
+            val callerArgs = helper.jsonObjectToMap(args).filterKeys { it != "tool_title" }
+            val result = KoogMcpClient.callTool(
                 config = config,
                 toolName = remoteTool.toolName,
-                arguments = helper.jsonObjectToMap(args).filterKeys { it != "tool_title" }
+                arguments = callerArgs
             )
             ToolExecutionResult.McpResult(
                 toolName = remoteTool.encodedToolName,

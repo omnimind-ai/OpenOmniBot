@@ -1,8 +1,8 @@
 package cn.com.omnimind.bot.agent
 
 import android.content.Context
-import cn.com.omnimind.assists.controller.http.HttpController
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
+import cn.com.omnimind.bot.agent.koog.KoogSceneChatCompletionBridge
 import cn.com.omnimind.baselib.i18n.PromptLocale
 import cn.com.omnimind.baselib.llm.ModelProviderConfigStore
 import cn.com.omnimind.baselib.llm.ModelSceneRegistry
@@ -501,7 +501,7 @@ class WorkspaceMemoryService(
                 longTermMemory = longTermMemory
             )
             runBlocking {
-                HttpController.postSceneChatCompletion(request)
+                KoogSceneChatCompletionBridge.postSceneChatCompletion(request)
             }
         }.onFailure {
             OmniLog.w(TAG, "rollup tool-call request failed: ${it.message}")
@@ -528,10 +528,10 @@ class WorkspaceMemoryService(
         )
         val responseText = runCatching {
             runBlocking {
-                HttpController.postLLMRequest(SCENE_MEMORY_ROLLUP, prompt).message
+                KoogSceneChatCompletionBridge.postLLMRequest(SCENE_MEMORY_ROLLUP, prompt)
             }
         }.onFailure {
-            OmniLog.w(TAG, "rollup legacy llm request failed: ${it.message}")
+            OmniLog.w(TAG, "rollup llm request failed: ${it.message}")
         }.getOrNull()?.trim().orEmpty()
         if (responseText.isEmpty()) {
             return null

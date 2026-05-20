@@ -2,6 +2,9 @@ package cn.com.omnimind.bot.agent
 
 import android.content.Context
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
+import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.bot.agent.koog.KoogAgentRunner
+import cn.com.omnimind.bot.agent.koog.KoogToolRegistryBuilder
 import cn.com.omnimind.bot.mcp.RemoteMcpDiscoveryRegistry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -113,11 +116,6 @@ class OmniAgentExecutor(
                 memoryContext = promptMemoryContext
             )
 
-            val llmClient = HttpAgentLlmClient(
-                scope = scope,
-                json = json,
-                modelOverride = modelOverride
-            )
             val contextCompactor = AgentConversationContextCompactor(
                 historyRepository = historyRepository,
                 modelScene = agentModelScene,
@@ -131,37 +129,34 @@ class OmniAgentExecutor(
                 scheduleToolBridge = scheduleToolBridge,
                 workspaceManager = workspaceManager
             )
-            val eventAdapter = AgentEventAdapter(json)
-            val orchestrator = AgentOrchestrator(
-                llmClient = llmClient,
-                toolRegistry = toolRegistry,
-                toolRouter = toolRouter,
-                eventAdapter = eventAdapter,
-                model = agentModelScene
+            val executionEnv = DefaultAgentExecutionEnvironment(
+                agentRunId = agentRunId,
+                userMessage = userMessage,
+                currentPackageName = currentPackageName,
+                runtimeContextRepository = runtimeContextRepository,
+                workspaceDescriptor = workspaceDescriptor,
+                resolvedSkills = resolvedSkills,
+                failureLearningSkill = failureLearningSkill,
+                workspaceManager = workspaceManager,
+                workspaceMemoryService = memoryService,
+                conversationMode = conversationMode,
+                reasoningEffort = reasoningEffort,
+                terminalEnvironment = terminalEnvironment,
+                runControl = runControl
             )
 
-            orchestrator.run(
-                AgentOrchestrator.Input(
-                    callback = callback,
-                    initialMessages = initialMessages,
-                    conversationId = conversationId,
-                    contextCompactor = contextCompactor,
-                    executionEnv = DefaultAgentExecutionEnvironment(
-                        agentRunId = agentRunId,
-                        userMessage = userMessage,
-                        currentPackageName = currentPackageName,
-                        runtimeContextRepository = runtimeContextRepository,
-                        workspaceDescriptor = workspaceDescriptor,
-                        resolvedSkills = resolvedSkills,
-                        failureLearningSkill = failureLearningSkill,
-                        workspaceManager = workspaceManager,
-                        workspaceMemoryService = memoryService,
-                        conversationMode = conversationMode,
-                        reasoningEffort = reasoningEffort,
-                        terminalEnvironment = terminalEnvironment,
-                        runControl = runControl
-                    )
-                )
+            val koogToolRegistry = KoogToolRegistryBuilder.build(
+                catalog = toolRegistry,
+                executor = toolRouter,
+                env = executionEnv,
+                callback = callback
+            )
+            KoogAgentRunner(modelOverride = modelOverride).runFromInitialMessages(
+                initialMessages = initialMessages,
+                userMessage = userMessage,
+                model = agentModelScene,
+                callback = callback,
+                toolRegistry = koogToolRegistry
             )
         } catch (e: CancellationException) {
             throw e

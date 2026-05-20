@@ -2,7 +2,7 @@
 agp = "8.13.2"
 glide = "5.0.5"
 gson = "2.13.2"
-kotlin = "2.3.0"
+kotlin = "2.3.10"
 coreKtx = "1.13.0"
 junit = "4.13.2"
 junitVersion = "1.3.0"
@@ -17,8 +17,10 @@ loggingInterceptor = "4.12.0"
 lottie = "6.6.10"
 material = "1.12.0"
 animationCore = "1.9.0"
-kotlinStdlib = "2.3.0"
-kotlinxCoroutines = "1.7.3"
+kotlinStdlib = "2.3.10"
+kotlinxCoroutines = "1.10.2"
+koog = "0.8.0"
+mcpKotlinSdk = "0.12.0"
 lifecycleService = "2.9.3"
 mmkv = "2.2.3"
 nanohttpd = "2.3.1"
@@ -34,7 +36,7 @@ pagingCommon = "3.2.1"
 roomKtx = "2.8.4"
 roomRuntime = "2.8.4"
 ktor = "3.1.3"
-kotlinxSerializationJson = "1.6.3"
+kotlinxSerializationJson = "1.10.0"
 textRecognitionChinese = "16.0.1"
 valiktor = "0.12.0"
 composeMaterialCore = "1.5.2"
@@ -147,6 +149,11 @@ nanohttpd = { group = "org.nanohttpd", name = "nanohttpd", version.ref = "nanoht
 opencv = { group = "com.quickbirdstudios", name = "opencv", version.ref = "opencv" }
 bouncycastle = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
 utilcode = { module = "com.blankj:utilcodex", version.ref = "blankjUtilcode" }
+
+# Koog AI agent framework (JetBrains)
+koog-agents = { group = "ai.koog", name = "koog-agents", version.ref = "koog" }
+# Official MCP Kotlin SDK (used by Koog; included explicitly to access StreamableHttpClientTransport)
+mcp-kotlin-sdk-client = { group = "io.modelcontextprotocol", name = "kotlin-sdk-client", version.ref = "mcpKotlinSdk" }
 
 # 添加exclude配置
 annotations-exclude = { module = "com.intellij:annotations" }
