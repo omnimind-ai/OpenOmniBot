@@ -1,16 +1,31 @@
 package cn.com.omnimind.bot.agent
 
-import cn.com.omnimind.baselib.llm.ChatCompletionUsage
+import dev.langchain4j.agent.tool.ToolExecutionRequest
+import dev.langchain4j.agent.tool.ToolSpecification
+import dev.langchain4j.data.message.AiMessage
+import dev.langchain4j.data.message.ChatMessage
+import dev.langchain4j.data.message.SystemMessage
+import dev.langchain4j.data.message.ToolExecutionResultMessage
+import dev.langchain4j.data.message.UserMessage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * Orchestrator behavior tests — exercised against a `FakeLlmClient` that
+ * implements the LangChain4j-typed [AgentLlmClient] interface.
+ *
+ * Helpers:
+ * - [initialMessages] / [assistantTurn] / [toolCall] build LangChain4j
+ *   primitives directly.
+ * - `messageRole(ChatMessage)` extracts the legacy "role" string for
+ *   assertions that previously read `message.role`.
+ */
 class AgentOrchestratorTest {
     private val eventJson = Json {
         ignoreUnknownKeys = true
@@ -55,11 +70,11 @@ class AgentOrchestratorTest {
         )
 
         assertEquals(listOf("file_read", "file_search"), toolExecutor.executeCalls)
-        assertEquals(3, llmClient.requests.size)
-        assertEquals("tool", llmClient.requests[1].messages.last().role)
+        assertEquals(3, llmClient.callCount)
+        assertEquals("tool", messageRole(llmClient.calls[1].messages.last()))
         assertEquals(
             1,
-            llmClient.requests[1].messages.count { it.role == "user" }
+            llmClient.calls[1].messages.count { messageRole(it) == "user" }
         )
         assertTrue(callback.finalChatMessages().last().contains("继续处理"))
         assertTrue(result is AgentResult.Success)
@@ -90,11 +105,11 @@ class AgentOrchestratorTest {
             )
         )
 
-        assertEquals(2, llmClient.requests.size)
-        assertEquals("tool", llmClient.requests[1].messages.last().role)
+        assertEquals(2, llmClient.callCount)
+        assertEquals("tool", messageRole(llmClient.calls[1].messages.last()))
         assertEquals(
             1,
-            llmClient.requests[1].messages.count { it.role == "user" }
+            llmClient.calls[1].messages.count { messageRole(it) == "user" }
         )
         assertTrue(callback.finalChatMessages().last().contains("读取失败"))
     }
@@ -116,7 +131,7 @@ class AgentOrchestratorTest {
             )
         )
 
-        assertEquals(1, llmClient.requests.size)
+        assertEquals(1, llmClient.callCount)
         assertTrue(callback.errors.isEmpty())
         assertTrue(callback.finalChatMessages().last().contains("打开设置"))
         assertTrue(result is AgentResult.Success)
@@ -141,7 +156,7 @@ class AgentOrchestratorTest {
             )
         )
 
-        assertEquals(1, llmClient.requests.size)
+        assertEquals(1, llmClient.callCount)
         assertTrue(callback.errors.isEmpty())
         assertTrue(callback.chatMessages.any { it.first.contains("<tool_call>") })
     }
@@ -170,10 +185,10 @@ class AgentOrchestratorTest {
             )
         )
 
-        assertEquals(2, llmClient.requests.size)
-        assertEquals("user", llmClient.requests[1].messages.last().role)
+        assertEquals(2, llmClient.callCount)
+        assertEquals("user", messageRole(llmClient.calls[1].messages.last()))
         assertTrue(
-            llmClient.requests[1].messages.last().contentText().contains("输出长度上限")
+            messageText(llmClient.calls[1].messages.last()).contains("输出长度上限")
         )
         assertEquals("第一段还没说完，后续完成。", callback.finalChatMessages().last())
         assertTrue(callback.chatMessages.any { it.first == "第一段还没说完" && !it.second })
@@ -202,7 +217,7 @@ class AgentOrchestratorTest {
             )
         )
 
-        assertEquals(4, llmClient.requests.size)
+        assertEquals(4, llmClient.callCount)
         assertEquals("ABCD", callback.finalChatMessages().last())
         assertTrue(result is AgentResult.Success)
         assertEquals("length", (result as AgentResult.Success).response.finishReason)
@@ -227,8 +242,8 @@ class AgentOrchestratorTest {
             )
         )
 
-        assertEquals(1, llmClient.requests.size)
-        assertEquals("low", llmClient.requests.first().reasoningEffort)
+        assertEquals(1, llmClient.callCount)
+        assertEquals("low", llmClient.calls.first().reasoningEffort)
     }
 
     @Test
@@ -296,7 +311,7 @@ class AgentOrchestratorTest {
         )
 
         assertEquals(listOf("terminal_execute"), toolExecutor.executeCalls)
-        assertEquals(2, llmClient.requests.size)
+        assertEquals(2, llmClient.callCount)
     }
 
     @Test
@@ -336,8 +351,8 @@ class AgentOrchestratorTest {
             )
         )
 
-        assertEquals(2, llmClient.requests.size)
-        assertEquals("tool", llmClient.requests[1].messages.last().role)
+        assertEquals(2, llmClient.callCount)
+        assertEquals("tool", messageRole(llmClient.calls[1].messages.last()))
         assertTrue(callback.finalChatMessages().last().contains("用户手动停止"))
     }
 
@@ -393,8 +408,8 @@ class AgentOrchestratorTest {
             )
         )
 
-        assertEquals(2, llmClient.requests.size)
-        assertEquals("tool", llmClient.requests[1].messages.last().role)
+        assertEquals(2, llmClient.callCount)
+        assertEquals("tool", messageRole(llmClient.calls[1].messages.last()))
         assertTrue(callback.finalChatMessages().last().contains("参数不合法"))
     }
 
@@ -432,8 +447,8 @@ class AgentOrchestratorTest {
             )
         )
 
-        assertEquals(2, llmClient.requests.size)
-        assertEquals("tool", llmClient.requests[1].messages.last().role)
+        assertEquals(2, llmClient.callCount)
+        assertEquals("tool", messageRole(llmClient.calls[1].messages.last()))
         assertTrue(callback.finalChatMessages().last().contains("校验失败"))
     }
 
@@ -506,6 +521,8 @@ class AgentOrchestratorTest {
         assertEquals(56.7, callback.lastDecodeTokensPerSecond!!, 0.0)
     }
 
+    // -- helpers -----------------------------------------------------------
+
     private fun createOrchestrator(
         llmClient: FakeLlmClient,
         toolExecutor: FakeToolExecutor
@@ -519,44 +536,33 @@ class AgentOrchestratorTest {
         )
     }
 
-    private fun initialMessages(userMessage: String): List<ChatCompletionMessage> {
-        return listOf(
-            ChatCompletionMessage(
-                role = "user",
-                content = JsonPrimitive(userMessage)
-            )
-        )
+    private fun initialMessages(userMessage: String): List<ChatMessage> {
+        return listOf(UserMessage.from(userMessage))
     }
 
     private fun assistantTurn(
         content: String = "",
-        toolCalls: List<AssistantToolCall> = emptyList(),
+        toolCalls: List<ToolExecutionRequest> = emptyList(),
         promptTokens: Int? = null,
         prefillTokensPerSecond: Double? = null,
         decodeTokensPerSecond: Double? = null,
         finishReason: String? = null
-    ): ChatCompletionTurn {
-        return ChatCompletionTurn(
-            message = ChatCompletionMessage(
-                role = "assistant",
-                content = if (content.isBlank()) null else JsonPrimitive(content),
-                toolCalls = toolCalls.ifEmpty { null }
-            ),
+    ): AgentLlmTurn {
+        val builder = AiMessage.builder()
+        if (content.isNotBlank()) {
+            builder.text(content)
+        }
+        if (toolCalls.isNotEmpty()) {
+            builder.toolExecutionRequests(toolCalls)
+        }
+        return AgentLlmTurn(
+            aiMessage = builder.build(),
             finishReason = finishReason,
-            usage =
-                if (
-                    promptTokens == null &&
-                    prefillTokensPerSecond == null &&
-                    decodeTokensPerSecond == null
-                ) {
-                    null
-                } else {
-                    ChatCompletionUsage(
-                        promptTokens = promptTokens,
-                        prefillTokensPerSecond = prefillTokensPerSecond,
-                        decodeTokensPerSecond = decodeTokensPerSecond
-                    )
-                }
+            promptTokens = promptTokens,
+            completionTokens = null,
+            prefillTokensPerSecond = prefillTokensPerSecond,
+            decodeTokensPerSecond = decodeTokensPerSecond,
+            reasoning = ""
         )
     }
 
@@ -564,32 +570,69 @@ class AgentOrchestratorTest {
         name: String,
         arguments: String = "{}",
         id: String = "call-$name"
-    ): AssistantToolCall {
-        return AssistantToolCall(
-            id = id,
-            function = AssistantToolCallFunction(
-                name = name,
-                arguments = arguments
-            )
-        )
+    ): ToolExecutionRequest {
+        return ToolExecutionRequest.builder()
+            .id(id)
+            .name(name)
+            .arguments(arguments)
+            .build()
     }
 
+    /** Translate a LangChain4j [ChatMessage] back to its OpenAI-style role string. */
+    private fun messageRole(message: ChatMessage): String = when (message) {
+        is SystemMessage -> "system"
+        is UserMessage -> "user"
+        is AiMessage -> "assistant"
+        is ToolExecutionResultMessage -> "tool"
+        else -> "unknown"
+    }
+
+    /** Extract a single text representation from any [ChatMessage] type. */
+    private fun messageText(message: ChatMessage): String = when (message) {
+        is SystemMessage -> message.text().orEmpty()
+        is UserMessage -> message.singleText().orEmpty()
+        is AiMessage -> message.text().orEmpty()
+        is ToolExecutionResultMessage -> message.text().orEmpty()
+        else -> ""
+    }
+
+    /** Captured input to [FakeLlmClient.streamTurn]. */
+    data class FakeCall(
+        val scene: String,
+        val messages: List<ChatMessage>,
+        val toolSpecifications: List<ToolSpecification>,
+        val reasoningEffort: String?
+    )
+
     private class FakeLlmClient(
-        turns: List<ChatCompletionTurn>,
+        turns: List<AgentLlmTurn>,
         reasoningUpdates: List<List<String>> = emptyList()
     ) : AgentLlmClient {
         private val queuedTurns = ArrayDeque(turns)
         private val queuedReasoningUpdates = ArrayDeque(
             reasoningUpdates.map { updates -> ArrayDeque(updates) }
         )
-        val requests = mutableListOf<ChatCompletionRequest>()
+        val calls = mutableListOf<FakeCall>()
+        val callCount: Int get() = calls.size
 
         override suspend fun streamTurn(
-            request: ChatCompletionRequest,
+            scene: String,
+            messages: List<ChatMessage>,
+            toolSpecifications: List<ToolSpecification>,
+            modelOverride: AgentModelOverride?,
+            reasoningEffort: String?,
+            toolChoice: AgentToolChoice,
+            parallelToolCalls: Boolean,
+            maxCompletionTokens: Int,
             onReasoningUpdate: (suspend (String) -> Unit)?,
             onContentUpdate: (suspend (String) -> Unit)?
-        ): ChatCompletionTurn {
-            requests += request
+        ): AgentLlmTurn {
+            calls += FakeCall(
+                scene = scene,
+                messages = messages,
+                toolSpecifications = toolSpecifications,
+                reasoningEffort = reasoningEffort
+            )
             val reasoningQueue = if (queuedReasoningUpdates.isEmpty()) {
                 null
             } else {
@@ -599,7 +642,7 @@ class AgentOrchestratorTest {
                 onReasoningUpdate?.invoke(reasoningQueue.removeFirst())
             }
             val turn = queuedTurns.removeFirst()
-            val content = turn.message.contentText()
+            val content = turn.aiMessage.text().orEmpty()
             if (content.isNotBlank()) {
                 onContentUpdate?.invoke(content)
             }
@@ -610,7 +653,7 @@ class AgentOrchestratorTest {
     private class FakeToolCatalog(
         private val validationErrors: Map<String, String> = emptyMap()
     ) : AgentToolCatalog {
-        override val toolsForModel: List<ChatCompletionTool> = emptyList()
+        override val toolSpecifications: List<ToolSpecification> = emptyList()
 
         override fun runtimeDescriptor(toolName: String): AgentToolRegistry.RuntimeToolDescriptor {
             return AgentToolRegistry.RuntimeToolDescriptor(
@@ -633,19 +676,19 @@ class AgentOrchestratorTest {
         val executeCalls = mutableListOf<String>()
 
         override suspend fun execute(
-            toolCall: AssistantToolCall,
+            toolRequest: ToolExecutionRequest,
             args: JsonObject,
             runtimeDescriptor: AgentToolRegistry.RuntimeToolDescriptor,
             env: AgentExecutionEnvironment,
             callback: AgentCallback,
             toolHandle: AgentToolExecutionHandle
         ): ToolExecutionResult {
-            executeCalls += toolCall.function.name
-            val queue = queuedResults[toolCall.function.name]
+            executeCalls += toolRequest.name()
+            val queue = queuedResults[toolRequest.name()]
             return if (queue != null && queue.isNotEmpty()) {
                 queue.removeFirst()
             } else {
-                ToolExecutionResult.Error(toolCall.function.name, "missing fake result")
+                ToolExecutionResult.Error(toolRequest.name(), "missing fake result")
             }
         }
     }

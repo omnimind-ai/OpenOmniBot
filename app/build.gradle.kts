@@ -240,6 +240,27 @@ dependencies {
     implementation(libs.ktor.serialization.gson)
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.ktor.server.call.logging)
+
+    // LangChain4j agent framework migration.
+    // - langchain4j-http-client-jdk excluded: references java.net.http.HttpClient
+    //   which is Android API 34+, but our minSdk is 29. We inject the OkHttp builder
+    //   explicitly in RouteResolvedModelFactory.
+    // - okhttp-jvm:5.x excluded: the project already depends on okhttp:4.12.0; the
+    //   two artifacts share class names but different module IDs, causing duplicate-
+    //   class errors at dex time. LangChain4j's OkHttpClientBuilder only uses public
+    //   OkHttpClient.Builder APIs that are stable across 4.x and 5.x.
+    implementation(libs.langchain4j.core)
+    implementation(libs.langchain4j.open.ai) {
+        exclude(group = "dev.langchain4j", module = "langchain4j-http-client-jdk")
+    }
+    implementation(libs.langchain4j.http.client.okhttp) {
+        exclude(group = "com.squareup.okhttp3", module = "okhttp-jvm")
+    }
+    implementation(libs.langchain4j.mcp) {
+        exclude(group = "dev.langchain4j", module = "langchain4j-http-client-jdk")
+        exclude(group = "com.squareup.okhttp3", module = "okhttp-jvm")
+    }
+
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest )

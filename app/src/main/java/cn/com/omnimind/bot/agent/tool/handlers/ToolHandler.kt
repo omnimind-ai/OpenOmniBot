@@ -4,6 +4,7 @@ import cn.com.omnimind.bot.agent.AgentCallback
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
 import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.ToolExecutionResult
+import dev.langchain4j.agent.tool.ToolExecutionRequest
 import kotlinx.serialization.json.JsonObject
 
 interface ToolHandler {
@@ -12,7 +13,7 @@ interface ToolHandler {
     fun canHandle(toolName: String): Boolean = toolName in toolNames
 
     suspend fun execute(
-        toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
+        toolRequest: ToolExecutionRequest,
         args: JsonObject,
         runtimeDescriptor: AgentToolRegistry.RuntimeToolDescriptor,
         env: cn.com.omnimind.bot.agent.AgentExecutionEnvironment,

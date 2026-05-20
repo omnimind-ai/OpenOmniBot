@@ -35,7 +35,11 @@ data class DefaultAgentExecutionEnvironment(
 ) : AgentExecutionEnvironment
 
 interface AgentToolCatalog {
-    val toolsForModel: List<ChatCompletionTool>
+    /**
+     * LangChain4j-typed tool list, used by the LLM client to populate
+     * `ChatRequest.toolSpecifications(...)`.
+     */
+    val toolSpecifications: List<dev.langchain4j.agent.tool.ToolSpecification>
 
     fun runtimeDescriptor(toolName: String): AgentToolRegistry.RuntimeToolDescriptor
 
@@ -44,7 +48,7 @@ interface AgentToolCatalog {
 
 interface AgentToolExecutor {
     suspend fun execute(
-        toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
+        toolRequest: dev.langchain4j.agent.tool.ToolExecutionRequest,
         args: JsonObject,
         runtimeDescriptor: AgentToolRegistry.RuntimeToolDescriptor,
         env: AgentExecutionEnvironment,

@@ -113,9 +113,8 @@ class OmniAgentExecutor(
                 memoryContext = promptMemoryContext
             )
 
-            val llmClient = HttpAgentLlmClient(
+            val llmClient = cn.com.omnimind.bot.agent.langchain4j.LangChain4jAgentLlmClient(
                 scope = scope,
-                json = json,
                 modelOverride = modelOverride
             )
             val contextCompactor = AgentConversationContextCompactor(
@@ -183,12 +182,13 @@ class OmniAgentExecutor(
         skillsRootAndroidPath: String,
         resolvedSkills: List<ResolvedSkillContext>,
         memoryContext: WorkspaceMemoryPromptContext?
-    ): List<cn.com.omnimind.baselib.llm.ChatCompletionMessage> {
+    ): List<dev.langchain4j.data.message.ChatMessage> {
         val historyMessages = promptSeed.historyMessages.toMutableList()
-        if (historyMessages.lastOrNull()?.role == "user") {
+        // Drop a trailing user message — the freshly typed user input replaces it.
+        if (historyMessages.lastOrNull() is dev.langchain4j.data.message.UserMessage) {
             historyMessages.removeAt(historyMessages.lastIndex)
         }
-        val messages = mutableListOf<cn.com.omnimind.baselib.llm.ChatCompletionMessage>()
+        val messages = mutableListOf<dev.langchain4j.data.message.ChatMessage>()
         val systemPrompt = AgentSystemPrompt.build(
             workspace = workspaceDescriptor,
             installedSkills = installedSkills,
@@ -198,12 +198,7 @@ class OmniAgentExecutor(
             memoryContext = memoryContext,
             locale = AppLocaleManager.resolvePromptLocale(context)
         )
-        messages.add(
-            cn.com.omnimind.baselib.llm.ChatCompletionMessage(
-                role = "system",
-                content = buildCachedSystemPromptContent(systemPrompt)
-            )
-        )
+        messages.add(dev.langchain4j.data.message.SystemMessage.from(systemPrompt))
         messages.addAll(historyMessages)
         messages.add(buildCurrentUserMessage(userMessage, attachments))
         return messages
@@ -212,43 +207,44 @@ class OmniAgentExecutor(
     private fun buildCurrentUserMessage(
         userMessage: String,
         attachments: List<Map<String, Any?>>
-    ): cn.com.omnimind.baselib.llm.ChatCompletionMessage {
+    ): dev.langchain4j.data.message.UserMessage {
         val normalizedAttachments = normalizeAttachments(attachments)
-        val imageParts = normalizedAttachments
+        val imageContents = normalizedAttachments
             .filter { it.isImage }
             .mapNotNull { attachment ->
                 val imageUrl = resolveImageAttachmentUrl(attachment)
-                if (imageUrl.isBlank()) {
-                    null
-                } else {
-                    buildJsonObject {
-                        put("type", "image_url")
-                        put("image_url", buildJsonObject {
-                            put("url", imageUrl)
-                        })
-                    }
-                }
+                if (imageUrl.isBlank()) null else buildImageContent(imageUrl)
             }
-        val rawText = userMessage
-        val content = if (imageParts.isEmpty()) {
-            JsonPrimitive(rawText)
-        } else {
-            buildJsonArray {
-                if (rawText.isNotBlank()) {
-                    add(
-                        buildJsonObject {
-                            put("type", "text")
-                            put("text", rawText)
-                        }
+        if (imageContents.isEmpty()) {
+            return dev.langchain4j.data.message.UserMessage.from(userMessage)
+        }
+        val parts = mutableListOf<dev.langchain4j.data.message.Content>()
+        if (userMessage.isNotBlank()) {
+            parts += dev.langchain4j.data.message.TextContent.from(userMessage)
+        }
+        parts += imageContents
+        return dev.langchain4j.data.message.UserMessage.from(parts)
+    }
+
+    private fun buildImageContent(url: String): dev.langchain4j.data.message.ImageContent {
+        val trimmed = url.trim()
+        if (trimmed.startsWith("data:")) {
+            val commaIndex = trimmed.indexOf(',')
+            if (commaIndex > 5) {
+                val header = trimmed.substring(5, commaIndex)
+                val payload = trimmed.substring(commaIndex + 1)
+                val parts = header.split(';')
+                val mime = parts.firstOrNull()?.takeIf { it.isNotBlank() } ?: "image/png"
+                val isBase64 = parts.any { it.equals("base64", ignoreCase = true) }
+                if (isBase64) {
+                    return dev.langchain4j.data.message.ImageContent.from(
+                        dev.langchain4j.data.image.Image.builder()
+                            .base64Data(payload).mimeType(mime).build()
                     )
                 }
-                imageParts.forEach { add(it) }
             }
         }
-        return cn.com.omnimind.baselib.llm.ChatCompletionMessage(
-            role = "user",
-            content = content
-        )
+        return dev.langchain4j.data.message.ImageContent.from(trimmed)
     }
 
     private data class PromptAttachment(

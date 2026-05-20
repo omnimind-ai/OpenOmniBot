@@ -7,6 +7,7 @@ import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
 import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.agent.ToolExecutionResult
+import dev.langchain4j.agent.tool.ToolExecutionRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -24,17 +25,17 @@ class SkillsToolHandler(
     private val skillLoader = SkillLoader(workspaceManager)
 
     override suspend fun execute(
-        toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
+        toolRequest: ToolExecutionRequest,
         args: JsonObject,
         runtimeDescriptor: AgentToolRegistry.RuntimeToolDescriptor,
         env: AgentExecutionEnvironment,
         callback: AgentCallback,
         toolHandle: AgentToolExecutionHandle
     ): ToolExecutionResult {
-        return when (toolCall.function.name) {
+        return when (toolRequest.name()) {
             "skills_list" -> executeSkillsList(args, env.workspaceDescriptor, callback)
             "skills_read" -> executeSkillsRead(args, env.workspaceDescriptor, callback)
-            else -> ToolExecutionResult.Error(toolCall.function.name, "Unknown skills tool")
+            else -> ToolExecutionResult.Error(toolRequest.name(), "Unknown skills tool")
         }
     }
 

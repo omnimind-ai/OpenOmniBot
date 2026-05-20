@@ -14,6 +14,7 @@ import cn.com.omnimind.bot.agent.tool.handlers.SystemToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.TerminalToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.ToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.VlmToolHandler
+import dev.langchain4j.agent.tool.ToolExecutionRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -61,7 +62,7 @@ class AgentToolRouter(
     }
 
     override suspend fun execute(
-        toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
+        toolRequest: ToolExecutionRequest,
         args: JsonObject,
         runtimeDescriptor: AgentToolRegistry.RuntimeToolDescriptor,
         env: AgentExecutionEnvironment,
@@ -69,12 +70,12 @@ class AgentToolRouter(
         toolHandle: AgentToolExecutionHandle
     ): ToolExecutionResult {
         helper.ensureRunActive()
-        val toolName = toolCall.function.name
+        val toolName = toolRequest.name()
         val handler = handlerMap[toolName]
         return if (handler != null) {
-            handler.execute(toolCall, args, runtimeDescriptor, env, callback, toolHandle)
+            handler.execute(toolRequest, args, runtimeDescriptor, env, callback, toolHandle)
         } else {
-            mcpFallback.execute(toolCall, args, runtimeDescriptor, env, callback, toolHandle)
+            mcpFallback.execute(toolRequest, args, runtimeDescriptor, env, callback, toolHandle)
         }
     }
 

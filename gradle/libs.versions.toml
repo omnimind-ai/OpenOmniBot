@@ -50,6 +50,8 @@ navigationFragment = "2.8.9"
 navigationUi = "2.8.9"
 palette = "1.0.0"
 shizuku = "13.1.5"
+langchain4j = "1.15.0"
+langchain4jBeta = "1.15.0-beta25"
 [libraries]
 accompanist-systemuicontroller = { module = "com.google.accompanist:accompanist-systemuicontroller", version.ref = "accompanistSystemuicontroller" }
 anrwatchdog = { module = "com.github.anrwatchdog:anrwatchdog", version.ref = "anrwatchdog" }
@@ -147,6 +149,12 @@ nanohttpd = { group = "org.nanohttpd", name = "nanohttpd", version.ref = "nanoht
 opencv = { group = "com.quickbirdstudios", name = "opencv", version.ref = "opencv" }
 bouncycastle = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
 utilcode = { module = "com.blankj:utilcodex", version.ref = "blankjUtilcode" }
+
+# LangChain4j (agent framework migration)
+langchain4j-core = { module = "dev.langchain4j:langchain4j-core", version.ref = "langchain4j" }
+langchain4j-open-ai = { module = "dev.langchain4j:langchain4j-open-ai", version.ref = "langchain4j" }
+langchain4j-http-client-okhttp = { module = "dev.langchain4j:langchain4j-http-client-okhttp", version.ref = "langchain4jBeta" }
+langchain4j-mcp = { module = "dev.langchain4j:langchain4j-mcp", version.ref = "langchain4jBeta" }
 
 # 添加exclude配置
 annotations-exclude = { module = "com.intellij:annotations" }

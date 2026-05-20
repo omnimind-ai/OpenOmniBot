@@ -1,12 +1,12 @@
 package cn.com.omnimind.bot.agent
 
 import android.content.Context
-import cn.com.omnimind.assists.controller.http.HttpController
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.i18n.PromptLocale
 import cn.com.omnimind.baselib.llm.ModelProviderConfigStore
 import cn.com.omnimind.baselib.llm.ModelSceneRegistry
 import cn.com.omnimind.baselib.llm.SceneModelBindingStore
+import dev.langchain4j.agent.tool.ToolExecutionRequest
 import cn.com.omnimind.baselib.util.OmniLog
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -495,13 +495,20 @@ class WorkspaceMemoryService(
         }
 
         val toolResponse = runCatching {
-            val request = buildRollupToolRequest(
+            val (messages, toolSpec) = buildRollupToolRequest(
                 date = date,
                 dailyLines = dailyLines,
                 longTermMemory = longTermMemory
             )
             runBlocking {
-                HttpController.postSceneChatCompletion(request)
+                cn.com.omnimind.bot.agent.langchain4j.WorkspaceMemoryLlmBridge
+                    .submitToolCallRequest(
+                        scene = SCENE_MEMORY_ROLLUP,
+                        messages = messages,
+                        toolSpecification = toolSpec,
+                        maxCompletionTokens = 768,
+                        temperature = 0.2
+                    )
             }
         }.onFailure {
             OmniLog.w(TAG, "rollup tool-call request failed: ${it.message}")
@@ -517,7 +524,7 @@ class WorkspaceMemoryService(
         } else if (toolResponse != null) {
             OmniLog.w(
                 TAG,
-                "rollup tool-call unsuccessful code=${toolResponse.code} message=${toolResponse.message}"
+                "rollup tool-call unsuccessful error=${toolResponse.errorMessage.orEmpty()}"
             )
         }
 
@@ -528,7 +535,8 @@ class WorkspaceMemoryService(
         )
         val responseText = runCatching {
             runBlocking {
-                HttpController.postLLMRequest(SCENE_MEMORY_ROLLUP, prompt).message
+                cn.com.omnimind.bot.agent.langchain4j.WorkspaceMemoryLlmBridge
+                    .submitTextPrompt(SCENE_MEMORY_ROLLUP, prompt)
             }
         }.onFailure {
             OmniLog.w(TAG, "rollup legacy llm request failed: ${it.message}")
@@ -547,7 +555,7 @@ class WorkspaceMemoryService(
         date: LocalDate,
         dailyLines: List<String>,
         longTermMemory: String
-    ): ChatCompletionRequest {
+    ): Pair<List<dev.langchain4j.data.message.ChatMessage>, dev.langchain4j.agent.tool.ToolSpecification> {
         val parameters = buildJsonObject {
             put("type", JsonPrimitive("object"))
             put(
@@ -600,40 +608,26 @@ class WorkspaceMemoryService(
                 }
             )
         }
-        return ChatCompletionRequest(
-            model = SCENE_MEMORY_ROLLUP,
-            messages = listOf(
-                ChatCompletionMessage(
-                    role = "system",
-                    content = JsonPrimitive(buildRollupToolSystemPrompt())
-                ),
-                ChatCompletionMessage(
-                    role = "user",
-                    content = JsonPrimitive(
-                        buildRollupToolUserPrompt(
-                            date = date,
-                            dailyLines = dailyLines,
-                            longTermMemory = longTermMemory
-                        )
-                    )
+        val messages: List<dev.langchain4j.data.message.ChatMessage> = listOf(
+            dev.langchain4j.data.message.SystemMessage.from(buildRollupToolSystemPrompt()),
+            dev.langchain4j.data.message.UserMessage.from(
+                buildRollupToolUserPrompt(
+                    date = date,
+                    dailyLines = dailyLines,
+                    longTermMemory = longTermMemory
                 )
-            ),
-            maxCompletionTokens = 768,
-            temperature = 0.2,
-            tools = listOf(
-                ChatCompletionTool(
-                    function = ChatCompletionFunction(
-                        name = ROLLUP_SUBMIT_TOOL,
-                        description = t(
-                            "提交 Workspace 当日记忆整理结果。",
-                            "Submit the workspace daily-memory rollup result."
-                        ),
-                        parameters = parameters
-                    )
-                )
-            ),
-            parallelToolCalls = false
+            )
         )
+        val toolSpec = cn.com.omnimind.bot.agent.langchain4j.JsonSchemaToToolSpecConverter
+            .toToolSpecification(
+                name = ROLLUP_SUBMIT_TOOL,
+                description = t(
+                    "提交 Workspace 当日记忆整理结果。",
+                    "Submit the workspace daily-memory rollup result."
+                ),
+                parameters = parameters
+            )
+        return messages to toolSpec
     }
 
     private fun buildRollupToolSystemPrompt(): String {
@@ -757,14 +751,14 @@ class WorkspaceMemoryService(
         }
     }
 
-    private fun parseRollupInferenceFromToolCalls(toolCalls: List<AssistantToolCall>): RollupInference? {
+    private fun parseRollupInferenceFromToolCalls(toolCalls: List<ToolExecutionRequest>): RollupInference? {
         if (toolCalls.isEmpty()) {
             return null
         }
         val preferred = toolCalls.firstOrNull {
-            it.function.name.trim().equals(ROLLUP_SUBMIT_TOOL, ignoreCase = true)
+            it.name().trim().equals(ROLLUP_SUBMIT_TOOL, ignoreCase = true)
         } ?: toolCalls.firstOrNull() ?: return null
-        val rawArguments = preferred.function.arguments.trim()
+        val rawArguments = preferred.arguments().trim()
         if (rawArguments.isEmpty()) {
             return null
         }

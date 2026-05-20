@@ -1,23 +1,14 @@
 package cn.com.omnimind.bot.agent
 
-import cn.com.omnimind.assists.controller.http.HttpController
-import cn.com.omnimind.baselib.llm.AssistantToolCall
-import cn.com.omnimind.baselib.llm.ChatCompletionMessage
 import cn.com.omnimind.baselib.util.OmniLog
-import kotlinx.coroutines.CompletableDeferred
+import cn.com.omnimind.bot.agent.langchain4j.RouteResolvedModelFactory
+import dev.langchain4j.data.message.ChatMessage
+import dev.langchain4j.data.message.SystemMessage
+import dev.langchain4j.data.message.UserMessage
+import dev.langchain4j.model.chat.request.ChatRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.contentOrNull
-import okhttp3.Response
-import okhttp3.sse.EventSource
-import okhttp3.sse.EventSourceListener
-import java.util.concurrent.atomic.AtomicBoolean
 
 open class AgentConversationContextCompactor(
     private val historyRepository: AgentConversationHistoryRepository,
@@ -66,94 +57,6 @@ Do NOT translate or alter code snippets, file paths, identifiers, or error messa
 """
         private const val FINAL_USER_PROMPT =
             "Generate the replacement context summary now."
-
-        internal fun buildCompactionRequestMessages(
-            existingSummary: String?,
-            messagesToCompact: List<ChatCompletionMessage>
-        ): List<Map<String, Any>> {
-            val requestMessages = mutableListOf<Map<String, Any>>()
-            requestMessages += mapOf(
-                "role" to "system",
-                "content" to buildTextContentBlocks(
-                    text = COMPACTION_REQUEST_PROMPT.trim(),
-                    cacheControl = EPHEMERAL_CACHE_CONTROL
-                )
-            )
-            existingSummary?.trim()?.takeIf { it.isNotEmpty() }?.let { summary ->
-                requestMessages += toTransportMessage(
-                    AgentConversationHistorySupport.buildContextSummaryUserMessage(summary)
-                )
-            }
-            requestMessages += messagesToCompact.map(::toTransportMessage)
-            requestMessages += mapOf(
-                "role" to "user",
-                "content" to FINAL_USER_PROMPT
-            )
-            return requestMessages
-        }
-
-        private fun buildTextContentBlocks(
-            text: String,
-            cacheControl: Map<String, String>? = null
-        ): List<Map<String, Any>> {
-            val block = linkedMapOf<String, Any>(
-                "type" to "text",
-                "text" to text
-            )
-            if (cacheControl != null) {
-                block["cache_control"] = cacheControl
-            }
-            return listOf(block)
-        }
-
-        private fun toTransportMessage(message: ChatCompletionMessage): Map<String, Any> {
-            val payload = linkedMapOf<String, Any>(
-                "role" to message.role
-            )
-            val content = message.content?.let(::jsonElementToTransportValue)
-            if (content != null) {
-                payload["content"] = content
-            }
-            message.toolCalls?.takeIf { it.isNotEmpty() }?.let { toolCalls ->
-                payload["tool_calls"] = toolCalls.map(::toolCallToTransportMap)
-            }
-            message.reasoningContent?.takeIf { it.isNotBlank() }?.let { reasoning ->
-                payload["reasoning_content"] = reasoning
-            }
-            message.toolCallId?.takeIf { it.isNotBlank() }?.let { toolCallId ->
-                payload["tool_call_id"] = toolCallId
-            }
-            message.name?.takeIf { it.isNotBlank() }?.let { name ->
-                payload["name"] = name
-            }
-            return payload
-        }
-
-        private fun toolCallToTransportMap(toolCall: AssistantToolCall): Map<String, Any> {
-            return linkedMapOf(
-                "id" to toolCall.id,
-                "type" to toolCall.type,
-                "function" to linkedMapOf(
-                    "name" to toolCall.function.name,
-                    "arguments" to toolCall.function.arguments
-                )
-            )
-        }
-
-        private fun jsonElementToTransportValue(element: JsonElement): Any? {
-            return when (element) {
-                is JsonPrimitive -> {
-                    element.contentOrNull
-                        ?: element.booleanOrNull
-                        ?: element.toString()
-                }
-
-                is JsonArray -> element.mapNotNull(::jsonElementToTransportValue)
-                is JsonObject -> element.entries.associate { (key, value) ->
-                    key to (jsonElementToTransportValue(value) ?: "")
-                }
-            }
-        }
     }
 
     open suspend fun resolvePromptTokenThreshold(conversationId: Long?): Int {
@@ -169,10 +72,10 @@ Do NOT translate or alter code snippets, file paths, identifiers, or error messa
         conversationId: Long?,
         conversationMode: String,
         promptTokens: Int?,
-        messages: List<ChatCompletionMessage>,
+        messages: List<ChatMessage>,
         promptTokenThresholdOverride: Int? = null,
         callback: AgentCallback? = null
-    ): List<ChatCompletionMessage> {
+    ): List<ChatMessage> {
         if (conversationId == null || conversationId <= 0L) {
             return messages
         }
@@ -265,7 +168,7 @@ Do NOT translate or alter code snippets, file paths, identifiers, or error messa
     private suspend fun compactAndPersist(
         conversationId: Long,
         existingSummary: String?,
-        messagesToCompact: List<ChatCompletionMessage>,
+        messagesToCompact: List<ChatMessage>,
         cutoffEntryDbId: Long
     ): CompactionOutcome {
         if (messagesToCompact.isEmpty()) {
@@ -274,11 +177,10 @@ Do NOT translate or alter code snippets, file paths, identifiers, or error messa
                 reason = "no_prompt_messages"
             )
         }
-        val requestMessages = buildCompactionRequestMessages(
+        val summary = requestCompactedSummary(
             existingSummary = existingSummary,
             messagesToCompact = messagesToCompact
         )
-        val summary = requestCompactedSummary(requestMessages)
         if (summary.isBlank()) {
             return CompactionOutcome(
                 compacted = false,
@@ -298,81 +200,48 @@ Do NOT translate or alter code snippets, file paths, identifiers, or error messa
     }
 
     private suspend fun requestCompactedSummary(
-        messages: List<Map<String, Any>>
+        existingSummary: String?,
+        messagesToCompact: List<ChatMessage>
     ): String = withContext(Dispatchers.IO) {
-        val completed = AtomicBoolean(false)
-        val result = CompletableDeferred<String>()
-        val accumulator = AgentLlmStreamAccumulator(json)
-        var eventSource: EventSource? = null
-
-        fun completeStream(source: EventSource? = null) {
-            if (!completed.compareAndSet(false, true)) return
-            runCatching {
-                accumulator.buildTurn().message.contentText().trim()
-            }.onSuccess { summary ->
-                result.complete(summary)
-            }.onFailure { error ->
-                result.completeExceptionally(error)
-            }
-            source?.cancel()
-        }
-
-        val listener = object : EventSourceListener() {
-            override fun onEvent(
-                eventSource: EventSource,
-                id: String?,
-                type: String?,
-                data: String
-            ) {
-                if (completed.get()) return
-                runCatching {
-                    val done = accumulator.consume(data)
-                    if (done) {
-                        completeStream(eventSource)
-                    }
-                }.onFailure { error ->
-                    if (completed.compareAndSet(false, true)) {
-                        result.completeExceptionally(error)
-                    }
-                }
-            }
-
-            override fun onClosed(eventSource: EventSource) {
-                completeStream(eventSource)
-            }
-
-            override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                if (!completed.compareAndSet(false, true)) return
-                val reason = buildString {
-                    append(t?.message?.trim().orEmpty())
-                    val responseBody = runCatching { response?.body?.string() }.getOrNull()
-                        ?.trim()
-                        .orEmpty()
-                    if (responseBody.isNotEmpty()) {
-                        if (isNotEmpty()) append(" ")
-                        append(responseBody.take(500))
-                    }
-                }.trim().ifEmpty { "unknown compaction stream failure" }
-                result.completeExceptionally(IllegalStateException(reason))
-            }
-        }
-
-        try {
-            eventSource = HttpController.postLLMStreamRequestWithContextAsFlow(
-                model = modelScene,
-                messages = messages,
-                event = listener,
-                enableThinking = false,
-                explicitApiBase = modelOverride?.apiBase,
-                explicitApiKey = modelOverride?.apiKey,
-                explicitModel = modelOverride?.modelId,
-                explicitProtocolType = modelOverride?.protocolType,
-                reasoningEffort = reasoningEffort
+        val handle = RouteResolvedModelFactory.chatModelFor(
+            scene = modelScene,
+            modelOverride = modelOverride
+        )
+        val messages = buildLangChain4jCompactionMessages(
+            existingSummary = existingSummary,
+            messagesToCompact = messagesToCompact
+        )
+        val response = runCatching {
+            handle.model.chat(
+                ChatRequest.builder()
+                    .messages(messages)
+                    .build()
             )
-            result.await()
-        } finally {
-            eventSource?.cancel()
+        }.onFailure { error ->
+            OmniLog.w(TAG, "langchain4j compaction call failed: ${error.message}")
+        }.getOrThrow()
+        response.aiMessage().text().orEmpty().trim()
+    }
+
+    /**
+     * Build the compaction prompt as LangChain4j typed messages. Mirrors the legacy
+     * [buildCompactionRequestMessages] shape (system prompt → optional summary user
+     * message → messagesToCompact → final user prompt), but drops the
+     * Anthropic-style `cache_control` field — LangChain4j's `SystemMessage` does not
+     * carry passthrough fields. The trade-off is documented in the migration plan.
+     */
+    private fun buildLangChain4jCompactionMessages(
+        existingSummary: String?,
+        messagesToCompact: List<ChatMessage>
+    ): List<ChatMessage> {
+        val out = mutableListOf<ChatMessage>()
+        out += SystemMessage.from(COMPACTION_REQUEST_PROMPT.trim())
+        existingSummary?.trim()?.takeIf { it.isNotEmpty() }?.let { summary ->
+            out += AgentConversationHistorySupport.buildContextSummaryUserMessage(summary)
         }
+        out += messagesToCompact
+        out += UserMessage.from(FINAL_USER_PROMPT)
+        return out
     }
 
 }

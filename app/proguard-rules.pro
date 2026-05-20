@@ -247,6 +247,33 @@
 # ==================== Detection 模块数据模型 ====================
 # 这些类涉及 Gson JSON 反序列化，字段名不能被混淆
 
+# LangChain4j agent framework
+# Many subsystems (HttpClientBuilder, JSON adapters, model integrations) use ServiceLoader.
+# Keep the META-INF/services entries AND the implementation classes they reference.
+-keep class dev.langchain4j.** { *; }
+-keep interface dev.langchain4j.** { *; }
+-dontwarn dev.langchain4j.**
+-keepattributes RuntimeVisibleAnnotations,RuntimeInvisibleAnnotations,RuntimeVisibleParameterAnnotations,RuntimeInvisibleParameterAnnotations,RuntimeVisibleTypeAnnotations,RuntimeInvisibleTypeAnnotations,AnnotationDefault
+
+# OkHttp 5 (pulled transitively by langchain4j-http-client-okhttp).
+# OkHttp uses reflection for its platform layer and BridgeInterceptor.
+-keep class okhttp3.** { *; }
+-keep interface okhttp3.** { *; }
+-keep class okio.** { *; }
+-keep interface okio.** { *; }
+-dontwarn okhttp3.**
+-dontwarn okio.**
+
+# Jackson (pulled transitively by langchain4j-open-ai)
+-keep class com.fasterxml.jackson.** { *; }
+-keep interface com.fasterxml.jackson.** { *; }
+-dontwarn com.fasterxml.jackson.**
+
+# MCP SDK (pulled transitively by langchain4j-mcp)
+-keep class io.modelcontextprotocol.** { *; }
+-keep interface io.modelcontextprotocol.** { *; }
+-dontwarn io.modelcontextprotocol.**
+
 # 其他优化选项
 -optimizationpasses 5
 -allowaccessmodification

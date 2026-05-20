@@ -7,6 +7,7 @@ import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
 import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.ToolExecutionResult
 import cn.com.omnimind.bot.util.AssistsUtil
+import dev.langchain4j.agent.tool.ToolExecutionRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -19,17 +20,17 @@ class ContextToolHandler(
     override val toolNames: Set<String> = setOf("context_apps_query", "context_time_now")
 
     override suspend fun execute(
-        toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
+        toolRequest: ToolExecutionRequest,
         args: JsonObject,
         runtimeDescriptor: AgentToolRegistry.RuntimeToolDescriptor,
         env: AgentExecutionEnvironment,
         callback: AgentCallback,
         toolHandle: AgentToolExecutionHandle
     ): ToolExecutionResult {
-        return when (toolCall.function.name) {
+        return when (toolRequest.name()) {
             "context_apps_query" -> executeContextAppsQuery(args, env.runtimeContextRepository, callback)
             "context_time_now" -> executeContextTimeNow(args, callback)
-            else -> ToolExecutionResult.Error(toolCall.function.name, "Unknown context tool")
+            else -> ToolExecutionResult.Error(toolRequest.name(), "Unknown context tool")
         }
     }
 

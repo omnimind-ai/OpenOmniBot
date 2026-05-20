@@ -34,7 +34,7 @@ object RemoteMcpDiscoveryRegistry {
             return cached.server
         }
         return try {
-            val tools = RemoteMcpClient.listTools(config)
+            val tools = cn.com.omnimind.bot.mcp.langchain4j.LangChain4jMcpClient.listTools(config)
             val updatedConfig = RemoteMcpConfigStore.updateDiscoveryStatus(
                 serverId = config.id,
                 health = RemoteMcpHealth.HEALTHY,
@@ -66,10 +66,10 @@ object RemoteMcpDiscoveryRegistry {
     fun invalidate(serverId: String? = null) {
         if (serverId == null) {
             cache.clear()
-            RemoteMcpClient.invalidateSession()
+            cn.com.omnimind.bot.mcp.langchain4j.LangChain4jMcpClient.invalidateSession()
             return
         }
         cache.remove(serverId)
-        RemoteMcpClient.invalidateSession(serverId)
+        cn.com.omnimind.bot.mcp.langchain4j.LangChain4jMcpClient.invalidateSession(serverId)
     }
 }

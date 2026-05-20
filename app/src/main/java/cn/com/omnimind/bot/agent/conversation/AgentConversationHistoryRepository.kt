@@ -6,8 +6,8 @@ import cn.com.omnimind.baselib.database.AgentConversationEntryHeader
 import cn.com.omnimind.baselib.database.AgentConversationEntryRecord
 import cn.com.omnimind.baselib.database.Conversation
 import cn.com.omnimind.baselib.database.DatabaseHelper
-import cn.com.omnimind.baselib.llm.ChatCompletionMessage
 import com.google.gson.Gson
+import dev.langchain4j.data.message.ChatMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -22,7 +22,7 @@ class AgentConversationHistoryRepository(
     )
 
     data class PromptSeed(
-        val historyMessages: List<ChatCompletionMessage>
+        val historyMessages: List<ChatMessage>
     )
 
     companion object {

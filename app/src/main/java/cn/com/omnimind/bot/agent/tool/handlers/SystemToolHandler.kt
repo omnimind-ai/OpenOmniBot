@@ -7,6 +7,7 @@ import cn.com.omnimind.bot.agent.AgentExecutionEnvironment
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
 import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.ToolExecutionResult
+import dev.langchain4j.agent.tool.ToolExecutionRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -32,14 +33,14 @@ class SystemToolHandler(
     private val musicToolService = AgentMusicToolService(helper.context, workspaceManager)
 
     override suspend fun execute(
-        toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
+        toolRequest: ToolExecutionRequest,
         args: JsonObject,
         runtimeDescriptor: AgentToolRegistry.RuntimeToolDescriptor,
         env: AgentExecutionEnvironment,
         callback: AgentCallback,
         toolHandle: AgentToolExecutionHandle
     ): ToolExecutionResult {
-        val toolName = toolCall.function.name
+        val toolName = toolRequest.name()
         return when (toolName) {
             in setOf("schedule_task_create", "schedule_task_list", "schedule_task_update", "schedule_task_delete") ->
                 executeScheduleTool(toolName, args, env.runtimeContextRepository, callback)

@@ -1,12 +1,15 @@
 package cn.com.omnimind.bot.agent
 
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
-import cn.com.omnimind.baselib.llm.AssistantToolCall
-import cn.com.omnimind.baselib.llm.ChatCompletionMessage
-import cn.com.omnimind.baselib.llm.ChatCompletionRequest
-import cn.com.omnimind.baselib.llm.ChatCompletionStreamOptions
-import cn.com.omnimind.baselib.llm.contentText
 import cn.com.omnimind.baselib.util.OmniLog
+import dev.langchain4j.agent.tool.ToolExecutionRequest
+import dev.langchain4j.data.message.AiMessage
+import dev.langchain4j.data.message.ChatMessage
+import dev.langchain4j.data.message.Content
+import dev.langchain4j.data.message.ImageContent
+import dev.langchain4j.data.message.ToolExecutionResultMessage
+import dev.langchain4j.data.message.UserMessage
+import dev.langchain4j.data.image.Image
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
@@ -16,9 +19,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 class AgentOrchestrator(
     private val llmClient: AgentLlmClient,
@@ -29,7 +29,7 @@ class AgentOrchestrator(
 ) {
     data class Input(
         val callback: AgentCallback,
-        val initialMessages: List<ChatCompletionMessage>,
+        val initialMessages: List<ChatMessage>,
         val executionEnv: AgentExecutionEnvironment,
         val conversationId: Long? = null,
         val contextCompactor: AgentConversationContextCompactor? = null
@@ -71,29 +71,25 @@ class AgentOrchestrator(
                 val round = completedModelRounds
                 val assistantContentPrefix = accumulatedAssistantContent
                 callback.onThinkingStart()
-                val toolChoiceForRound = if (messages.lastOrNull()?.role == "tool") {
-                    null
+                val toolChoiceForRound: AgentToolChoice = if (
+                    messages.lastOrNull() is ToolExecutionResultMessage
+                ) {
+                    AgentToolChoice.None
                 } else {
-                    JsonPrimitive("auto")
+                    AgentToolChoice.Auto
                 }
                 logInfo(
                     tag,
-                    "round=$round request_tools=${toolRegistry.toolsForModel.size}"
+                    "round=$round request_tools=${toolRegistry.toolSpecifications.size}"
                 )
-                val disableThinking = input.executionEnv.reasoningEffort == "no"
                 val turn = llmClient.streamTurn(
-                    request = ChatCompletionRequest(
-                        messages = messages.toList(),
-                        model = model,
-                        maxCompletionTokens = 16384,
-                        stream = true,
-                        streamOptions = ChatCompletionStreamOptions(includeUsage = true),
-                        enableThinking = if (disableThinking) false else null,
-                        reasoningEffort = if (disableThinking) null else input.executionEnv.reasoningEffort,
-                        tools = toolRegistry.toolsForModel,
-                        toolChoice = toolChoiceForRound,
-                        parallelToolCalls = false
-                    ),
+                    scene = model,
+                    messages = messages.toList(),
+                    toolSpecifications = toolRegistry.toolSpecifications,
+                    reasoningEffort = input.executionEnv.reasoningEffort,
+                    toolChoice = toolChoiceForRound,
+                    parallelToolCalls = false,
+                    maxCompletionTokens = 16384,
                     onReasoningUpdate = { reasoning ->
                         if (reasoning.isNotBlank()) {
                             callback.onThinkingUpdate(normalizeThinkingText(reasoning))
@@ -113,34 +109,22 @@ class AgentOrchestrator(
                 )
 
                 lastFinishReason = turn.finishReason
-                lastPrefillTokensPerSecond =
-                    turn.usage?.prefillTokensPerSecond ?: lastPrefillTokensPerSecond
-                lastDecodeTokensPerSecond =
-                    turn.usage?.decodeTokensPerSecond ?: lastDecodeTokensPerSecond
-                val rawAssistantContent = turn.message.contentText().trim()
+                lastPrefillTokensPerSecond = turn.prefillTokensPerSecond ?: lastPrefillTokensPerSecond
+                lastDecodeTokensPerSecond = turn.decodeTokensPerSecond ?: lastDecodeTokensPerSecond
+                val rawAssistantContent = turn.aiMessage.text().orEmpty().trim()
                 lastAssistantContent = combineContinuationContent(
                     prefix = accumulatedAssistantContent,
                     content = rawAssistantContent
                 )
-                val toolCalls = turn.message.toolCalls.orEmpty()
+                val toolRequests: List<ToolExecutionRequest> =
+                    turn.aiMessage.toolExecutionRequests().orEmpty()
                 logInfo(
                     tag,
-                    "round=$round parsed_tool_calls=${toolCalls.size} finish_reason=${lastFinishReason.orEmpty()} assistant_content_len=${lastAssistantContent.length}"
+                    "round=$round parsed_tool_calls=${toolRequests.size} finish_reason=${lastFinishReason.orEmpty()} assistant_content_len=${lastAssistantContent.length}"
                 )
 
-                messages.add(
-                    ChatCompletionMessage(
-                        role = "assistant",
-                        content = normalizeAssistantContentForNextRound(
-                            content = turn.message.content,
-                            toolCalls = toolCalls
-                        ),
-                        toolCalls = toolCalls.ifEmpty { null },
-                        reasoningContent = turn.message.reasoningContent
-                            ?.takeIf { it.isNotBlank() }
-                    )
-                )
-                latestPromptTokens = turn.usage?.promptTokens
+                messages.add(turn.aiMessage)
+                latestPromptTokens = turn.promptTokens
                 latestPromptTokenThreshold =
                     input.contextCompactor?.resolvePromptTokenThreshold(input.conversationId)
                 latestPromptTokens?.let { promptTokens ->
@@ -160,7 +144,7 @@ class AgentOrchestrator(
                     ).toMutableList()
                 }
 
-                if (toolCalls.isEmpty()) {
+                if (toolRequests.isEmpty()) {
                     if (
                         isLengthFinishReason(lastFinishReason) &&
                         rawAssistantContent.isNotBlank() &&
@@ -194,27 +178,35 @@ class AgentOrchestrator(
                 lengthContinuationRounds = 0
 
                 var advanceToNextRound = false
-                for (toolCall in toolCalls) {
-                    val descriptor = toolRegistry.runtimeDescriptor(toolCall.function.name)
+                // Images from ContextResult tools are appended as follow-up
+                // UserMessages, but they cannot be inlined between two
+                // ToolExecutionResultMessages — OpenAI requires tool results
+                // to be contiguous after the assistant turn that requested
+                // them. Collect them and append after the tool loop.
+                val pendingImageMessages = mutableListOf<ChatMessage>()
+                for (toolRequest in toolRequests) {
+                    val toolName = toolRequest.name()
+                    val descriptor = toolRegistry.runtimeDescriptor(toolName)
                     val parsedArgs: JsonObject = try {
-                        parseToolArguments(toolCall.function.arguments)
+                        parseToolArguments(toolRequest.arguments())
                     } catch (error: Exception) {
                         val result = ToolExecutionResult.Error(
-                            toolCall.function.name,
+                            toolName,
                             error.message ?: "Invalid tool arguments JSON"
                         )
                         val failureLearning = buildFailureLearningPayload(
                             env = input.executionEnv,
-                            toolCall = toolCall,
+                            toolName = toolName,
                             descriptor = descriptor,
                             argumentsJson = null,
                             result = result
                         )
                         executedTools.add(result)
-                        callback.onToolCallComplete(toolCall.function.name, result)
+                        callback.onToolCallComplete(toolName, result)
                         appendToolResultMessage(
                             messages = messages,
-                            toolCall = toolCall,
+                            pendingImageMessages = pendingImageMessages,
+                            toolRequest = toolRequest,
                             descriptor = descriptor,
                             result = result,
                             failureLearning = failureLearning
@@ -226,25 +218,26 @@ class AgentOrchestrator(
                     }
 
                     val validationError = runCatching {
-                        toolRegistry.validateArguments(toolCall.function.name, parsedArgs)
+                        toolRegistry.validateArguments(toolName, parsedArgs)
                     }.exceptionOrNull()
                     if (validationError != null) {
                         val result = ToolExecutionResult.Error(
-                            toolCall.function.name,
+                            toolName,
                             validationError.message ?: "Tool arguments validation failed"
                         )
                         val failureLearning = buildFailureLearningPayload(
                             env = input.executionEnv,
-                            toolCall = toolCall,
+                            toolName = toolName,
                             descriptor = descriptor,
                             argumentsJson = parsedArgs.toString(),
                             result = result
                         )
                         executedTools.add(result)
-                        callback.onToolCallComplete(toolCall.function.name, result)
+                        callback.onToolCallComplete(toolName, result)
                         appendToolResultMessage(
                             messages = messages,
-                            toolCall = toolCall,
+                            pendingImageMessages = pendingImageMessages,
+                            toolRequest = toolRequest,
                             descriptor = descriptor,
                             result = result,
                             failureLearning = failureLearning
@@ -256,15 +249,15 @@ class AgentOrchestrator(
                     }
 
                     val toolHandle = input.executionEnv.runControl.beginToolExecution(
-                        toolName = toolCall.function.name,
-                        toolCallId = toolCall.id
+                        toolName = toolName,
+                        toolCallId = toolRequest.id()
                     )
-                    callback.onToolCallStart(toolCall.function.name, parsedArgs)
+                    callback.onToolCallStart(toolName, parsedArgs)
                     val result = try {
                         coroutineScope {
                             val deferred = async {
                                 toolRouter.execute(
-                                    toolCall = toolCall,
+                                    toolRequest = toolRequest,
                                     args = parsedArgs,
                                     runtimeDescriptor = descriptor,
                                     env = input.executionEnv,
@@ -278,7 +271,7 @@ class AgentOrchestrator(
                     } catch (error: CancellationException) {
                         if (toolHandle.isManualStopRequested()) {
                             buildInterruptedToolResult(
-                                toolName = toolCall.function.name,
+                                toolName = toolName,
                                 toolHandle = toolHandle
                             )
                         } else {
@@ -291,15 +284,16 @@ class AgentOrchestrator(
                     executedTools.add(result)
                     val failureLearning = buildFailureLearningPayload(
                         env = input.executionEnv,
-                        toolCall = toolCall,
+                        toolName = toolName,
                         descriptor = descriptor,
                         argumentsJson = parsedArgs.toString(),
                         result = result
                     )
-                    callback.onToolCallComplete(toolCall.function.name, result)
+                    callback.onToolCallComplete(toolName, result)
                     appendToolResultMessage(
                         messages = messages,
-                        toolCall = toolCall,
+                        pendingImageMessages = pendingImageMessages,
+                        toolRequest = toolRequest,
                         descriptor = descriptor,
                         result = result,
                         failureLearning = failureLearning
@@ -318,15 +312,24 @@ class AgentOrchestrator(
                         break@roundLoop
                     }
                     if (
-                        toolCall.function.name == "terminal_execute" ||
-                        toolCall.function.name == "android_privileged_action" ||
-                        toolCall.function.name == "android_privileged_session_start" ||
-                        toolCall.function.name == "android_privileged_session_exec" ||
-                        toolCall.function.name == "android_privileged_session_read" ||
-                        toolCall.function.name == "android_privileged_session_stop"
+                        toolName == "terminal_execute" ||
+                        toolName == "android_privileged_action" ||
+                        toolName == "android_privileged_session_start" ||
+                        toolName == "android_privileged_session_exec" ||
+                        toolName == "android_privileged_session_read" ||
+                        toolName == "android_privileged_session_stop"
                     ) {
                         break
                     }
+                }
+
+                // Flush queued image attachments AFTER all tool result
+                // messages from this round — OpenAI requires the tool result
+                // sequence to be contiguous after the assistant turn that
+                // emitted the tool calls.
+                if (pendingImageMessages.isNotEmpty()) {
+                    messages.addAll(pendingImageMessages)
+                    pendingImageMessages.clear()
                 }
 
                 if (terminated) {
@@ -380,9 +383,19 @@ class AgentOrchestrator(
         return finalResult
     }
 
+    /**
+     * Append the tool result to the message list as a LangChain4j
+     * [ToolExecutionResultMessage]. If the tool produced an image payload
+     * (e.g. screenshot from `ContextToolHandler`), the image is queued in
+     * [pendingImageMessages] for appending after the round's tool loop —
+     * LangChain4j's `ToolExecutionResultMessage` only carries text, and OpenAI
+     * requires the tool result messages following a multi-tool-call assistant
+     * turn to be contiguous (no user messages interleaved).
+     */
     private fun appendToolResultMessage(
-        messages: MutableList<ChatCompletionMessage>,
-        toolCall: AssistantToolCall,
+        messages: MutableList<ChatMessage>,
+        pendingImageMessages: MutableList<ChatMessage>,
+        toolRequest: ToolExecutionRequest,
         descriptor: AgentToolRegistry.RuntimeToolDescriptor,
         result: ToolExecutionResult,
         failureLearning: FailureLearningHookPayload? = null
@@ -392,32 +405,32 @@ class AgentOrchestrator(
             result = result,
             extras = failureLearning?.toPayload() ?: emptyMap()
         )
-        val imageDataUrl = (result as? ToolExecutionResult.ContextResult)?.imageDataUrl
-
-        val content: JsonElement = if (imageDataUrl != null) {
-            buildJsonArray {
-                add(buildJsonObject {
-                    put("type", "text")
-                    put("text", textContent)
-                })
-                add(buildJsonObject {
-                    put("type", "image_url")
-                    put("image_url", buildJsonObject {
-                        put("url", imageDataUrl)
-                    })
-                })
-            }
-        } else {
-            JsonPrimitive(textContent)
-        }
-
         messages.add(
-            ChatCompletionMessage(
-                role = "tool",
-                toolCallId = toolCall.id,
-                content = content
-            )
+            ToolExecutionResultMessage.from(toolRequest.id().orEmpty(), toolRequest.name(), textContent)
         )
+
+        val imageDataUrl = (result as? ToolExecutionResult.ContextResult)?.imageDataUrl
+        if (!imageDataUrl.isNullOrBlank()) {
+            pendingImageMessages.add(UserMessage.from(listOf<Content>(buildImageContent(imageDataUrl))))
+        }
+    }
+
+    private fun buildImageContent(url: String): ImageContent {
+        val trimmed = url.trim()
+        if (trimmed.startsWith("data:")) {
+            val commaIndex = trimmed.indexOf(',')
+            if (commaIndex > 5) {
+                val header = trimmed.substring(5, commaIndex)
+                val payload = trimmed.substring(commaIndex + 1)
+                val parts = header.split(';')
+                val mime = parts.firstOrNull()?.takeIf { it.isNotBlank() } ?: "image/png"
+                val isBase64 = parts.any { it.equals("base64", ignoreCase = true) }
+                if (isBase64) {
+                    return ImageContent.from(Image.builder().base64Data(payload).mimeType(mime).build())
+                }
+            }
+        }
+        return ImageContent.from(trimmed)
     }
 
     private fun buildInterruptedToolResult(
@@ -477,7 +490,7 @@ class AgentOrchestrator(
 
     private fun buildFailureLearningPayload(
         env: AgentExecutionEnvironment,
-        toolCall: AssistantToolCall,
+        toolName: String,
         descriptor: AgentToolRegistry.RuntimeToolDescriptor,
         argumentsJson: String?,
         result: ToolExecutionResult
@@ -490,7 +503,7 @@ class AgentOrchestrator(
             skillsRoot = env.workspaceManager.skillsRoot(),
             skill = skill,
             userMessage = env.userMessage,
-            toolName = toolCall.function.name,
+            toolName = toolName,
             toolType = descriptor.toolType,
             argumentsJson = argumentsJson,
             result = result
@@ -498,27 +511,6 @@ class AgentOrchestrator(
         return payload.copy(
             logShellPath = env.workspaceManager.shellPathForAndroid(payload.logFile)
         )
-    }
-
-    private fun normalizeAssistantContentForNextRound(
-        content: JsonElement?,
-        toolCalls: List<AssistantToolCall>
-    ): JsonElement? {
-        if (toolCalls.isEmpty()) {
-            return content
-        }
-        return when (content) {
-            null -> JsonPrimitive("")
-            is JsonPrimitive -> {
-                if (content.isString && content.content.isBlank()) {
-                    JsonPrimitive("")
-                } else {
-                    content
-                }
-            }
-
-            else -> content
-        }
     }
 
     private fun parseToolArguments(argumentsJson: String): JsonObject {
@@ -545,12 +537,9 @@ class AgentOrchestrator(
             normalized == "max_completion_tokens"
     }
 
-    private fun buildLengthContinuationMessage(): ChatCompletionMessage {
-        return ChatCompletionMessage(
-            role = "user",
-            content = JsonPrimitive(
-                "上一条 assistant 回复因为达到输出长度上限被截断。请从中断处继续完成原任务，不要重复已经输出的内容，不要重新开头，不要解释本提示。"
-            )
+    private fun buildLengthContinuationMessage(): UserMessage {
+        return UserMessage.from(
+            "上一条 assistant 回复因为达到输出长度上限被截断。请从中断处继续完成原任务，不要重复已经输出的内容，不要重新开头，不要解释本提示。"
         )
     }
 

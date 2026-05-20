@@ -16,6 +16,7 @@ import cn.com.omnimind.bot.termux.TermuxCommandRunner
 import com.ai.assistance.operit.terminal.TerminalManager
 import com.ai.assistance.operit.terminal.data.TerminalSessionData
 import com.ai.assistance.operit.terminal.provider.type.TerminalType
+import dev.langchain4j.agent.tool.ToolExecutionRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.coroutineScope
@@ -89,20 +90,20 @@ class TerminalToolHandler(
     )
 
     override suspend fun execute(
-        toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
+        toolRequest: ToolExecutionRequest,
         args: JsonObject,
         runtimeDescriptor: AgentToolRegistry.RuntimeToolDescriptor,
         env: AgentExecutionEnvironment,
         callback: AgentCallback,
         toolHandle: AgentToolExecutionHandle
     ): ToolExecutionResult {
-        return when (toolCall.function.name) {
+        return when (toolRequest.name()) {
             "terminal_execute" -> executeTerminalTool(args, env.workspaceDescriptor, env.terminalEnvironment, callback, toolHandle)
             "terminal_session_start" -> executeTerminalSessionStart(args, env.workspaceDescriptor, env.terminalEnvironment, callback)
             "terminal_session_exec" -> executeTerminalSessionExec(args, env.workspaceDescriptor, env.terminalEnvironment, callback, toolHandle)
             "terminal_session_read" -> executeTerminalSessionRead(args, env.workspaceDescriptor, callback)
             "terminal_session_stop" -> executeTerminalSessionStop(args, env.workspaceDescriptor, callback)
-            else -> ToolExecutionResult.Error(toolCall.function.name, "Unknown terminal tool")
+            else -> ToolExecutionResult.Error(toolRequest.name(), "Unknown terminal tool")
         }
     }
 

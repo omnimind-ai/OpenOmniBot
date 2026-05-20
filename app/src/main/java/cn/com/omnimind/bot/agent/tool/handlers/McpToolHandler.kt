@@ -6,8 +6,9 @@ import cn.com.omnimind.bot.agent.AgentExecutionEnvironment
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
 import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.ToolExecutionResult
-import cn.com.omnimind.bot.mcp.RemoteMcpClient
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
+import cn.com.omnimind.bot.mcp.langchain4j.LangChain4jMcpClient
+import dev.langchain4j.agent.tool.ToolExecutionRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -20,7 +21,7 @@ class McpToolHandler(
     override fun canHandle(toolName: String): Boolean = true
 
     override suspend fun execute(
-        toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
+        toolRequest: ToolExecutionRequest,
         args: JsonObject,
         runtimeDescriptor: AgentToolRegistry.RuntimeToolDescriptor,
         env: AgentExecutionEnvironment,
@@ -28,7 +29,7 @@ class McpToolHandler(
         toolHandle: AgentToolExecutionHandle
     ): ToolExecutionResult {
         val remoteTool = runtimeDescriptor.remoteTool
-            ?: return ToolExecutionResult.Error(toolCall.function.name, "Unknown tool: ${toolCall.function.name}")
+            ?: return ToolExecutionResult.Error(toolRequest.name(), "Unknown tool: ${toolRequest.name()}")
         return executeMcpTool(remoteTool, args, callback)
     }
 
@@ -48,7 +49,7 @@ class McpToolHandler(
             )
             val config = RemoteMcpConfigStore.getServer(remoteTool.serverId)
                 ?: throw IllegalStateException("Remote MCP server not found")
-            val result = RemoteMcpClient.callTool(
+            val result = LangChain4jMcpClient.callTool(
                 config = config,
                 toolName = remoteTool.toolName,
                 arguments = helper.jsonObjectToMap(args).filterKeys { it != "tool_title" }

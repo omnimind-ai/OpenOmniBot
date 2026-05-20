@@ -2,20 +2,83 @@ package cn.com.omnimind.bot.agent
 
 import cn.com.omnimind.baselib.database.AgentConversationEntry
 import cn.com.omnimind.baselib.database.AgentConversationEntryRecord
-import cn.com.omnimind.baselib.llm.AssistantToolCall
-import cn.com.omnimind.baselib.llm.AssistantToolCallFunction
-import cn.com.omnimind.baselib.llm.ChatCompletionMessage
 import com.google.gson.Gson
+import dev.langchain4j.agent.tool.ToolExecutionRequest
+import dev.langchain4j.data.message.AiMessage
+import dev.langchain4j.data.message.ChatMessage
+import dev.langchain4j.data.message.ImageContent
+import dev.langchain4j.data.message.SystemMessage
+import dev.langchain4j.data.message.ToolExecutionResultMessage
+import dev.langchain4j.data.message.UserMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+
+// -- Test helper extensions ------------------------------------------------
+// Bridge LangChain4j ChatMessage assertions back to the legacy
+// `.role` / `.content.jsonPrimitive.content` / `.toolCalls` / `.reasoningContent`
+// patterns used throughout this file.
+
+private fun ChatMessage.roleStr(): String = when (this) {
+    is SystemMessage -> "system"
+    is UserMessage -> "user"
+    is AiMessage -> "assistant"
+    is ToolExecutionResultMessage -> "tool"
+    else -> "unknown"
+}
+
+private val ChatMessage.role: String get() = roleStr()
+
+private fun ChatMessage.textValue(): String = when (this) {
+    is SystemMessage -> text().orEmpty()
+    is UserMessage -> singleText().orEmpty()
+    is AiMessage -> text().orEmpty()
+    is ToolExecutionResultMessage -> text().orEmpty()
+    else -> ""
+}
+
+/**
+ * Pseudo-`.content` property: returns a `JsonPrimitive` view of the message
+ * text so assertions like `msg.content!!.jsonPrimitive.content` still compile.
+ * For messages with no plain text (e.g. assistant turn that's only tool calls),
+ * returns `null`.
+ */
+private val ChatMessage.content: JsonPrimitive?
+    get() {
+        val text = textValue()
+        return if (text.isEmpty()) null else JsonPrimitive(text)
+    }
+
+/**
+ * Pseudo-`.toolCalls` property: returns the assistant message's tool requests
+ * (or null if the message isn't an AiMessage with tool calls). Each "tool call"
+ * exposes `.function.name`/`.function.arguments` via the [PseudoToolCall] helper.
+ */
+private val ChatMessage.toolCalls: List<PseudoToolCall>?
+    get() {
+        if (this !is AiMessage) return null
+        val reqs = toolExecutionRequests().orEmpty()
+        return if (reqs.isEmpty()) null else reqs.map { PseudoToolCall(it) }
+    }
+
+private val ChatMessage.reasoningContent: String?
+    get() = (this as? AiMessage)?.thinking()
+
+/** Adapter that re-exposes [ToolExecutionRequest] under the legacy
+ * `toolCall.function.name` / `.arguments` shape. */
+private class PseudoToolCall(private val request: ToolExecutionRequest) {
+    val function: PseudoToolFunction get() = PseudoToolFunction(request)
+}
+
+private class PseudoToolFunction(private val request: ToolExecutionRequest) {
+    val name: String get() = request.name()
+    val arguments: String get() = request.arguments()
+}
 
 class AgentConversationHistorySupportTest {
     private val gson = Gson()
@@ -629,14 +692,13 @@ class AgentConversationHistorySupportTest {
             )
 
             val seed = AgentConversationHistorySupport.buildPromptSeedFromEntries(listOf(entry))
-            val content = seed.historyMessages.single().content as JsonArray
-            val imageBlock = content[1].jsonObject
-
-            assertEquals("image_url", imageBlock["type"]?.jsonPrimitive?.content)
-            assertEquals(
-                "data:image/jpeg;base64,MODEL_FROM_PATH",
-                imageBlock["image_url"]?.jsonObject?.get("url")?.jsonPrimitive?.content
-            )
+            val userMessage = seed.historyMessages.single() as UserMessage
+            val imageContent = userMessage.contents().filterIsInstance<ImageContent>().single()
+            val image = imageContent.image()
+            val resolvedUrl = image.url()?.toString() ?: image.base64Data()?.let { data ->
+                "data:${image.mimeType().orEmpty()};base64,$data"
+            }
+            assertEquals("data:image/jpeg;base64,MODEL_FROM_PATH", resolvedUrl)
         } finally {
             AgentImageAttachmentSupport.resetBackendForTests()
         }
@@ -902,30 +964,15 @@ class AgentConversationHistorySupportTest {
 
     @Test
     fun `buildRuntimeCompactionWindow uses current summary and compacts all historical context before latest user`() {
-        val messages = listOf(
-            ChatCompletionMessage(
-                role = "system",
-                content = JsonPrimitive("main system")
-            ),
+        val messages: List<ChatMessage> = listOf(
+            SystemMessage.from("main system"),
             AgentConversationHistorySupport.buildContextSummaryUserMessage(
                 "【用户目标与约束】\n旧总结"
             ),
-            ChatCompletionMessage(
-                role = "user",
-                content = JsonPrimitive("旧问题")
-            ),
-            ChatCompletionMessage(
-                role = "assistant",
-                content = JsonPrimitive("旧回答")
-            ),
-            ChatCompletionMessage(
-                role = "user",
-                content = JsonPrimitive("当前问题")
-            ),
-            ChatCompletionMessage(
-                role = "assistant",
-                content = JsonPrimitive("当前轮中间输出")
-            )
+            UserMessage.from("旧问题"),
+            AiMessage.from("旧回答"),
+            UserMessage.from("当前问题"),
+            AiMessage.from("当前轮中间输出")
         )
 
         val window = AgentConversationHistorySupport.buildRuntimeCompactionWindow(messages)
@@ -939,43 +986,26 @@ class AgentConversationHistorySupportTest {
     @Test
     fun `buildRuntimeCompactionWindow keeps historical tool replay inside compaction window`() {
         val historicalToolCalls = listOf(
-            AssistantToolCall(
-                id = "tool-call-old",
-                function = AssistantToolCallFunction(
-                    name = "browser_use",
-                    arguments = """{"url":"https://example.com/old"}"""
-                )
-            )
+            ToolExecutionRequest.builder()
+                .id("tool-call-old")
+                .name("browser_use")
+                .arguments("""{"url":"https://example.com/old"}""")
+                .build()
         )
-        val messages = listOf(
-            ChatCompletionMessage(
-                role = "system",
-                content = JsonPrimitive("main system")
-            ),
+        val messages: List<ChatMessage> = listOf(
+            SystemMessage.from("main system"),
             AgentConversationHistorySupport.buildContextSummaryUserMessage(
                 "【用户目标与约束】\n旧总结"
             ),
-            ChatCompletionMessage(
-                role = "user",
-                content = JsonPrimitive("更早的问题")
+            UserMessage.from("更早的问题"),
+            AiMessage.from("更早的回答"),
+            AiMessage.builder().toolExecutionRequests(historicalToolCalls).build(),
+            ToolExecutionResultMessage.from(
+                "tool-call-old",
+                "browser_use",
+                """{"summary":"旧工具结果"}"""
             ),
-            ChatCompletionMessage(
-                role = "assistant",
-                content = JsonPrimitive("更早的回答")
-            ),
-            ChatCompletionMessage(
-                role = "assistant",
-                toolCalls = historicalToolCalls
-            ),
-            ChatCompletionMessage(
-                role = "tool",
-                toolCallId = "tool-call-old",
-                content = JsonPrimitive("""{"summary":"旧工具结果"}""")
-            ),
-            ChatCompletionMessage(
-                role = "user",
-                content = JsonPrimitive("当前问题")
-            )
+            UserMessage.from("当前问题")
         )
 
         val window = AgentConversationHistorySupport.buildRuntimeCompactionWindow(messages)
@@ -993,61 +1023,38 @@ class AgentConversationHistorySupportTest {
     @Test
     fun `rebuildMessagesWithCompactedSummary keeps summary plus current turn context`() {
         val historicalToolCalls = listOf(
-            AssistantToolCall(
-                id = "tool-call-old",
-                function = AssistantToolCallFunction(
-                    name = "browser_use",
-                    arguments = """{"url":"https://example.com/old"}"""
-                )
-            )
+            ToolExecutionRequest.builder()
+                .id("tool-call-old")
+                .name("browser_use")
+                .arguments("""{"url":"https://example.com/old"}""")
+                .build()
         )
         val pendingToolCalls = listOf(
-            AssistantToolCall(
-                id = "tool-call-1",
-                function = AssistantToolCallFunction(
-                    name = "browser_use",
-                    arguments = """{"url":"https://example.com"}"""
-                )
-            )
+            ToolExecutionRequest.builder()
+                .id("tool-call-1")
+                .name("browser_use")
+                .arguments("""{"url":"https://example.com"}""")
+                .build()
         )
-        val messages = listOf(
-            ChatCompletionMessage(
-                role = "system",
-                content = JsonPrimitive("main system")
-            ),
+        val messages: List<ChatMessage> = listOf(
+            SystemMessage.from("main system"),
             AgentConversationHistorySupport.buildContextSummaryUserMessage(
                 "【用户目标与约束】\n旧总结"
             ),
-            ChatCompletionMessage(
-                role = "user",
-                content = JsonPrimitive("旧问题")
+            UserMessage.from("旧问题"),
+            AiMessage.from("旧回答"),
+            AiMessage.builder().toolExecutionRequests(historicalToolCalls).build(),
+            ToolExecutionResultMessage.from(
+                "tool-call-old",
+                "browser_use",
+                """{"summary":"旧工具结果"}"""
             ),
-            ChatCompletionMessage(
-                role = "assistant",
-                content = JsonPrimitive("旧回答")
-            ),
-            ChatCompletionMessage(
-                role = "assistant",
-                toolCalls = historicalToolCalls
-            ),
-            ChatCompletionMessage(
-                role = "tool",
-                toolCallId = "tool-call-old",
-                content = JsonPrimitive("""{"summary":"旧工具结果"}""")
-            ),
-            ChatCompletionMessage(
-                role = "assistant",
-                content = JsonPrimitive("旧工具后的解释")
-            ),
-            ChatCompletionMessage(
-                role = "user",
-                content = JsonPrimitive("当前问题")
-            ),
-            ChatCompletionMessage(
-                role = "assistant",
-                content = JsonPrimitive("不应保留的中间文本"),
-                toolCalls = pendingToolCalls
-            )
+            AiMessage.from("旧工具后的解释"),
+            UserMessage.from("当前问题"),
+            AiMessage.builder()
+                .text("不应保留的中间文本")
+                .toolExecutionRequests(pendingToolCalls)
+                .build()
         )
 
         val rebuilt = AgentConversationHistorySupport.rebuildMessagesWithCompactedSummary(

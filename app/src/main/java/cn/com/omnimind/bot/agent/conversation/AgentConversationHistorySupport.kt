@@ -2,15 +2,24 @@ package cn.com.omnimind.bot.agent
 
 import cn.com.omnimind.baselib.database.AgentConversationEntry
 import cn.com.omnimind.baselib.database.AgentConversationEntryRecord
-import cn.com.omnimind.baselib.llm.AssistantToolCall
-import cn.com.omnimind.baselib.llm.AssistantToolCallFunction
-import cn.com.omnimind.baselib.llm.ChatCompletionMessage
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import dev.langchain4j.agent.tool.ToolExecutionRequest
+import dev.langchain4j.data.image.Image
+import dev.langchain4j.data.message.AiMessage
+import dev.langchain4j.data.message.ChatMessage
+import dev.langchain4j.data.message.Content
+import dev.langchain4j.data.message.ImageContent
+import dev.langchain4j.data.message.SystemMessage
+import dev.langchain4j.data.message.TextContent
+import dev.langchain4j.data.message.ToolExecutionResultMessage
+import dev.langchain4j.data.message.UserMessage
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import java.time.Instant
 
 internal object AgentConversationHistorySupport {
@@ -31,7 +40,7 @@ internal object AgentConversationHistorySupport {
 
     data class RuntimeCompactionWindow(
         val existingSummary: String?,
-        val messagesToCompact: List<ChatCompletionMessage>
+        val messagesToCompact: List<ChatMessage>
     )
 
     data class MaterializedEntry(
@@ -222,7 +231,7 @@ internal object AgentConversationHistorySupport {
         contextSummary: String? = null,
         cutoffEntryDbId: Long? = null
     ): AgentConversationHistoryRepository.PromptSeed {
-        val historyMessages = mutableListOf<ChatCompletionMessage>()
+        val historyMessages = mutableListOf<ChatMessage>()
         contextSummary?.trim()?.takeIf { it.isNotEmpty() }?.let { summary ->
             historyMessages += buildContextSummaryUserMessage(summary)
         }
@@ -236,14 +245,14 @@ internal object AgentConversationHistorySupport {
     fun buildPromptRelevantMessages(
         entries: List<AgentConversationEntry>,
         cutoffEntryDbId: Long? = null
-    ): List<ChatCompletionMessage> {
+    ): List<ChatMessage> {
         val relevantEntries = entries
             .asSequence()
             .filter(::isPromptRelevantEntry)
             .filter { entry -> cutoffEntryDbId == null || entry.id > cutoffEntryDbId }
             .toList()
 
-        val replayMessages = mutableListOf<ChatCompletionMessage>()
+        val replayMessages = mutableListOf<ChatMessage>()
         val deferredAssistantEntries = mutableListOf<AgentConversationEntry>()
 
         fun flushDeferredAssistantEntries() {
@@ -282,50 +291,63 @@ internal object AgentConversationHistorySupport {
         return replayMessages
     }
 
-    fun buildContextSummaryUserMessage(summary: String): ChatCompletionMessage {
+    fun buildContextSummaryUserMessage(summary: String): UserMessage {
         val normalizedSummary = AgentTextSanitizer.sanitizeUtf16(summary).trim()
         val content = if (normalizedSummary.isEmpty()) {
             CONTEXT_SUMMARY_USER_PREFIX
         } else {
             "$CONTEXT_SUMMARY_USER_PREFIX\n\n$normalizedSummary"
         }
-        return ChatCompletionMessage(
-            role = "user",
-            content = JsonPrimitive(content)
-        )
+        return UserMessage.from(content)
     }
 
-    fun buildContextSummarySystemMessage(summary: String): ChatCompletionMessage {
+    fun buildContextSummarySystemMessage(summary: String): UserMessage {
         return buildContextSummaryUserMessage(summary)
     }
 
-    fun extractContextSummaryText(message: ChatCompletionMessage): String? {
-        val content = message.content as? JsonPrimitive ?: return null
+    fun extractContextSummaryText(message: ChatMessage): String? {
+        val text = singleTextOf(message) ?: return null
         return when {
-            message.role == "user" &&
-                content.content.startsWith(CONTEXT_SUMMARY_USER_PREFIX) -> {
-                content.content.removePrefix(CONTEXT_SUMMARY_USER_PREFIX).trim()
-            }
-
-            message.role == "system" &&
-                content.content.startsWith(LEGACY_CONTEXT_SUMMARY_SYSTEM_PREFIX) -> {
-                content.content.removePrefix(LEGACY_CONTEXT_SUMMARY_SYSTEM_PREFIX).trim()
-            }
-
+            message is UserMessage && text.startsWith(CONTEXT_SUMMARY_USER_PREFIX) ->
+                text.removePrefix(CONTEXT_SUMMARY_USER_PREFIX).trim()
+            message is SystemMessage && text.startsWith(LEGACY_CONTEXT_SUMMARY_SYSTEM_PREFIX) ->
+                text.removePrefix(LEGACY_CONTEXT_SUMMARY_SYSTEM_PREFIX).trim()
             else -> null
         }
     }
 
-    fun isContextSummaryMessage(message: ChatCompletionMessage): Boolean {
-        val content = message.content as? JsonPrimitive ?: return false
-        return (message.role == "user" &&
-            content.content.startsWith(CONTEXT_SUMMARY_USER_PREFIX)) ||
-            (message.role == "system" &&
-                content.content.startsWith(LEGACY_CONTEXT_SUMMARY_SYSTEM_PREFIX))
+    fun isContextSummaryMessage(message: ChatMessage): Boolean {
+        val text = singleTextOf(message) ?: return false
+        return (message is UserMessage && text.startsWith(CONTEXT_SUMMARY_USER_PREFIX)) ||
+            (message is SystemMessage && text.startsWith(LEGACY_CONTEXT_SUMMARY_SYSTEM_PREFIX))
     }
 
-    fun isContextSummarySystemMessage(message: ChatCompletionMessage): Boolean {
+    fun isContextSummarySystemMessage(message: ChatMessage): Boolean {
         return isContextSummaryMessage(message)
+    }
+
+    /**
+     * Extract a single text value from a LangChain4j [ChatMessage] regardless of
+     * concrete type — used by the context-summary detection helpers above.
+     * Returns null when the message has no text content (e.g. an
+     * [AiMessage] that carries only tool calls).
+     */
+    private fun singleTextOf(message: ChatMessage): String? {
+        return when (message) {
+            is SystemMessage -> message.text()
+            is UserMessage -> message.singleText()
+            is AiMessage -> message.text()
+            is ToolExecutionResultMessage -> message.text()
+            else -> null
+        }
+    }
+
+    private fun roleOf(message: ChatMessage): String = when (message) {
+        is SystemMessage -> "system"
+        is UserMessage -> "user"
+        is AiMessage -> "assistant"
+        is ToolExecutionResultMessage -> "tool"
+        else -> "unknown"
     }
 
     fun isPromptRelevantEntry(entry: AgentConversationEntry): Boolean {
@@ -358,10 +380,10 @@ internal object AgentConversationHistorySupport {
     }
 
     fun buildRuntimeCompactionWindow(
-        messages: List<ChatCompletionMessage>
+        messages: List<ChatMessage>
     ): RuntimeCompactionWindow? {
         if (messages.isEmpty()) return null
-        val leadingSystemCount = messages.takeWhile { it.role == "system" }.size
+        val leadingSystemCount = messages.takeWhile { it is SystemMessage }.size
         var summaryIndex = -1
         for (index in 0 until leadingSystemCount) {
             if (isContextSummaryMessage(messages[index])) {
@@ -375,7 +397,7 @@ internal object AgentConversationHistorySupport {
             summaryIndex = leadingSystemCount
         }
         val latestUserIndex = messages.indexOfLast { message ->
-            message.role == "user" && !isContextSummaryMessage(message)
+            message is UserMessage && !isContextSummaryMessage(message)
         }
         if (latestUserIndex == -1) return null
         val compactionStartIndex = if (summaryIndex >= 0) summaryIndex + 1 else leadingSystemCount
@@ -383,7 +405,7 @@ internal object AgentConversationHistorySupport {
             return null
         }
         val messagesToCompact = messages.subList(compactionStartIndex, latestUserIndex)
-            .filter { it.role != "system" && !isContextSummaryMessage(it) }
+            .filter { it !is SystemMessage && !isContextSummaryMessage(it) }
         if (messagesToCompact.isEmpty()) {
             return null
         }
@@ -399,19 +421,19 @@ internal object AgentConversationHistorySupport {
     }
 
     fun rebuildMessagesWithCompactedSummary(
-        messages: List<ChatCompletionMessage>,
+        messages: List<ChatMessage>,
         summary: String
-    ): List<ChatCompletionMessage> {
+    ): List<ChatMessage> {
         val preservedSystemMessages = messages
-            .takeWhile { it.role == "system" }
+            .takeWhile { it is SystemMessage }
             .filterNot(::isContextSummaryMessage)
         val latestUserIndex = messages.indexOfLast { message ->
-            message.role == "user" && !isContextSummaryMessage(message)
+            message is UserMessage && !isContextSummaryMessage(message)
         }
         if (latestUserIndex == -1) {
             return preservedSystemMessages + buildContextSummaryUserMessage(summary)
         }
-        val rebuilt = mutableListOf<ChatCompletionMessage>()
+        val rebuilt = mutableListOf<ChatMessage>()
         rebuilt += preservedSystemMessages
         rebuilt += buildContextSummaryUserMessage(summary)
         rebuilt += messages.subList(latestUserIndex, messages.size)
@@ -530,29 +552,90 @@ internal object AgentConversationHistorySupport {
         )
     }
 
-    private fun buildUserPromptMessages(entry: AgentConversationEntry): List<ChatCompletionMessage> {
+    private fun buildUserPromptMessages(entry: AgentConversationEntry): List<ChatMessage> {
         val payload = readMap(entry.payloadJson)
         val content = buildPromptContentFromMessagePayload(payload) ?: return emptyList()
         if (content.isBlankJsonPrimitive()) return emptyList()
-        return listOf(
-            ChatCompletionMessage(
-                role = "user",
-                content = content
-            )
-        )
+        return listOf(jsonContentToUserMessage(content))
     }
 
-    private fun buildAssistantPromptMessages(entry: AgentConversationEntry): List<ChatCompletionMessage> {
+    private fun buildAssistantPromptMessages(entry: AgentConversationEntry): List<ChatMessage> {
         val payload = readMap(entry.payloadJson)
         val content = buildPromptContentFromMessagePayload(payload) ?: return emptyList()
         if (content.isBlankJsonPrimitive()) return emptyList()
-        return listOf(
-            ChatCompletionMessage(
-                role = "assistant",
-                content = content,
-                reasoningContent = readReasoningContent(payload)
-            )
-        )
+        val text = jsonContentToText(content)
+        val reasoning = readReasoningContent(payload)
+        val builder = AiMessage.builder()
+        if (text.isNotEmpty()) {
+            builder.text(text)
+        }
+        reasoning?.takeIf { it.isNotBlank() }?.let(builder::thinking)
+        return listOf(builder.build())
+    }
+
+    private fun jsonContentToUserMessage(content: JsonElement): UserMessage {
+        val contents = jsonContentToContents(content)
+        return if (contents.isEmpty()) {
+            UserMessage.from(jsonContentToText(content))
+        } else {
+            UserMessage.from(contents)
+        }
+    }
+
+    private fun jsonContentToContents(content: JsonElement): List<Content> {
+        if (content !is JsonArray) {
+            val text = jsonContentToText(content)
+            return if (text.isEmpty()) emptyList() else listOf(TextContent.from(text))
+        }
+        return content.mapNotNull { item ->
+            val obj = item as? JsonObject ?: return@mapNotNull null
+            when (obj["type"]?.jsonPrimitive?.contentOrNull) {
+                "text" -> obj["text"]?.jsonPrimitive?.contentOrNull
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let(TextContent::from)
+                "image_url" -> {
+                    val url = (obj["image_url"] as? JsonObject)
+                        ?.get("url")?.jsonPrimitive?.contentOrNull
+                        ?: obj["url"]?.jsonPrimitive?.contentOrNull
+                    url?.let(::buildImageContentFromUrl)
+                }
+                else -> obj["text"]?.jsonPrimitive?.contentOrNull
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let(TextContent::from)
+            }
+        }
+    }
+
+    private fun jsonContentToText(content: JsonElement?): String {
+        return when (content) {
+            null -> ""
+            is JsonPrimitive -> content.contentOrNull.orEmpty()
+            is JsonArray -> content.joinToString(separator = "") { item ->
+                val obj = item as? JsonObject ?: return@joinToString ""
+                if (obj["type"]?.jsonPrimitive?.contentOrNull == "text") {
+                    obj["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                } else ""
+            }
+            else -> ""
+        }
+    }
+
+    private fun buildImageContentFromUrl(url: String): ImageContent {
+        val trimmed = url.trim()
+        if (trimmed.startsWith("data:")) {
+            val commaIndex = trimmed.indexOf(',')
+            if (commaIndex > 5) {
+                val header = trimmed.substring(5, commaIndex)
+                val payload = trimmed.substring(commaIndex + 1)
+                val parts = header.split(';')
+                val mime = parts.firstOrNull()?.takeIf { it.isNotBlank() } ?: "image/png"
+                val isBase64 = parts.any { it.equals("base64", ignoreCase = true) }
+                if (isBase64) {
+                    return ImageContent.from(Image.builder().base64Data(payload).mimeType(mime).build())
+                }
+            }
+        }
+        return ImageContent.from(trimmed)
     }
 
     private fun shouldReplayAssistantContentAfterTools(
@@ -576,7 +659,7 @@ internal object AgentConversationHistorySupport {
         return false
     }
 
-    private fun buildToolReplayMessages(entry: AgentConversationEntry): List<ChatCompletionMessage> {
+    private fun buildToolReplayMessages(entry: AgentConversationEntry): List<ChatMessage> {
         val payload = readMap(entry.payloadJson)
         if (parseBoolean(payload["historyOmitted"], default = false)) {
             return emptyList()
@@ -586,23 +669,23 @@ internal object AgentConversationHistorySupport {
 
         val toolCallId = "restored_${entry.entryId}"
         val argsJson = payload["argsJson"]?.toString()?.trim()?.ifEmpty { null } ?: "{}"
-        val assistantMessage = ChatCompletionMessage(
-            role = "assistant",
-            reasoningContent = readReasoningContent(payload),
-            toolCalls = listOf(
-                AssistantToolCall(
-                    id = toolCallId,
-                    function = AssistantToolCallFunction(
-                        name = toolName,
-                        arguments = argsJson
-                    )
+        val reasoning = readReasoningContent(payload)
+        val assistantBuilder = AiMessage.builder()
+            .toolExecutionRequests(
+                listOf(
+                    ToolExecutionRequest.builder()
+                        .id(toolCallId)
+                        .name(toolName)
+                        .arguments(argsJson)
+                        .build()
                 )
             )
-        )
-        val toolMessage = ChatCompletionMessage(
-            role = "tool",
-            toolCallId = toolCallId,
-            content = JsonPrimitive(buildCompactToolReplayContent(entry, payload))
+        reasoning?.takeIf { it.isNotBlank() }?.let(assistantBuilder::thinking)
+        val assistantMessage: ChatMessage = assistantBuilder.build()
+        val toolMessage: ChatMessage = ToolExecutionResultMessage.from(
+            toolCallId,
+            toolName,
+            buildCompactToolReplayContent(entry, payload)
         )
         return listOf(assistantMessage, toolMessage)
     }

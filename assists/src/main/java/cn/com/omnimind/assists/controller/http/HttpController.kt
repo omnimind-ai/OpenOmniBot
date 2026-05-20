@@ -71,7 +71,8 @@ object HttpController {
         val bindingProfileMissing: Boolean,
         val overrideApplied: Boolean,
         val protocolType: String = "openai_compatible",
-        val requiresReasoningEcho: Boolean = false
+        val requiresReasoningEcho: Boolean = false,
+        val apiKey: String? = null
     )
 
     private data class ResolvedSceneRequest(
@@ -443,7 +444,8 @@ object HttpController {
             requiresReasoningEcho = DeepSeekProvider.shouldUseOfficialAdapter(
                 protocolType = protocolType,
                 apiBase = apiBase
-            )
+            ),
+            apiKey = apiKey
         )
     }
 

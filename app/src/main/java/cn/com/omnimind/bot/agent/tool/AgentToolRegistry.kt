@@ -37,7 +37,7 @@ class AgentToolRegistry(
     private val tag = "AgentToolRegistry"
     private val toolSchemas = linkedMapOf<String, JsonObject>()
     private val runtimeDescriptors = linkedMapOf<String, RuntimeToolDescriptor>()
-    override val toolsForModel: List<ChatCompletionTool>
+    override val toolSpecifications: List<dev.langchain4j.agent.tool.ToolSpecification>
 
     init {
         val locale = AppLocaleManager.resolvePromptLocale(context)
@@ -95,7 +95,7 @@ class AgentToolRegistry(
         val filteredDefinitions = AgentConversationModePolicy
             .filterToolDefinitionsForConversationMode(runtimeDefinitions, conversationMode)
 
-        toolsForModel = filteredDefinitions.mapNotNull { definition ->
+        toolSpecifications = filteredDefinitions.mapNotNull { definition ->
             val function = definition["function"] as? JsonObject ?: return@mapNotNull null
             val name = function["name"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
             if (name.isBlank()) return@mapNotNull null
@@ -116,13 +116,12 @@ class AgentToolRegistry(
                 serverName = serverName,
                 remoteTool = findRemoteTool(name, discoveredServers)
             )
-            ChatCompletionTool(
-                function = ChatCompletionFunction(
+            cn.com.omnimind.bot.agent.langchain4j.JsonSchemaToToolSpecConverter
+                .toToolSpecification(
                     name = name,
                     description = description,
                     parameters = parameters
                 )
-            )
         }
     }
 
