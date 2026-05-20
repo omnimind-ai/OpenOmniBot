@@ -219,4 +219,70 @@ void main() {
     expect(title.style?.color, customTextColor);
     expect(title.style?.fontSize, 12);
   });
+
+  testWidgets('subagent card shows status line and expands timeline', (
+    tester,
+  ) async {
+    const thinkingLine = 'SubAgent #1 思考：检查数据来源';
+    const firstStatusLine = 'SubAgent #1 调用工具：file_search';
+    const secondStatusLine = 'SubAgent #2 思考：整理最终摘要';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AgentToolSummaryCard(
+            cardData: {
+              'status': 'running',
+              'displayName': '分派子任务',
+              'toolName': 'subagent_dispatch',
+              'toolType': 'subagent',
+              'subagentStatusText': firstStatusLine,
+              'subagentEvents': [
+                {
+                  'id': 'subagent-event-1',
+                  'seq': 1,
+                  'createdAt': 10,
+                  'kind': 'thinking',
+                  'summary': thinkingLine,
+                  'status': 'running',
+                  'taskIndex': 0,
+                },
+                {
+                  'id': 'subagent-event-2',
+                  'seq': 2,
+                  'createdAt': 20,
+                  'kind': 'tool_started',
+                  'summary': firstStatusLine,
+                  'status': 'running',
+                  'taskIndex': 0,
+                  'toolName': 'file_search',
+                },
+                {
+                  'id': 'subagent-event-3',
+                  'seq': 3,
+                  'createdAt': 30,
+                  'kind': 'thinking',
+                  'summary': secondStatusLine,
+                  'status': 'running',
+                  'taskIndex': 1,
+                },
+              ],
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('分派子任务'), findsOneWidget);
+    expect(find.text(firstStatusLine), findsOneWidget);
+    expect(find.text(secondStatusLine), findsOneWidget);
+    expect(find.text(thinkingLine), findsNothing);
+
+    await tester.tap(find.text(firstStatusLine));
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(find.text(thinkingLine), findsOneWidget);
+    expect(find.byIcon(Icons.psychology_alt_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.build_circle_outlined), findsOneWidget);
+  });
 }

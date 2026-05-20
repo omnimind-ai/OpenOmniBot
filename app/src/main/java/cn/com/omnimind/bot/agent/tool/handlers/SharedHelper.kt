@@ -307,6 +307,33 @@ class SharedHelper(
         Regex("^正在分派 (\\d+) 个子任务（并发 (\\d+)）$").matchEntire(text)?.let {
             return "Dispatching ${it.groupValues[1]} subtasks (concurrency ${it.groupValues[2]})"
         }
+        Regex("^SubAgent #(\\d+) 开始：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} started: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 开始思考$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} started thinking"
+        }
+        Regex("^SubAgent #(\\d+) 思考：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} thinking: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 调用工具：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} called tool: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 工具进度：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} tool progress: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 工具完成：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} completed tool: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 输出：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} output: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 得到结果：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} result: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 失败：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} failed: ${it.groupValues[2]}"
+        }
         Regex("^已完成子任务：(.*)$").matchEntire(text)?.let {
             return "Completed subtask: ${it.groupValues[1]}"
         }
@@ -319,7 +346,15 @@ class SharedHelper(
     private fun localizePayloadValue(value: Any?, key: String? = null): Any? {
         return when (value) {
             is String -> if (
-                key in setOf("summary", "message", "error", "errorMessage", "result", "lastProgress")
+                key in setOf(
+                    "summary",
+                    "message",
+                    "error",
+                    "errorMessage",
+                    "result",
+                    "lastProgress",
+                    "subagentStatusText"
+                )
             ) {
                 localized(value)
             } else {

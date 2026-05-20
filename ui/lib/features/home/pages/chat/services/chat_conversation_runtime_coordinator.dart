@@ -3008,6 +3008,13 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       'progress': progress.isNotEmpty
           ? progress
           : (existingCardData['progress'] ?? '').toString(),
+      'subagentStatusText': event.subagentStatusText.isNotEmpty
+          ? event.subagentStatusText
+          : (existingCardData['subagentStatusText'] ?? '').toString(),
+      'subagentEvents': _mergeSubagentEvents(
+        existingCardData['subagentEvents'],
+        event.subagentEvents,
+      ),
       'argsJson': event.argsJson.isNotEmpty
           ? event.argsJson
           : (existingCardData['argsJson'] ?? '').toString(),
@@ -3060,6 +3067,70 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         ),
       );
     }
+  }
+
+  List<Map<String, dynamic>> _mergeSubagentEvents(
+    dynamic existingRaw,
+    List<Map<String, dynamic>> incomingEvents,
+  ) {
+    final merged = <Map<String, dynamic>>[];
+    final seen = <String>{};
+
+    void addEvent(Map<dynamic, dynamic> rawEvent) {
+      final event = rawEvent.map<String, dynamic>(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+      final key = _subagentEventIdentity(event);
+      if (!seen.add(key)) {
+        return;
+      }
+      merged.add(event);
+    }
+
+    if (existingRaw is List) {
+      for (final item in existingRaw.whereType<Map>()) {
+        addEvent(item);
+      }
+    }
+    for (final event in incomingEvents) {
+      addEvent(event);
+    }
+    merged.sort((left, right) {
+      final leftSeq = _asInt(left['seq']);
+      final rightSeq = _asInt(right['seq']);
+      if (leftSeq != null && rightSeq != null && leftSeq != rightSeq) {
+        return leftSeq.compareTo(rightSeq);
+      }
+      final leftCreatedAt = _asInt(left['createdAt']) ?? 0;
+      final rightCreatedAt = _asInt(right['createdAt']) ?? 0;
+      if (leftCreatedAt != rightCreatedAt) {
+        return leftCreatedAt.compareTo(rightCreatedAt);
+      }
+      return _subagentEventIdentity(
+        left,
+      ).compareTo(_subagentEventIdentity(right));
+    });
+    return merged;
+  }
+
+  String _subagentEventIdentity(Map<String, dynamic> event) {
+    final id = (event['id'] ?? '').toString().trim();
+    if (id.isNotEmpty) {
+      return id;
+    }
+    return [
+      event['seq'],
+      event['kind'],
+      event['taskIndex'],
+      event['summary'],
+      event['toolName'],
+    ].map((item) => item?.toString() ?? '').join('|');
+  }
+
+  int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse((value ?? '').toString());
   }
 
   String _resolveTerminalOutput({

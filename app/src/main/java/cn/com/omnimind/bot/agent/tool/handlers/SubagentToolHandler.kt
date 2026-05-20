@@ -55,16 +55,22 @@ class SubagentToolHandler(
             val concurrency = args["concurrency"]?.jsonPrimitive?.intOrNull?.coerceIn(1, 6) ?: 2
             val mergeInstruction = args["mergeInstruction"]?.jsonPrimitive?.contentOrNull?.trim()
 
-            helper.reportToolProgress(
-                callback,
-                toolName,
-                "正在分派 ${specs.size} 个子任务（并发 $concurrency）"
-            )
-
             val results = dispatcher.dispatch(
                 parentEnv = env,
                 tasks = specs,
-                concurrency = concurrency
+                concurrency = concurrency,
+                progressReporter = { event ->
+                    helper.reportToolProgress(
+                        callback = callback,
+                        toolName = toolName,
+                        progress = event.summary,
+                        extras = mapOf(
+                            "subagentStatusText" to event.summary,
+                            "subagentEvents" to listOf(event.toPayload())
+                        ),
+                        toolHandle = toolHandle
+                    )
+                }
             )
 
             val payload = linkedMapOf<String, Any?>(
