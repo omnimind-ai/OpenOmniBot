@@ -134,6 +134,15 @@ object PromptTemplate {
             if (priorityEventSection.isNotBlank()) {
                 appendLine(priorityEventSection)
             }
+            if (context.currentPageSummary.isNotBlank() || context.firstStepGuidance.isNotBlank()) {
+                appendLine("${t(locale, "首步页面上下文", "First-step page context")}:")
+                if (context.currentPageSummary.isNotBlank()) {
+                    appendLine(context.currentPageSummary)
+                }
+                if (context.firstStepGuidance.isNotBlank()) {
+                    appendLine(context.firstStepGuidance)
+                }
+            }
             appendLine("${t(locale, "当前状态", "Current state")}: ${context.currentState.ifEmpty { t(locale, "未知", "Unknown") }}")
             appendLine("${t(locale, "建议下一步", "Suggested next step")}: ${context.nextStepHint.ifEmpty { t(locale, "无", "None") }}")
             appendLine("${t(locale, "已完成里程碑", "Completed milestones")}: $completedMilestones")

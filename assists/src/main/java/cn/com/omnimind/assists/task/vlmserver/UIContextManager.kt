@@ -11,6 +11,7 @@ class UIContextManager {
     fun initializeContext(
         overallTask: String,
         installedApplications: Map<String, String> = emptyMap(),
+        targetPackageName: String = "",
         maxSteps: Int? = null,
         currentStepGoal: String = overallTask,
         stepSkillGuidance: String = ""
@@ -20,6 +21,7 @@ class UIContextManager {
             currentStepGoal = currentStepGoal,
             stepSkillGuidance = stepSkillGuidance,
             installedApplications = installedApplications,
+            targetPackageName = targetPackageName,
             trace = emptyList(),
             keyMemory = emptyList(),
             maxSteps = maxSteps,

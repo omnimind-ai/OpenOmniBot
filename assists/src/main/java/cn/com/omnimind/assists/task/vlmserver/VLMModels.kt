@@ -181,6 +181,14 @@ data class UIContext(
     val stepSkillGuidance: String = "",
     @SerialName("installed_applications")
     val installedApplications: Map<String, String> = emptyMap(),
+    @SerialName("target_package_name")
+    val targetPackageName: String = "",
+    @SerialName("current_package_name")
+    val currentPackageName: String = "",
+    @SerialName("current_page_summary")
+    val currentPageSummary: String = "",
+    @SerialName("first_step_guidance")
+    val firstStepGuidance: String = "",
     val trace: List<UIStep> = emptyList(),
     @SerialName("key_memory")
     val keyMemory: List<String> = emptyList(),

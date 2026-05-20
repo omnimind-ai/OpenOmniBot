@@ -698,6 +698,12 @@ class OobOmniFlowToolkitService(
         val reason: String
         val requiresRoot: Boolean
         when {
+            action == "finished" -> {
+                decision = "allow"
+                risk = "low"
+                reason = "finished is a terminal marker"
+                requiresRoot = false
+            }
             isBlockedAction(action, step) -> {
                 decision = "block"
                 risk = "high"
@@ -765,13 +771,40 @@ class OobOmniFlowToolkitService(
     }
 
     private fun isBlockedAction(action: String, step: Map<String, Any?>): Boolean {
-        val text = step.toString().lowercase()
+        val text = guardScanText(step)
         return BLOCKED_ACTION_TOKENS.any { action.contains(it) || text.contains(it) }
     }
 
     private fun isConfirmationAction(action: String, step: Map<String, Any?>): Boolean {
-        val text = step.toString().lowercase()
+        val text = guardScanText(step)
         return CONFIRMATION_ACTION_TOKENS.any { action.contains(it) || text.contains(it) }
+    }
+
+    private fun guardScanText(step: Map<String, Any?>): String {
+        val parts = mutableListOf<String>()
+        for (key in GUARD_SCAN_KEYS) {
+            val value = step[key] ?: continue
+            parts += when (key) {
+                "args" -> sanitizedGuardArgs(value).toString()
+                else -> value.toString()
+            }
+        }
+        return parts.joinToString(" ").lowercase()
+    }
+
+    private fun sanitizedGuardArgs(value: Any?): Any? {
+        return when (value) {
+            is Map<*, *> -> linkedMapOf<String, Any?>().apply {
+                value.forEach { (rawKey, rawItem) ->
+                    val key = rawKey?.toString() ?: return@forEach
+                    if (key in GUARD_CONTEXT_KEYS) return@forEach
+                    put(key, sanitizedGuardArgs(rawItem))
+                }
+            }
+            is List<*> -> value.map(::sanitizedGuardArgs)
+            is Array<*> -> value.map(::sanitizedGuardArgs)
+            else -> value
+        }
     }
 
     private fun materializedSteps(spec: Map<String, Any?>): List<Map<String, Any?>> {
@@ -935,6 +968,26 @@ class OobOmniFlowToolkitService(
             "system_partition",
             "dd if=",
             "mkfs",
+        )
+        private val GUARD_SCAN_KEYS = setOf(
+            "title",
+            "kind",
+            "executor",
+            "tool",
+            "callable_tool",
+            "omniflow_action",
+            "local_action",
+            "type",
+            "args",
+        )
+        private val GUARD_CONTEXT_KEYS = setOf(
+            "source_context",
+            "src_ctx",
+            "page",
+            "xml",
+            "observation_xml",
+            "screenshot",
+            "image",
         )
     }
 }

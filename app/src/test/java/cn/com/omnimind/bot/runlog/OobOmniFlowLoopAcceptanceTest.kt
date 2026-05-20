@@ -127,6 +127,78 @@ class OobOmniFlowLoopAcceptanceTest {
         }
     }
 
+    @Test
+    fun `guard allows finished marker even when source xml contains blocked words`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val workspaceStore = WorkspaceFunctionStore(context.root)
+            val toolkit = OobOmniFlowToolkitService(context, workspaceStore)
+            val functionId = "oob_guard_finished_marker"
+
+            val register = toolkit.registerFunction(
+                mapOf(
+                    "function_id" to functionId,
+                    "name" to "Terminal marker",
+                    "description" to "Verify that terminal markers are not blocked by page XML.",
+                    "execution" to mapOf(
+                        "kind" to "tool_sequence",
+                        "runner" to "oob_tool_sequence",
+                        "entrypoint" to "execute",
+                        "capabilities" to mapOf(
+                            "scriptable_step_count" to 1,
+                            "model_free_step_count" to 1,
+                            "omniflow_step_count" to 1,
+                            "agent_step_count" to 0,
+                            "requires_agent_fallback" to false,
+                        ),
+                        "steps" to listOf(
+                            mapOf(
+                                "id" to "step_1",
+                                "index" to 0,
+                                "title" to "Task completed",
+                                "kind" to "omniflow_action",
+                                "executor" to "omniflow",
+                                "omniflow_action" to "finished",
+                                "local_action" to "finished",
+                                "tool" to "finished",
+                                "callable_tool" to "finished",
+                                "model_free" to true,
+                                "scriptable" to true,
+                                "args" to mapOf("content" to "Done"),
+                                "source_context" to mapOf(
+                                    "src_ctx" to mapOf(
+                                        "page" to "<hierarchy><node text=\"Fastboot and reboot settings\" /></hierarchy>"
+                                    )
+                                ),
+                            )
+                        ),
+                        "step_count" to 1,
+                        "omniflow_step_count" to 1,
+                        "agent_step_count" to 0,
+                        "requires_agent_fallback" to false,
+                    ),
+                )
+            )
+            assertEquals(true, register["success"])
+
+            val guard = toolkit.guardCheck(mapOf("function_id" to functionId))
+            assertEquals(true, guard["success"])
+            assertEquals("allow", guard["decision"])
+            assertEquals(false, guard["requires_root"])
+            val stepDecisions = guard["step_decisions"] as? List<*>
+            val step = stepDecisions?.single() as? Map<*, *>
+            assertEquals("allow", step?.get("decision"))
+            assertEquals("low", step?.get("risk_level"))
+
+            val call = toolkit.callFunction(mapOf("function_id" to functionId))
+            assertEquals(true, call["success"])
+            assertEquals(false, call["fallback"])
+            assertEquals(1, (call["actions_executed"] as Number).toInt())
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
     private class TempFilesContext : ContextWrapper(null) {
         val root: File = Files.createTempDirectory("oob-omniflow-loop-test").toFile()
         private val prefsByName = linkedMapOf<String, InMemorySharedPreferences>()

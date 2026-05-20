@@ -70,6 +70,40 @@ class ActionTargetGrounderTest {
         assertEquals(1240f, grounded.y, 0.01f)
     }
 
+    @Test
+    fun `prefers direct text node over large scroll container`() {
+        val action = ClickAction(
+            targetDescription = "Network & internet option",
+            x = 219f,
+            y = 800f,
+        )
+
+        val result = ActionTargetGrounder.ground(action, SETTINGS_XML)
+
+        assertTrue(result.applied)
+        val grounded = result.action as ClickAction
+        assertEquals(309.5f, grounded.x, 0.01f)
+        assertEquals(606f, grounded.y, 0.01f)
+        assertTrue(result.targetLabel.contains("Network"))
+    }
+
+    @Test
+    fun `high confidence direct text match can beat nearby unrelated text`() {
+        val action = ClickAction(
+            targetDescription = "Apps setting option",
+            x = 207f,
+            y = 1249f,
+        )
+
+        val result = ActionTargetGrounder.ground(action, SETTINGS_XML)
+
+        assertTrue(result.applied)
+        val grounded = result.action as ClickAction
+        assertEquals(189.5f, grounded.x, 0.01f)
+        assertEquals(958f, grounded.y, 0.01f)
+        assertTrue(result.targetLabel.contains("Apps"))
+    }
+
     companion object {
         private const val SAMPLE_XML =
             """
@@ -90,6 +124,22 @@ class ActionTargetGrounderTest {
                   <node text="确认支付" bounds="[620,1210][820,1270]" clickable="false" enabled="true" class="android.widget.TextView"/>
                 </node>
                 <node text="取消" bounds="[160,1180][480,1300]" clickable="true" enabled="true" class="android.widget.Button"/>
+              </node>
+            </hierarchy>
+            """
+
+        private const val SETTINGS_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][720,1280]" class="android.widget.FrameLayout" enabled="true">
+                <node bounds="[0,537][720,1232]" class="android.widget.ScrollView" scrollable="true" focusable="true" enabled="true">
+                  <node text="Network &amp; internet" bounds="[144,579][475,633]" clickable="false" enabled="true" class="android.widget.TextView"/>
+                  <node text="Mobile, Wi-Fi, hotspot" bounds="[144,633][412,671]" clickable="false" enabled="true" class="android.widget.TextView"/>
+                  <node text="Connected devices" bounds="[144,755][482,809]" clickable="false" enabled="true" class="android.widget.TextView"/>
+                  <node text="Bluetooth, pairing" bounds="[144,809][361,847]" clickable="false" enabled="true" class="android.widget.TextView"/>
+                  <node text="Apps" bounds="[144,931][235,985]" clickable="false" enabled="true" class="android.widget.TextView"/>
+                  <node text="Notifications" bounds="[144,1107][373,1161]" clickable="false" enabled="true" class="android.widget.TextView"/>
+                </node>
               </node>
             </hierarchy>
             """

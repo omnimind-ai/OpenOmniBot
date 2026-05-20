@@ -67,6 +67,25 @@ class SkillRuntimeBehaviorTest {
     }
 
     @Test
+    fun resolveMatchesVlmAndroidGuiRequests() {
+        val matches = SkillTriggerMatcher.resolveMatches(
+            userMessage = "继续，看看有没有开源 skills，加载 vlm 的 skills，跑 AndroidWorld 长任务",
+            entries = listOf(
+                entry(
+                    id = "find-install-skills",
+                    description = "Find and install relevant Omnibot skills. Use when the user asks \"找个 skill\", \"有没有这个功能的 skill\", \"find a skill for X\", \"is there a skill for X\", or wants to extend the agent with an installable workflow."
+                ),
+                entry(
+                    id = "vlm-android-gui",
+                    description = "Use for VLM/Android GUI automation, AndroidWorld-style phone tasks, 小万视觉执行, vlm_task, OmniFlow replay, call_tool, Function conversion, and RunLog validation. Prefer when the user asks for long phone tasks, screen automation, visual grounding, or reusable Android actions."
+                )
+            )
+        )
+
+        assertTrue(matches.any { it.entry.id == "vlm-android-gui" })
+    }
+
+    @Test
     fun resolveMatchesProjectCreationRequestsToOobProjectSkill() {
         val matches = SkillTriggerMatcher.resolveMatches(
             userMessage = "帮我做一个健身打卡 tracker",

@@ -239,6 +239,7 @@ class VLMOperationService(
         var context = contextManager.initializeContext(
             overallTask = goal,
             installedApplications = installedApps,
+            targetPackageName = packageName.orEmpty(),
             maxSteps = normalizedMaxSteps,
             currentStepGoal = currentStepGoal,
             stepSkillGuidance = stepSkillGuidance
@@ -616,6 +617,12 @@ class VLMOperationService(
                 safePauseCheck("after_screenshot_$stabilityAttempt")
                 val beforeXml = captureCurrentXml()
                 safePauseCheck("after_capture_xml_$stabilityAttempt")
+                _context = VLMFirstStepOptimizer.enrichContext(
+                    context = _context,
+                    currentXml = beforeXml,
+                    currentPackageName = AccessibilityController.Companion.getPackageName(),
+                    stepIndex = stepIndex
+                )
 
                 // Note: Compactor 已移至 executeTask 主循环，在超时计时之外执行
 
@@ -1078,6 +1085,14 @@ class VLMOperationService(
                 val absoluteY1 = toScreenCoord(rawY1, encodedHeight, scaleY, displayHeight)
                 val absoluteX2 = toScreenCoord(rawX2, encodedWidth, scaleX, displayWidth)
                 val absoluteY2 = toScreenCoord(rawY2, encodedHeight, scaleY, displayHeight)
+                val safeScroll = sanitizeScrollGestureCoordinates(
+                    x1 = absoluteX1,
+                    y1 = absoluteY1,
+                    x2 = absoluteX2,
+                    y2 = absoluteY2,
+                    displayWidth = displayWidth,
+                    displayHeight = displayHeight
+                )
                 OmniLog.d(
                     Tag,
                     "Coord mapping(scroll): raw=($rawX1, $rawY1, $rawX2, $rawY2) type=(${
@@ -1095,13 +1110,13 @@ class VLMOperationService(
                             rawY2,
                             encodedHeight
                         )
-                    }), encoded=${encodedWidth}x${encodedHeight}, mapped=($absoluteX1, $absoluteY1, $absoluteX2, $absoluteY2), display=${displayWidth}x${displayHeight}"
+                    }), encoded=${encodedWidth}x${encodedHeight}, mapped=($absoluteX1, $absoluteY1, $absoluteX2, $absoluteY2), safe=(${safeScroll.x1}, ${safeScroll.y1}, ${safeScroll.x2}, ${safeScroll.y2}, adjusted=${safeScroll.adjusted}), display=${displayWidth}x${displayHeight}"
                 )
                 action.copy(
-                    x1 = absoluteX1.toFloat(),
-                    y1 = absoluteY1.toFloat(),
-                    x2 = absoluteX2.toFloat(),
-                    y2 = absoluteY2.toFloat()
+                    x1 = safeScroll.x1.toFloat(),
+                    y1 = safeScroll.y1.toFloat(),
+                    x2 = safeScroll.x2.toFloat(),
+                    y2 = safeScroll.y2.toFloat()
                 )
             }
 
@@ -1321,3 +1336,42 @@ data class TaskExecutionReport(
     val feedback: String? = null,
     val doneReason: String? = null
 )
+
+internal data class SafeScrollCoordinates(
+    val x1: Int,
+    val y1: Int,
+    val x2: Int,
+    val y2: Int,
+    val adjusted: Boolean
+)
+
+internal fun sanitizeScrollGestureCoordinates(
+    x1: Int,
+    y1: Int,
+    x2: Int,
+    y2: Int,
+    displayWidth: Int,
+    displayHeight: Int
+): SafeScrollCoordinates {
+    val width = displayWidth.coerceAtLeast(1)
+    val height = displayHeight.coerceAtLeast(1)
+    val horizontalInset = (width * 0.025f).roundToInt().coerceIn(8, 32)
+    val topInset = (height * 0.04f).roundToInt().coerceAtLeast(48)
+    val bottomInset = (height * 0.08f).roundToInt().coerceAtLeast(96)
+    val minX = horizontalInset.coerceAtMost(width - 1)
+    val maxX = (width - horizontalInset).coerceAtLeast(minX)
+    val minY = topInset.coerceAtMost(height - 1)
+    val maxY = (height - bottomInset).coerceAtLeast(minY)
+
+    val safeX1 = x1.coerceIn(minX, maxX)
+    val safeY1 = y1.coerceIn(minY, maxY)
+    val safeX2 = x2.coerceIn(minX, maxX)
+    val safeY2 = y2.coerceIn(minY, maxY)
+    return SafeScrollCoordinates(
+        x1 = safeX1,
+        y1 = safeY1,
+        x2 = safeX2,
+        y2 = safeY2,
+        adjusted = safeX1 != x1 || safeY1 != y1 || safeX2 != x2 || safeY2 != y2
+    )
+}

@@ -68,6 +68,11 @@ object ActionTargetGrounder {
                 .filter { it.isNotBlank() }
                 .joinToString(" ")
 
+        val directLabel: String
+            get() = listOf(text, contentDesc, hintText, resourceTail())
+                .filter { it.isNotBlank() }
+                .joinToString(" ")
+
         private fun resourceTail(): String =
             resourceId.substringAfterLast('/').substringAfterLast(':')
 
@@ -112,24 +117,53 @@ object ActionTargetGrounder {
         nodes: List<Node>,
         copyAction: (Float, Float) -> UIAction,
     ): Result {
-        val candidates = nodes
+        val maxArea = maxPageArea(nodes)
+        val semanticDirectCandidates = nodes
             .asSequence()
-            .filter { it.actionable }
+            .filter { it.enabled }
             .filter { it.bounds.area >= MIN_TARGET_AREA }
-            .filter { it.bounds.area <= maxPageArea(nodes) * MAX_TARGET_AREA_RATIO }
+            .filter { it.bounds.area <= maxArea * MAX_TARGET_AREA_RATIO }
             .map { node ->
-                val textScore = textSimilarity(targetDescription, node.label)
-                val proximity = proximityScore(x, y, node.bounds, nodes)
-                val contains = node.bounds.contains(x, y)
-                val confidence = (textScore * 0.72) + (proximity * 0.28) + if (contains) 0.08 else 0.0
-                Candidate(node, confidence.coerceAtMost(1.0), textScore, proximity, contains)
+                buildCandidate(
+                    targetDescription = targetDescription,
+                    x = x,
+                    y = y,
+                    node = node,
+                    nodes = nodes,
+                )
             }
+            .filter { it.directTextScore >= MIN_TEXT_MATCH }
+            .toList()
+
+        val candidateSource = semanticDirectCandidates.ifEmpty {
+            nodes
+                .asSequence()
+                .filter { it.actionable }
+                .filter { it.bounds.area >= MIN_TARGET_AREA }
+                .filter { it.bounds.area <= maxArea * MAX_TARGET_AREA_RATIO }
+                .map { node ->
+                    buildCandidate(
+                        targetDescription = targetDescription,
+                        x = x,
+                        y = y,
+                        node = node,
+                        nodes = nodes,
+                    )
+                }
+                .toList()
+        }
+
+        val directMode = semanticDirectCandidates.isNotEmpty()
+        val candidates = candidateSource
             .filter { candidate ->
-                (candidate.contains && candidate.textScore >= MIN_CONTAINED_TEXT_MATCH) ||
+                (directMode && candidate.directTextScore >= HIGH_DIRECT_TEXT_MATCH) ||
+                    (directMode && candidate.directTextScore >= MIN_TEXT_MATCH && candidate.proximity >= MIN_PROXIMITY) ||
+                    (candidate.contains && candidate.textScore >= MIN_CONTAINED_TEXT_MATCH) ||
                     (candidate.textScore >= MIN_TEXT_MATCH && candidate.proximity >= MIN_PROXIMITY)
             }
             .sortedWith(
-                compareByDescending<Candidate> { it.confidence }
+                compareByDescending<Candidate> { it.directTextScore }
+                    .thenByDescending { it.confidence }
                     .thenByDescending { it.textScore }
                     .thenBy { it.node.bounds.area }
             )
@@ -181,9 +215,35 @@ object ActionTargetGrounder {
         val node: Node,
         val confidence: Double,
         val textScore: Double,
+        val directTextScore: Double,
         val proximity: Double,
         val contains: Boolean,
     )
+
+    private fun buildCandidate(
+        targetDescription: String,
+        x: Float,
+        y: Float,
+        node: Node,
+        nodes: List<Node>,
+    ): Candidate {
+        val textScore = textSimilarity(targetDescription, node.label)
+        val directTextScore = textSimilarity(targetDescription, node.directLabel)
+        val proximity = proximityScore(x, y, node.bounds, nodes)
+        val contains = node.bounds.contains(x, y)
+        val confidence = (textScore * 0.56) +
+            (directTextScore * 0.28) +
+            (proximity * 0.16) +
+            if (contains) 0.05 else 0.0
+        return Candidate(
+            node = node,
+            confidence = confidence.coerceAtMost(1.0),
+            textScore = textScore,
+            directTextScore = directTextScore,
+            proximity = proximity,
+            contains = contains,
+        )
+    }
 
     private fun parseNodes(xml: String): List<Node> {
         val document = runCatching {
@@ -272,7 +332,12 @@ object ActionTargetGrounder {
             0.0
         }
         val charScore = characterOverlap(target, label)
-        return max(tokenScore, charScore)
+        val weightedCharScore = if (targetTokens.isNotEmpty() && labelTokens.isNotEmpty()) {
+            charScore * 0.65
+        } else {
+            charScore
+        }
+        return max(tokenScore, weightedCharScore)
     }
 
     private fun normalizeText(value: String): String =
@@ -327,6 +392,7 @@ object ActionTargetGrounder {
     private const val MAX_TARGET_AREA_RATIO = 0.55f
     private const val MIN_CONTAINED_TEXT_MATCH = 0.32
     private const val MIN_TEXT_MATCH = 0.42
+    private const val HIGH_DIRECT_TEXT_MATCH = 0.88
     private const val MIN_PROXIMITY = 0.08
     private const val MIN_CONFIDENCE = 0.56
     private const val MIN_NUDGE_DISTANCE = 2.5
