@@ -95,3 +95,6 @@ python3 benchmarks/project_artifact/run_benchmark.py --candidate-root <candidate
 Use the metric failures as repair guidance. The primary metric is
 `case_resolved`; supporting metrics identify contract, runtime, export,
 regression, and safety failures.
+
+If a run fails, read `references/checker-guide.md` and repair the candidate by
+metric. Do not edit benchmark cases or oracle files to make a candidate pass.

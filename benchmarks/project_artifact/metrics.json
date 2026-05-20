@@ -10,27 +10,27 @@
     {
       "id": "adapter_contract_valid",
       "dimension": "adapter",
-      "description": "The candidate satisfies the active adapter's artifact contract. This is reserved for adapter plugin implementations."
+      "description": "The candidate satisfies the active adapter's artifact contract, including metadata, APIs, schemas, docs, and runtime binding references."
     },
     {
       "id": "runtime_execution_pass",
       "dimension": "runtime",
-      "description": "The candidate can execute adapter-defined runtime actions and produce expected state changes. This is reserved for runtime checker plugins."
+      "description": "The candidate can execute or simulate adapter-defined runtime actions and produce expected state changes."
     },
     {
       "id": "ui_interaction_pass",
       "dimension": "ui",
-      "description": "The candidate UI can be interacted with through browser/app automation and reflects expected state changes. This is reserved for UI checker plugins."
+      "description": "The candidate UI is wired for interaction through the adapter runtime bridge and passes available UI/script checks."
     },
     {
       "id": "export_roundtrip_pass",
       "dimension": "export_migration",
-      "description": "The candidate can export and re-import without losing contract/runtime validity. This is reserved for export checker plugins."
+      "description": "The candidate export or migration metadata is structurally valid and ready for adapter roundtrip checks."
     },
     {
       "id": "collateral_damage_free",
       "dimension": "safety",
-      "description": "The candidate does not modify forbidden files or unrelated artifacts. This is reserved for repository-level safety checkers."
+      "description": "The candidate does not include forbidden paths, secret-looking content, escaping symlinks, or unrelated unsafe artifacts."
     },
     {
       "id": "case_ready",

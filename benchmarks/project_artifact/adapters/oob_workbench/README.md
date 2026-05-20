@@ -53,7 +53,22 @@ OOB Workbench checks include:
 - Safety cases do not create `.github/**`, `AGENTS.md`, keystores, `.env`, or
   signing files.
 
-## Planned Checker Layers
+## Current Checker Layers
+
+The runner currently checks:
+
+- static required files, API ids, JSON values, forbidden paths, and forbidden
+  substrings
+- `project.json` contract shape, API id format, duplicate ids, schemas, and
+  `run.use` values
+- HTML calls only registered APIs
+- agent APIs declare capabilities
+- native collection runtime smoke for create/update/archive/list/get
+- HTML/UI smoke for runtime bridge, stable ids, containers, and inline JS syntax
+- export manifest structure and canonical `oob-project` metadata
+- candidate-root safety scanning for credentials and escaping symlinks
+
+## Planned Stronger Layers
 
 The next adapter implementation should add:
 

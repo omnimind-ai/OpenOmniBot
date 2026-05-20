@@ -14,9 +14,11 @@ An adapter should define:
 - Export checker: package/import/manifest checks when applicable.
 - Safety checker: forbidden paths, forbidden strings, and collateral damage.
 
-The runner currently implements the shared static checks and the
-`oob_workbench` builder baseline. Runtime/UI/export checker plugins are the next
-layer.
+The runner currently implements shared static checks plus a phase-one
+`oob_workbench` detector for contract validity, native runtime smoke, HTML/UI
+smoke, structural export checks, and collateral-damage scanning. Stronger
+runtime/UI/export plugins can replace or extend those checks while preserving
+the same metric contract.
 
 ## Candidate Directory Contract
 

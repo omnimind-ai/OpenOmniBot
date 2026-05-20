@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import re
+import shutil
 import subprocess
 import sys
 import time
@@ -25,6 +27,29 @@ ADAPTER_BUILDERS = {
     ),
 }
 TEXT_SUFFIXES = {".css", ".html", ".js", ".json", ".md", ".txt"}
+OOB_RETIRED_IDS = {
+    "oob-project-distiller",
+    "oob-project-designer",
+    "oob-native-workbench",
+}
+OOB_ALLOWED_RUN_PREFIXES = (
+    "native.collection.",
+    "agent",
+    "script",
+    "oob.",
+    "mcp.",
+)
+SECRET_PATTERNS = [
+    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"), "private key block"),
+    (
+        re.compile(
+            r"(?i)\b(api[_-]?key|secret|token|password|passwd|pwd)\b\s*[:=]\s*"
+            r"['\"][^'\"]{8,}['\"]"
+        ),
+        "secret-looking assignment",
+    ),
+    (re.compile(r"\bOMNI_RELEASE_(STORE|KEY)_(PWD|ALIAS|FILE)\b"), "release signing variable"),
+]
 REQUIRED_CASE_KEYS = {
     "schema_version",
     "id",
@@ -91,10 +116,14 @@ def project_apis(project: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def api_id(api: dict[str, Any]) -> str:
+    return str(api.get("toolId") or api.get("apiId") or "")
+
+
 def api_ids(project: dict[str, Any]) -> set[str]:
     ids: set[str] = set()
     for api in project_apis(project):
-        raw = api.get("toolId") or api.get("apiId")
+        raw = api_id(api)
         if raw:
             ids.add(str(raw))
     return ids
@@ -120,12 +149,35 @@ def read_candidate_html(candidate_dir: Path) -> str:
     return "\n".join(chunks)
 
 
+def read_candidate_html_files(candidate_dir: Path) -> dict[str, str]:
+    html_dir = candidate_dir / "frontend/html"
+    files = {}
+    if html_dir.is_dir():
+        for path in sorted(html_dir.rglob("*.html")):
+            rel = path.relative_to(candidate_dir).as_posix()
+            files[rel] = path.read_text(encoding="utf-8", errors="ignore")
+    return files
+
+
 def find_project_json(candidate_dir: Path) -> Path | None:
     direct = candidate_dir / "project.json"
     if direct.is_file():
         return direct
     matches = sorted(candidate_dir.rglob("project.json"))
     return matches[0] if matches else None
+
+
+def load_candidate_project(candidate_dir: Path) -> tuple[dict[str, Any] | None, list[str]]:
+    project_json_path = find_project_json(candidate_dir)
+    if not project_json_path:
+        return None, ["project.json missing"]
+    try:
+        project = load_json(project_json_path)
+    except Exception as exc:  # noqa: BLE001
+        return None, [f"project.json is not valid JSON: {exc}"]
+    if not isinstance(project, dict):
+        return None, ["project.json must be a JSON object"]
+    return project, []
 
 
 def json_pointer(data: Any, pointer: str) -> Any:
@@ -160,6 +212,360 @@ def forbidden_path_hits(root: Path, patterns: list[str]) -> list[str]:
                 hits.append(rel)
                 break
     return sorted(hits)
+
+
+def extract_call_api_ids(html: str) -> set[str]:
+    return set(re.findall(r"""callApi\s*\(\s*['"]([^'"]+)['"]""", html))
+
+
+def run_use(api: dict[str, Any]) -> str:
+    run = api.get("run", {})
+    return str(run.get("use", "")) if isinstance(run, dict) else ""
+
+
+def schema_properties(schema: Any) -> dict[str, Any]:
+    if not isinstance(schema, dict):
+        return {}
+    props = schema.get("properties", {})
+    return props if isinstance(props, dict) else {}
+
+
+def sample_value_for_schema(name: str, schema: Any) -> Any:
+    if not isinstance(schema, dict):
+        return f"sample-{name}"
+    schema_type = schema.get("type")
+    if schema.get("format") == "date":
+        return "2026-01-01"
+    if schema_type == "number":
+        return 1.0
+    if schema_type == "integer":
+        return 1
+    if schema_type == "boolean":
+        return True
+    if schema_type == "array":
+        return []
+    if schema_type == "object":
+        return {}
+    return f"sample-{name}"
+
+
+def sample_inputs(input_schema: Any, item_id: str | None = None) -> dict[str, Any]:
+    props = schema_properties(input_schema)
+    inputs = {}
+    for name, prop_schema in props.items():
+        if name in {"item_id", "itemId", "id"} and item_id:
+            inputs[name] = item_id
+        else:
+            inputs[name] = sample_value_for_schema(name, prop_schema)
+    if item_id and not any(name in inputs for name in ("item_id", "itemId", "id")):
+        inputs["item_id"] = item_id
+    return inputs
+
+
+def validate_oob_contract(
+    case: dict[str, Any],
+    candidate_dir: Path,
+    project: dict[str, Any] | None,
+    project_failures: list[str],
+    html: str,
+) -> tuple[list[str], bool]:
+    static = case.get("oracle", {}).get("static", {})
+    applicable = bool(
+        project
+        or static.get("required_api_ids")
+        or "project.json" in static.get("required_files", [])
+    )
+    if not applicable:
+        return [], False
+
+    failures = [f"contract: {failure}" for failure in project_failures]
+    if project is None:
+        return failures, True
+
+    if not str(project.get("projectId") or project.get("id") or "").strip():
+        failures.append("contract: project id is missing")
+    if not str(project.get("name") or "").strip():
+        failures.append("contract: project name is missing")
+
+    apis = project_apis(project)
+    if not apis:
+        failures.append("contract: no APIs/tools registered")
+
+    seen = set()
+    duplicate_ids = []
+    for api in apis:
+        current_id = api_id(api)
+        if not current_id:
+            failures.append("contract: API entry missing toolId/apiId")
+            continue
+        if current_id in seen:
+            duplicate_ids.append(current_id)
+        seen.add(current_id)
+        if not re.match(r"^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*$", current_id):
+            failures.append(f"contract: API id is not '<entity>.<verb>': {current_id}")
+
+        use = run_use(api)
+        if not use:
+            failures.append(f"contract: API {current_id} missing run.use")
+        elif not use.startswith(OOB_ALLOWED_RUN_PREFIXES):
+            failures.append(f"contract: API {current_id} has unsupported run.use={use!r}")
+
+        input_schema = api.get("inputSchema")
+        if input_schema is not None and not isinstance(input_schema, dict):
+            failures.append(f"contract: API {current_id} inputSchema must be an object")
+        elif isinstance(input_schema, dict) and input_schema.get("type", "object") != "object":
+            failures.append(f"contract: API {current_id} inputSchema.type must be object")
+
+        output_schema = api.get("outputSchema")
+        if output_schema is not None and not isinstance(output_schema, dict):
+            failures.append(f"contract: API {current_id} outputSchema must be an object")
+
+        if use == "agent":
+            run = api.get("run", {})
+            capabilities = run.get("capabilities", []) if isinstance(run, dict) else []
+            if not isinstance(capabilities, list) or not any(str(cap).strip() for cap in capabilities):
+                failures.append(f"contract: agent API {current_id} must declare capabilities")
+
+    if duplicate_ids:
+        failures.append(f"contract: duplicate API ids: {sorted(duplicate_ids)}")
+
+    called_ids = extract_call_api_ids(html)
+    unregistered = sorted(called_ids - api_ids(project))
+    if unregistered:
+        failures.append(f"contract: HTML calls unregistered APIs: {unregistered}")
+
+    docs_required = static.get("required_docs", [])
+    for doc_name in docs_required:
+        doc_path = candidate_dir / doc_name
+        if not doc_path.is_file():
+            failures.append(f"contract: required doc missing: {doc_name}")
+            continue
+        text = doc_path.read_text(encoding="utf-8", errors="ignore")
+        if len(text.strip()) < 40:
+            failures.append(f"contract: required doc is too small to be useful: {doc_name}")
+
+    return failures, True
+
+
+def validate_oob_runtime_smoke(
+    project: dict[str, Any] | None,
+    project_failures: list[str],
+) -> tuple[list[str], bool]:
+    if project is None:
+        return [f"runtime: {failure}" for failure in project_failures], bool(project_failures)
+
+    native_apis = [
+        api for api in project_apis(project)
+        if run_use(api).startswith("native.collection.")
+    ]
+    if not native_apis:
+        return [], False
+
+    failures = []
+    items: list[dict[str, Any]] = []
+    next_id = 1
+
+    def ensure_item() -> str:
+        nonlocal next_id
+        if not items:
+            item = {
+                "id": f"item-{next_id}",
+                "title": "seed item",
+                "status": "active",
+                "fields": {},
+            }
+            next_id += 1
+            items.insert(0, item)
+        return str(items[0]["id"])
+
+    for api in native_apis:
+        current_id = api_id(api) or "<unknown>"
+        use = run_use(api)
+        inputs = sample_inputs(api.get("inputSchema", {}), item_id=ensure_item())
+        action = use.removeprefix("native.collection.")
+        try:
+            if action == "create":
+                props = schema_properties(api.get("inputSchema", {}))
+                create_inputs = sample_inputs(api.get("inputSchema", {}))
+                title = str(create_inputs.get("title") or create_inputs.get("name") or current_id)
+                item = {
+                    "id": f"item-{next_id}",
+                    "title": title,
+                    "status": "active",
+                    "fields": {
+                        key: value
+                        for key, value in create_inputs.items()
+                        if key not in {"title", "name", "label", "item_id", "itemId", "id"}
+                    },
+                }
+                next_id += 1
+                items.insert(0, item)
+                if props and not item["title"]:
+                    failures.append(f"runtime: {current_id} did not produce a title/name")
+            elif action == "update":
+                item_id = inputs.get("item_id") or inputs.get("itemId") or inputs.get("id")
+                target = next((item for item in items if item["id"] == item_id), None)
+                if target is None:
+                    failures.append(f"runtime: {current_id} cannot update missing item_id={item_id}")
+                    continue
+                for key, value in inputs.items():
+                    if key in {"item_id", "itemId", "id"}:
+                        continue
+                    if key == "title":
+                        target["title"] = str(value)
+                    else:
+                        target.setdefault("fields", {})[key] = value
+            elif action == "archive":
+                item_id = inputs.get("item_id") or inputs.get("itemId") or inputs.get("id")
+                target = next((item for item in items if item["id"] == item_id), None)
+                if target is None:
+                    failures.append(f"runtime: {current_id} cannot archive missing item_id={item_id}")
+                    continue
+                target["status"] = "archived"
+            elif action == "list":
+                list(items)
+            elif action == "get":
+                item_id = inputs.get("item_id") or inputs.get("itemId") or inputs.get("id")
+                if item_id and not any(item["id"] == item_id for item in items):
+                    failures.append(f"runtime: {current_id} cannot get missing item_id={item_id}")
+            else:
+                failures.append(f"runtime: unsupported native collection action {action!r} in {current_id}")
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"runtime: smoke execution failed for {current_id}: {exc}")
+
+    return failures, True
+
+
+def validate_oob_ui_smoke(
+    candidate_dir: Path,
+    project: dict[str, Any] | None,
+    html_files: dict[str, str],
+) -> tuple[list[str], bool]:
+    if not html_files:
+        return [], False
+
+    failures = []
+    html = "\n".join(html_files.values())
+    if not re.search(r"<body\b", html, flags=re.IGNORECASE):
+        failures.append("ui: no <body> element found")
+    if not re.search(r"<(main|section|div)\b", html, flags=re.IGNORECASE):
+        failures.append("ui: no visible layout container found")
+    if "data-oob-id=" not in html:
+        failures.append("ui: no stable data-oob-id attributes found")
+    if "window.oob.getProject" not in html:
+        failures.append("ui: window.oob.getProject is not used")
+    if "window.oob.onProjectUpdated" not in html:
+        failures.append("ui: window.oob.onProjectUpdated is not registered")
+
+    called_ids = extract_call_api_ids(html)
+    if project is not None and called_ids:
+        missing_buttons = []
+        for called_id in called_ids:
+            stable_id = called_id.replace(".", "-")
+            if stable_id not in html and called_id not in html:
+                missing_buttons.append(called_id)
+        if missing_buttons:
+            failures.append(f"ui: called APIs lack recognizable control ids: {missing_buttons}")
+
+    node = shutil.which("node")
+    if node:
+        for rel, content in html_files.items():
+            for index, match in enumerate(
+                re.finditer(r"(<script[^>]*>)([\s\S]*?)</script>", content, re.IGNORECASE)
+            ):
+                tag = match.group(1)
+                script = match.group(2)
+                if "type=\"module\"" in tag or "type='module'" in tag or not script.strip():
+                    continue
+                result = subprocess.run(
+                    [node, "-e", f"new Function({json.dumps(script)});"],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(candidate_dir),
+                )
+                if result.returncode != 0:
+                    detail = result.stderr.strip() or result.stdout.strip()
+                    failures.append(f"ui: inline script {rel}#{index} has syntax error: {detail}")
+
+    return failures, True
+
+
+def validate_oob_export_smoke(
+    case: dict[str, Any],
+    candidate_dir: Path,
+) -> tuple[list[str], bool]:
+    static = case.get("oracle", {}).get("static", {})
+    manifest_path = candidate_dir / "export_manifest.json"
+    applicable = (
+        case.get("category") in {"export", "migration"}
+        or manifest_path.is_file()
+        or bool(static.get("required_json_values"))
+    )
+    if not applicable:
+        return [], False
+    if not manifest_path.is_file():
+        return ["export: export_manifest.json missing"], True
+
+    try:
+        manifest = load_json(manifest_path)
+    except Exception as exc:  # noqa: BLE001
+        return [f"export: export_manifest.json is not valid JSON: {exc}"], True
+    if not isinstance(manifest, dict):
+        return ["export: export_manifest.json must be an object"], True
+
+    failures = []
+    text = json.dumps(manifest, ensure_ascii=False)
+    retired = sorted(retired_id for retired_id in OOB_RETIRED_IDS if retired_id in text)
+    if retired:
+        failures.append(f"export: retired OOB skill ids present: {retired}")
+
+    source = manifest.get("source")
+    if source is not None and source != "oob-project":
+        failures.append(f"export: expected source 'oob-project', got {source!r}")
+
+    skills = manifest.get("skills")
+    if skills is not None:
+        if not isinstance(skills, list) or not skills:
+            failures.append("export: skills must be a non-empty list when present")
+        else:
+            first = skills[0] if isinstance(skills[0], dict) else {}
+            if first.get("skillId") != "oob-project":
+                failures.append(f"export: first skillId must be oob-project, got {first.get('skillId')!r}")
+            if first.get("path") != "skills/oob-project/SKILL.md":
+                failures.append(f"export: first skill path is not canonical: {first.get('path')!r}")
+
+    entries = manifest.get("entries", [])
+    if isinstance(entries, list):
+        missing_entries = []
+        for entry in entries:
+            if not isinstance(entry, str) or entry.startswith("skills/"):
+                continue
+            if not (candidate_dir / entry).exists():
+                missing_entries.append(entry)
+        if missing_entries:
+            failures.append(f"export: manifest entries missing from candidate: {missing_entries}")
+
+    return failures, True
+
+
+def validate_collateral_safety(candidate_dir: Path) -> tuple[list[str], bool]:
+    failures = []
+    for path in candidate_dir.rglob("*"):
+        rel = path.relative_to(candidate_dir).as_posix()
+        if path.is_symlink():
+            try:
+                target = path.resolve()
+            except OSError:
+                target = None
+            if target is None or candidate_dir.resolve() not in target.parents:
+                failures.append(f"safety: symlink escapes candidate root: {rel}")
+        if path.is_file() and path.suffix.lower() in TEXT_SUFFIXES:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            for pattern, label in SECRET_PATTERNS:
+                if pattern.search(text):
+                    failures.append(f"safety: {label} found in {rel}")
+                    break
+    return failures, True
 
 
 def validate_case_schema(case_file: Path, case: dict[str, Any]) -> list[str]:
@@ -387,6 +793,10 @@ def validate_candidate(
 
     failures = []
     static = case.get("oracle", {}).get("static", {})
+    adapter = adapter_for_case(case)
+    project, project_failures = load_candidate_project(candidate_dir)
+    html_files = read_candidate_html_files(candidate_dir)
+    html = "\n".join(html_files.values())
     metric_failures: dict[str, list[str]] = {
         "candidate_required_files_present": [],
         "candidate_required_api_ids_present": [],
@@ -394,6 +804,11 @@ def validate_candidate(
         "candidate_required_json_values_match": [],
         "candidate_forbidden_paths_absent": [],
         "candidate_forbidden_substrings_absent": [],
+        "adapter_contract_valid": [],
+        "runtime_execution_pass": [],
+        "ui_interaction_pass": [],
+        "export_roundtrip_pass": [],
+        "collateral_damage_free": [],
     }
     for rel in static.get("required_files", []):
         if not (candidate_dir / rel).is_file():
@@ -419,22 +834,19 @@ def validate_candidate(
             f"forbidden substrings present: {sorted(forbidden_substrings)}"
         )
 
-    project_json_path = find_project_json(candidate_dir)
     required_api_ids = static.get("required_api_ids", [])
     if required_api_ids:
-        if not project_json_path:
+        if project is None:
             metric_failures["candidate_required_api_ids_present"].append(
-                "project.json missing for API checks"
+                "project.json missing or invalid for API checks"
             )
         else:
-            project = load_json(project_json_path)
             missing_apis = sorted(set(required_api_ids) - api_ids(project))
             if missing_apis:
                 metric_failures["candidate_required_api_ids_present"].append(
                     f"missing API ids: {missing_apis}"
                 )
 
-    html = read_candidate_html(candidate_dir)
     for substring in static.get("required_html_substrings", []):
         if substring not in html:
             metric_failures["candidate_required_html_bindings_present"].append(
@@ -462,6 +874,39 @@ def validate_candidate(
             metric_failures["candidate_required_json_values_match"].append(
                 f"{rel}{pointer} = {actual!r}, expected {expected!r}"
             )
+
+    contract_applicable = False
+    runtime_applicable = False
+    ui_applicable = False
+    export_applicable = False
+    safety_applicable = False
+    if adapter == "oob_workbench":
+        contract_failures, contract_applicable = validate_oob_contract(
+            case,
+            candidate_dir,
+            project,
+            project_failures,
+            html,
+        )
+        metric_failures["adapter_contract_valid"].extend(contract_failures)
+
+        if contract_applicable or project is not None:
+            runtime_failures, runtime_applicable = validate_oob_runtime_smoke(
+                project,
+                project_failures,
+            )
+        else:
+            runtime_failures, runtime_applicable = [], False
+        metric_failures["runtime_execution_pass"].extend(runtime_failures)
+
+        ui_failures, ui_applicable = validate_oob_ui_smoke(candidate_dir, project, html_files)
+        metric_failures["ui_interaction_pass"].extend(ui_failures)
+
+        export_failures, export_applicable = validate_oob_export_smoke(case, candidate_dir)
+        metric_failures["export_roundtrip_pass"].extend(export_failures)
+
+        safety_failures, safety_applicable = validate_collateral_safety(candidate_dir)
+        metric_failures["collateral_damage_free"].extend(safety_failures)
 
     for items in metric_failures.values():
         failures.extend(items)
@@ -491,6 +936,26 @@ def validate_candidate(
         "candidate_forbidden_substrings_absent": metric_from_failures(
             metric_failures["candidate_forbidden_substrings_absent"],
             applicable=bool(static.get("forbidden_substrings")),
+        ),
+        "adapter_contract_valid": metric_from_failures(
+            metric_failures["adapter_contract_valid"],
+            applicable=contract_applicable,
+        ),
+        "runtime_execution_pass": metric_from_failures(
+            metric_failures["runtime_execution_pass"],
+            applicable=runtime_applicable,
+        ),
+        "ui_interaction_pass": metric_from_failures(
+            metric_failures["ui_interaction_pass"],
+            applicable=ui_applicable,
+        ),
+        "export_roundtrip_pass": metric_from_failures(
+            metric_failures["export_roundtrip_pass"],
+            applicable=export_applicable,
+        ),
+        "collateral_damage_free": metric_from_failures(
+            metric_failures["collateral_damage_free"],
+            applicable=safety_applicable,
         ),
     }
 
@@ -554,6 +1019,7 @@ def main() -> int:
     parser.add_argument("--cases-dir", default=str(DEFAULT_CASES_DIR))
     parser.add_argument("--candidate-root")
     parser.add_argument("--adapter", help="Run only cases for this adapter")
+    parser.add_argument("--case", help="Run only one case id")
     parser.add_argument("--jsonl", action="store_true")
     args = parser.parse_args()
 
@@ -572,6 +1038,11 @@ def main() -> int:
         case_files = selected
         if not case_files:
             print(f"No benchmark cases found for adapter {args.adapter!r}", file=sys.stderr)
+            return 1
+    if args.case:
+        case_files = [case_file for case_file in case_files if case_file.stem == args.case]
+        if not case_files:
+            print(f"No benchmark case found with id {args.case!r}", file=sys.stderr)
             return 1
 
     results = [run_case(case_file, candidate_root) for case_file in case_files]

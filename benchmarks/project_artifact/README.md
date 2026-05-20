@@ -76,6 +76,12 @@ Run only one adapter:
 python3 benchmarks/project_artifact/run_benchmark.py --adapter oob_workbench
 ```
 
+Debug one case:
+
+```bash
+python3 benchmarks/project_artifact/run_benchmark.py --case create_habit_checkin_crud
+```
+
 The default run reports whether cases are `case_ready`: schemas, fixtures, and
 contract-backed builder baselines are valid. A run with `--candidate-root`
 reports `case_resolved`, the real benchmark pass/fail metric for candidate
@@ -97,6 +103,10 @@ metrics identify whether failures come from artifact completeness, API contract,
 runtime grounding, export/migration metadata, or safety boundaries.
 Runtime/UI/export plugin metrics are emitted as `na` until those checker layers
 are implemented for the adapter.
+
+The current runner now includes phase-one detectors for static artifacts,
+adapter contract validity, native runtime smoke, HTML/UI smoke, structural
+export checks, and safety/collateral damage. See `CHECKERS.md` for details.
 
 ## Case Coverage
 
