@@ -12,6 +12,7 @@ import cn.com.omnimind.bot.agent.WorkspaceScheduledTaskScheduler
 import cn.com.omnimind.bot.activity.StartupThemeResolver
 import cn.com.omnimind.bot.localmodel.LocalModelFeatureInstaller
 import cn.com.omnimind.bot.mcp.McpServerManager
+import cn.com.omnimind.bot.quicklog.QuickLogWidgetUpdater
 import cn.com.omnimind.bot.terminal.EmbeddedTerminalRuntime
 import cn.com.omnimind.bot.update.AppUpdateManager
 import cn.com.omnimind.bot.util.NestedBackgroundStateUtil
@@ -131,6 +132,9 @@ class App : BaseApplication() {
         }
         runCatching {
             WorkspaceScheduledTaskScheduler(this).rescheduleAllEnabled()
+        }
+        runCatching {
+            QuickLogWidgetUpdater.updateAll(this)
         }
         runCatching {
             ShizukuCapabilityManager.get(this)

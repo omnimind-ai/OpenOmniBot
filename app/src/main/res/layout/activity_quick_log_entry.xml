@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F5F8FE"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView
+        android:id="@+id/quick_log_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/quick_log_entry_title"
+        android:textColor="#0F172A"
+        android:textSize="22sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/quick_log_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/quick_log_entry_subtitle"
+        android:textColor="#64748B"
+        android:textSize="14sp" />
+
+    <EditText
+        android:id="@+id/quick_log_editor"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="20dp"
+        android:layout_weight="1"
+        android:background="@drawable/quick_log_widget_card"
+        android:gravity="top|start"
+        android:hint="@string/quick_log_entry_hint"
+        android:inputType="textMultiLine|textCapSentences"
+        android:minHeight="240dp"
+        android:padding="18dp"
+        android:textColor="#0F172A"
+        android:textColorHint="#94A3B8"
+        android:textSize="16sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:gravity="end"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/quick_log_cancel_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/quick_log_widget_button_secondary"
+            android:paddingLeft="18dp"
+            android:paddingTop="10dp"
+            android:paddingRight="18dp"
+            android:paddingBottom="10dp"
+            android:text="@string/quick_log_cancel"
+            android:textAllCaps="false"
+            android:textColor="#334155" />
+
+        <Button
+            android:id="@+id/quick_log_delete_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:background="@drawable/quick_log_widget_button_secondary"
+            android:paddingLeft="18dp"
+            android:paddingTop="10dp"
+            android:paddingRight="18dp"
+            android:paddingBottom="10dp"
+            android:text="@string/quick_log_delete"
+            android:textAllCaps="false"
+            android:textColor="#B91C1C"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/quick_log_save_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:background="@drawable/quick_log_widget_button"
+            android:paddingLeft="18dp"
+            android:paddingTop="10dp"
+            android:paddingRight="18dp"
+            android:paddingBottom="10dp"
+            android:text="@string/quick_log_save"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+</LinearLayout>

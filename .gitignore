@@ -15,6 +15,7 @@ local.properties
 .claude/
 .codex/
 .vscode/
+.codex/
 .agents/
 claude-code-main/
 

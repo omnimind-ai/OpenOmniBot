@@ -12,6 +12,7 @@ import cn.com.omnimind.bot.localmodel.LocalModelFeature
 import cn.com.omnimind.bot.terminal.EmbeddedTerminalAutoStartManager
 import cn.com.omnimind.bot.terminal.EmbeddedTerminalInitCoordinator
 import cn.com.omnimind.bot.terminal.EmbeddedTerminalRuntime
+import cn.com.omnimind.bot.quicklog.QuickLogWidgetActionRouter
 import cn.com.omnimind.bot.ui.channel.ChannelManager
 import cn.com.omnimind.bot.ui.channel.FileSaveChannel
 import cn.com.omnimind.bot.ui.halfScreen.HalfScreenListenerImpl
@@ -57,6 +58,10 @@ class MainActivity : FlutterActivity() {
         setTheme(StartupThemeResolver.resolveSplashTheme(this))
         applyResponsiveOrientation()
         super.onCreate(savedInstanceState)
+        if (QuickLogWidgetActionRouter.consumeInto(this, intent)) {
+            finish()
+            return
+        }
         val channelStart = System.currentTimeMillis()
         channelManager.onCreate(this)
         OmniLog.d(TAG, "MainActivity channelManager.onCreate cost: ${System.currentTimeMillis() - channelStart}ms")
@@ -142,6 +147,10 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (QuickLogWidgetActionRouter.consumeInto(this, intent)) {
+            finish()
+            return
+        }
         SchemeUtil.pushRoute(intent, channelManager, null)
     }
 

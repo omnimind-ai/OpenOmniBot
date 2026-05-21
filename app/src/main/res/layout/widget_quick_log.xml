@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/quick_log_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/quick_log_widget_card_dark_92"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/quick_log_widget_logo"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_gravity="center_vertical"
+            android:padding="6dp"
+            android:scaleType="center"
+            android:src="@drawable/ic_quick_log_memory" />
+
+        <LinearLayout
+            android:id="@+id/quick_log_widget_title_action"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="6dp"
+            android:paddingEnd="8dp">
+
+            <TextView
+                android:id="@+id/quick_log_widget_title"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:gravity="center_vertical"
+                android:includeFontPadding="false"
+                android:text="@string/quick_log_widget_title"
+                android:textColor="#F8FAFC"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/quick_log_widget_add_action"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_gravity="center_vertical"
+            android:padding="6dp"
+            android:scaleType="center"
+            android:src="@drawable/ic_quick_log_plus" />
+
+        <ImageView
+            android:id="@+id/quick_log_widget_settings_action"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_gravity="center_vertical"
+            android:padding="6dp"
+            android:scaleType="center"
+            android:src="@drawable/ic_quick_log_settings" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/quick_log_widget_summary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="40dp"
+        android:layout_marginBottom="6dp"
+        android:maxLines="1"
+        android:textColor="#B9C2D0"
+        android:textSize="11sp"
+        android:visibility="gone" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ListView
+            android:id="@+id/quick_log_widget_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:divider="@android:color/transparent"
+            android:dividerHeight="6dp"
+            android:fadingEdge="none"
+            android:scrollbars="vertical" />
+
+        <LinearLayout
+            android:id="@+id/quick_log_widget_empty_state"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/quick_log_widget_row_card_dark"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:padding="14dp">
+
+            <TextView
+                android:id="@+id/quick_log_widget_empty_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingExtra="2dp"
+                android:maxLines="3"
+                android:text="@string/quick_log_widget_empty_hint"
+                android:textColor="#F8FAFC"
+                android:textSize="14sp" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/quick_log_widget_open_action"
+        android:layout_width="match_parent"
+        android:layout_height="26dp"
+        android:gravity="center"
+        android:text="@string/quick_log_widget_open"
+        android:textColor="#B9C2D0"
+        android:textSize="11sp" />
+</LinearLayout>

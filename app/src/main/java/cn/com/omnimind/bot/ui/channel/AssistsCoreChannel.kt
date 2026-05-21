@@ -148,6 +148,18 @@ class AssistsCoreChannel {
                 "getWorkspaceShortMemories" -> {
                     assistsCoreManager!!.getWorkspaceShortMemories(call, result)
                 }
+                "listQuickLogs" -> {
+                    assistsCoreManager!!.listQuickLogs(call, result)
+                }
+                "addQuickLog" -> {
+                    assistsCoreManager!!.addQuickLog(call, result)
+                }
+                "updateQuickLog" -> {
+                    assistsCoreManager!!.updateQuickLog(call, result)
+                }
+                "deleteQuickLog" -> {
+                    assistsCoreManager!!.deleteQuickLog(call, result)
+                }
                 "saveWorkspaceLongMemory" -> {
                     assistsCoreManager!!.saveWorkspaceLongMemory(call, result)
                 }

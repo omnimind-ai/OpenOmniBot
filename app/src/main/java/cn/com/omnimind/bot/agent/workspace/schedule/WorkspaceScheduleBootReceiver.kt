@@ -19,6 +19,7 @@ class WorkspaceScheduleBootReceiver : BroadcastReceiver() {
         runCatching {
             WorkspaceMemoryRollupScheduler(context).ensureScheduledIfEnabled()
             WorkspaceScheduledTaskScheduler(context).rescheduleAllEnabled()
+            AgentAlarmToolService(context).reschedulePersistedExactRemindersIfPermitted()
         }.onFailure {
             OmniLog.e("WorkspaceScheduleBootReceiver", "reschedule failed: ${it.message}")
         }
