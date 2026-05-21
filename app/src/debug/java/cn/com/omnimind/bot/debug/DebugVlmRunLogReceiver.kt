@@ -10,6 +10,7 @@ import cn.com.omnimind.baselib.llm.SceneModelBindingStore
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.AgentAiCapabilityConfigSync
+import cn.com.omnimind.bot.agent.ResolvedSkillContext
 import cn.com.omnimind.bot.manager.AssistsCoreManager
 import cn.com.omnimind.bot.mcp.VlmTaskRequest
 import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
@@ -43,6 +44,11 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
         val register = intent?.getBooleanExtra("register", true) ?: true
         val profileId = intent?.getStringExtra("profileId")?.trim().orEmpty()
         val modelId = intent?.getStringExtra("modelId")?.trim().orEmpty()
+        val skillId = intent?.getStringExtra("skillId")?.trim().orEmpty()
+        val stepSkillGuidance = intent.decodeBase64Extra("stepSkillGuidanceBase64")
+            ?: intent?.getStringExtra("stepSkillGuidance")?.trim().orEmpty()
+                .takeIf { it.isNotBlank() }
+            ?: loadBuiltinSkillGuidance(appContext, skillId)
 
         scope.launch {
             val result = runCatching {
@@ -57,6 +63,7 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
                     shouldPrelaunch,
                     startFromCurrent,
                     skipGoHome,
+                    stepSkillGuidance,
                 )
             }.getOrElse { error ->
                 linkedMapOf<String, Any?>(
@@ -83,6 +90,7 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
         prelaunch: Boolean,
         startFromCurrent: Boolean,
         skipGoHome: Boolean,
+        stepSkillGuidance: String,
     ): Map<String, Any?> {
         if (!AssistsUtil.Core.isInitialized()) {
             AssistsUtil.Core.initCore(context)
@@ -99,6 +107,7 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
                 maxSteps = maxSteps,
                 needSummary = false,
                 skipGoHome = startFromCurrent || skipGoHome,
+                stepSkillGuidance = stepSkillGuidance,
             ),
             scope = scope,
         )
@@ -125,6 +134,7 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
             "prelaunch" to prelaunch,
             "startFromCurrent" to startFromCurrent,
             "skipGoHome" to skipGoHome,
+            "step_skill_guidance_chars" to stepSkillGuidance.length,
             "configured_binding" to configuredBinding,
             "outcome" to outcome.toPayload(),
             "run_id" to runId,
@@ -184,8 +194,27 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
         }.getOrNull()
     }
 
+    private fun loadBuiltinSkillGuidance(context: Context, skillId: String): String {
+        val normalizedSkillId = skillId.trim()
+        if (normalizedSkillId.isBlank() || !SAFE_SKILL_ID.matches(normalizedSkillId)) {
+            return ""
+        }
+        val body = runCatching {
+            context.assets.open("builtin_skills/$normalizedSkillId/SKILL.md")
+                .bufferedReader()
+                .use { it.readText() }
+        }.getOrNull() ?: return ""
+        return ResolvedSkillContext(
+            skillId = normalizedSkillId,
+            frontmatter = mapOf("name" to normalizedSkillId),
+            bodyMarkdown = body,
+            triggerReason = "debug_vlm_runlog"
+        ).stepGuidance()
+    }
+
     companion object {
         private const val TAG = "DebugVlmRunLogReceiver"
+        private val SAFE_SKILL_ID = Regex("""[A-Za-z0-9_-]+""")
         private val gson = GsonBuilder().disableHtmlEscaping().create()
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
