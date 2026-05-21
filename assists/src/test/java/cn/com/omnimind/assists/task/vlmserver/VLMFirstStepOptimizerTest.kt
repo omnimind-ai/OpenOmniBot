@@ -100,6 +100,26 @@ class VLMFirstStepOptimizerTest {
     }
 
     @Test
+    fun `first step treats brightness goal as display settings candidate`() {
+        val context = UIContext(
+            overallTask = "Turn brightness to the min value.",
+            targetPackageName = "com.android.settings"
+        )
+
+        val enriched = VLMFirstStepOptimizer.enrichContext(
+            context = context,
+            currentXml = SETTINGS_WITH_DISPLAY_SUBTITLE_XML,
+            currentPackageName = "com.android.settings",
+            stepIndex = 0
+        )
+
+        assertTrue(enriched.currentPageSummary.contains("任务相关首屏候选"))
+        assertTrue(enriched.currentPageSummary.contains("Display"))
+        assertTrue(enriched.firstStepGuidance.contains("优先点击匹配候选"))
+    }
+
+
+    @Test
     fun `clears first step hints after first turn`() {
         val context = UIContext(
             overallTask = "给张三发送消息",
@@ -152,6 +172,20 @@ class VLMFirstStepOptimizerTest {
                 <node text="Bluetooth, pairing" bounds="[144,809][361,847]" />
                 <node text="Apps" bounds="[144,931][235,985]" clickable="true" />
                 <node text="Notifications" bounds="[144,1107][373,1161]" clickable="true" />
+              </node>
+            </hierarchy>
+            """
+
+        private const val SETTINGS_WITH_DISPLAY_SUBTITLE_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][720,1280]">
+                <node scrollable="true" bounds="[0,216][720,1232]">
+                  <node clickable="true" focusable="true" bounds="[0,957][720,1133]">
+                    <node text="Display" bounds="[144,999][274,1053]" />
+                    <node text="Dark theme, font size, brightness" bounds="[144,1053][549,1091]" />
+                  </node>
+                </node>
               </node>
             </hierarchy>
             """

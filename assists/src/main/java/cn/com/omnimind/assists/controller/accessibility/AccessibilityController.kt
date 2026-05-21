@@ -11,7 +11,10 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import cn.com.omnimind.accessibility.action.AccessibilityNodeScrollDirection
 import cn.com.omnimind.accessibility.action.AccessibilityScrollDirection
+import cn.com.omnimind.accessibility.action.AccessibilityNode
 import cn.com.omnimind.accessibility.action.OmniAction
 import cn.com.omnimind.accessibility.action.OmniCaptureAction
 import cn.com.omnimind.accessibility.action.OmniScreenshotAction
@@ -35,6 +38,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * 控制器辅助类
@@ -230,6 +236,258 @@ class AccessibilityController() {
             }
             actionController?.scrollCoordinate(x, y, mDirection, distance, duration)?.await()
         }
+
+        suspend fun setSliderProgressFromGesture(
+            x1: Float,
+            y1: Float,
+            x2: Float,
+            y2: Float,
+            targetDescription: String = ""
+        ): Boolean {
+            checkAccessibilityPermissions()
+            if (!isHorizontalEndpointGesture(x1, y1, x2, y2)) {
+                return false
+            }
+            val nodes = captureAction?.getNodeMap()?.values.orEmpty()
+            val candidate = findSliderProgressCandidate(
+                nodes = nodes,
+                x1 = x1,
+                y1 = y1,
+                x2 = x2,
+                y2 = y2,
+                targetDescription = targetDescription
+            ) ?: return false
+            val range = candidate.info.rangeInfo ?: return false
+            val progress = if (x2 >= x1) {
+                max(range.min, range.max)
+            } else {
+                min(range.min, range.max)
+            }
+            return runCatching {
+                withTimeout(2000) {
+                    actionController?.setProgress(candidate.info, progress)
+                        ?: throw IllegalStateException("Accessibility action controller is not ready")
+                }
+                OmniLog.i(
+                    TAG,
+                    "setSliderProgressFromGesture semantic success target=$targetDescription " +
+                        "progress=$progress bounds=${candidate.bounds} " +
+                        "label=${nodeSemanticLabel(candidate.info).take(80)}"
+                )
+                true
+            }.getOrElse { error ->
+                OmniLog.w(
+                    TAG,
+                    "setSliderProgressFromGesture semantic failed: ${error.message}; fallback to gesture"
+                )
+                false
+            }
+        }
+
+        suspend fun scrollScrollableNodeFromGesture(
+            x1: Float,
+            y1: Float,
+            x2: Float,
+            y2: Float,
+            targetDescription: String = ""
+        ): Boolean {
+            checkAccessibilityPermissions()
+            if (!isVerticalScrollGesture(x1, y1, x2, y2)) {
+                return false
+            }
+            val nodes = captureAction?.getNodeMap()?.values.orEmpty()
+            val candidate = findScrollableNodeCandidate(
+                nodes = nodes,
+                x = (x1 + x2) / 2f,
+                y = (y1 + y2) / 2f,
+                targetDescription = targetDescription
+            ) ?: return false
+            val direction = if (y2 < y1) {
+                AccessibilityNodeScrollDirection.FORWARD
+            } else {
+                AccessibilityNodeScrollDirection.BACKWARD
+            }
+            return runCatching {
+                withTimeout(2000) {
+                    actionController?.scrollNode(candidate.info, direction)
+                        ?: throw IllegalStateException("Accessibility action controller is not ready")
+                }
+                OmniLog.i(
+                    TAG,
+                    "scrollScrollableNodeFromGesture semantic success direction=$direction " +
+                        "target=$targetDescription bounds=${candidate.bounds} " +
+                        "label=${nodeSemanticLabel(candidate.info).take(80)}"
+                )
+                true
+            }.getOrElse { error ->
+                OmniLog.w(
+                    TAG,
+                    "scrollScrollableNodeFromGesture semantic failed: ${error.message}; fallback to gesture"
+                )
+                false
+            }
+        }
+
+        private fun isHorizontalEndpointGesture(
+            x1: Float,
+            y1: Float,
+            x2: Float,
+            y2: Float
+        ): Boolean {
+            val dx = abs(x2 - x1)
+            val dy = abs(y2 - y1)
+            return dx >= 32f && dx >= dy * 1.4f
+        }
+
+        private fun isVerticalScrollGesture(
+            x1: Float,
+            y1: Float,
+            x2: Float,
+            y2: Float
+        ): Boolean {
+            val dx = abs(x2 - x1)
+            val dy = abs(y2 - y1)
+            return dy >= 48f && dy >= dx * 1.2f
+        }
+
+        private fun findSliderProgressCandidate(
+            nodes: Collection<AccessibilityNode>,
+            x1: Float,
+            y1: Float,
+            x2: Float,
+            y2: Float,
+            targetDescription: String
+        ): AccessibilityNode? {
+            val gestureY = (y1 + y2) / 2f
+            val gestureLeft = min(x1, x2)
+            val gestureRight = max(x1, x2)
+            val targetTerms = semanticTerms(targetDescription)
+
+            return nodes.asSequence()
+                .filter { node ->
+                    node.show &&
+                        node.bounds.width() >= MIN_SLIDER_WIDTH_PX &&
+                        node.bounds.height() > 0 &&
+                        node.info.isEnabled &&
+                        node.info.rangeInfo != null &&
+                        hasSliderSignal(node.info, targetTerms)
+                }
+                .mapNotNull { node ->
+                    val bounds = node.bounds
+                    val yDistance = abs(bounds.exactCenterY() - gestureY)
+                    val yLimit = max(MIN_SLIDER_Y_TOLERANCE_PX, bounds.height() * 3f)
+                    val label = nodeSemanticLabel(node.info)
+                    val labelTerms = semanticTerms(label)
+                    val targetOverlap = if (targetTerms.isNotEmpty() && labelTerms.isNotEmpty()) {
+                        targetTerms.intersect(labelTerms.toSet()).size
+                    } else {
+                        0
+                    }
+                    val matchesTarget = targetOverlap > 0
+                    if (yDistance > yLimit && !matchesTarget) {
+                        return@mapNotNull null
+                    }
+                    val xOverlap = max(0f, min(bounds.right.toFloat(), gestureRight) - max(bounds.left.toFloat(), gestureLeft))
+                    val classOrId = listOf(
+                        node.info.className?.toString(),
+                        node.info.viewIdResourceName
+                    ).joinToString(" ").lowercase()
+                    val score =
+                        1000f -
+                            yDistance -
+                            abs(bounds.exactCenterX() - ((gestureLeft + gestureRight) / 2f)) * 0.05f +
+                            (xOverlap / max(1f, bounds.width().toFloat())) * 120f +
+                            (if (classOrId.contains("seekbar") || classOrId.contains("slider")) 160f else 0f) +
+                            (if (label.lowercase().contains("brightness") || label.lowercase().contains("volume")) 80f else 0f) +
+                            targetOverlap * 90f
+                    SliderCandidate(node = node, score = score)
+                }
+                .maxByOrNull { it.score }
+                ?.node
+        }
+
+        private fun findScrollableNodeCandidate(
+            nodes: Collection<AccessibilityNode>,
+            x: Float,
+            y: Float,
+            targetDescription: String
+        ): AccessibilityNode? {
+            val targetTerms = semanticTerms(targetDescription)
+            return nodes.asSequence()
+                .filter { node ->
+                    node.show &&
+                        node.info.isEnabled &&
+                        node.info.isScrollable &&
+                        node.bounds.width() >= MIN_SCROLLABLE_WIDTH_PX &&
+                        node.bounds.height() >= MIN_SCROLLABLE_HEIGHT_PX
+                }
+                .map { node ->
+                    val bounds = node.bounds
+                    val contains = bounds.contains(x.toInt(), y.toInt())
+                    val label = nodeSemanticLabel(node.info)
+                    val labelTerms = semanticTerms(label)
+                    val targetOverlap = if (targetTerms.isNotEmpty() && labelTerms.isNotEmpty()) {
+                        targetTerms.intersect(labelTerms).size
+                    } else {
+                        0
+                    }
+                    val distance = if (contains) {
+                        0f
+                    } else {
+                        abs(bounds.exactCenterY() - y) + abs(bounds.exactCenterX() - x) * 0.2f
+                    }
+                    val score =
+                        (if (contains) 500f else 0f) -
+                            distance * 0.05f +
+                            (bounds.width() * bounds.height()).toFloat() / 10000f +
+                            targetOverlap * 40f
+                    SliderCandidate(node = node, score = score)
+                }
+                .maxByOrNull { it.score }
+                ?.node
+        }
+
+        private fun hasSliderSignal(
+            node: AccessibilityNodeInfo,
+            targetTerms: Set<String>
+        ): Boolean {
+            val label = nodeSemanticLabel(node).lowercase()
+            val classOrId = listOf(
+                node.className?.toString(),
+                node.viewIdResourceName
+            ).joinToString(" ").lowercase()
+            if (classOrId.contains("seekbar") ||
+                classOrId.contains("slider") ||
+                classOrId.contains("range") ||
+                label.contains("slider") ||
+                label.contains("seekbar") ||
+                label.contains("brightness") ||
+                label.contains("volume") ||
+                label.contains("亮度") ||
+                label.contains("音量") ||
+                label.contains("滑块") ||
+                label.contains("进度条")
+            ) {
+                return true
+            }
+            return targetTerms.any { it in SLIDER_TARGET_TERMS }
+        }
+
+        private fun nodeSemanticLabel(node: AccessibilityNodeInfo): String =
+            listOf(
+                node.text?.toString(),
+                node.contentDescription?.toString(),
+                node.viewIdResourceName,
+                node.className?.toString()?.substringAfterLast('.')
+            )
+                .filter { !it.isNullOrBlank() }
+                .joinToString(" ")
+
+        private fun semanticTerms(value: String): Set<String> =
+            TERM_REGEX.findAll(value.lowercase())
+                .map { it.value.trim('_', '-') }
+                .filter { it.isNotBlank() }
+                .toSet()
 
         //
         suspend fun goHome() {
@@ -545,5 +803,28 @@ class AccessibilityController() {
             captureAction = null
             screenshotAction = null
         }
+
+        private data class SliderCandidate(
+            val node: AccessibilityNode,
+            val score: Float
+        )
+
+        private val TERM_REGEX = Regex("""[\p{L}\p{N}]+""")
+        private val SLIDER_TARGET_TERMS = setOf(
+            "slider",
+            "seekbar",
+            "brightness",
+            "volume",
+            "sound",
+            "display",
+            "亮度",
+            "音量",
+            "滑块",
+            "进度条"
+        )
+        private const val MIN_SLIDER_WIDTH_PX = 40
+        private const val MIN_SLIDER_Y_TOLERANCE_PX = 96f
+        private const val MIN_SCROLLABLE_WIDTH_PX = 120
+        private const val MIN_SCROLLABLE_HEIGHT_PX = 160
     }
 }

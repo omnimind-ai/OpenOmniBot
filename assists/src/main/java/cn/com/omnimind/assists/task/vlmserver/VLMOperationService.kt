@@ -266,6 +266,13 @@ class VLMOperationService(
             // 检查用户是否请求暂停（每一步执行前都检查）
             safePauseCheck("before_step_$stepIndex")
             context = drainExternalMemories(context)
+            tryCompleteSettingsToggleTask(
+                goal = goal,
+                context = context,
+                executionTrace = executionTrace,
+                stepIndex = stepIndex,
+                summaryScreenshotList = summaryScreenshotList
+            )?.let { return it }
 
             // === Context Compactor Logic (在超时计时之外执行) ===
             // 使用动态触发逻辑：随着步数增加，触发间隔逐渐从 12 步减少到 5 步
@@ -434,6 +441,13 @@ class VLMOperationService(
                     summaryScreenshotList = summaryScreenshotList
                 )
             }
+            tryCompleteSettingsToggleTask(
+                goal = goal,
+                context = context,
+                executionTrace = executionTrace,
+                stepIndex = stepIndex + 1,
+                summaryScreenshotList = summaryScreenshotList
+            )?.let { return it }
             if (step.action is InfoAction) {
                 try {
                     //接管需要将任务执行时间清空
@@ -544,6 +558,70 @@ class VLMOperationService(
             },
             summaryScreenshotList = summaryScreenshotList,
             doneReason = if (boundedMaxStepsSuccess) "max_steps_reached" else "error"
+        )
+    }
+
+    private fun appendSettingsToggleStateSummary(step: UIStep, goal: String): UIStep {
+        if (!VLMSettingsToggleCompletionChecker.mayHandle(goal)) return step
+        val markers = VLMSettingsToggleCompletionChecker.progressMarkers(
+            goal = goal,
+            stateSnapshot = VLMSettingsToggleCompletionChecker.readDeviceState(AssistsService.instance)
+        )
+        if (markers.isEmpty()) return step
+        val suffix = markers.joinToString(" ") { "[$it]" }
+        val summary = step.summary.trim()
+        return step.copy(summary = listOf(summary, suffix).filter { it.isNotBlank() }.joinToString(" "))
+    }
+
+    private suspend fun tryCompleteSettingsToggleTask(
+        goal: String,
+        context: UIContext,
+        executionTrace: MutableList<UIStep>,
+        stepIndex: Int,
+        summaryScreenshotList: List<String>
+    ): TaskExecutionReport? {
+        if (!VLMSettingsToggleCompletionChecker.mayHandle(context.overallTask)) return null
+        val currentPackageName = AccessibilityController.Companion.getPackageName().orEmpty()
+        val currentXml = captureCurrentXml()
+        val stateSnapshot = VLMSettingsToggleCompletionChecker.readDeviceState(AssistsService.instance)
+        val result = VLMSettingsToggleCompletionChecker.check(
+            goal = context.overallTask,
+            currentXml = currentXml,
+            stateSnapshot = stateSnapshot,
+            currentPackageName = currentPackageName,
+            targetPackageName = context.targetPackageName
+        )
+        if (!result.complete) return null
+
+        OmniLog.i(
+            Tag,
+            "Deterministic task completion applied: reason=${result.reason} goal=$goal summary=${result.summary}"
+        )
+        val now = System.currentTimeMillis()
+        val finishedStep = UIStep(
+            observation = "DETERMINISTIC_COMPLETION",
+            thought = "Detected that the requested Settings toggle state is already satisfied.",
+            action = FinishedAction(content = result.summary),
+            result = result.summary,
+            summary = "[deterministic_completion:${result.reason}] ${result.summary}",
+            observationXml = currentXml,
+            packageName = currentPackageName,
+            startedAtMs = now,
+            finishedAtMs = now
+        )
+        onStepStarted(stepIndex, finishedStep)
+        onStepCompleted(stepIndex, finishedStep, true, null)
+        val finalContext = updateContext(finishedStep, context)
+        executionTrace.add(finishedStep)
+        return TaskExecutionReport(
+            success = true,
+            goal = goal,
+            totalSteps = executionTrace.size,
+            executionTrace = executionTrace,
+            finalContext = finalContext,
+            error = null,
+            summaryScreenshotList = summaryScreenshotList,
+            doneReason = result.reason
         )
     }
 
@@ -814,6 +892,23 @@ class VLMOperationService(
 
                     else -> {}
                 }
+                val postProcessResult = VLMActionPostProcessor.correct(
+                    step = processedStep,
+                    context = _context,
+                    currentXml = beforeXml,
+                    currentPackageName = _context.currentPackageName,
+                    stepIndex = stepIndex,
+                    displayWidth = deviceOperator.getDisplayWidth(),
+                    displayHeight = deviceOperator.getDisplayHeight()
+                )
+                if (postProcessResult.applied) {
+                    OmniLog.i(
+                        Tag,
+                        "Runtime action correction applied: reason=${postProcessResult.reason} " +
+                            "from=${processedStep.action.name} to=${postProcessResult.step.action.name}"
+                    )
+                    processedStep = postProcessResult.step
+                }
                 processedStep = groundActionTarget(processedStep, beforeXml)
 
                 if (needsPreciseLocation(processedStep.action)) {
@@ -857,13 +952,14 @@ class VLMOperationService(
                 )
                 val actionFinishedAtMs = System.currentTimeMillis()
                 safePauseCheck("after_action_${processedStep.action.name}_${stabilityAttempt}")
-                val finalStep = executedStep.copy(
+                var finalStep = executedStep.copy(
                     summary = processedStep.summary,
                     observationXml = beforeXml,
                     packageName = AccessibilityController.Companion.getPackageName(),
                     startedAtMs = actionStartedAtMs,
                     finishedAtMs = actionFinishedAtMs
                 )
+                finalStep = appendSettingsToggleStateSummary(finalStep, _context.overallTask)
 
                 OmniLog.d(
                     Tag,
@@ -1290,29 +1386,7 @@ object VLMTaskCompletionPolicy {
         executionTrace: List<UIStep>,
         lastError: String?
     ): Boolean {
-        if (normalizedMaxSteps == null || normalizedMaxSteps <= 0) return false
-        if (lastError != null || executionTrace.isEmpty()) return false
-        val completedSteps = executionTrace.count(::isSuccessfulBoundedAction)
-        return completedSteps > 0 && executionTrace.size >= normalizedMaxSteps
-    }
-
-    private fun isSuccessfulBoundedAction(step: UIStep): Boolean {
-        val result = step.result.orEmpty()
-        if (result.startsWith("执行失败") || result.contains("不支持的操作类型")) {
-            return false
-        }
-        return when (step.action) {
-            is ClickAction,
-            is LongPressAction,
-            is TypeAction,
-            is ScrollAction,
-            is OpenAppAction,
-            is PressHomeAction,
-            is PressBackAction,
-            is HotKeyAction,
-            is FinishedAction -> true
-            else -> false
-        }
+        return false
     }
 }
 

@@ -19,6 +19,16 @@ interface DeviceOperator {
     suspend fun copyToClipboard(text: String): OperationResult
     suspend fun getClipboard(): String? // 获取剪贴板内容
     suspend fun slideCoordinate(x1: Float, y1: Float, x2: Float, y2: Float, duration: Long): OperationResult
+    suspend fun slideCoordinateWithContext(
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        duration: Long,
+        targetDescription: String,
+    ): OperationResult {
+        return slideCoordinate(x1, y1, x2, y2, duration)
+    }
     suspend fun goHome(): OperationResult
     suspend fun goBack(): OperationResult
     suspend fun launchApplication(packageName: String): OperationResult
@@ -78,12 +88,13 @@ class ActionExecutor(
             is ScrollAction -> {
                 // VLM 模型返回的 duration 是秒，需要转换为毫秒
                 val durationMs = (action.duration * 1000).toLong()
-                deviceOperator.slideCoordinate(
+                deviceOperator.slideCoordinateWithContext(
                     action.x1.toFloat(),
                     action.y1.toFloat(),
                     action.x2.toFloat(),
                     action.y2.toFloat(),
-                    durationMs
+                    durationMs,
+                    action.targetDescription
                 )
             }
 

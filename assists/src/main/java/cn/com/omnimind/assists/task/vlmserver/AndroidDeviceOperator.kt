@@ -288,6 +288,24 @@ class AndroidDeviceOperator(
         y2: Float,
         duration: Long
     ): OperationResult {
+        return slideCoordinateWithContext(
+            x1 = x1,
+            y1 = y1,
+            x2 = x2,
+            y2 = y2,
+            duration = duration,
+            targetDescription = ""
+        )
+    }
+
+    override suspend fun slideCoordinateWithContext(
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        duration: Long,
+        targetDescription: String
+    ): OperationResult {
         return try {
             val dx = x2 - x1
             val dy = y2 - y1
@@ -298,6 +316,8 @@ class AndroidDeviceOperator(
             }
 
             val distance = sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+            var usedSemanticSliderProgress = false
+            var usedSemanticNodeScroll = false
             if (executionTaskEventApi != null) {
                 executionTaskEventApi.scrollCoordinate(
                     x1,
@@ -305,24 +325,67 @@ class AndroidDeviceOperator(
                     scrollDirection,
                     distance.toInt()
                 ) {
-                    AccessibilityController.scrollCoordinate(
-                        x1,
-                        y1,
-                        scrollDirection,
-                        distance,
-                        duration = duration
+                    usedSemanticSliderProgress = AccessibilityController.setSliderProgressFromGesture(
+                        x1 = x1,
+                        y1 = y1,
+                        x2 = x2,
+                        y2 = y2,
+                        targetDescription = targetDescription
                     )
+                    if (!usedSemanticSliderProgress) {
+                        usedSemanticNodeScroll = AccessibilityController.scrollScrollableNodeFromGesture(
+                            x1 = x1,
+                            y1 = y1,
+                            x2 = x2,
+                            y2 = y2,
+                            targetDescription = targetDescription
+                        )
+                        if (!usedSemanticNodeScroll) {
+                            AccessibilityController.scrollCoordinate(
+                                x1,
+                                y1,
+                                scrollDirection,
+                                distance,
+                                duration = duration
+                            )
+                        }
+                    }
                 }
             } else {
-                AccessibilityController.scrollCoordinate(
-                    x1,
-                    y1,
-                    scrollDirection,
-                    distance,
-                    duration = duration
+                usedSemanticSliderProgress = AccessibilityController.setSliderProgressFromGesture(
+                    x1 = x1,
+                    y1 = y1,
+                    x2 = x2,
+                    y2 = y2,
+                    targetDescription = targetDescription
                 )
+                if (!usedSemanticSliderProgress) {
+                    usedSemanticNodeScroll = AccessibilityController.scrollScrollableNodeFromGesture(
+                        x1 = x1,
+                        y1 = y1,
+                        x2 = x2,
+                        y2 = y2,
+                        targetDescription = targetDescription
+                    )
+                    if (!usedSemanticNodeScroll) {
+                        AccessibilityController.scrollCoordinate(
+                            x1,
+                            y1,
+                            scrollDirection,
+                            distance,
+                            duration = duration
+                        )
+                    }
+                }
             }
-            OperationResult(true, "滑动 ($x1, $y1) → ($x2, $y2) 成功", null)
+            val message = if (usedSemanticSliderProgress) {
+                "语义设置滑块进度 ($x1, $y1) → ($x2, $y2) 成功"
+            } else if (usedSemanticNodeScroll) {
+                "语义滚动节点 ($x1, $y1) → ($x2, $y2) 成功"
+            } else {
+                "滑动 ($x1, $y1) → ($x2, $y2) 成功"
+            }
+            OperationResult(true, message, null)
         } catch (e: Exception) {
             OperationResult(false, "滑动失败: ${e.message}", null)
         }

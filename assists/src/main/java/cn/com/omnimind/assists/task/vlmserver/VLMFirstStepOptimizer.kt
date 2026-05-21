@@ -215,17 +215,30 @@ object VLMFirstStepOptimizer {
         return candidates.mapNotNull { candidate ->
             val labelTerms = semanticTerms(candidate).filterNot { it in LABEL_STOP_WORDS }.distinct()
             if (labelTerms.isEmpty()) return@mapNotNull null
-            val matched = labelTerms.count { it in goalTerms }
-            if (matched == 0) return@mapNotNull null
+            val aliasMatch = domainAliasMatch(goalTerms, labelTerms.toSet())
+            val rawMatched = labelTerms.count { it in goalTerms }
+            if (rawMatched == 0 && !aliasMatch) return@mapNotNull null
+            val matched = if (rawMatched == 0 && aliasMatch) 1 else rawMatched
             val coverage = matched.toDouble() / labelTerms.size.toDouble()
             val exactBonus = if (goalText.contains(candidate, ignoreCase = true)) 1.0 else 0.0
-            val score = coverage + exactBonus - (candidate.length.coerceAtMost(80) / 1000.0)
+            val aliasBonus = if (aliasMatch) 0.7 else 0.0
+            val score = coverage + exactBonus + aliasBonus - (candidate.length.coerceAtMost(80) / 1000.0)
             GoalMatch(candidate, score)
         }
             .filter { it.score >= MIN_GOAL_MATCH_SCORE }
             .sortedWith(compareByDescending<GoalMatch> { it.score }.thenBy { it.label.length })
             .map { it.label }
             .take(MAX_GOAL_MATCHES)
+    }
+
+    private fun domainAliasMatch(goalTerms: Set<String>, labelTerms: Set<String>): Boolean {
+        fun hasAny(terms: Set<String>, values: Set<String>): Boolean =
+            terms.any { it in values }
+
+        return (hasAny(goalTerms, BRIGHTNESS_TERMS) && hasAny(labelTerms, DISPLAY_TERMS)) ||
+            (hasAny(goalTerms, WIFI_NETWORK_TERMS) && hasAny(labelTerms, NETWORK_ROW_TERMS)) ||
+            (hasAny(goalTerms, BLUETOOTH_TERMS) && hasAny(labelTerms, CONNECTED_DEVICE_TERMS)) ||
+            (hasAny(goalTerms, VOLUME_SOUND_TERMS) && hasAny(labelTerms, SOUND_ROW_TERMS))
     }
 
     private fun semanticTerms(value: String): List<String> =
@@ -302,6 +315,24 @@ object VLMFirstStepOptimizer {
         "omnibot",
         "oob"
     )
+    private val BRIGHTNESS_TERMS = setOf("brightness", "bright", "亮度")
+    private val DISPLAY_TERMS = setOf("display", "screen", "显示", "屏幕")
+    private val WIFI_NETWORK_TERMS = setOf(
+        "wifi",
+        "wi",
+        "fi",
+        "network",
+        "internet",
+        "mobile",
+        "hotspot",
+        "网络",
+        "无线"
+    )
+    private val NETWORK_ROW_TERMS = setOf("network", "internet", "网络")
+    private val BLUETOOTH_TERMS = setOf("bluetooth", "pair", "pairing", "蓝牙")
+    private val CONNECTED_DEVICE_TERMS = setOf("device", "devices", "pairing", "连接", "设备", "配对")
+    private val VOLUME_SOUND_TERMS = setOf("volume", "sound", "ring", "alarm", "media", "音量", "声音")
+    private val SOUND_ROW_TERMS = setOf("sound", "vibration", "声音", "振动")
     private val GOAL_STOP_WORDS = setOf(
         "当前",
         "设置",

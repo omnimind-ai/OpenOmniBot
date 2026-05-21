@@ -9,12 +9,11 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 
 - AndroidWorld first-step policy lives here, not core optimizer.
 - Pass `packageName` when known; derive unknown packages from installed apps.
-- Blocking prompts: safe continuation only; avoid Deny/Delete/Sign in/Pay unless requested.
 - Focused editable input plus type/search task: use `type` first.
-- Missing list target: deliberate scroll, re-check text, do not tap unrelated first row.
-- Slider/seekbar: coordinates are 0-1000 normalized; for `Display brightness` max, do not click, use one `scroll` x1=70,y1=110,x2=990,y2=110.
-- Numeric keypad targets: click visible digits; `type` only for focused editable fields.
-- Validate after at least two visible UI states and concrete final text before `finished`.
+- Missing list target: scroll, re-check text; do not tap unrelated first row.
+- Slider/seekbar: 0-1000 normalized; `Display brightness` max: do not click, scroll x1=70,y1=110,x2=990,y2=110; min x1=990,y1=110,x2=10,y2=110.
+- Numeric keypad targets: click digit buttons; never use `type` unless focused editable.
+- Validate after at least two visible UI states before `finished`.
 
 Use this skill when the user wants OOB to operate an Android screen, run a
 VLM task, validate an AndroidWorld-style scenario, replay a stored Function, or
@@ -105,13 +104,17 @@ task-suite-specific prompt policy in the core VLM first-step optimizer.
   AndroidWorld phone, action arguments are 0-1000 normalized coordinates: if
   XML only shows `Display brightness`, the valid next action is
   `scroll(x1=70,y1=110,x2=990,y2=110)`, which executes at the far-right safe
-  edge, not `click`. To set min, reverse the x direction. Do not stop around
-  the middle such as executed `x2=490`, and do not settle for executed
-  `x2=680` when the task asks for maximum brightness.
+  edge, not `click`. To set min, use a leftward drag from the far right to the
+  far left, `scroll(x1=990,y1=110,x2=10,y2=110)`. Do not describe a min action
+  as "scroll left" while emitting rightward coordinates such as
+  `x1=50,x2=702`; `x1` must be greater than `x2` for minimum brightness. Do
+  not stop around the middle such as executed `x2=490`, and do not settle for
+  executed `x2=680` when the task asks for maximum brightness.
 - For on-screen numeric keypads such as Clock timers, enter values by clicking
   the visible digit buttons in order. Use `type` only when the focused node is an
   editable text field; a keypad made of clickable digit buttons is not an
-  editable text field.
+  editable text field. For a Clock timer value like 0h 1m 30s, click `1`, then
+  `3`, then `0`, and stop without pressing Start.
 - If the last action did not change visible text, selected state, or system
   value, do not repeat it more than once. Re-ground on the current screenshot/XML
   and choose a different action such as swipe, back, or a specific visible

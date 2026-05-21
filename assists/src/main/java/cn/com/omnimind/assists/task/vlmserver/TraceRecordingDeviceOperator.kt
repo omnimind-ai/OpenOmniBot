@@ -193,19 +193,68 @@ class TraceRecordingDeviceOperator(
         y2: Float,
         duration: Long,
     ): OperationResult {
-        val result = delegate.slideCoordinate(x1, y1, x2, y2, duration)
+        return recordSlide(
+            result = delegate.slideCoordinate(x1, y1, x2, y2, duration),
+            x1 = x1,
+            y1 = y1,
+            x2 = x2,
+            y2 = y2,
+            duration = duration,
+            targetDescription = null,
+        )
+    }
+
+    override suspend fun slideCoordinateWithContext(
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        duration: Long,
+        targetDescription: String,
+    ): OperationResult {
+        return recordSlide(
+            result = delegate.slideCoordinateWithContext(
+                x1 = x1,
+                y1 = y1,
+                x2 = x2,
+                y2 = y2,
+                duration = duration,
+                targetDescription = targetDescription,
+            ),
+            x1 = x1,
+            y1 = y1,
+            x2 = x2,
+            y2 = y2,
+            duration = duration,
+            targetDescription = targetDescription,
+        )
+    }
+
+    private fun recordSlide(
+        result: OperationResult,
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        duration: Long,
+        targetDescription: String?,
+    ): OperationResult {
+        val params = linkedMapOf<String, Any?>(
+            "x1" to x1,
+            "y1" to y1,
+            "x2" to x2,
+            "y2" to y2,
+            "duration_ms" to duration,
+        )
+        if (!targetDescription.isNullOrBlank()) {
+            params["target_description"] = targetDescription
+        }
         traceSession.recordDeviceEvent(
             eventType = "slide",
             request = mapOf(
                 "action" to mapOf(
                     "type" to "swipe",
-                    "params" to mapOf(
-                        "x1" to x1,
-                        "y1" to y1,
-                        "x2" to x2,
-                        "y2" to y2,
-                        "duration_ms" to duration,
-                    ),
+                    "params" to params,
                 )
             ),
             response = operationResultMap(result),

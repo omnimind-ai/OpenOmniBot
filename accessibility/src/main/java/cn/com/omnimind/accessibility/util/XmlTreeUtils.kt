@@ -314,6 +314,9 @@ object XmlTreeUtils {
                 // Sanitize text-based attributes before adding them
                 addAttr("text", sanitizeXmlString(n.text?.toString()))
                 addAttr("content-desc", sanitizeXmlString(n.contentDescription?.toString()))
+                addAttr("class", sanitizeXmlString(n.className?.toString()))
+                addAttr("resource-id", sanitizeXmlString(n.viewIdResourceName))
+                addAttr("enabled", n.isEnabled.toString())
                 addAttr("clickable", n.isClickable.toString())
                 addAttr("long-clickable", n.isLongClickable.toString())
                 addAttr("focusable", n.isFocusable.toString())
@@ -322,7 +325,9 @@ object XmlTreeUtils {
                 addAttr("password", n.isPassword.toString())
                 addAttr("selected", n.isSelected.toString())
                 addAttr("editable", n.isEditable.toString())
-                // addAttr("class-name", n.className?.toString() ?: "")
+                addAttr("checkable", n.isCheckable.toString())
+                addAttr("checked", n.isChecked.toString())
+                addAttr("state-description", sanitizeXmlString(n.stateDescription?.toString()))
                 serializer.attribute(
                     null,
                     "bounds",
@@ -342,4 +347,3 @@ object XmlTreeUtils {
         return writer.toString()
     }
 }
-

@@ -50,6 +50,7 @@ object ActionTargetGrounder {
         val contentDesc: String,
         val hintText: String,
         val descendantText: String,
+        val descendantTextParts: List<String>,
         val resourceId: String,
         val className: String,
         val clickable: Boolean,
@@ -72,6 +73,10 @@ object ActionTargetGrounder {
             get() = listOf(text, contentDesc, hintText, resourceTail())
                 .filter { it.isNotBlank() }
                 .joinToString(" ")
+
+        val directSemanticParts: List<String>
+            get() = listOf(text, contentDesc, hintText)
+                .filter { it.isNotBlank() }
 
         private fun resourceTail(): String =
             resourceId.substringAfterLast('/').substringAfterLast(':')
@@ -117,6 +122,17 @@ object ActionTargetGrounder {
         nodes: List<Node>,
         copyAction: (Float, Float) -> UIAction,
     ): Result {
+        exactKeyTarget(
+            targetDescription = targetDescription,
+            x = x,
+            y = y,
+            nodes = nodes,
+            copyAction = copyAction
+        )?.let { return it }
+
+        if (isGenericTargetDescription(targetDescription)) {
+            return Result(action = action, applied = false, reason = "generic_target_description")
+        }
         val maxArea = maxPageArea(nodes)
         val semanticDirectCandidates = nodes
             .asSequence()
@@ -163,6 +179,7 @@ object ActionTargetGrounder {
             }
             .sortedWith(
                 compareByDescending<Candidate> { it.directTextScore }
+                    .thenByDescending { if (it.node.actionable) 1 else 0 }
                     .thenByDescending { it.confidence }
                     .thenByDescending { it.textScore }
                     .thenBy { it.node.bounds.area }
@@ -172,7 +189,7 @@ object ActionTargetGrounder {
         val best = candidates.firstOrNull()
             ?: return Result(action = action, applied = false, reason = "no_semantic_target")
 
-        if (!best.contains && best.confidence < MIN_CONFIDENCE) {
+        if (!best.contains && best.directTextScore < HIGH_DIRECT_TEXT_MATCH && best.confidence < MIN_CONFIDENCE) {
             return Result(
                 action = action,
                 applied = false,
@@ -220,6 +237,56 @@ object ActionTargetGrounder {
         val contains: Boolean,
     )
 
+    private fun exactKeyTarget(
+        targetDescription: String,
+        x: Float,
+        y: Float,
+        nodes: List<Node>,
+        copyAction: (Float, Float) -> UIAction,
+    ): Result? {
+        val key = extractKeyTarget(targetDescription) ?: return null
+        val maxArea = maxPageArea(nodes)
+        val candidates = nodes
+            .asSequence()
+            .filter { it.actionable }
+            .filter { it.bounds.area >= MIN_TARGET_AREA }
+            .filter { it.bounds.area <= maxArea * MAX_KEY_TARGET_AREA_RATIO }
+            .filter { it.matchesExactKey(key) }
+            .sortedWith(
+                compareBy<Node> { it.bounds.area }
+                    .thenByDescending { proximityScore(x, y, it.bounds, nodes) }
+            )
+            .toList()
+
+        val target = candidates.firstOrNull() ?: return null
+        val groundedX = target.bounds.centerX
+        val groundedY = target.bounds.centerY
+        if (hypot((groundedX - x).toDouble(), (groundedY - y).toDouble()) < MIN_NUDGE_DISTANCE) {
+            return Result(
+                action = copyAction(groundedX, groundedY),
+                applied = false,
+                reason = "exact_key_target_already_centered",
+                confidence = 1.0,
+                targetLabel = target.label,
+                originalX = x,
+                originalY = y,
+                groundedX = groundedX,
+                groundedY = groundedY,
+            )
+        }
+        return Result(
+            action = copyAction(groundedX, groundedY),
+            applied = true,
+            reason = "exact_key_target",
+            confidence = 1.0,
+            targetLabel = target.label,
+            originalX = x,
+            originalY = y,
+            groundedX = groundedX,
+            groundedY = groundedY,
+        )
+    }
+
     private fun buildCandidate(
         targetDescription: String,
         x: Float,
@@ -228,7 +295,18 @@ object ActionTargetGrounder {
         nodes: List<Node>,
     ): Candidate {
         val textScore = textSimilarity(targetDescription, node.label)
-        val directTextScore = textSimilarity(targetDescription, node.directLabel)
+        val descendantPartScore = if (node.canUseDescendantTextAsClickAnchor) {
+            bestTextPartScore(targetDescription, node.descendantTextParts)
+        } else {
+            0.0
+        }
+        val directTextScore = max(
+            textSimilarity(targetDescription, node.directLabel),
+            max(
+                bestTextPartScore(targetDescription, node.directSemanticParts),
+                descendantPartScore
+            )
+        )
         val proximity = proximityScore(x, y, node.bounds, nodes)
         val contains = node.bounds.contains(x, y)
         val confidence = (textScore * 0.56) +
@@ -269,6 +347,7 @@ object ActionTargetGrounder {
                 contentDesc = element.attr("content-desc"),
                 hintText = element.attr("hintText"),
                 descendantText = descendantSemanticText(element),
+                descendantTextParts = descendantSemanticParts(element),
                 resourceId = element.attr("resource-id"),
                 className = element.attr("class"),
                 clickable = element.boolAttr("clickable"),
@@ -303,6 +382,21 @@ object ActionTargetGrounder {
         return parts.joinToString(" ").take(MAX_DESCENDANT_LABEL_LENGTH)
     }
 
+    private fun descendantSemanticParts(element: Element): List<String> {
+        val parts = linkedSetOf<String>()
+        val descendants = element.getElementsByTagName("node")
+        for (index in 0 until descendants.length) {
+            val child = descendants.item(index) as? Element ?: continue
+            if (child === element) continue
+            listOf(child.attr("text"), child.attr("content-desc"), child.attr("hintText"))
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .forEach { parts += it }
+            if (parts.size >= MAX_DESCENDANT_PARTS) break
+        }
+        return parts.toList()
+    }
+
     private fun parseBounds(raw: String): Rect? {
         val values = BOUNDS_REGEX.find(raw)?.groupValues ?: return null
         val left = values.getOrNull(1)?.toFloatOrNull() ?: return null
@@ -331,13 +425,73 @@ object ActionTargetGrounder {
         } else {
             0.0
         }
-        val charScore = characterOverlap(target, label)
-        val weightedCharScore = if (targetTokens.isNotEmpty() && labelTokens.isNotEmpty()) {
-            charScore * 0.65
+        val weightedCharScore = if (shouldUseCharacterOverlap(target, label, targetTokens, labelTokens)) {
+            characterOverlap(target, label)
         } else {
-            charScore
+            0.0
         }
-        return max(tokenScore, weightedCharScore)
+        return max(max(tokenScore, weightedCharScore), semanticAliasScore(targetTokens, labelTokens))
+    }
+
+    private fun bestTextPartScore(targetDescription: String, parts: List<String>): Double =
+        parts.maxOfOrNull { textSimilarity(targetDescription, it) } ?: 0.0
+
+    private fun semanticAliasScore(targetTokens: Set<String>, labelTokens: Set<String>): Double {
+        fun hasAny(tokens: Set<String>, values: Set<String>): Boolean =
+            tokens.any { it in values }
+
+        val creationIntent = hasAny(targetTokens, ADD_CREATE_TOKENS) && hasAny(labelTokens, ADD_CREATE_TOKENS)
+        if (!creationIntent) return 0.0
+        return when {
+            hasAny(targetTokens, CONTACT_TOKENS) && hasAny(labelTokens, CONTACT_TOKENS) -> 0.94
+            hasAny(targetTokens, EVENT_TOKENS) && hasAny(labelTokens, EVENT_TOKENS) -> 0.94
+            else -> 0.0
+        }
+    }
+
+    private fun extractKeyTarget(targetDescription: String): String? {
+        val normalized = normalizeText(targetDescription)
+        if (normalized == "00" || normalized.length == 1 && normalized[0].isDigit()) {
+            return normalized
+        }
+        KEY_TARGET_REGEX.find(normalized)?.let { match ->
+            return match.groupValues.getOrNull(1)?.takeIf { it == "00" || it.length == 1 && it[0].isDigit() }
+        }
+        return NUMBER_WORDS.entries.firstOrNull { (word, _) ->
+            Regex("""\b(digit|number|key|button|press|tap|enter)\s+$word\b""").containsMatchIn(normalized)
+        }?.value
+    }
+
+    private fun Node.matchesExactKey(key: String): Boolean {
+        val direct = directSemanticParts.map { normalizeText(it) }
+        if (direct.any { it == key }) return true
+        val resource = normalizeText(resourceId.substringAfterLast('/').substringAfterLast(':'))
+        return resource.endsWith("digit $key") ||
+            resource.endsWith("key $key") ||
+            resource == "digit $key" ||
+            resource == "key $key"
+    }
+
+    private val Node.canUseDescendantTextAsClickAnchor: Boolean
+        get() = enabled && (clickable || longClickable || editable || checkable)
+
+    private fun shouldUseCharacterOverlap(
+        target: String,
+        label: String,
+        targetTokens: Set<String>,
+        labelTokens: Set<String>
+    ): Boolean {
+        if (targetTokens.isEmpty() || labelTokens.isEmpty()) return true
+        return target.any(::isCjk) || label.any(::isCjk)
+    }
+
+    private fun isCjk(char: Char): Boolean =
+        char in '\u4e00'..'\u9fff'
+
+    private fun isGenericTargetDescription(value: String): Boolean {
+        val meaningfulTokens = tokens(normalizeText(value))
+            .filterNot { it in GENERIC_TARGET_TOKENS }
+        return meaningfulTokens.isEmpty()
     }
 
     private fun normalizeText(value: String): String =
@@ -388,8 +542,42 @@ object ActionTargetGrounder {
     }
 
     private val BOUNDS_REGEX = Regex("""\[(\-?\d+(?:\.\d+)?),(\-?\d+(?:\.\d+)?)\]\[(\-?\d+(?:\.\d+)?),(\-?\d+(?:\.\d+)?)\]""")
+    private val KEY_TARGET_REGEX = Regex("""\b(?:digit|number|key|button|press|tap|enter)\s+(00|\d)\b""")
+    private val NUMBER_WORDS = mapOf(
+        "zero" to "0",
+        "one" to "1",
+        "two" to "2",
+        "three" to "3",
+        "four" to "4",
+        "five" to "5",
+        "six" to "6",
+        "seven" to "7",
+        "eight" to "8",
+        "nine" to "9"
+    )
+    private val GENERIC_TARGET_TOKENS = setOf(
+        "app",
+        "application",
+        "screen",
+        "page",
+        "main",
+        "home",
+        "homepage",
+        "settings",
+        "setting",
+        "list",
+        "menu",
+        "current",
+        "area",
+        "container",
+        "view"
+    )
+    private val ADD_CREATE_TOKENS = setOf("add", "create", "new", "plus")
+    private val CONTACT_TOKENS = setOf("contact", "contacts")
+    private val EVENT_TOKENS = setOf("event", "events")
     private const val MIN_TARGET_AREA = 16f
     private const val MAX_TARGET_AREA_RATIO = 0.55f
+    private const val MAX_KEY_TARGET_AREA_RATIO = 0.08f
     private const val MIN_CONTAINED_TEXT_MATCH = 0.32
     private const val MIN_TEXT_MATCH = 0.42
     private const val HIGH_DIRECT_TEXT_MATCH = 0.88
@@ -397,4 +585,5 @@ object ActionTargetGrounder {
     private const val MIN_CONFIDENCE = 0.56
     private const val MIN_NUDGE_DISTANCE = 2.5
     private const val MAX_DESCENDANT_LABEL_LENGTH = 160
+    private const val MAX_DESCENDANT_PARTS = 12
 }

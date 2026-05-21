@@ -145,6 +145,21 @@ class OmniAction(
         }
     }
 
+    fun setProgress(
+        node: AccessibilityNodeInfo,
+        value: Float,
+    ) {
+        OmniLog.v(TAG, "fun setProgress")
+        val range = node.rangeInfo ?: throw RuntimeException("Node has no range info")
+        val progress = value.coerceIn(range.min, range.max)
+        val arguments = Bundle().apply {
+            putFloat(AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE, progress)
+        }
+        if (!node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id, arguments)) {
+            throw RuntimeException("Perform set progress on node failed")
+        }
+    }
+
     /**
      * 复制文本到系统剪贴板（需在主线程执行）
      * 注意：Android 10+ 后台应用无法访问剪贴板，建议使用 ClipboardHelperActivity

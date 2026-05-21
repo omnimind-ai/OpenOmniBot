@@ -1,12 +1,11 @@
 package cn.com.omnimind.assists.task.vlmserver
 
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VLMTaskCompletionPolicyTest {
     @Test
-    fun `bounded androidworld action is successful when explicit max steps is reached`() {
+    fun `max steps reached is not treated as task success`() {
         val trace = listOf(
             UIStep(
                 observation = "Settings",
@@ -20,7 +19,7 @@ class VLMTaskCompletionPolicyTest {
             )
         )
 
-        assertTrue(
+        assertFalse(
             VLMTaskCompletionPolicy.shouldTreatMaxStepsAsBoundedSuccess(
                 normalizedMaxSteps = 1,
                 executionTrace = trace,

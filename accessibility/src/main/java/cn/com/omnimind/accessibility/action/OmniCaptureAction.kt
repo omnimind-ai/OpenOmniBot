@@ -219,7 +219,7 @@ class OmniCaptureAction(
     }
 
     fun getNodeMap(): Map<String, AccessibilityNode>? {
-        val rootNode = service.rootInActiveWindow ?: return null
+        val rootNode = getActualRootNode() ?: service.rootInActiveWindow ?: return null
         val xmlTree = XmlTreeUtils.buildXmlTree(rootNode) ?: return null
         return XmlTreeUtils.extractNodeMap(xmlTree)
     }
@@ -237,4 +237,3 @@ data class XmlTreeNode(
     val node: AccessibilityNode,
     val children: List<XmlTreeNode>,
 )
-
