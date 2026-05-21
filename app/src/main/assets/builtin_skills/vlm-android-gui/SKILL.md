@@ -5,6 +5,15 @@ description: Use for VLM/Android GUI automation, AndroidWorld-style phone tasks,
 
 # VLM Android GUI Skill
 
+Step guidance essentials for phone execution:
+
+- AndroidWorld first-step policy lives in this skill, not core optimizer.
+- Pass `packageName` when known; derive it from installed apps when unknown.
+- Blocking prompts: safe continuation only; avoid Deny/Delete/Sign in/Pay unless requested.
+- Focused editable input plus type/search task: use `type` first.
+- Missing list target: deliberate scroll, re-check text, do not tap unrelated first row.
+- Validate after at least two visible UI states and concrete final text before `finished`.
+
 Use this skill when the user wants OOB to operate an Android screen, run a
 VLM task, validate an AndroidWorld-style scenario, replay a stored Function, or
 debug why a phone task did not execute.

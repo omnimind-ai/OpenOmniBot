@@ -64,6 +64,17 @@ class BuiltinSkillManifestConsistencyTest {
         assertTrue(skillBody.contains("editable field is already focused"))
         assertTrue(skillBody.contains("Validation prompts"))
         assertTrue(skillBody.contains("at least two UI states"))
+
+        val injectedStepGuidance = ResolvedSkillContext(
+            skillId = "vlm-android-gui",
+            frontmatter = mapOf("name" to "vlm-android-gui"),
+            bodyMarkdown = skillBody,
+            triggerReason = "test"
+        ).stepGuidance()
+        assertTrue(injectedStepGuidance.contains("AndroidWorld first-step policy"))
+        assertTrue(injectedStepGuidance.contains("Pass `packageName` when known"))
+        assertTrue(injectedStepGuidance.contains("Focused editable input"))
+        assertTrue(injectedStepGuidance.contains("Validate after at least two visible UI states"))
     }
 
     @Test
