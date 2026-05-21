@@ -483,7 +483,8 @@ open class VLMOperationTask(
             "after" to linkedMapOf(
                 "summary" to step.summary,
                 "result" to step.result,
-                "package_name" to step.packageName
+                "observation_xml" to step.afterObservationXml,
+                "package_name" to (step.afterPackageName?.takeIf { it.isNotBlank() } ?: step.packageName)
             )
         )
     }

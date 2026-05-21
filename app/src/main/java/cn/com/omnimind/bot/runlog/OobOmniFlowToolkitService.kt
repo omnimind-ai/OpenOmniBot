@@ -72,7 +72,8 @@ class OobOmniFlowToolkitService(
                     "function_id" to it.functionId,
                     "inputSchema" to inputSchema(it.spec),
                     "score" to it.score,
-                    "reason" to it.reason
+                    "reason" to it.reason,
+                    "step_summaries" to stepSummaries(it.spec)
                 )
             },
             "candidates" to if (directHit == null) candidates else emptyList<Map<String, Any?>>(),
@@ -671,9 +672,29 @@ class OobOmniFlowToolkitService(
             "reason" to reason,
             "step_count" to (execution["step_count"] ?: listArg(execution["steps"]).size),
             "requires_agent_fallback" to execution["requires_agent_fallback"],
+            "step_summaries" to stepSummaries(spec),
             "function_kind" to "oob_reusable_function",
             "asset_state" to "native_local"
         )
+    }
+
+    private fun stepSummaries(spec: Map<String, Any?>): List<Map<String, Any?>> {
+        val execution = mapArg(spec["execution"])
+        return listArg(execution["steps"]).mapIndexedNotNull { index, rawStep ->
+            val step = mapArg(rawStep).takeIf { it.isNotEmpty() } ?: return@mapIndexedNotNull null
+            linkedMapOf(
+                "index" to index,
+                "id" to firstNonBlank(step["id"], "step_${index + 1}"),
+                "title" to firstNonBlank(step["title"], step["summary"]),
+                "kind" to step["kind"],
+                "tool" to firstNonBlank(
+                    step["omniflow_action"],
+                    step["local_action"],
+                    step["callable_tool"],
+                    step["tool"],
+                )
+            )
+        }
     }
 
     private fun inputSchema(spec: Map<String, Any?>): Map<String, Any?> {

@@ -143,14 +143,19 @@ object OmniflowStepExecutor {
             else -> throw IllegalArgumentException("Unsupported omniflow action: $action")
         }
         delay(POST_STEP_DELAY_MS)
-        return linkedMapOf(
+        val postcondition = verifyPostcondition(step)
+        return linkedMapOf<String, Any?>(
             "step_id" to stepId,
             "tool" to action,
             "executor" to "omniflow",
             "model_free" to true,
             "success" to true,
             "summary" to (stepTitle.takeIf { it.isNotBlank() } ?: summary)
-        )
+        ).apply {
+            if (postcondition.isNotEmpty()) {
+                put("postcondition", postcondition)
+            }
+        }
     }
 
     fun remapStepArgs(step: Map<String, Any?>): StepArgsResult {
@@ -276,6 +281,67 @@ object OmniflowStepExecutor {
             "right" -> ScrollDirection.RIGHT
             else -> null
         }
+    }
+
+    private fun verifyPostcondition(step: Map<String, Any?>): Map<String, Any?> {
+        val postcondition = normalizeArgsMap(step["postcondition"])
+        if (postcondition.isEmpty()) return emptyMap()
+        val kind = postcondition["kind"]?.toString()?.trim().orEmpty()
+        if (kind != "recorded_after_page_similarity") return emptyMap()
+        val sourceContext = (step["source_context"] as? Map<*, *>)
+            ?: (normalizeArgsMap(step["args"])["source_context"] as? Map<*, *>)
+            ?: throw IllegalStateException("Postcondition failed: missing_source_context")
+        val dstCtx = sourceContext["dst_ctx"] as? Map<*, *>
+            ?: throw IllegalStateException("Postcondition failed: missing_recorded_after_context")
+        val expectedXml = firstNonBlank(
+            dstCtx["page"],
+            dstCtx["xml"],
+        )
+        if (expectedXml.isEmpty()) {
+            throw IllegalStateException("Postcondition failed: missing_recorded_after_xml")
+        }
+        val currentXml = OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
+        if (currentXml.isEmpty()) {
+            throw IllegalStateException("Postcondition failed: missing_current_xml")
+        }
+        val expectedPackage = firstNonBlank(dstCtx["package_name"], dstCtx["packageName"])
+        val currentPackage = OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
+        val packageMatched = expectedPackage.isEmpty() ||
+            currentPackage.isEmpty() ||
+            expectedPackage == currentPackage
+        val score = pageSimilarityScore(expectedXml, currentXml)
+        val minScore = numberArg(postcondition, "min_score", "minScore")?.toFloat()
+            ?: MIN_POSTCONDITION_PAGE_SCORE
+        if (!packageMatched || score < minScore) {
+            throw IllegalStateException(
+                "Postcondition failed: page_similarity=$score min=$minScore " +
+                    "package_matched=$packageMatched expected_package=$expectedPackage current_package=$currentPackage"
+            )
+        }
+        return linkedMapOf(
+            "kind" to kind,
+            "success" to true,
+            "score" to score,
+            "min_score" to minScore,
+            "package_matched" to packageMatched,
+            "expected_package" to expectedPackage.takeIf { it.isNotBlank() },
+            "current_package" to currentPackage.takeIf { it.isNotBlank() },
+        ).filterValues { it != null }
+    }
+
+    private fun pageSimilarityScore(expectedXml: String, currentXml: String): Float {
+        val expected = parsePageModel(expectedXml) ?: return 0f
+        val current = parsePageModel(currentXml) ?: return 0f
+        val expectedNodes = expected.nodes
+            .filter { isAnchorCandidate(it, expected.rootBounds) }
+            .take(MAX_POSTCONDITION_NODES)
+        if (expectedNodes.isEmpty()) return 0f
+        val matched = expectedNodes.count { source ->
+            current.nodes.any { target ->
+                nodeSimilarity(source, target) >= MIN_POSTCONDITION_NODE_SIMILARITY
+            }
+        }
+        return (matched.toFloat() / expectedNodes.size.toFloat()).coerceIn(0f, 1f)
     }
 
     private fun currentRootCenter(): Pair<Float, Float>? {
@@ -988,4 +1054,7 @@ object OmniflowStepExecutor {
     private const val MIN_ANCHOR_SIMILARITY = 0.45f
     private const val MIN_ANCHOR_MATCH_SCORE = 0.12f
     private const val MIN_DIRECT_FALLBACK_SIMILARITY = 0.58f
+    private const val MIN_POSTCONDITION_PAGE_SCORE = 0.12f
+    private const val MIN_POSTCONDITION_NODE_SIMILARITY = 0.50f
+    private const val MAX_POSTCONDITION_NODES = 24
 }

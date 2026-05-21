@@ -122,6 +122,22 @@ Defaults:
 - Block reboot, shutdown, fastboot, block-device writes, filesystem format, and
   protected system partition writes.
 
+## Replay Validation
+
+Local OmniFlow replay must treat action dispatch and task success as different
+facts:
+
+- A deterministic step succeeds only when the action executes and any recorded
+  postcondition passes.
+- Recorded after-page checks are lightweight compatibility gates. If the current
+  page no longer matches the recorded post-action page, report fallback instead
+  of claiming success.
+- Function replay may return `fallback=true`, `needs_agent`, or
+  `model_required=true`; in that case switch to bounded live VLM only when the
+  user requested continued execution.
+- Do not preserve `wait` steps as evidence. Page settling belongs to the native
+  replay backend.
+
 ## Final Response Requirements
 
 When you finish, report:

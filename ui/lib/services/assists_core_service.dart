@@ -678,6 +678,81 @@ class UtgManualRunResult {
       rawJson: Map<String, dynamic>.from(map),
     );
   }
+
+  Map<String, dynamic> get context {
+    final raw = rawJson['context'];
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      return raw.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return const <String, dynamic>{};
+  }
+
+  List<Map<String, dynamic>> get stepResults {
+    final raw =
+        context['step_results'] ??
+        terminalState['step_results'] ??
+        rawJson['step_results'];
+    if (raw is! List) return const <Map<String, dynamic>>[];
+    return raw
+        .whereType<Map>()
+        .map(
+          (item) => item.map((key, value) => MapEntry(key.toString(), value)),
+        )
+        .toList(growable: false);
+  }
+
+  bool get modelRequired => _truthy(
+    terminalState['model_required'] ??
+        rawJson['model_required'] ??
+        context['model_required'],
+  );
+
+  bool get fallbackAvailable => _truthy(
+    terminalState['fallback_available'] ??
+        rawJson['fallback_available'] ??
+        context['fallback_available'],
+  );
+
+  bool get delegatedToolUsed => _truthy(
+    terminalState['delegated_tool_used'] ??
+        rawJson['delegated_tool_used'] ??
+        context['delegated_tool_used'],
+  );
+
+  int get stepCount => _intValue(
+    terminalState['step_count'] ??
+        rawJson['step_count'] ??
+        context['step_count'],
+  );
+
+  int get successStepCount => _intValue(
+    terminalState['success_step_count'] ??
+        rawJson['success_step_count'] ??
+        context['success_step_count'],
+  );
+
+  String get runner =>
+      (terminalState['runner'] ?? rawJson['runner'] ?? context['runner'] ?? '')
+          .toString()
+          .trim();
+
+  static bool _truthy(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      return normalized == 'true' || normalized == '1' || normalized == 'yes';
+    }
+    return false;
+  }
+
+  static int _intValue(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value.trim()) ?? 0;
+    return 0;
+  }
 }
 
 class UtgFunctionMutationResult {
@@ -2358,18 +2433,16 @@ class AssistsMessageService {
     if (normalizedRunId.isEmpty) {
       throw Exception('runId 为空，无法转换 RunLog');
     }
-    final result = await assistCore.invokeMethod(
-      'convertInternalRunLogToOobFunction',
-      {
-        'runId': normalizedRunId,
-        'register': register,
-        if (functionId != null && functionId.trim().isNotEmpty)
-          'functionId': functionId.trim(),
-        if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
-        if (description != null && description.trim().isNotEmpty)
-          'description': description.trim(),
-      },
-    );
+    final result = await assistCore
+        .invokeMethod('convertInternalRunLogToOobFunction', {
+          'runId': normalizedRunId,
+          'register': register,
+          if (functionId != null && functionId.trim().isNotEmpty)
+            'functionId': functionId.trim(),
+          if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
+          if (description != null && description.trim().isNotEmpty)
+            'description': description.trim(),
+        });
     return _jsonSafeDynamicMap(result);
   }
 
@@ -2389,10 +2462,9 @@ class AssistsMessageService {
     if (normalized.isEmpty) {
       return {'success': false, 'error': 'functionId is empty'};
     }
-    final result = await assistCore.invokeMethod(
-      'deleteOobReusableFunction',
-      {'functionId': normalized},
-    );
+    final result = await assistCore.invokeMethod('deleteOobReusableFunction', {
+      'functionId': normalized,
+    });
     return _jsonSafeDynamicMap(result);
   }
 

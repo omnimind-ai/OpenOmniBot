@@ -155,8 +155,12 @@ data class UIStep(
     val summary: String = "",  // 添加summary字段用于历史总结
     @SerialName("observation_xml")
     val observationXml: String? = null,
+    @SerialName("after_observation_xml")
+    val afterObservationXml: String? = null,
     @SerialName("package_name")
     val packageName: String? = null,
+    @SerialName("after_package_name")
+    val afterPackageName: String? = null,
     @SerialName("started_at_ms")
     val startedAtMs: Long? = null,
     @SerialName("finished_at_ms")

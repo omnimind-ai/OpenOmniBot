@@ -116,9 +116,32 @@ object VlmToolCoordinator {
             mapOf("summary" to "正在启动视觉执行任务")
         )
 
+        val recallGuidance = VlmRecallGuidanceBuilder.build(
+            context = context,
+            goal = request.goal,
+            targetPackageName = request.packageName,
+        )
+        val augmentedRequest = request.withRecallGuidance(recallGuidance.guidance)
+        taskState.vlmRequest = augmentedRequest
+        if (recallGuidance.guidance.isNotBlank()) {
+            taskState.executionRoute = "vlm_with_omniflow_recall:${recallGuidance.decision}"
+            taskState.markStateChanged()
+            emitProgress(
+                progressReporter,
+                taskId,
+                taskState.status,
+                "召回增强",
+                mapOf(
+                    "summary" to "已注入 OmniFlow 历史轨迹提示",
+                    "omniflowRecallDecision" to recallGuidance.decision,
+                    "omniflowRecall" to recallGuidance.payload,
+                )
+            )
+        }
+
         val startResult = startVlmTaskInternal(
             context,
-            request,
+            augmentedRequest,
             taskId,
             taskState,
             scope,
@@ -191,9 +214,20 @@ object VlmToolCoordinator {
                     goal = taskState.goal,
                     needSummary = taskState.needSummary
                 )
+                val recallGuidance = VlmRecallGuidanceBuilder.build(
+                    context = context,
+                    goal = request.goal,
+                    targetPackageName = request.packageName,
+                )
+                val augmentedRequest = request.withRecallGuidance(recallGuidance.guidance)
+                taskState.vlmRequest = augmentedRequest
+                if (recallGuidance.guidance.isNotBlank()) {
+                    taskState.executionRoute = "vlm_with_omniflow_recall:${recallGuidance.decision}"
+                    taskState.markStateChanged()
+                }
                 val startResult = startVlmTaskInternal(
                     context,
-                    request,
+                    augmentedRequest,
                     taskId,
                     taskState,
                     scope,
@@ -569,5 +603,16 @@ object VlmToolCoordinator {
             if (notified) return true
         }
         return false
+    }
+
+    private fun VlmTaskRequest.withRecallGuidance(guidance: String): VlmTaskRequest {
+        val trimmed = guidance.trim()
+        if (trimmed.isEmpty()) return this
+        val existing = stepSkillGuidance.trim()
+        return copy(
+            stepSkillGuidance = listOf(existing, trimmed)
+                .filter { it.isNotBlank() }
+                .joinToString("\n\n")
+        )
     }
 }

@@ -94,6 +94,8 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals("hit", recall["decision"])
             val hit = recall["hit"] as? Map<*, *>
             assertEquals(functionId, hit?.get("function_id"))
+            val recalledSteps = hit?.get("step_summaries") as? List<*>
+            assertEquals(1, recalledSteps?.size)
 
             val call = toolkit.callFunction(
                 mapOf(
