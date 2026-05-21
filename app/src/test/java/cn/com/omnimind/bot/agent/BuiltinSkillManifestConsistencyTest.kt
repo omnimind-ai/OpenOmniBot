@@ -62,6 +62,13 @@ class BuiltinSkillManifestConsistencyTest {
         assertTrue(skillBody.contains("packageName"))
         assertTrue(skillBody.contains("permission, onboarding, or account prompt"))
         assertTrue(skillBody.contains("editable field is already focused"))
+        assertTrue(skillBody.contains("sliders, seekbars, and system panels"))
+        assertTrue(skillBody.contains("90-95%"))
+        assertTrue(skillBody.contains("0-1000 normalized"))
+        assertTrue(skillBody.contains("x2=990"))
+        assertTrue(skillBody.contains("Display brightness"))
+        assertTrue(skillBody.contains("not `click`"))
+        assertTrue(skillBody.contains("on-screen numeric keypads"))
         assertTrue(skillBody.contains("Validation prompts"))
         assertTrue(skillBody.contains("at least two UI states"))
 
@@ -71,9 +78,16 @@ class BuiltinSkillManifestConsistencyTest {
             bodyMarkdown = skillBody,
             triggerReason = "test"
         ).stepGuidance()
+        assertFalse("Injected VLM step guidance should not be truncated", injectedStepGuidance.endsWith("..."))
         assertTrue(injectedStepGuidance.contains("AndroidWorld first-step policy"))
         assertTrue(injectedStepGuidance.contains("Pass `packageName` when known"))
         assertTrue(injectedStepGuidance.contains("Focused editable input"))
+        assertTrue(injectedStepGuidance.contains("Slider/seekbar"))
+        assertTrue(injectedStepGuidance.contains("0-1000 normalized"))
+        assertTrue(injectedStepGuidance.contains("x2=990"))
+        assertTrue(injectedStepGuidance.contains("Display brightness"))
+        assertTrue(injectedStepGuidance.contains("do not click"))
+        assertTrue(injectedStepGuidance.contains("Numeric keypad targets"))
         assertTrue(injectedStepGuidance.contains("Validate after at least two visible UI states"))
     }
 

@@ -1,17 +1,19 @@
 ---
 name: vlm-android-gui
-description: Use for VLM/Android GUI automation, AndroidWorld-style phone tasks, 小万视觉执行, vlm_task, OmniFlow replay, call_tool, Function conversion, and RunLog validation. Prefer when the user asks for long phone tasks, screen automation, visual grounding, or reusable Android actions.
+description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, vlm_task, OmniFlow replay, Function conversion, and RunLog validation.
 ---
 
 # VLM Android GUI Skill
 
-Step guidance essentials for phone execution:
+## Step Guidance Essentials
 
-- AndroidWorld first-step policy lives in this skill, not core optimizer.
-- Pass `packageName` when known; derive it from installed apps when unknown.
+- AndroidWorld first-step policy lives here, not core optimizer.
+- Pass `packageName` when known; derive unknown packages from installed apps.
 - Blocking prompts: safe continuation only; avoid Deny/Delete/Sign in/Pay unless requested.
 - Focused editable input plus type/search task: use `type` first.
 - Missing list target: deliberate scroll, re-check text, do not tap unrelated first row.
+- Slider/seekbar: coordinates are 0-1000 normalized; for `Display brightness` max, do not click, use one `scroll` x1=70,y1=110,x2=990,y2=110.
+- Numeric keypad targets: click visible digits; `type` only for focused editable fields.
 - Validate after at least two visible UI states and concrete final text before `finished`.
 
 Use this skill when the user wants OOB to operate an Android screen, run a
@@ -96,6 +98,24 @@ task-suite-specific prompt policy in the core VLM first-step optimizer.
 - For list pages such as Settings, if the requested target is not visible, use a
   deliberate vertical scroll within the list and then re-check visible text. Do
   not tap the first unrelated row.
+- For sliders, seekbars, and system panels such as brightness or volume, never
+  repeat the same `click` on the slider. Use the `scroll` action as a horizontal
+  drag to the actual endpoint: to set max, set `x1` near the left/current thumb
+  and `x2` at 90-95% of screen or slider width at the slider y. On a 720px wide
+  AndroidWorld phone, action arguments are 0-1000 normalized coordinates: if
+  XML only shows `Display brightness`, the valid next action is
+  `scroll(x1=70,y1=110,x2=990,y2=110)`, which executes at the far-right safe
+  edge, not `click`. To set min, reverse the x direction. Do not stop around
+  the middle such as executed `x2=490`, and do not settle for executed
+  `x2=680` when the task asks for maximum brightness.
+- For on-screen numeric keypads such as Clock timers, enter values by clicking
+  the visible digit buttons in order. Use `type` only when the focused node is an
+  editable text field; a keypad made of clickable digit buttons is not an
+  editable text field.
+- If the last action did not change visible text, selected state, or system
+  value, do not repeat it more than once. Re-ground on the current screenshot/XML
+  and choose a different action such as swipe, back, or a specific visible
+  control.
 - Ignore OOB overlay controls such as 接管, 继续执行, 小万, and OmniBot when
   choosing the first phone action.
 
