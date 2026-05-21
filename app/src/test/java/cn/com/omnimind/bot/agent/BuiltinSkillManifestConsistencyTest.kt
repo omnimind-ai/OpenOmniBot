@@ -52,6 +52,21 @@ class BuiltinSkillManifestConsistencyTest {
     }
 
     @Test
+    fun vlmAndroidGuiSkillOwnsAndroidWorldFirstStepAndValidationGuidance() {
+        val skillBody = builtinSkillsRoot()
+            .resolve("vlm-android-gui/SKILL.md")
+            .readText()
+
+        assertTrue(skillBody.contains("First-Step AndroidWorld Rules"))
+        assertTrue(skillBody.contains("Do not encode"))
+        assertTrue(skillBody.contains("packageName"))
+        assertTrue(skillBody.contains("permission, onboarding, or account prompt"))
+        assertTrue(skillBody.contains("editable field is already focused"))
+        assertTrue(skillBody.contains("Validation prompts"))
+        assertTrue(skillBody.contains("at least two UI states"))
+    }
+
+    @Test
     fun projectCreationRequestsResolveOnlyToCanonicalOobProjectSkill() {
         val root = builtinSkillsRoot()
         @Suppress("UNCHECKED_CAST")

@@ -67,6 +67,29 @@ Guidelines:
 - Require visible verification before `finished`.
 - Do not change destructive or privacy-sensitive settings without confirmation.
 
+## First-Step AndroidWorld Rules
+
+Keep AndroidWorld first-step behavior in this skill guidance. Do not encode
+task-suite-specific prompt policy in the core VLM first-step optimizer.
+
+- If the target app is known, pass `packageName` in `vlm_task` instead of asking
+  the model to guess the package.
+- If the target app is not known, derive it from the installed application list
+  before calling `vlm_task`; do not invent common Android package names.
+- If the current page is a permission, onboarding, or account prompt that blocks
+  the task, the first action should unblock the flow with a safe continuation
+  control such as Allow, While using the app, OK, Got it, Continue, Skip, or Not
+  now. Do not choose Deny, Delete, Sign in, Pay, or other destructive/private
+  controls unless the user explicitly requested it.
+- If an editable field is already focused and the task asks to search, type, or
+  enter specific text, the first action should be `type`; do not click the same
+  input field again.
+- For list pages such as Settings, if the requested target is not visible, use a
+  deliberate vertical scroll within the list and then re-check visible text. Do
+  not tap the first unrelated row.
+- Ignore OOB overlay controls such as 接管, 继续执行, 小万, and OmniBot when
+  choosing the first phone action.
+
 ## `call_tool` Dispatch
 
 Prefer `call_tool` when the user explicitly asks to call a tool or when a stored
@@ -138,9 +161,19 @@ Safe example goals:
   visible, then finish.
 - Clock: open Alarms, verify the alarms list or empty state is visible, then
   finish without creating a new alarm.
+- Contacts: search for an existing visible contact, open the result, verify the
+  detail page is visible, then finish without editing or deleting anything.
+- Chrome: open a page or search query only when network access is available;
+  verify the page title, search result text, or address field state before
+  finishing.
 
 Avoid goals that toggle settings, send messages, buy items, delete data, or
 grant permissions unless the user explicitly confirms.
+
+Validation prompts should be written so success is observable from the current
+screen. Prefer final checks based on page title, row label, tab label, empty
+state, or stable visible text across at least two UI states. Do not mark success
+only because one click or one scroll was executed.
 
 ## RunLog and Function Handling
 
