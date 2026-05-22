@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/features/task/pages/execution_history/function_run_result_sheet.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/theme/app_colors.dart';
@@ -155,7 +156,13 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
         type: result.success ? ToastType.success : ToastType.error,
         duration: const Duration(seconds: 3),
       );
-      if (result.success) {
+      if (mounted) setState(() => _runningIds.remove(group.signature));
+      await showFunctionRunResultSheet(
+        context,
+        result: result,
+        title: _text(context, 'Function 执行结果', 'Function run result'),
+      );
+      if (result.success && mounted) {
         await _load();
       }
     } catch (e) {
@@ -402,7 +409,13 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
         type: result.success ? ToastType.success : ToastType.error,
         duration: const Duration(seconds: 3),
       );
-      if (result.success) {
+      if (mounted) setState(() => _runningIds.remove(group.signature));
+      await showFunctionRunResultSheet(
+        context,
+        result: result,
+        title: _text(context, 'Function 执行结果', 'Function run result'),
+      );
+      if (result.success && mounted) {
         await _load();
       }
     } catch (e) {

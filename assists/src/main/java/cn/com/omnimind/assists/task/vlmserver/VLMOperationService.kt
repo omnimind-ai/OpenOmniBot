@@ -605,7 +605,9 @@ class VLMOperationService(
             result = result.summary,
             summary = "[deterministic_completion:${result.reason}] ${result.summary}",
             observationXml = currentXml,
+            afterObservationXml = currentXml,
             packageName = currentPackageName,
+            afterPackageName = currentPackageName,
             startedAtMs = now,
             finishedAtMs = now
         )
@@ -932,13 +934,14 @@ class VLMOperationService(
                 ensureTaskActive("before_action_dispatch_${processedStep.action.name}_$stabilityAttempt")
 
                 val actionStartedAtMs = System.currentTimeMillis()
+                val beforePackageName = AccessibilityController.Companion.getPackageName()
                 val runningStep = UIStep(
                     observation = processedStep.observation,
                     thought = processedStep.thought,
                     action = processedStep.action,
                     summary = processedStep.summary,
                     observationXml = beforeXml,
-                    packageName = AccessibilityController.Companion.getPackageName(),
+                    packageName = beforePackageName,
                     startedAtMs = actionStartedAtMs
                 )
                 onStepStarted(stepIndex, runningStep)
@@ -952,10 +955,14 @@ class VLMOperationService(
                 )
                 val actionFinishedAtMs = System.currentTimeMillis()
                 safePauseCheck("after_action_${processedStep.action.name}_${stabilityAttempt}")
+                val afterActionXml = runCatching { captureCurrentXml().orEmpty() }.getOrDefault("")
+                val afterPackageName = AccessibilityController.Companion.getPackageName()
                 var finalStep = executedStep.copy(
                     summary = processedStep.summary,
                     observationXml = beforeXml,
-                    packageName = AccessibilityController.Companion.getPackageName(),
+                    afterObservationXml = afterActionXml.takeIf { it.isNotBlank() },
+                    packageName = beforePackageName,
+                    afterPackageName = afterPackageName,
                     startedAtMs = actionStartedAtMs,
                     finishedAtMs = actionFinishedAtMs
                 )

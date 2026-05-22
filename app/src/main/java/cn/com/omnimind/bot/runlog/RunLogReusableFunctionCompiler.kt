@@ -408,6 +408,10 @@ object RunLogReusableFunctionCompiler {
     ): Map<String, Any?> {
         val usesCoordinateHook =
             RunLogReplayPolicy.isCoordinateAction(replayAction) && sourceContext.isNotEmpty()
+        val hasRecordedAfterPage = asMap(sourceContext["dst_ctx"])["page"]
+            ?.toString()
+            ?.trim()
+            ?.isNotEmpty() == true
         return nullableMap(
             "title" to title,
             "kind" to "omniflow_action",
@@ -422,6 +426,16 @@ object RunLogReusableFunctionCompiler {
             "args" to args,
             "source_context" to sourceContext.takeIf { it.isNotEmpty() },
             "coordinate_hook" to if (usesCoordinateHook) "omniflow" else null,
+            "postcondition" to if (hasRecordedAfterPage && replayAction != "finished") {
+                linkedMapOf(
+                    "kind" to "recorded_after_page_similarity",
+                    "source" to "run_log_after_observation",
+                    "min_score" to 0.12,
+                    "fallback" to "agent"
+                )
+            } else {
+                null
+            },
             "replay_engine" to if (utg.isNotEmpty()) "omniflow_utg" else null,
             "utg" to utg.takeIf { it.isNotEmpty() },
         )
@@ -486,6 +500,9 @@ object RunLogReusableFunctionCompiler {
             .ifEmpty { asMap(card["observation_before_act"]) }
             .ifEmpty { asMap(card["before_observation"]) }
             .ifEmpty { asMap(card["observation"]) }
+        val after = asMap(card["after"])
+            .ifEmpty { asMap(card["observation_after_act"]) }
+            .ifEmpty { asMap(card["after_observation"]) }
         val sourceXml = firstNonBlank(
             before["observation_xml"],
             before["observationXml"],
@@ -493,6 +510,12 @@ object RunLogReusableFunctionCompiler {
             before["page"],
         )
         if (sourceXml.isEmpty()) return emptyMap()
+        val afterXml = firstNonBlank(
+            after["observation_xml"],
+            after["observationXml"],
+            after["xml"],
+            after["page"],
+        )
         val rawToolName = toolNameForCard(card)
         val normalizedToolName = RunLogReplayPolicy.normalizeToolName(rawToolName)
         val actionArgs = if (normalizedToolName == "android_privileged_action") {
@@ -529,10 +552,17 @@ object RunLogReusableFunctionCompiler {
         return linkedMapOf(
             "src_ctx" to linkedMapOf(
                 "page" to sourceXml,
+                "package_name" to firstNonBlank(before["package_name"], before["packageName"]),
                 "require_unique_action_signature" to false,
             ),
+            "dst_ctx" to linkedMapOf(
+                "page" to afterXml,
+                "package_name" to firstNonBlank(after["package_name"], after["packageName"]),
+            ).filterValues { value ->
+                value?.toString()?.trim()?.isNotEmpty() == true
+            }.takeIf { it.isNotEmpty() },
             "action" to sourceAction,
-        )
+        ).filterValues { it != null }
     }
 
     private fun agentFallbackPrompt(

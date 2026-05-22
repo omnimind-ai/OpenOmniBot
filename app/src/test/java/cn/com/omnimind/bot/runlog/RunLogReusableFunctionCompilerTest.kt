@@ -96,6 +96,30 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
+    fun `recorded after observation becomes replay postcondition`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf("target_description" to "Open", "x" to 120, "y" to 240),
+                    beforeXml = SOURCE_XML,
+                    afterXml = AFTER_XML,
+                ),
+            ),
+            runId = "run-click-after",
+        )
+
+        val click = stepsFrom(spec).single()
+        val sourceContext = click["source_context"] as Map<*, *>
+        val dstCtx = sourceContext["dst_ctx"] as Map<*, *>
+        val postcondition = click["postcondition"] as Map<*, *>
+
+        assertEquals(AFTER_XML, dstCtx["page"])
+        assertEquals("recorded_after_page_similarity", postcondition["kind"])
+        assertEquals("agent", postcondition["fallback"])
+    }
+
+    @Test
     fun `failed replay card does not suppress vlm fallback`() {
         val spec = compile(
             listOf(
@@ -449,6 +473,7 @@ class RunLogReusableFunctionCompilerTest {
         toolName: String,
         args: Map<String, Any?>,
         beforeXml: String = "",
+        afterXml: String = "",
         success: Boolean? = null,
         title: String? = null,
         compileKind: String? = null,
@@ -465,6 +490,10 @@ class RunLogReusableFunctionCompilerTest {
                 "package_name" to "com.example",
                 "observation_xml" to beforeXml,
             ),
+            "after" to linkedMapOf(
+                "package_name" to "com.example",
+                "observation_xml" to afterXml,
+            ).takeIf { afterXml.isNotBlank() },
         ).filterValues { it != null }
     }
 
@@ -519,5 +548,7 @@ class RunLogReusableFunctionCompilerTest {
     companion object {
         private const val SOURCE_XML =
             "<hierarchy><node bounds=\"[100,200][300,280]\" clickable=\"true\" text=\"Open\"/></hierarchy>"
+        private const val AFTER_XML =
+            "<hierarchy><node bounds=\"[100,200][300,280]\" text=\"Done\"/></hierarchy>"
     }
 }

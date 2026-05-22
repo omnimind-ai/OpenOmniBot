@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:ui/features/task/pages/execution_history/function_run_result_sheet.dart';
 import 'package:ui/features/task/run_log/run_log_reusable_function_converter.dart';
 import 'package:ui/features/task/run_log/run_log_replay_policy.dart';
 import 'package:ui/features/task/pages/scheduled_tasks/widgets/schedule_task_sheet.dart';
@@ -398,6 +399,12 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       _text(context, '正在注册 RunLog...', 'Registering RunLog...'),
       type: ToastType.info,
     );
+    final registrationFailedText = _text(
+      context,
+      '注册失败',
+      'Registration failed',
+    );
+    final useEnglish = _localeValue(context, zh: false, en: true);
     try {
       final result =
           await AssistsMessageService.convertInternalRunLogToOobFunction(
@@ -411,9 +418,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       if (result['success'] != true || functionId.isEmpty) {
         final error = result['error_message']?.toString().trim();
         throw Exception(
-          error?.isNotEmpty == true
-              ? error
-              : _text(context, '注册失败', 'Registration failed'),
+          error?.isNotEmpty == true ? error : registrationFailedText,
         );
       }
       final functionSpec = _asStringKeyMap(result['function_spec']);
@@ -437,7 +442,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       final agentPrompt =
           await RunLogReusableFunctionConverter.buildAgentPromptAsync(
             specJson,
-            useEnglish: _localeValue(context, zh: false, en: true),
+            useEnglish: useEnglish,
           );
       final spec = RunLogReusableFunctionSpec(
         json: specJson,
@@ -516,6 +521,11 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
             ? _runLogReplaySuccessMessage(context, result)
             : _runLogReplayFailureMessage(context, result),
         type: result.success ? ToastType.success : ToastType.error,
+      );
+      await showFunctionRunResultSheet(
+        context,
+        result: result,
+        title: _text(context, 'RunLog 重放结果', 'RunLog replay result'),
       );
     } catch (e) {
       if (!mounted) return;
@@ -1993,6 +2003,11 @@ class _ReusableFunctionSpecSheetState
             : _runFailureMessage(context, result),
         type: result.success ? ToastType.success : ToastType.error,
       );
+      await showFunctionRunResultSheet(
+        context,
+        result: result,
+        title: _text(context, 'OOB API 执行结果', 'OOB API run result'),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -2223,6 +2238,10 @@ class _FunctionApiStatusBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
+    final runResult = this.runResult;
+    final statusColor = runResult == null || runResult.success
+        ? _successColor(context)
+        : _errorColor(context);
     final lines = <String>[
       if (functionId.isNotEmpty) 'function_id: $functionId',
       if (importResult != null)
@@ -2230,53 +2249,58 @@ class _FunctionApiStatusBox extends StatelessWidget {
             ' · functions=${importResult!.functionsCreated}'
             ' · hits=${importResult!.hitFunctionIds.length}',
       if (runResult != null)
-        'run: ${runResult!.success ? 'started' : 'failed'}'
-            '${_runStatusSuffix(runResult!)}',
+        'run: ${runResult.success ? 'started' : 'failed'}'
+            '${_runStatusSuffix(runResult)}',
     ];
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: _successColor(
-          context,
-        ).withValues(alpha: context.isDarkTheme ? 0.14 : 0.09),
+        color: statusColor.withValues(alpha: context.isDarkTheme ? 0.14 : 0.09),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _successColor(context).withValues(alpha: 0.28),
-        ),
+        border: Border.all(color: statusColor.withValues(alpha: 0.28)),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.api_rounded, size: 18, color: _successColor(context)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              lines.join('\n'),
-              style: TextStyle(
-                fontSize: 12,
-                color: palette.textSecondary,
-                height: 1.35,
-                fontFamily: 'monospace',
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.api_rounded, size: 18, color: statusColor),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  lines.join('\n'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: palette.textSecondary,
+                    height: 1.35,
+                    fontFamily: 'monospace',
+                  ),
+                ),
               ),
-            ),
+              if (apiCallJson.trim().isNotEmpty)
+                Tooltip(
+                  message: _text(context, '复制 API 调用', 'Copy API call'),
+                  child: IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.content_copy_rounded, size: 16),
+                    color: palette.textSecondary,
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: apiCallJson));
+                      showToast(
+                        _text(context, '已复制 API 调用', 'API call copied'),
+                        type: ToastType.success,
+                      );
+                    },
+                  ),
+                ),
+            ],
           ),
-          if (apiCallJson.trim().isNotEmpty)
-            Tooltip(
-              message: _text(context, '复制 API 调用', 'Copy API call'),
-              child: IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.content_copy_rounded, size: 16),
-                color: palette.textSecondary,
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: apiCallJson));
-                  showToast(
-                    _text(context, '已复制 API 调用', 'API call copied'),
-                    type: ToastType.success,
-                  );
-                },
-              ),
-            ),
+          if (runResult != null && runResult.stepResults.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            FunctionRunResultInlinePanel(result: runResult),
+          ],
         ],
       ),
     );
@@ -2285,11 +2309,13 @@ class _FunctionApiStatusBox extends StatelessWidget {
   String _runStatusSuffix(UtgManualRunResult result) {
     final parts = <String>[];
     final status = result.terminalState['status']?.toString().trim() ?? '';
-    final runner = result.terminalState['runner']?.toString().trim() ?? '';
+    final runner = result.runner;
     final taskId = result.terminalState['taskId']?.toString().trim() ?? '';
     final error = result.errorMessage?.trim() ?? '';
+    final stepCount = result.stepCount;
     if (status.isNotEmpty) parts.add('status=$status');
     if (runner.isNotEmpty) parts.add('runner=$runner');
+    if (stepCount > 0) parts.add('steps=${result.successStepCount}/$stepCount');
     if (taskId.isNotEmpty) parts.add('task=$taskId');
     if (result.runFilePath.trim().isNotEmpty) parts.add(result.runFilePath);
     if (!result.success && error.isNotEmpty) parts.add(error);

@@ -1,5 +1,7 @@
 package cn.com.omnimind.bot.runlog
 
+import cn.com.omnimind.omniintelligence.models.ScrollDirection
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -88,5 +90,90 @@ class OmniflowStepExecutorTest {
 
         assertEquals(args, result.args)
         assertTrue(result.meta.isEmpty())
+    }
+
+    @Test
+    fun `execute verifies recorded after page postcondition`() = runBlocking {
+        val backend = FakeBackend(beforeXml = SOURCE_XML, afterXml = AFTER_XML)
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "coordinate_hook" to "omniflow",
+                    "args" to mapOf("x" to 120, "y" to 240),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to SOURCE_XML),
+                        "dst_ctx" to mapOf(
+                            "page" to AFTER_XML,
+                            "package_name" to "com.example",
+                        ),
+                    ),
+                    "postcondition" to mapOf(
+                        "kind" to "recorded_after_page_similarity",
+                        "min_score" to 0.1,
+                    ),
+                ),
+                stepId = "step_1",
+                stepTitle = "click open",
+            )
+
+            assertEquals(true, result["success"])
+            val postcondition = result["postcondition"] as Map<*, *>
+            assertEquals(true, postcondition["success"])
+            assertEquals(true, postcondition["package_matched"])
+        }
+    }
+
+    private class FakeBackend(
+        private val beforeXml: String,
+        private val afterXml: String,
+    ) : OmniflowActionBackend {
+        private var clicked = false
+
+        override fun isReady(): Boolean = true
+
+        override suspend fun click(x: Float, y: Float) {
+            clicked = true
+        }
+
+        override suspend fun longPress(x: Float, y: Float, durationMs: Long) {
+            clicked = true
+        }
+
+        override suspend fun scroll(
+            x: Float,
+            y: Float,
+            direction: ScrollDirection,
+            distance: Float,
+            durationMs: Long,
+        ) {
+            clicked = true
+        }
+
+        override suspend fun inputTextToFocusedNode(text: String) {
+            clicked = true
+        }
+
+        override suspend fun launchApplication(packageName: String) {
+            clicked = true
+        }
+
+        override suspend fun pressHotKey(key: String) {
+            clicked = true
+        }
+
+        override fun currentXml(): String = if (clicked) afterXml else beforeXml
+
+        override fun currentPackageName(): String = "com.example"
+
+        override fun currentActivityName(): String = "ExampleActivity"
+    }
+
+    companion object {
+        private const val SOURCE_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[100,200][300,280]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"Open\" class=\"android.widget.Button\" resource-id=\"app:id/open\"/></hierarchy>"
+        private const val AFTER_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[100,200][300,280]\" enabled=\"true\" visible-to-user=\"true\" text=\"Done\" class=\"android.widget.TextView\" resource-id=\"app:id/done\"/></hierarchy>"
     }
 }

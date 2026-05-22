@@ -8,6 +8,11 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 ## Step Guidance Essentials
 
 - AndroidWorld first-step policy lives here, not core optimizer.
+- OmniFlow recall context is only a historical successful trajectory hint. It
+  is not evidence that the current task is complete.
+- When recall context is present, reuse only the action idea that matches the
+  current screenshot/XML; still emit concrete live actions for the current
+  screen.
 - Pass `packageName` when known; derive unknown packages from installed apps.
 - Focused editable input plus type/search task: use `type` first.
 - Missing list target: scroll, re-check text; do not tap unrelated first row.
@@ -81,6 +86,26 @@ Guidelines:
 
 Keep AndroidWorld first-step behavior in this skill guidance. Do not encode
 task-suite-specific prompt policy in the core VLM first-step optimizer.
+
+## OmniFlow Recall Guidance
+
+OOB may inject an `OmniFlow recall context` section into the VLM dynamic
+context. Treat it as a compressed history of prior successful Functions:
+
+- Use it to prefer known app entry points, target labels, action ordering, and
+  common scroll/type/click patterns.
+- Do not call `finished` just because recall returned `hit` or a prior Function
+  finished. Finish only after the current visible page satisfies the user's
+  requested end state.
+- If the current screen does not match the recalled step, re-ground on the
+  current screenshot/XML and continue normally.
+- For form tasks, keep each field's intended value tied to the visible field
+  label. If a label row or spinner must be changed, click the label/spinner
+  control before typing; never type a label value into the currently focused
+  phone/email/name field.
+- If a replay-like action appears unsafe or ambiguous, choose a bounded live VLM
+  action such as `press_back`, `scroll`, or a specific visible `click`, rather
+  than blindly following historical coordinates.
 
 - If the target app is known, pass `packageName` in `vlm_task` instead of asking
   the model to guess the package.
