@@ -192,8 +192,18 @@ class OobUdegNodeStore(
             "kind" to "udeg_node_skill",
             "name" to "UDEG node context",
             "description" to "Skill-like decision context attached to a page-matched UDEG node.",
-            "activation" to "page_match",
+            "frontmatter" to linkedMapOf(
+                "name" to "udeg-node-$nodeId",
+                "description" to "Decision context for a page-matched UDEG node.",
+            ),
+            "activation" to linkedMapOf(
+                "type" to "page_match",
+                "min_page_similarity" to MIN_PAGE_MATCH_SCORE,
+                "strong_page_similarity" to STRONG_PAGE_MATCH_SCORE,
+            ),
             "role" to "decision_context",
+            "decision_path" to UDEG_DECISION_PATH,
+            "decision_rules" to NODE_DECISION_RULES,
             "decision_guidance" to guidance,
             "body" to renderNodeSkillBody(
                 nodeId = nodeId,
@@ -213,11 +223,23 @@ class OobUdegNodeStore(
     ): Map<String, Any?> = linkedMapOf(
         "schema_version" to NODE_DECISION_CONTEXT_SCHEMA_VERSION,
         "role" to "decision",
+        "context_kind" to "udeg_node_skill_decision_context",
         "entry_policy" to "page_match_to_udeg_node",
+        "decision_path" to UDEG_DECISION_PATH,
         "node_id" to nodeId,
         "package_name" to packageName.takeIf { it.isNotBlank() },
         "skill_id" to "udeg_node_skill_$nodeId",
         "function_count" to functionCount,
+        "usage" to listOf(
+            "choose the next live VLM action from the current page",
+            "select an attached Function only when the node, boundary, and goal match",
+            "fall back to normal VLM execution when the node skill does not fit",
+        ),
+        "constraints" to listOf(
+            "do not scan the Function store directly",
+            "do not treat a recalled Function as task completion",
+            "do not execute weak or parameterized Functions without live grounding",
+        ),
         "instruction" to "Use this UDEG node's skill-like context as VLM decision context after page match localizes the current screen to this node.",
     ).filterValues { it != null }
 
@@ -236,7 +258,14 @@ class OobUdegNodeStore(
         appendLine()
         appendLine("## Decision Context")
         appendLine()
+        appendLine("Decision path: `page match -> UDEG node -> node skill-like decision context -> VLM/tool decision`.")
+        appendLine()
         appendLine(guidance)
+        appendLine()
+        appendLine("## Decision Rules")
+        NODE_DECISION_RULES.forEach { rule ->
+            appendLine("- $rule")
+        }
         if (capabilities.isNotEmpty()) {
             appendLine()
             appendLine("## Attached Functions")
@@ -353,9 +382,17 @@ class OobUdegNodeStore(
         private const val NODE_SCHEMA_VERSION = "oob.udeg.node.v1"
         private const val NODE_SKILL_SCHEMA_VERSION = "oob.udeg.node_skill.v1"
         private const val NODE_DECISION_CONTEXT_SCHEMA_VERSION = "oob.udeg.decision_context.v1"
+        const val UDEG_DECISION_PATH =
+            "page_match -> UDEG node -> node skill-like decision context -> VLM/tool decision"
         const val MIN_PAGE_MATCH_SCORE = 0.30f
         const val STRONG_PAGE_MATCH_SCORE = 0.87f
         private const val MAX_NODE_SCAN = 1_000
+        private val NODE_DECISION_RULES = listOf(
+            "Use the node skill only after page match localizes the current page to this node.",
+            "Treat attached Functions as outgoing reusable transitions from this node.",
+            "Use the skill as decision context; keep grounding actions on the live screenshot/XML.",
+            "If no attached Function fits the user goal, continue with normal VLM actions.",
+        )
 
         private val gson = GsonBuilder()
             .disableHtmlEscaping()

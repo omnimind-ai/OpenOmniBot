@@ -49,17 +49,24 @@ class OobPageVectorSetTest {
             assertEquals(listOf("open_network_settings"), OobUdegNodeStore.functionIds(first.node))
             val nodeSkill = first.node["skill"] as? Map<*, *>
             assertEquals("udeg_node_skill", nodeSkill?.get("kind"))
-            assertEquals("page_match", nodeSkill?.get("activation"))
+            val activation = nodeSkill?.get("activation") as? Map<*, *>
+            assertEquals("page_match", activation?.get("type"))
             assertEquals("decision_context", nodeSkill?.get("role"))
+            assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, nodeSkill?.get("decision_path"))
+            val frontmatter = nodeSkill?.get("frontmatter") as? Map<*, *>
+            assertNotNull(frontmatter?.get("name"))
             assertNotNull(nodeSkill?.get("decision_guidance"))
             assertTrue(nodeSkill?.get("body")?.toString().orEmpty().contains("## Decision Context"))
+            assertTrue(nodeSkill?.get("body")?.toString().orEmpty().contains("## Decision Rules"))
 
             val decisionContext = first.node["decision_context"] as? Map<*, *>
             assertEquals("decision", decisionContext?.get("role"))
             assertEquals("page_match_to_udeg_node", decisionContext?.get("entry_policy"))
+            assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, decisionContext?.get("decision_path"))
             val recallMap = first.toMap()
             val recallDecisionContext = recallMap["decision_context"] as? Map<*, *>
             assertEquals("page_match_to_udeg_node", recallDecisionContext?.get("entry_policy"))
+            assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, recallDecisionContext?.get("decision_path"))
         } finally {
             context.root.deleteRecursively()
         }

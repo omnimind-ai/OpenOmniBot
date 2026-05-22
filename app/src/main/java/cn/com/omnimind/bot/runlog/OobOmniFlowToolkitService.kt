@@ -61,6 +61,7 @@ class OobOmniFlowToolkitService(
             return linkedMapOf<String, Any?>(
                 "success" to true,
                 "decision" to "miss",
+                "decision_path" to OobUdegNodeStore.UDEG_DECISION_PATH,
                 "hit" to null,
                 "candidates" to emptyList<Map<String, Any?>>(),
                 "node_candidates" to emptyList<Map<String, Any?>>(),
@@ -132,6 +133,7 @@ class OobOmniFlowToolkitService(
         return linkedMapOf<String, Any?>(
             "success" to true,
             "decision" to decision,
+            "decision_path" to OobUdegNodeStore.UDEG_DECISION_PATH,
             "hit" to directHit?.let {
                 linkedMapOf(
                     "function_id" to it.functionId,
@@ -147,6 +149,8 @@ class OobOmniFlowToolkitService(
             "candidates" to if (directHit == null) candidates else emptyList<Map<String, Any?>>(),
             "node_candidates" to nodeCandidates,
             "current_node" to nodeCandidates.firstOrNull(),
+            "node_skill" to (nodeCandidates.firstOrNull()?.get("skill")),
+            "decision_context" to (nodeCandidates.firstOrNull()?.get("decision_context")),
             "count" to candidates.size,
             "reason" to when {
                 nodeCandidates.isEmpty() -> "no_udeg_node_page_match"

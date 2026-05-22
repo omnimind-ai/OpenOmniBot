@@ -259,8 +259,9 @@ OOB recall follows OmniFlow's UDEG path:
    transitions.
 
 The decision path is exactly: `page match -> UDEG node -> node skill-like
-decision context -> VLM/tool decision`. Do not skip the node by scanning the
-Function store directly.
+decision context -> VLM/tool decision`. UDEG node data is skill-like decision
+context, not memory text and not a flat Function list. Do not skip the node by
+scanning the Function store directly.
 
 Do not treat recall as a flat text search over all Functions. A recalled
 Function is trusted only when the current page has been localized to its UDEG

@@ -26,7 +26,7 @@ class VlmRecallGuidanceBuilderTest {
         )
 
         assertTrue(guidance.contains("OmniFlow UDEG recall context"))
-        assertTrue(guidance.contains("path=page_match -> UDEG node -> node skill-like decision context"))
+        assertTrue(guidance.contains("path=page_match -> UDEG node -> node skill-like decision context -> VLM/tool decision"))
         assertTrue(guidance.contains("function_id=open_network_settings"))
         assertTrue(guidance.contains("step: 1. open_app"))
         assertFalse(guidance.contains("任务已完成"))
@@ -43,8 +43,20 @@ class VlmRecallGuidanceBuilderTest {
                     mapOf(
                         "node_id" to "udeg_node_settings",
                         "page_similarity" to 0.91,
+                        "decision_context" to mapOf(
+                            "role" to "decision",
+                            "entry_policy" to "page_match_to_udeg_node",
+                            "skill_id" to "udeg_node_skill_udeg_node_settings",
+                            "decision_path" to "page_match -> UDEG node -> node skill-like decision context -> VLM/tool decision",
+                        ),
                         "skill" to mapOf(
-                            "decision_guidance" to "Use Settings node context before choosing actions."
+                            "decision_guidance" to "Use Settings node context before choosing actions.",
+                            "body" to """
+                                # UDEG Node Skill
+                                
+                                ## Decision Context
+                                Use Settings node context before choosing actions.
+                            """.trimIndent(),
                         ),
                     )
                 ),
@@ -53,7 +65,11 @@ class VlmRecallGuidanceBuilderTest {
         )
 
         assertTrue(guidance.contains("node_id=udeg_node_settings"))
+        assertTrue(guidance.contains("node_decision_path: page_match -> UDEG node -> node skill-like decision context -> VLM/tool decision"))
+        assertTrue(guidance.contains("node_decision_context: role=decision entry_policy=page_match_to_udeg_node"))
         assertTrue(guidance.contains("node_skill_decision_context: Use Settings node context"))
+        assertTrue(guidance.contains("node_skill_body:"))
+        assertTrue(guidance.contains("# UDEG Node Skill"))
     }
 
     @Test

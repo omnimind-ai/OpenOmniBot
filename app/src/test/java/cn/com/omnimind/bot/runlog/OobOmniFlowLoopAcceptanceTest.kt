@@ -96,10 +96,15 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals(true, recall["success"])
             assertEquals("hit", recall["decision"])
             assertEquals("oob_native_udeg_page_match", recall["source"])
+            assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, recall["decision_path"])
             val currentNode = recall["current_node"] as? Map<*, *>
             assertNotNull(currentNode)
             val nodeSkill = currentNode?.get("skill") as? Map<*, *>
             assertEquals("udeg_node_skill", nodeSkill?.get("kind"))
+            assertEquals("decision_context", nodeSkill?.get("role"))
+            assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, nodeSkill?.get("decision_path"))
+            val decisionContext = recall["decision_context"] as? Map<*, *>
+            assertEquals("page_match_to_udeg_node", decisionContext?.get("entry_policy"))
             val hit = recall["hit"] as? Map<*, *>
             assertEquals(functionId, hit?.get("function_id"))
             assertNotNull(hit?.get("udeg_node"))

@@ -79,17 +79,35 @@ object VlmRecallGuidanceBuilder {
 
         return buildString {
             appendLine("OmniFlow UDEG recall context:")
-            appendLine("path=page_match -> UDEG node -> node skill-like decision context")
+            appendLine("path=page_match -> UDEG node -> node skill-like decision context -> VLM/tool decision")
             appendLine("decision=$decision")
             nodeCandidates.forEachIndexed { index, node ->
                 val nodeId = node["node_id"]?.toString()?.trim().orEmpty()
                 val score = node["page_similarity"]?.toString()?.trim().orEmpty()
                 val skill = mapArg(node["skill"])
+                val decisionContext = mapArg(node["decision_context"])
+                val decisionPath = firstNonBlank(
+                    decisionContext["decision_path"],
+                    skill["decision_path"],
+                    payload["decision_path"],
+                )
                 val guidance = skill["decision_guidance"]?.toString()?.trim().orEmpty()
                     .take(MAX_DESCRIPTION_CHARS)
                 appendLine("node ${index + 1}: node_id=$nodeId page_similarity=$score")
+                if (decisionPath.isNotBlank()) {
+                    appendLine("   node_decision_path: $decisionPath")
+                }
+                renderDecisionContext(decisionContext).takeIf { it.isNotBlank() }?.let {
+                    appendLine("   node_decision_context: $it")
+                }
                 if (guidance.isNotBlank()) {
                     appendLine("   node_skill_decision_context: $guidance")
+                }
+                val body = skill["body"]?.toString()?.trim().orEmpty()
+                    .take(MAX_SKILL_BODY_CHARS)
+                if (body.isNotBlank()) {
+                    appendLine("   node_skill_body:")
+                    appendIndented(body, "      ")
                 }
             }
             candidates.forEachIndexed { index, candidate ->
@@ -120,6 +138,24 @@ object VlmRecallGuidanceBuilder {
             if (title.isBlank() && tool.isBlank()) return@mapIndexedNotNull null
             "${index + 1}. ${tool.ifBlank { "step" }}: ${title.take(MAX_STEP_TITLE_CHARS)}"
         }
+    }
+
+    private fun StringBuilder.appendIndented(text: String, prefix: String) {
+        text.lineSequence()
+            .take(MAX_SKILL_BODY_LINES)
+            .forEach { line -> appendLine(prefix + line) }
+    }
+
+    private fun renderDecisionContext(decisionContext: Map<String, Any?>): String {
+        if (decisionContext.isEmpty()) return ""
+        val role = firstNonBlank(decisionContext["role"])
+        val entryPolicy = firstNonBlank(decisionContext["entry_policy"])
+        val skillId = firstNonBlank(decisionContext["skill_id"])
+        return listOf(
+            "role=$role".takeIf { role.isNotBlank() },
+            "entry_policy=$entryPolicy".takeIf { entryPolicy.isNotBlank() },
+            "skill_id=$skillId".takeIf { skillId.isNotBlank() },
+        ).filterNotNull().joinToString(" ")
     }
 
     private fun firstNonBlank(vararg values: Any?): String {
@@ -153,4 +189,6 @@ object VlmRecallGuidanceBuilder {
     private const val MAX_STEP_SUMMARIES = 5
     private const val MAX_DESCRIPTION_CHARS = 120
     private const val MAX_STEP_TITLE_CHARS = 120
+    private const val MAX_SKILL_BODY_CHARS = 900
+    private const val MAX_SKILL_BODY_LINES = 18
 }

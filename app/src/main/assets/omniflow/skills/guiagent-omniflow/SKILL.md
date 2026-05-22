@@ -57,10 +57,11 @@ the in-app Agent to use OmniFlow UI/native capabilities.
 
 ### Recall and Run a Function
 
-1. `omniflow.recall(goal, current_package?, current_node_id?, k?)`.
-   Recall must first page-match the current screen to a UDEG node, then use
-   that node's skill-like decision context and attached Functions. Do not treat
-   recall as a flat search over the Function store.
+1. `omniflow.recall(goal, current_package?, current_node_id?, current_xml?, k?)`.
+   Recall must follow `page match -> UDEG node -> node skill-like decision
+   context -> VLM/tool decision`, then use that node's skill-like decision
+   context and attached Functions. Do not treat recall as a flat search over
+   the Function store.
 2. If `decision=hit` and the hit has no required arguments, call
    `omniflow.call_tool({function_id, arguments: {}})`.
 3. If candidates are returned, choose one, fill arguments from `inputSchema`,
