@@ -148,6 +148,8 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
     final visibleMessages = widget.group.visibleMessagesOldestFirst;
     final hasProcessMessages = processMessages.isNotEmpty;
     final isRunLogOnly = widget.group.isRunLogOnly;
+    final showRunLogButton =
+        !widget.group.isActiveRun && widget.group.runLogId.trim().isNotEmpty;
     final directProcessAction = _resolveDirectProcessAction(processMessages);
     final showProcessToggle = hasProcessMessages && directProcessAction == null;
 
@@ -164,6 +166,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
           toolCount: widget.group.toolCount,
           outputSegmentCount: widget.group.outputSegmentCount,
           latestProcessSummary: _latestProcessSummary(context, processMessages),
+          isRunLogOnly: isRunLogOnly,
           onTap: hasProcessMessages
               ? (directProcessAction ??
                     () => _toggleProcessSection(processMessages))
@@ -171,7 +174,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
               ? () => _openRunLog(context)
               : null,
           showToggle: showProcessToggle,
-          showRunLogButton: isRunLogOnly,
+          showRunLogButton: showRunLogButton,
         ),
         _buildAnimatedProcessSection(processMessages),
         ...visibleMessages.map(
@@ -444,6 +447,7 @@ class _AgentRunSummaryHeader extends StatelessWidget {
     required this.toolCount,
     required this.outputSegmentCount,
     required this.latestProcessSummary,
+    required this.isRunLogOnly,
     required this.onTap,
     required this.showToggle,
     required this.showRunLogButton,
@@ -457,6 +461,7 @@ class _AgentRunSummaryHeader extends StatelessWidget {
   final int toolCount;
   final int outputSegmentCount;
   final String latestProcessSummary;
+  final bool isRunLogOnly;
   final VoidCallback? onTap;
   final bool showToggle;
   final bool showRunLogButton;
@@ -465,7 +470,6 @@ class _AgentRunSummaryHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final locale = Localizations.localeOf(context);
     final palette = context.omniPalette;
-    final isRunLogOnly = showRunLogButton;
     final label = AppTextLocalizer.choose(
       zh: '步骤',
       en: 'Steps',
@@ -580,25 +584,11 @@ class _AgentRunSummaryHeader extends StatelessWidget {
                 ),
                 if (showRunLogButton) ...[
                   const SizedBox(width: 6),
-                  Tooltip(
-                    message: AppTextLocalizer.text('查看执行记录', locale: locale),
-                    child: InkResponse(
-                      onTap: () {
-                        final resolvedRunLogId = runLogId.trim().isEmpty
-                            ? taskId
-                            : runLogId.trim();
-                        showRunLogTimelineSheet(
-                          context,
-                          runId: resolvedRunLogId,
-                        );
-                      },
-                      radius: 18,
-                      child: Icon(
-                        Icons.route_rounded,
-                        size: 16,
-                        color: labelColor,
-                      ),
-                    ),
+                  _RunLogHeaderButton(
+                    key: ValueKey('agent-run-runlog-$taskId'),
+                    taskId: taskId,
+                    runLogId: runLogId,
+                    iconColor: labelColor,
                   ),
                 ],
                 if (showToggle) ...[
@@ -736,24 +726,44 @@ class _RunLogOnlySummaryHeader extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 6),
-                Tooltip(
-                  message: AppTextLocalizer.text('查看执行记录', locale: locale),
-                  child: InkResponse(
-                    onTap: () {
-                      showRunLogTimelineSheet(context, runId: resolvedRunLogId);
-                    },
-                    radius: 18,
-                    child: Icon(
-                      Icons.route_rounded,
-                      size: 16,
-                      color: labelColor,
-                    ),
-                  ),
+                _RunLogHeaderButton(
+                  key: ValueKey('agent-run-runlog-$taskId'),
+                  taskId: taskId,
+                  runLogId: resolvedRunLogId,
+                  iconColor: labelColor,
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _RunLogHeaderButton extends StatelessWidget {
+  const _RunLogHeaderButton({
+    super.key,
+    required this.taskId,
+    required this.runLogId,
+    required this.iconColor,
+  });
+
+  final String taskId;
+  final String runLogId;
+  final Color iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = Localizations.localeOf(context);
+    final resolvedRunLogId = runLogId.trim().isEmpty ? taskId : runLogId.trim();
+
+    return Tooltip(
+      message: AppTextLocalizer.text('查看执行记录', locale: locale),
+      child: InkResponse(
+        onTap: () => showRunLogTimelineSheet(context, runId: resolvedRunLogId),
+        radius: 18,
+        child: Icon(Icons.route_rounded, size: 16, color: iconColor),
       ),
     );
   }

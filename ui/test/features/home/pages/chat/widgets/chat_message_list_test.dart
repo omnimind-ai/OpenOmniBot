@@ -1080,6 +1080,48 @@ void main() {
     },
   );
 
+  testWidgets('VLM run header exposes full runlog without expanding steps', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    final messages = _buildVlmProcessRunMessages(includeThinking: false);
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        child: SizedBox(
+          width: 400,
+          height: 560,
+          child: ChatMessageList(
+            messages: messages,
+            scrollController: controller,
+            onBeforeTaskExecute: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('agent-run-runlog-task-vlm')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('agent-run-process-task-vlm')),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('agent-run-runlog-task-vlm')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('agent-run-process-task-vlm')),
+      findsNothing,
+    );
+    expect(find.text('暂无步骤数据'), findsOneWidget);
+    expect(find.textContaining('没有工具调用'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('single thinking process opens expanded detail from header', (
     tester,
   ) async {
