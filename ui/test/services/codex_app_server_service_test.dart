@@ -123,6 +123,10 @@ void main() {
       'baseUrl': 'https://example.com/v1',
       'model': 'gpt-5.5',
       'apiKey': 'key',
+      'remoteEnabled': false,
+      'remoteBridgeUrl': '',
+      'remoteBridgeToken': '',
+      'remoteCwd': '',
     });
   });
 }

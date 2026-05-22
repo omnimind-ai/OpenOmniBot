@@ -374,6 +374,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   StreamSubscription<Map<String, dynamic>>? _codexEventSubscription;
   CodexStatus _codexStatus = CodexStatus.disconnected;
   bool _isCodexStatusLoading = false;
+  int? _activeCodexRemoteRuntimeId;
   String? _activeCodexThreadId;
   String? _activeCodexTurnId;
   String? _activeCodexModelId;
@@ -455,6 +456,20 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     final conversationId = _currentConversationIdByMode[mode];
     if (conversationId == null) return null;
     return _runtimeCoordinator.runtimeFor(
+      conversationId: conversationId,
+      mode: _modeKey(mode),
+    );
+  }
+
+  bool _isRemoteCodexRuntimeActiveForMode(ChatPageMode mode) {
+    if (mode != ChatPageMode.codex) {
+      return false;
+    }
+    final conversationId = _currentConversationIdByMode[mode];
+    if (conversationId == null) {
+      return false;
+    }
+    return _runtimeCoordinator.isEphemeralRuntime(
       conversationId: conversationId,
       mode: _modeKey(mode),
     );
@@ -594,6 +609,20 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   ConversationThreadTarget get _threadTargetForMode {
     final conversationMode = _conversationModeForPageMode(_activeMode);
     final conversationId = _currentConversationIdByMode[_activeMode];
+    if (_activeMode == ChatPageMode.codex &&
+        _isRemoteCodexRuntimeActiveForMode(ChatPageMode.codex)) {
+      final threadId = _activeCodexThreadId?.trim() ?? '';
+      if (threadId.isNotEmpty) {
+        return ConversationThreadTarget.codexSession(
+          threadId: threadId,
+          runtime: 'remote',
+        );
+      }
+      return ConversationThreadTarget.newConversation(
+        mode: ConversationMode.codex,
+        codexRuntime: 'remote',
+      );
+    }
     if (conversationId == null) {
       final resolvedTarget = _resolvedThreadTarget;
       if (resolvedTarget != null &&
@@ -1326,6 +1355,15 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   }
 
   @override
+  bool isEphemeralConversation(int conversationId, ConversationMode mode) {
+    final pageMode = _pageModeForConversationMode(mode);
+    return _runtimeCoordinator.isEphemeralRuntime(
+      conversationId: conversationId,
+      mode: _modeKey(pageMode),
+    );
+  }
+
+  @override
   Future<void> persistAgentConversation() => saveConversation();
 
   @override
@@ -1589,6 +1627,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     _userMessageEditControllerForMode(mode).clear();
     _draftMessageByMode[mode] = '';
     if (mode == ChatPageMode.codex) {
+      _activeCodexRemoteRuntimeId = null;
       _activeCodexThreadId = null;
       _activeCodexTurnId = null;
     }
@@ -1747,6 +1786,10 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   String? _codexRemoteWorkspaceNameForGreeting();
 
   Future<void> _openCodexRemoteWorkspacePicker();
+
+  Future<void> _prepareRemoteCodexSessionTarget(
+    ConversationThreadTarget target,
+  );
 
   void _handleCodexAppServerEvent(Map<String, dynamic> event);
 
@@ -1961,10 +2004,6 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   );
 
   Future<bool> _tryAgentFlow(String aiMessageId, String userMessageId);
-
-  List<Map<String, dynamic>> _historyBeforeLatestUser(
-    List<Map<String, dynamic>> history,
-  );
 
   Future<List<Map<String, dynamic>>> _latestUserAttachments();
 

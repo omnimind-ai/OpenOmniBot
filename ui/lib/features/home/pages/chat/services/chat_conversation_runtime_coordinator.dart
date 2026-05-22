@@ -91,7 +91,7 @@ class ChatConversationRuntimeState {
   final Map<String, String> currentThinkingMessages = <String, String>{};
   final Map<String, AgentStreamTaskState> agentStreamStates =
       <String, AgentStreamTaskState>{};
-  final Map<String, _StreamingTextBatchState> streamingTextBatches =
+  final Map<String, _StreamingTextBatchState> _streamingTextBatches =
       <String, _StreamingTextBatchState>{};
   final Map<String, int> codexEntrySequences = <String, int>{};
   final Map<String, int> codexEntryStartTimes = <String, int>{};
@@ -151,7 +151,7 @@ class ChatConversationRuntimeState {
 
   void dispose() {
     agentStreamStates.clear();
-    streamingTextBatches.clear();
+    _streamingTextBatches.clear();
     codexEntrySequences.clear();
     codexEntryStartTimes.clear();
     messages.dispose();
@@ -214,6 +214,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
   final Map<String, _TaskBinding> _taskBindings = <String, _TaskBinding>{};
   final Map<String, _PendingPersistenceRequest> _pendingPersistence =
       <String, _PendingPersistenceRequest>{};
+  final Set<String> _ephemeralRuntimeKeys = <String>{};
 
   bool _initialized = false;
 
@@ -279,6 +280,32 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       runtime.conversation = conversation;
     }
     return runtime;
+  }
+
+  ChatConversationRuntimeState ensureEphemeralRuntime({
+    required int conversationId,
+    required String mode,
+    List<ChatMessageModel>? initialMessages,
+    ConversationModel? conversation,
+    ChatIslandDisplayLayer? initialChatIslandDisplayLayer,
+  }) {
+    final runtime = ensureRuntime(
+      conversationId: conversationId,
+      mode: mode,
+      initialMessages: initialMessages,
+      conversation: conversation,
+      initialChatIslandDisplayLayer: initialChatIslandDisplayLayer,
+    );
+    _ephemeralRuntimeKeys.add(
+      _runtimeKey(conversationId: conversationId, mode: mode),
+    );
+    return runtime;
+  }
+
+  bool isEphemeralRuntime({required int conversationId, required String mode}) {
+    return _ephemeralRuntimeKeys.contains(
+      _runtimeKey(conversationId: conversationId, mode: mode),
+    );
   }
 
   void replaceConversationSnapshot({
@@ -349,7 +376,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     runtime.lastAgentToolType = lastAgentToolType;
     runtime.browserSessionSnapshot = browserSessionSnapshot;
     runtime.agentStreamStates.clear();
-    runtime.streamingTextBatches.clear();
+    runtime._streamingTextBatches.clear();
     runtime.codexEntrySequences.clear();
     runtime.codexEntryStartTimes.clear();
     runtime.codexNextEntrySequence = 0;
@@ -473,11 +500,16 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     final result = _codexEventReducer.reduce(runtime: runtime, event: event);
     if (result.handled) {
       notifyListeners();
-      schedulePersistRuntimeConversation(
+      if (!isEphemeralRuntime(
         conversationId: conversationId,
         mode: kChatRuntimeModeCodex,
-        persistMessages: true,
-      );
+      )) {
+        schedulePersistRuntimeConversation(
+          conversationId: conversationId,
+          mode: kChatRuntimeModeCodex,
+          persistMessages: true,
+        );
+      }
     }
     return result;
   }
@@ -527,6 +559,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     }
     _runtimes.clear();
     _taskBindings.clear();
+    _ephemeralRuntimeKeys.clear();
   }
 
   void clearConversationRuntimeSession({
@@ -552,7 +585,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     runtime.pendingThinkingRoundSplit = false;
     runtime.toolCardSequence = 0;
     runtime.thinkingRound = 0;
-    runtime.streamingTextBatches.clear();
+    runtime._streamingTextBatches.clear();
     runtime.codexEntrySequences.clear();
     runtime.codexEntryStartTimes.clear();
     runtime.codexNextEntrySequence = 0;
@@ -568,6 +601,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       _flushRuntimeStreamingText(runtime);
     }
     _cancelPendingPersistence(conversationId: conversationId, mode: mode);
+    _ephemeralRuntimeKeys.remove(
+      _runtimeKey(conversationId: conversationId, mode: mode),
+    );
     _taskBindings.removeWhere(
       (_, binding) =>
           binding.conversationId == conversationId && binding.mode == mode,
@@ -621,6 +657,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     bool persistMessages = false,
   }) async {
     _cancelPendingPersistence(conversationId: conversationId, mode: mode);
+    if (isEphemeralRuntime(conversationId: conversationId, mode: mode)) {
+      return;
+    }
     final runtime = runtimeFor(conversationId: conversationId, mode: mode);
     if (runtime == null) return;
     _flushRuntimeStreamingText(runtime);
@@ -706,6 +745,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     Duration delay = const Duration(milliseconds: 350),
   }) {
     final key = _runtimeKey(conversationId: conversationId, mode: mode);
+    if (_ephemeralRuntimeKeys.contains(key)) {
+      return;
+    }
     final previous = _pendingPersistence[key];
     previous?.timer.cancel();
     final nextGenerateSummary =
@@ -745,6 +787,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       return;
     }
     request.timer.cancel();
+    if (_ephemeralRuntimeKeys.contains(key)) {
+      return;
+    }
     await persistRuntimeConversation(
       conversationId: request.conversationId,
       mode: request.mode,
@@ -777,7 +822,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     String taskId,
     _StreamingTextStreamKind kind,
   ) {
-    return runtime.streamingTextBatches[_streamingTextBatchKey(taskId, kind)];
+    return runtime._streamingTextBatches[_streamingTextBatchKey(taskId, kind)];
   }
 
   _StreamingTextBatchState _ensureStreamingTextBatch(
@@ -788,7 +833,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     required String initialFlushedText,
   }) {
     final key = _streamingTextBatchKey(taskId, kind);
-    return runtime.streamingTextBatches.putIfAbsent(
+    return runtime._streamingTextBatches.putIfAbsent(
       key,
       () => _StreamingTextBatchState(
         taskId: taskId,
@@ -804,14 +849,14 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     String taskId,
     _StreamingTextStreamKind kind,
   ) {
-    runtime.streamingTextBatches.remove(_streamingTextBatchKey(taskId, kind));
+    runtime._streamingTextBatches.remove(_streamingTextBatchKey(taskId, kind));
   }
 
   void _clearStreamingTextBatchesForTask(
     ChatConversationRuntimeState runtime,
     String taskId,
   ) {
-    runtime.streamingTextBatches.removeWhere(
+    runtime._streamingTextBatches.removeWhere(
       (_, batch) => batch.taskId == taskId,
     );
   }
@@ -821,7 +866,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     bool emitVoiceUpdates = false,
     bool schedulePersistence = false,
   }) {
-    final taskIds = runtime.streamingTextBatches.values
+    final taskIds = runtime._streamingTextBatches.values
         .map((batch) => batch.taskId)
         .toSet()
         .toList(growable: false);
@@ -2397,6 +2442,10 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       didUpdate = true;
     }
     if (didUpdate &&
+        !isEphemeralRuntime(
+          conversationId: runtime.conversationId,
+          mode: runtime.mode,
+        ) &&
         nextPreviews.any(
           (item) =>
               ChatLinkPreview.fromJson(item).status !=
@@ -2481,6 +2530,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       conversationId: conversationId,
       mode: mode,
     );
+    if (isEphemeralRuntime(conversationId: conversationId, mode: mode)) {
+      return;
+    }
     await ConversationHistoryService.saveConversationMessages(
       conversationId,
       List<ChatMessageModel>.from(runtime.messages),
@@ -2694,6 +2746,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     required String mode,
     required ChatMessageModel message,
   }) {
+    if (isEphemeralRuntime(conversationId: conversationId, mode: mode)) {
+      return;
+    }
     final cardData = message.cardData;
     if (message.type != 2 || cardData?['type'] != 'context_compaction_marker') {
       return;
@@ -2830,6 +2885,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     required String mode,
     required ChatMessageModel message,
   }) {
+    if (isEphemeralRuntime(conversationId: conversationId, mode: mode)) {
+      return;
+    }
     final cardData = message.cardData;
     if (message.type != 2 || cardData?['type'] != 'deep_thinking') {
       return;
@@ -3150,10 +3208,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     return result;
   }
 
-  String _subagentStreamingGroupKey(
-    Map<String, dynamic> event,
-    String kind,
-  ) {
+  String _subagentStreamingGroupKey(Map<String, dynamic> event, String kind) {
     final subagentId = (event['subagentId'] ?? '').toString().trim();
     if (subagentId.isNotEmpty) {
       return 'sub:$subagentId|$kind';

@@ -2098,6 +2098,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
 
     final conversationId = _currentConversationId;
     if (conversationId == null) return;
+    if (isEphemeralConversation(conversationId, activeConversationModeValue)) {
+      return;
+    }
 
     await ConversationHistoryService.saveConversationMessages(
       conversationId,

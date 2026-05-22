@@ -158,6 +158,7 @@ class CodexAppServerManager private constructor(
     }
 
     private suspend fun startThread(args: Map<String, Any?>): Map<String, Any?> = threadStartMutex.withLock {
+        val shouldBindLocally = shouldSyncLocalThreadBindings()
         val cwd = sanitizeCodexAbsolutePath(args.stringValue("cwd")) ?: resolveDefaultCwd()
         val conversationId = args.longValue("conversationId")
         val params = linkedMapOf<String, Any?>(
@@ -169,14 +170,14 @@ class CodexAppServerManager private constructor(
             params["approvalsReviewer"] = it
         }
         addCodexOptionalRunParams(params, args)
-        if (conversationId != null) {
+        if (shouldBindLocally && conversationId != null) {
             pendingThreadStartConversationId = conversationId
         }
         try {
             val response = request("thread/start", params) as Map<String, Any?>
             val threadId = extractThreadId(response) ?: response.stringValue("id")
             var localConversationId: Long? = null
-            if (!threadId.isNullOrBlank()) {
+            if (shouldBindLocally && !threadId.isNullOrBlank()) {
                 localConversationId = bindingRepository.ensureBinding(
                     threadId = threadId,
                     conversationId = conversationId,
@@ -199,7 +200,9 @@ class CodexAppServerManager private constructor(
         args["sortKey"]?.let { params["sortKey"] = it }
         params["sourceKinds"] = args["sourceKinds"] ?: DEFAULT_CODEX_THREAD_SOURCE_KINDS
         val response = request("thread/list", params) as Map<String, Any?>
-        syncThreadListResponse(response)
+        if (shouldSyncLocalThreadBindings()) {
+            syncThreadListResponse(response)
+        }
         return response
     }
 
@@ -209,12 +212,12 @@ class CodexAppServerManager private constructor(
     ): Map<String, Any?> {
         val threadId = resolveThreadId(args)
         val response = request(method, mapOf("threadId" to threadId)) as Map<String, Any?>
-        if (method == "thread/read" || method == "thread/resume") {
+        if (shouldSyncLocalThreadBindings() && (method == "thread/read" || method == "thread/resume")) {
             syncThreadListResponse(response)
         }
         return response.withLocalIds(
             threadId = threadId,
-            conversationId = bindingRepository.getBindingByThreadId(threadId)?.conversationId
+            conversationId = localConversationIdForThread(threadId)
         )
     }
 
@@ -225,10 +228,12 @@ class CodexAppServerManager private constructor(
         val threadId = resolveThreadId(args)
         val method = if (archived) "thread/archive" else "thread/unarchive"
         val response = request(method, mapOf("threadId" to threadId)) as Map<String, Any?>
-        bindingRepository.setArchived(threadId, archived)
+        if (shouldSyncLocalThreadBindings()) {
+            bindingRepository.setArchived(threadId, archived)
+        }
         return response.withLocalIds(
             threadId = threadId,
-            conversationId = bindingRepository.getBindingByThreadId(threadId)?.conversationId
+            conversationId = localConversationIdForThread(threadId)
         )
     }
 
@@ -239,10 +244,12 @@ class CodexAppServerManager private constructor(
             "thread/name/set",
             mapOf("threadId" to threadId, "name" to name)
         ) as Map<String, Any?>
-        bindingRepository.updateTitle(threadId, name)
+        if (shouldSyncLocalThreadBindings()) {
+            bindingRepository.updateTitle(threadId, name)
+        }
         return response.withLocalIds(
             threadId = threadId,
-            conversationId = bindingRepository.getBindingByThreadId(threadId)?.conversationId
+            conversationId = localConversationIdForThread(threadId)
         )
     }
 
@@ -289,7 +296,7 @@ class CodexAppServerManager private constructor(
         }
         return response.withLocalIds(
             threadId = threadId,
-            conversationId = bindingRepository.getBindingByThreadId(threadId)?.conversationId,
+            conversationId = localConversationIdForThread(threadId),
             turnId = turnId
         )
     }
@@ -324,7 +331,7 @@ class CodexAppServerManager private constructor(
         }
         return response.withLocalIds(
             threadId = threadId,
-            conversationId = bindingRepository.getBindingByThreadId(threadId)?.conversationId,
+            conversationId = localConversationIdForThread(threadId),
             turnId = turnId
         )
     }
@@ -345,7 +352,7 @@ class CodexAppServerManager private constructor(
         ) as Map<String, Any?>
         return response.withLocalIds(
             threadId = threadId,
-            conversationId = bindingRepository.getBindingByThreadId(threadId)?.conversationId,
+            conversationId = localConversationIdForThread(threadId),
             turnId = expectedTurnId
         )
     }
@@ -362,7 +369,7 @@ class CodexAppServerManager private constructor(
         activeTurnsByThreadId.remove(threadId)
         return response.withLocalIds(
             threadId = threadId,
-            conversationId = bindingRepository.getBindingByThreadId(threadId)?.conversationId,
+            conversationId = localConversationIdForThread(threadId),
             turnId = turnId
         )
     }
@@ -572,16 +579,30 @@ class CodexAppServerManager private constructor(
         if (!explicitThreadId.isNullOrBlank()) {
             return explicitThreadId
         }
-        val conversationId = args.longValue("conversationId")
-        if (conversationId != null) {
-            val binding = bindingRepository.getBindingByConversationId(conversationId)
-            if (binding != null) {
-                return binding.threadId
+        if (shouldSyncLocalThreadBindings()) {
+            val conversationId = args.longValue("conversationId")
+            if (conversationId != null) {
+                val binding = bindingRepository.getBindingByConversationId(conversationId)
+                if (binding != null) {
+                    return binding.threadId
+                }
             }
         }
         val response = startThread(args + mapOf("cwd" to cwd))
         return response["threadId"]?.toString()?.takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("thread/start did not return a threadId")
+    }
+
+    private fun shouldSyncLocalThreadBindings(): Boolean {
+        return activeRuntime != CodexRuntimeKind.REMOTE &&
+            resolveRuntime().kind != CodexRuntimeKind.REMOTE
+    }
+
+    private suspend fun localConversationIdForThread(threadId: String): Long? {
+        if (!shouldSyncLocalThreadBindings()) {
+            return null
+        }
+        return bindingRepository.getBindingByThreadId(threadId)?.conversationId
     }
 
     private suspend fun request(method: String, params: Any?): Any {
@@ -634,6 +655,9 @@ class CodexAppServerManager private constructor(
         params: Map<String, Any?>,
         threadId: String?
     ): Long? {
+        if (!shouldSyncLocalThreadBindings()) {
+            return null
+        }
         return when (method) {
             "thread/started" -> {
                 val thread = params.mapValue("thread")
@@ -768,6 +792,9 @@ class CodexAppServerManager private constructor(
         val explicit = args.stringValue("threadId") ?: args.stringValue("thread_id")
         if (!explicit.isNullOrBlank()) {
             return explicit
+        }
+        if (!shouldSyncLocalThreadBindings()) {
+            throw IllegalArgumentException("threadId is required for remote Codex sessions")
         }
         val conversationId = args.longValue("conversationId")
             ?: throw IllegalArgumentException("threadId or conversationId is required")
@@ -1065,20 +1092,26 @@ private fun extractThreadTitle(value: Any?): String? {
         map["thread_name"],
         map["name"],
         map["title"],
+        map["preview"],
         params?.get("threadName"),
         params?.get("thread_name"),
         params?.get("name"),
         params?.get("title"),
+        params?.get("preview"),
         result?.get("threadName"),
         result?.get("thread_name"),
         result?.get("name"),
         result?.get("title"),
+        result?.get("preview"),
         thread?.get("name"),
         thread?.get("title"),
+        thread?.get("preview"),
         (params?.get("thread") as? Map<*, *>)?.get("name"),
         (result?.get("thread") as? Map<*, *>)?.get("name"),
         (params?.get("thread") as? Map<*, *>)?.get("title"),
-        (result?.get("thread") as? Map<*, *>)?.get("title")
+        (result?.get("thread") as? Map<*, *>)?.get("title"),
+        (params?.get("thread") as? Map<*, *>)?.get("preview"),
+        (result?.get("thread") as? Map<*, *>)?.get("preview")
     ).firstNotNullOfOrNull { it?.toString()?.trim()?.takeIf(String::isNotEmpty) }
 }
 
@@ -1130,10 +1163,12 @@ private fun collectThreadEntries(value: Any?): List<CodexThreadListEntry> {
                     val title = listOfNotNull(
                         current["name"],
                         current["title"],
+                        current["preview"],
                         current["threadName"],
                         current["thread_name"],
                         threadMap?.get("name"),
-                        threadMap?.get("title")
+                        threadMap?.get("title"),
+                        threadMap?.get("preview")
                     ).firstNotNullOfOrNull {
                         it?.toString()?.trim()?.takeIf(String::isNotEmpty)
                     }
@@ -1235,6 +1270,7 @@ private val THREAD_SUMMARY_KEYS = setOf(
     "cwd",
     "name",
     "title",
+    "preview",
     "threadName",
     "thread_name",
     "archived",

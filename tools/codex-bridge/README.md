@@ -19,7 +19,7 @@ OMNIBOT_BRIDGE_CWD="/Users/you/code/project" \
 npm start
 ```
 
-Set the same values in Omnibot under Settings -> Scene Model Config -> Codex:
+Set the same values in Omnibot under Settings -> 服务与环境 -> Codex:
 
 - Bridge URL: `ws://<pc-lan-ip>:17321/codex`
 - Remote cwd: the project path on the PC

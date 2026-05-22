@@ -5,6 +5,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     final conversationId = _currentConversationId;
     final cardData = message.cardData;
     if (conversationId == null ||
+        isEphemeralConversation(conversationId, activeConversationModeValue) ||
         message.type != 2 ||
         cardData?['type'] != 'deep_thinking') {
       return;
@@ -350,8 +351,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     }
 
     for (final profileId in configuredProfileIds) {
-      final models =
-          optionsSource[profileId] ?? const <ProviderModelOption>[];
+      final models = optionsSource[profileId] ?? const <ProviderModelOption>[];
       if (models.any((model) => model.id.trim().isNotEmpty)) {
         return true;
       }
@@ -643,7 +643,8 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     }
 
     final conversationId = _currentConversationId;
-    if (conversationId != null) {
+    if (conversationId != null &&
+        !isEphemeralConversation(conversationId, activeConversationModeValue)) {
       await ConversationHistoryService.saveConversationMessages(
         conversationId,
         List<ChatMessageModel>.from(_messages),
@@ -878,19 +879,6 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       debugPrint('Agent flow error: $e');
       return false;
     }
-  }
-
-  @override
-  List<Map<String, dynamic>> _historyBeforeLatestUser(
-    List<Map<String, dynamic>> history,
-  ) {
-    if (history.isEmpty) return history;
-    final normalized = List<Map<String, dynamic>>.from(history);
-    final last = normalized.last;
-    if ((last['role'] as String?) == 'user') {
-      normalized.removeLast();
-    }
-    return normalized;
   }
 
   @override

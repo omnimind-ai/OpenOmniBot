@@ -75,6 +75,8 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
     ConversationModel conversation,
     List<ChatMessageModel> messages,
   ) {}
+  bool isEphemeralConversation(int conversationId, ConversationMode mode) =>
+      false;
 
   bool _isConversationOperationCurrent(int token) =>
       mounted && isConversationLifecycleTokenCurrent(token);
@@ -393,6 +395,7 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
     final operationMode = activeConversationModeValue;
     final conversationId = currentConversationId;
     if (conversationId == null) return;
+    if (isEphemeralConversation(conversationId, operationMode)) return;
 
     setState(() {
       isLoadingMore = true;
@@ -433,6 +436,7 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
     final operationMode = activeConversationModeValue;
     final activeConversationId = currentConversationId;
     if (activeConversationId == null) return;
+    if (isEphemeralConversation(activeConversationId, operationMode)) return;
 
     try {
       final allConversations = await ConversationService.getAllConversations(
@@ -670,6 +674,10 @@ mixin ConversationManager<T extends StatefulWidget> on State<T> {
     final snapshotConversationId = currentConversationId;
     final snapshotConversation = currentConversation;
     final snapshotMode = activeConversationModeValue;
+    if (snapshotConversationId != null &&
+        isEphemeralConversation(snapshotConversationId, snapshotMode)) {
+      return;
+    }
 
     try {
       debugPrint(

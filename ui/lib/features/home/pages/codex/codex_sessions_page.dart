@@ -101,6 +101,18 @@ class _CodexSessionsPageState extends State<CodexSessionsPage> {
       _openingThreadId = session.threadId;
     });
     try {
+      if (_status.runtime == 'remote' || _status.remoteEnabled) {
+        if (!mounted) return;
+        GoRouterManager.push(
+          '/home/chat',
+          extra: ConversationThreadTarget.codexSession(
+            threadId: session.threadId,
+            runtime: 'remote',
+            requestKey: DateTime.now().microsecondsSinceEpoch.toString(),
+          ),
+        );
+        return;
+      }
       final response = await CodexAppServerService.resumeThread(
         threadId: session.threadId,
       );
@@ -382,10 +394,12 @@ List<_CodexSessionSummary> _extractCodexSessions(List<dynamic> payloads) {
             _stringValue(
               map['name'] ??
                   map['title'] ??
+                  map['preview'] ??
                   map['threadName'] ??
                   map['thread_name'] ??
                   threadMap?['name'] ??
-                  threadMap?['title'],
+                  threadMap?['title'] ??
+                  threadMap?['preview'],
             ) ??
             'Codex ${threadId.length > 6 ? threadId.substring(threadId.length - 6) : threadId}',
         cwd:
@@ -552,6 +566,7 @@ const Set<String> _threadSummaryKeys = <String>{
   'worktree',
   'name',
   'title',
+  'preview',
   'threadName',
   'thread_name',
   'archived',
