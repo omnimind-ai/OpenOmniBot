@@ -1,4 +1,7 @@
+#!/usr/bin/env node
+
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,13 +13,134 @@ import { WebSocketServer } from 'ws';
 const require = createRequire(import.meta.url);
 const qrcode = require('qrcode-terminal');
 
-const port = Number.parseInt(process.env.OMNIBOT_BRIDGE_PORT || '17321', 10);
-const host = process.env.OMNIBOT_BRIDGE_HOST || '0.0.0.0';
-const publicHost = process.env.OMNIBOT_BRIDGE_PUBLIC_HOST || '';
-const token = process.env.OMNIBOT_BRIDGE_TOKEN || '';
-const codexBin = process.env.CODEX_BIN || 'codex';
-const bridgeCwd = process.env.OMNIBOT_BRIDGE_CWD || process.cwd();
-const codexHome = process.env.CODEX_HOME || '';
+function printHelp() {
+  console.log(`Omnibot Codex Bridge
+
+Usage:
+  omnibot-codex-bridge [project-dir] [options]
+  npx @omnibot/codex-bridge --cwd /path/to/project --token auto
+
+Options:
+  --cwd <path>            Codex working directory. Defaults to current directory.
+  --token <value|auto>    Bearer token. Use "auto" to generate one for this run.
+  --no-token              Disable token auth.
+  --host <host>           Listen host. Defaults to 0.0.0.0.
+  --port <port>           Listen port. Defaults to 17321.
+  --public-host <host>    Host/IP printed in the QR code.
+  --codex-bin <path>      Codex executable. Defaults to codex.
+  --codex-home <path>     Optional CODEX_HOME override.
+  -h, --help              Show this help.
+
+Environment variables with the same meaning are also supported:
+  OMNIBOT_BRIDGE_CWD, OMNIBOT_BRIDGE_TOKEN, OMNIBOT_BRIDGE_HOST,
+  OMNIBOT_BRIDGE_PORT, OMNIBOT_BRIDGE_PUBLIC_HOST, CODEX_BIN, CODEX_HOME`);
+}
+
+function readOptionValue(args, index, option) {
+  const arg = args[index];
+  const equalsIndex = arg.indexOf('=');
+  if (equalsIndex >= 0) {
+    return { value: arg.slice(equalsIndex + 1), nextIndex: index };
+  }
+  const value = args[index + 1];
+  if (value == null || value.startsWith('-')) {
+    throw new Error(`${option} requires a value.`);
+  }
+  return { value, nextIndex: index + 1 };
+}
+
+function parseCliArgs(args) {
+  const options = {};
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '-h' || arg === '--help') {
+      options.help = true;
+      continue;
+    }
+    if (arg === '--no-token') {
+      options.token = '';
+      continue;
+    }
+    const optionMap = {
+      '--cwd': 'cwd',
+      '--token': 'token',
+      '--host': 'host',
+      '--port': 'port',
+      '--public-host': 'publicHost',
+      '--codex-bin': 'codexBin',
+      '--codex-home': 'codexHome',
+    };
+    const matchedOption = Object.keys(optionMap).find(
+      (option) => arg === option || arg.startsWith(`${option}=`)
+    );
+    if (matchedOption) {
+      const parsed = readOptionValue(args, index, matchedOption);
+      options[optionMap[matchedOption]] = parsed.value;
+      index = parsed.nextIndex;
+      continue;
+    }
+    if (arg.startsWith('-')) {
+      throw new Error(`Unknown option: ${arg}`);
+    }
+    if (!options.cwd) {
+      options.cwd = arg;
+      continue;
+    }
+    throw new Error(`Unexpected argument: ${arg}`);
+  }
+  return options;
+}
+
+function resolveToken(cliToken) {
+  const rawToken =
+    cliToken === undefined ? process.env.OMNIBOT_BRIDGE_TOKEN || '' : cliToken;
+  return rawToken === 'auto' ? crypto.randomBytes(16).toString('hex') : rawToken;
+}
+
+function expandHomePath(rawPath) {
+  const value = String(rawPath || '').trim();
+  if (value === '~') return os.homedir();
+  if (value.startsWith('~/') || value.startsWith('~\\')) {
+    return path.join(os.homedir(), value.slice(2));
+  }
+  return value;
+}
+
+let cliOptions;
+try {
+  cliOptions = parseCliArgs(process.argv.slice(2));
+} catch (error) {
+  console.error(error.message);
+  console.error('Run with --help for usage.');
+  process.exit(1);
+}
+
+if (cliOptions.help) {
+  printHelp();
+  process.exit(0);
+}
+
+const port = Number.parseInt(
+  cliOptions.port || process.env.OMNIBOT_BRIDGE_PORT || '17321',
+  10
+);
+if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+  console.error(`Invalid bridge port: ${cliOptions.port || process.env.OMNIBOT_BRIDGE_PORT}`);
+  process.exit(1);
+}
+const host = cliOptions.host || process.env.OMNIBOT_BRIDGE_HOST || '0.0.0.0';
+const publicHost =
+  cliOptions.publicHost || process.env.OMNIBOT_BRIDGE_PUBLIC_HOST || '';
+const token = resolveToken(cliOptions.token);
+const codexBin = cliOptions.codexBin || process.env.CODEX_BIN || 'codex';
+const bridgeCwd = path.resolve(
+  expandHomePath(
+    cliOptions.cwd || process.env.OMNIBOT_BRIDGE_CWD || process.cwd()
+  )
+);
+const codexHome = expandHomePath(
+  cliOptions.codexHome || process.env.CODEX_HOME || ''
+);
 const homeDir = os.homedir();
 
 function isAuthorized(req, payloadToken = '') {
@@ -341,6 +465,7 @@ console.log(`Directory browser: http://${host}:${port}/fs/list`);
 console.log(`Working directory: ${bridgeCwd}`);
 if (token) {
   console.log('Token auth: enabled');
+  console.log(`Bridge token: ${token}`);
 }
 console.log(`Quick connect bridge URL: ${primaryBridgeUrl}`);
 if (advertised.length > 1) {

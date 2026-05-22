@@ -58,6 +58,7 @@ import 'package:ui/features/home/pages/chat/utils/codex_slash_commands.dart';
 import 'package:ui/features/home/pages/chat/utils/deep_thinking_persistence.dart';
 import 'package:ui/features/home/pages/chat/utils/keyboard_inset_motion_tracker.dart';
 import 'package:ui/features/home/pages/codex/codex_remote_directory_picker.dart';
+import 'package:ui/features/home/pages/codex/codex_remote_workspace_browser.dart';
 import 'package:ui/widgets/chat_drawer_gesture_guard.dart';
 
 // 导入 Mixins
@@ -411,6 +412,9 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   double _hdPadPaneDragDelta = 0;
   final GlobalKey<OmnibotWorkspaceBrowserState> _hdPadWorkspaceBrowserKey =
       GlobalKey<OmnibotWorkspaceBrowserState>();
+  final GlobalKey<CodexRemoteWorkspaceBrowserState>
+  _hdPadRemoteWorkspaceBrowserKey =
+      GlobalKey<CodexRemoteWorkspaceBrowserState>();
 
   ChatPageMode get _activeMode => _activeConversationMode;
   ConversationMode _conversationModeForPageMode(ChatPageMode mode) {

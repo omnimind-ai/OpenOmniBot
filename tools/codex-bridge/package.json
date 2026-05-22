@@ -1,10 +1,37 @@
 {
   "name": "@omnibot/codex-bridge",
   "version": "0.1.0",
-  "private": true,
+  "description": "Self-hosted PC bridge for Omnibot remote Codex mode.",
+  "license": "MIT",
   "type": "module",
+  "bin": {
+    "omnibot-codex-bridge": "./server.mjs"
+  },
+  "files": [
+    "README.md",
+    "server.mjs"
+  ],
+  "keywords": [
+    "omnibot",
+    "codex",
+    "bridge",
+    "remote-codex"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omnimind-ai/OpenOmniBot.git",
+    "directory": "tools/codex-bridge"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "check": "node --check server.mjs",
+    "pack:dry": "npm pack --dry-run"
   },
   "dependencies": {
     "qrcode-terminal": "^0.12.0",

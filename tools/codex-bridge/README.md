@@ -11,30 +11,60 @@ Codex sessions are read through the proxied `codex app-server` protocol, so the 
 
 ## Run
 
+Recommended one-shot startup:
+
+```bash
+npx @omnibot/codex-bridge --cwd "/Users/you/code/project" --token auto
+```
+
+Or install it globally:
+
+```bash
+npm install -g @omnibot/codex-bridge
+omnibot-codex-bridge "/Users/you/code/project" --token auto
+```
+
+When the bridge starts, it prints a terminal QR code. In Omnibot, tap Settings -> 服务与环境 -> Codex -> 扫码连接 to fill the remote Bridge URL, cwd, and token automatically.
+
+For local development from this repository:
+
 ```bash
 cd tools/codex-bridge
 npm install
-OMNIBOT_BRIDGE_TOKEN="$(openssl rand -hex 16)" \
-OMNIBOT_BRIDGE_CWD="/Users/you/code/project" \
-npm start
+npm start -- --cwd "/Users/you/code/project" --token auto
 ```
 
-Set the same values in Omnibot under Settings -> 服务与环境 -> Codex:
+If you do not use the QR code, set these values in Omnibot under Settings -> 服务与环境 -> Codex:
 
-- Bridge URL: `ws://<pc-lan-ip>:17321/codex`
-- Remote cwd: the project path on the PC
-- Bridge Token: `OMNIBOT_BRIDGE_TOKEN`
-
-The bridge prints a terminal QR code when it starts. In Omnibot, tap Settings -> 服务与环境 -> Codex -> 扫码连接 to fill the remote Bridge URL, cwd, and token automatically.
+- Bridge URL: the printed `Quick connect bridge URL`, usually `ws://<pc-lan-ip>:17321/codex`
+- Remote cwd: the project path passed with `--cwd`
+- Bridge Token: the printed `Bridge token`; with `--token auto` it is generated for this run
 
 For WAN access, put this behind Tailscale, WireGuard, a trusted reverse proxy with TLS, or another private network path. Do not expose the bridge directly to the public internet.
+
+If the printed IP is not reachable from your phone, override the advertised address:
+
+```bash
+npx @omnibot/codex-bridge --cwd "/Users/you/code/project" --token auto --public-host 192.168.1.20
+```
+
+## CLI Options
+
+- `--cwd <path>` or positional `project-dir`: Codex working directory, default current directory
+- `--token <value|auto>`: bearer token; `auto` generates a random token for this run
+- `--no-token`: disable token auth for trusted private networks
+- `--host <host>`: listen host, default `0.0.0.0`
+- `--port <port>`: listen port, default `17321`
+- `--public-host <host>`: advertised host/IP used in the QR code
+- `--codex-bin <path>`: Codex executable, default `codex`
+- `--codex-home <path>`: optional `CODEX_HOME` override
 
 ## Environment
 
 - `OMNIBOT_BRIDGE_HOST`: listen host, default `0.0.0.0`
 - `OMNIBOT_BRIDGE_PUBLIC_HOST`: optional advertised host/IP used in the QR code
 - `OMNIBOT_BRIDGE_PORT`: listen port, default `17321`
-- `OMNIBOT_BRIDGE_TOKEN`: optional bearer token
+- `OMNIBOT_BRIDGE_TOKEN`: optional bearer token; set to `auto` to generate one
 - `OMNIBOT_BRIDGE_CWD`: default project directory
 - `CODEX_BIN`: Codex executable, default `codex`
 - `CODEX_HOME`: optional Codex config directory override
