@@ -118,4 +118,14 @@ class CodexAppServerProtocolPayloadTest {
             normalizeCodexBridgeFsListUrl("ws://192.168.1.10:17321/codex")
         )
     }
+
+    @Test
+    fun defaultThreadSourceKindsUseCurrentCodexAppServerVariants() {
+        assertTrue(DEFAULT_CODEX_THREAD_SOURCE_KINDS.contains("cli"))
+        assertTrue(DEFAULT_CODEX_THREAD_SOURCE_KINDS.contains("appServer"))
+        assertTrue(DEFAULT_CODEX_THREAD_SOURCE_KINDS.contains("subAgentOther"))
+        assertEquals(false, DEFAULT_CODEX_THREAD_SOURCE_KINDS.contains("interactive"))
+        assertEquals(false, DEFAULT_CODEX_THREAD_SOURCE_KINDS.contains("background"))
+        assertEquals(false, DEFAULT_CODEX_THREAD_SOURCE_KINDS.contains("subAgentInteractive"))
+    }
 }

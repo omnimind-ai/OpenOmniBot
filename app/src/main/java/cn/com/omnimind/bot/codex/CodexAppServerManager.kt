@@ -197,11 +197,7 @@ class CodexAppServerManager private constructor(
         args["cursor"]?.let { params["cursor"] = it }
         args["limit"]?.let { params["limit"] = it }
         args["sortKey"]?.let { params["sortKey"] = it }
-        params["sourceKinds"] = args["sourceKinds"] ?: listOf(
-            "interactive",
-            "background",
-            "subAgentInteractive"
-        )
+        params["sourceKinds"] = args["sourceKinds"] ?: DEFAULT_CODEX_THREAD_SOURCE_KINDS
         val response = request("thread/list", params) as Map<String, Any?>
         syncThreadListResponse(response)
         return response
@@ -1264,4 +1260,16 @@ private val CODEX_THREAD_ITEM_TYPES = setOf(
     "userMessage",
     "plan",
     "serverRequest"
+)
+
+internal val DEFAULT_CODEX_THREAD_SOURCE_KINDS = listOf(
+    "cli",
+    "vscode",
+    "exec",
+    "appServer",
+    "subAgent",
+    "subAgentReview",
+    "subAgentCompact",
+    "subAgentThreadSpawn",
+    "subAgentOther"
 )
