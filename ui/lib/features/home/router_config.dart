@@ -6,6 +6,7 @@ import 'package:ui/models/conversation_thread_target.dart';
 import 'package:ui/features/home/pages/alarm_setting/alarm_setting_page.dart';
 import 'package:ui/features/home/pages/authorize_setting/authorize_setting_page.dart';
 import 'package:ui/features/home/pages/companion_setting/companion_setting_page.dart';
+import 'package:ui/features/home/pages/codex/codex_sessions_page.dart';
 import 'package:ui/features/home/pages/chat_history/chat_history_page.dart';
 import 'package:ui/features/home/pages/permission_guide/permission_guide_detail_page.dart';
 import 'package:ui/features/home/pages/permission_guide/permission_guide_page.dart';
@@ -150,6 +151,16 @@ List<GoRoute> homeRoutes = [
     path: '/home/chat_history',
     name: 'home/chat_history',
     builder: (context, state) => const ChatHistoryPage(archivedOnly: true),
+  ),
+
+  GoRoute(
+    path: '/home/codex_sessions',
+    name: 'home/codex_sessions',
+    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
+      key: state.pageKey,
+      name: 'home/codex_sessions',
+      child: const CodexSessionsPage(),
+    ),
   ),
   GoRoute(
     path: '/home/archived_conversations',

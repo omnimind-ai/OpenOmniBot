@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_switch/flutter_switch.dart';
+import 'package:ui/features/home/pages/codex/codex_remote_directory_picker.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/codex_app_server_service.dart';
 import 'package:ui/services/model_provider_config_service.dart';
@@ -84,8 +86,11 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
   bool _isSavingVoiceConfig = false;
   bool _isLoadingCodexConfig = true;
   bool _isSavingCodexConfig = false;
+  bool _isTestingCodexBridge = false;
   bool _isSyncingCodexConfig = false;
   bool _obscureCodexApiKey = true;
+  bool _obscureCodexBridgeToken = true;
+  bool _codexRemoteEnabled = false;
 
   List<SceneCatalogItem> _catalog = const [];
   List<SceneModelBindingEntry> _bindings = const [];
@@ -99,10 +104,14 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
   late final TextEditingController _codexBaseUrlController;
   late final TextEditingController _codexModelController;
   late final TextEditingController _codexApiKeyController;
+  late final TextEditingController _codexBridgeUrlController;
+  late final TextEditingController _codexBridgeTokenController;
+  late final TextEditingController _codexBridgeCwdController;
   Timer? _voiceConfigSaveDebounce;
   Timer? _codexConfigSaveDebounce;
   SceneVoiceConfig? _pendingVoiceConfig;
   String _codexHome = _defaultCodexHome;
+  String _codexRuntime = 'local';
   String? _codexConfigError;
   String? _codexConfigStatus;
   String? _lastSavedCodexConfigSignature;
@@ -126,9 +135,15 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
     _codexBaseUrlController = TextEditingController();
     _codexModelController = TextEditingController(text: _defaultCodexModel);
     _codexApiKeyController = TextEditingController();
+    _codexBridgeUrlController = TextEditingController();
+    _codexBridgeTokenController = TextEditingController();
+    _codexBridgeCwdController = TextEditingController();
     _codexBaseUrlController.addListener(_handleCodexConfigEdited);
     _codexModelController.addListener(_handleCodexConfigEdited);
     _codexApiKeyController.addListener(_handleCodexConfigEdited);
+    _codexBridgeUrlController.addListener(_handleCodexConfigEdited);
+    _codexBridgeTokenController.addListener(_handleCodexConfigEdited);
+    _codexBridgeCwdController.addListener(_handleCodexConfigEdited);
     _loadData();
     unawaited(_loadCodexConfig());
     _configChangedSubscription = AssistsMessageService
@@ -157,9 +172,15 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
     _codexBaseUrlController.removeListener(_handleCodexConfigEdited);
     _codexModelController.removeListener(_handleCodexConfigEdited);
     _codexApiKeyController.removeListener(_handleCodexConfigEdited);
+    _codexBridgeUrlController.removeListener(_handleCodexConfigEdited);
+    _codexBridgeTokenController.removeListener(_handleCodexConfigEdited);
+    _codexBridgeCwdController.removeListener(_handleCodexConfigEdited);
     _codexBaseUrlController.dispose();
     _codexModelController.dispose();
     _codexApiKeyController.dispose();
+    _codexBridgeUrlController.dispose();
+    _codexBridgeTokenController.dispose();
+    _codexBridgeCwdController.dispose();
     super.dispose();
   }
 
@@ -259,6 +280,10 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
         config.model.trim().isEmpty ? _defaultCodexModel : config.model,
       );
       _setControllerText(_codexApiKeyController, config.apiKey);
+      _setControllerText(_codexBridgeUrlController, config.remoteBridgeUrl);
+      _setControllerText(_codexBridgeTokenController, config.remoteBridgeToken);
+      _setControllerText(_codexBridgeCwdController, config.remoteCwd);
+      _codexRemoteEnabled = config.remoteEnabled;
     } finally {
       _isSyncingCodexConfig = false;
     }
@@ -268,8 +293,20 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
     required String baseUrl,
     required String model,
     required String apiKey,
+    required String remoteBridgeUrl,
+    required String remoteBridgeToken,
+    required String remoteCwd,
+    required bool remoteEnabled,
   }) {
-    return '${baseUrl.trim()}\n${model.trim()}\n${apiKey.trim()}';
+    return [
+      baseUrl.trim(),
+      model.trim(),
+      apiKey.trim(),
+      remoteEnabled ? 'remote' : 'local',
+      remoteBridgeUrl.trim(),
+      remoteBridgeToken.trim(),
+      remoteCwd.trim(),
+    ].join('\n');
   }
 
   String _currentCodexConfigSignature() {
@@ -277,19 +314,59 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
       baseUrl: _codexBaseUrlController.text,
       model: _codexModelController.text,
       apiKey: _codexApiKeyController.text,
+      remoteBridgeUrl: _codexBridgeUrlController.text,
+      remoteBridgeToken: _codexBridgeTokenController.text,
+      remoteCwd: _codexBridgeCwdController.text,
+      remoteEnabled: _codexRemoteEnabled,
     );
   }
 
-  bool get _hasAnyCodexConfigInput {
+  bool get _hasAnyLocalCodexConfigInput {
     return _codexBaseUrlController.text.trim().isNotEmpty ||
         _codexModelController.text.trim().isNotEmpty ||
         _codexApiKeyController.text.trim().isNotEmpty;
   }
 
-  bool get _hasCompleteCodexConfigInput {
+  bool get _hasAnyRemoteCodexConfigInput {
+    return _codexBridgeUrlController.text.trim().isNotEmpty ||
+        _codexBridgeTokenController.text.trim().isNotEmpty ||
+        _codexBridgeCwdController.text.trim().isNotEmpty;
+  }
+
+  bool get _hasAnyCodexConfigInput {
+    return _hasAnyLocalCodexConfigInput || _hasAnyRemoteCodexConfigInput;
+  }
+
+  bool get _hasCompleteLocalCodexConfigInput {
     return _codexBaseUrlController.text.trim().isNotEmpty &&
         _codexModelController.text.trim().isNotEmpty &&
         _codexApiKeyController.text.trim().isNotEmpty;
+  }
+
+  bool get _hasCompleteRemoteCodexConfigInput {
+    return _codexBridgeUrlController.text.trim().isNotEmpty &&
+        _codexBridgeCwdController.text.trim().isNotEmpty;
+  }
+
+  bool get _hasCompleteCodexConfigInput {
+    if (_codexRemoteEnabled) {
+      return _hasCompleteRemoteCodexConfigInput;
+    }
+    if (_isChangingCodexRemoteEnabled) {
+      return true;
+    }
+    if (_hasAnyLocalCodexConfigInput) {
+      return _hasCompleteLocalCodexConfigInput;
+    }
+    return true;
+  }
+
+  bool get _isChangingCodexRemoteEnabled {
+    return _codexRemoteEnabled != (_codexRuntime == 'remote');
+  }
+
+  bool get _isRemoteCodexConfigIncomplete {
+    return _codexRemoteEnabled && !_hasCompleteRemoteCodexConfigInput;
   }
 
   void _handleCodexConfigEdited() {
@@ -300,20 +377,28 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
     _codexConfigSaveDebounce?.cancel();
     final signature = _currentCodexConfigSignature();
     final complete = _hasCompleteCodexConfigInput;
-    final anyInput = _hasAnyCodexConfigInput;
+    final anyInput = _hasAnyCodexConfigInput || _codexRemoteEnabled;
+    final remoteIncomplete = _isRemoteCodexConfigIncomplete;
     setState(() {
       _codexConfigError = null;
-      if (!anyInput) {
+      if (remoteIncomplete) {
+        _codexConfigStatus = _localeText(
+          zh: '远程 Bridge URL 与远程工作目录填写完整后将自动保存。',
+          en: 'Remote Bridge URL and remote cwd are required to autosave.',
+        );
+      } else if (!anyInput) {
         _codexConfigStatus = null;
       } else if (!complete) {
         _codexConfigStatus = _localeText(
-          zh: '填写完整后将自动保存。',
-          en: 'Complete all fields to autosave.',
+          zh: _codexRemoteEnabled ? '填写完整后将自动保存。' : '本地配置填写完整后将自动保存。',
+          en: _codexRemoteEnabled
+              ? 'Complete all fields to autosave.'
+              : 'Complete the local config to autosave.',
         );
       } else if (signature == _lastSavedCodexConfigSignature) {
         _codexConfigStatus = _localeText(
-          zh: '已自动保存，请重启软件以应用 Codex 配置。',
-          en: 'Autosaved. Restart the app to apply the Codex config.',
+          zh: '已自动保存。远程配置会在下次进入 Codex 模式时生效。',
+          en: 'Autosaved. Remote config applies the next time Codex mode starts.',
         );
       } else {
         _codexConfigStatus = _localeText(
@@ -325,6 +410,29 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
 
     if (complete && signature != _lastSavedCodexConfigSignature) {
       _scheduleCodexConfigAutoSave();
+    }
+  }
+
+  void _setCodexRemoteEnabled(bool value) {
+    if (_codexRemoteEnabled == value) {
+      return;
+    }
+    setState(() {
+      _codexRemoteEnabled = value;
+      _codexConfigError = null;
+      _codexConfigStatus = value
+          ? _localeText(
+              zh: '远程模式已开启，填写 Bridge URL 与远程工作目录后将自动保存。',
+              en: 'Remote mode is enabled. Fill Bridge URL and remote cwd to autosave.',
+            )
+          : _localeText(
+              zh: '远程模式已关闭，将切换为本地 Alpine Codex。',
+              en: 'Remote mode is disabled. Codex will use local Alpine.',
+            );
+    });
+    if (_hasCompleteCodexConfigInput &&
+        _currentCodexConfigSignature() != _lastSavedCodexConfigSignature) {
+      _scheduleCodexConfigAutoSave(delay: const Duration(milliseconds: 300));
     }
   }
 
@@ -351,6 +459,7 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
       final signature = _currentCodexConfigSignature();
       setState(() {
         _codexHome = config.codexHome ?? _defaultCodexHome;
+        _codexRuntime = config.runtime ?? 'local';
         _isLoadingCodexConfig = false;
         _codexConfigError = null;
         _codexConfigStatus = null;
@@ -374,12 +483,29 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
     final baseUrl = _codexBaseUrlController.text.trim();
     final model = _codexModelController.text.trim();
     final apiKey = _codexApiKeyController.text.trim();
-    if (baseUrl.isEmpty || model.isEmpty || apiKey.isEmpty) {
+    final remoteBridgeUrl = _codexBridgeUrlController.text.trim();
+    final remoteBridgeToken = _codexBridgeTokenController.text.trim();
+    final remoteCwd = _codexBridgeCwdController.text.trim();
+    final remoteIncomplete = _isRemoteCodexConfigIncomplete;
+    if (remoteIncomplete) {
       if (mounted) {
         setState(() {
           _codexConfigStatus = _localeText(
-            zh: '填写完整后将自动保存。',
-            en: 'Complete all fields to autosave.',
+            zh: '远程 Bridge URL 与远程工作目录填写完整后将自动保存。',
+            en: 'Remote Bridge URL and remote cwd are required to autosave.',
+          );
+        });
+      }
+      return;
+    }
+    if (!_hasCompleteCodexConfigInput) {
+      if (mounted) {
+        setState(() {
+          _codexConfigStatus = _localeText(
+            zh: _codexRemoteEnabled ? '填写完整后将自动保存。' : '本地配置填写完整后将自动保存。',
+            en: _codexRemoteEnabled
+                ? 'Complete all fields to autosave.'
+                : 'Complete the local config to autosave.',
           );
         });
       }
@@ -390,13 +516,17 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
       baseUrl: baseUrl,
       model: model,
       apiKey: apiKey,
+      remoteBridgeUrl: remoteBridgeUrl,
+      remoteBridgeToken: remoteBridgeToken,
+      remoteCwd: remoteCwd,
+      remoteEnabled: _codexRemoteEnabled,
     );
     if (savingSignature == _lastSavedCodexConfigSignature) {
       if (mounted) {
         setState(() {
           _codexConfigStatus = _localeText(
-            zh: '已自动保存，请重启软件以应用 Codex 配置。',
-            en: 'Autosaved. Restart the app to apply the Codex config.',
+            zh: '已自动保存。远程配置会在下次进入 Codex 模式时生效。',
+            en: 'Autosaved. Remote config applies the next time Codex mode starts.',
           );
         });
       }
@@ -413,24 +543,37 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
         baseUrl: baseUrl,
         model: model,
         apiKey: apiKey,
+        remoteEnabled: _codexRemoteEnabled,
+        remoteBridgeUrl: remoteBridgeUrl,
+        remoteBridgeToken: remoteBridgeToken,
+        remoteCwd: remoteCwd,
       );
       if (!mounted) return;
       final savedSignature = _codexConfigSignature(
         baseUrl: saved.baseUrl,
         model: saved.model,
         apiKey: saved.apiKey,
+        remoteBridgeUrl: saved.remoteBridgeUrl,
+        remoteBridgeToken: saved.remoteBridgeToken,
+        remoteCwd: saved.remoteCwd,
+        remoteEnabled: saved.remoteEnabled,
       );
       if (_currentCodexConfigSignature() == savingSignature) {
         _syncCodexControllers(saved);
       }
       setState(() {
         _codexHome = saved.codexHome ?? _defaultCodexHome;
+        _codexRuntime = saved.runtime ?? 'local';
         _codexConfigError = null;
         _lastSavedCodexConfigSignature = savedSignature;
         _codexConfigStatus = _currentCodexConfigSignature() == savedSignature
             ? _localeText(
-                zh: '已自动保存，请重启软件以应用 Codex 配置。',
-                en: 'Autosaved. Restart the app to apply the Codex config.',
+                zh: saved.remoteEnabled
+                    ? '已自动保存，Codex 模式将优先使用远程 PC Bridge。'
+                    : '已自动保存，将使用本地 Alpine Codex。',
+                en: saved.remoteEnabled
+                    ? 'Autosaved. Codex mode will prefer the remote PC Bridge.'
+                    : 'Autosaved. Codex mode will use local Alpine Codex.',
               )
             : _localeText(zh: '即将自动保存...', en: 'Autosave pending...');
       });
@@ -454,6 +597,93 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
         }
       }
     }
+  }
+
+  Future<void> _testCodexBridgeConnection() async {
+    if (_isTestingCodexBridge) return;
+    final remoteBridgeUrl = _codexBridgeUrlController.text.trim();
+    final remoteBridgeToken = _codexBridgeTokenController.text.trim();
+    final remoteCwd = _codexBridgeCwdController.text.trim();
+    if (remoteBridgeUrl.isEmpty || remoteCwd.isEmpty) {
+      showToast(
+        _localeText(
+          zh: '测试连接需要填写 Bridge URL 与远程工作目录。',
+          en: 'Bridge URL and remote cwd are required for the connection test.',
+        ),
+        type: ToastType.warning,
+      );
+      return;
+    }
+    setState(() {
+      _isTestingCodexBridge = true;
+      _codexConfigError = null;
+    });
+    showToast(
+      _localeText(zh: '正在测试远程 PC Bridge...', en: 'Testing remote PC Bridge...'),
+      type: ToastType.loading,
+      duration: const Duration(milliseconds: 1200),
+    );
+    try {
+      final result = await CodexAppServerService.testRemoteConfig(
+        remoteBridgeUrl: remoteBridgeUrl,
+        remoteBridgeToken: remoteBridgeToken,
+        remoteCwd: remoteCwd,
+      );
+      if (!mounted) return;
+      final ok = result['ok'] == true || result['ready'] == true;
+      final version = result['version']?.toString().trim() ?? '';
+      final cwd = result['cwd']?.toString().trim() ?? '';
+      showToast(
+        ok
+            ? _localeText(
+                zh: '远程 Bridge 可用${version.isEmpty ? '' : '：$version'}${cwd.isEmpty ? '' : '，目录：$cwd'}',
+                en: 'Remote Bridge is ready${version.isEmpty ? '' : ': $version'}${cwd.isEmpty ? '' : ', cwd: $cwd'}',
+              )
+            : _localeText(
+                zh: '远程 Bridge 测试失败：${result['error'] ?? 'unknown'}',
+                en: 'Remote Bridge test failed: ${result['error'] ?? 'unknown'}',
+              ),
+        type: ok ? ToastType.success : ToastType.error,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showToast(
+        _localeText(
+          zh: '远程 Bridge 测试失败：$error',
+          en: 'Remote Bridge test failed: $error',
+        ),
+        type: ToastType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isTestingCodexBridge = false);
+      }
+    }
+  }
+
+  Future<void> _openCodexRemoteDirectoryPicker() async {
+    final remoteBridgeUrl = _codexBridgeUrlController.text.trim();
+    if (remoteBridgeUrl.isEmpty) {
+      showToast(
+        _localeText(
+          zh: '请先填写 Bridge URL。',
+          en: 'Bridge URL is required first.',
+        ),
+        type: ToastType.warning,
+      );
+      return;
+    }
+    final selected = await showCodexRemoteDirectoryPicker(
+      context: context,
+      remoteBridgeUrl: remoteBridgeUrl,
+      remoteBridgeToken: _codexBridgeTokenController.text.trim(),
+      initialPath: _codexBridgeCwdController.text.trim(),
+    );
+    if (!mounted || selected == null || selected.trim().isEmpty) {
+      return;
+    }
+    _setControllerText(_codexBridgeCwdController, selected.trim());
+    _handleCodexConfigEdited();
   }
 
   void _updateVoiceConfig(
@@ -1281,6 +1511,36 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
     );
   }
 
+  Widget _buildCodexRemoteSwitch() {
+    final palette = context.omniPalette;
+    final enabled = !_isSavingCodexConfig;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: enabled
+          ? () => _setCodexRemoteEnabled(!_codexRemoteEnabled)
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 12),
+        child: AbsorbPointer(
+          child: Opacity(
+            opacity: enabled ? 1 : 0.5,
+            child: FlutterSwitch(
+              width: 32,
+              height: 18.67,
+              toggleSize: 11.3,
+              padding: 3,
+              activeColor: palette.accentPrimary,
+              inactiveColor: palette.borderStrong,
+              borderRadius: 28.75,
+              value: _codexRemoteEnabled,
+              onToggle: _setCodexRemoteEnabled,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCodexConfigSection() {
     final borderColor = _isDarkTheme
         ? context.omniPalette.borderSubtle
@@ -1295,8 +1555,8 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
         SettingsSectionTitle(
           label: _localeText(zh: 'Codex 配置', en: 'Codex Config'),
           subtitle: _localeText(
-            zh: '写入 Alpine 内的 config.toml 与 auth.json。',
-            en: 'Writes config.toml and auth.json inside Alpine.',
+            zh: '用开关明确选择远程 PC Bridge 或本地 Alpine。',
+            en: 'Use the switch to choose remote PC Bridge or local Alpine.',
           ),
         ),
         Container(
@@ -1313,7 +1573,9 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
               Row(
                 children: [
                   Icon(
-                    Icons.terminal_rounded,
+                    _codexRuntime == 'remote'
+                        ? Icons.hub_rounded
+                        : Icons.terminal_rounded,
                     size: 18,
                     color: Theme.of(context).colorScheme.primary,
                   ),
@@ -1321,8 +1583,12 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
                   Expanded(
                     child: Text(
                       _localeText(
-                        zh: '配置目录：$_codexHome',
-                        en: 'Config directory: $_codexHome',
+                        zh: _codexRuntime == 'remote'
+                            ? '当前运行时：远程 PC Bridge'
+                            : '当前运行时：本地 Alpine（配置目录：$_codexHome）',
+                        en: _codexRuntime == 'remote'
+                            ? 'Runtime: Remote PC Bridge'
+                            : 'Runtime: Local Alpine (config: $_codexHome)',
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1361,6 +1627,120 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
                 ],
               ),
               const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _localeText(zh: '远程 PC Bridge', en: 'Remote PC Bridge'),
+                      style: TextStyle(
+                        color: _primaryTextColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'PingFang SC',
+                      ),
+                    ),
+                  ),
+                  _buildCodexRemoteSwitch(),
+                ],
+              ),
+              Text(
+                _codexRemoteEnabled
+                    ? _localeText(
+                        zh: '已启用：Codex 模式将连接远程 PC Bridge。',
+                        en: 'Enabled: Codex mode will connect to the remote PC Bridge.',
+                      )
+                    : _localeText(
+                        zh: '已关闭：Codex 模式使用本地 Alpine。',
+                        en: 'Disabled: Codex mode uses local Alpine.',
+                      ),
+                style: TextStyle(
+                  color: _secondaryTextColor,
+                  fontSize: 12,
+                  height: 1.35,
+                  fontFamily: 'PingFang SC',
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildCodexTextField(
+                key: const Key('codex-config-remote-bridge-url-field'),
+                controller: _codexBridgeUrlController,
+                label: _localeText(zh: 'Bridge URL', en: 'Bridge URL'),
+                hint: 'ws://192.168.1.10:17321/codex',
+                keyboardType: TextInputType.url,
+              ),
+              const SizedBox(height: 12),
+              _buildCodexTextField(
+                key: const Key('codex-config-remote-cwd-field'),
+                controller: _codexBridgeCwdController,
+                label: _localeText(zh: '远程工作目录', en: 'Remote cwd'),
+                hint: '/Users/name/code/project',
+                suffixIcon: IconButton(
+                  tooltip: _localeText(zh: '选择目录', en: 'Choose directory'),
+                  onPressed: _openCodexRemoteDirectoryPicker,
+                  icon: const Icon(Icons.folder_open_rounded, size: 18),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildCodexTextField(
+                key: const Key('codex-config-remote-token-field'),
+                controller: _codexBridgeTokenController,
+                label: _localeText(
+                  zh: 'Bridge Token（可选）',
+                  en: 'Bridge Token (optional)',
+                ),
+                hint: 'OMNIBOT_BRIDGE_TOKEN',
+                obscureText: _obscureCodexBridgeToken,
+                suffixIcon: IconButton(
+                  tooltip: _obscureCodexBridgeToken
+                      ? _localeText(zh: '显示 Token', en: 'Show token')
+                      : _localeText(zh: '隐藏 Token', en: 'Hide token'),
+                  onPressed: () {
+                    setState(() {
+                      _obscureCodexBridgeToken = !_obscureCodexBridgeToken;
+                    });
+                  },
+                  icon: Icon(
+                    _obscureCodexBridgeToken
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    size: 18,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: _isTestingCodexBridge
+                      ? null
+                      : () => unawaited(_testCodexBridgeConnection()),
+                  icon: _isTestingCodexBridge
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.wifi_tethering_rounded, size: 17),
+                  label: Text(
+                    _isTestingCodexBridge
+                        ? _localeText(zh: '测试中...', en: 'Testing...')
+                        : _localeText(zh: '测试 Bridge 连接', en: 'Test Bridge'),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Divider(height: 1, color: borderColor),
+              const SizedBox(height: 12),
+              Text(
+                _localeText(zh: '本地 Alpine Codex', en: 'Local Alpine Codex'),
+                style: TextStyle(
+                  color: _primaryTextColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'PingFang SC',
+                ),
+              ),
+              const SizedBox(height: 8),
               _buildCodexTextField(
                 key: const Key('codex-config-base-url-field'),
                 controller: _codexBaseUrlController,
@@ -1420,8 +1800,8 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
                     Expanded(
                       child: Text(
                         _localeText(
-                          zh: '自动保存，请重启软件以应用 Codex 配置。',
-                          en: 'Config autosaves. Restart the app to apply the Codex config.',
+                          zh: '远程开关关闭时使用本地 Codex；配置修改会自动保存并断开当前 Codex 会话。',
+                          en: 'When the remote switch is off, local Codex is used. Changes autosave and disconnect the current Codex session.',
                         ),
                         style: TextStyle(
                           color: _secondaryTextColor,

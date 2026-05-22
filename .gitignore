@@ -6,6 +6,7 @@
 /local.properties
 .DS_Store
 /build
+node_modules/
 /captures
 .externalNativeBuild
 .cxx

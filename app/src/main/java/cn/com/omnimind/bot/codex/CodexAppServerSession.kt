@@ -1,8 +1,6 @@
 package cn.com.omnimind.bot.codex
 
 import android.content.Context
-import android.util.Log
-import com.ai.assistance.operit.terminal.TerminalManager
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
@@ -11,17 +9,10 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import java.io.OutputStreamWriter
-import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -29,16 +20,9 @@ internal class CodexAppServerSession(
     private val context: Context? = null,
     private val scope: CoroutineScope,
     private val onServerMessage: suspend (Map<String, Any?>) -> Unit,
+    private val connectionFactory: (() -> CodexAppServerConnection)? = null,
     private val processStarter: suspend (String, Map<String, String>) -> Process = { command, extraEnvironment ->
-        val safeContext = requireNotNull(context) {
-            "Context is required when using the default Codex process starter."
-        }
-        TerminalManager.getInstance(safeContext).startLongLivedAlpineProcess(
-            command = command,
-            executorKey = "codex-app-server",
-            redirectErrorStream = false,
-            extraEnvironment = extraEnvironment
-        )
+        defaultLocalProcessStarter(context, command, extraEnvironment)
     }
 ) {
     private val gson = Gson()
@@ -47,29 +31,31 @@ internal class CodexAppServerSession(
     private val nextId = AtomicLong(1L)
 
     @Volatile
-    private var process: Process? = null
-    private var stdoutJob: Job? = null
-    private var stderrJob: Job? = null
-    private var waitJob: Job? = null
+    private var connection: CodexAppServerConnection? = null
 
     val isRunning: Boolean
-        get() = process?.isAlive == true
+        get() = connection?.isRunning == true
 
     suspend fun start(clientVersion: String) {
         if (isRunning) {
             return
         }
-        val command = buildStartCommand()
-        val startedProcess = processStarter(
-            command,
-            mapOf(
-                "OMNIBOT_HEADLESS" to "1",
-                "CODEX_HOME" to CodexAppServerDefaults.CODEX_HOME,
-                "OMNIBOT_SESSION_CWD" to CodexAppServerDefaults.FALLBACK_CWD
-            )
+        val startedConnection = createConnection()
+        connection = startedConnection
+        startedConnection.start(
+            onStdoutLine = ::handleStdoutLine,
+            onStderrLine = { line ->
+                onServerMessage(
+                    mapOf(
+                        "method" to "codex/stderr",
+                        "params" to mapOf("message" to line)
+                    )
+                )
+            },
+            onExit = { exitCode ->
+                handleConnectionExit(startedConnection, exitCode)
+            }
         )
-        process = startedProcess
-        startReaders(startedProcess)
 
         try {
             withTimeout(INITIALIZE_TIMEOUT_MS) {
@@ -103,8 +89,8 @@ internal class CodexAppServerSession(
         params: Any? = null,
         timeoutMs: Long = REQUEST_TIMEOUT_MS
     ): Map<String, Any?> {
-        val currentProcess = process
-        check(currentProcess?.isAlive == true) { "Codex app-server is not connected." }
+        val currentConnection = connection
+        check(currentConnection?.isRunning == true) { "Codex app-server is not connected." }
         val id = nextId.getAndIncrement()
         val deferred = CompletableDeferred<Map<String, Any?>>()
         pending[id] = deferred
@@ -142,74 +128,35 @@ internal class CodexAppServerSession(
     }
 
     suspend fun disconnect() {
-        val currentProcess = process
-        process = null
+        val currentConnection = connection
+        connection = null
         pending.forEach { (_, deferred) ->
             deferred.completeExceptionally(IllegalStateException("Codex app-server disconnected."))
         }
         pending.clear()
-        runCatching { currentProcess?.outputStream?.close() }
-        runCatching { currentProcess?.inputStream?.close() }
-        runCatching { currentProcess?.errorStream?.close() }
-        runCatching { currentProcess?.destroy() }
-        stdoutJob?.cancelAndJoin()
-        stderrJob?.cancelAndJoin()
-        waitJob?.cancelAndJoin()
-        stdoutJob = null
-        stderrJob = null
-        waitJob = null
+        currentConnection?.close()
     }
 
-    private fun startReaders(startedProcess: Process) {
-        stdoutJob = scope.launch(Dispatchers.IO) {
-            runCatching {
-                startedProcess.inputStream.bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
-                    lines.forEach { line ->
-                        if (line.isNotBlank()) {
-                            handleStdoutLine(line)
-                        }
-                    }
-                }
-            }.onFailure { error ->
-                Log.w(TAG, "Codex stdout reader stopped: ${error.message}")
-            }
+    private suspend fun handleConnectionExit(
+        exitedConnection: CodexAppServerConnection,
+        exitCode: Int?
+    ) {
+        if (connection !== exitedConnection) {
+            return
         }
-        stderrJob = scope.launch(Dispatchers.IO) {
-            runCatching {
-                startedProcess.errorStream.bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
-                    lines.forEach { line ->
-                        if (line.isNotBlank()) {
-                            onServerMessage(
-                                mapOf(
-                                    "method" to "codex/stderr",
-                                    "params" to mapOf("message" to line)
-                                )
-                            )
-                        }
-                    }
-                }
-            }.onFailure { error ->
-                Log.w(TAG, "Codex stderr reader stopped: ${error.message}")
-            }
+        connection = null
+        pending.forEach { (_, deferred) ->
+            deferred.completeExceptionally(
+                IllegalStateException("Codex app-server exited.")
+            )
         }
-        waitJob = scope.launch(Dispatchers.IO) {
-            val exitCode = runCatching { startedProcess.waitFor() }.getOrNull()
-            if (process === startedProcess) {
-                process = null
-                pending.forEach { (_, deferred) ->
-                    deferred.completeExceptionally(
-                        IllegalStateException("Codex app-server exited.")
-                    )
-                }
-                pending.clear()
-                onServerMessage(
-                    mapOf(
-                        "method" to "codex/disconnected",
-                        "params" to mapOf("exitCode" to exitCode)
-                    )
-                )
-            }
-        }
+        pending.clear()
+        onServerMessage(
+            mapOf(
+                "method" to "codex/disconnected",
+                "params" to mapOf("exitCode" to exitCode)
+            )
+        )
     }
 
     private suspend fun handleStdoutLine(line: String) {
@@ -241,16 +188,30 @@ internal class CodexAppServerSession(
 
     private suspend fun writeJsonLine(message: Map<String, Any?>) {
         val line = gson.toJson(toJsonElement(message)) + "\n"
-        val output = process?.outputStream
+        val currentConnection = connection
             ?: throw IllegalStateException("Codex app-server stdin is closed.")
         writeMutex.withLock {
-            withContext(Dispatchers.IO) {
-                OutputStreamWriter(output, StandardCharsets.UTF_8).apply {
-                    write(line)
-                    flush()
-                }
-            }
+            currentConnection.writeLine(line)
         }
+    }
+
+    private fun createConnection(): CodexAppServerConnection {
+        return connectionFactory?.invoke()
+            ?: LocalCodexAppServerConnection(
+                context = context,
+                scope = scope,
+                command = buildStartCommand(),
+                environment = buildStartEnvironment(),
+                processStarter = processStarter
+            )
+    }
+
+    private fun buildStartEnvironment(): Map<String, String> {
+        return mapOf(
+            "OMNIBOT_HEADLESS" to "1",
+            "CODEX_HOME" to CodexAppServerDefaults.CODEX_HOME,
+            "OMNIBOT_SESSION_CWD" to CodexAppServerDefaults.FALLBACK_CWD
+        )
     }
 
     private fun buildStartCommand(): String {
@@ -324,7 +285,6 @@ internal class CodexAppServerSession(
     }
 
     companion object {
-        private const val TAG = "CodexAppServerSession"
         const val DEFAULT_WORKSPACE_ID = "default"
         private const val INITIALIZE_TIMEOUT_MS = 15_000L
         private const val REQUEST_TIMEOUT_MS = 300_000L

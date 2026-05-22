@@ -855,6 +855,12 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
       emptyGreetingPinnedQuickPromptIds:
           homeGreetingSettings.pinnedQuickPromptIds,
       onQuickPromptSelected: _applyHomeQuickPrompt,
+      emptyGreetingCodexWorkspaceName: mode == ChatPageMode.codex
+          ? _codexRemoteWorkspaceNameForGreeting()
+          : null,
+      onEmptyGreetingCodexWorkspaceTap: mode == ChatPageMode.codex
+          ? () => unawaited(_openCodexRemoteWorkspacePicker())
+          : null,
       scrollController: _scrollControllerForMode(mode),
       bottomOverlayInset:
           bottomOverlayInset +
@@ -1106,6 +1112,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               onCodexTap: () {
                 unawaited(_handleCodexTap());
               },
+              onPrimaryModeTap: _activeMode == ChatPageMode.codex
+                  ? () => GoRouterManager.push('/home/codex_sessions')
+                  : null,
               onCompanionTap: () {
                 unawaited(_toggleCompanionMode());
               },
@@ -1870,7 +1879,8 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
             return success;
           }
 
-          final modelId = _activeConversationModelOverrideSelection?.modelId ??
+          final modelId =
+              _activeConversationModelOverrideSelection?.modelId ??
               _activeDispatchSceneSelection?.modelId;
           if (modelId != null && modelId.isNotEmpty) {
             await StorageService.setManualModelContextThreshold(

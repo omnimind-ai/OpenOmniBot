@@ -37,6 +37,8 @@ class ChatEmptyGreeting extends StatelessWidget {
   final List<HomeQuickPrompt> quickPrompts;
   final List<String> pinnedQuickPromptIds;
   final ValueChanged<HomeQuickPrompt>? onQuickPromptSelected;
+  final String? codexWorkspaceName;
+  final VoidCallback? onCodexWorkspaceTap;
 
   const ChatEmptyGreeting({
     super.key,
@@ -47,6 +49,8 @@ class ChatEmptyGreeting extends StatelessWidget {
     this.quickPrompts = const <HomeQuickPrompt>[],
     this.pinnedQuickPromptIds = const <String>[],
     this.onQuickPromptSelected,
+    this.codexWorkspaceName,
+    this.onCodexWorkspaceTap,
   });
 
   @override
@@ -60,6 +64,8 @@ class ChatEmptyGreeting extends StatelessWidget {
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     final headline = isEnglish ? "Hi 👋, I'm Omnibot" : '你好👋，我是小万';
     final prefix = isEnglish ? 'I can help you' : '我可以帮助你';
+    final workspaceName = codexWorkspaceName?.trim() ?? '';
+    final useCodexWorkspaceGreeting = workspaceName.isNotEmpty;
     final words = isEnglish ? _kChatGreetingWordsEn : _kChatGreetingWordsZh;
     final fontSize = compact ? 17.0 : 19.0;
     final headlineStyle = TextStyle(
@@ -95,9 +101,13 @@ class ChatEmptyGreeting extends StatelessWidget {
     );
 
     return Semantics(
-      label: isEnglish
-          ? "$headline\nI can help you chat, execute, build, and explore."
-          : '$headline\n我可以帮助你聊天、执行、构建和探索。',
+      label: useCodexWorkspaceGreeting
+          ? (isEnglish
+                ? '$headline\nWhat can we do in $workspaceName?'
+                : '$headline\n可以在$workspaceName中做点什么')
+          : (isEnglish
+                ? "$headline\nI can help you chat, execute, build, and explore."
+                : '$headline\n我可以帮助你聊天、执行、构建和探索。'),
       child: ExcludeSemantics(
         child: TweenAnimationBuilder<double>(
           tween: Tween<double>(begin: 0, end: 1),
@@ -126,16 +136,36 @@ class ChatEmptyGreeting extends StatelessWidget {
               children: [
                 Text(headline, textAlign: TextAlign.left, style: headlineStyle),
                 const SizedBox(height: 6),
-                Wrap(
-                  alignment: WrapAlignment.start,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 5,
-                  runSpacing: 2,
-                  children: [
-                    Text(prefix, style: helperStyle),
-                    _SlotWordRotator(words: words, style: keywordStyle),
-                  ],
-                ),
+                if (useCodexWorkspaceGreeting)
+                  Wrap(
+                    alignment: WrapAlignment.start,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 5,
+                    runSpacing: 2,
+                    children: [
+                      Text(
+                        isEnglish ? 'What can we do in' : '可以在',
+                        style: helperStyle,
+                      ),
+                      _CodexWorkspaceNameButton(
+                        label: workspaceName,
+                        style: keywordStyle,
+                        onTap: onCodexWorkspaceTap,
+                      ),
+                      Text(isEnglish ? '?' : '中做点什么', style: helperStyle),
+                    ],
+                  )
+                else
+                  Wrap(
+                    alignment: WrapAlignment.start,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 5,
+                    runSpacing: 2,
+                    children: [
+                      Text(prefix, style: helperStyle),
+                      _SlotWordRotator(words: words, style: keywordStyle),
+                    ],
+                  ),
                 if (quickPrompts.isNotEmpty) ...[
                   const SizedBox(height: 14),
                   _RandomQuickPromptPills(
@@ -151,6 +181,46 @@ class ChatEmptyGreeting extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CodexWorkspaceNameButton extends StatelessWidget {
+  const _CodexWorkspaceNameButton({
+    required this.label,
+    required this.style,
+    this.onTap,
+  });
+
+  final String label;
+  final TextStyle style;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveStyle = style.copyWith(
+      decoration: onTap == null
+          ? TextDecoration.none
+          : TextDecoration.underline,
+      decorationColor: style.color,
+      decorationThickness: 1.2,
+    );
+    final text = Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: effectiveStyle,
+    );
+    if (onTap == null) {
+      return text;
+    }
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+        child: text,
       ),
     );
   }

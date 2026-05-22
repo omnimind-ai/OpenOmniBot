@@ -85,4 +85,37 @@ class CodexAppServerProtocolPayloadTest {
         assertEquals("baseBranch", target["type"])
         assertEquals("main", target["branch"])
     }
+
+    @Test
+    fun remoteBridgeConfigRequiresUrlAndCwd() {
+        assertTrue(
+            CodexRemoteBridgeConfig(
+                bridgeUrl = "ws://127.0.0.1:17321/codex",
+                cwd = "/Users/ocean/code/project"
+            ).isConfigured
+        )
+        assertEquals(
+            false,
+            CodexRemoteBridgeConfig(
+                bridgeUrl = "ws://127.0.0.1:17321/codex",
+                cwd = ""
+            ).isConfigured
+        )
+    }
+
+    @Test
+    fun normalizeBridgeUrlsAcceptHostPortAndDefaultPaths() {
+        assertEquals(
+            "ws://192.168.1.10:17321/codex",
+            normalizeCodexBridgeWebSocketUrl("192.168.1.10:17321")
+        )
+        assertEquals(
+            "http://192.168.1.10:17321/health",
+            normalizeCodexBridgeHealthUrl("ws://192.168.1.10:17321/codex")
+        )
+        assertEquals(
+            "http://192.168.1.10:17321/fs/list",
+            normalizeCodexBridgeFsListUrl("ws://192.168.1.10:17321/codex")
+        )
+    }
 }

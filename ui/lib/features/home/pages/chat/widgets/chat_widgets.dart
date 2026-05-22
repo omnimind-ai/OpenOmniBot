@@ -53,6 +53,7 @@ class ChatAppBar extends StatelessWidget {
   final VoidCallback? onAgentTap;
   final VoidCallback? onPureChatToggleTap;
   final VoidCallback? onCodexTap;
+  final VoidCallback? onPrimaryModeTap;
   final VoidCallback onCompanionTap;
   final ChatSurfaceMode activeMode;
   final ValueChanged<ChatSurfaceMode> onModeChanged;
@@ -93,6 +94,7 @@ class ChatAppBar extends StatelessWidget {
     this.onAgentTap,
     this.onPureChatToggleTap,
     this.onCodexTap,
+    this.onPrimaryModeTap,
     required this.onCompanionTap,
     required this.activeMode,
     required this.onModeChanged,
@@ -271,6 +273,7 @@ class ChatAppBar extends StatelessWidget {
                         visualProfile: visualProfile,
                         showSurfaceLayer: showSurfaceSwitcher,
                         primaryModeIconAsset: primaryModeIconAsset,
+                        onPrimaryModeTap: onPrimaryModeTap,
                       ),
                     ),
                   ),
@@ -705,6 +708,7 @@ class _ChatModeModelSwitcher extends StatefulWidget {
     this.visualProfile = AppBackgroundVisualProfile.defaultProfile,
     this.showSurfaceLayer = true,
     required this.primaryModeIconAsset,
+    this.onPrimaryModeTap,
   });
 
   final ChatSurfaceMode activeMode;
@@ -724,6 +728,7 @@ class _ChatModeModelSwitcher extends StatefulWidget {
   final AppBackgroundVisualProfile visualProfile;
   final bool showSurfaceLayer;
   final String primaryModeIconAsset;
+  final VoidCallback? onPrimaryModeTap;
 
   @override
   State<_ChatModeModelSwitcher> createState() => _ChatModeModelSwitcherState();
@@ -969,6 +974,7 @@ class _ChatModeModelSwitcherState extends State<_ChatModeModelSwitcher> {
                             onInteracted: _handleSliderInteraction,
                             visualProfile: widget.visualProfile,
                             primaryIconAsset: widget.primaryModeIconAsset,
+                            onPrimaryModeTap: widget.onPrimaryModeTap,
                           ),
                         )
                       : const SizedBox.shrink(),
@@ -1210,6 +1216,7 @@ class ChatModeSlider extends StatefulWidget {
   final VoidCallback? onInteracted;
   final AppBackgroundVisualProfile visualProfile;
   final String primaryIconAsset;
+  final VoidCallback? onPrimaryModeTap;
 
   const ChatModeSlider({
     super.key,
@@ -1218,6 +1225,7 @@ class ChatModeSlider extends StatefulWidget {
     this.onInteracted,
     this.visualProfile = AppBackgroundVisualProfile.defaultProfile,
     this.primaryIconAsset = _kChatAppBarAgentIconAsset,
+    this.onPrimaryModeTap,
   });
 
   @override
@@ -1280,6 +1288,12 @@ class _ChatModeSliderState extends State<ChatModeSlider> {
           0,
           kVisibleChatSurfaceModes.length - 1,
         );
+        if (targetIndex == 0 &&
+            targetIndex == _activeVisibleModeIndex &&
+            widget.onPrimaryModeTap != null) {
+          widget.onPrimaryModeTap?.call();
+          return;
+        }
         widget.onChanged(kVisibleChatSurfaceModes[targetIndex]);
       },
       child: Container(
@@ -1389,6 +1403,8 @@ class ChatMessageList extends StatefulWidget {
   final List<HomeQuickPrompt> emptyGreetingQuickPrompts;
   final List<String> emptyGreetingPinnedQuickPromptIds;
   final ValueChanged<HomeQuickPrompt>? onQuickPromptSelected;
+  final String? emptyGreetingCodexWorkspaceName;
+  final VoidCallback? onEmptyGreetingCodexWorkspaceTap;
 
   const ChatMessageList({
     super.key,
@@ -1415,6 +1431,8 @@ class ChatMessageList extends StatefulWidget {
     this.emptyGreetingQuickPrompts = const <HomeQuickPrompt>[],
     this.emptyGreetingPinnedQuickPromptIds = const <String>[],
     this.onQuickPromptSelected,
+    this.emptyGreetingCodexWorkspaceName,
+    this.onEmptyGreetingCodexWorkspaceTap,
   });
 
   @override
@@ -2023,6 +2041,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
                   pinnedQuickPromptIds:
                       widget.emptyGreetingPinnedQuickPromptIds,
                   onQuickPromptSelected: widget.onQuickPromptSelected,
+                  codexWorkspaceName: widget.emptyGreetingCodexWorkspaceName,
+                  onCodexWorkspaceTap: widget.onEmptyGreetingCodexWorkspaceTap,
                 ),
               ),
             )

@@ -75,6 +75,15 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
       _isCodexStatusLoading = false;
     });
     if (!status.ready) {
+      if (status.remoteEnabled) {
+        _showSnackBar(
+          LegacyTextLocalizer.isEnglish
+              ? 'Remote Codex Bridge is unavailable'
+              : '远程 Codex Bridge 不可用',
+        );
+        GoRouterManager.push('/home/scene_model_setting');
+        return;
+      }
       GoRouterManager.push('/home/termux_setting?focus=codex');
       return;
     }
@@ -98,6 +107,90 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
 
   ConversationThreadTarget _resolveCodexExitTarget() {
     return _newThreadTargetForConversationMode(ConversationMode.normal);
+  }
+
+  @override
+  String? _codexRemoteWorkspaceNameForGreeting() {
+    if (!_codexStatus.remoteEnabled) {
+      return null;
+    }
+    return _codexLastPathSegment(
+      _codexStatus.remoteCwd ?? _codexStatus.cwd ?? '',
+    );
+  }
+
+  @override
+  Future<void> _openCodexRemoteWorkspacePicker() async {
+    if (!_codexStatus.remoteEnabled) {
+      return;
+    }
+    CodexLocalConfig config;
+    try {
+      config = await CodexAppServerService.readLocalConfig();
+    } catch (error) {
+      showToast(
+        LegacyTextLocalizer.isEnglish
+            ? 'Failed to read Codex config: $error'
+            : '读取 Codex 配置失败：$error',
+        type: ToastType.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    if (!config.remoteEnabled || config.remoteBridgeUrl.trim().isEmpty) {
+      showToast(
+        LegacyTextLocalizer.isEnglish
+            ? 'Remote Codex Bridge is not configured'
+            : '远程 Codex Bridge 尚未配置',
+        type: ToastType.warning,
+      );
+      return;
+    }
+    final selected = await showCodexRemoteDirectoryPicker(
+      context: context,
+      remoteBridgeUrl: config.remoteBridgeUrl,
+      remoteBridgeToken: config.remoteBridgeToken,
+      initialPath: config.remoteCwd,
+    );
+    if (!mounted || selected == null || selected.trim().isEmpty) {
+      return;
+    }
+    final nextCwd = selected.trim();
+    if (nextCwd == config.remoteCwd.trim()) {
+      return;
+    }
+    try {
+      await CodexAppServerService.writeLocalConfig(
+        baseUrl: config.baseUrl,
+        model: config.model,
+        apiKey: config.apiKey,
+        remoteEnabled: true,
+        remoteBridgeUrl: config.remoteBridgeUrl,
+        remoteBridgeToken: config.remoteBridgeToken,
+        remoteCwd: nextCwd,
+      );
+      final status = await CodexAppServerService.status();
+      if (!mounted) return;
+      setState(() {
+        _codexStatus = status;
+        _activeCodexThreadId = null;
+        _activeCodexTurnId = null;
+      });
+      showToast(
+        LegacyTextLocalizer.isEnglish
+            ? 'Switched Codex workspace to ${_codexLastPathSegment(nextCwd) ?? nextCwd}'
+            : '已切换到 ${_codexLastPathSegment(nextCwd) ?? nextCwd}',
+        type: ToastType.success,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showToast(
+        LegacyTextLocalizer.isEnglish
+            ? 'Failed to switch workspace: $error'
+            : '切换工作目录失败：$error',
+        type: ToastType.error,
+      );
+    }
   }
 
   @override
@@ -721,6 +814,18 @@ int? _asCodexInt(dynamic value) {
 String? _asCodexString(dynamic value) {
   final text = value?.toString().trim() ?? '';
   return text.isEmpty ? null : text;
+}
+
+String? _codexLastPathSegment(String path) {
+  final normalized = path.trim().replaceAll(RegExp(r'/+$'), '');
+  if (normalized.isEmpty) {
+    return null;
+  }
+  final parts = normalized.split('/').where((part) => part.isNotEmpty).toList();
+  if (parts.isEmpty) {
+    return normalized == '/' ? '/' : null;
+  }
+  return parts.last;
 }
 
 List<String> _extractCodexOptionIds(

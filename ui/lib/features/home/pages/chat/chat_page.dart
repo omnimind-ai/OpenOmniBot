@@ -57,6 +57,7 @@ import 'package:ui/features/home/pages/chat/utils/agent_thinking_card_locator.da
 import 'package:ui/features/home/pages/chat/utils/codex_slash_commands.dart';
 import 'package:ui/features/home/pages/chat/utils/deep_thinking_persistence.dart';
 import 'package:ui/features/home/pages/chat/utils/keyboard_inset_motion_tracker.dart';
+import 'package:ui/features/home/pages/codex/codex_remote_directory_picker.dart';
 import 'package:ui/widgets/chat_drawer_gesture_guard.dart';
 
 // 导入 Mixins
@@ -1742,6 +1743,10 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   Future<void> _startCodexReviewCommand();
 
   Future<void> _handleCodexTap();
+
+  String? _codexRemoteWorkspaceNameForGreeting();
+
+  Future<void> _openCodexRemoteWorkspacePicker();
 
   void _handleCodexAppServerEvent(Map<String, dynamic> event);
 
