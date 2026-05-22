@@ -350,15 +350,22 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
         message: _runLogEmptyMessage(context, _payload),
       );
     }
-    return ListView.builder(
+    final tokenSummary = _RunLogTokenUsageAggregate.fromPayload(_payload);
+    return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-      itemCount: _cards.length,
-      itemBuilder: (context, index) => _StepCard(
-        card: _cards[index],
-        fallbackIndex: index,
-        isLast: index == _cards.length - 1,
-        onTap: () => _showStepDetail(_cards[index], index),
-      ),
+      children: [
+        if (tokenSummary.hasUsage) ...[
+          _RunLogTokenSummaryCard(summary: tokenSummary),
+          const SizedBox(height: 14),
+        ],
+        for (var index = 0; index < _cards.length; index++)
+          _StepCard(
+            card: _cards[index],
+            fallbackIndex: index,
+            isLast: index == _cards.length - 1,
+            onTap: () => _showStepDetail(_cards[index], index),
+          ),
+      ],
     );
   }
 
@@ -662,6 +669,106 @@ class _RunLogTimelineEmptyNotice extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _RunLogTokenSummaryCard extends StatelessWidget {
+  const _RunLogTokenSummaryCard({required this.summary});
+
+  final _RunLogTokenUsageAggregate summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final accent = const Color(0xFF2563EB);
+    final items = <MapEntry<String, String>>[
+      if (summary.totalTokens != null)
+        MapEntry(
+          _text(context, '总计', 'Total'),
+          _formatTokens(summary.totalTokens!),
+        ),
+      if (summary.stepCount != null)
+        MapEntry(
+          _text(context, 'VLM 调用', 'VLM calls'),
+          summary.stepCount.toString(),
+        ),
+      if (summary.promptTokens != null)
+        MapEntry(
+          _text(context, '输入', 'Prompt'),
+          _formatTokens(summary.promptTokens!),
+        ),
+      if (summary.completionTokens != null)
+        MapEntry(
+          _text(context, '输出', 'Completion'),
+          _formatTokens(summary.completionTokens!),
+        ),
+      if (summary.cachedTokens != null && summary.cachedTokens! > 0)
+        MapEntry(
+          _text(context, '缓存', 'Cached'),
+          _formatTokens(summary.cachedTokens!),
+        ),
+    ];
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(
+          accent.withValues(alpha: isDark ? 0.16 : 0.08),
+          isDark ? palette.surfaceSecondary : Colors.white,
+        ),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: accent.withValues(alpha: isDark ? 0.32 : 0.18),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: isDark ? 0.22 : 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.data_usage_rounded, color: accent, size: 16),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _text(context, 'Token 消耗', 'Token usage'),
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: items
+                      .map(
+                        (entry) =>
+                            _SummaryPill(label: entry.key, value: entry.value),
+                      )
+                      .toList(growable: false),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3918,6 +4025,55 @@ String _vlmActionLabel(BuildContext context, String raw) {
 
 List<Map<String, dynamic>> _extractTimelineCards(Map<String, dynamic> payload) {
   return _findTimelineCards(payload, <Object>{});
+}
+
+class _RunLogTokenUsageAggregate {
+  const _RunLogTokenUsageAggregate({
+    required this.totalTokens,
+    required this.promptTokens,
+    required this.completionTokens,
+    required this.cachedTokens,
+    required this.stepCount,
+  });
+
+  final int? totalTokens;
+  final int? promptTokens;
+  final int? completionTokens;
+  final int? cachedTokens;
+  final int? stepCount;
+
+  bool get hasUsage =>
+      totalTokens != null ||
+      promptTokens != null ||
+      completionTokens != null ||
+      cachedTokens != null ||
+      stepCount != null;
+
+  factory _RunLogTokenUsageAggregate.fromPayload(Map<String, dynamic> payload) {
+    final usage = _firstMap(payload, const ['token_usage', 'tokenUsage']);
+    final byStep = _asStringKeyMapList(
+      _firstPresentValue(payload, const [
+        'token_usage_by_step',
+        'tokenUsageByStep',
+      ]),
+    );
+    return _RunLogTokenUsageAggregate(
+      totalTokens: _asInt(
+        payload['token_usage_total'] ??
+            payload['tokenUsageTotal'] ??
+            usage['total_tokens'] ??
+            usage['totalTokens'],
+      ),
+      promptTokens: _asInt(usage['prompt_tokens'] ?? usage['promptTokens']),
+      completionTokens: _asInt(
+        usage['completion_tokens'] ?? usage['completionTokens'],
+      ),
+      cachedTokens: _asInt(usage['cached_tokens'] ?? usage['cachedTokens']),
+      stepCount:
+          _asInt(usage['step_count'] ?? usage['stepCount']) ??
+          (byStep.isNotEmpty ? byStep.length : null),
+    );
+  }
 }
 
 String? _runLogPayloadError(

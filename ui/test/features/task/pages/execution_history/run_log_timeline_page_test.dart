@@ -47,8 +47,28 @@ void main() {
               'run_id': 'run-vlm',
               'done_reason': 'finished',
               'goal': '打开 Settings',
+              'token_usage': <String, dynamic>{
+                'prompt_tokens': 1000,
+                'completion_tokens': 234,
+                'total_tokens': 1234,
+                'step_count': 1,
+              },
+              'token_usage_total': 1234,
+              'token_usage_by_step': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'step_index': 0,
+                  'card_id': 'run-vlm-1',
+                  'tool_name': 'open_app',
+                  'token_usage': <String, dynamic>{
+                    'prompt_tokens': 1000,
+                    'completion_tokens': 234,
+                    'total_tokens': 1234,
+                  },
+                },
+              ],
               'cards': <Map<String, dynamic>>[
                 <String, dynamic>{
+                  'card_id': 'run-vlm-1',
                   'compile_kind': 'vlm_step',
                   'source': 'vlm',
                   'header': <String, dynamic>{
@@ -56,6 +76,17 @@ void main() {
                     'success': true,
                     'duration_ms': 0,
                     'compile_kind': 'vlm_step',
+                    'token_usage_total': 1234,
+                    'token_usage': <String, dynamic>{
+                      'prompt_tokens': 1000,
+                      'completion_tokens': 234,
+                      'total_tokens': 1234,
+                    },
+                  },
+                  'token_usage': <String, dynamic>{
+                    'prompt_tokens': 1000,
+                    'completion_tokens': 234,
+                    'total_tokens': 1234,
                   },
                   'tool_call': <String, dynamic>{
                     'id': 'run-vlm-1',
@@ -95,7 +126,13 @@ void main() {
 
     expect(find.text('执行步骤'), findsOneWidget);
     expect(find.text('1 步'), findsOneWidget);
+    expect(find.text('Token 消耗'), findsOneWidget);
+    expect(_richTextContaining('总计  1.23k'), findsOneWidget);
+    expect(_richTextContaining('VLM 调用  1'), findsOneWidget);
+    expect(_richTextContaining('输入  1.00k'), findsOneWidget);
+    expect(_richTextContaining('输出  234'), findsOneWidget);
     expect(find.text('第 1 步'), findsOneWidget);
+    expect(find.text('1.23k'), findsOneWidget);
     expect(find.text('OmniFlow'), findsOneWidget);
     expect(find.text('VLM'), findsNothing);
     final omniFlowBadge = tester.widget<Text>(find.text('OmniFlow').first);
@@ -110,6 +147,7 @@ void main() {
     expect(find.textContaining('OmniFlow 执行记录 · 第 1 步'), findsOneWidget);
     expect(find.text('OmniFlow 动作'), findsOneWidget);
     expect(_richTextContaining('执行方式  OmniFlow'), findsOneWidget);
+    expect(_richTextContaining('Token  1.23k · P1000/C234'), findsOneWidget);
     expect(_richTextContaining('VLM 决策 / OmniFlow 本地重放'), findsNothing);
     expect(_richTextContaining('重放  OmniFlow 本地'), findsNothing);
     expect(find.textContaining('VLM'), findsNothing);
