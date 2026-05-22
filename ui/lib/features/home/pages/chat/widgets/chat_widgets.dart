@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/home_greeting_settings_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import '../../../../../models/chat_message_model.dart';
@@ -50,6 +51,7 @@ class ChatAppBar extends StatelessWidget {
   final VoidCallback? onAgentTap;
   final VoidCallback? onPureChatToggleTap;
   final VoidCallback? onCodexTap;
+  final VoidCallback? onPrimaryModeTap;
   final VoidCallback onCompanionTap;
   final ChatSurfaceMode activeMode;
   final ValueChanged<ChatSurfaceMode> onModeChanged;
@@ -90,6 +92,7 @@ class ChatAppBar extends StatelessWidget {
     this.onAgentTap,
     this.onPureChatToggleTap,
     this.onCodexTap,
+    this.onPrimaryModeTap,
     required this.onCompanionTap,
     required this.activeMode,
     required this.onModeChanged,
@@ -369,7 +372,7 @@ class _ChatAppBarCompanionButton extends StatelessWidget {
                   'assets/home/avatar.svg',
                   width: 20,
                   height: 20,
-                  colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+                  colorFilter: null,
                 ),
         ),
       ),
@@ -1368,6 +1371,8 @@ class ChatMessageList extends StatefulWidget {
   final List<HomeQuickPrompt> emptyGreetingQuickPrompts;
   final List<String> emptyGreetingPinnedQuickPromptIds;
   final ValueChanged<HomeQuickPrompt>? onQuickPromptSelected;
+  final String? emptyGreetingCodexWorkspaceName;
+  final VoidCallback? onEmptyGreetingCodexWorkspaceTap;
 
   const ChatMessageList({
     super.key,
@@ -1394,6 +1399,8 @@ class ChatMessageList extends StatefulWidget {
     this.emptyGreetingQuickPrompts = const <HomeQuickPrompt>[],
     this.emptyGreetingPinnedQuickPromptIds = const <String>[],
     this.onQuickPromptSelected,
+    this.emptyGreetingCodexWorkspaceName,
+    this.onEmptyGreetingCodexWorkspaceTap,
   });
 
   @override
@@ -2211,6 +2218,9 @@ class VlmInfoPrompt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isTakeover = AssistsMessageService.isVlmManualTakeoverPrompt(
+      question,
+    );
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(12),
@@ -2223,11 +2233,17 @@ class VlmInfoPrompt extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            AppTextLocalizer.choose(
-              zh: '需要你的确认',
-              en: 'Need your confirmation',
-              locale: Localizations.localeOf(context),
-            ),
+            isTakeover
+                ? AppTextLocalizer.choose(
+                    zh: '人工接管中',
+                    en: 'Manual takeover',
+                    locale: Localizations.localeOf(context),
+                  )
+                : AppTextLocalizer.choose(
+                    zh: '需要你的确认',
+                    en: 'Need your confirmation',
+                    locale: Localizations.localeOf(context),
+                  ),
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -2239,48 +2255,52 @@ class VlmInfoPrompt extends StatelessWidget {
             question,
             style: const TextStyle(fontSize: 13, color: Color(0xFF1D3E7B)),
           ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: controller,
-            maxLines: 2,
-            decoration: InputDecoration(
-              hintText: AppTextLocalizer.choose(
-                zh: '可选：补充你的操作说明，默认发送"已完成操作，继续执行"',
-                en: 'Optional: add details. Default sends: Completed action, continue execution',
-                locale: Localizations.localeOf(context),
+          if (!isTakeover) ...[
+            const SizedBox(height: 10),
+            TextField(
+              controller: controller,
+              maxLines: 2,
+              decoration: InputDecoration(
+                hintText: AppTextLocalizer.choose(
+                  zh: '可选：补充你的操作说明，默认发送"已完成操作，继续执行"',
+                  en: 'Optional: add details. Default sends: Completed action, continue execution',
+                  locale: Localizations.localeOf(context),
+                ),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                border: const OutlineInputBorder(),
               ),
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
-              border: const OutlineInputBorder(),
             ),
-          ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: isSubmitting ? null : onDismiss,
-                  child: Text(
-                    AppTextLocalizer.choose(
-                      zh: '稍后再说',
-                      en: 'Later',
-                      locale: Localizations.localeOf(context),
+              if (!isTakeover) ...[
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: isSubmitting ? null : onDismiss,
+                    child: Text(
+                      AppTextLocalizer.choose(
+                        zh: '稍后再说',
+                        en: 'Later',
+                        locale: Localizations.localeOf(context),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
+                const SizedBox(width: 12),
+              ],
               Expanded(
                 child: ElevatedButton(
                   onPressed: isSubmitting ? null : onSubmit,
                   child: Text(
                     isSubmitting
                         ? AppTextLocalizer.choose(
-                            zh: '发送中...',
-                            en: 'Sending...',
+                            zh: isTakeover ? '恢复中...' : '发送中...',
+                            en: isTakeover ? 'Resuming...' : 'Sending...',
                             locale: Localizations.localeOf(context),
                           )
                         : AppTextLocalizer.choose(

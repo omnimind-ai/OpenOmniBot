@@ -174,7 +174,6 @@ object AgentToolDefinitions {
 
     private val englishStringMap: Map<String, String> = mapOf(
         "查询已安装应用" to "Query Installed Apps",
-        "查询当前时间" to "Query Current Time",
         "视觉执行" to "Vision Task",
         "终端执行" to "Run Terminal Command",
         "启动终端会话" to "Start Terminal Session",
@@ -228,10 +227,6 @@ object AgentToolDefinitions {
             "Optional keyword filter. Matches app names or package names.",
         "可选，返回数量上限，默认 20，范围 1-100。" to
             "Optional maximum number of results to return. Default 20, range 1-100.",
-        "查询当前时间信息。需要日期、时间、时区或星期信息时调用。" to
-            "Query current time information. Use this when you need the date, time, timezone, or weekday.",
-        "可选 IANA 时区，例如 Asia/Shanghai、America/Los_Angeles。默认使用系统时区。" to
-            "Optional IANA timezone, for example Asia/Shanghai or America/Los_Angeles. Uses the system timezone by default.",
         "使用视觉语言模型执行手机屏幕操作任务。该工具会阻塞等待到任务完成、需要用户输入、屏幕锁定或超时，再把终态结果返回给模型。若需要最终整理文本，必须设置 needSummary=true。" to
             "Use a vision-language model to execute an on-device screen task. This tool blocks until the task finishes, needs user input, encounters a locked screen, or times out, and then returns the terminal state. Set `needSummary=true` when you need a final summarized result.",
         "任务目标，使用第一人称描述。" to
@@ -548,25 +543,6 @@ object AgentToolDefinitions {
                     putJsonObject("limit") {
                         put("type", "integer")
                         put("description", "可选，返回数量上限，默认 20，范围 1-100。")
-                    }
-                }
-            }
-        }
-    }
-
-    val contextTimeNowTool: JsonObject = buildJsonObject {
-        put("type", "function")
-        putJsonObject("function") {
-            put("name", "context_time_now")
-            put("displayName", "查询当前时间")
-            put("toolType", "builtin")
-            put("description", "查询当前时间信息。需要日期、时间、时区或星期信息时调用。")
-            putJsonObject("parameters") {
-                put("type", "object")
-                putJsonObject("properties") {
-                    putJsonObject("timezone") {
-                        put("type", "string")
-                        put("description", "可选 IANA 时区，例如 Asia/Shanghai、America/Los_Angeles。默认使用系统时区。")
                     }
                 }
             }
@@ -2839,6 +2815,29 @@ object AgentToolDefinitions {
         }
     }
 
+    val memoryLoadTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "memory_load")
+            put("displayName", "加载长期记忆")
+            put("toolType", "memory")
+            put("description", "按 slug 加载完整的长期记忆条目正文。slug 来自系统提示的记忆索引或上一次 `memory_search` 命中。同一轮内重复加载会被自动跳过。")
+            put("postToolRule", "读取后再决定是否需要进一步检索或写入。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("slug") {
+                        put("type", "string")
+                        put("description", "长期记忆条目 slug，例如 `langchain-7c2b8e90`。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("slug")
+                }
+            }
+        }
+    }
+
     val subagentDispatchTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -2875,7 +2874,6 @@ object AgentToolDefinitions {
 
     private val builtinToolDefinitions: List<JsonObject> = listOf(
         contextAppsQueryTool,
-        contextTimeNowTool,
         callToolTool,
         vlmTaskTool,
         imagePickerTool,
@@ -2951,7 +2949,8 @@ object AgentToolDefinitions {
         memorySearchTool,
         memoryWriteDailyTool,
         memoryUpsertLongTermTool,
-        memoryRollupDayTool
+        memoryRollupDayTool,
+        memoryLoadTool
     )
 
     private val subagentToolDefinitions: List<JsonObject> = listOf(

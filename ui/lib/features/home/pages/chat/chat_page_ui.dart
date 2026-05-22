@@ -877,6 +877,12 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
       emptyGreetingPinnedQuickPromptIds:
           homeGreetingSettings.pinnedQuickPromptIds,
       onQuickPromptSelected: _applyHomeQuickPrompt,
+      emptyGreetingCodexWorkspaceName: mode == ChatPageMode.codex
+          ? _codexRemoteWorkspaceNameForGreeting()
+          : null,
+      onEmptyGreetingCodexWorkspaceTap: mode == ChatPageMode.codex
+          ? () => unawaited(_openCodexRemoteWorkspacePicker())
+          : null,
       scrollController: _scrollControllerForMode(mode),
       bottomOverlayInset:
           bottomOverlayInset +
@@ -911,6 +917,12 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
 
   @override
   Widget _buildWorkspaceSurfacePage() {
+    if (_shouldUseRemoteCodexWorkspace()) {
+      return _buildRemoteCodexWorkspaceBrowser(
+        translucentSurfaces: AppBackgroundService.current.isActive,
+        enableSystemBackHandler: true,
+      );
+    }
     final workspacePathsFuture = _workspacePathsLoadFuture ??=
         OmnibotResourceService.ensureWorkspacePathsLoaded();
     return FutureBuilder<OmnibotWorkspacePaths>(
@@ -1004,6 +1016,97 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                 ),
         );
       },
+    );
+  }
+
+  bool _shouldUseRemoteCodexWorkspace() {
+    if (_activeMode != ChatPageMode.codex) {
+      return false;
+    }
+    final runtime = _codexStatus.runtime?.trim();
+    return runtime == 'remote' || _codexStatus.remoteEnabled;
+  }
+
+  Widget _buildRemoteCodexWorkspaceBrowser({
+    Key? key,
+    required bool translucentSurfaces,
+    required bool enableSystemBackHandler,
+  }) {
+    final workspacePath = (_codexStatus.remoteCwd ?? _codexStatus.cwd ?? '')
+        .trim();
+    final bridgeUrl = (_codexStatus.remoteBridgeUrl ?? '').trim();
+    if (workspacePath.isEmpty) {
+      return _buildRemoteCodexWorkspaceUnavailable();
+    }
+    return CodexRemoteWorkspaceBrowser(
+      key: key,
+      workspacePath: workspacePath,
+      remoteBridgeUrl: bridgeUrl,
+      enableSystemBackHandler: enableSystemBackHandler,
+      translucentSurfaces: translucentSurfaces,
+      showBreadcrumbHeader: true,
+      showHeaderTitle: false,
+      onCanGoUpChanged: (canGoUp) {
+        if (_workspaceBrowserCanGoUp == canGoUp || !mounted) return;
+        setState(() {
+          _workspaceBrowserCanGoUp = canGoUp;
+        });
+      },
+    );
+  }
+
+  Widget _buildRemoteCodexWorkspaceUnavailable() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_workspaceBrowserCanGoUp) return;
+      setState(() {
+        _workspaceBrowserCanGoUp = false;
+      });
+    });
+    final palette = context.omniPalette;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.folder_off_outlined,
+              size: 34,
+              color: palette.textSecondary,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              LegacyTextLocalizer.isEnglish
+                  ? 'Remote Codex workspace is not configured'
+                  : '远程 Codex 工作目录尚未配置',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: palette.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              LegacyTextLocalizer.isEnglish
+                  ? 'Open Codex settings and set a remote cwd, or scan the PC Bridge QR code.'
+                  : '请在 Codex 配置中设置远程工作目录，或扫描 PC Bridge 二维码。',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: palette.textSecondary,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextButton.icon(
+              onPressed: () => GoRouterManager.push('/home/codex_setting'),
+              icon: const Icon(Icons.settings_outlined, size: 18),
+              label: Text(LegacyTextLocalizer.localize('Codex 配置')),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1214,6 +1317,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
               onCodexTap: () {
                 unawaited(_handleCodexTap());
               },
+              onPrimaryModeTap: _activeMode == ChatPageMode.codex
+                  ? () => GoRouterManager.push('/home/codex_sessions')
+                  : null,
               onCompanionTap: () {
                 unawaited(_toggleCompanionMode());
               },
@@ -1438,6 +1544,13 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
     required bool backgroundActive,
     required AppBackgroundVisualProfile visualProfile,
   }) {
+    if (_shouldUseRemoteCodexWorkspace()) {
+      return _buildRemoteCodexWorkspaceBrowser(
+        key: _hdPadRemoteWorkspaceBrowserKey,
+        translucentSurfaces: backgroundActive,
+        enableSystemBackHandler: false,
+      );
+    }
     final workspacePathsFuture = _workspacePathsLoadFuture ??=
         OmnibotResourceService.ensureWorkspacePathsLoaded();
     return FutureBuilder<OmnibotWorkspacePaths>(
@@ -1770,7 +1883,13 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                 if (isHdPadLandscape &&
                     !_hdPadRightPaneCollapsed &&
                     _workspaceBrowserCanGoUp) {
-                  _hdPadWorkspaceBrowserKey.currentState?.openParentDirectory();
+                  if (_shouldUseRemoteCodexWorkspace()) {
+                    _hdPadRemoteWorkspaceBrowserKey.currentState
+                        ?.openParentDirectory();
+                  } else {
+                    _hdPadWorkspaceBrowserKey.currentState
+                        ?.openParentDirectory();
+                  }
                   return;
                 }
                 if (_activeSurfaceMode == ChatSurfaceMode.workspace &&
@@ -2207,6 +2326,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
 
     final conversationId = _currentConversationId;
     if (conversationId == null) return;
+    if (isEphemeralConversation(conversationId, activeConversationModeValue)) {
+      return;
+    }
 
     await ConversationHistoryService.saveConversationMessages(
       conversationId,

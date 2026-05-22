@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:simple_gradient_text/simple_gradient_text.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/core/mixins/page_lifecycle_mixin.dart';
 import 'package:ui/features/memory/models/mem0_memory_item.dart';
@@ -635,15 +636,16 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
       final items = await workspace_memory
           .WorkspaceMemoryService.getShortMemories(days: 14, limit: 300);
       final cards = items.map((item) {
-        final text = item.content.trim();
-        final title = text.length <= 26 ? text : '${text.substring(0, 26)}...';
+        final text = _normalizeShortMemoryText(item.content);
+        final isTruncated = text.length > 26;
+        final title = isTruncated ? '${text.substring(0, 26)}...' : text;
         final timestamp = item.timestampMillis > 0
             ? item.timestampMillis
             : DateTime.now().millisecondsSinceEpoch;
         return MemoryCardModel(
           id: item.id.hashCode,
           title: title,
-          description: text,
+          description: isTruncated ? text : null,
           createdAt: timestamp,
           updatedAt: timestamp,
           appName: context.l10n.memoryShortTermTitle,
@@ -669,6 +671,19 @@ class MemoryCenterPageState extends State<MemoryCenterPage>
     } catch (e) {
       print('Error loading short memories: $e');
     }
+  }
+
+  String _normalizeShortMemoryText(String raw) {
+    final text = raw.trim();
+    if (LegacyTextLocalizer.isEnglish) {
+      return text;
+    }
+    final quickLogPrefix = RegExp(r'^Quick log[:：]?\s*');
+    if (quickLogPrefix.hasMatch(text)) {
+      final content = text.replaceFirst(quickLogPrefix, '');
+      return content.isEmpty ? '日志速记' : '日志速记：$content';
+    }
+    return text;
   }
 
   // 加载系统应用标签数据

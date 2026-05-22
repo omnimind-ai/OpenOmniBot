@@ -323,7 +323,11 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     _resetLocalConversationState(targetMode);
     _vlmAnswerController.clear();
     _applyDraftForConversationMode(targetMode);
-    await initializeConversation(lifecycleToken: lifecycleToken);
+    if (effectiveTarget.isRemoteCodexSessionTarget) {
+      await _prepareRemoteCodexSessionTarget(effectiveTarget);
+    } else {
+      await initializeConversation(lifecycleToken: lifecycleToken);
+    }
     if (isStaleRequest()) return;
     if (_activeConversationMode == ChatPageMode.codex) {
       await _refreshCodexCommandPreferences();
@@ -446,6 +450,11 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       return;
     }
     _resolvedThreadTarget = visibleTarget;
+    if (visibleTarget.isRemoteCodexSessionTarget ||
+        (_activeConversationMode == ChatPageMode.codex &&
+            _isRemoteCodexRuntimeActiveForMode(ChatPageMode.codex))) {
+      return;
+    }
     await ConversationHistoryService.saveLastVisibleThreadTarget(visibleTarget);
     await ConversationHistoryService.saveCurrentConversationTarget(
       visibleTarget,

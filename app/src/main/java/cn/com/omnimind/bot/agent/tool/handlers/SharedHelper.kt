@@ -66,8 +66,6 @@ class SharedHelper(
         "网页搜索完成，未抽取到结构化结果。" to
             "Web search completed, but no structured results were extracted.",
         "浏览器操作失败" to "Browser action failed",
-        "正在查询当前时间" to "Querying current time",
-        "查询当前时间失败" to "Failed to query current time",
         "请提供继续执行所需的信息。" to "Please provide the information required to continue.",
         "视觉执行失败" to "Vision task failed",
         "视觉任务已完成" to "Vision task completed",
@@ -222,8 +220,6 @@ class SharedHelper(
         englishTextMap[text]?.let { return it }
 
         when {
-            text.startsWith("当前时间：") ->
-                return "Current time: ${text.removePrefix("当前时间：")}"
             text.startsWith("终端会话已启动：") ->
                 return "Terminal session started: ${text.removePrefix("终端会话已启动：")}"
             text.startsWith("终端会话不存在或不属于当前 workspace：") ->
@@ -323,6 +319,33 @@ class SharedHelper(
         Regex("^正在分派 (\\d+) 个子任务（并发 (\\d+)）$").matchEntire(text)?.let {
             return "Dispatching ${it.groupValues[1]} subtasks (concurrency ${it.groupValues[2]})"
         }
+        Regex("^SubAgent #(\\d+) 开始：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} started: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 开始思考$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} started thinking"
+        }
+        Regex("^SubAgent #(\\d+) 思考：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} thinking: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 调用工具：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} called tool: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 工具进度：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} tool progress: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 工具完成：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} completed tool: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 输出：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} output: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 得到结果：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} result: ${it.groupValues[2]}"
+        }
+        Regex("^SubAgent #(\\d+) 失败：(.*)$").matchEntire(text)?.let {
+            return "SubAgent #${it.groupValues[1]} failed: ${it.groupValues[2]}"
+        }
         Regex("^已完成子任务：(.*)$").matchEntire(text)?.let {
             return "Completed subtask: ${it.groupValues[1]}"
         }
@@ -335,7 +358,15 @@ class SharedHelper(
     private fun localizePayloadValue(value: Any?, key: String? = null): Any? {
         return when (value) {
             is String -> if (
-                key in setOf("summary", "message", "error", "errorMessage", "result", "lastProgress")
+                key in setOf(
+                    "summary",
+                    "message",
+                    "error",
+                    "errorMessage",
+                    "result",
+                    "lastProgress",
+                    "subagentStatusText"
+                )
             ) {
                 localized(value)
             } else {

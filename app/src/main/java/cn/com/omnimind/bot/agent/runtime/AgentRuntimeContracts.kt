@@ -1,5 +1,7 @@
 package cn.com.omnimind.bot.agent
 
+import cn.com.omnimind.bot.agent.workspace.memory.LongTermMemoryIndex
+import cn.com.omnimind.bot.agent.workspace.memory.TurnMemoryLoadTracker
 import kotlinx.serialization.json.JsonObject
 
 interface AgentExecutionEnvironment {
@@ -17,6 +19,15 @@ interface AgentExecutionEnvironment {
     val reasoningEffort: String?
     val terminalEnvironment: Map<String, String>
     val runControl: AgentRunControl
+
+    /** Long-term memory slug index. Null when unavailable; tools handle gracefully. */
+    val longTermMemoryIndex: LongTermMemoryIndex? get() = null
+
+    /**
+     * Tracks which memory ids/slugs have been loaded in the current turn so we
+     * don't re-attach the same content twice. Null = treat all loads as new.
+     */
+    val turnMemoryLoadTracker: TurnMemoryLoadTracker? get() = null
 }
 
 data class DefaultAgentExecutionEnvironment(
@@ -33,7 +44,9 @@ data class DefaultAgentExecutionEnvironment(
     override val conversationMode: String,
     override val reasoningEffort: String? = null,
     override val terminalEnvironment: Map<String, String> = emptyMap(),
-    override val runControl: AgentRunControl = NoOpAgentRunControl
+    override val runControl: AgentRunControl = NoOpAgentRunControl,
+    override val longTermMemoryIndex: LongTermMemoryIndex? = null,
+    override val turnMemoryLoadTracker: TurnMemoryLoadTracker? = null
 ) : AgentExecutionEnvironment
 
 interface AgentToolCatalog {

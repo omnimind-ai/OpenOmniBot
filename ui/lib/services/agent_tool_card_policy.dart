@@ -937,7 +937,7 @@ class AgentToolCardPolicy {
       return Icons.language_rounded;
     }
     if (toolType == 'vlm' || toolType == 'mobile') {
-      return Icons.touch_app_rounded;
+      return Icons.visibility_rounded;
     }
     if (toolType == 'calendar') {
       return Icons.calendar_month_rounded;

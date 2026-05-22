@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/models/conversation_thread_target.dart';
 import 'package:ui/services/codex_app_server_service.dart';
@@ -9,6 +10,8 @@ class ConversationService {
   static const MethodChannel _assistCore = MethodChannel(
     'cn.com.omnimind.bot/AssistCoreEvent',
   );
+  static const String _hiddenCodexConversationIdsKey =
+      'hidden_codex_conversation_ids';
 
   static List<ConversationModel> _normalizeConversations(List<dynamic> raw) {
     final conversations = raw
@@ -40,7 +43,9 @@ class ConversationService {
         'getConversations',
       );
       if (result == null) return [];
-      final conversations = _normalizeConversations(result);
+      final conversations = await _filterHiddenCodexConversations(
+        _normalizeConversations(result),
+      );
       if (archivedOnly) {
         return conversations.where((item) => item.isArchived).toList();
       }
@@ -154,6 +159,7 @@ class ConversationService {
       if (!appServerArchived && !localArchived) {
         return false;
       }
+      await _markCodexConversationHidden(conversationId);
       await ConversationHistoryService.clearConversationThreadReferences(
         conversationId,
         mode: ConversationMode.codex,
@@ -275,6 +281,53 @@ class ConversationService {
       }
     }
     return null;
+  }
+
+  static Future<List<ConversationModel>> _filterHiddenCodexConversations(
+    List<ConversationModel> conversations,
+  ) async {
+    if (conversations.isEmpty) {
+      return conversations;
+    }
+    final hiddenIds = await _getHiddenCodexConversationIds();
+    if (hiddenIds.isEmpty) {
+      return conversations;
+    }
+    return conversations
+        .where(
+          (conversation) =>
+              conversation.mode != ConversationMode.codex ||
+              !hiddenIds.contains(conversation.id),
+        )
+        .toList();
+  }
+
+  static Future<Set<int>> _getHiddenCodexConversationIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return (prefs.getStringList(_hiddenCodexConversationIdsKey) ??
+              const <String>[])
+          .map(int.tryParse)
+          .whereType<int>()
+          .toSet();
+    } catch (e) {
+      debugPrint('[ConversationService] 读取 Codex 隐藏会话失败: $e');
+      return const <int>{};
+    }
+  }
+
+  static Future<void> _markCodexConversationHidden(int conversationId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final hiddenIds = await _getHiddenCodexConversationIds();
+      if (!hiddenIds.add(conversationId)) {
+        return;
+      }
+      final encoded = hiddenIds.map((id) => id.toString()).toList()..sort();
+      await prefs.setStringList(_hiddenCodexConversationIdsKey, encoded);
+    } catch (e) {
+      debugPrint('[ConversationService] 保存 Codex 隐藏会话失败: $e');
+    }
   }
 
   static Future<bool> updateConversationTitle({

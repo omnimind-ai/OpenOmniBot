@@ -15,11 +15,13 @@ import android.os.Looper
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.WindowManager.BadTokenException
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.uikit.UIKit
 import cn.com.omnimind.uikit.api.callback.HalfScreenApi
+import cn.com.omnimind.uikit.loader.cat.DraggableBallInstance
 import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
 import cn.com.omnimind.uikit.view.layout.HalfScreenView
 
@@ -74,13 +76,26 @@ class FloatingHalfScreenLoader(
         fun isShowing(): Boolean {
             return INSTANCE?.isShowing() ?: false
         }
+
+        fun hideForExternalActivity(): Boolean {
+            return getInstance()?.hideForExternalActivity() ?: false
+        }
+
+        fun restoreAfterExternalActivity(): Boolean {
+            return getInstance()?.restoreAfterExternalActivity() ?: false
+        }
     }
     private var flutterView: View? = null
 
     private var container: HalfScreenView? = null
     private lateinit var windowManager: WindowManager;
+    private var windowParams: WindowManager.LayoutParams? = null
 
     private var isAttachedToWindow: Boolean = false
+    private var isHiddenForExternalActivity: Boolean = false
+    private var didHideScreenMaskForExternalActivity: Boolean = false
+    private var didHideCancelClickForExternalActivity: Boolean = false
+    private var didHideDraggableForExternalActivity: Boolean = false
 
     fun isShowing(): Boolean = isAttachedToWindow
 
@@ -150,6 +165,7 @@ class FloatingHalfScreenLoader(
                     WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
                             WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
             }
+            windowParams = params
 
             OmniLog.d("HalfScreen", "🪟 添加视图到 WindowManager...")
             try {
@@ -164,7 +180,22 @@ class FloatingHalfScreenLoader(
             OmniLog.d("HalfScreen", "✅ FlutterView 已添加到容器")
 
             isAttachedToWindow = true
-            OmniLog.d("HalfScreen", "✅ 半屏已直接展示")
+            isHiddenForExternalActivity = false
+
+            OmniLog.d("HalfScreen", "🎬 准备启动渐变动画...")
+            // 视图添加完成后，使用 post 确保在下一帧开始动画
+            flutterView?.post {
+                OmniLog.d("HalfScreen", "▶️ 开始执行渐变动画")
+                // 使用属性动画，渐变显示
+                flutterView?.animate()
+                    ?.alpha(1f)
+                    ?.setDuration(200)
+                    ?.setInterpolator(DecelerateInterpolator())
+                    ?.withEndAction {
+                        OmniLog.d("HalfScreen", "🎉 [5/5] 渐变动画完成，半屏已完全展示")
+                    }
+                    ?.start()
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             OmniLog.e("HalfScreen", "❌ loadFloatingHalfScreen 失败: ${e.message}", e)
@@ -217,6 +248,7 @@ class FloatingHalfScreenLoader(
                 softInputMode =
                     WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
             }
+            windowParams = params
             try {
                 getWindowManager().addView(container, params)
             } catch (e: BadTokenException) {
@@ -225,13 +257,103 @@ class FloatingHalfScreenLoader(
             }
             (container as HalfScreenView).addView(flutterView)
             isAttachedToWindow = true
+            isHiddenForExternalActivity = false
+
+            // 视图添加完成后，使用 post 确保在下一帧开始动画
+            flutterView?.post {
+                // 使用属性动画代替 TranslateAnimation，更流畅
+                flutterView?.animate()
+                    ?.translationY(0f)
+                    ?.setDuration(300)
+                    ?.setInterpolator(DecelerateInterpolator())
+                    ?.start()
+            }
         } catch (e: Exception) {
             OmniLog.e("FloatingHalfScreenLoader", "load error: ${e.message}")
         }
     }
 
+    fun hideForExternalActivity(): Boolean {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Handler(Looper.getMainLooper()).post { hideForExternalActivity() }
+            return false
+        }
+        didHideScreenMaskForExternalActivity = ScreenMaskLoader.hideForExternalActivity()
+        didHideCancelClickForExternalActivity = CancelClickLoader.hideForExternalActivity()
+        didHideDraggableForExternalActivity = DraggableBallInstance.hideForExternalActivity()
+        if (!isAttachedToWindow || container == null) {
+            return didHideScreenMaskForExternalActivity ||
+                    didHideCancelClickForExternalActivity ||
+                    didHideDraggableForExternalActivity
+        }
+        return try {
+            flutterView?.animate()?.cancel()
+            flutterView?.alpha = 1f
+            getWindowManager().removeView(container)
+            isAttachedToWindow = false
+            isHiddenForExternalActivity = true
+            OmniLog.d("FloatingHalfScreenLoader", "Half screen hidden for external activity")
+            true
+        } catch (e: Exception) {
+            OmniLog.e("FloatingHalfScreenLoader", "hideForExternalActivity failed: ${e.message}", e)
+            false
+        }
+    }
+
+    fun restoreAfterExternalActivity(): Boolean {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Handler(Looper.getMainLooper()).post { restoreAfterExternalActivity() }
+            return false
+        }
+        var restoredScreenMask = false
+        if (didHideScreenMaskForExternalActivity) {
+            restoredScreenMask = ScreenMaskLoader.restoreAfterExternalActivity()
+            didHideScreenMaskForExternalActivity = false
+        }
+        var restoredCancelClick = false
+        if (didHideCancelClickForExternalActivity) {
+            restoredCancelClick = CancelClickLoader.restoreAfterExternalActivity()
+            didHideCancelClickForExternalActivity = false
+        }
+        var restoredDraggable = false
+        if (didHideDraggableForExternalActivity) {
+            restoredDraggable = DraggableBallInstance.restoreAfterExternalActivity()
+            didHideDraggableForExternalActivity = false
+        }
+        val view = container ?: return false
+        val params = windowParams ?: return false
+        if (isAttachedToWindow || !isHiddenForExternalActivity) {
+            return restoredScreenMask || restoredCancelClick || restoredDraggable
+        }
+        return try {
+            getWindowManager().addView(view, params)
+            flutterView?.visibility = View.VISIBLE
+            flutterView?.alpha = 1f
+            isAttachedToWindow = true
+            isHiddenForExternalActivity = false
+            OmniLog.d("FloatingHalfScreenLoader", "Half screen restored after external activity")
+            true
+        } catch (e: BadTokenException) {
+            OmniLog.e("FloatingHalfScreenLoader", "restoreAfterExternalActivity BadTokenException: ${e.message}")
+            restoredScreenMask || restoredCancelClick || restoredDraggable
+        } catch (e: Exception) {
+            OmniLog.e("FloatingHalfScreenLoader", "restoreAfterExternalActivity failed: ${e.message}", e)
+            restoredScreenMask || restoredCancelClick || restoredDraggable
+        }
+    }
+
     fun removeView() {
         if (!isAttachedToWindow) {
+            if (isHiddenForExternalActivity) {
+                halfScreenApi?.onDestroyOrGone()
+                container = null
+                flutterView = null
+                windowParams = null
+                isHiddenForExternalActivity = false
+                didHideScreenMaskForExternalActivity = false
+                didHideCancelClickForExternalActivity = false
+                didHideDraggableForExternalActivity = false
+            }
             return
         }
         halfScreenApi?.onDestroyOrGone()
@@ -243,10 +365,15 @@ class FloatingHalfScreenLoader(
                 windowManager.removeView(container)
             }
             container = null
+            windowParams = null
         } catch (e: Exception) {
             e.printStackTrace()
         }
 
         isAttachedToWindow = false
+        isHiddenForExternalActivity = false
+        didHideScreenMaskForExternalActivity = false
+        didHideCancelClickForExternalActivity = false
+        didHideDraggableForExternalActivity = false
     }
 }

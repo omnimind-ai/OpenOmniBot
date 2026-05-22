@@ -338,7 +338,7 @@ void main() {
   );
 
   test(
-    'delete codex conversation soft-archives locally when binding is stale',
+    'delete codex conversation hides it from future conversation loads',
     () async {
       nativeConversations = <Map<String, dynamic>>[
         {
@@ -364,6 +364,14 @@ void main() {
       expect(deleted, isTrue);
       expect(codexCalls.single.method, 'thread/archive');
       expect(nativeConversations.single['isArchived'], isTrue);
+
+      final visibleConversations =
+          await ConversationService.getAllConversations(includeArchived: true);
+      expect(visibleConversations, isEmpty);
+
+      final archivedConversations =
+          await ConversationService.getAllConversations(archivedOnly: true);
+      expect(archivedConversations, isEmpty);
     },
   );
 }

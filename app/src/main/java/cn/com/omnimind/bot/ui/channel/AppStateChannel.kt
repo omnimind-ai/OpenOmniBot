@@ -6,6 +6,7 @@ import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.activity.MainActivity
 import cn.com.omnimind.bot.activity.StartupThemeResolver
+import cn.com.omnimind.bot.quicklog.QuickLogWidgetUpdater
 import cn.com.omnimind.bot.share.SharedOpenDraftStore
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
 import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
@@ -141,6 +142,11 @@ class AppStateChannel {
                     AgentWorkspaceManager(appContext).ensureRuntimeDirectories()
                 }.onFailure {
                     OmniLog.w(TAG, "Failed to refresh workspace defaults after language change: ${it.message}")
+                }
+                runCatching {
+                    QuickLogWidgetUpdater.updateAll(appContext)
+                }.onFailure {
+                    OmniLog.w(TAG, "Failed to refresh quick log widget language: ${it.message}")
                 }
                 result.success(true)
             }

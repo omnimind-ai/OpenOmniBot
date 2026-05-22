@@ -31,6 +31,7 @@ class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
   static const double _compactMaxWidthFactor = 0.76;
   static const double _compactMaxWidth = 360;
   static const double _compactMinWidth = 148;
+  static const double _readableCompactMaxWidthFactor = 0.96;
   static const double _compactRadius = 8;
   static const double _compactAccentWidth = 3;
   static const double _processFontSize = 12;
@@ -53,28 +54,46 @@ class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
       widget.activity.kind,
     );
     if (widget.compactSurface) {
+      final needsReadableTimeline =
+          widget.activity.kind == AgentToolActivityKind.vlm &&
+          widget.activity.stepCount > 1;
       final compactBackgroundColor = context.isDarkTheme
           ? Color.alphaBlend(
-              activityColor.withValues(alpha: 0.08),
+              activityColor.withValues(
+                alpha: needsReadableTimeline ? 0.06 : 0.08,
+              ),
               palette.surfacePrimary,
             )
-          : activityColor.withValues(alpha: 0.055);
+          : activityColor.withValues(
+              alpha: needsReadableTimeline ? 0.038 : 0.055,
+            );
       final compactBorderColor = context.isDarkTheme
           ? Color.lerp(palette.borderSubtle, activityColor, 0.30)!
-          : activityColor.withValues(alpha: 0.16);
+          : activityColor.withValues(
+              alpha: needsReadableTimeline ? 0.11 : 0.16,
+            );
       return Align(
         alignment: Alignment.centerLeft,
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final maxWidth = (constraints.maxWidth * _compactMaxWidthFactor)
-                .clamp(_compactMinWidth, _compactMaxWidth)
-                .toDouble();
+            final availableWidth = constraints.maxWidth.isFinite
+                ? constraints.maxWidth
+                : MediaQuery.of(context).size.width;
+            final maxWidth = needsReadableTimeline
+                ? (availableWidth * _readableCompactMaxWidthFactor)
+                      .clamp(_compactMinWidth, availableWidth)
+                      .toDouble()
+                : (availableWidth * _compactMaxWidthFactor)
+                      .clamp(_compactMinWidth, _compactMaxWidth)
+                      .toDouble();
             return ConstrainedBox(
               key: ValueKey(
                 'agent-tool-activity-compact-surface-${widget.activity.id}',
               ),
               constraints: BoxConstraints(
-                minWidth: _compactMinWidth,
+                minWidth: needsReadableTimeline
+                    ? maxWidth
+                    : _compactMinWidth,
                 maxWidth: maxWidth,
               ),
               child: Padding(
@@ -547,14 +566,14 @@ class _ActivityStepRow extends StatelessWidget {
                     step.isRetry
                         ? '${AppTextLocalizer.choose(zh: '重试', en: 'Retry', locale: Localizations.localeOf(context))} · $title'
                         : title,
-                    maxLines: 1,
+                    maxLines: compact ? 2 : 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: palette.textPrimary,
                       fontSize: _AgentToolActivityCardState._processFontSize,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 0,
-                      height: 1.2,
+                      height: 1.25,
                     ),
                   ),
                   if (subtitle.isNotEmpty)
@@ -562,7 +581,7 @@ class _ActivityStepRow extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
                         subtitle,
-                        maxLines: 1,
+                        maxLines: compact ? 2 : 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: palette.textSecondary,
@@ -579,7 +598,7 @@ class _ActivityStepRow extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
                         preview,
-                        maxLines: 1,
+                        maxLines: compact ? 2 : 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: palette.textTertiary,
@@ -785,10 +804,11 @@ String _stepTitle(BuildContext context, AgentToolActivityStep step) {
 String _stepSubtitle(BuildContext context, AgentToolActivityStep step) {
   final action = _localizedActionText(context, step.action).trim();
   final target = step.target.trim();
+  final title = _stepTitle(context, step).trim();
   if (action.isEmpty) {
     return target;
   }
-  if (target.isEmpty || target == action) {
+  if (target.isEmpty || target == action || target == title) {
     return action;
   }
   return '$action · $target';
@@ -807,6 +827,15 @@ String _stepPreview(BuildContext context, AgentToolActivityStep step) {
       preview == subtitle ||
       AgentToolCardPolicy.isPlaceholderText(preview)) {
     return '';
+  }
+  final action = _localizedActionText(context, step.action).trim();
+  if (action.isNotEmpty && title.isNotEmpty) {
+    final compactPreview = preview.replaceAll(RegExp(r'\s+'), ' ');
+    if (compactPreview == '$action $title' ||
+        compactPreview == '$action$title' ||
+        compactPreview == '$action · $title') {
+      return '';
+    }
   }
   return preview;
 }

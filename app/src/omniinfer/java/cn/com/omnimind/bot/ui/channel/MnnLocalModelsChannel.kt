@@ -260,6 +260,17 @@ class MnnLocalModelsChannel {
                 }
                 return
             }
+
+            "refreshLanProxyToken" -> {
+                result.success(OmniInferLocalRuntime.refreshLanProxyToken())
+                return
+            }
+
+            "stopLanProxy" -> {
+                OmniInferLocalRuntime.stopLanProxy()
+                result.success(getCurrentConfig())
+                return
+            }
         }
 
         when (getSelectedBackend()) {
@@ -278,6 +289,15 @@ class MnnLocalModelsChannel {
         }
         OmniInferLocalRuntime.setSelectedBackend(normalizedBackend)
         return normalizedBackend
+    }
+
+    private fun getCurrentConfig(): Map<String, Any?> {
+        return when (getSelectedBackend()) {
+            OmniInferLocalRuntime.BACKEND_OMNIINFER_MNN -> OmniInferMnnModelsManager.getConfig()
+            OmniInferLocalRuntime.BACKEND_EXECUTORCH_QNN -> OmniInferQnnModelsManager.getConfig()
+            OmniInferLocalRuntime.BACKEND_LITERT -> OmniInferLiteRtModelsManager.getConfig()
+            else -> OmniInferModelsManager.getConfig()
+        }
     }
 
     private fun handleLlamaCppCall(call: MethodCall, result: MethodChannel.Result) {
@@ -637,4 +657,3 @@ class MnnLocalModelsChannel {
         }
     }
 }
-

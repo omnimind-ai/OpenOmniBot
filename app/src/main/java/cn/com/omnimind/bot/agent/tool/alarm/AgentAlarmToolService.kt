@@ -12,6 +12,7 @@ import android.os.Build
 import android.provider.AlarmClock
 import android.provider.Settings
 import androidx.core.content.ContextCompat
+import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.activity.MainActivity
 import cn.com.omnimind.baselib.permission.PermissionRequest
 import com.google.gson.Gson
@@ -41,6 +42,7 @@ class AgentAlarmToolService(
     private val context: Context
 ) {
     companion object {
+        private const val TAG = "AgentAlarmToolService"
         const val MODE_EXACT_ALARM = "exact_alarm"
         const val MODE_CLOCK_APP = "clock_app"
 
@@ -169,9 +171,6 @@ class AgentAlarmToolService(
     }
 
     fun reschedulePersistedExactRemindersIfPermitted(): Int {
-        if (!hasExactAlarmPermission()) {
-            return 0
-        }
         val now = System.currentTimeMillis()
         val activeRecords = loadRecords().filter { record ->
             record.triggerAtMillis > now && record.state != STATE_RINGING
@@ -528,25 +527,36 @@ class AgentAlarmToolService(
                 },
                 PendingIntent.FLAG_UPDATE_CURRENT or immutableFlag()
             )
-            alarmManager.setAlarmClock(
-                AlarmManager.AlarmClockInfo(triggerAtMillis, showIntent),
-                pendingIntent
-            )
-            return
+            val alarmClockScheduled = runCatching {
+                alarmManager.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(triggerAtMillis, showIntent),
+                    pendingIntent
+                )
+            }.onFailure {
+                OmniLog.w(TAG, "setAlarmClock failed, fallback exact/set: ${it.message}")
+            }.isSuccess
+            if (alarmClockScheduled) {
+                return
+            }
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && allowWhileIdle) {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAtMillis,
-                pendingIntent
-            )
-        } else {
-            alarmManager.setExact(
-                AlarmManager.RTC_WAKEUP,
-                triggerAtMillis,
-                pendingIntent
-            )
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && allowWhileIdle) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setExact(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+                )
+            }
+        }.onFailure {
+            OmniLog.w(TAG, "setExact failed, fallback set(): ${it.message}")
+            alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
         }
     }
 

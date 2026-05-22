@@ -479,6 +479,26 @@ internal object AgentConversationHistorySupport {
             return incoming[key] ?: existing[key]
         }
 
+        fun mergeMapList(key: String): List<Map<String, Any?>> {
+            val merged = linkedMapOf<String, Map<String, Any?>>()
+            fun addAll(items: List<Map<String, Any?>>) {
+                for (item in items) {
+                    val identity = item["id"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: listOf(
+                            item["seq"],
+                            item["kind"],
+                            item["taskIndex"],
+                            item["summary"],
+                            item["toolName"]
+                        ).joinToString("|") { it?.toString().orEmpty() }
+                    merged[identity] = item
+                }
+            }
+            addAll(toListOfStringAnyMap(existing[key]))
+            addAll(toListOfStringAnyMap(incoming[key]))
+            return merged.values.toList()
+        }
+
         val toolType = chooseText("toolType", "builtin")
         val existingTerminalOutput = rawText(existing, "terminalOutput")
         val terminalOutputDelta = rawText(incoming, "terminalOutputDelta")
@@ -508,6 +528,8 @@ internal object AgentConversationHistorySupport {
             "summary" to chooseText("summary", fallbackSummary),
             "reasoning_content" to reasoningContent,
             "progress" to chooseText("progress"),
+            "subagentStatusText" to chooseText("subagentStatusText"),
+            "subagentEvents" to mergeMapList("subagentEvents"),
             "args" to chooseText("args"),
             "argsJson" to chooseText("argsJson"),
             "resultPreviewJson" to chooseText("resultPreviewJson"),
@@ -750,6 +772,11 @@ internal object AgentConversationHistorySupport {
                 payload["progress"]?.toString().orEmpty(),
                 MAX_TOOL_SUMMARY_CHARS
             ),
+            "subagentStatusText" to trimText(
+                payload["subagentStatusText"]?.toString().orEmpty(),
+                MAX_TOOL_SUMMARY_CHARS
+            ),
+            "subagentEvents" to compactDisplayList(payload["subagentEvents"]),
             "argsJson" to safeArgsJson,
             "resultPreviewJson" to safeResultPreviewJson,
             "rawResultJson" to safeRawResultJson,
@@ -872,6 +899,8 @@ internal object AgentConversationHistorySupport {
             "summary" to cardData["summary"]?.toString()?.trim().orEmpty(),
             "reasoning_content" to cardData["reasoning_content"]?.toString().orEmpty(),
             "progress" to cardData["progress"]?.toString()?.trim().orEmpty(),
+            "subagentStatusText" to cardData["subagentStatusText"]?.toString()?.trim().orEmpty(),
+            "subagentEvents" to toListOfStringAnyMap(cardData["subagentEvents"]),
             "args" to cardData["argsJson"]?.toString().orEmpty(),
             "argsJson" to cardData["argsJson"]?.toString().orEmpty(),
             "resultPreviewJson" to cardData["resultPreviewJson"]?.toString().orEmpty(),
@@ -1148,6 +1177,11 @@ internal object AgentConversationHistorySupport {
                 payload["progress"]?.toString().orEmpty(),
                 MAX_TOOL_SUMMARY_CHARS
             ),
+            "subagentStatusText" to trimText(
+                payload["subagentStatusText"]?.toString().orEmpty(),
+                MAX_TOOL_SUMMARY_CHARS
+            ),
+            "subagentEvents" to compactDisplayList(payload["subagentEvents"]),
             "args" to compactJsonText(payload["args"]?.toString().orEmpty(), MAX_STORAGE_TOOL_JSON_CHARS),
             "argsJson" to compactJsonText(
                 payload["argsJson"]?.toString().orEmpty(),

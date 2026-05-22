@@ -268,6 +268,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
   final Map<String, _TaskBinding> _taskBindings = <String, _TaskBinding>{};
   final Map<String, _PendingPersistenceRequest> _pendingPersistence =
       <String, _PendingPersistenceRequest>{};
+  final Set<String> _ephemeralRuntimeKeys = <String>{};
 
   bool _initialized = false;
 
@@ -331,6 +332,32 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       runtime.conversation = conversation;
     }
     return runtime;
+  }
+
+  ChatConversationRuntimeState ensureEphemeralRuntime({
+    required int conversationId,
+    required String mode,
+    List<ChatMessageModel>? initialMessages,
+    ConversationModel? conversation,
+    ChatIslandDisplayLayer? initialChatIslandDisplayLayer,
+  }) {
+    final runtime = ensureRuntime(
+      conversationId: conversationId,
+      mode: mode,
+      initialMessages: initialMessages,
+      conversation: conversation,
+      initialChatIslandDisplayLayer: initialChatIslandDisplayLayer,
+    );
+    _ephemeralRuntimeKeys.add(
+      _runtimeKey(conversationId: conversationId, mode: mode),
+    );
+    return runtime;
+  }
+
+  bool isEphemeralRuntime({required int conversationId, required String mode}) {
+    return _ephemeralRuntimeKeys.contains(
+      _runtimeKey(conversationId: conversationId, mode: mode),
+    );
   }
 
   void replaceConversationSnapshot({
@@ -525,11 +552,16 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     final result = _codexEventReducer.reduce(runtime: runtime, event: event);
     if (result.handled) {
       notifyListeners();
-      schedulePersistRuntimeConversation(
+      if (!isEphemeralRuntime(
         conversationId: conversationId,
         mode: kChatRuntimeModeCodex,
-        persistMessages: true,
-      );
+      )) {
+        schedulePersistRuntimeConversation(
+          conversationId: conversationId,
+          mode: kChatRuntimeModeCodex,
+          persistMessages: true,
+        );
+      }
     }
     return result;
   }
@@ -579,6 +611,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     }
     _runtimes.clear();
     _taskBindings.clear();
+    _ephemeralRuntimeKeys.clear();
   }
 
   void clearConversationRuntimeSession({
@@ -620,6 +653,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       _flushRuntimeStreamingText(runtime);
     }
     _cancelPendingPersistence(conversationId: conversationId, mode: mode);
+    _ephemeralRuntimeKeys.remove(
+      _runtimeKey(conversationId: conversationId, mode: mode),
+    );
     _taskBindings.removeWhere(
       (_, binding) =>
           binding.conversationId == conversationId && binding.mode == mode,
@@ -765,6 +801,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     bool persistMessages = false,
   }) async {
     _cancelPendingPersistence(conversationId: conversationId, mode: mode);
+    if (isEphemeralRuntime(conversationId: conversationId, mode: mode)) {
+      return;
+    }
     final runtime = runtimeFor(conversationId: conversationId, mode: mode);
     if (runtime == null) return;
     _flushRuntimeStreamingText(runtime);
@@ -850,6 +889,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     Duration delay = const Duration(milliseconds: 350),
   }) {
     final key = _runtimeKey(conversationId: conversationId, mode: mode);
+    if (_ephemeralRuntimeKeys.contains(key)) {
+      return;
+    }
     final previous = _pendingPersistence[key];
     previous?.timer.cancel();
     final nextGenerateSummary =
@@ -889,6 +931,9 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       return;
     }
     request.timer.cancel();
+    if (_ephemeralRuntimeKeys.contains(key)) {
+      return;
+    }
     await persistRuntimeConversation(
       conversationId: request.conversationId,
       mode: request.mode,

@@ -8,17 +8,15 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 ## Step Guidance Essentials
 
 - AndroidWorld first-step policy lives here, not core optimizer.
-- OmniFlow recall context is only a historical successful trajectory hint. It
-  is not evidence that the current task is complete.
-- When recall context is present, reuse only the action idea that matches the
-  current screenshot/XML; still emit concrete live actions for the current
-  screen.
 - Pass `packageName` when known; derive unknown packages from installed apps.
-- Focused editable input plus type/search task: use `type` first.
-- Missing list target: scroll, re-check text; do not tap unrelated first row.
+- Permission/onboarding prompt: use safe continuation; avoid Deny, Delete, Sign in, Pay unless requested.
+- Focused editable input plus type/search task: use `type` first; missing list target: scroll and re-check text.
 - Slider/seekbar: 0-1000 normalized; `Display brightness` max: do not click, scroll x1=70,y1=110,x2=990,y2=110; min x1=990,y1=110,x2=10,y2=110.
 - Numeric keypad targets: click digit buttons; never use `type` unless focused editable.
+- OmniFlow recall context is only a historical hint; reuse only when the current screenshot/XML matches.
 - Validate after at least two visible UI states before `finished`.
+
+## Overview
 
 Use this skill when the user wants OOB to operate an Android screen, run a
 VLM task, validate an AndroidWorld-style scenario, replay a stored Function, or

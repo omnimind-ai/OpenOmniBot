@@ -1118,7 +1118,7 @@ double resolveChatComposerKeyboardSpacer({
   final normalizedBottomInset = bottomInset.isFinite
       ? math.max(0.0, bottomInset)
       : 0.0;
-  if (normalizedBottomInset <= 0.5) {
+  if (normalizedBottomInset <= 0) {
     return 0.0;
   }
   final normalizedClearance = keyboardClearance.isFinite

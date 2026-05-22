@@ -6,6 +6,7 @@
 /local.properties
 .DS_Store
 /build
+node_modules/
 /captures
 .externalNativeBuild
 .cxx
@@ -15,7 +16,9 @@ local.properties
 .claude/
 .codex/
 .vscode/
+.codex/
 .agents/
+claude-code-main/
 
 skills-lock.json
 

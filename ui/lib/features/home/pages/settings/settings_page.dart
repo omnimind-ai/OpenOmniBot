@@ -517,6 +517,14 @@ class _SettingsPageState extends State<SettingsPage> {
               GoRouterManager.push('/home/termux_setting');
             },
           ),
+          _SettingItem(
+            icon: Icons.terminal_rounded,
+            title: 'Codex',
+            subtitle: context.trLegacy('本地 Alpine 与远程 PC Bridge'),
+            onTap: () {
+              GoRouterManager.push('/home/codex_setting');
+            },
+          ),
         ],
       ),
       _SettingSection(

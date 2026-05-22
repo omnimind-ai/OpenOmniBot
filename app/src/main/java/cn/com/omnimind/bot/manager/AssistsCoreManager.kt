@@ -93,6 +93,7 @@ import cn.com.omnimind.bot.agent.tool.handlers.SharedHelper
 import cn.com.omnimind.bot.runlog.OobRunLogReplayService
 import cn.com.omnimind.bot.localmodel.LocalModelFeature
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
+import cn.com.omnimind.bot.quicklog.QuickLogService
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
 import cn.com.omnimind.bot.webchat.ConversationDomainService
 import cn.com.omnimind.bot.webchat.FlutterChatSyncBridge
@@ -4341,70 +4342,118 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         workJob.launch {
             try {
                 val service = WorkspaceMemoryService(context)
-                val now = LocalDate.now()
-                val timePattern = Regex("^\\[([0-2]\\d:[0-5]\\d:[0-5]\\d)]\\s*(.*)$")
-                val zoneId = ZoneId.systemDefault()
-                val payload = mutableListOf<Map<String, Any?>>()
-
-                for (offset in 0 until days) {
-                    val date = now.minusDays(offset.toLong())
-                    val dateText = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                    val content = service.readDailyMemory(date)
-                    if (content.isBlank()) {
-                        continue
-                    }
-                    var lineIndex = 0
-                    content.lineSequence().forEach { raw ->
-                        val line = raw.trim()
-                        if (!line.startsWith("- ")) {
-                            return@forEach
-                        }
-                        val item = line.removePrefix("- ").trim()
-                        if (item.isEmpty()) {
-                            return@forEach
-                        }
-                        val match = timePattern.find(item)
-                        val timeText = match?.groupValues?.getOrNull(1)?.trim()
-                        val body = (match?.groupValues?.getOrNull(2) ?: item).trim()
-                        if (body.isEmpty() || isWorkspaceRollupMetadataLine(body)) {
-                            return@forEach
-                        }
-                        val localTime = runCatching {
-                            LocalTime.parse(timeText ?: "00:00:00")
-                        }.getOrNull() ?: LocalTime.MIDNIGHT
-                        val timestampMillis = LocalDateTime.of(date, localTime)
-                            .atZone(zoneId)
-                            .toInstant()
-                            .toEpochMilli()
-                        val stableKey = "$dateText|$lineIndex|$body"
-                        payload += mapOf(
-                            "id" to stableKey.hashCode().toString(),
-                            "date" to dateText,
-                            "time" to (timeText ?: "00:00:00"),
-                            "content" to body,
-                            "timestampMillis" to timestampMillis
+                val payload = service.listShortMemoryEntries(days = days, limit = limit)
+                    .map { entry ->
+                        mapOf(
+                            "id" to entry.id,
+                            "date" to entry.date,
+                            "time" to entry.time,
+                            "content" to entry.content,
+                            "timestampMillis" to entry.timestampMillis,
+                            "quickLogId" to entry.quickLogId
                         )
-                        lineIndex += 1
                     }
-                }
-
-                val sorted = payload.sortedWith(
-                    compareByDescending<Map<String, Any?>> {
-                        (it["timestampMillis"] as? Long) ?: 0L
-                    }.thenByDescending {
-                        (it["id"] as? String) ?: ""
-                    }
-                ).take(limit)
                 withContext(Dispatchers.Main) {
                     result.success(
                         mapOf(
-                            "items" to sorted
+                            "items" to payload
                         )
                     )
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     result.error("GET_WORKSPACE_SHORT_MEMORY_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun listQuickLogs(call: MethodCall, result: MethodChannel.Result) {
+        val limit = (call.argument<Int>("limit") ?: 200).coerceIn(1, 500)
+        workJob.launch {
+            try {
+                val service = QuickLogService(context)
+                val items = service.listLogs(limit).map { it.toMap() }
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        mapOf(
+                            "items" to items,
+                            "totalCount" to service.countLogs()
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("LIST_QUICK_LOGS_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun addQuickLog(call: MethodCall, result: MethodChannel.Result) {
+        val content = call.argument<String>("content") ?: ""
+        val source = call.argument<String>("source") ?: QuickLogService.SOURCE_APP
+        workJob.launch {
+            try {
+                val item = QuickLogService(context).addLog(
+                    content = content,
+                    source = source
+                )
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        mapOf(
+                            "item" to item.toMap()
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("ADD_QUICK_LOG_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun updateQuickLog(call: MethodCall, result: MethodChannel.Result) {
+        val id = call.argument<String>("id") ?: ""
+        val content = call.argument<String>("content") ?: ""
+        workJob.launch {
+            try {
+                val item = QuickLogService(context).updateLog(id, content)
+                withContext(Dispatchers.Main) {
+                    if (item == null) {
+                        result.error("UPDATE_QUICK_LOG_NOT_FOUND", "quick log not found", null)
+                    } else {
+                        result.success(
+                            mapOf(
+                                "item" to item.toMap()
+                            )
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("UPDATE_QUICK_LOG_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun deleteQuickLog(call: MethodCall, result: MethodChannel.Result) {
+        val id = call.argument<String>("id") ?: ""
+        workJob.launch {
+            try {
+                val deleted = QuickLogService(context).deleteLog(id)
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        mapOf(
+                            "deleted" to deleted
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("DELETE_QUICK_LOG_ERROR", e.message, null)
                 }
             }
         }

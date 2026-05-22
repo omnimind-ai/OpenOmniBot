@@ -38,7 +38,7 @@ class CodexAppServerSessionTest {
             assertTrue(lines[0].contains("\"experimentalApi\":true"))
             assertTrue(lines[0].contains("\"version\":\"1.2.3\""))
             assertTrue(lines[1].contains("\"method\":\"initialized\""))
-            assertTrue(harness.events.any { it["method"] == "codex/connected" })
+            assertTrue(harness.eventsSnapshot().any { it["method"] == "codex/connected" })
             assertTrue(harness.startCommand.contains("codex app-server"))
             assertEquals(CodexAppServerDefaults.CODEX_HOME, harness.startEnvironment["CODEX_HOME"])
         } finally {
@@ -68,7 +68,7 @@ class CodexAppServerSessionTest {
 
             val result = response["result"] as? Map<*, *>
             assertEquals(true, result?.get("ok"))
-            waitUntil { harness.events.any { it["method"] == "turn/started" } }
+            waitUntil { harness.eventsSnapshot().any { it["method"] == "turn/started" } }
         } finally {
             harness.close()
         }
@@ -88,9 +88,9 @@ class CodexAppServerSessionTest {
         try {
             harness.session.start(clientVersion = "1.2.3")
             waitUntil {
-                harness.events.any { it["method"] == "codex/parseError" }
+                harness.eventsSnapshot().any { it["method"] == "codex/parseError" }
             }
-            val parseError = harness.events.first { it["method"] == "codex/parseError" }
+            val parseError = harness.eventsSnapshot().first { it["method"] == "codex/parseError" }
             val params = parseError["params"] as? Map<*, *>
             assertEquals("not-json", params?.get("raw"))
         } finally {
@@ -111,7 +111,7 @@ class CodexAppServerSessionTest {
         try {
             harness.session.start(clientVersion = "1.2.3")
             waitUntil {
-                harness.events.any { it["method"] == "codex/disconnected" }
+                harness.eventsSnapshot().any { it["method"] == "codex/disconnected" }
             }
             assertTrue(!harness.session.isRunning)
 
@@ -157,6 +157,12 @@ class CodexAppServerSessionTest {
             session.disconnect()
             scopeJob.cancelAndJoin()
             tempDir.deleteRecursively()
+        }
+
+        fun eventsSnapshot(): List<Map<String, Any?>> {
+            return synchronized(events) {
+                events.toList()
+            }
         }
     }
 }

@@ -146,7 +146,19 @@ data class ResolvedSkillContext(
     }
 
     fun stepGuidance(maxChars: Int = 900): String {
-        val lines = bodyMarkdown.lines()
+        val sourceLines = bodyMarkdown.lines()
+        val bodyLines = if (sourceLines.firstOrNull()?.trim() == "---") {
+            sourceLines.drop(1).dropWhile { it.trim() != "---" }.drop(1)
+        } else {
+            sourceLines
+        }
+        val guidanceSection = bodyLines
+            .dropWhile { it.trim() != "## Step Guidance Essentials" }
+            .drop(1)
+            .takeWhile { !it.trim().startsWith("## ") }
+            .takeIf { it.isNotEmpty() }
+            ?: bodyLines
+        val lines = guidanceSection
             .map { it.trim() }
             .filter { line ->
                 line.isNotEmpty() &&

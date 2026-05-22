@@ -7,10 +7,11 @@ import cn.com.omnimind.baselib.llm.ChatCompletionRequest
 import cn.com.omnimind.baselib.llm.ChatCompletionStreamOptions
 import cn.com.omnimind.baselib.llm.contentText
 import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.bot.agent.tool.AgentToolConcurrencyPolicy
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.supervisorScope
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -51,7 +52,7 @@ class AgentOrchestrator(
 
     suspend fun run(input: Input): AgentResult {
         val callback = input.callback
-        var messages = input.initialMessages.toMutableList()
+        val memory: AgentChatMemory = MutableListChatMemory(input.initialMessages)
         val executedTools = mutableListOf<ToolExecutionResult>()
         var outputKind = AgentOutputKind.NONE
         var hasUserFacingOutput = false
@@ -72,7 +73,7 @@ class AgentOrchestrator(
                 val round = completedModelRounds
                 val assistantContentPrefix = accumulatedAssistantContent
                 callback.onThinkingStart()
-                val toolChoiceForRound = if (messages.lastOrNull()?.role == "tool") {
+                val toolChoiceForRound = if (memory.lastRole() == "tool") {
                     null
                 } else {
                     JsonPrimitive("auto")
@@ -84,7 +85,7 @@ class AgentOrchestrator(
                 val disableThinking = input.executionEnv.reasoningEffort == "no"
                 val turn = llmClient.streamTurn(
                     request = ChatCompletionRequest(
-                        messages = messages.toList(),
+                        messages = memory.snapshot(),
                         model = model,
                         maxCompletionTokens = 16384,
                         stream = true,
@@ -93,7 +94,7 @@ class AgentOrchestrator(
                         reasoningEffort = if (disableThinking) null else input.executionEnv.reasoningEffort,
                         tools = toolRegistry.toolsForModel,
                         toolChoice = toolChoiceForRound,
-                        parallelToolCalls = false
+                        parallelToolCalls = true
                     ),
                     onReasoningUpdate = { reasoning ->
                         if (reasoning.isNotBlank()) {
@@ -101,29 +102,13 @@ class AgentOrchestrator(
                         }
                     },
                     onContentUpdate = { content ->
-                        val displayContent = AgentTextSanitizer.stripTextFunctionCalls(
-                            AgentTextSanitizer.sanitizeUtf16(content)
-                        )
-                        if (displayContent.isNotBlank()) {
+                        if (content.isNotBlank()) {
                             callback.onChatMessage(
                                 combineContinuationContent(
                                     prefix = assistantContentPrefix,
-                                    content = displayContent
+                                    content = content
                                 ),
                                 false
-                            )
-                        }
-                    },
-                    onToolCallUpdate = { snapshot ->
-                        val toolName = snapshot.name?.trim().orEmpty()
-                        if (toolName.isNotBlank()) {
-                            callback.onToolCallPreview(
-                                toolName = toolName,
-                                argumentsJson = AgentTextSanitizer.sanitizeUtf16(
-                                    snapshot.arguments
-                                ),
-                                toolCallId = snapshot.id,
-                                toolCallIndex = snapshot.index
                             )
                         }
                     }
@@ -145,7 +130,7 @@ class AgentOrchestrator(
                     "round=$round parsed_tool_calls=${toolCalls.size} finish_reason=${lastFinishReason.orEmpty()} assistant_content_len=${lastAssistantContent.length}"
                 )
 
-                messages.add(
+                memory.add(
                     ChatCompletionMessage(
                         role = "assistant",
                         content = normalizeAssistantContentForNextRound(
@@ -167,14 +152,15 @@ class AgentOrchestrator(
                     )
                 }
                 input.contextCompactor?.let { compactor ->
-                    messages = compactor.compactIfNeeded(
+                    val compacted = compactor.compactIfNeeded(
                         conversationId = input.conversationId,
                         conversationMode = input.executionEnv.conversationMode,
                         promptTokens = latestPromptTokens,
-                        messages = messages,
+                        messages = memory.snapshot(),
                         promptTokenThresholdOverride = latestPromptTokenThreshold,
                         callback = callback
-                    ).toMutableList()
+                    )
+                    memory.replaceAll(compacted)
                 }
 
                 if (toolCalls.isEmpty()) {
@@ -185,15 +171,14 @@ class AgentOrchestrator(
                     ) {
                         lengthContinuationRounds += 1
                         accumulatedAssistantContent = lastAssistantContent
-                        messages.add(buildLengthContinuationMessage())
+                        memory.add(buildLengthContinuationMessage())
                         logInfo(
                             tag,
                             "round=$round finish_reason=${lastFinishReason.orEmpty()} auto_continue=$lengthContinuationRounds/${maxLengthContinuationRounds} accumulated_content_len=${accumulatedAssistantContent.length}"
                         )
                         continue@roundLoop
                     }
-                    val cleanedContent = AgentTextSanitizer.stripTextFunctionCalls(lastAssistantContent)
-                    val fallbackMessage = cleanedContent.ifBlank {
+                    val fallbackMessage = lastAssistantContent.ifBlank {
                         "我已完成思考，但暂时无法生成回复，请重试。"
                     }
                     callback.onChatMessage(
@@ -212,8 +197,17 @@ class AgentOrchestrator(
                 lengthContinuationRounds = 0
 
                 var advanceToNextRound = false
-                for (toolCall in toolCalls) {
+                val descriptorMap = mutableMapOf<String, AgentToolRegistry.RuntimeToolDescriptor>()
+                val parsedArgsMap = mutableMapOf<String, JsonObject>()
+                val validatedCalls = mutableListOf<AssistantToolCall>()
+
+                // Phase A — parse + validate all tool arguments synchronously.
+                // Any parse/validation failure aborts the current turn's tool execution
+                // (matching pre-refactor semantics: write the error tool message,
+                // skip remaining calls, and advance to the next LLM round).
+                parsePhase@ for (toolCall in toolCalls) {
                     val descriptor = toolRegistry.runtimeDescriptor(toolCall.function.name)
+                    descriptorMap[toolCall.id] = descriptor
                     val parsedArgs: JsonObject = try {
                         parseToolArguments(toolCall.function.arguments)
                     } catch (error: Exception) {
@@ -231,7 +225,7 @@ class AgentOrchestrator(
                         executedTools.add(result)
                         callback.onToolCallComplete(toolCall.function.name, result)
                         appendToolResultMessage(
-                            messages = messages,
+                            memory = memory,
                             toolCall = toolCall,
                             descriptor = descriptor,
                             result = result,
@@ -240,9 +234,8 @@ class AgentOrchestrator(
                         hasUserFacingOutput =
                             hasUserFacingOutput || eventAdapter.hasUserVisibleOutput(result)
                         advanceToNextRound = true
-                        break
+                        break@parsePhase
                     }
-
                     val validationError = runCatching {
                         toolRegistry.validateArguments(toolCall.function.name, parsedArgs)
                     }.exceptionOrNull()
@@ -261,7 +254,7 @@ class AgentOrchestrator(
                         executedTools.add(result)
                         callback.onToolCallComplete(toolCall.function.name, result)
                         appendToolResultMessage(
-                            messages = messages,
+                            memory = memory,
                             toolCall = toolCall,
                             descriptor = descriptor,
                             result = result,
@@ -270,80 +263,116 @@ class AgentOrchestrator(
                         hasUserFacingOutput =
                             hasUserFacingOutput || eventAdapter.hasUserVisibleOutput(result)
                         advanceToNextRound = true
-                        break
+                        break@parsePhase
                     }
+                    parsedArgsMap[toolCall.id] = parsedArgs
+                    validatedCalls.add(toolCall)
+                }
 
-                    val toolHandle = input.executionEnv.runControl.beginToolExecution(
-                        toolName = toolCall.function.name,
-                        toolCallId = toolCall.id
+                // Phase B — partition validated calls into batches and execute.
+                if (validatedCalls.isNotEmpty()) {
+                    val batches = AgentToolConcurrencyPolicy.partitionToolCalls(
+                        validatedCalls,
+                        parsedArgsMap
                     )
-                    callback.onToolCallStart(toolCall.function.name, toolCall.id, parsedArgs)
-                    val result = try {
-                        supervisorScope {
-                            val deferred = async {
-                                toolRouter.execute(
-                                    toolCall = toolCall,
-                                    args = parsedArgs,
-                                    runtimeDescriptor = descriptor,
+                    logInfo(
+                        tag,
+                        "round=$round batches=${batches.size} " +
+                            batches.joinToString(separator = ",") { batch ->
+                                "${if (batch.parallel) "P" else "S"}${batch.calls.size}"
+                            }
+                    )
+
+                    batchLoop@ for (batch in batches) {
+                        val batchResults: List<Pair<AssistantToolCall, ToolExecutionResult>>
+                        if (batch.parallel && batch.calls.size > 1) {
+                            // Parallel batch: launch async per call. callback.onToolCallStart /
+                            // onToolCallComplete fire from inside each async (lets UI update each
+                            // card independently). State mutation + memory append happen serially
+                            // below to preserve ToolCall ↔ ToolMessage pairing order.
+                            batchResults = coroutineScope {
+                                batch.calls.map { call ->
+                                    async {
+                                        val desc = descriptorMap.getValue(call.id)
+                                        val args = parsedArgsMap.getValue(call.id)
+                                        val result = executeSingleTool(
+                                            env = input.executionEnv,
+                                            callback = callback,
+                                            toolCall = call,
+                                            descriptor = desc,
+                                            parsedArgs = args
+                                        )
+                                        callback.onToolCallComplete(call.function.name, result)
+                                        call to result
+                                    }
+                                }.awaitAll()
+                            }
+                        } else {
+                            // Serial batch (single call or barrier).
+                            val singles = mutableListOf<Pair<AssistantToolCall, ToolExecutionResult>>()
+                            for (call in batch.calls) {
+                                val desc = descriptorMap.getValue(call.id)
+                                val args = parsedArgsMap.getValue(call.id)
+                                val result = executeSingleTool(
                                     env = input.executionEnv,
                                     callback = callback,
-                                    toolHandle = toolHandle
+                                    toolCall = call,
+                                    descriptor = desc,
+                                    parsedArgs = args
                                 )
+                                callback.onToolCallComplete(call.function.name, result)
+                                singles.add(call to result)
                             }
-                            toolHandle.bindExecutionJob(deferred)
-                            deferred.await()
+                            batchResults = singles
                         }
-                    } catch (error: CancellationException) {
-                        if (toolHandle.isManualStopRequested()) {
-                            buildInterruptedToolResult(
-                                toolName = toolCall.function.name,
-                                toolHandle = toolHandle
+
+                        var breakBatchLoopAfterPost = false
+                        // Phase C — serial post-process: write results back to memory in
+                        // original call order, accumulate UI state, honor stop conditions.
+                        for ((call, result) in batchResults) {
+                            val desc = descriptorMap.getValue(call.id)
+                            val args = parsedArgsMap.getValue(call.id)
+                            executedTools.add(result)
+                            val failureLearning = buildFailureLearningPayload(
+                                env = input.executionEnv,
+                                toolCall = call,
+                                descriptor = desc,
+                                argumentsJson = args.toString(),
+                                result = result
                             )
-                        } else {
-                            throw error
+                            appendToolResultMessage(
+                                memory = memory,
+                                toolCall = call,
+                                descriptor = desc,
+                                result = result,
+                                failureLearning = failureLearning
+                            )
+
+                            if (eventAdapter.hasUserVisibleOutput(result)) {
+                                hasUserFacingOutput = true
+                            }
+                            val mappedKind = eventAdapter.mapOutputKind(result)
+                            if (mappedKind != AgentOutputKind.NONE) {
+                                outputKind = mappedKind
+                            }
+                            if (eventAdapter.isConversationStoppingResult(result)) {
+                                terminated = true
+                                break@roundLoop
+                            }
+                            if (
+                                call.function.name == "terminal_execute" ||
+                                call.function.name == "android_privileged_action" ||
+                                call.function.name == "android_privileged_session_start" ||
+                                call.function.name == "android_privileged_session_exec" ||
+                                call.function.name == "android_privileged_session_read" ||
+                                call.function.name == "android_privileged_session_stop"
+                            ) {
+                                breakBatchLoopAfterPost = true
+                            }
                         }
-                    } finally {
-                        toolHandle.complete()
-                    }
-
-                    executedTools.add(result)
-                    val failureLearning = buildFailureLearningPayload(
-                        env = input.executionEnv,
-                        toolCall = toolCall,
-                        descriptor = descriptor,
-                        argumentsJson = parsedArgs.toString(),
-                        result = result
-                    )
-                    callback.onToolCallComplete(toolCall.function.name, result)
-                    appendToolResultMessage(
-                        messages = messages,
-                        toolCall = toolCall,
-                        descriptor = descriptor,
-                        result = result,
-                        failureLearning = failureLearning
-                    )
-
-                    if (eventAdapter.hasUserVisibleOutput(result)) {
-                        hasUserFacingOutput = true
-                    }
-                    val mappedKind = eventAdapter.mapOutputKind(result)
-                    if (mappedKind != AgentOutputKind.NONE) {
-                        outputKind = mappedKind
-                    }
-
-                    if (eventAdapter.isConversationStoppingResult(result)) {
-                        terminated = true
-                        break@roundLoop
-                    }
-                    if (
-                        toolCall.function.name == "terminal_execute" ||
-                        toolCall.function.name == "android_privileged_action" ||
-                        toolCall.function.name == "android_privileged_session_start" ||
-                        toolCall.function.name == "android_privileged_session_exec" ||
-                        toolCall.function.name == "android_privileged_session_read" ||
-                        toolCall.function.name == "android_privileged_session_stop"
-                    ) {
-                        break
+                        if (breakBatchLoopAfterPost) {
+                            break@batchLoop
+                        }
                     }
                 }
 
@@ -398,8 +427,49 @@ class AgentOrchestrator(
         return finalResult
     }
 
+    private suspend fun executeSingleTool(
+        env: AgentExecutionEnvironment,
+        callback: AgentCallback,
+        toolCall: AssistantToolCall,
+        descriptor: AgentToolRegistry.RuntimeToolDescriptor,
+        parsedArgs: JsonObject
+    ): ToolExecutionResult {
+        val toolHandle = env.runControl.beginToolExecution(
+            toolName = toolCall.function.name,
+            toolCallId = toolCall.id
+        )
+        callback.onToolCallStart(toolCall.function.name, toolCall.id, parsedArgs)
+        return try {
+            coroutineScope {
+                val deferred = async {
+                    toolRouter.execute(
+                        toolCall = toolCall,
+                        args = parsedArgs,
+                        runtimeDescriptor = descriptor,
+                        env = env,
+                        callback = callback,
+                        toolHandle = toolHandle
+                    )
+                }
+                toolHandle.bindExecutionJob(deferred)
+                deferred.await()
+            }
+        } catch (error: CancellationException) {
+            if (toolHandle.isManualStopRequested()) {
+                buildInterruptedToolResult(
+                    toolName = toolCall.function.name,
+                    toolHandle = toolHandle
+                )
+            } else {
+                throw error
+            }
+        } finally {
+            toolHandle.complete()
+        }
+    }
+
     private fun appendToolResultMessage(
-        messages: MutableList<ChatCompletionMessage>,
+        memory: AgentChatMemory,
         toolCall: AssistantToolCall,
         descriptor: AgentToolRegistry.RuntimeToolDescriptor,
         result: ToolExecutionResult,
@@ -429,7 +499,7 @@ class AgentOrchestrator(
             JsonPrimitive(textContent)
         }
 
-        messages.add(
+        memory.add(
             ChatCompletionMessage(
                 role = "tool",
                 toolCallId = toolCall.id,

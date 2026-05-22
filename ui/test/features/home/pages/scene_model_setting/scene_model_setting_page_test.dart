@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:ui/features/home/pages/codex/codex_setting_page.dart';
 import 'package:ui/features/home/pages/scene_model_setting/scene_model_setting_page.dart';
 import 'package:ui/l10n/generated/app_localizations.dart';
 import 'package:ui/services/assists_core_service.dart';
@@ -226,7 +227,7 @@ void main() {
     expect(codexWriteCount, 0);
   });
 
-  testWidgets('codex config autosaves after fields are complete', (
+  testWidgets('codex setting page autosaves after fields are complete', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1080, 2200);
@@ -234,7 +235,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(buildTestApp(const SceneModelSettingPage()));
+    await tester.pumpWidget(buildTestApp(const CodexSettingPage()));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
@@ -257,7 +258,11 @@ void main() {
       'baseUrl': 'https://new.example/v1',
       'model': 'gpt-5.6',
       'apiKey': 'new-key',
+      'remoteEnabled': false,
+      'remoteBridgeUrl': '',
+      'remoteBridgeToken': '',
+      'remoteCwd': '',
     });
-    expect(find.text('已自动保存，请重启软件以应用 Codex 配置。'), findsOneWidget);
+    expect(find.text('已自动保存，将使用本地 Alpine Codex。'), findsOneWidget);
   });
 }

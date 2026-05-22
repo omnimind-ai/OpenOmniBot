@@ -1119,8 +1119,9 @@ class _ChatBotSheetState extends State<ChatBotSheet>
     setState(() {
       _isSubmittingVlmReply = true;
     });
-    final success = await AssistsMessageService.provideUserInputToVLMTask(
-      reply,
+    final success = await AssistsMessageService.continueVLMTaskPrompt(
+      question: _vlmInfoQuestion,
+      userInput: reply,
     );
     if (!mounted) return;
     setState(() {
@@ -2462,6 +2463,9 @@ class _ChatBotSheetState extends State<ChatBotSheet>
   }
 
   Widget _buildVlmInfoPrompt() {
+    final isTakeover = AssistsMessageService.isVlmManualTakeoverPrompt(
+      _vlmInfoQuestion,
+    );
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(12),
@@ -2474,11 +2478,17 @@ class _ChatBotSheetState extends State<ChatBotSheet>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            AppTextLocalizer.choose(
-              zh: '需要你的确认',
-              en: 'Need your confirmation',
-              locale: Localizations.localeOf(context),
-            ),
+            isTakeover
+                ? AppTextLocalizer.choose(
+                    zh: '人工接管中',
+                    en: 'Manual takeover',
+                    locale: Localizations.localeOf(context),
+                  )
+                : AppTextLocalizer.choose(
+                    zh: '需要你的确认',
+                    en: 'Need your confirmation',
+                    locale: Localizations.localeOf(context),
+                  ),
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -2490,48 +2500,52 @@ class _ChatBotSheetState extends State<ChatBotSheet>
             _vlmInfoQuestion ?? '',
             style: const TextStyle(fontSize: 13, color: Color(0xFF1D3E7B)),
           ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _vlmAnswerController,
-            maxLines: 2,
-            decoration: InputDecoration(
-              hintText: AppTextLocalizer.choose(
-                zh: '可选：补充你的操作说明，默认发送“已完成操作，继续执行”',
-                en: 'Optional: add details. Default sends: Completed action, continue execution',
-                locale: Localizations.localeOf(context),
+          if (!isTakeover) ...[
+            const SizedBox(height: 10),
+            TextField(
+              controller: _vlmAnswerController,
+              maxLines: 2,
+              decoration: InputDecoration(
+                hintText: AppTextLocalizer.choose(
+                  zh: '可选：补充你的操作说明，默认发送“已完成操作，继续执行”',
+                  en: 'Optional: add details. Default sends: Completed action, continue execution',
+                  locale: Localizations.localeOf(context),
+                ),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                border: const OutlineInputBorder(),
               ),
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
-              border: const OutlineInputBorder(),
             ),
-          ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _isSubmittingVlmReply ? null : _dismissVlmInfo,
-                  child: Text(
-                    AppTextLocalizer.choose(
-                      zh: '稍后再说',
-                      en: 'Later',
-                      locale: Localizations.localeOf(context),
+              if (!isTakeover) ...[
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _isSubmittingVlmReply ? null : _dismissVlmInfo,
+                    child: Text(
+                      AppTextLocalizer.choose(
+                        zh: '稍后再说',
+                        en: 'Later',
+                        locale: Localizations.localeOf(context),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
+                const SizedBox(width: 12),
+              ],
               Expanded(
                 child: ElevatedButton(
                   onPressed: _isSubmittingVlmReply ? null : _onSubmitVlmInfo,
                   child: Text(
                     _isSubmittingVlmReply
                         ? AppTextLocalizer.choose(
-                            zh: '发送中...',
-                            en: 'Sending...',
+                            zh: isTakeover ? '恢复中...' : '发送中...',
+                            en: isTakeover ? 'Resuming...' : 'Sending...',
                             locale: Localizations.localeOf(context),
                           )
                         : AppTextLocalizer.choose(

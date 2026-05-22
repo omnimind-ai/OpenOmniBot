@@ -16,7 +16,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class ContextToolHandler(
     private val helper: SharedHelper
 ) : ToolHandler {
-    override val toolNames: Set<String> = setOf("context_apps_query", "context_time_now")
+    override val toolNames: Set<String> = setOf("context_apps_query")
 
     override suspend fun execute(
         toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
@@ -28,7 +28,6 @@ class ContextToolHandler(
     ): ToolExecutionResult {
         return when (toolCall.function.name) {
             "context_apps_query" -> executeContextAppsQuery(args, env.runtimeContextRepository, callback)
-            "context_time_now" -> executeContextTimeNow(args, callback)
             else -> ToolExecutionResult.Error(toolCall.function.name, "Unknown context tool")
         }
     }
@@ -76,46 +75,6 @@ class ContextToolHandler(
             throw e
         } catch (error: Exception) {
             helper.errorResult(toolName, error.message, "查询已安装应用失败")
-        }
-    }
-
-    private suspend fun executeContextTimeNow(
-        args: JsonObject,
-        callback: AgentCallback
-    ): ToolExecutionResult {
-        val toolName = "context_time_now"
-        return try {
-            helper.reportToolProgress(callback, toolName, "正在查询当前时间")
-            helper.ensureRunActive()
-            val timezoneArg = args["timezone"]?.jsonPrimitive?.contentOrNull?.trim()
-            val zoneId = timezoneArg
-                ?.takeIf { it.isNotEmpty() }
-                ?.let { value ->
-                    runCatching { java.time.ZoneId.of(value) }.getOrElse {
-                        throw IllegalArgumentException("Invalid timezone: $value")
-                    }
-                } ?: java.time.ZoneId.systemDefault()
-            val now = java.time.ZonedDateTime.now(zoneId)
-            val payload = linkedMapOf<String, Any?>(
-                "timezone" to zoneId.id,
-                "epochMillis" to now.toInstant().toEpochMilli(),
-                "iso8601" to now.format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                "date" to now.toLocalDate().toString(),
-                "time" to now.toLocalTime().format(java.time.format.DateTimeFormatter.ISO_LOCAL_TIME),
-                "dayOfWeek" to now.dayOfWeek.name
-            )
-            val payloadJson = helper.encodeLocalizedPayload(payload)
-            ToolExecutionResult.ContextResult(
-                toolName = toolName,
-                summaryText = helper.localized("当前时间：${payload["iso8601"]}"),
-                previewJson = payloadJson,
-                rawResultJson = payloadJson,
-                success = true
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (error: Exception) {
-            helper.errorResult(toolName, error.message, "查询当前时间失败")
         }
     }
 }

@@ -213,8 +213,9 @@ mixin ChatMessageHandler<T extends StatefulWidget> on State<T> {
     setState(() {
       isSubmittingVlmReply = true;
     });
-    final success = await AssistsMessageService.provideUserInputToVLMTask(
-      reply,
+    final success = await AssistsMessageService.continueVLMTaskPrompt(
+      question: vlmInfoQuestion,
+      userInput: reply,
     );
     if (!mounted) return;
     setState(() {

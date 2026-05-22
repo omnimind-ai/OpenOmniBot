@@ -95,17 +95,10 @@ class OobFunctionToolHandler(
     ): cn.com.omnimind.bot.agent.ToolExecutionResult {
         val toolName = toolCall.function.name
         val argsMap = helper.jsonObjectToMap(args)
-        val targetTool = callToolTargetTool(argsMap, emptyMap())
-        val targetArgs = callToolArguments(argsMap)
-        val functionId = firstNonBlank(
-            callToolFunctionId(argsMap, emptyMap()),
-            if (RunLogReplayPolicy.isOmniflowFunctionTool(targetTool)) {
-                callToolFunctionId(targetArgs, emptyMap())
-            } else {
-                null
-            },
-            targetTool.takeIf { it.isNotEmpty() && getSpec(it) != null },
-        )
+        val callTool = resolveCallToolRequest(argsMap)
+        val targetTool = callTool.targetTool
+        val targetArgs = callTool.targetArgs
+        val functionId = callTool.functionId
 
         if (functionId.isNotEmpty()) {
             val spec = getSpec(functionId)
@@ -673,17 +666,10 @@ class OobFunctionToolHandler(
         callStack: List<String>,
     ): Map<String, Any?> {
         val args = stepArgs(step)
-        val targetTool = callToolTargetTool(args, step)
-        val targetArgs = callToolArguments(args)
-        val functionId = firstNonBlank(
-            callToolFunctionId(args, step),
-            if (RunLogReplayPolicy.isOmniflowFunctionTool(targetTool)) {
-                callToolFunctionId(targetArgs, emptyMap())
-            } else {
-                null
-            },
-            targetTool.takeIf { it.isNotEmpty() && getSpec(it) != null },
-        )
+        val callTool = resolveCallToolRequest(args, step)
+        val targetTool = callTool.targetTool
+        val targetArgs = callTool.targetArgs
+        val functionId = callTool.functionId
         if (functionId.isNotEmpty()) {
             val functionStep = LinkedHashMap<String, Any?>().apply {
                 putAll(step)
@@ -1047,6 +1033,28 @@ class OobFunctionToolHandler(
         }
     }
 
+    private fun resolveCallToolRequest(
+        args: Map<String, Any?>,
+        step: Map<String, Any?> = emptyMap(),
+    ): CallToolRequest {
+        val targetTool = callToolTargetTool(args, step)
+        val targetArgs = callToolArguments(args)
+        val functionId = firstNonBlank(
+            callToolFunctionId(args, step),
+            if (RunLogReplayPolicy.isOmniflowFunctionTool(targetTool)) {
+                callToolFunctionId(targetArgs, emptyMap())
+            } else {
+                null
+            },
+            targetTool.takeIf { it.isNotEmpty() && getSpec(it) != null },
+        )
+        return CallToolRequest(
+            targetTool = targetTool,
+            targetArgs = targetArgs,
+            functionId = functionId,
+        )
+    }
+
     private fun callToolFunctionId(
         args: Map<String, Any?>,
         step: Map<String, Any?>,
@@ -1358,6 +1366,12 @@ class OobFunctionToolHandler(
         "input",
         "goal",
         "tool_title",
+    )
+
+    private data class CallToolRequest(
+        val targetTool: String,
+        val targetArgs: Map<String, Any?>,
+        val functionId: String,
     )
 
     private companion object {

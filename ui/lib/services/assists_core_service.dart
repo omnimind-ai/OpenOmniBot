@@ -1264,6 +1264,8 @@ class AgentToolEventData {
   final String? interruptionReason;
   final List<Map<String, dynamic>> artifacts;
   final List<Map<String, dynamic>> actions;
+  final String subagentStatusText;
+  final List<Map<String, dynamic>> subagentEvents;
   final bool success;
 
   const AgentToolEventData({
@@ -1290,6 +1292,8 @@ class AgentToolEventData {
     this.interruptionReason,
     this.artifacts = const [],
     this.actions = const [],
+    this.subagentStatusText = '',
+    this.subagentEvents = const [],
     this.success = true,
   });
 
@@ -1325,8 +1329,28 @@ class AgentToolEventData {
           .whereType<Map>()
           .map((item) => item.map((k, v) => MapEntry(k.toString(), v)))
           .toList(),
+      subagentStatusText: (raw['subagentStatusText'] ?? '').toString(),
+      subagentEvents: _readSubagentEvents(
+        raw['subagentEvents'] ?? raw['subagentEvent'],
+      ),
       success: raw['success'] != false,
     );
+  }
+
+  static List<Map<String, dynamic>> _readSubagentEvents(dynamic value) {
+    final rawEvents = value is List
+        ? value
+        : value is Map
+        ? <dynamic>[value]
+        : const <dynamic>[];
+    return rawEvents
+        .whereType<Map>()
+        .map(
+          (item) => item.map<String, dynamic>(
+            (key, value) => MapEntry(key.toString(), value),
+          ),
+        )
+        .toList(growable: false);
   }
 }
 
@@ -2667,6 +2691,25 @@ class AssistsMessageService {
       print('提供用户输入失败: ${e.message}');
       return false;
     }
+  }
+
+  static bool isVlmManualTakeoverPrompt(String? question) {
+    final normalized = question?.trim().toLowerCase() ?? '';
+    if (normalized.isEmpty) return false;
+    return normalized.contains('已接管控制') ||
+        normalized.contains('用户已接管') ||
+        (normalized.contains('takeover') && normalized.contains('continue')) ||
+        (normalized.contains('taken over') && normalized.contains('continue'));
+  }
+
+  static Future<bool> continueVLMTaskPrompt({
+    required String? question,
+    required String userInput,
+  }) {
+    if (isVlmManualTakeoverPrompt(question)) {
+      return resumeVLMTask();
+    }
+    return provideUserInputToVLMTask(userInput);
   }
 
   static Future<bool> pauseVLMTask() async {

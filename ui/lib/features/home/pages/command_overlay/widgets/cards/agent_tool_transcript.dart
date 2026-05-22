@@ -968,7 +968,7 @@ IconData _iconForToolKind(AgentToolActivityKind kind) {
     AgentToolActivityKind.thinking => Icons.psychology_alt_outlined,
     AgentToolActivityKind.browser => Icons.public_rounded,
     AgentToolActivityKind.research => Icons.travel_explore_rounded,
-    AgentToolActivityKind.vlm => Icons.touch_app_rounded,
+    AgentToolActivityKind.vlm => Icons.visibility_rounded,
     AgentToolActivityKind.terminal => Icons.terminal_rounded,
     AgentToolActivityKind.workspace => Icons.folder_open_rounded,
     AgentToolActivityKind.workbench => Icons.dashboard_customize_rounded,

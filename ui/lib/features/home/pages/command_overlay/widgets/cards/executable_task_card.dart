@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/command_overlay/services/executable_task_service.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/special_permission.dart';
+import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 
 import 'card_widget_factory.dart';
@@ -66,6 +67,8 @@ class _ExecutableTaskCardState extends State<ExecutableTaskCard> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
     // 优先从 cardData 中获取 instruction（来自 dispatchResult），否则从 suggestion 获取
     final suggestion = widget.cardData['suggestion'] as Map<String, dynamic>?;
     final instruction =
@@ -78,7 +81,7 @@ class _ExecutableTaskCardState extends State<ExecutableTaskCard> {
     return Container(
       margin: const EdgeInsets.fromLTRB(0, 0, 0, 16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FCFF), // 和 chatbot 背景色一致
+        color: isDark ? palette.pageBackground : const Color(0xFFF9FCFF),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Padding(
