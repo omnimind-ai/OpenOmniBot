@@ -102,59 +102,52 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
 
   /// 构建输入框内容区域（按钮、文本框等）
   Widget _buildInputContent() {
-    return ValueListenableBuilder<bool>(
-      valueListenable: _hasTextNotifier,
-      builder: (context, hasText, _) {
-        return ValueListenableBuilder<bool>(
-          valueListenable: _isFocusedNotifier,
-          builder: (context, _, _) {
-            final openClawButton = _buildOpenClawButton();
-            final hasPayload = hasText || widget.attachments.isNotEmpty;
-            return Row(
-              children: [
-                Expanded(child: _buildTextField()),
-                const SizedBox(width: 9),
-                _buildAnimatedButtonRow(
-                  hasText: hasPayload,
-                  openClawButton: openClawButton,
-                ),
-              ],
-            );
-          },
+    return ValueListenableBuilder<_ComposerInteractionState>(
+      valueListenable: _composerStateNotifier,
+      builder: (context, composerState, _) {
+        final openClawButton = _buildOpenClawButton();
+        final hasPayload =
+            composerState.hasText || widget.attachments.isNotEmpty;
+        return Row(
+          children: [
+            Expanded(child: _buildTextField()),
+            const SizedBox(width: 9),
+            _buildAnimatedButtonRow(
+              hasText: hasPayload,
+              openClawButton: openClawButton,
+            ),
+          ],
         );
       },
     );
   }
 
   Widget _buildLargeComposer() {
-    return ValueListenableBuilder<bool>(
-      valueListenable: _hasTextNotifier,
-      builder: (context, hasText, _) {
-        return ValueListenableBuilder<bool>(
-          valueListenable: _isFocusedNotifier,
-          builder: (context, _, _) {
-            final hasPayload = hasText || widget.attachments.isNotEmpty;
+    return ValueListenableBuilder<_ComposerInteractionState>(
+      valueListenable: _composerStateNotifier,
+      builder: (context, composerState, _) {
+        final hasPayload =
+            composerState.hasText || widget.attachments.isNotEmpty;
 
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (widget.attachments.isNotEmpty) ...[
-                  _buildAttachmentPreview(),
-                  const SizedBox(height: 8),
-                ],
-                if ((widget.selectedModelOverrideId ?? '')
-                    .trim()
-                    .isNotEmpty) ...[
-                  _buildSelectedModelOverrideChip(),
-                  const SizedBox(height: 8),
-                ],
-                _buildTextField(multiline: true),
-                const SizedBox(height: 6),
-                _buildLargeActionRow(hasPayload: hasPayload),
-              ],
-            );
-          },
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (widget.attachments.isNotEmpty) ...[
+              _buildAttachmentPreview(),
+              const SizedBox(height: 8),
+            ],
+            if ((widget.selectedModelOverrideId ?? '').trim().isNotEmpty) ...[
+              _buildSelectedModelOverrideChip(),
+              const SizedBox(height: 8),
+            ],
+            _buildTextField(
+              multiline: true,
+              expanded: composerState.expandsTextField,
+            ),
+            const SizedBox(height: 6),
+            _buildLargeActionRow(hasPayload: hasPayload),
+          ],
         );
       },
     );
@@ -358,10 +351,11 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
         if (!_isComposerHovered) return;
         setState(() => _isComposerHovered = false);
       },
-      child: ValueListenableBuilder<bool>(
-        valueListenable: _isFocusedNotifier,
+      child: ValueListenableBuilder<_ComposerInteractionState>(
+        valueListenable: _composerStateNotifier,
         child: content,
-        builder: (context, focused, child) {
+        builder: (context, composerState, child) {
+          final focused = composerState.hasFocus;
           final inputSurfaceColor = context.isDarkTheme
               ? palette.surfacePrimary
               : const Color(0xFFF9FCFF);
@@ -430,7 +424,7 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
                         child: AnimatedSize(
                           duration: const Duration(milliseconds: 220),
                           curve: Curves.easeOutCubic,
-                          alignment: Alignment.topCenter,
+                          alignment: Alignment.bottomCenter,
                           child: child ?? const SizedBox.shrink(),
                         ),
                       ),
@@ -847,12 +841,16 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
   }
 
   /// 统一的输入框组件
-  Widget _buildTextField({bool multiline = false}) {
+  Widget _buildTextField({bool multiline = false, bool expanded = false}) {
     final palette = context.omniPalette;
-    final keyboardType = multiline
+    final useKeyboardNewline =
+        multiline &&
+        widget.useIndependentSendButton &&
+        StorageService.isIndependentChatSendButtonEnabled();
+    final keyboardType = useKeyboardNewline
         ? TextInputType.multiline
         : TextInputType.text;
-    final textInputAction = multiline
+    final textInputAction = useKeyboardNewline
         ? TextInputAction.newline
         : TextInputAction.send;
     final textColor = context.isDarkTheme
@@ -867,6 +865,8 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
       color: textColor,
       letterSpacing: 0.333,
     );
+    final minLines = multiline ? (expanded ? 2 : 1) : 1;
+    final maxLines = multiline ? 3 : 1;
     return GestureDetector(
       onTap: () {
         widget.focusNode.requestFocus();
@@ -879,10 +879,10 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
           scrollController: _textFieldScrollController,
           keyboardType: keyboardType,
           textInputAction: textInputAction,
-          minLines: 1,
-          maxLines: multiline ? 2 : 1,
+          minLines: minLines,
+          maxLines: maxLines,
           scrollPhysics: const ClampingScrollPhysics(),
-          onSubmitted: multiline
+          onSubmitted: useKeyboardNewline
               ? null
               : (_) {
                   if (widget.controller.text.trim().isNotEmpty) {

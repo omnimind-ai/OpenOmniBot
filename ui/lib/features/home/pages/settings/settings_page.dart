@@ -8,10 +8,8 @@ import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/features/local_model/local_model_feature.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/assists_core_service.dart';
-import 'package:ui/services/hide_from_recents_service.dart';
 import 'package:ui/services/mcp_server_service.dart';
 import 'package:ui/services/special_permission.dart';
-import 'package:ui/services/storage_service.dart';
 import 'package:ui/services/workspace_memory_service.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -26,7 +24,6 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  bool hideFromRecentsEnabled = false;
   bool _mcpEnabled = false;
   bool _mcpLoaded = false;
   bool _mcpBusy = false;
@@ -38,7 +35,6 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
-    _loadHideFromRecentsState();
     _loadMcpServerState();
     _loadWorkspaceMemoryState();
     _configChangedSubscription = AssistsMessageService
@@ -55,34 +51,6 @@ class _SettingsPageState extends State<SettingsPage> {
   void dispose() {
     _configChangedSubscription?.cancel();
     super.dispose();
-  }
-
-  Future<void> _loadHideFromRecentsState() async {
-    try {
-      final enabled =
-          StorageService.getBool('hide_from_recents', defaultValue: false) ??
-          false;
-      setState(() {
-        hideFromRecentsEnabled = enabled;
-      });
-    } catch (e) {
-      debugPrint('Error loading hide from recents state: $e');
-    }
-  }
-
-  Future<void> _onHideFromRecentsChanged(bool value) async {
-    setState(() {
-      hideFromRecentsEnabled = value;
-    });
-
-    final success = await HideFromRecentsService.setExcludeFromRecents(value);
-    if (!success) {
-      if (!mounted) return;
-      setState(() {
-        hideFromRecentsEnabled = !value;
-      });
-      showToast(context.l10n.settingsHideRecentsFailed, type: ToastType.error);
-    }
   }
 
   Future<void> _loadMcpServerState() async {
@@ -362,14 +330,12 @@ class _SettingsPageState extends State<SettingsPage> {
             },
           ),
           _SettingItem(
-            icon: Icons.visibility_off_outlined,
-            iconSvg: 'assets/home/hide_recents_setting_icon.svg',
-            title: context.l10n.settingsHideRecentsTitle,
-            subtitle: context.l10n.settingsHideRecentsSubtitle,
-            trailing: _buildSwitchTrailing(
-              value: hideFromRecentsEnabled,
-              onToggle: _onHideFromRecentsChanged,
-            ),
+            icon: Icons.terminal_rounded,
+            title: 'Codex',
+            subtitle: context.trLegacy('本地 Alpine 与远程 PC Bridge'),
+            onTap: () {
+              GoRouterManager.push('/home/codex_setting');
+            },
           ),
         ],
       ),
@@ -388,7 +354,7 @@ class _SettingsPageState extends State<SettingsPage> {
             icon: Icons.more_horiz_rounded,
             iconSvg: 'assets/home/misc_blocks_setting_icon.svg',
             title: context.trLegacy('杂项'),
-            subtitle: context.trLegacy('闹钟、振动、自动回聊天与打开方式'),
+            subtitle: context.trLegacy('首页、后台隐藏、闹钟、振动与打开方式'),
             onTap: () {
               GoRouterManager.push('/home/experience_misc_setting');
             },

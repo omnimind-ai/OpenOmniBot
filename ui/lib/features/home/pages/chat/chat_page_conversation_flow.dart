@@ -5,6 +5,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     final conversationId = _currentConversationId;
     final cardData = message.cardData;
     if (conversationId == null ||
+        isEphemeralConversation(conversationId, activeConversationModeValue) ||
         message.type != 2 ||
         cardData?['type'] != 'deep_thinking') {
       return;
@@ -333,11 +334,116 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     );
   }
 
+  bool _hasConfiguredNormalChatProviderModel({
+    List<ModelProviderProfileSummary>? profiles,
+    Map<String, List<ProviderModelOption>>? modelOptionsByProfileId,
+    List<SceneCatalogItem>? sceneCatalog,
+  }) {
+    final profileSource = profiles ?? _modelProviderProfiles;
+    final optionsSource = modelOptionsByProfileId ?? _modelOptionsByProfileId;
+    final catalogSource = sceneCatalog ?? _sceneCatalog;
+    final configuredProfileIds = profileSource
+        .where((profile) => profile.configured)
+        .map((profile) => profile.id)
+        .toSet();
+    if (configuredProfileIds.isEmpty) {
+      return false;
+    }
+
+    for (final profileId in configuredProfileIds) {
+      final models = optionsSource[profileId] ?? const <ProviderModelOption>[];
+      if (models.any((model) => model.id.trim().isNotEmpty)) {
+        return true;
+      }
+    }
+
+    for (final scene in catalogSource) {
+      final providerProfileId = scene.effectiveProviderProfileId.trim();
+      if (!scene.providerConfigured ||
+          !configuredProfileIds.contains(providerProfileId)) {
+        continue;
+      }
+      if (scene.effectiveModel.trim().isNotEmpty) {
+        return true;
+      }
+    }
+
+    final override = _activeConversationModelOverrideSelection;
+    return override != null &&
+        configuredProfileIds.contains(override.providerProfileId) &&
+        override.modelId.trim().isNotEmpty;
+  }
+
+  @override
+  Future<bool> _ensureNormalChatModelConfigurationForSend() async {
+    if (_activeMode != ChatPageMode.normal || _isOpenClawSurface) {
+      return true;
+    }
+    if (_hasConfiguredNormalChatProviderModel()) {
+      return true;
+    }
+    if (_isCheckingSendModelConfiguration) {
+      return false;
+    }
+
+    _isCheckingSendModelConfiguration = true;
+    try {
+      final results = await Future.wait<dynamic>([
+        ModelProviderConfigService.loadModelGroups(),
+        SceneModelConfigService.getSceneCatalog(),
+      ]);
+      if (!mounted) {
+        return false;
+      }
+
+      final groups = results[0] as List<ProviderModelGroup>;
+      final catalog = results[1] as List<SceneCatalogItem>;
+      final profiles = groups.map((group) => group.profile).toList();
+      final source = <String, List<ProviderModelOption>>{
+        for (final group in groups)
+          group.profile.id: List<ProviderModelOption>.from(group.models),
+      };
+      final mergedOptions = _mergeChatModelOptions(
+        profiles: profiles,
+        source: source,
+        sceneCatalog: catalog,
+        overrideSelection: _activeConversationModelOverrideSelection,
+      );
+      final hasConfiguredModel = _hasConfiguredNormalChatProviderModel(
+        profiles: profiles,
+        modelOptionsByProfileId: mergedOptions,
+        sceneCatalog: catalog,
+      );
+
+      setState(() {
+        _modelProviderProfiles = profiles;
+        _modelOptionsByProfileId = mergedOptions;
+        _sceneCatalog = catalog;
+      });
+      if (hasConfiguredModel) {
+        return true;
+      }
+    } catch (e) {
+      debugPrint('检查聊天模型配置失败: $e');
+    } finally {
+      _isCheckingSendModelConfiguration = false;
+    }
+
+    if (mounted) {
+      showToast(
+        LegacyTextLocalizer.localize('请先配置ai服务商和模型'),
+        type: ToastType.warning,
+      );
+    }
+    return false;
+  }
+
   @override
   Future<void> _sendMessage({String? text}) async {
     final messageText = (text ?? _messageController.text).trim();
     final hasAttachments = _pendingAttachments.isNotEmpty;
     if ((messageText.isEmpty && !hasAttachments) || _isAiResponding) return;
+    if (!await _ensureNormalChatModelConfigurationForSend()) return;
 
     final attachments = _pendingAttachments
         .map((item) => item.toMap())
@@ -402,6 +508,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       _showOpenClawCommandPanel(expand: true);
       return;
     }
+    if (!await _ensureNormalChatModelConfigurationForSend()) return;
 
     _inputFocusNode.unfocus();
     final messageIds = addUserMessage(messageText, attachments: attachments);
@@ -536,7 +643,8 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     }
 
     final conversationId = _currentConversationId;
-    if (conversationId != null) {
+    if (conversationId != null &&
+        !isEphemeralConversation(conversationId, activeConversationModeValue)) {
       await ConversationHistoryService.saveConversationMessages(
         conversationId,
         List<ChatMessageModel>.from(_messages),
@@ -774,19 +882,6 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
   }
 
   @override
-  List<Map<String, dynamic>> _historyBeforeLatestUser(
-    List<Map<String, dynamic>> history,
-  ) {
-    if (history.isEmpty) return history;
-    final normalized = List<Map<String, dynamic>>.from(history);
-    final last = normalized.last;
-    if ((last['role'] as String?) == 'user') {
-      normalized.removeLast();
-    }
-    return normalized;
-  }
-
-  @override
   Future<List<Map<String, dynamic>>> _latestUserAttachments() async {
     for (final message in _messages) {
       if (message.user != 1) continue;
@@ -891,6 +986,8 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
             _currentDispatchTaskId ?? _activeRuntime?.lastAgentTaskId;
         if (taskId != null) {
           _runtimeCoordinator.unregisterTask(taskId);
+          _upsertCancelledAgentRunMessage(taskId);
+          _collapseAgentRunTrace(taskId);
         }
         setState(() {
           _isAiResponding = false;
@@ -940,6 +1037,8 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     AssistsMessageService.cancelRunningTask(taskId: taskId);
     if (taskId != null) {
       _updateThinkingCardToCancelled(taskId);
+      _upsertCancelledAgentRunMessage(taskId);
+      _collapseAgentRunTrace(taskId);
       _runtimeCoordinator.unregisterTask(taskId);
     }
     clearAgentStreamSessionState();
@@ -953,6 +1052,8 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       AssistsMessageService.cancelRunningTask(taskId: taskId);
       _runtimeCoordinator.unregisterTask(taskId);
       _updateThinkingCardToCancelled(taskId);
+      _upsertCancelledAgentRunMessage(taskId);
+      _collapseAgentRunTrace(taskId);
       clearAgentStreamSessionState();
       resetDispatchState();
       setState(() {
@@ -996,6 +1097,72 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       );
     });
     _persistDeepThinkingCardIfNeeded(_messages[index]);
+  }
+
+  @override
+  void _collapseAgentRunTrace(String taskId) {
+    final normalizedTaskId = taskId.trim();
+    if (normalizedTaskId.isEmpty) {
+      return;
+    }
+    final expandedTaskIds = _expandedAgentRunTaskIdsForMode(_activeMode);
+    if (!expandedTaskIds.contains(normalizedTaskId)) {
+      return;
+    }
+    final nextTaskIds = Set<String>.from(expandedTaskIds)
+      ..remove(normalizedTaskId);
+    _updateExpandedAgentRunTaskIds(_activeMode, nextTaskIds);
+  }
+
+  void _upsertCancelledAgentRunMessage(String taskId) {
+    final normalizedTaskId = taskId.trim();
+    if (normalizedTaskId.isEmpty) {
+      return;
+    }
+    final messageId = '$normalizedTaskId-cancelled';
+    final text = LegacyTextLocalizer.localize('任务已取消');
+    final streamMeta = ensureAgentStreamMessageMeta(
+      null,
+      seq: 1000000000,
+      roundIndex: 1000000000,
+      kind: 'text_snapshot',
+      parentTaskId: normalizedTaskId,
+      entryId: messageId,
+      isFinal: true,
+    );
+    final content = <String, dynamic>{
+      'text': text,
+      'id': messageId,
+      'renderMarkdown': false,
+    };
+    final existingIndex = _messages.indexWhere(
+      (message) => message.id == messageId,
+    );
+    setState(() {
+      if (existingIndex == -1) {
+        _messages.insert(
+          0,
+          ChatMessageModel(
+            id: messageId,
+            type: 1,
+            user: 2,
+            content: content,
+            streamMeta: streamMeta,
+          ),
+        );
+      } else {
+        _messages[existingIndex] = _messages[existingIndex].copyWith(
+          content: content,
+          isLoading: false,
+          isError: false,
+          streamMeta: streamMeta,
+        );
+      }
+    });
+    if (_currentConversationId != null) {
+      _syncRuntimeSnapshotForMode(_activeMode);
+    }
+    unawaited(saveConversation());
   }
 
   @override

@@ -2,8 +2,11 @@ package cn.com.omnimind.bot.agent
 
 import cn.com.omnimind.assists.controller.http.HttpController
 import cn.com.omnimind.baselib.llm.ChatCompletionRequest
+import cn.com.omnimind.baselib.llm.ChatCompletionMessage
 import cn.com.omnimind.baselib.llm.ChatCompletionTurn
+import cn.com.omnimind.baselib.llm.DeepSeekProvider
 import cn.com.omnimind.baselib.llm.LocalModelProviderBridge
+import cn.com.omnimind.baselib.llm.ModelProviderConfigStore
 import cn.com.omnimind.baselib.llm.ReasoningStreamUpdatePolicy
 import cn.com.omnimind.baselib.util.OmniLog
 import kotlinx.coroutines.CompletableDeferred
@@ -69,7 +72,9 @@ class HttpAgentLlmClient(
         onContentUpdate: (suspend (String) -> Unit)?
     ): ChatCompletionTurn {
         val modelCandidates = buildModelCandidates(request.model)
-        val variants = buildRequestVariants(request)
+        val variants = buildRequestVariants(
+            sanitizeRequestForTarget(request)
+        )
         var lastFailure: StreamRequestFailure? = null
 
         for (modelIndex in modelCandidates.indices) {
@@ -404,6 +409,76 @@ class HttpAgentLlmClient(
             )
         }
         return variants
+    }
+
+    private fun sanitizeRequestForTarget(request: ChatCompletionRequest): ChatCompletionRequest {
+        if (shouldPreserveAllAssistantReasoning()) {
+            return request
+        }
+        val sanitizedMessages = request.messages.mapIndexed { index, message ->
+            if (
+                message.role != "assistant" ||
+                message.reasoningContent.isNullOrBlank() ||
+                shouldRetainAssistantReasoning(index, request.messages)
+            ) {
+                message
+            } else {
+                message.copy(reasoningContent = null)
+            }
+        }
+        return if (sanitizedMessages == request.messages) {
+            request
+        } else {
+            request.copy(messages = sanitizedMessages)
+        }
+    }
+
+    private fun shouldPreserveAllAssistantReasoning(): Boolean {
+        if (isOfficialDeepSeekTarget()) {
+            return true
+        }
+        return resolvedProtocolType() == DeepSeekProvider.PROTOCOL_TYPE
+    }
+
+    private fun shouldRetainAssistantReasoning(
+        assistantIndex: Int,
+        messages: List<ChatCompletionMessage>
+    ): Boolean {
+        val message = messages.getOrNull(assistantIndex) ?: return false
+        if (message.toolCalls?.isNotEmpty() == true) {
+            return true
+        }
+        for (index in assistantIndex + 1 until messages.size) {
+            when (messages[index].role) {
+                "tool" -> return true
+                "user" -> return false
+            }
+        }
+        return false
+    }
+
+    private fun isOfficialDeepSeekTarget(): Boolean {
+        if (modelOverride != null) {
+            return DeepSeekProvider.shouldUseOfficialAdapter(
+                protocolType = modelOverride.protocolType,
+                apiBase = modelOverride.apiBase
+            )
+        }
+        val profile = runCatching { ModelProviderConfigStore.getEditingProfile() }
+            .getOrNull()
+        return DeepSeekProvider.shouldUseOfficialAdapter(
+            protocolType = profile?.protocolType,
+            apiBase = profile?.baseUrl
+        )
+    }
+
+    private fun resolvedProtocolType(): String {
+        modelOverride?.protocolType
+            ?.let(DeepSeekProvider::normalizeProtocolType)
+            ?.let { return it }
+        return runCatching { ModelProviderConfigStore.getEditingProfile().protocolType }
+            .map(DeepSeekProvider::normalizeProtocolType)
+            .getOrDefault(DeepSeekProvider.normalizeProtocolType(null))
     }
 
     private fun toLegacyFunctionCall(toolChoice: JsonElement?): JsonElement? {

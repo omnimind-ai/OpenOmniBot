@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:ui/theme/theme_context.dart';
 import 'package:ui/widgets/image/cached_image.dart';
 
 class OpenClawAttachmentCard extends StatefulWidget {
@@ -26,6 +27,8 @@ class _OpenClawAttachmentCardState extends State<OpenClawAttachmentCard> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
     final attachment = widget.attachment;
     final mimeType = attachment['mimeType']?.toString() ?? '';
     final fileName = attachment['fileName']?.toString() ?? '';
@@ -45,8 +48,10 @@ class _OpenClawAttachmentCardState extends State<OpenClawAttachmentCard> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE0E0E0)),
-        color: const Color(0xFFF8F9FB),
+        border: Border.all(
+          color: isDark ? palette.borderSubtle : const Color(0xFFE0E0E0),
+        ),
+        color: isDark ? palette.surfaceSecondary : const Color(0xFFF8F9FB),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -60,7 +65,7 @@ class _OpenClawAttachmentCardState extends State<OpenClawAttachmentCard> {
                     ? Icons.image_outlined
                     : Icons.insert_drive_file_outlined,
                 size: 20,
-                color: const Color(0xFF6B7280),
+                color: isDark ? palette.textSecondary : const Color(0xFF6B7280),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -68,9 +73,9 @@ class _OpenClawAttachmentCardState extends State<OpenClawAttachmentCard> {
                   name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
-                    color: Color(0xFF353E53),
+                    color: palette.textPrimary,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -81,13 +86,13 @@ class _OpenClawAttachmentCardState extends State<OpenClawAttachmentCard> {
           if (metaText.isNotEmpty)
             Text(
               metaText,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF9AA0A6)),
+              style: TextStyle(fontSize: 12, color: palette.textTertiary),
             ),
           if (_downloading) const SizedBox(height: 8),
           if (_downloading)
-            const Text(
+            Text(
               '正在保存到本地…',
-              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+              style: TextStyle(fontSize: 12, color: palette.textSecondary),
             ),
           if (_saved) const SizedBox(height: 8),
           if (_saved)
@@ -99,7 +104,7 @@ class _OpenClawAttachmentCardState extends State<OpenClawAttachmentCard> {
           if (_saved && _savedPath.isNotEmpty)
             SelectableText(
               _savedPath,
-              style: const TextStyle(fontSize: 11, color: Color(0xFF9AA0A6)),
+              style: TextStyle(fontSize: 11, color: palette.textTertiary),
             ),
           if (_downloadError.isNotEmpty) const SizedBox(height: 8),
           if (_downloadError.isNotEmpty)
@@ -112,9 +117,9 @@ class _OpenClawAttachmentCardState extends State<OpenClawAttachmentCard> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   '链接：',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF9AA0A6)),
+                  style: TextStyle(fontSize: 12, color: palette.textTertiary),
                 ),
                 SelectableText(
                   _normalizeUrl(url),

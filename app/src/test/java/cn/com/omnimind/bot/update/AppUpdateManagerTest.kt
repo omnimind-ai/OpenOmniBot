@@ -30,6 +30,13 @@ class AppUpdateManagerTest {
     }
 
     @Test
+    fun apkDownloadSourceDefaultsLegacyCnbToWorker() {
+        assertEquals(ApkDownloadSource.WORKER, ApkDownloadSource.fromValue(null))
+        assertEquals(ApkDownloadSource.WORKER, ApkDownloadSource.fromValue("cnb"))
+        assertEquals(ApkDownloadSource.GITHUB, ApkDownloadSource.fromValue("github"))
+    }
+
+    @Test
     fun selectLatestReleaseHonorsBetaOptIn() {
         val stable = ReleaseCandidate(
             version = "1.6.2",
@@ -126,12 +133,32 @@ class AppUpdateManagerTest {
         )
 
         assertEquals(
-            "https://cnb.cool/o.a/OpenOmniBot/-/releases/download/v0.3.7.5/OpenOmniBot-v0.3.7.5.apk",
-            AppUpdateManager.resolveApkDownloadUrl(ApkDownloadSource.CNB, "0.3.7.5", asset)
+            "https://omni.1775885.xyz/downloads/v0.3.7.5/OpenOmniBot-v0.3.7.5.apk",
+            AppUpdateManager.resolveApkDownloadUrl(ApkDownloadSource.WORKER, "0.3.7.5", asset)
         )
         assertEquals(
             "https://github.com/omnimind-ai/OpenOmniBot/releases/download/v0.3.7.5/OpenOmniBot-v0.3.7.5.apk",
             AppUpdateManager.resolveApkDownloadUrl(ApkDownloadSource.GITHUB, "0.3.7.5", asset)
         )
     }
+
+    @Test
+    fun buildWorkerCheckUrlAddsClientSelectionParameters() {
+        val url = AppUpdateManager.buildWorkerCheckUrl(
+            workerUrl = "https://updates.example.workers.dev",
+            currentVersion = "v0.5.0.3",
+            includeBeta = true,
+            downloadSource = ApkDownloadSource.WORKER,
+            edition = "omniinfer"
+        )
+
+        assertEquals("https", url?.scheme)
+        assertEquals("updates.example.workers.dev", url?.host)
+        assertEquals("/updates", url?.encodedPath)
+        assertEquals("0.5.0.3", url?.queryParameter("currentVersion"))
+        assertEquals("true", url?.queryParameter("includeBeta"))
+        assertEquals("omniinfer", url?.queryParameter("edition"))
+        assertEquals("worker", url?.queryParameter("source"))
+    }
+
 }

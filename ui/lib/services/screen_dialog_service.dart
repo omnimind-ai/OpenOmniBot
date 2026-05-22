@@ -83,4 +83,26 @@ class ScreenDialogService {
       return false;
     }
   }
+
+  static Future<bool> hideForExternalActivity() async {
+    try {
+      final result = await _channel.invokeMethod('hideForExternalActivity');
+      return result == true;
+    } on PlatformException catch (e) {
+      print('Failed to hide dialog for external activity: ${e.message}');
+      return false;
+    }
+  }
+
+  static Future<bool> restoreAfterExternalActivity() async {
+    try {
+      final result = await _channel.invokeMethod(
+        'restoreAfterExternalActivity',
+      );
+      return result == true;
+    } on PlatformException catch (e) {
+      print('Failed to restore dialog after external activity: ${e.message}');
+      return false;
+    }
+  }
 }

@@ -33,10 +33,12 @@ class AgentLlmStreamAccumulator(
     private val reasoningBuffer = StringBuilder()
     private val inlineTextBuffer = StringBuilder()
     private val toolCallBuilders: SortedMap<Int, MutableToolCallBuilder> = TreeMap()
+    private var providerError: StreamProviderError? = null
     private var finishReason: String? = null
     private var usage: ChatCompletionUsage? = null
     private var decodeTokensPerSecond: Double? = null
     private var seenChunk = false
+    private var seenDoneSignal = false
     private var lastChunkPreview: String = ""
     private var thinkSectionOpen = false
     private var inlineThinkTagObserved = false
@@ -59,7 +61,10 @@ class AgentLlmStreamAccumulator(
     }
 
     private fun consumeSingleChunk(trimmed: String): Boolean {
-        if (trimmed == "[DONE]") return true
+        if (trimmed == "[DONE]") {
+            seenDoneSignal = true
+            return true
+        }
         val root = parseJsonObject(trimmed)
         if (root == null) {
             seenChunk = true
@@ -75,6 +80,9 @@ class AgentLlmStreamAccumulator(
         val prevReasoningLen = reasoningBuffer.length
         val prevToolCallCount = toolCallBuilders.size
 
+        extractProviderError(root)?.let { error ->
+            providerError = error
+        }
         usage = decodeUsage(root["usage"]) ?: usage
         decodeTokensPerSecond = decodeTimings(root["timings"]) ?: decodeTokensPerSecond
 
@@ -198,6 +206,24 @@ class AgentLlmStreamAccumulator(
 
     fun currentContent(): String = AgentTextSanitizer.sanitizeUtf16(contentBuffer.toString())
 
+    fun hasDoneSignal(): Boolean = seenDoneSignal
+
+    fun currentFinishReason(): String? = finishReason
+
+    fun hasUsagePayload(): Boolean = usage != null
+
+    fun hasAssistantPayload(): Boolean {
+        return contentBuffer.isNotEmpty() ||
+            reasoningBuffer.isNotEmpty() ||
+            toolCallBuilders.isNotEmpty()
+    }
+
+    fun canFinalizeOnClosed(): Boolean {
+        return hasDoneSignal() ||
+            !finishReason.isNullOrBlank() ||
+            (hasUsagePayload() && hasAssistantPayload())
+    }
+
     fun buildTurn(): ChatCompletionTurn {
         if (!seenChunk) {
             throw IllegalStateException("chat completion stream ended without chunks")
@@ -226,6 +252,9 @@ class AgentLlmStreamAccumulator(
             )
         }
         if (content.isBlank() && toolCalls.isEmpty()) {
+            providerError?.let { error ->
+                throw IllegalStateException(buildProviderErrorMessage(error))
+            }
             throw IllegalStateException(
                 "assistant turn has neither content nor tool_calls; finish_reason=${finishReason.orEmpty()}, last_chunk=$lastChunkPreview"
             )
@@ -237,7 +266,11 @@ class AgentLlmStreamAccumulator(
                 content = content.ifBlank { null }?.let(::JsonPrimitive),
                 toolCalls = toolCalls.ifEmpty { null },
                 reasoningContent = reasoning.takeIf {
-                    includeReasoningInAssistantMessage && it.isNotBlank()
+                    it.isNotBlank() && (
+                        includeReasoningInAssistantMessage ||
+                            toolCalls.isNotEmpty() ||
+                            finishReasonIndicatesToolCall(finishReason)
+                        )
                 }
             ),
             reasoning = reasoning,
@@ -249,7 +282,7 @@ class AgentLlmStreamAccumulator(
             TAG,
             "[stream done] chunks=$chunkIndex, content_len=${content.length}, " +
                 "reasoning_len=${reasoningBuffer.length}, tool_calls=${toolCalls.size}, " +
-                "finish=$finishReason" +
+                "finish=$finishReason, done=$seenDoneSignal" +
                 (turn.usage?.let { u ->
                     ", usage(prompt=${u.promptTokens}, completion=${u.completionTokens}, total=${u.totalTokens}" +
                         (u.decodeTokensPerSecond?.let { ", decode=${it}tok/s" }.orEmpty()) + ")"
@@ -264,6 +297,13 @@ class AgentLlmStreamAccumulator(
         var type: String? = null,
         var name: String? = null,
         val arguments: StringBuilder = StringBuilder()
+    )
+
+    private data class StreamProviderError(
+        val statusCode: Int? = null,
+        val code: String? = null,
+        val type: String? = null,
+        val message: String
     )
 
     private fun consumeChoice(choice: JsonObject): Boolean {
@@ -424,6 +464,35 @@ class AgentLlmStreamAccumulator(
     private fun decodeTimings(element: JsonElement?): Double? {
         val obj = element as? JsonObject ?: return null
         return obj["predicted_per_second"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
+    }
+
+    private fun extractProviderError(root: JsonObject): StreamProviderError? {
+        val errorObj = root["error"] as? JsonObject ?: return null
+        val message = extractText(errorObj["message"])
+            ?: extractText(errorObj["detail"])
+            ?: extractText(root["message"])
+            ?: return null
+        val statusCode = root["status_code"]?.jsonPrimitive?.intOrNull
+            ?: errorObj["status_code"]?.jsonPrimitive?.intOrNull
+        return StreamProviderError(
+            statusCode = statusCode,
+            code = extractText(errorObj["code"]),
+            type = extractText(errorObj["type"]),
+            message = message
+        )
+    }
+
+    private fun buildProviderErrorMessage(error: StreamProviderError): String {
+        val suffix = buildList {
+            error.statusCode?.let { add("status=$it") }
+            error.code?.takeIf { it.isNotBlank() }?.let { add("code=$it") }
+            error.type?.takeIf { it.isNotBlank() }?.let { add("type=$it") }
+        }.joinToString(", ")
+        return if (suffix.isBlank()) {
+            "provider stream returned error: ${error.message}"
+        } else {
+            "provider stream returned error ($suffix): ${error.message}"
+        }
     }
 
     private fun appendReasoningPayload(element: JsonElement?) {

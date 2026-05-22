@@ -120,6 +120,35 @@ void main() {
       containsAll(<String>['task-3-permission-card', 'task-3-permission-text']),
     );
   });
+
+  test(
+    'uses cancelled text as the visible body for a manually stopped run',
+    () {
+      final messages = <ChatMessageModel>[
+        _assistantMessage(
+          id: 'task-5-cancelled',
+          text: '任务已取消',
+          taskId: 'task-5',
+          kind: 'text_snapshot',
+          seq: 1000000000,
+          isFinal: true,
+        ),
+        _thinkingCard(id: 'task-5-thinking', taskId: 'task-5', seq: 12),
+      ];
+
+      final entries = buildAgentRunTimelineEntries(messages);
+
+      expect(entries, hasLength(1));
+      expect(
+        entries.single.group?.visibleMessagesNewestFirst.single.text,
+        '任务已取消',
+      );
+      expect(
+        entries.single.group?.processMessagesNewestFirst.single.id,
+        'task-5-thinking',
+      );
+    },
+  );
 }
 
 List<ChatMessageModel> _buildCompletedRunMessages({bool isFinal = true}) {

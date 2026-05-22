@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ui/features/home/state/habitual_hand_controller.dart';
 import 'package:ui/features/home/widgets/home_drawer.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/models/conversation_thread_target.dart';
+import 'package:ui/models/habitual_hand.dart';
 
 class _SvgTestAssetBundle extends CachingAssetBundle {
   static final Uint8List _svgBytes = Uint8List.fromList(
@@ -79,7 +81,7 @@ void main() {
       MaterialApp(
         home: DefaultAssetBundle(
           bundle: _SvgTestAssetBundle(),
-          child: ProviderScope(
+          child: _buildProviderScope(
             child: Scaffold(
               body: SizedBox(
                 width: 360,
@@ -116,7 +118,7 @@ void main() {
         MaterialApp(
           home: DefaultAssetBundle(
             bundle: _SvgTestAssetBundle(),
-            child: ProviderScope(
+            child: _buildProviderScope(
               child: Scaffold(
                 body: SizedBox(
                   width: 360,
@@ -166,7 +168,7 @@ void main() {
       MaterialApp(
         home: DefaultAssetBundle(
           bundle: _SvgTestAssetBundle(),
-          child: ProviderScope(
+          child: _buildProviderScope(
             child: Scaffold(
               body: SizedBox(
                 width: 360,
@@ -193,4 +195,15 @@ void main() {
     expect(selectedTarget!.conversationId, 42);
     expect(selectedTarget!.mode, ConversationMode.openclaw);
   });
+}
+
+Widget _buildProviderScope({required Widget child}) {
+  return ProviderScope(
+    overrides: [
+      habitualHandProvider.overrideWith(
+        (ref) => HabitualHandController(initial: HabitualHand.right),
+      ),
+    ],
+    child: child,
+  );
 }

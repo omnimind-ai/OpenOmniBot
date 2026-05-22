@@ -51,7 +51,7 @@ OpenOmniBot 是一个基于 Android 原生 Kotlin 与 Flutter 构建的端侧 AI
 <h2 id="quick-start">快速开始</h2>
 
 <p align="center">
-  <img src="docs/tutorial/example.jpg" alt="示例" width="260" />
+  <img src="docs/tutorial/example.png" alt="示例" width="260" />
 </p>
 
 ### 配置

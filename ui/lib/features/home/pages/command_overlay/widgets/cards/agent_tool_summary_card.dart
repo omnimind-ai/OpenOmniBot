@@ -1,12 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/services/app_background_service.dart';
 import 'package:ui/theme/theme_context.dart';
 
-class AgentToolSummaryCard extends StatelessWidget {
+class AgentToolSummaryCard extends StatefulWidget {
   const AgentToolSummaryCard({
     super.key,
     required this.cardData,
@@ -19,12 +21,27 @@ class AgentToolSummaryCard extends StatelessWidget {
   final AppBackgroundVisualProfile visualProfile;
 
   @override
+  State<AgentToolSummaryCard> createState() => _AgentToolSummaryCardState();
+}
+
+class _AgentToolSummaryCardState extends State<AgentToolSummaryCard> {
+  final Set<String> _expandedSubagentKeys = <String>{};
+
+  @override
   Widget build(BuildContext context) {
+    final cardData = widget.cardData;
     final status = (cardData['status'] ?? 'running').toString();
     final title = resolveAgentToolTitle(cardData);
     final statusLabel = resolveAgentToolStatusLabel(cardData);
     final preview = resolveAgentToolPreview(cardData);
     final typeLabel = resolveAgentToolTypeLabel(cardData);
+    final isSubagent = _isSubagentTool(cardData);
+    final subagentEvents = isSubagent
+        ? _resolveSubagentTimelineEvents(cardData)
+        : const <_SubagentTimelineEvent>[];
+    final subagentGroups = isSubagent
+        ? _resolveSubagentStatusGroups(cardData, subagentEvents)
+        : const <_SubagentStatusGroup>[];
     final statusColor = resolveAgentToolStatusColor(status);
     final palette = context.omniPalette;
     final cardBackgroundColor = context.isDarkTheme
@@ -51,12 +68,36 @@ class AgentToolSummaryCard extends StatelessWidget {
         : statusColor;
     final titleColor = context.isDarkTheme
         ? palette.textPrimary
-        : visualProfile.primaryTextColor;
+        : widget.visualProfile.primaryTextColor;
+    final titleStyle = TextStyle(
+      color: titleColor,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+      letterSpacing: 0,
+      height: 1.15,
+    );
 
     final tooltipLines = <String>[title];
     if (preview.isNotEmpty && preview != title) {
       tooltipLines.add(preview);
     }
+    for (final group in subagentGroups) {
+      tooltipLines.add(group.statusText);
+    }
+
+    final capsule = _buildCapsule(
+      context: context,
+      cardData: cardData,
+      status: status,
+      title: title,
+      titleStyle: titleStyle,
+      typeLabel: typeLabel,
+      statusLabel: statusLabel,
+      cardBackgroundColor: cardBackgroundColor,
+      cardBorderColor: cardBorderColor,
+      statusTagBackgroundColor: statusTagBackgroundColor,
+      statusTagTextColor: statusTagTextColor,
+    );
 
     return Tooltip(
       message: tooltipLines.join('\n'),
@@ -69,73 +110,843 @@ class AgentToolSummaryCard extends StatelessWidget {
           ),
           child: Container(
             margin: const EdgeInsets.only(top: 6, bottom: 2),
-            child: Material(
-              color: Colors.transparent,
-              borderRadius: BorderRadius.circular(999),
-              clipBehavior: Clip.antiAlias,
-              child: Ink(
-                decoration: BoxDecoration(
-                  color: cardBackgroundColor,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: cardBorderColor),
+            child: isSubagent
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      capsule,
+                      for (final group in subagentGroups)
+                        _SubagentStatusBlock(
+                          group: group,
+                          shimmer:
+                              status == 'running' && !group.isTerminalStatus,
+                          expanded: _expandedSubagentKeys.contains(group.key),
+                          onTap: () => _toggleSubagentGroup(group.key),
+                        ),
+                    ],
+                  )
+                : capsule,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _toggleSubagentGroup(String key) {
+    setState(() {
+      if (!_expandedSubagentKeys.add(key)) {
+        _expandedSubagentKeys.remove(key);
+      }
+    });
+  }
+
+  Widget _buildCapsule({
+    required BuildContext context,
+    required Map<String, dynamic> cardData,
+    required String status,
+    required String title,
+    required TextStyle titleStyle,
+    required String typeLabel,
+    required String statusLabel,
+    required Color cardBackgroundColor,
+    required Color cardBorderColor,
+    required Color statusTagBackgroundColor,
+    required Color statusTagTextColor,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(999),
+      clipBehavior: Clip.antiAlias,
+      child: Ink(
+        decoration: BoxDecoration(
+          color: cardBackgroundColor,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: cardBorderColor),
+        ),
+        child: InkWell(
+          onTap: () =>
+              unawaited(showAgentToolDetailSheet(context, cardData: cardData)),
+          borderRadius: BorderRadius.circular(999),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _StatusIcon(status: status, toolType: cardData['toolType']),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: status == 'running'
+                      ? _FlowingToolTitleText(text: title, style: titleStyle)
+                      : Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: titleStyle,
+                        ),
                 ),
-                child: InkWell(
-                  onTap: () => unawaited(
-                    showAgentToolDetailSheet(context, cardData: cardData),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 4,
                   ),
-                  borderRadius: BorderRadius.circular(999),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _StatusIcon(
-                          status: status,
-                          toolType: cardData['toolType'],
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: titleColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              height: 1.15,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: statusTagBackgroundColor,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            status == 'running' ? typeLabel : statusLabel,
-                            style: TextStyle(
-                              color: statusTagTextColor,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              height: 1,
-                            ),
-                          ),
-                        ),
-                      ],
+                  decoration: BoxDecoration(
+                    color: statusTagBackgroundColor,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    status == 'running' ? typeLabel : statusLabel,
+                    style: TextStyle(
+                      color: statusTagTextColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      height: 1,
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+bool _isSubagentTool(Map<String, dynamic> cardData) {
+  return (cardData['toolType'] ?? '').toString().trim() == 'subagent' ||
+      (cardData['toolName'] ?? '').toString().trim() == 'subagent_dispatch';
+}
+
+List<_SubagentStatusGroup> _resolveSubagentStatusGroups(
+  Map<String, dynamic> cardData,
+  List<_SubagentTimelineEvent> events,
+) {
+  final keyedEvents = <String, List<_SubagentTimelineEvent>>{};
+  final fallbackEvents = <_SubagentTimelineEvent>[];
+
+  for (final event in events) {
+    final key = _subagentGroupKey(event);
+    if (key == null) {
+      fallbackEvents.add(event);
+      continue;
+    }
+    keyedEvents.putIfAbsent(key, () => <_SubagentTimelineEvent>[]).add(event);
+  }
+
+  if (keyedEvents.isEmpty) {
+    final statusText = _resolveSubagentStatusText(cardData, events);
+    if (statusText.isEmpty) {
+      return const <_SubagentStatusGroup>[];
+    }
+    return <_SubagentStatusGroup>[
+      _SubagentStatusGroup(
+        key: 'subagent-dispatch',
+        statusText: statusText,
+        events: events.isEmpty ? fallbackEvents : events,
+        isTerminalStatus: (cardData['status'] ?? '').toString() != 'running',
+        sortIndex: 0,
+      ),
+    ];
+  }
+
+  final groups = keyedEvents.entries
+      .map((entry) {
+        final groupEvents = entry.value..sort(_compareSubagentEvents);
+        final latest = groupEvents.last;
+        return _SubagentStatusGroup(
+          key: entry.key,
+          statusText: latest.summary,
+          events: groupEvents,
+          isTerminalStatus: groupEvents.any(_isTerminalSubagentEvent),
+          sortIndex: _resolveSubagentSortIndex(groupEvents),
+        );
+      })
+      .toList(growable: false);
+
+  groups.sort((left, right) {
+    final indexCompare = left.sortIndex.compareTo(right.sortIndex);
+    if (indexCompare != 0) {
+      return indexCompare;
+    }
+    return left.key.compareTo(right.key);
+  });
+  return groups;
+}
+
+String? _subagentGroupKey(_SubagentTimelineEvent event) {
+  if (event.subagentId.isNotEmpty) {
+    return 'id:${event.subagentId}';
+  }
+  final taskIndex = event.taskIndex;
+  if (taskIndex != null) {
+    return 'task:$taskIndex';
+  }
+  return null;
+}
+
+int _resolveSubagentSortIndex(List<_SubagentTimelineEvent> events) {
+  for (final event in events) {
+    final taskIndex = event.taskIndex;
+    if (taskIndex != null) {
+      return taskIndex;
+    }
+  }
+  return events.isEmpty ? 0 : events.first.sequence;
+}
+
+int _compareSubagentEvents(
+  _SubagentTimelineEvent left,
+  _SubagentTimelineEvent right,
+) {
+  final sequenceCompare = left.sequence.compareTo(right.sequence);
+  if (sequenceCompare != 0) {
+    return sequenceCompare;
+  }
+  final createdCompare = left.createdAt.compareTo(right.createdAt);
+  if (createdCompare != 0) {
+    return createdCompare;
+  }
+  return left.summary.compareTo(right.summary);
+}
+
+bool _isTerminalSubagentEvent(_SubagentTimelineEvent event) {
+  return event.kind == 'subagent_completed' ||
+      event.kind == 'subagent_failed' ||
+      event.kind == 'subagent_cancelled';
+}
+
+String _resolveSubagentStatusText(
+  Map<String, dynamic> cardData,
+  List<_SubagentTimelineEvent> events,
+) {
+  final explicit = (cardData['subagentStatusText'] ?? '').toString().trim();
+  if (explicit.isNotEmpty) {
+    return explicit;
+  }
+
+  final status = (cardData['status'] ?? 'running').toString();
+  if (status != 'running') {
+    final result = _resolveSubagentResultStatusText(cardData);
+    if (result.isNotEmpty) {
+      return result;
+    }
+  }
+  if (events.isNotEmpty) {
+    return events.last.summary;
+  }
+  final reasoning = _compactInline(
+    (cardData['reasoning_content'] ?? '').toString(),
+  );
+  if (reasoning.isNotEmpty) {
+    return '${_isEnglish ? 'Thinking' : '思考'}：$reasoning';
+  }
+  final progress = _compactInline((cardData['progress'] ?? '').toString());
+  if (progress.isNotEmpty) {
+    return progress;
+  }
+  return _compactInline(resolveAgentToolPreview(cardData));
+}
+
+String _resolveSubagentResultStatusText(Map<String, dynamic> cardData) {
+  for (final rawJson in [
+    (cardData['resultPreviewJson'] ?? '').toString(),
+    (cardData['rawResultJson'] ?? '').toString(),
+  ]) {
+    final result = _decodeSubagentResultStatusText(rawJson);
+    if (result.isNotEmpty) {
+      return result;
+    }
+  }
+  final summary = _compactInline((cardData['summary'] ?? '').toString());
+  return summary;
+}
+
+String _decodeSubagentResultStatusText(String rawJson) {
+  final decoded = _decodeJsonMap(rawJson);
+  final results = decoded['results'];
+  if (results is! List || results.isEmpty) {
+    return '';
+  }
+  final resultMaps = results.whereType<Map>().toList(growable: false);
+  if (resultMaps.isEmpty) {
+    return '';
+  }
+  final last = resultMaps.last;
+  final taskIndex = _asNullableInt(last['taskIndex']);
+  final displayIndex = taskIndex == null ? '' : ' #${taskIndex + 1}';
+  final status = (last['status'] ?? '').toString().trim();
+  final result = _compactInline((last['result'] ?? '').toString());
+  final error = _compactInline((last['error'] ?? '').toString());
+  if (status == 'completed' && result.isNotEmpty) {
+    return 'SubAgent$displayIndex ${_isEnglish ? 'result' : '得到结果'}：$result';
+  }
+  if (error.isNotEmpty) {
+    return 'SubAgent$displayIndex ${_isEnglish ? 'failed' : '失败'}：$error';
+  }
+  return '';
+}
+
+List<_SubagentTimelineEvent> _resolveSubagentTimelineEvents(
+  Map<String, dynamic> cardData,
+) {
+  final events = <_SubagentTimelineEvent>[];
+  final rawEvents = cardData['subagentEvents'];
+  if (rawEvents is List) {
+    for (final rawEvent in rawEvents.whereType<Map>()) {
+      final event = _SubagentTimelineEvent.fromMap(rawEvent);
+      if (event != null) {
+        events.add(event);
+      }
+    }
+  }
+
+  if (events.isEmpty) {
+    final reasoning = _compactInline(
+      (cardData['reasoning_content'] ?? '').toString(),
+    );
+    if (reasoning.isNotEmpty) {
+      events.add(
+        _SubagentTimelineEvent(
+          sequence: 0,
+          createdAt: 0,
+          kind: 'thinking',
+          summary: '${_isEnglish ? 'Thinking' : '思考'}：$reasoning',
+          status: 'running',
+        ),
+      );
+    }
+    final progress = _compactInline((cardData['progress'] ?? '').toString());
+    if (progress.isNotEmpty) {
+      events.add(
+        _SubagentTimelineEvent(
+          sequence: 1,
+          createdAt: 1,
+          kind: 'tool_progress',
+          summary: progress,
+          status: (cardData['status'] ?? 'running').toString(),
+        ),
+      );
+    }
+    events.addAll(_synthesizeSubagentResultEvents(cardData));
+  }
+
+  events.sort(_compareSubagentEvents);
+  return events;
+}
+
+List<_SubagentTimelineEvent> _synthesizeSubagentResultEvents(
+  Map<String, dynamic> cardData,
+) {
+  Map<String, dynamic> decoded = const <String, dynamic>{};
+  for (final rawJson in [
+    (cardData['resultPreviewJson'] ?? '').toString(),
+    (cardData['rawResultJson'] ?? '').toString(),
+  ]) {
+    decoded = _decodeJsonMap(rawJson);
+    if (decoded['results'] is List) {
+      break;
+    }
+  }
+  final results = decoded['results'];
+  if (results is! List || results.isEmpty) {
+    return const <_SubagentTimelineEvent>[];
+  }
+  final events = <_SubagentTimelineEvent>[];
+  var sequence = 10;
+  for (final result in results.whereType<Map>()) {
+    final taskIndex = _asNullableInt(result['taskIndex']);
+    final label = taskIndex == null ? 'SubAgent' : 'SubAgent #${taskIndex + 1}';
+    final toolCalls = result['toolCalls'];
+    if (toolCalls is List && toolCalls.isNotEmpty) {
+      events.add(
+        _SubagentTimelineEvent(
+          sequence: sequence++,
+          createdAt: sequence,
+          kind: 'tool_started',
+          summary:
+              '$label ${_isEnglish ? 'called tools' : '调用工具'}：${toolCalls.join(', ')}',
+          status: 'completed',
+          taskIndex: taskIndex,
+        ),
+      );
+    }
+    final status = (result['status'] ?? '').toString().trim();
+    final output = _compactInline((result['result'] ?? '').toString());
+    final error = _compactInline((result['error'] ?? '').toString());
+    if (status == 'completed' && output.isNotEmpty) {
+      events.add(
+        _SubagentTimelineEvent(
+          sequence: sequence++,
+          createdAt: sequence,
+          kind: 'subagent_completed',
+          summary: '$label ${_isEnglish ? 'result' : '得到结果'}：$output',
+          status: 'completed',
+          taskIndex: taskIndex,
+        ),
+      );
+    } else if (error.isNotEmpty) {
+      events.add(
+        _SubagentTimelineEvent(
+          sequence: sequence++,
+          createdAt: sequence,
+          kind: 'subagent_failed',
+          summary: '$label ${_isEnglish ? 'failed' : '失败'}：$error',
+          status: 'failed',
+          taskIndex: taskIndex,
+        ),
+      );
+    }
+  }
+  return events;
+}
+
+Map<String, dynamic> _decodeJsonMap(String rawJson) {
+  final text = rawJson.trim();
+  if (text.isEmpty) {
+    return const <String, dynamic>{};
+  }
+  try {
+    final decoded = jsonDecode(text);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    if (decoded is Map) {
+      return decoded.map<String, dynamic>(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+    }
+  } catch (_) {
+    return const <String, dynamic>{};
+  }
+  return const <String, dynamic>{};
+}
+
+String _compactInline(String text, {int limit = 160}) {
+  final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+  return '${normalized.substring(0, limit).trimRight()}...';
+}
+
+int? _asNullableInt(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse((value ?? '').toString());
+}
+
+int _asInt(dynamic value) {
+  return _asNullableInt(value) ?? 0;
+}
+
+bool get _isEnglish => LegacyTextLocalizer.isEnglish;
+
+class _SubagentStatusGroup {
+  const _SubagentStatusGroup({
+    required this.key,
+    required this.statusText,
+    required this.events,
+    required this.isTerminalStatus,
+    required this.sortIndex,
+  });
+
+  final String key;
+  final String statusText;
+  final List<_SubagentTimelineEvent> events;
+  final bool isTerminalStatus;
+  final int sortIndex;
+}
+
+class _SubagentTimelineEvent {
+  const _SubagentTimelineEvent({
+    required this.sequence,
+    required this.createdAt,
+    required this.kind,
+    required this.summary,
+    required this.status,
+    this.taskIndex,
+    this.subagentId = '',
+    this.profileId = '',
+    this.toolName = '',
+  });
+
+  final int sequence;
+  final int createdAt;
+  final String kind;
+  final String summary;
+  final String status;
+  final int? taskIndex;
+  final String subagentId;
+  final String profileId;
+  final String toolName;
+
+  static _SubagentTimelineEvent? fromMap(Map<dynamic, dynamic> raw) {
+    final summary = (raw['summary'] ?? raw['message'] ?? raw['text'] ?? '')
+        .toString()
+        .trim();
+    if (summary.isEmpty) {
+      return null;
+    }
+    return _SubagentTimelineEvent(
+      sequence: _asInt(raw['seq']),
+      createdAt: _asInt(raw['createdAt']),
+      kind: (raw['kind'] ?? '').toString().trim(),
+      summary: summary,
+      status: (raw['status'] ?? 'running').toString().trim(),
+      taskIndex: _asNullableInt(raw['taskIndex']),
+      subagentId: (raw['subagentId'] ?? '').toString().trim(),
+      profileId: (raw['profileId'] ?? '').toString().trim(),
+      toolName: (raw['toolName'] ?? '').toString().trim(),
+    );
+  }
+}
+
+class _SubagentStatusBlock extends StatelessWidget {
+  const _SubagentStatusBlock({
+    required this.group,
+    required this.shimmer,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final _SubagentStatusGroup group;
+  final bool shimmer;
+  final bool expanded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SubagentStatusLine(
+          text: group.statusText,
+          shimmer: shimmer,
+          expanded: expanded,
+          onTap: onTap,
+        ),
+        _SubagentTimeline(events: group.events, expanded: expanded),
+      ],
+    );
+  }
+}
+
+class _SubagentStatusLine extends StatelessWidget {
+  const _SubagentStatusLine({
+    required this.text,
+    required this.shimmer,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final String text;
+  final bool shimmer;
+  final bool expanded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final color = context.isDarkTheme
+        ? Color.lerp(palette.textSecondary, palette.accentPrimary, 0.32)!
+        : const Color(0xFF51657E);
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, right: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          splashColor: palette.accentPrimary.withValues(alpha: 0.06),
+          highlightColor: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              children: [
+                Expanded(
+                  child: shimmer
+                      ? _FlowingToolTitleText(
+                          text: text,
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 11.2,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 0,
+                            height: 1.2,
+                          ),
+                        )
+                      : Text(
+                          text,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 11.2,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 0,
+                            height: 1.2,
+                          ),
+                        ),
+                ),
+                const SizedBox(width: 4),
+                AnimatedRotation(
+                  turns: expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  child: Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 15,
+                    color: color.withValues(alpha: 0.78),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SubagentTimeline extends StatelessWidget {
+  const _SubagentTimeline({required this.events, required this.expanded});
+
+  final List<_SubagentTimelineEvent> events;
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final showTimeline = expanded && events.isNotEmpty;
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topLeft,
+      child: showTimeline
+          ? Padding(
+              padding: const EdgeInsets.only(left: 18, top: 4, bottom: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < events.length; i++)
+                    _SubagentTimelineRow(
+                      event: events[i],
+                      isLast: i == events.length - 1,
+                    ),
+                ],
+              ),
+            )
+          : const SizedBox.shrink(),
+    );
+  }
+}
+
+class _SubagentTimelineRow extends StatelessWidget {
+  const _SubagentTimelineRow({required this.event, required this.isLast});
+
+  final _SubagentTimelineEvent event;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final normalizedStatus = event.status == 'failed'
+        ? 'error'
+        : event.status == 'completed'
+        ? 'success'
+        : event.status;
+    final statusColor = resolveAgentToolStatusColor(normalizedStatus);
+    final lineColor = context.isDarkTheme
+        ? palette.borderSubtle.withValues(alpha: 0.58)
+        : const Color(0x1F0F2034);
+    final textColor = context.isDarkTheme
+        ? palette.textSecondary
+        : const Color(0xFF5F7188);
+    final icon = _iconForSubagentEvent(event.kind);
+    final detailText = _subagentTimelineDetailText(event);
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 16,
+            child: Column(
+              children: [
+                Container(
+                  width: 14,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 9, color: statusColor),
+                ),
+                if (!isLast)
+                  Expanded(child: Container(width: 1, color: lineColor)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 7),
+          Flexible(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 9),
+              child: Text(
+                detailText,
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 11,
+                  height: 1.32,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _subagentTimelineDetailText(_SubagentTimelineEvent event) {
+    final withoutAgentPrefix = event.summary
+        .replaceFirst(RegExp(r'^SubAgent(?: #\d+)?\s*'), '')
+        .trim();
+    final text = withoutAgentPrefix.isEmpty
+        ? event.summary.trim()
+        : withoutAgentPrefix;
+
+    String stripLabel(List<String> labels) {
+      var result = text;
+      for (final label in labels) {
+        result = result
+            .replaceFirst(
+              RegExp('^${RegExp.escape(label)}(?:\\s*[：:]\\s*|\\s+)'),
+              '',
+            )
+            .trim();
+      }
+      return result.isEmpty ? text : result;
+    }
+
+    switch (event.kind) {
+      case 'subagent_started':
+        return stripLabel(const ['开始', 'started']);
+      case 'thinking':
+        return stripLabel(const ['思考', 'thinking', 'Thinking']);
+      case 'tool_started':
+        return stripLabel(const [
+          '调用工具',
+          '工具调用',
+          'called tool',
+          'called tools',
+        ]);
+      case 'tool_progress':
+        return stripLabel(const ['工具进度', 'tool progress']);
+      case 'tool_completed':
+        return stripLabel(const ['工具完成', 'completed tool']);
+      case 'message':
+        return stripLabel(const ['输出', 'output']);
+      case 'subagent_completed':
+        return stripLabel(const ['得到结果', 'result']);
+      case 'subagent_failed':
+        return stripLabel(const ['失败', 'failed']);
+      default:
+        return text;
+    }
+  }
+
+  IconData _iconForSubagentEvent(String kind) {
+    switch (kind) {
+      case 'thinking_started':
+      case 'thinking':
+        return Icons.psychology_alt_rounded;
+      case 'tool_started':
+      case 'tool_progress':
+      case 'tool_completed':
+        return Icons.build_circle_outlined;
+      case 'subagent_completed':
+        return Icons.check_rounded;
+      case 'subagent_failed':
+        return Icons.error_outline_rounded;
+      default:
+        return Icons.hub_outlined;
+    }
+  }
+}
+
+class _FlowingToolTitleText extends StatefulWidget {
+  const _FlowingToolTitleText({required this.text, required this.style});
+
+  final String text;
+  final TextStyle style;
+
+  @override
+  State<_FlowingToolTitleText> createState() => _FlowingToolTitleTextState();
+}
+
+class _FlowingToolTitleTextState extends State<_FlowingToolTitleText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final child = Text(
+      widget.text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: widget.style,
+    );
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return child;
+    }
+
+    final baseColor = widget.style.color ?? context.omniPalette.textPrimary;
+    final highlightColor = context.isDarkTheme
+        ? Colors.white.withValues(alpha: 0.96)
+        : Colors.white.withValues(alpha: 0.92);
+
+    return AnimatedBuilder(
+      animation: _controller,
+      child: child,
+      builder: (context, child) {
+        return ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) {
+            final textWidth = bounds.width <= 0 ? 1.0 : bounds.width;
+            final shimmerWidth = (textWidth * 0.72)
+                .clamp(52.0, 180.0)
+                .toDouble();
+            final travelDistance = textWidth + shimmerWidth;
+            final shimmerLeft =
+                bounds.left - shimmerWidth + travelDistance * _controller.value;
+            return LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [baseColor, highlightColor, baseColor],
+              stops: const [0.08, 0.5, 0.92],
+            ).createShader(
+              Rect.fromLTWH(
+                shimmerLeft,
+                bounds.top,
+                shimmerWidth,
+                bounds.height,
+              ),
+            );
+          },
+          child: child,
+        );
+      },
     );
   }
 }

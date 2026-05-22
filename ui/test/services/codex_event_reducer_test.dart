@@ -189,6 +189,48 @@ void main() {
     expect(completedCard['endTime'], isNotNull);
   });
 
+  test('turn completion after manual interrupt leaves a cancellation body', () {
+    reducer.reduce(
+      runtime: runtime,
+      event: {
+        'message': {
+          'method': 'turn/started',
+          'params': {'turnId': 'turn-1'},
+        },
+      },
+    );
+    reducer.reduce(
+      runtime: runtime,
+      event: {
+        'message': {
+          'method': 'item/reasoning/textDelta',
+          'params': {
+            'turnId': 'turn-1',
+            'itemId': 'reason-1',
+            'delta': 'thinking',
+          },
+        },
+      },
+    );
+
+    reducer.reduce(
+      runtime: runtime,
+      event: {
+        'message': {
+          'method': 'turn/completed',
+          'params': {'turnId': 'turn-1'},
+        },
+      },
+    );
+
+    final cancelMessage = runtime.messages.firstWhere(
+      (message) => message.id == 'turn-1-cancelled',
+    );
+    expect(cancelMessage.text, '任务已取消');
+    expect(cancelMessage.streamMeta?['parentTaskId'], 'turn-1');
+    expect(cancelMessage.streamMeta?['isFinal'], isTrue);
+  });
+
   test('updates tool cards in place with stable codex stream metadata', () {
     reducer.reduce(
       runtime: runtime,

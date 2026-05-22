@@ -368,6 +368,18 @@ abstract class AppLocalizations {
   /// **'执行任务时，通过振动进行操作提醒'**
   String get settingsVibrationSubtitle;
 
+  /// No description provided for @settingsIndependentSendButtonTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用独立的发送按钮'**
+  String get settingsIndependentSendButtonTitle;
+
+  /// No description provided for @settingsIndependentSendButtonSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启后，聊天页键盘回车为换行；关闭后，回车直接发送'**
+  String get settingsIndependentSendButtonSubtitle;
+
   /// No description provided for @settingsAutoBackTitle.
   ///
   /// In zh, this message translates to:
@@ -379,6 +391,30 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'关闭后，任务结束将停留在当前完成页面'**
   String get settingsAutoBackSubtitle;
+
+  /// No description provided for @settingsHabitualHandTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'惯用手'**
+  String get settingsHabitualHandTitle;
+
+  /// No description provided for @settingsHabitualHandSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'影响聊天历史记录的侧滑菜单方向'**
+  String get settingsHabitualHandSubtitle;
+
+  /// No description provided for @settingsHabitualHandLeft.
+  ///
+  /// In zh, this message translates to:
+  /// **'左手'**
+  String get settingsHabitualHandLeft;
+
+  /// No description provided for @settingsHabitualHandRight.
+  ///
+  /// In zh, this message translates to:
+  /// **'右手'**
+  String get settingsHabitualHandRight;
 
   /// No description provided for @settingsCompanionPermissionTitle.
   ///
@@ -1136,6 +1172,12 @@ abstract class AppLocalizations {
   /// **'内置'**
   String get skillBuiltin;
 
+  /// No description provided for @skillOfficial.
+  ///
+  /// In zh, this message translates to:
+  /// **'官方'**
+  String get skillOfficial;
+
   /// No description provided for @skillUser.
   ///
   /// In zh, this message translates to:
@@ -1249,6 +1291,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'切换失败'**
   String get skillToggleFailed;
+
+  /// No description provided for @skillSyncOfficialTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装/更新官方 Skills'**
+  String get skillSyncOfficialTooltip;
+
+  /// No description provided for @skillSyncOfficialSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'官方 Skills 已同步（{count} 个）'**
+  String skillSyncOfficialSuccess(Object count);
+
+  /// No description provided for @skillSyncOfficialFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步官方 Skills 失败'**
+  String get skillSyncOfficialFailed;
 
   /// No description provided for @skillLoadFailed.
   ///
@@ -2909,13 +2969,13 @@ abstract class AppLocalizations {
   /// No description provided for @aboutApkSourceOptionCnb.
   ///
   /// In zh, this message translates to:
-  /// **'CNB'**
+  /// **'Cloudflare R2'**
   String get aboutApkSourceOptionCnb;
 
   /// No description provided for @aboutApkSourceOptionCnbDescription.
   ///
   /// In zh, this message translates to:
-  /// **'国内网络优先'**
+  /// **'通过更新 Worker 分发'**
   String get aboutApkSourceOptionCnbDescription;
 
   /// No description provided for @aboutApkSourceOptionGithub.

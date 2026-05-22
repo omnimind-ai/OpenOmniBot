@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/models/agent_stream_event.dart';
@@ -18,17 +19,21 @@ import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
 import 'package:ui/features/home/pages/chat/utils/stream_text_merge.dart';
 import 'package:ui/features/home/pages/chat/utils/agent_thinking_card_locator.dart';
 import 'package:ui/features/home/pages/chat/utils/deep_thinking_persistence.dart';
+import 'package:ui/features/home/pages/chat/utils/keyboard_inset_motion_tracker.dart';
 import 'package:ui/features/home/pages/chat/widgets/agent_run_group_message.dart';
+import 'package:ui/features/home/pages/chat/widgets/chat_empty_greeting.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/services/voice_playback_coordinator.dart';
 import 'package:ui/services/screen_dialog_service.dart';
 import 'package:ui/services/conversation_service.dart';
 import 'package:ui/services/conversation_history_service.dart';
+import 'package:ui/services/home_greeting_settings_service.dart';
 import 'package:ui/services/link_preview_service.dart';
 import 'package:ui/widgets/ai_generated_badge.dart';
 import 'package:ui/constants/openclaw/openclaw_keys.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/features/home/pages/chat/mixins/agent_stream_handler.dart';
+import 'package:ui/theme/theme_context.dart';
 
 /// 聊天上下文存储的key
 const String kChatContextStorageKey = 'chat_context_for_summary';
@@ -48,6 +53,7 @@ enum ChatBotLaunchScene {
 
 class ChatBotSheet extends StatefulWidget {
   final String? initialMessage;
+  final List<Map<String, dynamic>> initialAttachments;
   final Map<String, dynamic>? initialScheduleInfo;
 
   /// 启动场景，用于控制是否加载之前保存的上下文
@@ -57,6 +63,7 @@ class ChatBotSheet extends StatefulWidget {
   const ChatBotSheet({
     super.key,
     this.initialMessage,
+    this.initialAttachments = const [],
     this.initialScheduleInfo,
     this.launchScene = ChatBotLaunchScene.normal,
     this.openClawEnabled,
@@ -66,7 +73,8 @@ class ChatBotSheet extends StatefulWidget {
   State<ChatBotSheet> createState() => _ChatBotSheetState();
 }
 
-class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
+class _ChatBotSheetState extends State<ChatBotSheet>
+    with WidgetsBindingObserver, AgentStreamHandler {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _messageScrollController = ScrollController();
   final DraggableScrollableController _sheetController =
@@ -76,6 +84,9 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   final TextEditingController _vlmAnswerController = TextEditingController();
   final GlobalKey<ChatInputAreaState> _chatInputAreaKey =
       GlobalKey<ChatInputAreaState>();
+  final KeyboardInsetMotionTracker _emptyGreetingKeyboardLiftTracker =
+      KeyboardInsetMotionTracker();
+  final List<ChatInputAttachment> _pendingAttachments = <ChatInputAttachment>[];
 
   late AiChatService _aiService;
   bool _isAiResponding = false;
@@ -247,6 +258,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   Future<void> persistAgentConversation() => _saveConversationToDb();
 
   @override
+  void clearAgentStreamSessionState() {
+    super.clearAgentStreamSessionState();
+  }
+
+  @override
   void onAgentTextMessageUpdated(String messageId, {bool isFinal = true}) {
     if (isFinal) {
       _syncMessageLinkPreviews(messageId);
@@ -257,6 +273,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   void initState() {
     super.initState();
 
+    WidgetsBinding.instance.addObserver(this);
+    HomeGreetingSettingsService.notifier.addListener(
+      _handleHomeGreetingSettingsChanged,
+    );
+    unawaited(HomeGreetingSettingsService.load());
     _aiService = AiChatService();
 
     _aiService.setOnMessageCallback((taskId, content, type) {
@@ -286,10 +307,16 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       _clearSavedContext();
       StorageService.remove(kChatResumeAfterAuthKey);
 
-      // 如果有初始消息，立即发送
-      if (widget.initialMessage != null && widget.initialMessage!.isNotEmpty) {
+      // 如果有初始文本或附件，立即发送
+      final hasInitialPayload =
+          (widget.initialMessage?.trim().isNotEmpty ?? false) ||
+          widget.initialAttachments.isNotEmpty;
+      if (hasInitialPayload) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _sendMessage(text: widget.initialMessage!);
+          _pendingAttachments
+            ..clear()
+            ..addAll(_chatInputAttachmentsFromMaps(widget.initialAttachments));
+          _sendMessage(text: widget.initialMessage ?? '');
         });
       }
 
@@ -873,7 +900,44 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   }
 
   @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    _syncEmptyGreetingKeyboardLiftFromView();
+  }
+
+  void _syncEmptyGreetingKeyboardLiftFromView() {
+    if (!mounted) return;
+    final view = View.of(context);
+    final bottomInset = view.viewInsets.bottom / view.devicePixelRatio;
+    if (_emptyGreetingKeyboardLiftTracker.update(bottomInset)) {
+      setState(() {});
+    }
+  }
+
+  void _handleHomeGreetingSettingsChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  void _applyHomeQuickPrompt(HomeQuickPrompt prompt) {
+    final text = prompt.resolvePrompt(context).trim();
+    if (text.isEmpty) {
+      return;
+    }
+    _messageController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _handleSlashCommandInput();
+    _inputFocusNode.requestFocus();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    HomeGreetingSettingsService.notifier.removeListener(
+      _handleHomeGreetingSettingsChanged,
+    );
     _messageController.removeListener(_handleSlashCommandInput);
     _messageController.dispose();
     _messageScrollController.dispose();
@@ -897,7 +961,10 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     super.dispose();
   }
 
-  void _onFocusChange() {}
+  void _onFocusChange() {
+    if (!mounted) return;
+    setState(() {});
+  }
 
   void _updateInputAreaMetrics() {
     final context = _inputAreaKey.currentContext;
@@ -910,6 +977,13 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
         _inputAreaHeight = height;
       });
     }
+  }
+
+  void _onInputHeightChanged(double height) {
+    if (height == _inputAreaHeight || !mounted) return;
+    setState(() {
+      _inputAreaHeight = height;
+    });
   }
 
   /// 添加loading消息
@@ -1622,7 +1696,7 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
     for (final message in recentMessages) {
       if (message.user == 1) {
-        final text = message.content?['text'] as String? ?? '';
+        final text = _buildMessageTextForModel(message);
         if (text.isNotEmpty) {
           history.insert(0, {'role': 'user', 'content': text});
         }
@@ -1650,15 +1724,22 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     bool appendUserBubble = true,
   }) async {
     final messageText = text ?? _messageController.text.trim();
-    if (messageText.isEmpty || _isAiResponding) return;
+    final hasAttachments = _pendingAttachments.isNotEmpty;
+    if ((messageText.isEmpty && !hasAttachments) || _isAiResponding) return;
 
     final handledSlash = await _tryHandleSlashCommand(messageText);
     if (handledSlash) return;
 
     _inputFocusNode.unfocus();
+    final attachments = _pendingAttachments
+        .map((item) => item.toMap())
+        .toList();
+    if (attachments.isNotEmpty && mounted) {
+      setState(() => _pendingAttachments.clear());
+    }
     late final ({String userMessageId, String aiMessageId}) messageIds;
     if (appendUserBubble) {
-      messageIds = _addUserMessage(messageText);
+      messageIds = _addUserMessage(messageText, attachments: attachments);
       await _saveConversationToDb();
     } else {
       final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
@@ -1691,20 +1772,22 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     }
   }
 
-  ({String userMessageId, String aiMessageId}) _addUserMessage(String text) {
+  ({String userMessageId, String aiMessageId}) _addUserMessage(
+    String text, {
+    List<Map<String, dynamic>> attachments = const [],
+  }) {
     final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
     final userMessageId = '$timestamp-user';
     final aiMessageId = '$timestamp-ai';
+    final content = <String, dynamic>{'text': text, 'id': userMessageId};
+    if (attachments.isNotEmpty) {
+      content['attachments'] = attachments;
+    }
 
     setState(() {
       _messages.insert(
         0,
-        ChatMessageModel(
-          id: userMessageId,
-          type: 1,
-          user: 1,
-          content: {'text': text, 'id': userMessageId},
-        ),
+        ChatMessageModel(id: userMessageId, type: 1, user: 1, content: content),
       );
       _messageController.clear();
       _isAiResponding = true;
@@ -1739,9 +1822,11 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       _createThinkingCard(aiMessageId);
 
       final userMessage = _latestUserUtterance();
+      final attachments = _latestUserAgentAttachments();
       final success = await AssistsMessageService.createAgentTask(
         taskId: aiMessageId,
         userMessage: userMessage,
+        attachments: attachments,
         conversationId: _currentConversationId,
         conversationMode: ConversationMode.normal.storageValue,
       );
@@ -1768,13 +1853,233 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   String _latestUserUtterance() {
     for (final message in _messages) {
       if (message.user == 1) {
-        final text = message.content?['text'] as String? ?? '';
+        final text = _buildMessageTextForModel(message);
         if (text.isNotEmpty) {
           return text;
         }
       }
     }
     return '';
+  }
+
+  List<Map<String, dynamic>> _latestUserAgentAttachments() {
+    for (final message in _messages) {
+      if (message.user != 1) continue;
+      final raw = message.content?['attachments'];
+      if (raw is! List) return const [];
+      return raw
+          .whereType<Map>()
+          .map((item) => item.map((k, v) => MapEntry(k.toString(), v)))
+          .where(_attachmentShouldSendToModel)
+          .toList();
+    }
+    return const [];
+  }
+
+  bool _attachmentShouldSendToModel(Map<String, dynamic> attachment) {
+    final raw = attachment['sendToModel'];
+    if (raw is bool) return raw;
+    if (raw is String) return raw.toLowerCase() != 'false';
+    return true;
+  }
+
+  String _buildMessageTextForModel(ChatMessageModel message) {
+    final text = message.content?['text'] as String? ?? '';
+    final attachments = _extractAttachmentList(message);
+    if (attachments.isEmpty) return text;
+
+    final pathHint = _buildAttachmentPathHint(attachments);
+    if (pathHint.isNotEmpty) {
+      if (text.trim().isEmpty) return pathHint;
+      return '$text\n$pathHint';
+    }
+
+    final names = attachments
+        .where((attachment) => !_isImageAttachmentMap(attachment))
+        .map(_resolveAttachmentName)
+        .where((name) => name.trim().isNotEmpty)
+        .map((name) => name.trim())
+        .toList();
+    if (names.isEmpty) return text;
+    final attachmentHint = '已附加附件：${names.join('、')}';
+    if (text.trim().isEmpty) return attachmentHint;
+    return '$text\n$attachmentHint';
+  }
+
+  List<Map<String, dynamic>> _extractAttachmentList(ChatMessageModel message) {
+    final raw = message.content?['attachments'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((item) => item.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  String _buildAttachmentPathHint(List<Map<String, dynamic>> attachments) {
+    final lines = attachments
+        .map((attachment) {
+          final promptPath = (attachment['promptPath'] as String? ?? '').trim();
+          if (promptPath.isEmpty) return '';
+          final name = _resolveAttachmentName(attachment);
+          return name.isEmpty ? '- $promptPath' : '- $name: $promptPath';
+        })
+        .where((line) => line.isNotEmpty)
+        .toList();
+    if (lines.isEmpty) return '';
+    return '已添加到 workspace，可通过以下路径读取：\n${lines.join('\n')}';
+  }
+
+  String _resolveAttachmentName(Map<String, dynamic> attachment) {
+    final name = (attachment['name'] as String? ?? '').trim();
+    if (name.isNotEmpty) return name;
+    final path = (attachment['path'] as String? ?? '').trim();
+    return path.isEmpty ? '' : _fileNameFromPath(path);
+  }
+
+  bool _isImageAttachmentMap(Map<String, dynamic> attachment) {
+    final explicit = attachment['isImage'];
+    if (explicit is bool && explicit) return true;
+    final mimeType = (attachment['mimeType'] as String? ?? '').toLowerCase();
+    if (mimeType.startsWith('image/')) return true;
+    final path = (attachment['path'] as String? ?? '').toLowerCase();
+    return _isImageFilePath(path, mimeType: mimeType);
+  }
+
+  Future<void> _pickAttachments() async {
+    var hiddenForPicker = false;
+    try {
+      hiddenForPicker = await ScreenDialogService.hideForExternalActivity();
+      if (hiddenForPicker) {
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      }
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.any,
+      );
+      if (result == null || result.files.isEmpty || !mounted) return;
+
+      setState(() {
+        for (final file in result.files) {
+          final path = file.path;
+          if (path == null || path.isEmpty) continue;
+          final exists = _pendingAttachments.any((item) => item.path == path);
+          if (exists) continue;
+          final displayName = file.name.trim().isNotEmpty
+              ? file.name.trim()
+              : _fileNameFromPath(path);
+          final extension = (file.extension ?? '').toLowerCase();
+          final mimeType = _mimeTypeFromExtension(path, extension: extension);
+          _pendingAttachments.add(
+            ChatInputAttachment(
+              id: '${path}_${DateTime.now().microsecondsSinceEpoch}',
+              name: displayName,
+              path: path,
+              size: file.size > 0 ? file.size : null,
+              mimeType: mimeType,
+              isImage: _isImageFilePath(path, mimeType: mimeType),
+            ),
+          );
+        }
+      });
+    } catch (e) {
+      _showSnackBar('添加附件失败：$e');
+    } finally {
+      if (hiddenForPicker) {
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        await ScreenDialogService.restoreAfterExternalActivity();
+      }
+    }
+  }
+
+  void _removePendingAttachment(String id) {
+    if (!mounted) return;
+    setState(() {
+      _pendingAttachments.removeWhere((item) => item.id == id);
+    });
+  }
+
+  List<ChatInputAttachment> _chatInputAttachmentsFromMaps(
+    List<Map<String, dynamic>> rawAttachments,
+  ) {
+    return rawAttachments
+        .map((item) {
+          final path = (item['path'] as String? ?? '').trim();
+          final name = (item['name'] as String? ?? '').trim();
+          final mimeType = item['mimeType'] as String?;
+          final size = item['size'];
+          return ChatInputAttachment(
+            id: (item['id'] as String? ?? '').trim().isNotEmpty
+                ? (item['id'] as String).trim()
+                : '${path}_${DateTime.now().microsecondsSinceEpoch}',
+            name: name.isNotEmpty ? name : _fileNameFromPath(path),
+            path: path,
+            size: size is int ? size : int.tryParse(size?.toString() ?? ''),
+            mimeType: mimeType,
+            isImage: item['isImage'] is bool
+                ? item['isImage'] as bool
+                : _isImageFilePath(path, mimeType: mimeType),
+            promptPath: item['promptPath'] as String?,
+            sendToModel: item['sendToModel'] is bool
+                ? item['sendToModel'] as bool
+                : true,
+          );
+        })
+        .where((item) => item.path.isNotEmpty)
+        .toList();
+  }
+
+  String _fileNameFromPath(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final segments = normalized.split('/');
+    if (segments.isEmpty) return path;
+    return segments.last.isEmpty ? path : segments.last;
+  }
+
+  bool _isImageFilePath(String path, {String? mimeType}) {
+    final normalizedMime = mimeType?.trim().toLowerCase();
+    if (normalizedMime != null && normalizedMime.startsWith('image/')) {
+      return true;
+    }
+    final lowerPath = path.toLowerCase();
+    return lowerPath.endsWith('.png') ||
+        lowerPath.endsWith('.jpg') ||
+        lowerPath.endsWith('.jpeg') ||
+        lowerPath.endsWith('.webp') ||
+        lowerPath.endsWith('.gif') ||
+        lowerPath.endsWith('.bmp') ||
+        lowerPath.endsWith('.heic') ||
+        lowerPath.endsWith('.heif');
+  }
+
+  String? _mimeTypeFromExtension(String path, {String extension = ''}) {
+    final ext = extension.isNotEmpty
+        ? extension
+        : _fileNameFromPath(path).split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'bmp':
+        return 'image/bmp';
+      case 'heic':
+        return 'image/heic';
+      case 'heif':
+        return 'image/heif';
+      case 'pdf':
+        return 'application/pdf';
+      case 'txt':
+        return 'text/plain';
+      case 'md':
+        return 'text/markdown';
+      default:
+        return null;
+    }
   }
 
   /// 处理 429 限流错误
@@ -1878,6 +2183,8 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
         AssistsMessageService.cancelRunningTask(taskId: taskId);
         if (taskId != null) {
           _updateThinkingCardToCancelled(taskId);
+          _upsertCancelledAgentRunMessage(taskId);
+          _collapseAgentRunTrace(taskId);
         }
         _resetDispatchState();
       } else {
@@ -1906,6 +2213,8 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
       interruptActiveToolCard();
       AssistsMessageService.cancelRunningTask(taskId: taskId);
       _updateThinkingCardToCancelled(taskId);
+      _upsertCancelledAgentRunMessage(taskId);
+      _collapseAgentRunTrace(taskId);
       _resetDispatchState();
       setState(() {
         _isAiResponding = false;
@@ -1947,6 +2256,66 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     _persistDeepThinkingCardIfNeeded(_messages[index]);
   }
 
+  void _collapseAgentRunTrace(String taskId) {
+    final normalizedTaskId = taskId.trim();
+    if (normalizedTaskId.isEmpty ||
+        !_expandedAgentRunTaskIds.contains(normalizedTaskId)) {
+      return;
+    }
+    setState(() {
+      _expandedAgentRunTaskIds.remove(normalizedTaskId);
+    });
+  }
+
+  void _upsertCancelledAgentRunMessage(String taskId) {
+    final normalizedTaskId = taskId.trim();
+    if (normalizedTaskId.isEmpty) {
+      return;
+    }
+    final messageId = '$normalizedTaskId-cancelled';
+    final content = <String, dynamic>{
+      'text': LegacyTextLocalizer.localize('任务已取消'),
+      'id': messageId,
+      'renderMarkdown': false,
+    };
+    final streamMeta = ensureAgentStreamMessageMeta(
+      null,
+      seq: 1000000000,
+      roundIndex: 1000000000,
+      kind: 'text_snapshot',
+      parentTaskId: normalizedTaskId,
+      entryId: messageId,
+      isFinal: true,
+    );
+    final existingIndex = _messages.indexWhere(
+      (message) => message.id == messageId,
+    );
+    setState(() {
+      if (existingIndex == -1) {
+        _messages.insert(
+          0,
+          ChatMessageModel(
+            id: messageId,
+            type: 1,
+            user: 2,
+            content: content,
+            streamMeta: streamMeta,
+          ),
+        );
+      } else {
+        _messages[existingIndex] = _messages[existingIndex].copyWith(
+          content: content,
+          isLoading: false,
+          isError: false,
+          streamMeta: streamMeta,
+        );
+      }
+    });
+    unawaited(
+      _saveConversationToDb(generateSummary: false, markComplete: true),
+    );
+  }
+
   void _onPopupVisibilityChanged(bool visible) {
     setState(() {
       _isPopupVisible = visible;
@@ -1958,6 +2327,12 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
     final screenHeight = MediaQuery.of(context).size.height;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final inputAreaHeight = _inputAreaHeight > 0 ? _inputAreaHeight : 72.0;
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final liftEmptyGreeting = _emptyGreetingKeyboardLiftTracker.resolveForBuild(
+      bottomInset,
+    );
+    final homeGreetingSettings = HomeGreetingSettingsService.notifier.value;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateInputAreaMetrics();
     });
@@ -1987,66 +2362,107 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
               behavior: HitTestBehavior.translucent,
               onPointerDown: (event) => _handleOutsideTap(event.position),
               child: Container(
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF9FCFF), // #F9FCFF
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? palette.pageBackground
+                      : const Color(0xFFF9FCFF),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: Color(0x1A000000),
+                      color: isDark
+                          ? Colors.black.withValues(alpha: 0.28)
+                          : const Color(0x1A000000),
                       blurRadius: 20,
-                      offset: Offset(0, -4),
+                      offset: const Offset(0, -4),
                     ),
                   ],
                 ),
-                child: Column(
+                child: Stack(
                   children: [
-                    // 拖动指示条 - 仅用于拖动整个 sheet 高度
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onVerticalDragUpdate: (details) {
-                        final delta = details.primaryDelta ?? 0;
-                        final currentSize = _sheetController.size;
-                        // 向上拖动(delta<0)增大size，向下拖动(delta>0)减小size
-                        final newSize = currentSize - (delta / screenHeight);
-                        _sheetController.jumpTo(newSize.clamp(0.4, 0.95));
-                      },
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
-                        child: Center(
+                    Column(
+                      children: [
+                        // 拖动指示条 - 仅用于拖动整个 sheet 高度
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onVerticalDragUpdate: (details) {
+                            final delta = details.primaryDelta ?? 0;
+                            final currentSize = _sheetController.size;
+                            // 向上拖动(delta<0)增大size，向下拖动(delta>0)减小size
+                            final newSize =
+                                currentSize - (delta / screenHeight);
+                            _sheetController.jumpTo(newSize.clamp(0.4, 0.95));
+                          },
                           child: Container(
-                            width: 100,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFCCCCCC), // #CCCCCC
-                              borderRadius: BorderRadius.circular(4),
+                            width: double.infinity,
+                            padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+                            child: Center(
+                              child: Container(
+                                width: 100,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? palette.borderStrong
+                                      : const Color(0xFFCCCCCC),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        // AI 生成标识
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4),
+                          child: Align(
+                            alignment: Alignment.center,
+                            child: AiGeneratedBadge(),
+                          ),
+                        ),
+                        // 消息列表 - 使用 NotificationListener 阻止滚动事件影响 sheet
+                        Expanded(
+                          child: NotificationListener<ScrollNotification>(
+                            onNotification: (notification) {
+                              _handleMessageScrollNotification(notification);
+                              return true; // 阻止滚动事件冒泡到 sheet
+                            },
+                            child: _buildMessageList(),
+                          ),
+                        ),
+                        if (_vlmInfoQuestion != null) _buildVlmInfoPrompt(),
+                        // 输入框 - 根据 _isInputAreaVisible 控制显示
+                        if (_isInputAreaVisible) _buildInputArea(),
+                        SizedBox(height: bottomInset),
+                      ],
+                    ),
+                    if (_messages.isEmpty &&
+                        homeGreetingSettings.greetingEnabled)
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 280),
+                        curve: Curves.easeInOutCubic,
+                        left: 0,
+                        right: 0,
+                        top: liftEmptyGreeting ? 56 : 116,
+                        child: IgnorePointer(
+                          child: AnimatedAlign(
+                            duration: const Duration(milliseconds: 280),
+                            curve: Curves.easeInOutCubic,
+                            alignment: liftEmptyGreeting
+                                ? Alignment.centerLeft
+                                : Alignment.center,
+                            child: ChatEmptyGreeting(
+                              compact: true,
+                              primaryTextColor: palette.textPrimary,
+                              secondaryTextColor: palette.textSecondary,
+                              accentColor: palette.accentPrimary,
+                              quickPrompts: homeGreetingSettings.quickPrompts,
+                              pinnedQuickPromptIds:
+                                  homeGreetingSettings.pinnedQuickPromptIds,
+                              onQuickPromptSelected: _applyHomeQuickPrompt,
                             ),
                           ),
                         ),
                       ),
-                    ),
-                    // AI 生成标识
-                    const Padding(
-                      padding: EdgeInsets.only(top: 4),
-                      child: Align(
-                        alignment: Alignment.center,
-                        child: AiGeneratedBadge(),
-                      ),
-                    ),
-                    // 消息列表 - 使用 NotificationListener 阻止滚动事件影响 sheet
-                    Expanded(
-                      child: NotificationListener<ScrollNotification>(
-                        onNotification: (notification) {
-                          _handleMessageScrollNotification(notification);
-                          return true; // 阻止滚动事件冒泡到 sheet
-                        },
-                        child: _buildMessageList(),
-                      ),
-                    ),
-                    if (_vlmInfoQuestion != null) _buildVlmInfoPrompt(),
-                    // 输入框 - 根据 _isInputAreaVisible 控制显示
-                    if (_isInputAreaVisible) _buildInputArea(),
-                    SizedBox(height: bottomInset),
                   ],
                 ),
               ),
@@ -2073,32 +2489,12 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   }
 
   Widget _buildMessageList() {
-    final emptyStateBottomInset =
-        (_isInputAreaVisible
-                ? ((_inputAreaHeight > 0 ? _inputAreaHeight : 72.0) +
-                      MediaQuery.of(context).viewInsets.bottom +
-                      12)
-                : 0.0)
-            .clamp(0.0, double.infinity)
-            .toDouble();
     if (_messages.isEmpty) {
       // 使用 GestureDetector 阻止手势穿透到原生层
       return GestureDetector(
         onVerticalDragUpdate: (_) {},
         behavior: HitTestBehavior.opaque,
-        child: AnimatedPadding(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          padding: EdgeInsets.only(bottom: emptyStateBottomInset),
-          child: Center(
-            child: Text(
-              Localizations.localeOf(context).languageCode == 'en'
-                  ? 'How can I help you?'
-                  : '有什么可以帮助你的？',
-              style: const TextStyle(color: Color(0xFF999999), fontSize: 14),
-            ),
-          ),
-        ),
+        child: const SizedBox.expand(),
       );
     }
 
@@ -2173,13 +2569,21 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
   }
 
   Widget _buildVlmInfoPrompt() {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final promptAccentColor = isDark
+        ? palette.accentPrimary
+        : const Color(0xFF4F83FF);
+    final promptTextColor = isDark
+        ? palette.textPrimary
+        : const Color(0xFF1D3E7B);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFE8F2FF),
+        color: isDark ? palette.surfaceSecondary : const Color(0xFFE8F2FF),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF4F83FF)),
+        border: Border.all(color: promptAccentColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2191,13 +2595,12 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF1D3E7B),
-            ),
+            ).copyWith(color: promptTextColor),
           ),
           const SizedBox(height: 6),
           Text(
             _vlmInfoQuestion ?? '',
-            style: const TextStyle(fontSize: 13, color: Color(0xFF1D3E7B)),
+            style: TextStyle(fontSize: 13, color: promptTextColor),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -2252,6 +2655,17 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
 
   Widget _buildSlashCommandPanel() {
     final visible = _showSlashCommandPanel || _openClawPanelExpanded;
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final panelTextColor = isDark
+        ? palette.textPrimary
+        : const Color(0xFF1F2937);
+    final panelSecondaryTextColor = isDark
+        ? palette.textSecondary
+        : const Color(0xFF6B7280);
+    final panelAccentColor = isDark
+        ? palette.accentPrimary
+        : const Color(0xFF2563EB);
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
       transitionBuilder: (child, animation) {
@@ -2273,11 +2687,12 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
               margin: const EdgeInsets.fromLTRB(24, 0, 24, 6),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: isDark ? palette.surfacePrimary : Colors.white,
                 borderRadius: BorderRadius.circular(12),
+                border: isDark ? Border.all(color: palette.borderSubtle) : null,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.08),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -2287,12 +2702,12 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'OpenClaw 配置',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
+                            color: panelTextColor,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -2334,27 +2749,23 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
                       borderRadius: BorderRadius.circular(10),
                       child: Row(
                         children: [
-                          const Icon(
-                            Icons.link,
-                            size: 16,
-                            color: Color(0xFF2563EB),
-                          ),
+                          Icon(Icons.link, size: 16, color: panelAccentColor),
                           const SizedBox(width: 8),
-                          const Expanded(
+                          Expanded(
                             child: Text(
                               'OpenClaw',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
+                                color: panelTextColor,
                               ),
                             ),
                           ),
                           Text(
                             LegacyTextLocalizer.isEnglish ? 'Config' : '配置',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: Color(0xFF6B7280),
+                              color: panelSecondaryTextColor,
                             ),
                           ),
                         ],
@@ -2376,8 +2787,14 @@ class _ChatBotSheetState extends State<ChatBotSheet> with AgentStreamHandler {
         onSendMessage: _sendMessage,
         onCancelTask: _onCancelTask,
         onPopupVisibilityChanged: _onPopupVisibilityChanged,
+        onInputHeightChanged: _onInputHeightChanged,
         openClawEnabled: _openClawEnabled,
         onToggleOpenClaw: _setOpenClawEnabled,
+        useLargeComposerStyle: true,
+        useAttachmentPickerForPlus: true,
+        onPickAttachment: _pickAttachments,
+        attachments: _pendingAttachments,
+        onRemoveAttachment: _removePendingAttachment,
       ),
     );
   }

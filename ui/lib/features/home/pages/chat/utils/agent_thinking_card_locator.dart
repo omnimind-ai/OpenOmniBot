@@ -59,9 +59,15 @@ ChatMessageModel? resolveAgentThinkingCardForTask(
 bool _isAgentThinkingCardForTask(ChatMessageModel message, String taskId) {
   final baseThinkingCardId = '$taskId-thinking';
   final cardData = message.cardData;
+  final cardTaskId = (cardData?['taskID'] ?? '').toString().trim();
+  final streamTaskId = (message.streamMeta?['parentTaskId'] ?? '')
+      .toString()
+      .trim();
   return message.type == 2 &&
       cardData?['type'] == 'deep_thinking' &&
-      (message.id == baseThinkingCardId ||
+      (cardTaskId == taskId ||
+          streamTaskId == taskId ||
+          message.id == baseThinkingCardId ||
           message.id.startsWith('$baseThinkingCardId-'));
 }
 

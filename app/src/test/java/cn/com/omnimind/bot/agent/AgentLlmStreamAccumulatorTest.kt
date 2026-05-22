@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.agent
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentLlmStreamAccumulatorTest {
@@ -109,6 +110,40 @@ class AgentLlmStreamAccumulatorTest {
 
         assertEquals("需要查工具", turn.reasoning)
         assertEquals("需要查工具", turn.message.reasoningContent)
+    }
+
+    @Test
+    fun `tool rounds retain reasoning content even without full deepseek adapter mode`() {
+        val accumulator = AgentLlmStreamAccumulator(json = json)
+
+        accumulator.consume(
+            """{"choices":[{"delta":{"reasoning_content":"继续调用工具前要回传思考","content":"","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"get_time","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}"""
+        )
+
+        val turn = accumulator.buildTurn()
+
+        assertEquals("继续调用工具前要回传思考", turn.reasoning)
+        assertEquals("继续调用工具前要回传思考", turn.message.reasoningContent)
+    }
+
+    @Test
+    fun `surfaces top level provider error instead of empty assistant turn`() {
+        val accumulator = AgentLlmStreamAccumulator(json = json)
+
+        accumulator.consume(
+            """{"error":{"code":"upstream_unavailable","message":"Upstream service is unavailable and returned no output.","param":null,"type":"service_unavailable_error"},"status_code":503}"""
+        )
+        accumulator.consume(
+            """{"id":"","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":0,"total_tokens":10}}"""
+        )
+        accumulator.consume("[DONE]")
+
+        val error = runCatching { accumulator.buildTurn() }.exceptionOrNull()
+
+        requireNotNull(error)
+        assertTrue(error.message.orEmpty().contains("provider stream returned error"))
+        assertTrue(error.message.orEmpty().contains("status=503"))
+        assertTrue(error.message.orEmpty().contains("upstream_unavailable"))
     }
 
     @Test

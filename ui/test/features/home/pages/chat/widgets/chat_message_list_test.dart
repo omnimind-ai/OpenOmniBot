@@ -683,6 +683,71 @@ void main() {
   });
 
   testWidgets(
+    'cancelled agent run auto-collapses trace and shows cancel body',
+    (tester) async {
+      final controller = ScrollController();
+      final messages = ObservableChatMessageList()
+        ..replaceAllMessages(_buildCompletedAgentRunMessages());
+      Set<String> expandedTaskIds = <String>{'task-1'};
+      late StateSetter setState;
+
+      await tester.pumpWidget(
+        _buildLocalizedApp(
+          child: StatefulBuilder(
+            builder: (context, stateSetter) {
+              setState = stateSetter;
+              return SizedBox(
+                width: 400,
+                height: 520,
+                child: ChatMessageList(
+                  messages: messages,
+                  scrollController: controller,
+                  expandedAgentRunTaskIds: expandedTaskIds,
+                  onExpandedAgentRunTaskIdsChanged: (nextTaskIds) {
+                    setState(() {
+                      expandedTaskIds = nextTaskIds;
+                    });
+                  },
+                  onBeforeTaskExecute: () async {},
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('运行 git status'), findsOneWidget);
+
+      messages.insert(
+        0,
+        ChatMessageModel(
+          id: 'task-1-cancelled',
+          type: 1,
+          user: 2,
+          content: const <String, dynamic>{
+            'text': '任务已取消',
+            'id': 'task-1-cancelled',
+            'renderMarkdown': false,
+          },
+          streamMeta: const <String, dynamic>{
+            'parentTaskId': 'task-1',
+            'kind': 'text_snapshot',
+            'seq': 1000000000,
+            'entryId': 'task-1-cancelled',
+            'isFinal': true,
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(expandedTaskIds, isEmpty);
+      expect(find.text('任务已取消'), findsOneWidget);
+      expect(find.text('运行 git status'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'expanding latest agent run keeps the summary row anchored while inset grows',
     (tester) async {
       final controller = ScrollController();

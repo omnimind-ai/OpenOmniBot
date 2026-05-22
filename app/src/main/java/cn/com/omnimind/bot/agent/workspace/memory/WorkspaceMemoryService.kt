@@ -23,6 +23,8 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -63,6 +65,15 @@ data class WorkspaceMemoryPromptContext(
     val soul: String,
     val longTermMemory: String,
     val todayShortMemory: String
+)
+
+data class WorkspaceShortMemoryEntry(
+    val id: String,
+    val date: String,
+    val time: String,
+    val content: String,
+    val timestampMillis: Long,
+    val quickLogId: String? = null
 )
 
 data class WorkspaceMemoryRollupStatus(
@@ -107,6 +118,14 @@ class WorkspaceMemoryService(
         private const val KEY_ROLLUP_LAST_RUN_AT = "workspace_memory_rollup_last_run_at_v1"
         private const val KEY_ROLLUP_LAST_SUMMARY = "workspace_memory_rollup_last_summary_v1"
         private const val MAX_ROLLUP_LONG_TERM_CANDIDATES = 8
+        private val QUICK_LOG_MARKER_REGEX =
+            Regex("^\\[quick-log:([A-Za-z0-9-]+)]\\s*(.*)$")
+        private val DAILY_TIME_PREFIX_REGEX =
+            Regex("^\\[([0-2]\\d:[0-5]\\d:[0-5]\\d)]\\s*(.*)$")
+        private val LEGACY_QUICK_LOG_PREFIX_REGEX =
+            Regex("^(?:Quick log|\\u65e5\\u5fd7\\u901f\\u8bb0)[:\\uff1a]?\\s*", RegexOption.IGNORE_CASE)
+        private val SHORT_MEMORY_FILE_DATE_FORMAT =
+            DateTimeFormatter.ofPattern("yy-MM-dd")
     }
 
     private val gson = Gson()
@@ -199,6 +218,122 @@ class WorkspaceMemoryService(
             .format(LocalDateTime.now())
         file.appendText("- [$timestamp] $normalized\n")
         return file
+    }
+
+    fun listShortMemoryEntries(
+        days: Int = 14,
+        limit: Int = 240
+    ): List<WorkspaceShortMemoryEntry> {
+        ensureInitialized()
+        val now = LocalDate.now()
+        val entries = mutableListOf<WorkspaceShortMemoryEntry>()
+        for (offset in 0 until days.coerceIn(1, 90)) {
+            val date = now.minusDays(offset.toLong())
+            entries += parseDailyShortMemoryEntries(
+                date = date,
+                content = readDailyMemory(date)
+            )
+        }
+        val sorted = entries.sortedWith(
+            compareByDescending<WorkspaceShortMemoryEntry> { it.timestampMillis }
+                .thenByDescending { it.id }
+        )
+        val seenQuickLogIds = mutableSetOf<String>()
+        return sorted.filter { entry ->
+            val quickLogId = entry.quickLogId
+            quickLogId == null || seenQuickLogIds.add(quickLogId)
+        }.take(limit.coerceIn(1, 1000))
+    }
+
+    fun appendQuickLogMemory(
+        logId: String,
+        content: String,
+        date: LocalDate = LocalDate.now()
+    ): WorkspaceShortMemoryEntry {
+        ensureInitialized()
+        val normalizedLogId = logId.trim()
+        val normalizedContent = normalizeQuickLogContent(content)
+        require(normalizedLogId.isNotEmpty()) { "log id is empty" }
+        require(normalizedContent.isNotEmpty()) { "memory text is empty" }
+
+        val file = workspaceManager.dailyShortMemoryFile(date)
+        if (!file.exists()) {
+            file.parentFile?.mkdirs()
+            file.writeText("# ${date.format(DateTimeFormatter.ISO_LOCAL_DATE)} Daily Memory\n\n")
+        }
+        val timestamp = DateTimeFormatter.ofPattern("HH:mm:ss").format(LocalDateTime.now())
+        file.appendText("- [$timestamp] ${buildQuickLogBody(normalizedLogId, normalizedContent)}\n")
+        return parseDailyShortMemoryEntries(date, file.readText())
+            .lastOrNull { it.quickLogId == normalizedLogId }
+            ?: WorkspaceShortMemoryEntry(
+                id = normalizedLogId,
+                date = date.format(DateTimeFormatter.ISO_LOCAL_DATE),
+                time = timestamp,
+                content = normalizedContent,
+                timestampMillis = parseTimestampMillis(date, timestamp),
+                quickLogId = normalizedLogId
+            )
+    }
+
+    fun updateQuickLogMemory(
+        logId: String,
+        previousContent: String,
+        newContent: String
+    ): WorkspaceShortMemoryEntry? {
+        ensureInitialized()
+        val normalizedLogId = logId.trim()
+        val normalizedNewContent = normalizeQuickLogContent(newContent)
+        require(normalizedLogId.isNotEmpty()) { "log id is empty" }
+        require(normalizedNewContent.isNotEmpty()) { "memory text is empty" }
+
+        val candidateFiles = workspaceManager.shortMemoriesDirectory()
+            .listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".md") }
+            ?.sortedByDescending { it.name }
+            .orEmpty()
+
+        candidateFiles.forEach { file ->
+            val date = parseLocalDateFromFileName(file.nameWithoutExtension) ?: return@forEach
+            val lines = file.readLines().toMutableList()
+            val updated = updateQuickLogLineInMemoryFile(
+                lines = lines,
+                normalizedLogId = normalizedLogId,
+                normalizedPreviousContent = normalizeQuickLogContent(previousContent),
+                normalizedNewContent = normalizedNewContent
+            )
+            if (updated) {
+                writeDailyMemoryLines(file, lines)
+                return parseDailyShortMemoryEntries(date, file.readText())
+                    .firstOrNull { it.quickLogId == normalizedLogId }
+            }
+        }
+        return null
+    }
+
+    fun deleteQuickLogMemory(logId: String, contentHint: String): Boolean {
+        ensureInitialized()
+        val normalizedLogId = logId.trim()
+        require(normalizedLogId.isNotEmpty()) { "log id is empty" }
+
+        val candidateFiles = workspaceManager.shortMemoriesDirectory()
+            .listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".md") }
+            ?.sortedByDescending { it.name }
+            .orEmpty()
+
+        candidateFiles.forEach { file ->
+            val lines = file.readLines().toMutableList()
+            val deleted = deleteQuickLogLineFromMemoryFile(
+                lines = lines,
+                normalizedLogId = normalizedLogId,
+                normalizedContentHint = normalizeQuickLogContent(contentHint)
+            )
+            if (deleted) {
+                writeDailyMemoryLines(file, lines)
+                return true
+            }
+        }
+        return false
     }
 
     fun upsertLongTermMemory(text: String): Boolean {
@@ -427,8 +562,23 @@ class WorkspaceMemoryService(
             return emptyTodayShortMemoryText()
         }
         val lines = today.lineSequence()
-            .map { it.trim() }
-            .filter { it.startsWith("- ") }
+            .mapNotNull { raw ->
+                val line = raw.trim()
+                if (!line.startsWith("- ")) {
+                    return@mapNotNull null
+                }
+                val item = line.removePrefix("- ").trim()
+                if (item.isEmpty()) {
+                    return@mapNotNull null
+                }
+                val (timeText, bodyText) = extractTimestampAndBody(item)
+                val content = stripQuickLogDecorators(bodyText)
+                if (content.isEmpty() || isRollupMetadataLine(content)) {
+                    return@mapNotNull null
+                }
+                val prefix = if (timeText.isEmpty()) "" else "[$timeText] "
+                "- $prefix$content"
+            }
             .take(maxItems)
             .toList()
         return if (lines.isEmpty()) emptyTodayShortMemoryText() else lines.joinToString("\n")
@@ -466,6 +616,8 @@ class WorkspaceMemoryService(
     private fun normalizeRollupLine(raw: String): String {
         return raw
             .replace(Regex("^\\[[0-2]\\d:[0-5]\\d:[0-5]\\d]\\s*"), "")
+            .replace(QUICK_LOG_MARKER_REGEX, "$2")
+            .replace(LEGACY_QUICK_LOG_PREFIX_REGEX, "")
             .replace(Regex("\\s+"), " ")
             .trim()
     }
@@ -965,7 +1117,8 @@ class WorkspaceMemoryService(
             .filter { it.isNotEmpty() }
             .filterNot { it.startsWith("#") }
             .map {
-                if (it.startsWith("- ")) it.removePrefix("- ").trim() else it
+                val value = if (it.startsWith("- ")) it.removePrefix("- ").trim() else it
+                stripQuickLogDecorators(value)
             }
             .filter { it.isNotEmpty() }
             .toList()
@@ -1145,5 +1298,177 @@ class WorkspaceMemoryService(
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(raw.toByteArray(StandardCharsets.UTF_8))
         return digest.joinToString("") { "%02x".format(it) }.take(24)
+    }
+
+    private fun parseDailyShortMemoryEntries(
+        date: LocalDate,
+        content: String
+    ): List<WorkspaceShortMemoryEntry> {
+        if (content.isBlank()) {
+            return emptyList()
+        }
+        val dateText = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val entries = mutableListOf<WorkspaceShortMemoryEntry>()
+        var lineIndex = 0
+        content.lineSequence().forEach { raw ->
+            val line = raw.trim()
+            if (!line.startsWith("- ")) {
+                return@forEach
+            }
+            val item = line.removePrefix("- ").trim()
+            if (item.isEmpty()) {
+                return@forEach
+            }
+            val (timeText, bodyText) = extractTimestampAndBody(item)
+            val quickLogId = extractQuickLogId(bodyText)
+            val displayContent = stripQuickLogDecorators(bodyText)
+            if (displayContent.isEmpty() || isRollupMetadataLine(displayContent)) {
+                return@forEach
+            }
+            entries += WorkspaceShortMemoryEntry(
+                id = quickLogId ?: makeStableShortMemoryId(dateText, lineIndex, displayContent),
+                date = dateText,
+                time = timeText.ifEmpty { "00:00:00" },
+                content = displayContent,
+                timestampMillis = parseTimestampMillis(date, timeText),
+                quickLogId = quickLogId
+            )
+            lineIndex += 1
+        }
+        return entries
+    }
+
+    private fun updateQuickLogLineInMemoryFile(
+        lines: MutableList<String>,
+        normalizedLogId: String,
+        normalizedPreviousContent: String,
+        normalizedNewContent: String
+    ): Boolean {
+        val matchedIndexes = mutableListOf<Int>()
+        var lastMatchedTimeText = ""
+        for (index in lines.indices) {
+            val raw = lines[index].trim()
+            if (!raw.startsWith("- ")) {
+                continue
+            }
+            val item = raw.removePrefix("- ").trim()
+            val (timeText, bodyText) = extractTimestampAndBody(item)
+            val quickLogId = extractQuickLogId(bodyText)
+            val displayContent = normalizeQuickLogContent(stripQuickLogDecorators(bodyText))
+            val matches = quickLogId == normalizedLogId ||
+                (quickLogId == null &&
+                    normalizedPreviousContent.isNotEmpty() &&
+                    displayContent == normalizedPreviousContent)
+            if (!matches) {
+                continue
+            }
+            matchedIndexes += index
+            if (timeText.isNotEmpty()) {
+                lastMatchedTimeText = timeText
+            }
+        }
+        val targetIndex = matchedIndexes.lastOrNull() ?: return false
+        for (index in matchedIndexes.asReversed()) {
+            if (index != targetIndex) {
+                lines.removeAt(index)
+            }
+        }
+        val prefix = if (lastMatchedTimeText.isEmpty()) "" else "[$lastMatchedTimeText] "
+        lines[targetIndex - (matchedIndexes.size - 1)] =
+            "- $prefix${buildQuickLogBody(normalizedLogId, normalizedNewContent)}"
+        return true
+    }
+
+    private fun deleteQuickLogLineFromMemoryFile(
+        lines: MutableList<String>,
+        normalizedLogId: String,
+        normalizedContentHint: String
+    ): Boolean {
+        val matchedIndexes = mutableListOf<Int>()
+        for (index in lines.indices) {
+            val raw = lines[index].trim()
+            if (!raw.startsWith("- ")) {
+                continue
+            }
+            val item = raw.removePrefix("- ").trim()
+            val (_, bodyText) = extractTimestampAndBody(item)
+            val quickLogId = extractQuickLogId(bodyText)
+            val displayContent = normalizeQuickLogContent(stripQuickLogDecorators(bodyText))
+            val matches = quickLogId == normalizedLogId ||
+                (quickLogId == null &&
+                    normalizedContentHint.isNotEmpty() &&
+                    displayContent == normalizedContentHint)
+            if (!matches) {
+                continue
+            }
+            matchedIndexes += index
+        }
+        if (matchedIndexes.isEmpty()) {
+            return false
+        }
+        matchedIndexes.asReversed().forEach { index ->
+            lines.removeAt(index)
+        }
+        return true
+    }
+
+    private fun writeDailyMemoryLines(file: File, lines: List<String>) {
+        val text = if (lines.isEmpty()) "" else lines.joinToString("\n").trimEnd() + "\n"
+        file.writeText(text)
+    }
+
+    private fun extractTimestampAndBody(item: String): Pair<String, String> {
+        val match = DAILY_TIME_PREFIX_REGEX.find(item)
+        if (match == null) {
+            return "" to item.trim()
+        }
+        return (match.groupValues.getOrNull(1)?.trim().orEmpty()) to
+            (match.groupValues.getOrNull(2)?.trim().orEmpty())
+    }
+
+    private fun buildQuickLogBody(logId: String, content: String): String {
+        return "[quick-log:$logId] $content"
+    }
+
+    private fun extractQuickLogId(bodyText: String): String? {
+        val match = QUICK_LOG_MARKER_REGEX.find(bodyText.trim()) ?: return null
+        return match.groupValues.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun stripQuickLogDecorators(raw: String): String {
+        val withoutMarker = raw.trim().replace(QUICK_LOG_MARKER_REGEX, "$2").trim()
+        return withoutMarker.replace(LEGACY_QUICK_LOG_PREFIX_REGEX, "").trim()
+    }
+
+    private fun normalizeQuickLogContent(raw: String): String {
+        return stripQuickLogDecorators(raw)
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private fun parseLocalDateFromFileName(value: String): LocalDate? {
+        return runCatching {
+            LocalDate.parse(value, SHORT_MEMORY_FILE_DATE_FORMAT)
+        }.recoverCatching {
+            LocalDate.parse(value, DateTimeFormatter.ISO_LOCAL_DATE)
+        }.getOrNull()
+    }
+
+    private fun parseTimestampMillis(date: LocalDate, timeText: String): Long {
+        val localTime = runCatching {
+            LocalTime.parse(timeText.ifEmpty { "00:00:00" })
+        }.getOrNull() ?: LocalTime.MIDNIGHT
+        return LocalDateTime.of(date, localTime)
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+    }
+
+    private fun makeStableShortMemoryId(date: String, lineIndex: Int, content: String): String {
+        return stableChunkId(
+            source = ".omnibot/memory/short-memories",
+            date = date,
+            text = "$lineIndex|$content"
+        )
     }
 }

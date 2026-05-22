@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ui/l10n/app_language_mode.dart';
+import 'package:ui/models/habitual_hand.dart';
 import 'package:ui/theme/app_theme_mode.dart';
 
 /// SharedPreferences 统一管理类。
@@ -158,8 +159,47 @@ class StorageService {
   static const String kPetOverlayImagePathKey = 'pet_overlay_image_path';
   static const String kPetOverlaySelectedIdKey = 'pet_overlay_selected_id';
   static const String kPetOverlayVisibleKey = 'pet_overlay_visible';
+  static const String kUseIndependentChatSendButtonKey =
+      'use_independent_chat_send_button';
+  static const String kHabitualHandKey = 'habitual_hand';
   static const String kThemeOptionKey = 'theme_option';
   static const String kLanguageOptionKey = 'language_option';
+
+  static const String _kManualModelContextThresholdsKey =
+      'manual_model_context_thresholds';
+
+  static Future<bool> setManualModelContextThreshold(
+    String modelId,
+    int threshold,
+  ) async {
+    final map = getJson<Map<String, dynamic>>(
+          _kManualModelContextThresholdsKey,
+        ) ??
+        <String, dynamic>{};
+    map[modelId] = threshold;
+    return setJson(_kManualModelContextThresholdsKey, map);
+  }
+
+  static Future<bool> clearManualModelContextThreshold(String modelId) async {
+    final map = getJson<Map<String, dynamic>>(
+          _kManualModelContextThresholdsKey,
+        ) ??
+        <String, dynamic>{};
+    if (!map.containsKey(modelId)) return true;
+    map.remove(modelId);
+    return setJson(_kManualModelContextThresholdsKey, map);
+  }
+
+  static int? getManualModelContextThreshold(String modelId) {
+    final map = getJson<Map<String, dynamic>>(
+      _kManualModelContextThresholdsKey,
+    );
+    if (map == null || !map.containsKey(modelId)) return null;
+    final value = map[modelId];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return null;
+  }
 
   static Future<bool> isAutoBackToChatAfterTaskEnabled() async {
     final enabled = getBool(kAutoBackToChatAfterTaskKey, defaultValue: true);
@@ -169,6 +209,7 @@ class StorageService {
   static Future<void> setAutoBackToChatAfterTaskEnabled(bool enabled) async {
     await setBool(kAutoBackToChatAfterTaskKey, enabled);
   }
+
 
   static Future<bool> isPreventScreenSleepDuringTasksEnabled() async {
     final enabled = getBool(
@@ -221,6 +262,28 @@ class StorageService {
 
   static Future<void> setPetOverlayVisible(bool visible) async {
     await setBool(kPetOverlayVisibleKey, visible);
+
+  static bool isIndependentChatSendButtonEnabled() {
+    return getBool(kUseIndependentChatSendButtonKey, defaultValue: true) ??
+        true;
+  }
+
+  static Future<bool> setIndependentChatSendButtonEnabled(bool enabled) {
+    return setBool(kUseIndependentChatSendButtonKey, enabled);
+  }
+
+  static HabitualHand getHabitualHand() {
+    return habitualHandFromStorageValue(
+      getString(
+        kHabitualHandKey,
+        defaultValue: HabitualHand.right.storageValue,
+      ),
+    );
+  }
+
+  static Future<bool> setHabitualHand(HabitualHand hand) async {
+    return setString(kHabitualHandKey, hand.storageValue);
+
   }
 
   static AppThemeMode getThemeMode() {
@@ -249,9 +312,7 @@ class StorageService {
     await setString(kLanguageOptionKey, mode.storageValue);
   }
 
-  static ResolvedAppLocale getResolvedAppLocale({
-    Locale? systemLocale,
-  }) {
+  static ResolvedAppLocale getResolvedAppLocale({Locale? systemLocale}) {
     return resolveAppLocale(
       mode: getLanguageMode(),
       systemLocale: systemLocale ?? PlatformDispatcher.instance.locale,

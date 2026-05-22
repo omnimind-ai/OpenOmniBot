@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:ui/services/storage_service.dart';
 
 enum AppUpdateDownloadSource {
-  cnb('cnb'),
+  worker('worker'),
   github('github');
 
   const AppUpdateDownloadSource(this.value);
@@ -15,7 +15,7 @@ enum AppUpdateDownloadSource {
   static AppUpdateDownloadSource fromRaw(String? raw) {
     return AppUpdateDownloadSource.values.firstWhere(
       (source) => source.value == raw?.trim().toLowerCase(),
-      orElse: () => AppUpdateDownloadSource.cnb,
+      orElse: () => AppUpdateDownloadSource.worker,
     );
   }
 }
@@ -107,7 +107,7 @@ class AppUpdateService {
     false,
   );
   static final ValueNotifier<AppUpdateDownloadSource> downloadSourceNotifier =
-      ValueNotifier<AppUpdateDownloadSource>(AppUpdateDownloadSource.cnb);
+      ValueNotifier<AppUpdateDownloadSource>(AppUpdateDownloadSource.worker);
   static final ValueNotifier<AppUpdateStatus?> statusNotifier =
       ValueNotifier<AppUpdateStatus?>(null);
 

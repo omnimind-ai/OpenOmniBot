@@ -124,6 +124,16 @@ class AgentToolRegistry(
                 )
             )
         }
+
+        // Debug dump: full registered tool list to verify which ones the LLM actually receives.
+        OmniLog.i(
+            tag,
+            "registered_tools count=${toolsForModel.size} " +
+                "conversationMode=$conversationMode " +
+                "subagent_present=${"subagent_dispatch" in runtimeDescriptors.keys} " +
+                "memory_load_present=${"memory_load" in runtimeDescriptors.keys} " +
+                "names=[${runtimeDescriptors.keys.joinToString(",")}]"
+        )
     }
 
     override fun runtimeDescriptor(toolName: String): RuntimeToolDescriptor {

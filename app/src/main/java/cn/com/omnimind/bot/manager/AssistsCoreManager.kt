@@ -82,6 +82,7 @@ import cn.com.omnimind.bot.agent.WorkspaceScheduledTaskScheduler
 import cn.com.omnimind.bot.agent.resolveToolExecutionStatus
 import cn.com.omnimind.bot.localmodel.LocalModelFeature
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
+import cn.com.omnimind.bot.quicklog.QuickLogService
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
 import cn.com.omnimind.bot.webchat.ConversationDomainService
 import cn.com.omnimind.bot.webchat.FlutterChatSyncBridge
@@ -240,6 +241,23 @@ private fun sanitizeInteropMap(payload: Map<String, Any?>): Map<String, Any?> {
             put(key, sanitizeInteropValue(value))
         }
     }
+}
+
+internal const val AGENT_MANUAL_CANCELLATION_SEQUENCE = 1_000_000_000L
+internal const val AGENT_MANUAL_CANCELLATION_ROUND = 1_000_000_000
+
+internal fun buildAgentManualCancellationStreamMeta(
+    taskId: String,
+    entryId: String
+): Map<String, Any?> {
+    return linkedMapOf(
+        "seq" to AGENT_MANUAL_CANCELLATION_SEQUENCE,
+        "roundIndex" to AGENT_MANUAL_CANCELLATION_ROUND,
+        "kind" to "text_snapshot",
+        "parentTaskId" to taskId,
+        "entryId" to entryId,
+        "isFinal" to true
+    )
 }
 
 internal fun extractChatTaskTextPayload(content: String): String {
@@ -513,8 +531,10 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     )
 
     private class ActiveAgentRunContext(
-        private val taskId: String,
-        val job: Job
+        val taskId: String,
+        val job: Job,
+        val conversationId: Long?,
+        val conversationMode: String
     ) : AgentRunControl {
         private val lock = Any()
         private var generationCounter = 0L
@@ -725,20 +745,66 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     }
 
     private fun cancelActiveAgentRun(taskId: String?, reason: String) {
-        val jobsToCancel = synchronized(activeAgentLock) {
+        val runsToCancel = synchronized(activeAgentLock) {
             if (taskId.isNullOrBlank()) {
-                val snapshot = activeAgentRuns.values.map { it.job }
+                val snapshot = activeAgentRuns.values.toList()
                 activeAgentRuns.clear()
                 snapshot
             } else {
-                val current = activeAgentRuns.remove(taskId)?.job
+                val current = activeAgentRuns.remove(taskId)
                 if (current == null) emptyList() else listOf(current)
             }
         }
-        if (jobsToCancel.isNotEmpty()) {
+        if (runsToCancel.isNotEmpty()) {
             OmniLog.i(TAG, "Cancelling active agent run(s): $reason taskId=$taskId")
-            jobsToCancel.forEach { job ->
-                job.cancel(CancellationException(reason))
+            runsToCancel.forEach { run ->
+                publishManualAgentCancellation(run)
+                run.job.cancel(CancellationException(reason))
+            }
+        }
+    }
+
+    private fun publishManualAgentCancellation(run: ActiveAgentRunContext) {
+        val conversationId = run.conversationId ?: return
+        val cancelledText = when (AppLocaleManager.resolvePromptLocale(context)) {
+            PromptLocale.EN_US -> "Task canceled"
+            PromptLocale.ZH_CN -> "任务已取消"
+        }
+        val entryId = "${run.taskId}-cancelled"
+        val now = System.currentTimeMillis()
+        val streamMeta = buildAgentManualCancellationStreamMeta(run.taskId, entryId)
+        workJob.launch {
+            runCatching {
+                val repository = conversationHistoryRepository()
+                repository.upsertAssistantMessage(
+                    conversationId = conversationId,
+                    conversationMode = run.conversationMode,
+                    entryId = entryId,
+                    text = cancelledText,
+                    isError = false,
+                    streamMeta = streamMeta,
+                    createdAt = now
+                )
+                withContext(Dispatchers.Main) {
+                    invokeFlutterEventSafely(
+                        "onAgentStreamEvent",
+                        sanitizeInteropMap(
+                            mapOf(
+                                "taskId" to run.taskId,
+                                "seq" to AGENT_MANUAL_CANCELLATION_SEQUENCE,
+                                "kind" to "text_snapshot",
+                                "entryId" to entryId,
+                                "roundIndex" to AGENT_MANUAL_CANCELLATION_ROUND,
+                                "isFinal" to true,
+                                "text" to cancelledText,
+                                "createdAt" to now,
+                                "streamMeta" to streamMeta
+                            )
+                        )
+                    )
+                }
+            }.onFailure {
+                OmniLog.w(TAG, "publish manual agent cancellation failed: ${it.message}", it)
             }
         }
     }
@@ -3262,70 +3328,118 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         workJob.launch {
             try {
                 val service = WorkspaceMemoryService(context)
-                val now = LocalDate.now()
-                val timePattern = Regex("^\\[([0-2]\\d:[0-5]\\d:[0-5]\\d)]\\s*(.*)$")
-                val zoneId = ZoneId.systemDefault()
-                val payload = mutableListOf<Map<String, Any?>>()
-
-                for (offset in 0 until days) {
-                    val date = now.minusDays(offset.toLong())
-                    val dateText = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                    val content = service.readDailyMemory(date)
-                    if (content.isBlank()) {
-                        continue
-                    }
-                    var lineIndex = 0
-                    content.lineSequence().forEach { raw ->
-                        val line = raw.trim()
-                        if (!line.startsWith("- ")) {
-                            return@forEach
-                        }
-                        val item = line.removePrefix("- ").trim()
-                        if (item.isEmpty()) {
-                            return@forEach
-                        }
-                        val match = timePattern.find(item)
-                        val timeText = match?.groupValues?.getOrNull(1)?.trim()
-                        val body = (match?.groupValues?.getOrNull(2) ?: item).trim()
-                        if (body.isEmpty() || isWorkspaceRollupMetadataLine(body)) {
-                            return@forEach
-                        }
-                        val localTime = runCatching {
-                            LocalTime.parse(timeText ?: "00:00:00")
-                        }.getOrNull() ?: LocalTime.MIDNIGHT
-                        val timestampMillis = LocalDateTime.of(date, localTime)
-                            .atZone(zoneId)
-                            .toInstant()
-                            .toEpochMilli()
-                        val stableKey = "$dateText|$lineIndex|$body"
-                        payload += mapOf(
-                            "id" to stableKey.hashCode().toString(),
-                            "date" to dateText,
-                            "time" to (timeText ?: "00:00:00"),
-                            "content" to body,
-                            "timestampMillis" to timestampMillis
+                val payload = service.listShortMemoryEntries(days = days, limit = limit)
+                    .map { entry ->
+                        mapOf(
+                            "id" to entry.id,
+                            "date" to entry.date,
+                            "time" to entry.time,
+                            "content" to entry.content,
+                            "timestampMillis" to entry.timestampMillis,
+                            "quickLogId" to entry.quickLogId
                         )
-                        lineIndex += 1
                     }
-                }
-
-                val sorted = payload.sortedWith(
-                    compareByDescending<Map<String, Any?>> {
-                        (it["timestampMillis"] as? Long) ?: 0L
-                    }.thenByDescending {
-                        (it["id"] as? String) ?: ""
-                    }
-                ).take(limit)
                 withContext(Dispatchers.Main) {
                     result.success(
                         mapOf(
-                            "items" to sorted
+                            "items" to payload
                         )
                     )
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     result.error("GET_WORKSPACE_SHORT_MEMORY_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun listQuickLogs(call: MethodCall, result: MethodChannel.Result) {
+        val limit = (call.argument<Int>("limit") ?: 200).coerceIn(1, 500)
+        workJob.launch {
+            try {
+                val service = QuickLogService(context)
+                val items = service.listLogs(limit).map { it.toMap() }
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        mapOf(
+                            "items" to items,
+                            "totalCount" to service.countLogs()
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("LIST_QUICK_LOGS_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun addQuickLog(call: MethodCall, result: MethodChannel.Result) {
+        val content = call.argument<String>("content") ?: ""
+        val source = call.argument<String>("source") ?: QuickLogService.SOURCE_APP
+        workJob.launch {
+            try {
+                val item = QuickLogService(context).addLog(
+                    content = content,
+                    source = source
+                )
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        mapOf(
+                            "item" to item.toMap()
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("ADD_QUICK_LOG_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun updateQuickLog(call: MethodCall, result: MethodChannel.Result) {
+        val id = call.argument<String>("id") ?: ""
+        val content = call.argument<String>("content") ?: ""
+        workJob.launch {
+            try {
+                val item = QuickLogService(context).updateLog(id, content)
+                withContext(Dispatchers.Main) {
+                    if (item == null) {
+                        result.error("UPDATE_QUICK_LOG_NOT_FOUND", "quick log not found", null)
+                    } else {
+                        result.success(
+                            mapOf(
+                                "item" to item.toMap()
+                            )
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("UPDATE_QUICK_LOG_ERROR", e.message, null)
+                }
+            }
+        }
+    }
+
+    fun deleteQuickLog(call: MethodCall, result: MethodChannel.Result) {
+        val id = call.argument<String>("id") ?: ""
+        workJob.launch {
+            try {
+                val deleted = QuickLogService(context).deleteLog(id)
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        mapOf(
+                            "deleted" to deleted
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("DELETE_QUICK_LOG_ERROR", e.message, null)
                 }
             }
         }
@@ -3822,7 +3936,12 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
         val agentRunJob = SupervisorJob()
         val agentRunScope = CoroutineScope(agentRunJob + Dispatchers.Default)
-        val agentRunContext = ActiveAgentRunContext(taskId = taskId, job = agentRunJob)
+        val agentRunContext = ActiveAgentRunContext(
+            taskId = taskId,
+            job = agentRunJob,
+            conversationId = conversationId,
+            conversationMode = resolvedConversationMode
+        )
         registerActiveAgentRun(taskId, agentRunContext)
         TaskRuntimeSettings.onTaskStarted(context)
 
@@ -4286,6 +4405,12 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     missing: List<String>? = null,
                     extras: Map<String, Any?> = emptyMap()
                 ) {
+                    val effectiveThinking = thinking
+                        ?.takeIf { it.isNotBlank() }
+                        ?: latestThinkingContent.takeIf {
+                            kind == "text_snapshot" &&
+                                it.isNotBlank()
+                        }
                     val basePayload = AgentStreamEvent(
                         taskId = taskId,
                         seq = nextEventSeq(),
@@ -4295,7 +4420,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         roundIndex = roundIndex,
                         isFinal = isFinal,
                         text = text,
-                        thinking = thinking,
+                        thinking = effectiveThinking,
                         stage = stage,
                         prefillTokensPerSecond = prefillTokensPerSecond,
                         decodeTokensPerSecond = decodeTokensPerSecond,
@@ -4438,6 +4563,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         val payload = buildToolStartPayload(toolName, argsJson).toMutableMap().apply {
                             put("cardId", entryId)
                         }
+                        latestThinkingContent.takeIf { it.isNotBlank() }?.let { reasoning ->
+                            payload["reasoning_content"] = reasoning
+                        }
                         upsertToolEvent(
                             entryId = entryId,
                             roundIndex = roundIndex,
@@ -4516,6 +4644,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             .toMutableMap().apply {
                                 put("cardId", entryId)
                             }
+                        latestThinkingContent.takeIf { it.isNotBlank() }?.let { reasoning ->
+                            payload["reasoning_content"] = reasoning
+                        }
                         val success = payload["success"] != false
                         upsertToolEvent(
                             entryId = entryId,
@@ -5267,6 +5398,57 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             "WORKSPACE_STORAGE_PERMISSION_REQUIRED"
                         } else {
                             "AGENT_SKILL_INSTALL_BUILTIN_ERROR"
+                        },
+                        if (isWorkspacePermissionError) {
+                            WorkspaceStorageAccess.REQUIRED_PERMISSION_NAME
+                        } else {
+                            e.message
+                        },
+                        null
+                    )
+                }
+            }
+        }
+    }
+
+    fun agentSkillSyncOfficialRepository(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            try {
+                if (!WorkspaceStorageAccess.isGranted(context)) {
+                    withContext(Dispatchers.Main) {
+                        result.error(
+                            "WORKSPACE_STORAGE_PERMISSION_REQUIRED",
+                            WorkspaceStorageAccess.REQUIRED_PERMISSION_NAME,
+                            null
+                        )
+                    }
+                    return@launch
+                }
+                val workspaceManager = AgentWorkspaceManager(context)
+                val skillIndexService = SkillIndexService(context, workspaceManager)
+                val syncResult = skillIndexService.syncOfficialSkillsRepository()
+                withContext(Dispatchers.Main) {
+                    result.success(
+                        mapOf(
+                            "action" to syncResult.action,
+                            "repositoryUrl" to syncResult.repositoryUrl,
+                            "rootPath" to syncResult.rootPath,
+                            "shellRootPath" to syncResult.shellRootPath,
+                            "skillCount" to syncResult.skillCount,
+                            "skills" to syncResult.skills.map(::skillEntryPayload),
+                            "output" to syncResult.output
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    val isWorkspacePermissionError =
+                        WorkspaceStorageAccess.looksLikePermissionError(e)
+                    result.error(
+                        if (isWorkspacePermissionError) {
+                            "WORKSPACE_STORAGE_PERMISSION_REQUIRED"
+                        } else {
+                            "AGENT_SKILL_SYNC_OFFICIAL_ERROR"
                         },
                         if (isWorkspacePermissionError) {
                             WorkspaceStorageAccess.REQUIRED_PERMISSION_NAME

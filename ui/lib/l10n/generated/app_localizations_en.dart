@@ -158,11 +158,31 @@ class AppLocalizationsEn extends AppLocalizations {
       'Use vibration to signal task progress while executing';
 
   @override
+  String get settingsIndependentSendButtonTitle => 'Independent Send Button';
+
+  @override
+  String get settingsIndependentSendButtonSubtitle =>
+      'When enabled, Enter creates a new line; when disabled, Enter sends the message directly';
+
+  @override
   String get settingsAutoBackTitle => 'Return to Chat After Tasks';
 
   @override
   String get settingsAutoBackSubtitle =>
       'When disabled, the task result page stays open after completion';
+
+  @override
+  String get settingsHabitualHandTitle => 'Dominant Hand';
+
+  @override
+  String get settingsHabitualHandSubtitle =>
+      'Changes the swipe direction for chat history menus';
+
+  @override
+  String get settingsHabitualHandLeft => 'Left';
+
+  @override
+  String get settingsHabitualHandRight => 'Right';
 
   @override
   String get settingsCompanionPermissionTitle => 'Companion App Permissions';
@@ -584,6 +604,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get skillBuiltin => 'Built-in';
 
   @override
+  String get skillOfficial => 'Official';
+
+  @override
   String get skillUser => 'User';
 
   @override
@@ -648,6 +671,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get skillToggleFailed => 'Failed to toggle';
+
+  @override
+  String get skillSyncOfficialTooltip => 'Install/update official skills';
+
+  @override
+  String skillSyncOfficialSuccess(Object count) {
+    return 'Official skills synced ($count)';
+  }
+
+  @override
+  String get skillSyncOfficialFailed => 'Failed to sync official skills';
 
   @override
   String get skillLoadFailed => 'Failed to load skills';
@@ -1619,10 +1653,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Choose the source used for update installs.';
 
   @override
-  String get aboutApkSourceOptionCnb => 'CNB';
+  String get aboutApkSourceOptionCnb => 'Cloudflare R2';
 
   @override
-  String get aboutApkSourceOptionCnbDescription => 'Best for mainland China';
+  String get aboutApkSourceOptionCnbDescription => 'Served by update worker';
 
   @override
   String get aboutApkSourceOptionGithub => 'GitHub';

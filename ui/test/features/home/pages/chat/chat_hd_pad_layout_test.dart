@@ -130,6 +130,40 @@ void main() {
     expect(geometry.rect.height, 96);
   });
 
+  test('adds composer clearance only when soft keyboard is visible', () {
+    expect(
+      resolveChatComposerKeyboardSpacer(
+        shouldLiftComposerForKeyboard: true,
+        bottomInset: 320,
+      ),
+      320 + kChatKeyboardComposerClearance,
+    );
+    expect(
+      resolveChatComposerKeyboardSpacer(
+        shouldLiftComposerForKeyboard: false,
+        bottomInset: 320,
+      ),
+      0,
+    );
+    expect(
+      resolveChatComposerKeyboardSpacer(
+        shouldLiftComposerForKeyboard: true,
+        bottomInset: 0,
+      ),
+      0,
+    );
+  });
+
+  test('ramps composer clearance out as the soft keyboard finishes hiding', () {
+    expect(
+      resolveChatComposerKeyboardSpacer(
+        shouldLiftComposerForKeyboard: true,
+        bottomInset: 4,
+      ),
+      8,
+    );
+  });
+
   test('clamps overlay anchor when keyboard spacing exceeds viewport', () {
     final geometry = resolveChatPaneOverlayAnchorGeometry(
       viewportSize: const Size(420, 300),

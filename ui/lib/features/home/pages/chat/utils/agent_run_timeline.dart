@@ -87,7 +87,10 @@ List<AgentRunTimelineEntry> buildAgentRunTimelineEntries(
 }
 
 String? agentRunParentTaskId(ChatMessageModel message) {
-  final raw = message.streamMeta?['parentTaskId'];
+  final raw =
+      message.streamMeta?['parentTaskId'] ??
+      message.cardData?['taskID'] ??
+      message.cardData?['taskId'];
   final normalized = raw?.toString().trim() ?? '';
   return normalized.isEmpty ? null : normalized;
 }
@@ -198,10 +201,17 @@ ChatMessageModel? _resolvePrimaryVisibleMessage(
   final fallbackTextSnapshots = aiTextMessages
       .where(_isLegacyTextSnapshotFallbackCandidate)
       .toList(growable: false);
-  if (fallbackTextSnapshots.isEmpty) {
-    return null;
+  if (fallbackTextSnapshots.isNotEmpty) {
+    return _newestBySequence(fallbackTextSnapshots);
   }
-  return _newestBySequence(fallbackTextSnapshots);
+
+  final cancelledTextMessages = aiTextMessages
+      .where(_isCancelledTextMessage)
+      .toList(growable: false);
+  if (cancelledTextMessages.isNotEmpty) {
+    return _newestBySequence(cancelledTextMessages);
+  }
+  return null;
 }
 
 bool _isTerminalVisibleTextMessage(ChatMessageModel message) {
@@ -224,6 +234,11 @@ bool _isLegacyTextSnapshotFallbackCandidate(ChatMessageModel message) {
     return true;
   }
   return streamMeta['isFinal'] == true;
+}
+
+bool _isCancelledTextMessage(ChatMessageModel message) {
+  final text = (message.text ?? '').trim().toLowerCase();
+  return text == '任务已取消' || text == 'task canceled' || text == 'task cancelled';
 }
 
 List<ChatMessageModel> _resolveVisibleMessages(

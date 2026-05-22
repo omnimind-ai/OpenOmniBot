@@ -1111,6 +1111,31 @@ class HdPadPaneLayout {
 
 const double kHdPadMinShortestSide = 600;
 const double kHdPadMinLandscapeWidth = 960;
+const double kChatKeyboardComposerClearance = 10.0;
+
+double resolveChatComposerKeyboardSpacer({
+  required bool shouldLiftComposerForKeyboard,
+  required double bottomInset,
+  double keyboardClearance = kChatKeyboardComposerClearance,
+}) {
+  if (!shouldLiftComposerForKeyboard) {
+    return 0.0;
+  }
+  final normalizedBottomInset = bottomInset.isFinite
+      ? math.max(0.0, bottomInset)
+      : 0.0;
+  if (normalizedBottomInset <= 0) {
+    return 0.0;
+  }
+  final normalizedClearance = keyboardClearance.isFinite
+      ? math.max(0.0, keyboardClearance)
+      : 0.0;
+  final closingClearance = math.min(
+    normalizedClearance,
+    normalizedBottomInset,
+  );
+  return normalizedBottomInset + closingClearance;
+}
 
 bool isHdPadLandscapeViewport(Size size) {
   return size.width > size.height &&

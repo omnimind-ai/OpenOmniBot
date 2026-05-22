@@ -70,6 +70,8 @@ class AgentSkillItem {
 
   bool get isBuiltin => source == 'builtin';
 
+  bool get isOfficial => source == 'official';
+
   AgentSkillItem copyWith({
     String? id,
     String? name,

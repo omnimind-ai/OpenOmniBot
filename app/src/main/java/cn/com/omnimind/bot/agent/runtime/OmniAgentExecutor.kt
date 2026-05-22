@@ -2,7 +2,11 @@ package cn.com.omnimind.bot.agent
 
 import android.content.Context
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
+import cn.com.omnimind.bot.agent.workspace.memory.LongTermMemoryIndex
+import cn.com.omnimind.bot.agent.workspace.memory.MemoryRetrievalPipeline
+import cn.com.omnimind.bot.agent.workspace.memory.TurnMemoryLoadTracker
 import cn.com.omnimind.bot.mcp.RemoteMcpDiscoveryRegistry
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.json.Json
@@ -12,6 +16,10 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 class OmniAgentExecutor(
@@ -73,6 +81,21 @@ class OmniAgentExecutor(
             val promptMemoryContext = runCatching {
                 memoryService.buildPromptContext()
             }.getOrNull()
+            val ltmIndex = runCatching {
+                LongTermMemoryIndex(workspaceManager)
+            }.getOrNull()
+            val memoryLoadTracker = TurnMemoryLoadTracker()
+            val prefetchedMemoryHits = if (ltmIndex != null) {
+                runCatching {
+                    MemoryRetrievalPipeline(memoryService, ltmIndex)
+                        .prefetchRelevant(userMessage, topK = 4)
+                }.getOrDefault(emptyList())
+            } else {
+                emptyList()
+            }
+            if (prefetchedMemoryHits.isNotEmpty()) {
+                memoryLoadTracker.markLoaded(prefetchedMemoryHits.map { it.id })
+            }
             val skillIndexService = SkillIndexService(context, workspaceManager)
             val skillLoader = SkillLoader(workspaceManager)
             val installedSkills = skillIndexService.listInstalledSkills()
@@ -110,7 +133,8 @@ class OmniAgentExecutor(
                     ?: workspaceManager.skillsRoot().absolutePath,
                 skillsRootAndroidPath = workspaceManager.skillsRoot().absolutePath,
                 resolvedSkills = resolvedSkills,
-                memoryContext = promptMemoryContext
+                memoryContext = promptMemoryContext,
+                prefetchedMemoryHits = prefetchedMemoryHits
             )
 
             val llmClient = HttpAgentLlmClient(
@@ -125,13 +149,31 @@ class OmniAgentExecutor(
                 reasoningEffort = reasoningEffort,
                 json = json
             )
+            val eventAdapter = AgentEventAdapter(json)
+            // Break the SubagentDispatcher ↔ AgentToolRouter cycle: hand the
+            // dispatcher a lazy reference to the router that we'll populate
+            // immediately after the router is constructed.
+            val routerRef = AtomicReference<AgentToolExecutor?>()
+            val catalogRef = AtomicReference<AgentToolCatalog?>(toolRegistry)
+            val subagentDispatcher = SubagentDispatcher(
+                llmClient = llmClient,
+                toolExecutorProvider = {
+                    routerRef.get() ?: error("subagent dispatcher invoked before router was bound")
+                },
+                parentCatalogProvider = {
+                    catalogRef.get() ?: error("subagent dispatcher missing parent catalog")
+                },
+                eventAdapter = eventAdapter,
+                model = agentModelScene
+            )
             toolRouter = AgentToolRouter(
                 context = context,
                 scope = scope,
                 scheduleToolBridge = scheduleToolBridge,
-                workspaceManager = workspaceManager
+                workspaceManager = workspaceManager,
+                subagentDispatcher = subagentDispatcher
             )
-            val eventAdapter = AgentEventAdapter(json)
+            routerRef.set(toolRouter)
             val orchestrator = AgentOrchestrator(
                 llmClient = llmClient,
                 toolRegistry = toolRegistry,
@@ -159,7 +201,9 @@ class OmniAgentExecutor(
                         conversationMode = conversationMode,
                         reasoningEffort = reasoningEffort,
                         terminalEnvironment = terminalEnvironment,
-                        runControl = runControl
+                        runControl = runControl,
+                        longTermMemoryIndex = ltmIndex,
+                        turnMemoryLoadTracker = memoryLoadTracker
                     )
                 )
             )
@@ -167,7 +211,7 @@ class OmniAgentExecutor(
             throw e
         } catch (e: Exception) {
             callback.onError("Agent execution failed: ${e.message}")
-            AgentResult.Error("Agent execution failed", e as? Exception)
+            AgentResult.Error("Agent execution failed", e)
         } finally {
             runCatching { toolRouter?.dispose() }
         }
@@ -182,7 +226,8 @@ class OmniAgentExecutor(
         skillsRootShellPath: String,
         skillsRootAndroidPath: String,
         resolvedSkills: List<ResolvedSkillContext>,
-        memoryContext: WorkspaceMemoryPromptContext?
+        memoryContext: WorkspaceMemoryPromptContext?,
+        prefetchedMemoryHits: List<WorkspaceMemorySearchHit> = emptyList()
     ): List<cn.com.omnimind.baselib.llm.ChatCompletionMessage> {
         val historyMessages = promptSeed.historyMessages.toMutableList()
         if (historyMessages.lastOrNull()?.role == "user") {
@@ -204,9 +249,64 @@ class OmniAgentExecutor(
                 content = buildCachedSystemPromptContent(systemPrompt)
             )
         )
+        messages.add(buildCurrentTimeContextMessage(AppLocaleManager.resolvePromptLocale(context)))
         messages.addAll(historyMessages)
+        buildPrefetchedMemoryAttachment(prefetchedMemoryHits)?.let { messages.add(it) }
         messages.add(buildCurrentUserMessage(userMessage, attachments))
         return messages
+    }
+
+    private fun buildCurrentTimeContextMessage(
+        locale: cn.com.omnimind.baselib.i18n.PromptLocale
+    ): cn.com.omnimind.baselib.llm.ChatCompletionMessage {
+        val zoneId = ZoneId.systemDefault()
+        val now = ZonedDateTime.now(zoneId)
+        val utcNow = now.withZoneSameInstant(ZoneOffset.UTC)
+        val isoFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
+        val content = when (locale) {
+            cn.com.omnimind.baselib.i18n.PromptLocale.ZH_CN -> """
+                [time_context]
+                当前本地时间: ${now.format(isoFormatter)}
+                本地日期: ${now.toLocalDate()}
+                本地时间: ${now.toLocalTime().format(DateTimeFormatter.ISO_LOCAL_TIME)}
+                时区: ${zoneId.id}
+                UTC: ${utcNow.format(isoFormatter)}
+                星期: ${now.dayOfWeek.name}
+                这条上下文由运行时为本轮请求自动生成，用于解释“今天”“明天”“现在”等相对时间；不要把它当作用户原文或长期记忆。
+            """.trimIndent()
+
+            cn.com.omnimind.baselib.i18n.PromptLocale.EN_US -> """
+                [time_context]
+                Current local time: ${now.format(isoFormatter)}
+                Local date: ${now.toLocalDate()}
+                Local clock time: ${now.toLocalTime().format(DateTimeFormatter.ISO_LOCAL_TIME)}
+                Timezone: ${zoneId.id}
+                UTC: ${utcNow.format(isoFormatter)}
+                Day of week: ${now.dayOfWeek.name}
+                This context is generated by the runtime for this request only. Use it to interpret relative times such as "today", "tomorrow", and "now"; do not treat it as user-authored text or long-term memory.
+            """.trimIndent()
+        }
+        return cn.com.omnimind.baselib.llm.ChatCompletionMessage(
+            role = "system",
+            content = JsonPrimitive(content)
+        )
+    }
+
+    private fun buildPrefetchedMemoryAttachment(
+        hits: List<WorkspaceMemorySearchHit>
+    ): cn.com.omnimind.baselib.llm.ChatCompletionMessage? {
+        if (hits.isEmpty()) return null
+        val payload = buildString {
+            appendLine("[memory.prefetch] 与当前用户问题最相关的工作区记忆：")
+            hits.take(4).forEach { hit ->
+                val text = hit.text.replace(Regex("\\s+"), " ").trim().take(280)
+                appendLine("- (${hit.source}) $text")
+            }
+        }.trim()
+        return cn.com.omnimind.baselib.llm.ChatCompletionMessage(
+            role = "user",
+            content = JsonPrimitive(payload)
+        )
     }
 
     private fun buildCurrentUserMessage(

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:ui/models/scheduled_task.dart';
-import 'package:ui/theme/app_colors.dart';
+import 'package:ui/theme/theme_context.dart';
 import 'package:uuid/uuid.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 
@@ -32,7 +32,7 @@ class ScheduleTaskSheet extends StatefulWidget {
   final ScheduledTask? existingTask;
 
   const ScheduleTaskSheet({
-    Key? key,
+    super.key,
     required this.taskTitle,
     required this.packageName,
     required this.nodeId,
@@ -41,7 +41,7 @@ class ScheduleTaskSheet extends StatefulWidget {
     this.appIconUrl,
     this.typeIconUrl,
     this.existingTask,
-  }) : super(key: key);
+  });
 
   @override
   State<ScheduleTaskSheet> createState() => _ScheduleTaskSheetState();
@@ -127,10 +127,11 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.omniPalette;
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      decoration: BoxDecoration(
+        color: palette.surfacePrimary,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: SafeArea(
         top: false,
@@ -143,7 +144,7 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey[300],
+                color: palette.borderStrong,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -155,20 +156,22 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      LegacyTextLocalizer.isEnglish ? 'Set scheduled task' : '设置定时任务',
-                      style: const TextStyle(
+                      LegacyTextLocalizer.isEnglish
+                          ? 'Set scheduled task'
+                          : '设置定时任务',
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.text,
+                        color: palette.textPrimary,
                       ),
                     ),
                   ),
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
-                    child: const Icon(
+                    child: Icon(
                       Icons.close,
                       size: 24,
-                      color: AppColors.text70,
+                      color: palette.textSecondary,
                     ),
                   ),
                 ],
@@ -180,23 +183,19 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
               margin: const EdgeInsets.symmetric(horizontal: 16),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.background,
+                color: palette.surfaceSecondary,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.task_alt,
-                    size: 20,
-                    color: AppColors.primaryBlue,
-                  ),
+                  Icon(Icons.task_alt, size: 20, color: palette.accentPrimary),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       widget.taskTitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
-                        color: AppColors.text,
+                        color: palette.textPrimary,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -234,12 +233,15 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
                   children: [
                     Text(
                       LegacyTextLocalizer.isEnglish ? 'Repeat daily' : '每日重复执行',
-                      style: TextStyle(fontSize: 14, color: AppColors.text),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: palette.textPrimary,
+                      ),
                     ),
                     const Spacer(),
                     CupertinoSwitch(
                       value: _repeatDaily,
-                      activeColor: AppColors.primaryBlue,
+                      activeTrackColor: palette.accentPrimary,
                       onChanged: (value) {
                         setState(() {
                           _repeatDaily = value;
@@ -261,8 +263,8 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
                 child: ElevatedButton(
                   onPressed: _onConfirm,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryBlue,
-                    foregroundColor: Colors.white,
+                    backgroundColor: palette.accentPrimary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(24),
                     ),
@@ -285,18 +287,19 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
 
   /// 构建标签页选择器
   Widget _buildTabSelector() {
+    final palette = context.omniPalette;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: palette.segmentTrack,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
           Expanded(
             child: _buildTabButton(
-              title: '固定时间',
+              title: LegacyTextLocalizer.isEnglish ? 'Fixed time' : '固定时间',
               isSelected: _selectedTabIndex == 0,
               onTap: () {
                 setState(() {
@@ -312,7 +315,7 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
           ),
           Expanded(
             child: _buildTabButton(
-              title: '倒计时',
+              title: LegacyTextLocalizer.isEnglish ? 'Countdown' : '倒计时',
               isSelected: _selectedTabIndex == 1,
               onTap: () {
                 setState(() {
@@ -337,17 +340,18 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
+    final palette = context.omniPalette;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
+          color: isSelected ? palette.segmentThumb : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: palette.shadowColor,
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -360,7 +364,7 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
             style: TextStyle(
               fontSize: 14,
               fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
-              color: isSelected ? AppColors.primaryBlue : AppColors.text70,
+              color: isSelected ? palette.accentPrimary : palette.textSecondary,
             ),
           ),
         ),
@@ -370,18 +374,22 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
 
   /// 构建固定时间选择
   Widget _buildFixedTimeTab() {
+    final palette = context.omniPalette;
     return SizedBox(
       height: 200,
       child: CupertinoTheme(
         data: CupertinoThemeData(
+          brightness: context.isDarkTheme ? Brightness.dark : Brightness.light,
+          primaryColor: palette.accentPrimary,
           textTheme: CupertinoTextThemeData(
             dateTimePickerTextStyle: TextStyle(
               fontSize: 26, // 增大字体
-              color: AppColors.text,
+              color: palette.textPrimary,
             ),
           ),
         ),
         child: CupertinoDatePicker(
+          backgroundColor: palette.surfacePrimary,
           mode: CupertinoDatePickerMode.time,
           initialDateTime: DateTime(
             DateTime.now().year,
@@ -404,6 +412,7 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
 
   /// 构建倒计时选择
   Widget _buildCountdownTab() {
+    final palette = context.omniPalette;
     return Center(
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -424,9 +433,8 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               decoration: BoxDecoration(
-                border: Border.all(
-                  color: AppColors.primaryBlue.withOpacity(0.3),
-                ),
+                color: palette.surfaceSecondary,
+                border: Border.all(color: palette.borderStrong),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -434,16 +442,19 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
                 children: [
                   Text(
                     _formatCountdown(_countdownMinutes),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 36,
                       fontWeight: FontWeight.w300,
-                      color: AppColors.text,
+                      color: palette.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '后执行',
-                    style: TextStyle(fontSize: 14, color: AppColors.text70),
+                    LegacyTextLocalizer.isEnglish ? 'Execute after' : '后执行',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: palette.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -482,15 +493,16 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
 
   /// 格式化倒计时显示
   String _formatCountdown(int minutes) {
+    final isEnglish = LegacyTextLocalizer.isEnglish;
     if (minutes >= 60) {
       final hours = minutes ~/ 60;
       final mins = minutes % 60;
       if (mins > 0) {
         return '${hours}h ${mins}m';
       }
-      return '${hours}小时';
+      return isEnglish ? '${hours}h' : '$hours小时';
     }
-    return '${minutes}分钟';
+    return isEnglish ? '${minutes}m' : '$minutes分钟';
   }
 
   /// 构建加减按钮
@@ -498,40 +510,19 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
     required IconData icon,
     required VoidCallback onTap,
   }) {
+    final palette = context.omniPalette;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: AppColors.primaryBlue.withOpacity(0.1),
+          color: palette.accentPrimary.withValues(alpha: 0.12),
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, size: 24, color: AppColors.primaryBlue),
+        child: Icon(icon, size: 24, color: palette.accentPrimary),
       ),
     );
-  }
-
-  /// 选择时间
-  Future<void> _selectTime() async {
-    final TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: _selectedTime,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(primary: AppColors.primaryBlue),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked != null && picked != _selectedTime) {
-      setState(() {
-        _selectedTime = picked;
-      });
-    }
   }
 
   /// 确认创建定时任务
@@ -613,7 +604,9 @@ class _CountdownInputDialogState extends State<_CountdownInputDialog> {
     final minutes = int.tryParse(_controller.text.trim());
     if (minutes == null || minutes <= 0 || minutes > 1440) {
       setState(() {
-        _errorText = '请输入 1-1440 之间的分钟数';
+        _errorText = LegacyTextLocalizer.isEnglish
+            ? 'Enter minutes between 1 and 1440'
+            : '请输入 1-1440 之间的分钟数';
       });
       return;
     }
@@ -622,6 +615,13 @@ class _CountdownInputDialogState extends State<_CountdownInputDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final inputBorder = OutlineInputBorder(
+      borderSide: BorderSide(color: palette.borderStrong),
+    );
+    final focusedInputBorder = OutlineInputBorder(
+      borderSide: BorderSide(color: palette.accentPrimary),
+    );
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -629,7 +629,12 @@ class _CountdownInputDialogState extends State<_CountdownInputDialog> {
         _close();
       },
       child: AlertDialog(
-        title: const Text('设置倒计时'),
+        backgroundColor: palette.surfacePrimary,
+        surfaceTintColor: Colors.transparent,
+        title: Text(
+          LegacyTextLocalizer.isEnglish ? 'Set countdown' : '设置倒计时',
+          style: TextStyle(color: palette.textPrimary),
+        ),
         content: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -638,9 +643,19 @@ class _CountdownInputDialogState extends State<_CountdownInputDialog> {
                 controller: _controller,
                 focusNode: _focusNode,
                 keyboardType: TextInputType.number,
+                style: TextStyle(color: palette.textPrimary),
                 decoration: InputDecoration(
-                  suffixText: '分钟',
-                  border: const OutlineInputBorder(),
+                  suffixText: LegacyTextLocalizer.isEnglish ? 'min' : '分钟',
+                  suffixStyle: TextStyle(color: palette.textSecondary),
+                  border: inputBorder,
+                  enabledBorder: inputBorder,
+                  focusedBorder: focusedInputBorder,
+                  errorBorder: inputBorder.copyWith(
+                    borderSide: const BorderSide(color: Colors.redAccent),
+                  ),
+                  focusedErrorBorder: focusedInputBorder.copyWith(
+                    borderSide: const BorderSide(color: Colors.redAccent),
+                  ),
                   errorText: _errorText,
                 ),
                 onChanged: (_) {
@@ -658,11 +673,11 @@ class _CountdownInputDialogState extends State<_CountdownInputDialog> {
         actions: [
           TextButton(
             onPressed: () => _close(),
-            child: const Text('取消'),
+            child: Text(LegacyTextLocalizer.isEnglish ? 'Cancel' : '取消'),
           ),
           TextButton(
             onPressed: _submit,
-            child: const Text('确定'),
+            child: Text(LegacyTextLocalizer.isEnglish ? 'OK' : '确定'),
           ),
         ],
       ),

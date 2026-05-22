@@ -123,6 +123,64 @@ void main() {
       'baseUrl': 'https://example.com/v1',
       'model': 'gpt-5.5',
       'apiKey': 'key',
+      'remoteEnabled': false,
+      'remoteBridgeUrl': '',
+      'remoteBridgeToken': '',
+      'remoteCwd': '',
     });
+  });
+
+  test('forwards remote filesystem operations without trimming content', () async {
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      if (call.method == 'config/remote/fs/read') {
+        return <String, dynamic>{
+          'ok': true,
+          'path': '/repo/lib/main.dart',
+          'name': 'main.dart',
+          'previewKind': 'code',
+          'mimeType': 'text/plain',
+          'content': 'void main() {}',
+        };
+      }
+      return <String, dynamic>{'ok': true};
+    });
+
+    final read = await CodexAppServerService.readRemoteFile(
+      remoteBridgeUrl: ' ws://pc:17321/codex ',
+      remoteBridgeToken: ' token ',
+      remoteCwd: ' /repo ',
+      path: ' /repo/lib/main.dart ',
+    );
+    await CodexAppServerService.writeRemoteFile(
+      path: '/repo/lib/main.dart',
+      content: '  keep whitespace\n',
+    );
+    await CodexAppServerService.deleteRemotePath(
+      path: '/repo/tmp',
+      recursive: true,
+    );
+    await CodexAppServerService.moveRemotePath(
+      path: '/repo/a.dart',
+      destinationPath: '/repo/b.dart',
+    );
+
+    expect(read.content, 'void main() {}');
+    expect(calls.map((call) => call.method), [
+      'config/remote/fs/read',
+      'config/remote/fs/write',
+      'config/remote/fs/delete',
+      'config/remote/fs/move',
+    ]);
+    expect(calls[0].arguments, <String, dynamic>{
+      'remoteBridgeUrl': 'ws://pc:17321/codex',
+      'remoteBridgeToken': 'token',
+      'remoteCwd': '/repo',
+      'path': '/repo/lib/main.dart',
+    });
+    expect((calls[1].arguments as Map)['content'], '  keep whitespace\n');
+    expect((calls[2].arguments as Map)['recursive'], true);
+    expect((calls[3].arguments as Map)['destinationPath'], '/repo/b.dart');
   });
 }

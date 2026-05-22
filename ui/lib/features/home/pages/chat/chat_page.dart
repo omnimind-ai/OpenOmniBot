@@ -37,6 +37,7 @@ import 'package:ui/services/conversation_model_override_service.dart';
 import 'package:ui/services/conversation_history_service.dart';
 import 'package:ui/services/conversation_service.dart';
 import 'package:ui/services/device_service.dart';
+import 'package:ui/services/home_greeting_settings_service.dart';
 import 'package:ui/services/link_preview_service.dart';
 import 'package:ui/services/model_provider_config_service.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
@@ -55,6 +56,9 @@ import 'package:ui/features/home/pages/chat/utils/agent_runtime_attachment_paylo
 import 'package:ui/features/home/pages/chat/utils/agent_thinking_card_locator.dart';
 import 'package:ui/features/home/pages/chat/utils/codex_slash_commands.dart';
 import 'package:ui/features/home/pages/chat/utils/deep_thinking_persistence.dart';
+import 'package:ui/features/home/pages/chat/utils/keyboard_inset_motion_tracker.dart';
+import 'package:ui/features/home/pages/codex/codex_remote_directory_picker.dart';
+import 'package:ui/features/home/pages/codex/codex_remote_workspace_browser.dart';
 import 'package:ui/widgets/chat_drawer_gesture_guard.dart';
 
 // 导入 Mixins
@@ -129,6 +133,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
 
   // ===================== State =====================
   bool _isPopupVisible = false;
+  bool _isCheckingSendModelConfiguration = false;
   final ChatConversationRuntimeCoordinator _runtimeCoordinator =
       ChatConversationRuntimeCoordinator.instance;
   final ChatConversationLifecycleGuard _conversationLifecycleGuard =
@@ -179,6 +184,8 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     ChatPageMode.openclaw: '',
     ChatPageMode.codex: '',
   };
+  final KeyboardInsetMotionTracker _emptyGreetingKeyboardLiftTracker =
+      KeyboardInsetMotionTracker();
   final Map<ChatPageMode, ChatIslandDisplayLayer>
   _chatIslandDisplayLayerByMode = {
     ChatPageMode.normal: ChatIslandDisplayLayer.tools,
@@ -341,6 +348,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   };
   bool _isAwaitingAuthorizeResult = false;
   bool _isRetryingLatestInstructionAfterAuth = false;
+  bool _suppressNextOutsideTapKeyboardHide = false;
   static const String _openClawWaitingHint = '等待龙虾烹饪';
   static const String _openClawWaitingStatusKey = 'openclaw_waiting';
   static const String _openClawSessionKeyPrefix = 'openclaw';
@@ -367,6 +375,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   StreamSubscription<Map<String, dynamic>>? _codexEventSubscription;
   CodexStatus _codexStatus = CodexStatus.disconnected;
   bool _isCodexStatusLoading = false;
+  int? _activeCodexRemoteRuntimeId;
   String? _activeCodexThreadId;
   String? _activeCodexTurnId;
   String? _activeCodexModelId;
@@ -403,6 +412,9 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   double _hdPadPaneDragDelta = 0;
   final GlobalKey<OmnibotWorkspaceBrowserState> _hdPadWorkspaceBrowserKey =
       GlobalKey<OmnibotWorkspaceBrowserState>();
+  final GlobalKey<CodexRemoteWorkspaceBrowserState>
+  _hdPadRemoteWorkspaceBrowserKey =
+      GlobalKey<CodexRemoteWorkspaceBrowserState>();
 
   ChatPageMode get _activeMode => _activeConversationMode;
   ConversationMode _conversationModeForPageMode(ChatPageMode mode) {
@@ -448,6 +460,20 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     final conversationId = _currentConversationIdByMode[mode];
     if (conversationId == null) return null;
     return _runtimeCoordinator.runtimeFor(
+      conversationId: conversationId,
+      mode: _modeKey(mode),
+    );
+  }
+
+  bool _isRemoteCodexRuntimeActiveForMode(ChatPageMode mode) {
+    if (mode != ChatPageMode.codex) {
+      return false;
+    }
+    final conversationId = _currentConversationIdByMode[mode];
+    if (conversationId == null) {
+      return false;
+    }
+    return _runtimeCoordinator.isEphemeralRuntime(
       conversationId: conversationId,
       mode: _modeKey(mode),
     );
@@ -587,6 +613,20 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   ConversationThreadTarget get _threadTargetForMode {
     final conversationMode = _conversationModeForPageMode(_activeMode);
     final conversationId = _currentConversationIdByMode[_activeMode];
+    if (_activeMode == ChatPageMode.codex &&
+        _isRemoteCodexRuntimeActiveForMode(ChatPageMode.codex)) {
+      final threadId = _activeCodexThreadId?.trim() ?? '';
+      if (threadId.isNotEmpty) {
+        return ConversationThreadTarget.codexSession(
+          threadId: threadId,
+          runtime: 'remote',
+        );
+      }
+      return ConversationThreadTarget.newConversation(
+        mode: ConversationMode.codex,
+        codexRuntime: 'remote',
+      );
+    }
     if (conversationId == null) {
       final resolvedTarget = _resolvedThreadTarget;
       if (resolvedTarget != null &&
@@ -1319,6 +1359,15 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   }
 
   @override
+  bool isEphemeralConversation(int conversationId, ConversationMode mode) {
+    final pageMode = _pageModeForConversationMode(mode);
+    return _runtimeCoordinator.isEphemeralRuntime(
+      conversationId: conversationId,
+      mode: _modeKey(pageMode),
+    );
+  }
+
+  @override
   Future<void> persistAgentConversation() => saveConversation();
 
   @override
@@ -1450,6 +1499,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
 
   @override
   void clearAgentStreamSessionState() {
+    super.clearAgentStreamSessionState();
     final conversationId = _currentConversationId;
     if (conversationId == null) return;
     _runtimeCoordinator.clearConversationRuntimeSession(
@@ -1582,6 +1632,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     _userMessageEditControllerForMode(mode).clear();
     _draftMessageByMode[mode] = '';
     if (mode == ChatPageMode.codex) {
+      _activeCodexRemoteRuntimeId = null;
       _activeCodexThreadId = null;
       _activeCodexTurnId = null;
     }
@@ -1740,6 +1791,14 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   Future<void> _startCodexReviewCommand();
 
   Future<void> _handleCodexTap();
+
+  String? _codexRemoteWorkspaceNameForGreeting();
+
+  Future<void> _openCodexRemoteWorkspacePicker();
+
+  Future<void> _prepareRemoteCodexSessionTarget(
+    ConversationThreadTarget target,
+  );
 
   void _handleCodexAppServerEvent(Map<String, dynamic> event);
 
@@ -1935,6 +1994,8 @@ abstract class _ChatPageStateBase extends State<ChatPage>
 
   void _showSnackBar(String message);
 
+  Future<bool> _ensureNormalChatModelConfigurationForSend();
+
   Future<void> _sendMessage({String? text});
 
   Future<void> _retryUserMessageText(
@@ -1953,10 +2014,6 @@ abstract class _ChatPageStateBase extends State<ChatPage>
 
   Future<bool> _tryAgentFlow(String aiMessageId, String userMessageId);
 
-  List<Map<String, dynamic>> _historyBeforeLatestUser(
-    List<Map<String, dynamic>> history,
-  );
-
   Future<List<Map<String, dynamic>>> _latestUserAttachments();
 
   bool _isImageAttachmentMap(Map<String, dynamic> item);
@@ -1970,6 +2027,8 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   void _onCancelTaskFromCard(String taskId);
 
   void _updateThinkingCardToCancelled(String taskId);
+
+  void _collapseAgentRunTrace(String taskId);
 
   void _onPopupVisibilityChanged(bool visible);
 

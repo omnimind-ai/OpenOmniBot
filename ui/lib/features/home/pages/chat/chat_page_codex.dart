@@ -75,6 +75,15 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
       _isCodexStatusLoading = false;
     });
     if (!status.ready) {
+      if (status.remoteEnabled) {
+        _showSnackBar(
+          LegacyTextLocalizer.isEnglish
+              ? 'Remote Codex Bridge is unavailable'
+              : '远程 Codex Bridge 不可用',
+        );
+        GoRouterManager.push('/home/codex_setting');
+        return;
+      }
       GoRouterManager.push('/home/termux_setting?focus=codex');
       return;
     }
@@ -98,6 +107,157 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
 
   ConversationThreadTarget _resolveCodexExitTarget() {
     return _newThreadTargetForConversationMode(ConversationMode.normal);
+  }
+
+  @override
+  String? _codexRemoteWorkspaceNameForGreeting() {
+    if (!_codexStatus.remoteEnabled) {
+      return null;
+    }
+    return _codexLastPathSegment(
+      _codexStatus.remoteCwd ?? _codexStatus.cwd ?? '',
+    );
+  }
+
+  @override
+  Future<void> _openCodexRemoteWorkspacePicker() async {
+    if (!_codexStatus.remoteEnabled) {
+      return;
+    }
+    CodexLocalConfig config;
+    try {
+      config = await CodexAppServerService.readLocalConfig();
+    } catch (error) {
+      showToast(
+        LegacyTextLocalizer.isEnglish
+            ? 'Failed to read Codex config: $error'
+            : '读取 Codex 配置失败：$error',
+        type: ToastType.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    if (!config.remoteEnabled || config.remoteBridgeUrl.trim().isEmpty) {
+      showToast(
+        LegacyTextLocalizer.isEnglish
+            ? 'Remote Codex Bridge is not configured'
+            : '远程 Codex Bridge 尚未配置',
+        type: ToastType.warning,
+      );
+      return;
+    }
+    final selected = await showCodexRemoteDirectoryPicker(
+      context: context,
+      remoteBridgeUrl: config.remoteBridgeUrl,
+      remoteBridgeToken: config.remoteBridgeToken,
+      initialPath: config.remoteCwd,
+    );
+    if (!mounted || selected == null || selected.trim().isEmpty) {
+      return;
+    }
+    final nextCwd = selected.trim();
+    if (nextCwd == config.remoteCwd.trim()) {
+      return;
+    }
+    try {
+      await CodexAppServerService.writeLocalConfig(
+        baseUrl: config.baseUrl,
+        model: config.model,
+        apiKey: config.apiKey,
+        remoteEnabled: true,
+        remoteBridgeUrl: config.remoteBridgeUrl,
+        remoteBridgeToken: config.remoteBridgeToken,
+        remoteCwd: nextCwd,
+      );
+      final status = await CodexAppServerService.status();
+      if (!mounted) return;
+      setState(() {
+        _codexStatus = status;
+        _activeCodexThreadId = null;
+        _activeCodexTurnId = null;
+      });
+      showToast(
+        LegacyTextLocalizer.isEnglish
+            ? 'Switched Codex workspace to ${_codexLastPathSegment(nextCwd) ?? nextCwd}'
+            : '已切换到 ${_codexLastPathSegment(nextCwd) ?? nextCwd}',
+        type: ToastType.success,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showToast(
+        LegacyTextLocalizer.isEnglish
+            ? 'Failed to switch workspace: $error'
+            : '切换工作目录失败：$error',
+        type: ToastType.error,
+      );
+    }
+  }
+
+  @override
+  Future<void> _prepareRemoteCodexSessionTarget(
+    ConversationThreadTarget target,
+  ) async {
+    final threadId = target.codexThreadId?.trim() ?? '';
+    if (threadId.isEmpty) {
+      return;
+    }
+    final runtimeId = _remoteCodexRuntimeId(threadId);
+    _activeCodexRemoteRuntimeId = runtimeId;
+    _activeCodexThreadId = threadId;
+    _currentConversationIdByMode[ChatPageMode.codex] = runtimeId;
+
+    try {
+      CodexStatus status = _codexStatus;
+      if (!status.connected) {
+        status = await CodexAppServerService.connect();
+      }
+      final response = await CodexAppServerService.resumeThread(
+        threadId: threadId,
+      );
+      if (!mounted) return;
+      final resolvedThreadId =
+          _asCodexString(response['threadId']) ??
+          _asCodexString((response['thread'] as Map?)?['id']) ??
+          threadId;
+      final messages = _codexMessagesFromThreadResponse(response);
+      final conversation = _remoteCodexConversationFromResponse(
+        runtimeId: runtimeId,
+        response: response,
+      );
+      setState(() {
+        _codexStatus = status;
+        _activeCodexThreadId = resolvedThreadId;
+        _currentConversationByMode[ChatPageMode.codex] = conversation;
+        _messagesByMode[ChatPageMode.codex]!
+          ..clear()
+          ..addAll(messages);
+        _hasMoreMessagesByMode[ChatPageMode.codex] = false;
+        _messageOffsetByMode[ChatPageMode.codex] = messages.length;
+      });
+      _runtimeCoordinator.ensureEphemeralRuntime(
+        conversationId: runtimeId,
+        mode: kChatRuntimeModeCodex,
+        initialMessages: messages,
+        conversation: conversation,
+        initialChatIslandDisplayLayer: ChatIslandDisplayLayer.mode,
+      );
+      _runtimeCoordinator.replaceConversationSnapshot(
+        conversationId: runtimeId,
+        mode: kChatRuntimeModeCodex,
+        messages: messages,
+        conversation: conversation,
+        chatIslandDisplayLayer: ChatIslandDisplayLayer.mode,
+      );
+      _rememberRuntimeUiSnapshot(ChatPageMode.codex);
+    } catch (error) {
+      if (!mounted) return;
+      showToast(
+        LegacyTextLocalizer.isEnglish
+            ? 'Failed to load Codex session: $error'
+            : '加载 Codex session 失败：$error',
+        type: ToastType.error,
+      );
+    }
   }
 
   @override
@@ -385,36 +545,45 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
     _messageController.clear();
     _hideSlashCommandPanel();
     final messageIds = addUserMessage('/review');
-    try {
-      await _ensureActiveConversationReadyForStreaming();
-    } catch (_) {
-      if (mounted) {
-        _currentDispatchTaskId = messageIds.aiMessageId;
-        handleAgentError('Conversation setup failed. Please retry.');
+    final remoteCodex = _isRemoteCodexConfigured();
+    int? conversationId;
+    if (remoteCodex) {
+      conversationId = _ensureRemoteCodexRuntimeForCurrentMessages();
+    } else {
+      try {
+        await _ensureActiveConversationReadyForStreaming();
+      } catch (_) {
+        if (mounted) {
+          _currentDispatchTaskId = messageIds.aiMessageId;
+          handleAgentError('Conversation setup failed. Please retry.');
+        }
+        return;
       }
-      return;
-    }
-    final conversationId = _currentConversationId;
-    if (conversationId == null) {
-      if (mounted) {
-        _currentDispatchTaskId = messageIds.aiMessageId;
-        handleAgentError('Conversation setup failed. Please retry.');
+      conversationId = _currentConversationId;
+      if (conversationId == null) {
+        if (mounted) {
+          _currentDispatchTaskId = messageIds.aiMessageId;
+          handleAgentError('Conversation setup failed. Please retry.');
+        }
+        return;
       }
-      return;
     }
 
+    final resolvedConversationId = conversationId;
     _syncRuntimeSnapshotForMode(_activeMode);
     _currentDispatchTaskId = messageIds.aiMessageId;
     _runtimeCoordinator.registerTask(
       taskId: messageIds.aiMessageId,
-      conversationId: conversationId,
+      conversationId: resolvedConversationId,
       mode: _modeKey(_activeMode),
     );
-    await ConversationHistoryService.saveConversationMessages(
-      conversationId,
-      List<ChatMessageModel>.from(_messages),
-      mode: ConversationMode.codex,
-    );
+    if (!remoteCodex) {
+      await ConversationHistoryService.saveConversationMessages(
+        resolvedConversationId,
+        List<ChatMessageModel>.from(_messages),
+        mode: ConversationMode.codex,
+      );
+    }
 
     try {
       CodexStatus status = _codexStatus;
@@ -427,7 +596,7 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
         }
       }
       final response = await CodexAppServerService.startReview(
-        conversationId: conversationId,
+        conversationId: remoteCodex ? null : resolvedConversationId,
         threadId: _activeCodexThreadId,
         approvalPolicy: _codexPermissionMode.approvalPolicy,
         approvalsReviewer: _codexPermissionMode.approvalsReviewer,
@@ -564,36 +733,45 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
     String? modelOverride,
     String? collaborationModeOverride,
   }) async {
-    try {
-      await _ensureActiveConversationReadyForStreaming();
-    } catch (_) {
-      if (mounted) {
-        _currentDispatchTaskId = aiMessageId;
-        handleAgentError('Conversation setup failed. Please retry.');
+    final remoteCodex = _isRemoteCodexConfigured();
+    int? conversationId;
+    if (remoteCodex) {
+      conversationId = _ensureRemoteCodexRuntimeForCurrentMessages();
+    } else {
+      try {
+        await _ensureActiveConversationReadyForStreaming();
+      } catch (_) {
+        if (mounted) {
+          _currentDispatchTaskId = aiMessageId;
+          handleAgentError('Conversation setup failed. Please retry.');
+        }
+        return;
       }
-      return;
-    }
-    final conversationId = _currentConversationId;
-    if (conversationId == null) {
-      if (mounted) {
-        _currentDispatchTaskId = aiMessageId;
-        handleAgentError('Conversation setup failed. Please retry.');
+      conversationId = _currentConversationId;
+      if (conversationId == null) {
+        if (mounted) {
+          _currentDispatchTaskId = aiMessageId;
+          handleAgentError('Conversation setup failed. Please retry.');
+        }
+        return;
       }
-      return;
     }
 
+    final resolvedConversationId = conversationId;
     _syncRuntimeSnapshotForMode(_activeMode);
     _currentDispatchTaskId = aiMessageId;
     _runtimeCoordinator.registerTask(
       taskId: aiMessageId,
-      conversationId: conversationId,
+      conversationId: resolvedConversationId,
       mode: _modeKey(_activeMode),
     );
-    await ConversationHistoryService.saveConversationMessages(
-      conversationId,
-      List<ChatMessageModel>.from(_messages),
-      mode: ConversationMode.codex,
-    );
+    if (!remoteCodex) {
+      await ConversationHistoryService.saveConversationMessages(
+        resolvedConversationId,
+        List<ChatMessageModel>.from(_messages),
+        mode: ConversationMode.codex,
+      );
+    }
 
     try {
       CodexStatus status = _codexStatus;
@@ -606,7 +784,7 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
         }
       }
       final response = await CodexAppServerService.startTurn(
-        conversationId: conversationId,
+        conversationId: remoteCodex ? null : resolvedConversationId,
         threadId: _activeCodexThreadId,
         text: messageText,
         approvalPolicy: _codexPermissionMode.approvalPolicy,
@@ -621,7 +799,8 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
       _activeCodexTurnId =
           _asCodexString(response['turnId']) ?? _activeCodexTurnId;
       final localConversationId = _asCodexInt(response['conversationId']);
-      if (localConversationId != null &&
+      if (!remoteCodex &&
+          localConversationId != null &&
           localConversationId !=
               _currentConversationIdByMode[ChatPageMode.codex]) {
         if (_currentConversationIdByMode[ChatPageMode.codex] == null) {
@@ -656,13 +835,59 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
     }
     try {
       await CodexAppServerService.interruptTurn(
-        conversationId: conversationId,
+        conversationId: _isRemoteCodexConfigured() ? null : conversationId,
         threadId: _activeCodexThreadId,
         turnId: _activeCodexTurnId,
       );
     } catch (error) {
       debugPrint('Codex interrupt failed: $error');
     }
+  }
+
+  bool _isRemoteCodexConfigured() {
+    final runtime = _codexStatus.runtime?.trim();
+    return runtime == 'remote' || _codexStatus.remoteEnabled;
+  }
+
+  int _ensureRemoteCodexRuntimeForCurrentMessages() {
+    final currentId = _currentConversationIdByMode[ChatPageMode.codex];
+    if (currentId != null &&
+        _runtimeCoordinator.isEphemeralRuntime(
+          conversationId: currentId,
+          mode: kChatRuntimeModeCodex,
+        )) {
+      return currentId;
+    }
+    final runtimeId = _activeCodexThreadId?.trim().isNotEmpty == true
+        ? _remoteCodexRuntimeId(_activeCodexThreadId!)
+        : (_activeCodexRemoteRuntimeId ??
+              _remoteCodexRuntimeId(
+                'pending-${DateTime.now().microsecondsSinceEpoch}',
+              ));
+    _activeCodexRemoteRuntimeId = runtimeId;
+    _currentConversationIdByMode[ChatPageMode.codex] = runtimeId;
+    _currentConversationByMode[ChatPageMode.codex] ??= ConversationModel(
+      id: runtimeId,
+      mode: ConversationMode.codex,
+      title: 'Codex',
+      status: 0,
+      lastMessage: _messagesByMode[ChatPageMode.codex]!.isNotEmpty
+          ? _messagesByMode[ChatPageMode.codex]!.first.text
+          : null,
+      messageCount: _messagesByMode[ChatPageMode.codex]!.length,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    _runtimeCoordinator.ensureEphemeralRuntime(
+      conversationId: runtimeId,
+      mode: kChatRuntimeModeCodex,
+      initialMessages: List<ChatMessageModel>.from(
+        _messagesByMode[ChatPageMode.codex]!,
+      ),
+      conversation: _currentConversationByMode[ChatPageMode.codex],
+      initialChatIslandDisplayLayer: ChatIslandDisplayLayer.mode,
+    );
+    return runtimeId;
   }
 
   Future<void> _showCodexAccountStatus() async {
@@ -721,6 +946,334 @@ int? _asCodexInt(dynamic value) {
 String? _asCodexString(dynamic value) {
   final text = value?.toString().trim() ?? '';
   return text.isEmpty ? null : text;
+}
+
+int _remoteCodexRuntimeId(String seed) {
+  var hash = 0x45d9f3b;
+  for (final codeUnit in seed.codeUnits) {
+    hash = 0x1fffffff & (hash * 31 + codeUnit);
+  }
+  return -((hash & 0x3fffffff) + 1);
+}
+
+ConversationModel _remoteCodexConversationFromResponse({
+  required int runtimeId,
+  required Map<String, dynamic> response,
+}) {
+  final thread = _asCodexMap(response['thread']) ?? response;
+  final now = DateTime.now().millisecondsSinceEpoch;
+  final createdAt =
+      _codexTimeValueMs(thread['createdAt'] ?? thread['created_at']) ?? now;
+  final updatedAt =
+      _codexTimeValueMs(
+        thread['updatedAt'] ??
+            thread['updated_at'] ??
+            thread['lastActivityAt'] ??
+            thread['last_activity_at'],
+      ) ??
+      createdAt;
+  final title =
+      _asCodexString(
+        thread['name'] ??
+            thread['title'] ??
+            thread['preview'] ??
+            response['name'] ??
+            response['title'] ??
+            response['preview'],
+      ) ??
+      'Codex';
+  return ConversationModel(
+    id: runtimeId,
+    mode: ConversationMode.codex,
+    title: _truncateCodexText(title, 40),
+    status: 0,
+    lastMessage: _asCodexString(thread['preview']),
+    messageCount: _codexMessagesFromThreadResponse(response).length,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+  );
+}
+
+List<ChatMessageModel> _codexMessagesFromThreadResponse(
+  Map<String, dynamic> response,
+) {
+  final thread = _asCodexMap(response['thread']) ?? response;
+  final rawTurns = thread['turns'] ?? response['turns'];
+  if (rawTurns is! List) {
+    return const <ChatMessageModel>[];
+  }
+  final chronological = <ChatMessageModel>[];
+  var seq = 0;
+  for (var turnIndex = 0; turnIndex < rawTurns.length; turnIndex += 1) {
+    final turn = _asCodexMap(rawTurns[turnIndex]);
+    if (turn == null) {
+      continue;
+    }
+    final turnId = _asCodexString(turn['id']) ?? 'turn-$turnIndex';
+    final turnStartedAt =
+        _codexTimeValueMs(turn['startedAt'] ?? turn['started_at']) ??
+        DateTime.now().millisecondsSinceEpoch;
+    final rawItems = turn['items'];
+    if (rawItems is! List) {
+      continue;
+    }
+    for (var itemIndex = 0; itemIndex < rawItems.length; itemIndex += 1) {
+      final item = _asCodexMap(rawItems[itemIndex]);
+      if (item == null) {
+        continue;
+      }
+      final itemType = _asCodexString(item['type']) ?? '';
+      final itemId = _asCodexString(item['id']) ?? '$turnId-item-$itemIndex';
+      final createdAt = DateTime.fromMillisecondsSinceEpoch(
+        (_codexTimeValueMs(
+                  item['createdAt'] ??
+                      item['created_at'] ??
+                      item['startedAt'] ??
+                      item['started_at'],
+                ) ??
+                turnStartedAt) +
+            itemIndex,
+      );
+      if (itemType == 'userMessage') {
+        final text = _codexExtractText(item['content'] ?? item['text']);
+        if (text.trim().isEmpty) {
+          continue;
+        }
+        chronological.add(
+          ChatMessageModel(
+            id: '$itemId-codex-user',
+            type: 1,
+            user: 1,
+            content: {'text': text, 'id': '$itemId-codex-user'},
+            createAt: createdAt,
+          ),
+        );
+        continue;
+      }
+      if (itemType == 'agentMessage') {
+        final text = _codexExtractText(
+          item['text'] ?? item['message'] ?? item['content'],
+        );
+        if (text.trim().isEmpty) {
+          continue;
+        }
+        seq += 1;
+        final messageId = '$itemId-codex-agent';
+        chronological.add(
+          ChatMessageModel(
+            id: messageId,
+            type: 1,
+            user: 2,
+            content: {'text': text, 'id': messageId},
+            createAt: createdAt,
+            streamMeta: ensureAgentStreamMessageMeta(
+              null,
+              seq: seq,
+              roundIndex: seq,
+              kind: 'text_snapshot',
+              parentTaskId: turnId,
+              entryId: messageId,
+              isFinal: true,
+            ),
+          ),
+        );
+        continue;
+      }
+      if (itemType == 'reasoning') {
+        final text = _codexExtractText(
+          item['summary'] ?? item['text'] ?? item['content'],
+        );
+        if (text.trim().isEmpty) {
+          continue;
+        }
+        seq += 1;
+        final cardId = '$itemId-codex-thinking';
+        chronological.add(
+          ChatMessageModel.cardMessage(
+            {
+              'type': 'deep_thinking',
+              'isLoading': false,
+              'thinkingContent': text,
+              'stage': ThinkingStage.complete.value,
+              'taskID': turnId,
+              'cardId': cardId,
+              'startTime': createdAt.millisecondsSinceEpoch,
+              'endTime': createdAt.millisecondsSinceEpoch,
+              'isCollapsible': true,
+            },
+            id: cardId,
+            streamMeta: ensureAgentStreamMessageMeta(
+              null,
+              seq: seq,
+              roundIndex: seq,
+              kind: 'thinking_snapshot',
+              parentTaskId: turnId,
+              entryId: cardId,
+              isFinal: true,
+            ),
+          ).copyWith(createAt: createdAt),
+        );
+        continue;
+      }
+      if (_codexHistoricalToolItemTypes.contains(itemType)) {
+        seq += 1;
+        final cardId = '$itemId-codex-${_codexToolKind(itemType)}';
+        final summary = _codexExtractText(
+          item['summary'] ??
+              item['status'] ??
+              item['output'] ??
+              item['text'] ??
+              item['content'],
+        );
+        chronological.add(
+          ChatMessageModel.cardMessage(
+            {
+              'type': 'agent_tool_summary',
+              'taskId': turnId,
+              'toolName': 'codex.${_codexToolKind(itemType)}',
+              'displayName': _codexToolTitle(itemType, item),
+              'toolTitle': _codexToolTitle(itemType, item),
+              'cardId': cardId,
+              'toolType': _codexToolKind(itemType),
+              'status': 'success',
+              'summary': summary,
+              'progress': summary,
+              'argsJson': _safeCodexJson(item),
+              'resultPreviewJson': '',
+              'rawResultJson': _safeCodexJson(item),
+              'terminalOutput': _codexExtractText(item['output']),
+              'terminalOutputDelta': '',
+              'showTerminalOutput': itemType == 'commandExecution',
+              'showRawResult': true,
+            },
+            id: cardId,
+            streamMeta: ensureAgentStreamMessageMeta(
+              null,
+              seq: seq,
+              roundIndex: seq,
+              kind: 'tool_completed',
+              parentTaskId: turnId,
+              entryId: cardId,
+              isFinal: true,
+            ),
+          ).copyWith(createAt: createdAt),
+        );
+      }
+    }
+  }
+  return chronological.reversed.toList(growable: false);
+}
+
+Map<String, dynamic>? _asCodexMap(dynamic value) {
+  if (value is! Map) {
+    return null;
+  }
+  return value.map((key, nestedValue) {
+    return MapEntry(key.toString(), nestedValue);
+  });
+}
+
+String _codexExtractText(dynamic value) {
+  if (value == null) return '';
+  if (value is String) return value;
+  if (value is num || value is bool) return value.toString();
+  if (value is List) {
+    return value.map(_codexExtractText).where((text) => text.isNotEmpty).join();
+  }
+  final map = _asCodexMap(value);
+  if (map != null) {
+    for (final key in const <String>[
+      'text',
+      'content',
+      'message',
+      'value',
+      'delta',
+      'summary',
+    ]) {
+      final text = _codexExtractText(map[key]);
+      if (text.isNotEmpty) {
+        return text;
+      }
+    }
+  }
+  return value.toString();
+}
+
+int? _codexTimeValueMs(dynamic value) {
+  if (value == null) return null;
+  if (value is num) {
+    final raw = value.toInt();
+    return raw < 100000000000 ? raw * 1000 : raw;
+  }
+  final text = value.toString().trim();
+  if (text.isEmpty) return null;
+  final rawInt = int.tryParse(text);
+  if (rawInt != null) {
+    return rawInt < 100000000000 ? rawInt * 1000 : rawInt;
+  }
+  return DateTime.tryParse(text)?.millisecondsSinceEpoch;
+}
+
+String _codexToolKind(String itemType) {
+  return switch (itemType) {
+    'commandExecution' => 'terminal',
+    'fileChange' => 'file',
+    'plan' => 'plan',
+    _ => 'tool',
+  };
+}
+
+String _codexToolTitle(String itemType, Map<String, dynamic> item) {
+  if (itemType == 'commandExecution') {
+    final command = _codexExtractText(item['command'] ?? item['cmd']).trim();
+    if (command.isNotEmpty) {
+      return _truncateCodexText(command, 48);
+    }
+    return 'Codex command';
+  }
+  if (itemType == 'fileChange') {
+    return 'Codex file change';
+  }
+  if (itemType == 'plan') {
+    return 'Codex plan';
+  }
+  return _asCodexString(item['toolName'] ?? item['name']) ?? 'Codex tool';
+}
+
+String _truncateCodexText(String text, int maxLength) {
+  final normalized = text.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return '${normalized.substring(0, maxLength)}...';
+}
+
+String _safeCodexJson(dynamic value) {
+  try {
+    return const JsonEncoder.withIndent('  ').convert(value);
+  } catch (_) {
+    return value?.toString() ?? '';
+  }
+}
+
+const Set<String> _codexHistoricalToolItemTypes = <String>{
+  'commandExecution',
+  'fileChange',
+  'tool',
+  'mcpToolCall',
+  'plan',
+};
+
+String? _codexLastPathSegment(String path) {
+  final normalized = path.trim().replaceAll(RegExp(r'/+$'), '');
+  if (normalized.isEmpty) {
+    return null;
+  }
+  final parts = normalized.split('/').where((part) => part.isNotEmpty).toList();
+  if (parts.isEmpty) {
+    return normalized == '/' ? '/' : null;
+  }
+  return parts.last;
 }
 
 List<String> _extractCodexOptionIds(

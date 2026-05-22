@@ -6,6 +6,8 @@ import 'package:ui/models/conversation_thread_target.dart';
 import 'package:ui/features/home/pages/alarm_setting/alarm_setting_page.dart';
 import 'package:ui/features/home/pages/authorize_setting/authorize_setting_page.dart';
 import 'package:ui/features/home/pages/companion_setting/companion_setting_page.dart';
+import 'package:ui/features/home/pages/codex/codex_setting_page.dart';
+import 'package:ui/features/home/pages/codex/codex_sessions_page.dart';
 import 'package:ui/features/home/pages/chat_history/chat_history_page.dart';
 import 'package:ui/features/home/pages/permission_guide/permission_guide_detail_page.dart';
 import 'package:ui/features/home/pages/permission_guide/permission_guide_page.dart';
@@ -17,6 +19,7 @@ import 'pages/edit_profile/edit_profile_page.dart';
 import 'pages/settings/workspace_memory_setting_page.dart';
 import 'pages/settings/background_setting_page.dart';
 import 'pages/settings/experience_misc_setting_page.dart';
+import 'pages/settings/home_setting_page.dart';
 import 'pages/settings/open_with_omnibot_setting_page.dart';
 import 'pages/settings/storage_usage_page.dart';
 import 'pages/omnibot_workspace/omnibot_artifact_preview_page.dart';
@@ -149,6 +152,25 @@ List<GoRoute> homeRoutes = [
     path: '/home/chat_history',
     name: 'home/chat_history',
     builder: (context, state) => const ChatHistoryPage(archivedOnly: true),
+  ),
+
+  GoRoute(
+    path: '/home/codex_sessions',
+    name: 'home/codex_sessions',
+    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
+      key: state.pageKey,
+      name: 'home/codex_sessions',
+      child: const CodexSessionsPage(),
+    ),
+  ),
+  GoRoute(
+    path: '/home/codex_setting',
+    name: 'home/codex_setting',
+    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
+      key: state.pageKey,
+      name: 'home/codex_setting',
+      child: const CodexSettingPage(),
+    ),
   ),
   GoRoute(
     path: '/home/archived_conversations',
@@ -321,6 +343,16 @@ List<GoRoute> homeRoutes = [
       key: state.pageKey,
       name: 'home/experience_misc_setting',
       child: const ExperienceMiscSettingPage(),
+    ),
+  ),
+
+  GoRoute(
+    path: '/home/home_setting',
+    name: 'home/home_setting',
+    pageBuilder: (context, state) => GoRouterManager.buildActivitySlidePage(
+      key: state.pageKey,
+      name: 'home/home_setting',
+      child: const HomeSettingPage(),
     ),
   ),
 

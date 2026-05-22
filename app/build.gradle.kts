@@ -84,10 +84,11 @@ android {
         minSdk = 29
         targetSdk = 34
         versionCode = 1
-        versionName = "0.5.0.3"
+        versionName = "0.5.2.6"
         buildConfigField("String", "IMAGE_BASE_URL", buildConfigString(omnibotImageBaseUrl))
         buildConfigField("String", "IMAGE_MODEL", buildConfigString(omnibotImageModel))
         buildConfigField("String", "IMAGE_API_KEY", buildConfigString(omnibotImageApiKey))
+
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a"))
@@ -101,12 +102,14 @@ android {
         create("develop") {
             dimension = "version"
             buildConfigField("String", "BASE_URL", "\"${prop("OMNIBOT_BASE_URL")}\"")
+            buildConfigField("String", "APP_UPDATE_WORKER_URL", "\"${prop("OMNIBOT_UPDATE_WORKER_URL")}\"")
             resValue("bool", "is_accessibility_tool", "true")
         }
 
         create("production") {
             dimension = "version"
             buildConfigField("String", "BASE_URL", "\"${prop("OMNIBOT_BASE_URL")}\"")
+            buildConfigField("String", "APP_UPDATE_WORKER_URL", "\"${prop("OMNIBOT_UPDATE_WORKER_URL")}\"")
             resValue("bool", "is_accessibility_tool", "true")
         }
 

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:ui/services/home_greeting_settings_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import '../../../../../models/chat_message_model.dart';
 import '../../../../../services/app_background_service.dart';
@@ -14,6 +15,7 @@ import '../utils/agent_run_timeline.dart';
 import '../../command_overlay/widgets/message_bubble.dart';
 import '../../command_overlay/widgets/chat_input_area.dart';
 import 'agent_run_group_message.dart';
+import 'chat_empty_greeting.dart';
 
 const String _kChatAppBarUpdateSparklesAsset =
     'assets/home/chat/update_sparkles.svg';
@@ -51,6 +53,7 @@ class ChatAppBar extends StatelessWidget {
   final VoidCallback? onAgentTap;
   final VoidCallback? onPureChatToggleTap;
   final VoidCallback? onCodexTap;
+  final VoidCallback? onPrimaryModeTap;
   final VoidCallback onCompanionTap;
   final ChatSurfaceMode activeMode;
   final ValueChanged<ChatSurfaceMode> onModeChanged;
@@ -91,6 +94,7 @@ class ChatAppBar extends StatelessWidget {
     this.onAgentTap,
     this.onPureChatToggleTap,
     this.onCodexTap,
+    this.onPrimaryModeTap,
     required this.onCompanionTap,
     required this.activeMode,
     required this.onModeChanged,
@@ -271,6 +275,7 @@ class ChatAppBar extends StatelessWidget {
                         visualProfile: visualProfile,
                         showSurfaceLayer: showSurfaceSwitcher,
                         primaryModeIconAsset: primaryModeIconAsset,
+                        onPrimaryModeTap: onPrimaryModeTap,
                       ),
                     ),
                   ),
@@ -708,6 +713,7 @@ class _ChatModeModelSwitcher extends StatefulWidget {
     this.visualProfile = AppBackgroundVisualProfile.defaultProfile,
     this.showSurfaceLayer = true,
     required this.primaryModeIconAsset,
+    this.onPrimaryModeTap,
   });
 
   final ChatSurfaceMode activeMode;
@@ -727,6 +733,7 @@ class _ChatModeModelSwitcher extends StatefulWidget {
   final AppBackgroundVisualProfile visualProfile;
   final bool showSurfaceLayer;
   final String primaryModeIconAsset;
+  final VoidCallback? onPrimaryModeTap;
 
   @override
   State<_ChatModeModelSwitcher> createState() => _ChatModeModelSwitcherState();
@@ -972,6 +979,7 @@ class _ChatModeModelSwitcherState extends State<_ChatModeModelSwitcher> {
                             onInteracted: _handleSliderInteraction,
                             visualProfile: widget.visualProfile,
                             primaryIconAsset: widget.primaryModeIconAsset,
+                            onPrimaryModeTap: widget.onPrimaryModeTap,
                           ),
                         )
                       : const SizedBox.shrink(),
@@ -1213,6 +1221,7 @@ class ChatModeSlider extends StatefulWidget {
   final VoidCallback? onInteracted;
   final AppBackgroundVisualProfile visualProfile;
   final String primaryIconAsset;
+  final VoidCallback? onPrimaryModeTap;
 
   const ChatModeSlider({
     super.key,
@@ -1221,6 +1230,7 @@ class ChatModeSlider extends StatefulWidget {
     this.onInteracted,
     this.visualProfile = AppBackgroundVisualProfile.defaultProfile,
     this.primaryIconAsset = _kChatAppBarAgentIconAsset,
+    this.onPrimaryModeTap,
   });
 
   @override
@@ -1283,6 +1293,12 @@ class _ChatModeSliderState extends State<ChatModeSlider> {
           0,
           kVisibleChatSurfaceModes.length - 1,
         );
+        if (targetIndex == 0 &&
+            targetIndex == _activeVisibleModeIndex &&
+            widget.onPrimaryModeTap != null) {
+          widget.onPrimaryModeTap?.call();
+          return;
+        }
         widget.onChanged(kVisibleChatSurfaceModes[targetIndex]);
       },
       child: Container(
@@ -1387,6 +1403,13 @@ class ChatMessageList extends StatefulWidget {
   final ValueChanged<Set<String>>? onExpandedAgentRunTaskIdsChanged;
   final AppBackgroundVisualProfile visualProfile;
   final AppBackgroundConfig appearanceConfig;
+  final bool showEmptyGreeting;
+  final bool liftEmptyGreeting;
+  final List<HomeQuickPrompt> emptyGreetingQuickPrompts;
+  final List<String> emptyGreetingPinnedQuickPromptIds;
+  final ValueChanged<HomeQuickPrompt>? onQuickPromptSelected;
+  final String? emptyGreetingCodexWorkspaceName;
+  final VoidCallback? onEmptyGreetingCodexWorkspaceTap;
 
   const ChatMessageList({
     super.key,
@@ -1408,6 +1431,13 @@ class ChatMessageList extends StatefulWidget {
     this.onExpandedAgentRunTaskIdsChanged,
     this.visualProfile = AppBackgroundVisualProfile.defaultProfile,
     this.appearanceConfig = AppBackgroundConfig.defaults,
+    this.showEmptyGreeting = true,
+    this.liftEmptyGreeting = false,
+    this.emptyGreetingQuickPrompts = const <HomeQuickPrompt>[],
+    this.emptyGreetingPinnedQuickPromptIds = const <String>[],
+    this.onQuickPromptSelected,
+    this.emptyGreetingCodexWorkspaceName,
+    this.onEmptyGreetingCodexWorkspaceTap,
   });
 
   @override
@@ -1417,6 +1447,9 @@ class ChatMessageList extends StatefulWidget {
 class _ChatMessageListState extends State<ChatMessageList> {
   static const Duration _kAgentRunToggleAutoStickSuppression = Duration(
     milliseconds: 420,
+  );
+  static const Duration _kEditingUserMessageRevealDuration = Duration(
+    milliseconds: 220,
   );
   bool _stickToBottomScheduled = false;
   bool _autoStickToLatest = true;
@@ -1428,6 +1461,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
   static const double _historyLoadTriggerExtent = 180.0;
   ObservableChatMessageList? _observableMessages;
   DateTime? _autoStickSuppressedUntil;
+  GlobalKey? _editingUserMessageRevealKey;
+  String? _editingUserMessageRevealKeyId;
 
   Set<String> get _expandedAgentRunTaskIds =>
       widget.expandedAgentRunTaskIds ?? _localExpandedAgentRunTaskIds;
@@ -1455,10 +1490,29 @@ class _ChatMessageListState extends State<ChatMessageList> {
   void didUpdateWidget(covariant ChatMessageList oldWidget) {
     super.didUpdateWidget(oldWidget);
     _bindObservableMessages(widget.messages);
-    if (oldWidget.scrollController != widget.scrollController) {
+    final scrollControllerChanged =
+        oldWidget.scrollController != widget.scrollController;
+    if (scrollControllerChanged) {
       _autoStickToLatest = true;
       _outerScrollWasUserDriven = false;
       _autoStickSuppressedUntil = null;
+    }
+    final editingMessageChanged =
+        oldWidget.editingUserMessageId != widget.editingUserMessageId;
+    final bottomInsetChanged =
+        (oldWidget.bottomOverlayInset - widget.bottomOverlayInset).abs() >= 0.5;
+    if (widget.editingUserMessageId == null) {
+      _editingUserMessageRevealKey = null;
+      _editingUserMessageRevealKeyId = null;
+    } else if (editingMessageChanged ||
+        bottomInsetChanged ||
+        scrollControllerChanged) {
+      _autoStickSuppressedUntil = DateTime.now().add(
+        _kEditingUserMessageRevealDuration,
+      );
+      _outerScrollWasUserDriven = false;
+      _scheduleEditingUserMessageReveal(widget.editingUserMessageId!);
+      return;
     }
     if (_autoStickToLatest) {
       _autoStickToLatest = true;
@@ -1575,10 +1629,65 @@ class _ChatMessageListState extends State<ChatMessageList> {
     if (!mounted) {
       return;
     }
+    _collapseCancelledAgentRuns();
     if (_autoStickToLatest && !_isAutoStickTemporarilySuppressed) {
       _scheduleStickToLatest();
     }
     setState(() {});
+  }
+
+  void _collapseCancelledAgentRuns() {
+    final collapsedTaskIds = _cancelledAgentRunTaskIds(
+      _expandedAgentRunTaskIds,
+    );
+    if (collapsedTaskIds.isEmpty) {
+      return;
+    }
+    final nextExpandedTaskIds = Set<String>.from(_expandedAgentRunTaskIds)
+      ..removeAll(collapsedTaskIds);
+    if (widget.expandedAgentRunTaskIds != null) {
+      widget.onExpandedAgentRunTaskIdsChanged?.call(nextExpandedTaskIds);
+      return;
+    }
+    _localExpandedAgentRunTaskIds
+      ..clear()
+      ..addAll(nextExpandedTaskIds);
+    widget.onExpandedAgentRunTaskIdsChanged?.call(nextExpandedTaskIds);
+  }
+
+  Set<String> _cancelledAgentRunTaskIds(Set<String> expandedTaskIds) {
+    if (expandedTaskIds.isEmpty) {
+      return const <String>{};
+    }
+    final normalizedExpandedTaskIds = expandedTaskIds
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toSet();
+    if (normalizedExpandedTaskIds.isEmpty) {
+      return const <String>{};
+    }
+    final collapsedTaskIds = <String>{};
+    final messages = _observableMessages ?? widget.messages;
+    for (final message in messages) {
+      final taskId = agentRunParentTaskId(message);
+      if (taskId == null || !normalizedExpandedTaskIds.contains(taskId)) {
+        continue;
+      }
+      if (_isCancelledAgentRunMessage(message)) {
+        collapsedTaskIds.add(taskId);
+      }
+    }
+    return collapsedTaskIds;
+  }
+
+  bool _isCancelledAgentRunMessage(ChatMessageModel message) {
+    if (message.type != 1 || message.user != 2) {
+      return false;
+    }
+    final text = (message.text ?? '').trim().toLowerCase();
+    return text == '任务已取消' ||
+        text == 'task canceled' ||
+        text == 'task cancelled';
   }
 
   void _handleParentScrollHandoff() {
@@ -1739,6 +1848,36 @@ class _ChatMessageListState extends State<ChatMessageList> {
     return false;
   }
 
+  GlobalKey? _editingRevealKeyForMessage(String? messageId) {
+    if (messageId == null || messageId != widget.editingUserMessageId) {
+      return null;
+    }
+    if (_editingUserMessageRevealKey == null ||
+        _editingUserMessageRevealKeyId != messageId) {
+      _editingUserMessageRevealKey = GlobalKey();
+      _editingUserMessageRevealKeyId = messageId;
+    }
+    return _editingUserMessageRevealKey;
+  }
+
+  void _scheduleEditingUserMessageReveal(String messageId) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.editingUserMessageId != messageId) {
+        return;
+      }
+      final targetContext = _editingUserMessageRevealKey?.currentContext;
+      if (targetContext == null) {
+        return;
+      }
+      Scrollable.ensureVisible(
+        targetContext,
+        duration: _kEditingUserMessageRevealDuration,
+        curve: Curves.easeOutCubic,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+      );
+    });
+  }
+
   ValueListenable<ChatMessageModel>? _messageListenableFor(
     ObservableChatMessageList messages,
     String messageId,
@@ -1813,6 +1952,9 @@ class _ChatMessageListState extends State<ChatMessageList> {
         onCancelTask: widget.onCancelTask,
         parentScrollController: widget.scrollController,
         onParentScrollHandoff: _handleParentScrollHandoff,
+        editingUserMessageRevealKey: _editingRevealKeyForMessage(
+          entry.message?.id,
+        ),
         onRequestAuthorize: widget.onRequestAuthorize,
         onUserMessageLongPressStart: widget.onUserMessageLongPressStart,
         onStreamingTextLayoutChanged: _handleStreamingTextLayoutChanged,
@@ -1878,69 +2020,85 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
     final Widget content;
     if (widget.messages.isEmpty) {
-      content = GestureDetector(
-        onVerticalDragUpdate: (_) {},
-        behavior: HitTestBehavior.opaque,
-        child: Center(
-          child: Text(
-            Localizations.localeOf(context).languageCode == 'en'
-                ? 'How can I help you?'
-                : '有什么可以帮助你的？',
-            style: TextStyle(
-              color:
-                  !widget.appearanceConfig.isActive &&
-                      widget.appearanceConfig.chatTextColorMode !=
-                          AppBackgroundTextColorMode.custom
-                  ? context.omniPalette.textSecondary
-                  : widget.visualProfile.secondaryTextColor,
-              fontSize: 14,
-            ),
-          ),
-        ),
-      );
-    } else {
-      String? latestUserMessageId;
-      final messageSource = _observableMessages ?? widget.messages;
-      final timelineEntries = buildAgentRunTimelineEntries(
-        List<ChatMessageModel>.from(messageSource),
-        activeTaskIds: widget.activeAgentTaskIds,
-      );
-      for (final item in messageSource) {
-        if (item.user == 1) {
-          latestUserMessageId = item.id;
-          break;
-        }
+      final usePaletteText =
+          !widget.appearanceConfig.isActive &&
+          widget.appearanceConfig.chatTextColorMode !=
+              AppBackgroundTextColorMode.custom;
+      content = widget.showEmptyGreeting
+          ? GestureDetector(
+              onVerticalDragUpdate: (_) {},
+              behavior: HitTestBehavior.opaque,
+              child: AnimatedAlign(
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeInOutCubic,
+                alignment: widget.liftEmptyGreeting
+                    ? const Alignment(-1, -1)
+                    : const Alignment(0, -0.18),
+                child: ChatEmptyGreeting(
+                  primaryTextColor: usePaletteText
+                      ? context.omniPalette.textPrimary
+                      : widget.visualProfile.primaryTextColor,
+                  secondaryTextColor: usePaletteText
+                      ? context.omniPalette.textSecondary
+                      : widget.visualProfile.secondaryTextColor,
+                  accentColor: context.omniPalette.accentPrimary,
+                  quickPrompts: widget.emptyGreetingQuickPrompts,
+                  pinnedQuickPromptIds:
+                      widget.emptyGreetingPinnedQuickPromptIds,
+                  onQuickPromptSelected: widget.onQuickPromptSelected,
+                  codexWorkspaceName: widget.emptyGreetingCodexWorkspaceName,
+                  onCodexWorkspaceTap: widget.onEmptyGreetingCodexWorkspaceTap,
+                ),
+              ),
+            )
+          : const SizedBox.expand();
+      if (pageBackgroundColor == null) {
+        return content;
       }
-      Widget listView = ListView.builder(
-        controller: widget.scrollController,
-        reverse: false,
-        physics: const ClampingScrollPhysics(),
-        clipBehavior: Clip.hardEdge,
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-        itemCount: timelineEntries.length,
-        itemBuilder: (context, index) {
-          final dataIndex = timelineEntries.length - 1 - index;
-          final entry = timelineEntries[dataIndex];
-          final isOldestEntry = dataIndex == timelineEntries.length - 1;
-          final needTopPadding = isOldestEntry && !entry.isUserMessage;
-          return _buildTimelineListRow(
-            messageSource: messageSource,
-            entry: entry,
-            latestUserMessageId: latestUserMessageId,
-            padding: EdgeInsets.only(top: needTopPadding ? 24.0 : 0.0),
-          );
-        },
-      );
-      content = ClipRect(
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: _handleListScrollNotification,
-            child: listView,
-          ),
-        ),
-      );
+      return ColoredBox(color: pageBackgroundColor, child: content);
     }
+
+    String? latestUserMessageId;
+    final messageSource = _observableMessages ?? widget.messages;
+    final timelineEntries = buildAgentRunTimelineEntries(
+      List<ChatMessageModel>.from(messageSource),
+      activeTaskIds: widget.activeAgentTaskIds,
+    );
+    for (final item in messageSource) {
+      if (item.user == 1) {
+        latestUserMessageId = item.id;
+        break;
+      }
+    }
+    Widget listView = ListView.builder(
+      controller: widget.scrollController,
+      reverse: false,
+      physics: const ClampingScrollPhysics(),
+      clipBehavior: Clip.hardEdge,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      itemCount: timelineEntries.length,
+      itemBuilder: (context, index) {
+        final dataIndex = timelineEntries.length - 1 - index;
+        final entry = timelineEntries[dataIndex];
+        final isOldestEntry = dataIndex == timelineEntries.length - 1;
+        final needTopPadding = isOldestEntry && !entry.isUserMessage;
+        return _buildTimelineListRow(
+          messageSource: messageSource,
+          entry: entry,
+          latestUserMessageId: latestUserMessageId,
+          padding: EdgeInsets.only(top: needTopPadding ? 24.0 : 0.0),
+        );
+      },
+    );
+    content = ClipRect(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleListScrollNotification,
+          child: listView,
+        ),
+      ),
+    );
 
     final paddedContent = AnimatedPadding(
       duration: const Duration(milliseconds: 180),
@@ -1970,6 +2128,7 @@ class _ChatTimelineListRow extends StatelessWidget {
     this.onCancelTask,
     this.parentScrollController,
     this.onParentScrollHandoff,
+    this.editingUserMessageRevealKey,
     this.onRequestAuthorize,
     this.onUserMessageLongPressStart,
     this.onStreamingTextLayoutChanged,
@@ -1990,6 +2149,7 @@ class _ChatTimelineListRow extends StatelessWidget {
   final void Function(String taskId)? onCancelTask;
   final ScrollController? parentScrollController;
   final VoidCallback? onParentScrollHandoff;
+  final GlobalKey? editingUserMessageRevealKey;
   final void Function(List<String> requiredPermissionIds)? onRequestAuthorize;
   final void Function(ChatMessageModel message, LongPressStartDetails details)?
   onUserMessageLongPressStart;
@@ -2030,34 +2190,37 @@ class _ChatTimelineListRow extends StatelessWidget {
         canEditUserMessage &&
         editingUserMessageId == currentMessage.id &&
         userMessageEditController != null;
+    final bubble = MessageBubble(
+      message: currentMessage,
+      key: ValueKey(
+        currentMessage.dbId ?? currentMessage.contentId ?? currentMessage.id,
+      ),
+      onBeforeTaskExecute: onBeforeTaskExecute,
+      onCancelTask: onCancelTask,
+      enableThinkingCollapse: true,
+      parentScrollController: parentScrollController,
+      onParentScrollHandoff: onParentScrollHandoff,
+      onRequestAuthorize: onRequestAuthorize,
+      onUserMessageLongPressStart: onUserMessageLongPressStart,
+      isUserMessageEditing: isEditingUserMessage,
+      userMessageEditController: isEditingUserMessage
+          ? userMessageEditController
+          : null,
+      onCancelUserEdit: isEditingUserMessage
+          ? onUserMessageEditCancelled
+          : null,
+      onSaveUserEdit: isEditingUserMessage
+          ? () => onUserMessageEditSaved?.call(currentMessage)
+          : null,
+      onStreamingTextLayoutChanged: onStreamingTextLayoutChanged,
+      visualProfile: visualProfile,
+      appearanceConfig: appearanceConfig,
+    );
     return Padding(
       padding: padding,
-      child: MessageBubble(
-        message: currentMessage,
-        key: ValueKey(
-          currentMessage.dbId ?? currentMessage.contentId ?? currentMessage.id,
-        ),
-        onBeforeTaskExecute: onBeforeTaskExecute,
-        onCancelTask: onCancelTask,
-        enableThinkingCollapse: true,
-        parentScrollController: parentScrollController,
-        onParentScrollHandoff: onParentScrollHandoff,
-        onRequestAuthorize: onRequestAuthorize,
-        onUserMessageLongPressStart: onUserMessageLongPressStart,
-        isUserMessageEditing: isEditingUserMessage,
-        userMessageEditController: isEditingUserMessage
-            ? userMessageEditController
-            : null,
-        onCancelUserEdit: isEditingUserMessage
-            ? onUserMessageEditCancelled
-            : null,
-        onSaveUserEdit: isEditingUserMessage
-            ? () => onUserMessageEditSaved?.call(currentMessage)
-            : null,
-        onStreamingTextLayoutChanged: onStreamingTextLayoutChanged,
-        visualProfile: visualProfile,
-        appearanceConfig: appearanceConfig,
-      ),
+      child: isEditingUserMessage && editingUserMessageRevealKey != null
+          ? KeyedSubtree(key: editingUserMessageRevealKey, child: bubble)
+          : bubble,
     );
   }
 }
@@ -2187,6 +2350,7 @@ class ChatInputWrapper extends StatelessWidget {
   final ValueChanged<double>? onInputHeightChanged;
   final CodexPermissionMode? codexPermissionMode;
   final ValueChanged<CodexPermissionMode>? onCodexPermissionModeChanged;
+  final bool useIndependentSendButton;
   final bool translucent;
 
   const ChatInputWrapper({
@@ -2217,6 +2381,7 @@ class ChatInputWrapper extends StatelessWidget {
     this.onInputHeightChanged,
     this.codexPermissionMode,
     this.onCodexPermissionModeChanged,
+    this.useIndependentSendButton = true,
     this.translucent = false,
   });
 
@@ -2256,6 +2421,7 @@ class ChatInputWrapper extends StatelessWidget {
             codexPermissionMode: codexPermissionMode,
             onCodexPermissionModeChanged: onCodexPermissionModeChanged,
             onInputHeightChanged: onInputHeightChanged,
+            useIndependentSendButton: useIndependentSendButton,
           ),
         ],
       ),

@@ -64,7 +64,7 @@ object OmniInferQnnModelsManager {
 
     fun handleAppOpen() {
         if (shouldAutoStartOnAppOpen()) {
-            Thread({ startApiService(getActiveModelId()) }, "OmniInfer-qnn-autostart").start()
+            Thread({ startApiService(getActiveModelId(), exposeLan = false) }, "OmniInfer-qnn-autostart").start()
         }
     }
 
@@ -99,7 +99,7 @@ object OmniInferQnnModelsManager {
             "loadedModelId" to getLoadedModelId(),
             "deviceSoc" to soc,
             "deviceSupported" to OmniInferQnnMarketRepository.isDeviceSupported(),
-        )
+        ) + OmniInferLocalRuntime.getLanProxyState()
     }
 
     fun saveConfig(arguments: Map<*, *>): Map<String, Any?> {
@@ -109,6 +109,10 @@ object OmniInferQnnModelsManager {
         arguments["apiPort"]?.let {
             val port = (it as? Number)?.toInt()
             if (port != null && port > 0) OmniInferLocalRuntime.setPort(port)
+        }
+        arguments["lanProxyPort"]?.let {
+            val port = (it as? Number)?.toInt()
+            if (port != null && port > 0) OmniInferLocalRuntime.setLanProxyPort(port)
         }
         arguments["activeModelId"]?.let {
             mmkv.encode(KEY_ACTIVE_MODEL_ID, it.toString().trim())
@@ -175,7 +179,7 @@ object OmniInferQnnModelsManager {
 
     // ---- API service ----
 
-    fun startApiService(modelId: String? = null): Map<String, Any?> {
+    fun startApiService(modelId: String? = null, exposeLan: Boolean = true): Map<String, Any?> {
         val targetModelId = modelId?.trim().orEmpty().ifBlank { getActiveModelId() }
         if (targetModelId.isBlank()) {
             OmniLog.w(TAG, "[startApiService] no modelId and no active model")
@@ -191,12 +195,15 @@ object OmniInferQnnModelsManager {
 
         OmniLog.i(TAG, "[startApiService] modelId=${installed.modelId}, ptePath=${installed.ptePath}, decoderVersion=$decoderVersion")
         mmkv.encode(KEY_ACTIVE_MODEL_ID, installed.modelId)
-        OmniInferLocalRuntime.loadModel(
+        val loaded = OmniInferLocalRuntime.loadModel(
             modelId = installed.modelId,
             modelPath = installed.ptePath,
             backend = BACKEND_NAME,
             extraConfig = mapOf("decoder_model_version" to decoderVersion),
         )
+        if (loaded && exposeLan) {
+            OmniInferLocalRuntime.startLanProxy()
+        }
         emitConfigChanged()
         return getConfig()
     }

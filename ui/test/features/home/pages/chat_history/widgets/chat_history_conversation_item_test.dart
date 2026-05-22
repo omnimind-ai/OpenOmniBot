@@ -1,13 +1,15 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ui/features/home/state/habitual_hand_controller.dart';
 import 'package:ui/features/home/pages/chat_history/widgets/chat_history_conversation_item.dart';
 import 'package:ui/features/home/widgets/conversation_slidable.dart';
 import 'package:ui/models/conversation_model.dart';
+import 'package:ui/models/habitual_hand.dart';
 
 void main() {
   testWidgets('tap still opens the conversation item', (tester) async {
@@ -71,7 +73,7 @@ void main() {
       ),
     );
 
-    await tester.drag(find.byType(Slidable), const Offset(-800, 0));
+    await tester.drag(find.byType(Slidable), const Offset(-260, 0));
     await tester.pumpAndSettle();
 
     expect(find.byType(CustomSlidableAction), findsOneWidget);
@@ -80,6 +82,55 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(deleteCount, 1);
+  });
+
+  testWidgets('left hand preference reveals actions with a right swipe', (
+    tester,
+  ) async {
+    var deleteCount = 0;
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        habitualHand: HabitualHand.left,
+        child: ChatHistoryConversationItem(
+          conversation: _conversation(id: 5, title: 'Conversation Left'),
+          actions: _deleteActions(() => deleteCount++),
+          onTap: () {},
+          onDelete: () => deleteCount++,
+        ),
+      ),
+    );
+
+    await tester.drag(find.byType(Slidable), const Offset(220, 0));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CustomSlidableAction), findsOneWidget);
+
+    await tester.tap(find.byType(CustomSlidableAction));
+    await tester.pumpAndSettle();
+
+    expect(deleteCount, 1);
+  });
+
+  testWidgets('left swipe does not reveal actions for left hand preference', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildTestApp(
+        habitualHand: HabitualHand.left,
+        child: ChatHistoryConversationItem(
+          conversation: _conversation(id: 6, title: 'Conversation Left Guard'),
+          actions: _deleteActions(() {}),
+          onTap: () {},
+          onDelete: () {},
+        ),
+      ),
+    );
+
+    await tester.drag(find.byType(Slidable), const Offset(-220, 0));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CustomSlidableAction), findsNothing);
   });
 
   testWidgets('full swipe uses the override callback when provided', (
@@ -101,7 +152,11 @@ void main() {
       ),
     );
 
-    await tester.drag(find.byType(Slidable), const Offset(-800, 0));
+    await tester.timedDrag(
+      find.byType(Slidable),
+      const Offset(-640, 0),
+      const Duration(milliseconds: 400),
+    );
     await tester.pumpAndSettle();
 
     expect(archiveCount, 1);
@@ -125,7 +180,11 @@ void main() {
       ),
     );
 
-    await tester.drag(find.byType(Slidable), const Offset(-800, 0));
+    await tester.timedDrag(
+      find.byType(Slidable),
+      const Offset(-640, 0),
+      const Duration(milliseconds: 400),
+    );
     await tester.pumpAndSettle();
 
     expect(deleteCount, 1);
@@ -151,12 +210,22 @@ void main() {
   });
 }
 
-Widget _buildTestApp({required Widget child}) {
+Widget _buildTestApp({
+  required Widget child,
+  HabitualHand habitualHand = HabitualHand.right,
+}) {
   return DefaultAssetBundle(
     bundle: _TestAssetBundle(),
-    child: MaterialApp(
-      home: Scaffold(
-        body: SlidableAutoCloseBehavior(child: ListView(children: [child])),
+    child: ProviderScope(
+      overrides: [
+        habitualHandProvider.overrideWith(
+          (ref) => HabitualHandController(initial: habitualHand),
+        ),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+          body: SlidableAutoCloseBehavior(child: ListView(children: [child])),
+        ),
       ),
     ),
   );

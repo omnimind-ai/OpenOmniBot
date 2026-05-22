@@ -928,8 +928,27 @@ class ToolActivityRow extends StatelessWidget {
         ? palette.textSecondary
         : const Color(0xFF7C8DA5);
     final status = (card['status'] ?? 'running').toString();
+    final isCommandCard = _isCommandActivityCard(card);
     final toolTypeLabel = resolveAgentToolTypeLabel(card);
     final statusLabel = resolveAgentToolStatusLabel(card);
+    final titleText = _resolveActivityRowTitle(card);
+    final descriptionText = isCommandCard
+        ? _resolveCommandActivityDescription(card)
+        : '';
+    final titleStyle = TextStyle(
+      color: primaryTextColor,
+      fontSize: 11,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0,
+      height: 1.05,
+    );
+    final descriptionStyle = TextStyle(
+      color: secondaryTextColor.withValues(alpha: 0.76),
+      fontSize: 9,
+      fontWeight: FontWeight.w400,
+      letterSpacing: 0,
+      height: 1.05,
+    );
 
     return SizedBox(
       height: _kToolActivityRowHeight,
@@ -939,12 +958,17 @@ class ToolActivityRow extends StatelessWidget {
         padding: EdgeInsets.fromLTRB(10 + leadingInset, 0, 8, 0),
         child: LayoutBuilder(
           builder: (context, constraints) {
+            final commandDescriptionMaxWidth = math
+                .min(constraints.maxWidth * 0.42, 180.0)
+                .toDouble();
             final showTypeLabel =
+                !isCommandCard &&
                 constraints.maxWidth >=
-                _kToolActivityTypeSlotWidth +
-                    _kToolActivityStatusSlotWidth +
-                    _kToolActivityTrailingSlotWidth +
-                    28;
+                    _kToolActivityTypeSlotWidth +
+                        _kToolActivityStatusSlotWidth +
+                        _kToolActivityTrailingSlotWidth +
+                        28;
+            final showStatusLabel = !isCommandCard;
             return Row(
               children: [
                 Expanded(
@@ -953,21 +977,44 @@ class ToolActivityRow extends StatelessWidget {
                     onTap: onTap,
                     child: Row(
                       children: [
-                        _StatusDot(status: status),
-                        const SizedBox(width: 6),
+                        if (!isCommandCard) ...[
+                          _StatusDot(status: status),
+                          const SizedBox(width: 6),
+                        ],
                         Expanded(
-                          child: Text(
-                            resolveAgentToolTitle(card),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: primaryTextColor,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: -0.2,
-                              height: 1.05,
-                            ),
-                          ),
+                          child: descriptionText.isEmpty
+                              ? Text(
+                                  titleText,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: titleStyle,
+                                )
+                              : Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        titleText,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: titleStyle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    SizedBox(
+                                      width: commandDescriptionMaxWidth,
+                                      child: Align(
+                                        alignment: Alignment.centerRight,
+                                        child: Text(
+                                          descriptionText,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          textAlign: TextAlign.right,
+                                          style: descriptionStyle,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                         ),
                         SizedBox(width: showTypeLabel ? 6 : 0),
                         SizedBox(
@@ -986,23 +1033,27 @@ class ToolActivityRow extends StatelessWidget {
                                       color: secondaryTextColor,
                                       fontSize: 9,
                                       fontWeight: FontWeight.w600,
-                                      letterSpacing: -0.1,
+                                      letterSpacing: 0,
                                       height: 1.05,
                                     ),
                                   ),
                                 )
                               : null,
                         ),
-                        const SizedBox(width: 4),
+                        SizedBox(width: showStatusLabel ? 4 : 0),
                         SizedBox(
-                          width: _kToolActivityStatusSlotWidth,
-                          child: Align(
-                            alignment: Alignment.centerRight,
-                            child: _StatusTag(
-                              status: status,
-                              label: statusLabel,
-                            ),
-                          ),
+                          width: showStatusLabel
+                              ? _kToolActivityStatusSlotWidth
+                              : 0,
+                          child: showStatusLabel
+                              ? Align(
+                                  alignment: Alignment.centerRight,
+                                  child: _StatusTag(
+                                    status: status,
+                                    label: statusLabel,
+                                  ),
+                                )
+                              : null,
                         ),
                       ],
                     ),
@@ -1023,6 +1074,35 @@ class ToolActivityRow extends StatelessWidget {
       ),
     );
   }
+}
+
+bool _isCommandActivityCard(Map<String, dynamic> cardData) {
+  return (cardData['toolType'] ?? '').toString() == 'command';
+}
+
+String _resolveActivityRowTitle(Map<String, dynamic> cardData) {
+  final title = resolveAgentToolTitle(cardData).trim();
+  if (!_isCommandActivityCard(cardData)) {
+    return title;
+  }
+  return title.replaceFirst(RegExp(r'^/+'), '').trim();
+}
+
+String _resolveCommandActivityDescription(Map<String, dynamic> cardData) {
+  final title = resolveAgentToolTitle(cardData).trim();
+  final summary = (cardData['summary'] ?? '').toString().trim();
+  if (summary.isNotEmpty && summary != title) {
+    return summary;
+  }
+  final progress = (cardData['progress'] ?? '').toString().trim();
+  if (progress.isNotEmpty && progress != title) {
+    return progress;
+  }
+  final preview = resolveAgentToolPreview(cardData).trim();
+  if (preview.isNotEmpty && preview != title) {
+    return preview;
+  }
+  return '';
 }
 
 class _StatusDot extends StatelessWidget {

@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:ui/services/assists_core_service.dart';
-import 'package:ui/services/codex_app_server_service.dart';
 import 'package:ui/services/model_provider_config_service.dart';
 import 'package:ui/services/scene_model_config_service.dart';
 import 'package:ui/theme/app_colors.dart';
@@ -42,9 +41,6 @@ class SceneModelSettingPage extends StatefulWidget {
 
 class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
   static const bool _showManualRefreshButton = false;
-  static const String _defaultCodexModel = 'gpt-5.5';
-  static const String _defaultCodexHome = '/root/.codex';
-  static const Duration _codexConfigAutoSaveDelay = Duration(milliseconds: 700);
 
   static const List<String> _sceneOrder = [
     'scene.dispatch.model',
@@ -82,10 +78,6 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
   bool _isLoading = true;
   bool _isRefreshingModels = false;
   bool _isSavingVoiceConfig = false;
-  bool _isLoadingCodexConfig = true;
-  bool _isSavingCodexConfig = false;
-  bool _isSyncingCodexConfig = false;
-  bool _obscureCodexApiKey = true;
 
   List<SceneCatalogItem> _catalog = const [];
   List<SceneModelBindingEntry> _bindings = const [];
@@ -96,16 +88,8 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
   SceneVoiceConfig _voiceConfig = const SceneVoiceConfig();
   late final TextEditingController _voiceIdController;
   late final TextEditingController _voiceCustomStyleController;
-  late final TextEditingController _codexBaseUrlController;
-  late final TextEditingController _codexModelController;
-  late final TextEditingController _codexApiKeyController;
   Timer? _voiceConfigSaveDebounce;
-  Timer? _codexConfigSaveDebounce;
   SceneVoiceConfig? _pendingVoiceConfig;
-  String _codexHome = _defaultCodexHome;
-  String? _codexConfigError;
-  String? _codexConfigStatus;
-  String? _lastSavedCodexConfigSignature;
   DateTime? _suppressExternalReloadUntil;
   StreamSubscription<AgentAiConfigChangedEvent>? _configChangedSubscription;
   static const List<String> _voiceStylePresets = <String>[
@@ -123,14 +107,7 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
     super.initState();
     _voiceIdController = TextEditingController();
     _voiceCustomStyleController = TextEditingController();
-    _codexBaseUrlController = TextEditingController();
-    _codexModelController = TextEditingController(text: _defaultCodexModel);
-    _codexApiKeyController = TextEditingController();
-    _codexBaseUrlController.addListener(_handleCodexConfigEdited);
-    _codexModelController.addListener(_handleCodexConfigEdited);
-    _codexApiKeyController.addListener(_handleCodexConfigEdited);
     _loadData();
-    unawaited(_loadCodexConfig());
     _configChangedSubscription = AssistsMessageService
         .agentAiConfigChangedStream
         .listen((event) {
@@ -151,15 +128,8 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
   void dispose() {
     _configChangedSubscription?.cancel();
     _voiceConfigSaveDebounce?.cancel();
-    _codexConfigSaveDebounce?.cancel();
     _voiceIdController.dispose();
     _voiceCustomStyleController.dispose();
-    _codexBaseUrlController.removeListener(_handleCodexConfigEdited);
-    _codexModelController.removeListener(_handleCodexConfigEdited);
-    _codexApiKeyController.removeListener(_handleCodexConfigEdited);
-    _codexBaseUrlController.dispose();
-    _codexModelController.dispose();
-    _codexApiKeyController.dispose();
     super.dispose();
   }
 
@@ -192,12 +162,6 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
       _isDarkTheme ? context.omniPalette.textSecondary : AppColors.text70;
   Color get _tertiaryTextColor =>
       _isDarkTheme ? context.omniPalette.textTertiary : AppColors.text50;
-  bool get _isEnglish => Localizations.localeOf(context).languageCode == 'en';
-
-  String _localeText({required String zh, required String en}) {
-    return _isEnglish ? en : zh;
-  }
-
   String _sceneDisplayName(String sceneId) {
     return _sceneDisplayNameMap[sceneId] ?? sceneId;
   }
@@ -237,222 +201,6 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
         text: config.customStyle,
         selection: TextSelection.collapsed(offset: config.customStyle.length),
       );
-    }
-  }
-
-  void _setControllerText(TextEditingController controller, String text) {
-    if (controller.text == text) {
-      return;
-    }
-    controller.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-  }
-
-  void _syncCodexControllers(CodexLocalConfig config) {
-    _isSyncingCodexConfig = true;
-    try {
-      _setControllerText(_codexBaseUrlController, config.baseUrl);
-      _setControllerText(
-        _codexModelController,
-        config.model.trim().isEmpty ? _defaultCodexModel : config.model,
-      );
-      _setControllerText(_codexApiKeyController, config.apiKey);
-    } finally {
-      _isSyncingCodexConfig = false;
-    }
-  }
-
-  String _codexConfigSignature({
-    required String baseUrl,
-    required String model,
-    required String apiKey,
-  }) {
-    return '${baseUrl.trim()}\n${model.trim()}\n${apiKey.trim()}';
-  }
-
-  String _currentCodexConfigSignature() {
-    return _codexConfigSignature(
-      baseUrl: _codexBaseUrlController.text,
-      model: _codexModelController.text,
-      apiKey: _codexApiKeyController.text,
-    );
-  }
-
-  bool get _hasAnyCodexConfigInput {
-    return _codexBaseUrlController.text.trim().isNotEmpty ||
-        _codexModelController.text.trim().isNotEmpty ||
-        _codexApiKeyController.text.trim().isNotEmpty;
-  }
-
-  bool get _hasCompleteCodexConfigInput {
-    return _codexBaseUrlController.text.trim().isNotEmpty &&
-        _codexModelController.text.trim().isNotEmpty &&
-        _codexApiKeyController.text.trim().isNotEmpty;
-  }
-
-  void _handleCodexConfigEdited() {
-    if (_isSyncingCodexConfig || !mounted) {
-      return;
-    }
-
-    _codexConfigSaveDebounce?.cancel();
-    final signature = _currentCodexConfigSignature();
-    final complete = _hasCompleteCodexConfigInput;
-    final anyInput = _hasAnyCodexConfigInput;
-    setState(() {
-      _codexConfigError = null;
-      if (!anyInput) {
-        _codexConfigStatus = null;
-      } else if (!complete) {
-        _codexConfigStatus = _localeText(
-          zh: '填写完整后将自动保存。',
-          en: 'Complete all fields to autosave.',
-        );
-      } else if (signature == _lastSavedCodexConfigSignature) {
-        _codexConfigStatus = _localeText(
-          zh: '已自动保存，请重启软件以应用 Codex 配置。',
-          en: 'Autosaved. Restart the app to apply the Codex config.',
-        );
-      } else {
-        _codexConfigStatus = _localeText(
-          zh: '即将自动保存...',
-          en: 'Autosave pending...',
-        );
-      }
-    });
-
-    if (complete && signature != _lastSavedCodexConfigSignature) {
-      _scheduleCodexConfigAutoSave();
-    }
-  }
-
-  void _scheduleCodexConfigAutoSave({
-    Duration delay = _codexConfigAutoSaveDelay,
-  }) {
-    _codexConfigSaveDebounce?.cancel();
-    _codexConfigSaveDebounce = Timer(delay, () {
-      unawaited(_saveCodexConfig());
-    });
-  }
-
-  Future<void> _loadCodexConfig() async {
-    if (mounted) {
-      setState(() {
-        _isLoadingCodexConfig = true;
-        _codexConfigError = null;
-      });
-    }
-    try {
-      final config = await CodexAppServerService.readLocalConfig();
-      if (!mounted) return;
-      _syncCodexControllers(config);
-      final signature = _currentCodexConfigSignature();
-      setState(() {
-        _codexHome = config.codexHome ?? _defaultCodexHome;
-        _isLoadingCodexConfig = false;
-        _codexConfigError = null;
-        _codexConfigStatus = null;
-        _lastSavedCodexConfigSignature = signature;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _isLoadingCodexConfig = false;
-        _codexConfigError = _localeText(
-          zh: 'Codex 配置读取失败：$error',
-          en: 'Failed to read Codex config: $error',
-        );
-        _codexConfigStatus = null;
-      });
-    }
-  }
-
-  Future<void> _saveCodexConfig() async {
-    if (_isSavingCodexConfig) return;
-    final baseUrl = _codexBaseUrlController.text.trim();
-    final model = _codexModelController.text.trim();
-    final apiKey = _codexApiKeyController.text.trim();
-    if (baseUrl.isEmpty || model.isEmpty || apiKey.isEmpty) {
-      if (mounted) {
-        setState(() {
-          _codexConfigStatus = _localeText(
-            zh: '填写完整后将自动保存。',
-            en: 'Complete all fields to autosave.',
-          );
-        });
-      }
-      return;
-    }
-
-    final savingSignature = _codexConfigSignature(
-      baseUrl: baseUrl,
-      model: model,
-      apiKey: apiKey,
-    );
-    if (savingSignature == _lastSavedCodexConfigSignature) {
-      if (mounted) {
-        setState(() {
-          _codexConfigStatus = _localeText(
-            zh: '已自动保存，请重启软件以应用 Codex 配置。',
-            en: 'Autosaved. Restart the app to apply the Codex config.',
-          );
-        });
-      }
-      return;
-    }
-
-    setState(() {
-      _isSavingCodexConfig = true;
-      _codexConfigError = null;
-      _codexConfigStatus = _localeText(zh: '正在自动保存...', en: 'Autosaving...');
-    });
-    try {
-      final saved = await CodexAppServerService.writeLocalConfig(
-        baseUrl: baseUrl,
-        model: model,
-        apiKey: apiKey,
-      );
-      if (!mounted) return;
-      final savedSignature = _codexConfigSignature(
-        baseUrl: saved.baseUrl,
-        model: saved.model,
-        apiKey: saved.apiKey,
-      );
-      if (_currentCodexConfigSignature() == savingSignature) {
-        _syncCodexControllers(saved);
-      }
-      setState(() {
-        _codexHome = saved.codexHome ?? _defaultCodexHome;
-        _codexConfigError = null;
-        _lastSavedCodexConfigSignature = savedSignature;
-        _codexConfigStatus = _currentCodexConfigSignature() == savedSignature
-            ? _localeText(
-                zh: '已自动保存，请重启软件以应用 Codex 配置。',
-                en: 'Autosaved. Restart the app to apply the Codex config.',
-              )
-            : _localeText(zh: '即将自动保存...', en: 'Autosave pending...');
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _codexConfigError = _localeText(
-          zh: 'Codex 配置保存失败：$error',
-          en: 'Failed to save Codex config: $error',
-        );
-        _codexConfigStatus = null;
-      });
-    } finally {
-      if (mounted) {
-        setState(() => _isSavingCodexConfig = false);
-        if (_hasCompleteCodexConfigInput &&
-            _currentCodexConfigSignature() != savingSignature) {
-          _scheduleCodexConfigAutoSave(
-            delay: const Duration(milliseconds: 300),
-          );
-        }
-      }
     }
   }
 
@@ -1251,242 +999,6 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
     return _buildDefaultSceneRow(scene);
   }
 
-  Widget _buildCodexTextField({
-    required Key key,
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    TextInputType keyboardType = TextInputType.text,
-    bool obscureText = false,
-    Widget? suffixIcon,
-  }) {
-    return TextField(
-      key: key,
-      controller: controller,
-      obscureText: obscureText,
-      keyboardType: keyboardType,
-      textInputAction: TextInputAction.next,
-      style: TextStyle(
-        color: _primaryTextColor,
-        fontSize: 13,
-        fontFamily: 'PingFang SC',
-      ),
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        border: const OutlineInputBorder(),
-        isDense: true,
-        suffixIcon: suffixIcon,
-      ),
-    );
-  }
-
-  Widget _buildCodexConfigSection() {
-    final borderColor = _isDarkTheme
-        ? context.omniPalette.borderSubtle
-        : const Color(0x1A000000);
-    final mutedSurface = _isDarkTheme
-        ? context.omniPalette.surfaceSecondary
-        : const Color(0xFFF8FAFC);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SettingsSectionTitle(
-          label: _localeText(zh: 'Codex 配置', en: 'Codex Config'),
-          subtitle: _localeText(
-            zh: '写入 Alpine 内的 config.toml 与 auth.json。',
-            en: 'Writes config.toml and auth.json inside Alpine.',
-          ),
-        ),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-          decoration: BoxDecoration(
-            color: _cardColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: borderColor),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.terminal_rounded,
-                    size: 18,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _localeText(
-                        zh: '配置目录：$_codexHome',
-                        en: 'Config directory: $_codexHome',
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: _secondaryTextColor,
-                        fontSize: 12,
-                        fontFamily: 'PingFang SC',
-                      ),
-                    ),
-                  ),
-                  if (_isLoadingCodexConfig)
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  else
-                    IconButton(
-                      key: const Key('codex-config-refresh-button'),
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 28,
-                        height: 28,
-                      ),
-                      padding: EdgeInsets.zero,
-                      tooltip: _localeText(zh: '重新读取', en: 'Reload'),
-                      onPressed: _isSavingCodexConfig
-                          ? null
-                          : () => unawaited(_loadCodexConfig()),
-                      icon: Icon(
-                        Icons.refresh_rounded,
-                        size: 17,
-                        color: _tertiaryTextColor,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _buildCodexTextField(
-                key: const Key('codex-config-base-url-field'),
-                controller: _codexBaseUrlController,
-                label: 'Base URL',
-                hint: 'https://bring_your_own_key.endpoint/v1',
-                keyboardType: TextInputType.url,
-              ),
-              const SizedBox(height: 12),
-              _buildCodexTextField(
-                key: const Key('codex-config-model-field'),
-                controller: _codexModelController,
-                label: 'Model',
-                hint: _defaultCodexModel,
-              ),
-              const SizedBox(height: 12),
-              _buildCodexTextField(
-                key: const Key('codex-config-api-key-field'),
-                controller: _codexApiKeyController,
-                label: 'OPENAI_API_KEY',
-                hint: 'your_own_key',
-                obscureText: _obscureCodexApiKey,
-                suffixIcon: IconButton(
-                  tooltip: _obscureCodexApiKey
-                      ? _localeText(zh: '显示密钥', en: 'Show key')
-                      : _localeText(zh: '隐藏密钥', en: 'Hide key'),
-                  onPressed: () {
-                    setState(() {
-                      _obscureCodexApiKey = !_obscureCodexApiKey;
-                    });
-                  },
-                  icon: Icon(
-                    _obscureCodexApiKey
-                        ? Icons.visibility_outlined
-                        : Icons.visibility_off_outlined,
-                    size: 18,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: mutedSurface,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: borderColor),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.restart_alt_rounded,
-                      size: 17,
-                      color: _tertiaryTextColor,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _localeText(
-                          zh: '自动保存，请重启软件以应用 Codex 配置。',
-                          en: 'Config autosaves. Restart the app to apply the Codex config.',
-                        ),
-                        style: TextStyle(
-                          color: _secondaryTextColor,
-                          fontSize: 12,
-                          height: 1.45,
-                          fontFamily: 'PingFang SC',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (_codexConfigError != null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  _codexConfigError!,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                    fontSize: 12,
-                    height: 1.45,
-                    fontFamily: 'PingFang SC',
-                  ),
-                ),
-              ],
-              if (_codexConfigStatus != null || _isSavingCodexConfig) ...[
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    if (_isSavingCodexConfig) ...[
-                      const SizedBox(
-                        width: 13,
-                        height: 13,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: 8),
-                    ] else ...[
-                      Icon(
-                        Icons.check_circle_outline_rounded,
-                        size: 15,
-                        color: _tertiaryTextColor,
-                      ),
-                      const SizedBox(width: 7),
-                    ],
-                    Expanded(
-                      child: Text(
-                        _codexConfigStatus ??
-                            _localeText(zh: '正在自动保存...', en: 'Autosaving...'),
-                        style: TextStyle(
-                          color: _secondaryTextColor,
-                          fontSize: 12,
-                          height: 1.45,
-                          fontFamily: 'PingFang SC',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1574,8 +1086,6 @@ class _SceneModelSettingPageState extends State<SceneModelSettingPage> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 22),
-                  _buildCodexConfigSection(),
                 ],
               ),
       ),

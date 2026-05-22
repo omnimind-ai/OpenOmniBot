@@ -234,6 +234,9 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     final messageId = (event.entryId ?? '').trim();
     final text = event.text.trim();
     if (messageId.isEmpty || text.isEmpty) return;
+    final reasoningContent =
+        _normalizeReasoningContent(event.thinking) ??
+        _normalizeReasoningContent(deepThinkingContent);
     final streamMeta = ensureAgentStreamMessageMeta(
       _streamMetaFromEvent(event),
       entryId: messageId,
@@ -259,6 +262,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
                 'decodeTokensPerSecond': event.decodeTokensPerSecond,
             },
             streamMeta: streamMeta,
+            reasoningContent: reasoningContent,
           ),
         );
       } else {
@@ -274,6 +278,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         messages[index] = existing.copyWith(
           content: content,
           streamMeta: streamMeta,
+          reasoningContent: reasoningContent ?? existing.reasoningContent,
         );
       }
       isAiResponding = true;
@@ -317,6 +322,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         progress: toolEvent.progress,
         resultPreviewJson: toolEvent.resultPreviewJson,
         rawResultJson: toolEvent.rawResultJson,
+        reasoningContent: event.thinking,
         streamMeta: _streamMetaFromEvent(event),
       );
     });
@@ -331,6 +337,9 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         ? event.question.trim()
         : event.text.trim();
     final messageId = (event.entryId ?? '').trim();
+    final reasoningContent =
+        _normalizeReasoningContent(event.thinking) ??
+        _normalizeReasoningContent(deepThinkingContent);
     final streamMeta = ensureAgentStreamMessageMeta(
       _streamMetaFromEvent(event),
       entryId: messageId,
@@ -351,12 +360,15 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
               user: 2,
               content: {'text': text, 'id': messageId},
               streamMeta: streamMeta,
+              reasoningContent: reasoningContent,
             ),
           );
         } else {
           messages[index] = messages[index].copyWith(
             content: {'text': text, 'id': messageId},
             streamMeta: streamMeta,
+            reasoningContent:
+                reasoningContent ?? messages[index].reasoningContent,
           );
         }
       }
@@ -412,6 +424,9 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     final taskId = event.taskId;
     final messageId = (event.entryId ?? '').trim();
     final text = event.text.trim();
+    final reasoningContent =
+        _normalizeReasoningContent(event.thinking) ??
+        _normalizeReasoningContent(deepThinkingContent);
     final permissionCardId =
         (event.raw['permissionCardId'] ?? '$taskId-permission').toString();
     final executionPermissionIds = _resolveExecutionPermissionIds(
@@ -442,12 +457,15 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
               user: 2,
               content: {'text': text, 'id': messageId},
               streamMeta: replyStreamMeta,
+              reasoningContent: reasoningContent,
             ),
           );
         } else {
           messages[index] = messages[index].copyWith(
             content: {'text': text, 'id': messageId},
             streamMeta: replyStreamMeta,
+            reasoningContent:
+                reasoningContent ?? messages[index].reasoningContent,
           );
         }
       }
@@ -744,6 +762,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     required String progress,
     required String resultPreviewJson,
     required String rawResultJson,
+    String? reasoningContent,
     Map<String, dynamic>? streamMeta,
   }) {
     setState(() {
@@ -771,12 +790,22 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         'toolType': event.toolType,
         'serverName': event.serverName,
         'status': status,
+        'reasoning_content':
+            _normalizeReasoningContent(reasoningContent) ??
+            (existingCardData['reasoning_content'] ?? '').toString(),
         'summary': summary.isNotEmpty
             ? summary
             : (existingCardData['summary'] ?? '').toString(),
         'progress': progress.isNotEmpty
             ? progress
             : (existingCardData['progress'] ?? '').toString(),
+        'subagentStatusText': event.subagentStatusText.isNotEmpty
+            ? event.subagentStatusText
+            : (existingCardData['subagentStatusText'] ?? '').toString(),
+        'subagentEvents': _mergeSubagentEvents(
+          existingCardData['subagentEvents'],
+          event.subagentEvents,
+        ),
         'argsJson': event.argsJson.isNotEmpty
             ? event.argsJson
             : (existingCardData['argsJson'] ?? '').toString(),
@@ -827,6 +856,122 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         );
       }
     });
+  }
+
+  List<Map<String, dynamic>> _mergeSubagentEvents(
+    dynamic existingRaw,
+    List<Map<String, dynamic>> incomingEvents,
+  ) {
+    final merged = <Map<String, dynamic>>[];
+    final seen = <String>{};
+
+    void addEvent(Map<dynamic, dynamic> rawEvent) {
+      final event = rawEvent.map<String, dynamic>(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+      final key = _subagentEventIdentity(event);
+      if (!seen.add(key)) {
+        return;
+      }
+      merged.add(event);
+    }
+
+    if (existingRaw is List) {
+      for (final item in existingRaw.whereType<Map>()) {
+        addEvent(item);
+      }
+    }
+    for (final event in incomingEvents) {
+      addEvent(event);
+    }
+    // 折叠流式累积事件: 同一个 subagent (按 subagentId 或 taskIndex 分组)
+    // 的同种流式 kind (thinking / message) 只保留 seq 最大的一条。
+    // Kotlin 端为了实现"实时滚动"效果会每 ~32 字符 emit 一次 thinking 事件,
+    // 每条 seq 都不同,id-based 去重保留不了它们。展开后会显示"每行字数递增"。
+    final folded = _foldStreamingSubagentEvents(merged);
+    folded.sort((left, right) {
+      final leftSeq = _asInt(left['seq']);
+      final rightSeq = _asInt(right['seq']);
+      if (leftSeq != null && rightSeq != null && leftSeq != rightSeq) {
+        return leftSeq.compareTo(rightSeq);
+      }
+      final leftCreatedAt = _asInt(left['createdAt']) ?? 0;
+      final rightCreatedAt = _asInt(right['createdAt']) ?? 0;
+      if (leftCreatedAt != rightCreatedAt) {
+        return leftCreatedAt.compareTo(rightCreatedAt);
+      }
+      return _subagentEventIdentity(
+        left,
+      ).compareTo(_subagentEventIdentity(right));
+    });
+    return folded;
+  }
+
+  static const Set<String> _streamingSubagentKinds = <String>{
+    'thinking',
+    'message',
+  };
+
+  List<Map<String, dynamic>> _foldStreamingSubagentEvents(
+    List<Map<String, dynamic>> events,
+  ) {
+    final latestByGroup = <String, Map<String, dynamic>>{};
+    final result = <Map<String, dynamic>>[];
+    for (final event in events) {
+      final kind = (event['kind'] ?? '').toString();
+      if (!_streamingSubagentKinds.contains(kind)) {
+        result.add(event);
+        continue;
+      }
+      final groupKey = _subagentStreamingGroupKey(event, kind);
+      final existing = latestByGroup[groupKey];
+      if (existing == null) {
+        latestByGroup[groupKey] = event;
+        continue;
+      }
+      final existingSeq = _asInt(existing['seq']) ?? -1;
+      final newSeq = _asInt(event['seq']) ?? -1;
+      if (newSeq >= existingSeq) {
+        latestByGroup[groupKey] = event;
+      }
+    }
+    result.addAll(latestByGroup.values);
+    return result;
+  }
+
+  String _subagentStreamingGroupKey(
+    Map<String, dynamic> event,
+    String kind,
+  ) {
+    final subagentId = (event['subagentId'] ?? '').toString().trim();
+    if (subagentId.isNotEmpty) {
+      return 'sub:$subagentId|$kind';
+    }
+    final taskIndex = event['taskIndex'];
+    if (taskIndex != null) {
+      return 'task:$taskIndex|$kind';
+    }
+    return 'global|$kind';
+  }
+
+  String _subagentEventIdentity(Map<String, dynamic> event) {
+    final id = (event['id'] ?? '').toString().trim();
+    if (id.isNotEmpty) {
+      return id;
+    }
+    return [
+      event['seq'],
+      event['kind'],
+      event['taskIndex'],
+      event['summary'],
+      event['toolName'],
+    ].map((item) => item?.toString() ?? '').join('|');
+  }
+
+  int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse((value ?? '').toString());
   }
 
   String _resolveTerminalOutput({
@@ -880,5 +1025,10 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         : candidate;
     final remaining = _maxTerminalOutputChars - notice.length;
     return '$notice${body.substring(body.length > remaining ? body.length - remaining : 0)}';
+  }
+
+  String? _normalizeReasoningContent(String? value) {
+    final normalized = value?.trim() ?? '';
+    return normalized.isEmpty ? null : normalized;
   }
 }

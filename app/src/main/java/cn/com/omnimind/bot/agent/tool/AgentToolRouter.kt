@@ -6,6 +6,7 @@ import cn.com.omnimind.bot.agent.tool.handlers.ContextToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.FileToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.ImageGenerationToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.McpToolHandler
+import cn.com.omnimind.bot.agent.tool.handlers.MemoryLoadToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.MemoryToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.PrivilegedToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.SharedHelper
@@ -23,7 +24,8 @@ class AgentToolRouter(
     private val context: Context,
     private val scope: CoroutineScope,
     private val scheduleToolBridge: AgentScheduleToolBridge,
-    private val workspaceManager: AgentWorkspaceManager
+    private val workspaceManager: AgentWorkspaceManager,
+    private val subagentDispatcher: SubagentDispatcher
 ) : AgentToolExecutor {
 
     private val json = Json {
@@ -49,7 +51,8 @@ class AgentToolRouter(
         SkillsToolHandler(helper, workspaceManager),
         SystemToolHandler(helper, scheduleToolBridge, workspaceManager),
         MemoryToolHandler(helper),
-        SubagentToolHandler(helper, scope)
+        MemoryLoadToolHandler(helper),
+        SubagentToolHandler(helper, subagentDispatcher)
     )
 
     private val mcpFallback = McpToolHandler(helper)

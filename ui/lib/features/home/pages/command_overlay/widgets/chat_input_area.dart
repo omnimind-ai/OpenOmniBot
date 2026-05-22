@@ -6,6 +6,7 @@ import 'dart:ui';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/services/special_permission.dart';
+import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/widgets/image_preview_overlay.dart';
 import 'package:ui/widgets/text_input_context_menu.dart';
@@ -14,6 +15,8 @@ part 'chat_input_area_composer.dart';
 part 'chat_input_area_popup.dart';
 
 const String _kInputTerminalIconAsset = 'assets/home/input_terminal_icon.svg';
+const String _kInputAttachmentIconAsset =
+    'assets/home/input_attachment_cross_icon.svg';
 
 const String _kLucideCommandSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
@@ -96,6 +99,7 @@ class ChatInputArea extends StatefulWidget {
   final VoidCallback? onLongPressContextUsageRing;
   final CodexPermissionMode? codexPermissionMode;
   final ValueChanged<CodexPermissionMode>? onCodexPermissionModeChanged;
+  final bool useIndependentSendButton;
 
   const ChatInputArea({
     super.key,
@@ -124,6 +128,7 @@ class ChatInputArea extends StatefulWidget {
     this.onLongPressContextUsageRing,
     this.codexPermissionMode,
     this.onCodexPermissionModeChanged,
+    this.useIndependentSendButton = true,
   });
 
   @override
@@ -291,11 +296,62 @@ class _ContextUsageRingPainter extends CustomPainter {
 class ChatInputAreaState extends _ChatInputAreaStateBase
     with _ChatInputAreaComposerMixin, _ChatInputAreaPopupMixin {}
 
+enum _ComposerKeyboardPhase { hidden, opening, visible, closing }
+
+extension on _ComposerKeyboardPhase {
+  bool get expandsEmptyTextField {
+    return switch (this) {
+      _ComposerKeyboardPhase.opening || _ComposerKeyboardPhase.visible => true,
+      _ComposerKeyboardPhase.hidden || _ComposerKeyboardPhase.closing => false,
+    };
+  }
+}
+
+class _ComposerInteractionState {
+  const _ComposerInteractionState({
+    required this.hasText,
+    required this.hasFocus,
+    required this.keyboardPhase,
+  });
+
+  final bool hasText;
+  final bool hasFocus;
+  final _ComposerKeyboardPhase keyboardPhase;
+
+  bool get expandsTextField => hasText || keyboardPhase.expandsEmptyTextField;
+
+  _ComposerInteractionState copyWith({
+    bool? hasText,
+    bool? hasFocus,
+    _ComposerKeyboardPhase? keyboardPhase,
+  }) {
+    return _ComposerInteractionState(
+      hasText: hasText ?? this.hasText,
+      hasFocus: hasFocus ?? this.hasFocus,
+      keyboardPhase: keyboardPhase ?? this.keyboardPhase,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is _ComposerInteractionState &&
+        other.hasText == hasText &&
+        other.hasFocus == hasFocus &&
+        other.keyboardPhase == keyboardPhase;
+  }
+
+  @override
+  int get hashCode => Object.hash(hasText, hasFocus, keyboardPhase);
+}
+
 abstract class _ChatInputAreaStateBase extends State<ChatInputArea>
-    with TickerProviderStateMixin {
-  late ValueNotifier<bool> _hasTextNotifier;
-  late ValueNotifier<bool> _isFocusedNotifier;
+    with TickerProviderStateMixin, WidgetsBindingObserver {
+  static const double _keyboardVisibleInsetThreshold = 0.5;
+  static const double _keyboardMotionEpsilon = 1.0;
+
+  late ValueNotifier<_ComposerInteractionState> _composerStateNotifier;
   bool _isPopupVisible = false;
+  double _lastKeyboardInset = 0;
 
   final ScrollController _textFieldScrollController = ScrollController();
 
@@ -318,10 +374,16 @@ abstract class _ChatInputAreaStateBase extends State<ChatInputArea>
   @override
   void initState() {
     super.initState();
-    _hasTextNotifier = ValueNotifier<bool>(false);
-    _isFocusedNotifier = ValueNotifier<bool>(false);
+    _composerStateNotifier = ValueNotifier<_ComposerInteractionState>(
+      _ComposerInteractionState(
+        hasText: widget.controller.text.trim().isNotEmpty,
+        hasFocus: widget.focusNode.hasFocus,
+        keyboardPhase: _ComposerKeyboardPhase.hidden,
+      ),
+    );
     widget.controller.addListener(_onTextChanged);
     widget.focusNode.addListener(_onFocusChanged);
+    WidgetsBinding.instance.addObserver(this);
 
     _terminalSvg = const SizedBox.shrink();
     _sendSvg = const SizedBox.shrink();
@@ -338,6 +400,7 @@ abstract class _ChatInputAreaStateBase extends State<ChatInputArea>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _syncKeyboardPhaseFromView();
     final palette = context.omniPalette;
     _terminalSvg = SvgPicture.asset(
       _kInputTerminalIconAsset,
@@ -385,42 +448,34 @@ abstract class _ChatInputAreaStateBase extends State<ChatInputArea>
             height: 20,
           );
     _addSvg = context.isDarkTheme
-        ? _buildDarkActionButtonIcon(
-            size: 20,
-            backgroundColor: palette.surfaceSecondary,
-            borderColor: palette.borderSubtle,
-            foreground: Icon(
-              Icons.add_rounded,
-              size: 14,
-              color: palette.textPrimary,
-            ),
-          )
-        : _buildComposerIconAsset(
-            'assets/home/input_add_icon.svg',
+        ? _buildComposerIconAsset(
+            _kInputAttachmentIconAsset,
             width: 20,
             height: 20,
+            color: palette.accentPrimary,
+          )
+        : _buildComposerIconAsset(
+            _kInputAttachmentIconAsset,
+            width: 20,
+            height: 20,
+            color: palette.accentPrimary,
           );
     _commandSvg = context.isDarkTheme
-        ? _buildDarkActionButtonIcon(
-            size: 20,
-            backgroundColor: palette.surfaceSecondary,
-            borderColor: palette.borderSubtle,
-            foreground: SvgPicture.string(
-              _kLucideCommandSvg,
-              width: 12,
-              height: 12,
-              colorFilter: ColorFilter.mode(
-                palette.textPrimary,
-                BlendMode.srcIn,
-              ),
+        ? SvgPicture.string(
+            _kLucideCommandSvg,
+            width: 20,
+            height: 20,
+            colorFilter: ColorFilter.mode(
+              palette.accentPrimary,
+              BlendMode.srcIn,
             ),
           )
         : SvgPicture.string(
             _kLucideCommandSvg,
             width: 20,
             height: 20,
-            colorFilter: const ColorFilter.mode(
-              Color(0xFF54627A),
+            colorFilter: ColorFilter.mode(
+              palette.accentPrimary,
               BlendMode.srcIn,
             ),
           );
@@ -430,8 +485,16 @@ abstract class _ChatInputAreaStateBase extends State<ChatInputArea>
     String assetPath, {
     required double width,
     required double height,
+    Color? color,
   }) {
-    return SvgPicture.asset(assetPath, width: width, height: height);
+    return SvgPicture.asset(
+      assetPath,
+      width: width,
+      height: height,
+      colorFilter: color == null
+          ? null
+          : ColorFilter.mode(color, BlendMode.srcIn),
+    );
   }
 
   Widget _buildDarkActionButtonIcon({
@@ -471,12 +534,68 @@ abstract class _ChatInputAreaStateBase extends State<ChatInputArea>
   }
 
   void _onTextChanged() {
-    _hasTextNotifier.value = widget.controller.text.trim().isNotEmpty;
-    _reportInputHeightAfterBuild();
+    _updateComposerState(hasText: widget.controller.text.trim().isNotEmpty);
   }
 
   void _onFocusChanged() {
-    _isFocusedNotifier.value = widget.focusNode.hasFocus;
+    _updateComposerState(hasFocus: widget.focusNode.hasFocus);
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    _syncKeyboardPhaseFromView();
+  }
+
+  void _syncKeyboardPhaseFromView() {
+    if (!mounted) return;
+    final view = View.of(context);
+    final bottomInset = view.viewInsets.bottom / view.devicePixelRatio;
+    final keyboardPhase = _resolveKeyboardPhase(bottomInset);
+    _updateComposerState(keyboardPhase: keyboardPhase);
+  }
+
+  _ComposerKeyboardPhase _resolveKeyboardPhase(double bottomInset) {
+    final normalizedInset = bottomInset.isFinite
+        ? math.max(0.0, bottomInset)
+        : 0.0;
+    final previousInset = _lastKeyboardInset;
+    _lastKeyboardInset = normalizedInset;
+
+    if (normalizedInset <= _keyboardVisibleInsetThreshold) {
+      return _ComposerKeyboardPhase.hidden;
+    }
+    if (previousInset <= _keyboardVisibleInsetThreshold ||
+        normalizedInset > previousInset + _keyboardMotionEpsilon) {
+      return _ComposerKeyboardPhase.opening;
+    }
+    if (normalizedInset < previousInset - _keyboardMotionEpsilon) {
+      return _ComposerKeyboardPhase.closing;
+    }
+
+    return switch (_composerStateNotifier.value.keyboardPhase) {
+      _ComposerKeyboardPhase.hidden ||
+      _ComposerKeyboardPhase.opening ||
+      _ComposerKeyboardPhase.visible => _ComposerKeyboardPhase.visible,
+      _ComposerKeyboardPhase.closing => _ComposerKeyboardPhase.closing,
+    };
+  }
+
+  void _updateComposerState({
+    bool? hasText,
+    bool? hasFocus,
+    _ComposerKeyboardPhase? keyboardPhase,
+  }) {
+    final current = _composerStateNotifier.value;
+    final next = current.copyWith(
+      hasText: hasText,
+      hasFocus: hasFocus,
+      keyboardPhase: keyboardPhase,
+    );
+    if (next == current) {
+      return;
+    }
+    _composerStateNotifier.value = next;
     _reportInputHeightAfterBuild();
   }
 
@@ -493,9 +612,9 @@ abstract class _ChatInputAreaStateBase extends State<ChatInputArea>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _textFieldScrollController.dispose();
-    _hasTextNotifier.dispose();
-    _isFocusedNotifier.dispose();
+    _composerStateNotifier.dispose();
     _composerFlowController.dispose();
     widget.controller.removeListener(_onTextChanged);
     widget.focusNode.removeListener(_onFocusChanged);

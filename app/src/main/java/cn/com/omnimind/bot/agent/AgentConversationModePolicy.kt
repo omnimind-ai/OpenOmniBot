@@ -20,8 +20,11 @@ object AgentConversationModePolicy {
         "calendar_event_create",
         "calendar_event_list",
         "calendar_event_update",
-        "calendar_event_delete",
-        "subagent_dispatch"
+        "calendar_event_delete"
+        // `subagent_dispatch` 的防递归改由 SubagentProfileRegistry.FORBIDDEN
+        // (SubagentProfile.kt) 在每个子 Agent 的工具白名单里硬禁用。这样
+        // 即便父 Agent 处于 subagent 模式,也能 spawn 真子 Agent;子 Agent
+        // 自身看不到 subagent_dispatch,无法再递归。
     )
 
     fun isSubagentMode(conversationMode: String?): Boolean {

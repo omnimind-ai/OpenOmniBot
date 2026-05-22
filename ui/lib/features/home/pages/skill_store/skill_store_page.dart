@@ -10,6 +10,9 @@ import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
 
+const String _kOfficialSkillsDownloadAsset =
+    'assets/home/hard_drive_download.svg';
+
 const String _kBuiltinSkillBadgeCheckSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
     'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
@@ -34,6 +37,7 @@ class _SkillStorePageState extends State<SkillStorePage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   bool _loading = true;
+  bool _syncingOfficial = false;
   final Set<String> _busyIds = <String>{};
   List<AgentSkillItem> _skills = [];
 
@@ -157,8 +161,9 @@ class _SkillStorePageState extends State<SkillStorePage> {
           if (a.installed != b.installed) {
             return a.installed ? -1 : 1;
           }
-          if (a.isBuiltin != b.isBuiltin) {
-            return a.isBuiltin ? -1 : 1;
+          final sourceOrder = _sourceRank(a).compareTo(_sourceRank(b));
+          if (sourceOrder != 0) {
+            return sourceOrder;
           }
           return a.name.toLowerCase().compareTo(b.name.toLowerCase());
         });
@@ -171,6 +176,33 @@ class _SkillStorePageState extends State<SkillStorePage> {
       showToast(context.l10n.skillInstallFailed, type: ToastType.error);
     } finally {
       _setBusy(item.id, false);
+    }
+  }
+
+  Future<void> _syncOfficialSkills() async {
+    if (_syncingOfficial) return;
+    setState(() => _syncingOfficial = true);
+    try {
+      final result = await AgentSkillStoreService.syncOfficialSkills();
+      if (!mounted) return;
+      if (result == null) {
+        showToast(context.l10n.skillSyncOfficialFailed, type: ToastType.error);
+        return;
+      }
+      setState(() {
+        _skills = result.skills;
+      });
+      showToast(
+        context.l10n.skillSyncOfficialSuccess(result.skillCount),
+        type: ToastType.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showToast(context.l10n.skillSyncOfficialFailed, type: ToastType.error);
+    } finally {
+      if (mounted) {
+        setState(() => _syncingOfficial = false);
+      }
     }
   }
 
@@ -225,7 +257,39 @@ class _SkillStorePageState extends State<SkillStorePage> {
       backgroundColor: context.isDarkTheme
           ? palette.pageBackground
           : AppColors.background,
-      appBar: CommonAppBar(title: context.l10n.skillStoreTitle, primary: true),
+      appBar: CommonAppBar(
+        title: context.l10n.skillStoreTitle,
+        primary: true,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Tooltip(
+              message: context.l10n.skillSyncOfficialTooltip,
+              child: IconButton(
+                onPressed: _syncingOfficial ? null : _syncOfficialSkills,
+                icon: _syncingOfficial
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: palette.accentPrimary,
+                        ),
+                      )
+                    : SvgPicture.asset(
+                        _kOfficialSkillsDownloadAsset,
+                        width: 22,
+                        height: 22,
+                        colorFilter: ColorFilter.mode(
+                          palette.textPrimary,
+                          BlendMode.srcIn,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
@@ -392,20 +456,22 @@ class _SkillStorePageState extends State<SkillStorePage> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      TextButton(
-                        onPressed: busy ? null : () => _deleteSkill(item),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.alertRed,
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(0, 28),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      if (!item.isOfficial) ...[
+                        const SizedBox(width: 12),
+                        TextButton(
+                          onPressed: busy ? null : () => _deleteSkill(item),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.alertRed,
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(0, 28),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            context.l10n.skillDelete,
+                            style: const TextStyle(fontSize: 12),
+                          ),
                         ),
-                        child: Text(
-                          context.l10n.skillDelete,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ),
+                      ],
                     ],
                   ),
                 ],
@@ -436,9 +502,12 @@ class _SkillStorePageState extends State<SkillStorePage> {
       fontFamily: 'PingFang SC',
     );
 
-    if (!item.isBuiltin) {
+    if (!item.isBuiltin && !item.isOfficial) {
       return Text(item.name, style: titleStyle);
     }
+    final badgeLabel = item.isBuiltin
+        ? context.l10n.skillBuiltin
+        : context.l10n.skillOfficial;
 
     return Text.rich(
       TextSpan(
@@ -449,7 +518,7 @@ class _SkillStorePageState extends State<SkillStorePage> {
             child: Padding(
               padding: const EdgeInsets.only(left: 6),
               child: Tooltip(
-                message: context.l10n.skillBuiltin,
+                message: badgeLabel,
                 child: SvgPicture.string(
                   _kBuiltinSkillBadgeCheckSvg,
                   width: 16,
@@ -471,6 +540,8 @@ class _SkillStorePageState extends State<SkillStorePage> {
     final labels = <String>[];
     if (item.isBuiltin) {
       labels.add(context.l10n.skillBuiltin);
+    } else if (item.isOfficial) {
+      labels.add(context.l10n.skillOfficial);
     } else if (item.installed) {
       labels.add(context.l10n.skillInstalled);
     }
@@ -605,5 +676,11 @@ class _SkillStorePageState extends State<SkillStorePage> {
         ],
       ),
     );
+  }
+
+  int _sourceRank(AgentSkillItem item) {
+    if (item.isBuiltin) return 0;
+    if (item.isOfficial) return 1;
+    return 2;
   }
 }

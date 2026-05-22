@@ -38,6 +38,10 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
 
     _runtimeCoordinator.ensureInitialized();
     _runtimeCoordinator.addListener(_handleRuntimeCoordinatorChanged);
+    HomeGreetingSettingsService.notifier.addListener(
+      _handleHomeGreetingSettingsChanged,
+    );
+    unawaited(HomeGreetingSettingsService.load());
     AppUpdateService.statusNotifier.addListener(_handleAppUpdateStatusChanged);
     _appUpdateStatus = AppUpdateService.statusNotifier.value;
     unawaited(AppUpdateService.initialize());
@@ -96,6 +100,21 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
         '${oldWidget.threadTarget} -> ${widget.threadTarget}',
       );
       unawaited(_reloadConversationForCurrentTarget());
+    }
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    _syncEmptyGreetingKeyboardLiftFromView();
+  }
+
+  void _syncEmptyGreetingKeyboardLiftFromView() {
+    if (!mounted) return;
+    final view = View.of(context);
+    final bottomInset = view.viewInsets.bottom / view.devicePixelRatio;
+    if (_emptyGreetingKeyboardLiftTracker.update(bottomInset)) {
+      setState(() {});
     }
   }
 
@@ -250,7 +269,11 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     _resetLocalConversationState(targetMode);
     _vlmAnswerController.clear();
     _applyDraftForConversationMode(targetMode);
-    await initializeConversation(lifecycleToken: lifecycleToken);
+    if (effectiveTarget.isRemoteCodexSessionTarget) {
+      await _prepareRemoteCodexSessionTarget(effectiveTarget);
+    } else {
+      await initializeConversation(lifecycleToken: lifecycleToken);
+    }
     if (isStaleRequest()) return;
     if (_activeConversationMode == ChatPageMode.codex) {
       await _refreshCodexCommandPreferences();
@@ -374,6 +397,11 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       return;
     }
     _resolvedThreadTarget = visibleTarget;
+    if (visibleTarget.isRemoteCodexSessionTarget ||
+        (_activeConversationMode == ChatPageMode.codex &&
+            _isRemoteCodexRuntimeActiveForMode(ChatPageMode.codex))) {
+      return;
+    }
     await ConversationHistoryService.saveLastVisibleThreadTarget(visibleTarget);
     await ConversationHistoryService.saveCurrentConversationTarget(
       visibleTarget,
@@ -547,6 +575,9 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       _subscribedRoute = null;
     }
     _runtimeCoordinator.removeListener(_handleRuntimeCoordinatorChanged);
+    HomeGreetingSettingsService.notifier.removeListener(
+      _handleHomeGreetingSettingsChanged,
+    );
     AppUpdateService.statusNotifier.removeListener(
       _handleAppUpdateStatusChanged,
     );
@@ -660,7 +691,15 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   }
 
   @override
-  void _onFocusChange() {}
+  void _onFocusChange() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  void _handleHomeGreetingSettingsChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
 
   @override
   void _handleAppUpdateStatusChanged() {

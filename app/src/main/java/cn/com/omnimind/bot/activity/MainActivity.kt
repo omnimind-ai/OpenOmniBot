@@ -12,6 +12,7 @@ import cn.com.omnimind.bot.localmodel.LocalModelFeature
 import cn.com.omnimind.bot.terminal.EmbeddedTerminalAutoStartManager
 import cn.com.omnimind.bot.terminal.EmbeddedTerminalInitCoordinator
 import cn.com.omnimind.bot.terminal.EmbeddedTerminalRuntime
+import cn.com.omnimind.bot.quicklog.QuickLogWidgetActionRouter
 import cn.com.omnimind.bot.ui.channel.ChannelManager
 import cn.com.omnimind.bot.ui.channel.FileSaveChannel
 import cn.com.omnimind.bot.ui.halfScreen.HalfScreenListenerImpl
@@ -60,6 +61,12 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         TaskRuntimeSettings.attachActivity(this)
         TaskRuntimeSettings.consumeTaskCompletionNotificationIntent(this, intent)
+
+        if (QuickLogWidgetActionRouter.consumeInto(this, intent)) {
+            finish()
+            return
+        }
+
         val channelStart = System.currentTimeMillis()
         channelManager.onCreate(this)
         OmniLog.d(TAG, "MainActivity channelManager.onCreate cost: ${System.currentTimeMillis() - channelStart}ms")
@@ -146,7 +153,14 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         TaskRuntimeSettings.consumeTaskCompletionNotificationIntent(this, intent)
+
+        if (QuickLogWidgetActionRouter.consumeInto(this, intent)) {
+            finish()
+            return
+        }
+
         SchemeUtil.pushRoute(intent, channelManager, null)
+
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -156,7 +170,23 @@ class MainActivity : FlutterActivity() {
         if (LocalModelFeature.onActivityResult(this, requestCode, resultCode, data)) {
             return
         }
+        if (isHalfScreenInitialized && halfScreenListenerImpl.onActivityResult(requestCode, resultCode, data)) {
+            return
+        }
         super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        if (isHalfScreenInitialized &&
+            halfScreenListenerImpl.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        ) {
+            return
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     override fun onResume() {

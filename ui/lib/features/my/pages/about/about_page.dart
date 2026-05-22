@@ -29,7 +29,7 @@ class _AboutPageState extends State<AboutPage> {
   String _version = '';
   AppUpdateStatus? _updateStatus;
   bool _betaOptIn = false;
-  AppUpdateDownloadSource _downloadSource = AppUpdateDownloadSource.cnb;
+  AppUpdateDownloadSource _downloadSource = AppUpdateDownloadSource.worker;
   bool _isCheckingUpdate = false;
   bool _isUpdatingBetaOptIn = false;
   bool _isUpdatingDownloadSource = false;
@@ -228,7 +228,7 @@ class _AboutPageState extends State<AboutPage> {
 
   String _downloadSourceLabel(AppUpdateDownloadSource source) {
     switch (source) {
-      case AppUpdateDownloadSource.cnb:
+      case AppUpdateDownloadSource.worker:
         return context.l10n.aboutApkSourceOptionCnb;
       case AppUpdateDownloadSource.github:
         return context.l10n.aboutApkSourceOptionGithub;
@@ -237,7 +237,7 @@ class _AboutPageState extends State<AboutPage> {
 
   String _downloadSourceDescription(AppUpdateDownloadSource source) {
     switch (source) {
-      case AppUpdateDownloadSource.cnb:
+      case AppUpdateDownloadSource.worker:
         return context.l10n.aboutApkSourceOptionCnbDescription;
       case AppUpdateDownloadSource.github:
         return context.l10n.aboutApkSourceOptionGithubDescription;

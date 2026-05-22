@@ -8,6 +8,7 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
@@ -115,6 +116,27 @@
             android:theme="@style/Theme.OmnibotApp.Splash" />
 
         <activity
+            android:name=".activity.QuickLogEntryActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.OmnibotApp.BottomSheet"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".activity.QuickLogWidgetSettingsActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.OmnibotApp.BottomSheet" />
+        <activity
+            android:name=".activity.QuickLogWidgetBridgeActivity"
+            android:exported="true"
+            android:theme="@style/Theme.OmnibotApp.Transparent"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="" />
+
+        <activity
             android:name=".activity.TerminalActivity"
             android:exported="false"
             android:theme="@style/Theme.OmnibotApp"
@@ -170,6 +192,26 @@
                 <action android:name="android.intent.action.TIME_SET" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name=".quicklog.QuickLogWidgetProvider"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/quick_log_widget_info" />
+        </receiver>
+        <service
+            android:name=".quicklog.QuickLogWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.widget.RemoteViewsService" />
+            </intent-filter>
+        </service>
         <service
             android:name="cn.com.omnimind.bot.agent.AgentAlarmRingingService"
             android:enabled="true"

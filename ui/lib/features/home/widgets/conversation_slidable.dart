@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:ui/features/home/state/habitual_hand_controller.dart';
 
 class ConversationSlideAction {
   const ConversationSlideAction({
@@ -15,7 +17,7 @@ class ConversationSlideAction {
   final BorderRadius borderRadius;
 }
 
-class ConversationSlidable extends StatelessWidget {
+class ConversationSlidable extends ConsumerWidget {
   const ConversationSlidable({
     super.key,
     required this.itemKey,
@@ -42,14 +44,42 @@ class ConversationSlidable extends StatelessWidget {
   final VoidCallback? onFullSwipe;
 
   @override
-  Widget build(BuildContext context) {
-    final totalExtentRatio =
-        (actionExtentRatioPerAction * actions.length).clamp(0.0, 1.0).toDouble();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isLeftHanded = ref.watch(habitualHandProvider).isLeft;
+    final totalExtentRatio = (actionExtentRatioPerAction * actions.length)
+        .clamp(0.0, 1.0)
+        .toDouble();
     final resolvedDismissThreshold =
         dismissThreshold ??
         (actions.length > 1
             ? (totalExtentRatio + 0.16).clamp(0.0, 0.95).toDouble()
             : 0.4);
+    final effectiveActions = isLeftHanded
+        ? actions.reversed.toList(growable: false)
+        : actions;
+    final actionPane = ActionPane(
+      motion: const BehindMotion(),
+      extentRatio: totalExtentRatio,
+      dismissible: DismissiblePane(
+        dismissThreshold: resolvedDismissThreshold,
+        closeOnCancel: true,
+        motion: const InversedDrawerMotion(),
+        onDismissed: onFullSwipe ?? onDismissed,
+      ),
+      children: effectiveActions
+          .map(
+            (action) => CustomSlidableAction(
+              onPressed: (_) => action.onPressed(),
+              backgroundColor: action.backgroundColor,
+              borderRadius: isLeftHanded
+                  ? _mirrorBorderRadius(action.borderRadius)
+                  : action.borderRadius,
+              padding: EdgeInsets.zero,
+              child: action.child,
+            ),
+          )
+          .toList(),
+    );
 
     return Container(
       margin: margin,
@@ -62,31 +92,21 @@ class ConversationSlidable extends StatelessWidget {
             key: ValueKey<String>(itemKey),
             groupTag: groupTag,
             closeOnScroll: true,
-            endActionPane: ActionPane(
-              motion: const BehindMotion(),
-              extentRatio: totalExtentRatio,
-              dismissible: DismissiblePane(
-                dismissThreshold: resolvedDismissThreshold,
-                closeOnCancel: true,
-                motion: const InversedDrawerMotion(),
-                onDismissed: onFullSwipe ?? onDismissed,
-              ),
-              children: actions
-                  .map(
-                    (action) => CustomSlidableAction(
-                      onPressed: (_) => action.onPressed(),
-                      backgroundColor: action.backgroundColor,
-                      borderRadius: action.borderRadius,
-                      padding: EdgeInsets.zero,
-                      child: action.child,
-                    ),
-                  )
-                  .toList(),
-            ),
+            startActionPane: isLeftHanded ? actionPane : null,
+            endActionPane: isLeftHanded ? null : actionPane,
             child: child,
           ),
         ),
       ),
+    );
+  }
+
+  BorderRadius _mirrorBorderRadius(BorderRadius radius) {
+    return BorderRadius.only(
+      topLeft: radius.topRight,
+      topRight: radius.topLeft,
+      bottomLeft: radius.bottomRight,
+      bottomRight: radius.bottomLeft,
     );
   }
 }

@@ -63,4 +63,21 @@ void main() {
       expect(resolved?.id, 'agent-task-thinking-3');
     },
   );
+
+  test('matches restored thinking cards by task metadata', () {
+    final messages = <ChatMessageModel>[
+      ChatMessageModel.cardMessage(
+        <String, dynamic>{'type': 'deep_thinking', 'taskID': 'agent-task'},
+        id: 'restored-thinking-card',
+        streamMeta: const <String, dynamic>{'roundIndex': 1, 'seq': 2},
+      ),
+    ];
+
+    final resolved = resolveAgentThinkingCardForTask(
+      messages,
+      taskId: 'agent-task',
+    );
+
+    expect(resolved?.id, 'restored-thinking-card');
+  });
 }
