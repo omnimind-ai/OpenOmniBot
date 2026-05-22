@@ -47,9 +47,24 @@ object VLMActionPostProcessor {
         }
 
         val page = parsePage(currentXml)
+        correctPrematureFinishedForOrderedTarget(
+            step = step,
+            context = context,
+            page = page,
+            displayWidth = displayWidth,
+            displayHeight = displayHeight
+        )?.let { return it }
         correctTypeToNumericKeypadClick(step, page)?.let { return it }
 
         if (step.action is ClickAction) {
+            correctOrderedGoalClickTarget(
+                step = step,
+                context = context,
+                page = page
+            )?.let { return it }
+            if (isOrderedGoalClickSatisfied(step, context, page)) {
+                return Result(step = step)
+            }
             correctSettingsToggleTarget(
                 step = step,
                 context = context,
@@ -96,6 +111,95 @@ object VLMActionPostProcessor {
         }
 
         return Result(step = step)
+    }
+
+    private fun correctPrematureFinishedForOrderedTarget(
+        step: VLMStep,
+        context: UIContext,
+        page: PageModel,
+        displayWidth: Int,
+        displayHeight: Int
+    ): Result? {
+        if (step.action !is FinishedAction) return null
+        val progress = orderedGoalProgress(context) ?: return null
+        val pendingTarget = progress.pendingTarget ?: return null
+
+        val visibleTarget = page.bestOrderedGoalClickTarget(pendingTarget)
+        if (visibleTarget != null) {
+            return corrected(
+                step = step,
+                action = ClickAction(
+                    targetDescription = visibleTarget.label,
+                    x = visibleTarget.bounds.centerX,
+                    y = visibleTarget.bounds.centerY
+                ),
+                reason = "premature_finished_ordered_target",
+                extraSummary = "Pending ordered target: ${pendingTarget.label}"
+            )
+        }
+
+        page.bestSearchScroll(displayWidth, displayHeight, pendingTarget.label)?.let { scroll ->
+            if (!page.hasNavigateUp() || page.hasAnyOrderedTargetVisible(progress.targets)) {
+                return corrected(
+                    step = step,
+                    action = scroll,
+                    reason = "premature_finished_ordered_target_scroll",
+                    extraSummary = "Pending ordered target: ${pendingTarget.label}"
+                )
+            }
+        }
+
+        if (page.hasNavigateUp()) {
+            return corrected(
+                step = step,
+                action = PressBackAction(),
+                reason = "premature_finished_ordered_target_go_back",
+                extraSummary = "Pending ordered target: ${pendingTarget.label}"
+            )
+        }
+
+        return null
+    }
+
+    private fun correctOrderedGoalClickTarget(
+        step: VLMStep,
+        context: UIContext,
+        page: PageModel
+    ): Result? {
+        val action = step.action as? ClickAction ?: return null
+        val progress = orderedGoalProgress(context) ?: return null
+        val pendingTarget = progress.pendingTarget ?: return null
+        val target = page.bestOrderedGoalClickTarget(pendingTarget) ?: return null
+        if (target.bounds.contains(action.x, action.y)) return null
+        if (orderedTargetTextScore(pendingTarget, action.targetDescription) >= MIN_ORDERED_TARGET_ACTION_SCORE) {
+            return null
+        }
+
+        return corrected(
+            step = step,
+            action = action.copy(
+                targetDescription = target.label,
+                x = target.bounds.centerX,
+                y = target.bounds.centerY
+            ),
+            reason = "ordered_goal_target",
+            extraSummary = "Pending ordered target: ${pendingTarget.label}"
+        )
+    }
+
+    private fun isOrderedGoalClickSatisfied(
+        step: VLMStep,
+        context: UIContext,
+        page: PageModel
+    ): Boolean {
+        val action = step.action as? ClickAction ?: return false
+        val progress = orderedGoalProgress(context) ?: return false
+        val pendingTarget = progress.pendingTarget ?: return false
+        if (orderedTargetTextScore(pendingTarget, action.targetDescription) >= MIN_ORDERED_TARGET_ACTION_SCORE) {
+            return true
+        }
+        val visibleTarget = page.bestOrderedGoalClickTarget(pendingTarget) ?: return false
+        return visibleTarget.bounds.contains(action.x, action.y)
     }
 
     private fun correctTypeToNumericKeypadClick(
@@ -506,6 +610,53 @@ object VLMActionPostProcessor {
             .firstOrNull()
             ?.first
     }
+
+    private fun PageModel.bestOrderedGoalClickTarget(target: OrderedGoalTarget): PageNode? {
+        val maxArea = nodes.maxOfOrNull { it.bounds.area } ?: return null
+        return nodes
+            .asSequence()
+            .filter { it.actionable }
+            .filter { it.bounds.area >= MIN_TARGET_AREA }
+            .filter { it.bounds.area <= maxArea * MAX_TARGET_AREA_RATIO }
+            .filterNot { isOverlayLabel(it.label) }
+            .mapNotNull { node ->
+                val score = orderedTargetTextScore(target, node.label)
+                if (score >= MIN_ORDERED_TARGET_NODE_SCORE) node to score else null
+            }
+            .sortedWith(
+                compareByDescending<Pair<PageNode, Double>> { it.second }
+                    .thenBy { it.first.bounds.area }
+            )
+            .firstOrNull()
+            ?.first
+    }
+
+    private fun PageModel.bestSearchScroll(
+        displayWidth: Int,
+        displayHeight: Int,
+        pendingLabel: String
+    ): ScrollAction? {
+        val scrollBounds = bestScrollableBounds() ?: return null
+        val width = displayWidth.coerceAtLeast(1)
+        val height = displayHeight.coerceAtLeast(1)
+        val x = scrollBounds.centerX.coerceIn(0f, width.toFloat())
+        val top = scrollBounds.top.coerceIn(0f, height.toFloat())
+        val bottom = scrollBounds.bottom.coerceIn(top, height.toFloat())
+        val y1 = (bottom - scrollBounds.height * 0.12f).coerceIn(top, bottom)
+        val y2 = (top + scrollBounds.height * 0.22f).coerceIn(top, bottom)
+        if (abs(y1 - y2) < 48f) return null
+        return ScrollAction(
+            targetDescription = "Scroll current list to find ${pendingLabel.take(80)}",
+            x1 = x,
+            y1 = y1,
+            x2 = x,
+            y2 = y2,
+            duration = 1.0f
+        )
+    }
+
+    private fun PageModel.hasAnyOrderedTargetVisible(targets: List<OrderedGoalTarget>): Boolean =
+        targets.any { bestOrderedGoalClickTarget(it) != null }
 
     private fun PageModel.bestSettingsDomainClickTarget(domain: SettingsDomain, maxArea: Float): PageNode? =
         nodes
@@ -1064,6 +1215,118 @@ object VLMActionPostProcessor {
             SettingsDomain.SOUND -> "Sound vibration volume"
         }
 
+    private fun orderedGoalProgress(context: UIContext): OrderedGoalProgress? {
+        val targets = orderedGoalTargets(context.overallTask)
+        if (targets.size < MIN_ORDERED_TARGET_COUNT) return null
+
+        var pendingIndex = 0
+        for (traceStep in context.trace) {
+            val pending = targets.getOrNull(pendingIndex) ?: break
+            if (stepCompletesOrderedTarget(traceStep, pending)) {
+                pendingIndex++
+            }
+        }
+
+        return OrderedGoalProgress(
+            targets = targets,
+            pendingIndex = pendingIndex,
+            pendingTarget = targets.getOrNull(pendingIndex)
+        )
+    }
+
+    private fun orderedGoalTargets(goalText: String): List<OrderedGoalTarget> {
+        if (goalText.isBlank()) return emptyList()
+        val actionCandidates = mutableListOf<Pair<Int, String>>()
+        val verifyCandidates = mutableListOf<Pair<Int, String>>()
+        ORDERED_ACTION_TARGET_REGEX.findAll(goalText).forEach { match ->
+            actionCandidates += match.range.first to match.groupValues.getOrNull(1).orEmpty()
+        }
+        ORDERED_VERIFY_TARGET_REGEX.findAll(goalText).forEach { match ->
+            verifyCandidates += match.range.first to match.groupValues.getOrNull(1).orEmpty()
+        }
+
+        val cleanedVerifyTargets = cleanOrderedTargetCandidates(verifyCandidates)
+        if (cleanedVerifyTargets.size >= MIN_ORDERED_TARGET_COUNT) {
+            return cleanedVerifyTargets
+        }
+        return cleanOrderedTargetCandidates(actionCandidates + verifyCandidates)
+    }
+
+    private fun cleanOrderedTargetCandidates(candidates: List<Pair<Int, String>>): List<OrderedGoalTarget> {
+        val seen = linkedSetOf<String>()
+        return candidates
+            .sortedBy { it.first }
+            .mapNotNull { (_, raw) ->
+                val label = cleanOrderedTargetLabel(raw)
+                val key = normalizeText(label)
+                if (key.isBlank() || !seen.add(key) || !isUsefulOrderedTarget(label)) {
+                    null
+                } else {
+                    OrderedGoalTarget(label = label, normalizedLabel = key)
+                }
+            }
+    }
+
+    private fun cleanOrderedTargetLabel(raw: String): String {
+        var value = raw
+            .replace(Regex("""["'“”‘’]"""), "")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+            .trim('.', ',', ';', ':')
+        value = value.replace(Regex("""(?i)^(?:the|a|an)\s+"""), "")
+        value = value.replace(Regex("""(?i)\s+(?:is|are|be)\s+visible$"""), "")
+        while (true) {
+            val trimmed = value.replace(Regex("""(?i)\s+(?:page|screen|row|option|settings|menu|list)$"""), "")
+            if (trimmed == value) break
+            value = trimmed
+        }
+        return value.replace(Regex("""\s+"""), " ").trim().take(MAX_ORDERED_TARGET_LABEL_CHARS)
+    }
+
+    private fun isUsefulOrderedTarget(label: String): Boolean {
+        val normalized = normalizeText(label)
+        if (normalized in ORDERED_TARGET_STOP_PHRASES) return false
+        val terms = semanticTerms(normalized).filterNot { it in STOP_WORDS || it in ORDERED_TARGET_STOP_WORDS }
+        return terms.isNotEmpty()
+    }
+
+    private fun stepCompletesOrderedTarget(step: UIStep, target: OrderedGoalTarget): Boolean {
+        if (step.action !is ClickAction && step.action !is LongPressAction) return false
+        val actionText = actionSemanticText(step.action)
+        return orderedTargetTextScore(target, actionText) >= MIN_ORDERED_TARGET_ACTION_SCORE
+    }
+
+    private fun orderedTargetTextScore(target: OrderedGoalTarget, text: String): Double {
+        val normalizedText = normalizeText(text)
+        if (target.normalizedLabel.isBlank() || normalizedText.isBlank()) return 0.0
+        val targetTerms = semanticTerms(target.normalizedLabel)
+            .filterNot { it in STOP_WORDS || it in ORDERED_TARGET_STOP_WORDS }
+        val textTerms = semanticTerms(normalizedText)
+            .filterNot { it in STOP_WORDS || it in ORDERED_TARGET_STOP_WORDS }
+        if (targetTerms.isEmpty() || textTerms.isEmpty()) return 0.0
+
+        if (targetTerms.size == 1) {
+            val targetTerm = targetTerms.first()
+            val firstMeaningful = textTerms.firstOrNull()
+            return when {
+                normalizedText == targetTerm -> 1.0
+                normalizedText.startsWith("$targetTerm ") -> 0.98
+                firstMeaningful == targetTerm -> 0.92
+                else -> 0.0
+            }
+        }
+
+        if (normalizedText == target.normalizedLabel) return 1.0
+        if (normalizedText.contains(target.normalizedLabel)) return 0.96
+        val overlap = targetTerms.intersect(textTerms.toSet()).size.toDouble() /
+            targetTerms.size.toDouble().coerceAtLeast(1.0)
+        return when {
+            overlap >= 1.0 -> 0.9
+            overlap >= 0.72 -> 0.76
+            else -> 0.0
+        }
+    }
+
     private fun stepIntentText(step: VLMStep): String =
         listOf(actionSemanticText(step.action), step.thought, step.summary).joinToString(" ")
 
@@ -1213,6 +1476,17 @@ object VLMActionPostProcessor {
         val preferredSettingsDomain: SettingsDomain?
     )
 
+    private data class OrderedGoalProgress(
+        val targets: List<OrderedGoalTarget>,
+        val pendingIndex: Int,
+        val pendingTarget: OrderedGoalTarget?
+    )
+
+    private data class OrderedGoalTarget(
+        val label: String,
+        val normalizedLabel: String
+    )
+
     private data class NarrativeSegment(
         val text: String,
         val weight: Double
@@ -1220,6 +1494,12 @@ object VLMActionPostProcessor {
 
     private val BOUNDS_REGEX = Regex("""\[(\d+(?:\.\d+)?),(\d+(?:\.\d+)?)\]\[(\d+(?:\.\d+)?),(\d+(?:\.\d+)?)\]""")
     private val TERM_REGEX = Regex("""[\p{L}\p{N}]+""")
+    private val ORDERED_ACTION_TARGET_REGEX = Regex(
+        """(?i)\b(?:open|tap|click|select|choose|enter|go to|navigate to)\s+(?:the\s+)?(.+?)(?=,|\bthen\b|\band\b|$)"""
+    )
+    private val ORDERED_VERIFY_TARGET_REGEX = Regex(
+        """(?i)\bverify\s+(?:that\s+)?(?:the\s+)?(.+?)(?=,|\bthen\b|\band\b|$)"""
+    )
     private val NUMERIC_KEYS = setOf("0", "1", "2", "3", "4", "5", "6", "7", "8", "9")
     private val SLIDER_TERMS = setOf(
         "slider",
@@ -1452,15 +1732,35 @@ object VLMActionPostProcessor {
         "禁用",
         "切换"
     )
+    private val ORDERED_TARGET_STOP_PHRASES = setOf(
+        "settings",
+        "settings home",
+        "home",
+        "current screen",
+        "current page",
+        "current"
+    )
+    private val ORDERED_TARGET_STOP_WORDS = setOf(
+        "visible",
+        "visibility",
+        "shown",
+        "showing",
+        "finish",
+        "finished"
+    )
     private const val MIN_TARGET_AREA = 24f * 24f
     private const val MIN_SCROLLABLE_AREA = 120f * 160f
     private const val MAX_TARGET_AREA_RATIO = 0.45f
     private const val MAX_SCROLL_TO_CLICK_AREA_RATIO = 0.45f
     private const val MIN_GOAL_TARGET_SCORE = 0.58
     private const val MIN_VISIBLE_TARGET_SCORE = 0.58
+    private const val MIN_ORDERED_TARGET_COUNT = 2
+    private const val MIN_ORDERED_TARGET_NODE_SCORE = 0.76
+    private const val MIN_ORDERED_TARGET_ACTION_SCORE = 0.88
     private const val MIN_FORM_FIELD_NARRATIVE_SCORE = 118.0
     private const val MIN_NUMERIC_KEYPAD_KEYS = 6
     private const val MAX_DESCENDANT_CHARS = 120
     private const val MAX_FORM_FIELD_LABEL_CHARS = 48
+    private const val MAX_ORDERED_TARGET_LABEL_CHARS = 48
     private const val FORM_ACTION_CUE_WINDOW = 36
 }

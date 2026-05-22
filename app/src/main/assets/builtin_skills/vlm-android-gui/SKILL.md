@@ -9,12 +9,13 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 
 - AndroidWorld first-step policy lives here, not core optimizer.
 - Pass `packageName` when known; derive unknown packages from installed apps.
-- Permission/onboarding prompt: use safe continuation; avoid Deny, Delete, Sign in, Pay unless requested.
-- Focused editable input plus type/search task: use `type` first; missing list target: scroll and re-check text.
+- Permission/onboarding: continue safely; avoid Deny, Delete, Sign in, Pay unless requested.
+- Focused editable input for type/search: use `type` first; missing list target: scroll and re-check.
 - Slider/seekbar: 0-1000 normalized; `Display brightness` max: do not click, scroll x1=70,y1=110,x2=990,y2=110; min x1=990,y1=110,x2=10,y2=110.
 - Numeric keypad targets: click digit buttons; never use `type` unless focused editable.
-- OmniFlow recall context is only a historical hint; reuse only when the current screenshot/XML matches.
+- OmniFlow recall is only a historical hint; reuse only when current screenshot/XML matches.
 - Validate after at least two visible UI states before `finished`.
+- Multi-target goals are ordered checklists; finish only after every named page/row/option is opened or verified.
 
 ## Overview
 
@@ -78,6 +79,9 @@ Guidelines:
 - Use `maxSteps` high enough for long tasks; prefer 8 to 20 for AndroidWorld
   validation instead of tiny click-only smoke tests.
 - Require visible verification before `finished`.
+- For goals with several named targets such as "open A, verify A, go back, open
+  B, verify B", keep an ordered checklist. Do not skip directly to B, and do not
+  call `finished` until A and B were both visited or verified in order.
 - Do not change destructive or privacy-sensitive settings without confirmation.
 
 ## First-Step AndroidWorld Rules
@@ -133,6 +137,9 @@ context. Treat it as a compressed history of prior successful Functions:
   `x1=50,x2=702`; `x1` must be greater than `x2` for minimum brightness. Do
   not stop around the middle such as executed `x2=490`, and do not settle for
   executed `x2=680` when the task asks for maximum brightness.
+- For nested Settings pages such as Apps > Default apps, if the task lists
+  multiple rows (for example Browser app before Phone app), click the first
+  pending named row even if a later row is also visible.
 - For on-screen numeric keypads such as Clock timers, enter values by clicking
   the visible digit buttons in order. Use `type` only when the focused node is an
   editable text field; a keypad made of clickable digit buttons is not an

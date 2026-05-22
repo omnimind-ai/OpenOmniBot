@@ -621,7 +621,189 @@ class VLMActionPostProcessorTest {
         assertTrue(action.x >= 560f)
     }
 
+    @Test
+    fun `redirects nested ordered settings click before later sibling`() {
+        val step = VLMStep(
+            observation = "default apps list",
+            thought = "open the Phone app settings",
+            action = ClickAction(
+                targetDescription = "Phone app Phone LinearLayout",
+                x = 540f,
+                y = 1525f
+            )
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = DEFAULT_APPS_ORDERED_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(appsStep(), defaultAppsStep())
+            ),
+            currentXml = DEFAULT_APPS_LIST_XML,
+            currentPackageName = "com.google.android.permissioncontroller",
+            stepIndex = 2,
+            displayWidth = 1080,
+            displayHeight = 2400
+        )
+
+        assertTrue(result.applied)
+        assertEquals("ordered_goal_target", result.reason)
+        val action = result.step.action as ClickAction
+        assertTrue(action.targetDescription, action.targetDescription.contains("Browser app", ignoreCase = true))
+        assertTrue(action.y in 650f..760f)
+    }
+
+    @Test
+    fun `keeps ordered target click from later visible goal correction`() {
+        val step = VLMStep(
+            observation = "default apps list",
+            thought = "open the Browser app settings",
+            action = ClickAction(
+                targetDescription = "Browser app Chrome LinearLayout",
+                x = 540f,
+                y = 701f
+            )
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = DEFAULT_APPS_ORDERED_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(appsStep(), defaultAppsStep())
+            ),
+            currentXml = DEFAULT_APPS_LIST_XML,
+            currentPackageName = "com.google.android.permissioncontroller",
+            stepIndex = 2,
+            displayWidth = 1080,
+            displayHeight = 2400
+        )
+
+        assertFalse(result.applied)
+        val action = result.step.action as ClickAction
+        assertTrue(action.targetDescription, action.targetDescription.contains("Browser app", ignoreCase = true))
+    }
+
+    @Test
+    fun `does not treat narrative mention as ordered target completion`() {
+        val step = VLMStep(
+            observation = "default apps list",
+            thought = "open the Phone app settings",
+            action = ClickAction(
+                targetDescription = "Phone app Phone LinearLayout",
+                x = 540f,
+                y = 1525f
+            )
+        )
+        val defaultStepWithBrowserNarrative = defaultAppsStep().copy(
+            summary = "Navigated to the Apps page; identified Browser app as the next target."
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = DEFAULT_APPS_ORDERED_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(appsStep(), defaultStepWithBrowserNarrative)
+            ),
+            currentXml = DEFAULT_APPS_LIST_XML,
+            currentPackageName = "com.google.android.permissioncontroller",
+            stepIndex = 2,
+            displayWidth = 1080,
+            displayHeight = 2400
+        )
+
+        assertTrue(result.applied)
+        assertEquals("ordered_goal_target", result.reason)
+        val action = result.step.action as ClickAction
+        assertTrue(action.targetDescription, action.targetDescription.contains("Browser app", ignoreCase = true))
+    }
+
+    @Test
+    fun `converts premature finished into pending ordered target click when visible`() {
+        val step = VLMStep(
+            observation = "default apps list",
+            thought = "all done",
+            action = FinishedAction(content = "Done")
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = DEFAULT_APPS_ORDERED_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(appsStep(), defaultAppsStep())
+            ),
+            currentXml = DEFAULT_APPS_LIST_XML,
+            currentPackageName = "com.google.android.permissioncontroller",
+            stepIndex = 2,
+            displayWidth = 1080,
+            displayHeight = 2400
+        )
+
+        assertTrue(result.applied)
+        assertEquals("premature_finished_ordered_target", result.reason)
+        val action = result.step.action as ClickAction
+        assertTrue(action.targetDescription, action.targetDescription.contains("Browser app", ignoreCase = true))
+    }
+
+    @Test
+    fun `converts premature finished into back when pending ordered target is not visible`() {
+        val step = VLMStep(
+            observation = "phone detail page",
+            thought = "phone page is visible",
+            action = FinishedAction(content = "The Phone app page is visible.")
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = DEFAULT_APPS_ORDERED_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(appsStep(), defaultAppsStep(), phoneAppStep(), pressBackStep(), phoneAppStep())
+            ),
+            currentXml = PHONE_APP_DETAIL_XML,
+            currentPackageName = "com.google.android.permissioncontroller",
+            stepIndex = 5,
+            displayWidth = 1080,
+            displayHeight = 2400
+        )
+
+        assertTrue(result.applied)
+        assertEquals("premature_finished_ordered_target_go_back", result.reason)
+        assertTrue(result.step.action is PressBackAction)
+    }
+
+    @Test
+    fun `allows finished after every ordered target was clicked in order`() {
+        val step = VLMStep(
+            observation = "phone detail page",
+            thought = "phone page is visible",
+            action = FinishedAction(content = "The Phone app page is visible.")
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = DEFAULT_APPS_ORDERED_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(appsStep(), defaultAppsStep(), browserAppStep(), pressBackStep(), phoneAppStep())
+            ),
+            currentXml = PHONE_APP_DETAIL_XML,
+            currentPackageName = "com.google.android.permissioncontroller",
+            stepIndex = 5,
+            displayWidth = 1080,
+            displayHeight = 2400
+        )
+
+        assertFalse(result.applied)
+    }
+
     companion object {
+        private const val DEFAULT_APPS_ORDERED_TASK =
+            "From Settings home, open Apps, open Default apps, open Browser app, verify the Browser app page is visible, go back to Default apps, open Phone app, verify the Phone app page is visible, then finish."
+
         private fun wifiToggleStep(): UIStep =
             UIStep(
                 observation = "internet settings",
@@ -637,6 +819,46 @@ class VLMActionPostProcessorTest {
         private fun wifiPendingStep(): UIStep =
             wifiToggleStep().copy(
                 summary = "[settings_state_pending:wifi=off actual=on] [settings_state_pending:bluetooth=on actual=off]"
+            )
+
+        private fun appsStep(): UIStep =
+            UIStep(
+                observation = "settings home",
+                thought = "open Apps",
+                action = ClickAction(targetDescription = "Apps option to open Apps settings", x = 540f, y = 1347.5f),
+                result = "clicked Apps"
+            )
+
+        private fun defaultAppsStep(): UIStep =
+            UIStep(
+                observation = "apps settings",
+                thought = "open Default apps",
+                action = ClickAction(targetDescription = "Default apps option to open default app settings", x = 620f, y = 1538f),
+                result = "clicked Default apps"
+            )
+
+        private fun browserAppStep(): UIStep =
+            UIStep(
+                observation = "default apps list",
+                thought = "open Browser app",
+                action = ClickAction(targetDescription = "Browser app Chrome LinearLayout", x = 540f, y = 701f),
+                result = "clicked Browser app"
+            )
+
+        private fun phoneAppStep(): UIStep =
+            UIStep(
+                observation = "default apps list",
+                thought = "open Phone app",
+                action = ClickAction(targetDescription = "Phone app Phone LinearLayout", x = 540f, y = 1525f),
+                result = "clicked Phone app"
+            )
+
+        private fun pressBackStep(): UIStep =
+            UIStep(
+                observation = "detail page",
+                thought = "go back to Default apps",
+                action = PressBackAction(),
+                result = "pressed back"
             )
 
         private const val SETTINGS_XML =
@@ -679,6 +901,49 @@ class VLMActionPostProcessorTest {
                 <node text="Network &amp; internet" bounds="[144,579][475,633]" clickable="true" />
                 <node text="Connected devices" bounds="[144,755][482,809]" clickable="true" />
                 <node text="Display" bounds="[144,887][418,959]" clickable="true" />
+              </node>
+            </hierarchy>
+            """
+
+        private const val DEFAULT_APPS_LIST_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][1080,2400]">
+                <node content-desc="Navigate up" clickable="true" focusable="true" enabled="true" bounds="[0,128][147,275]" />
+                <node class="androidx.recyclerview.widget.RecyclerView" scrollable="true" focusable="true" enabled="true" bounds="[0,598][1080,1989]">
+                  <node clickable="true" focusable="true" enabled="true" bounds="[0,598][1080,804]">
+                    <node text="Browser app" enabled="true" bounds="[189,640][485,711]" />
+                    <node text="Chrome" enabled="true" bounds="[189,711][319,762]" />
+                  </node>
+                  <node clickable="true" focusable="true" enabled="true" bounds="[0,804][1080,1010]">
+                    <node text="Caller ID &amp; spam app" enabled="true" bounds="[189,846][680,917]" />
+                    <node text="None" enabled="true" bounds="[189,917][276,968]" />
+                  </node>
+                  <node clickable="true" focusable="true" enabled="true" bounds="[0,1216][1080,1422]">
+                    <node text="Home app" enabled="true" bounds="[189,1258][433,1329]" />
+                    <node text="Pixel Launcher" enabled="true" bounds="[189,1329][429,1380]" />
+                  </node>
+                  <node clickable="true" focusable="true" enabled="true" bounds="[0,1422][1080,1628]">
+                    <node text="Phone app" enabled="true" bounds="[189,1464][440,1535]" />
+                    <node text="Phone" enabled="true" bounds="[189,1535][293,1586]" />
+                  </node>
+                </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val PHONE_APP_DETAIL_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][1080,2400]">
+                <node content-desc="Navigate up" clickable="true" focusable="true" enabled="true" bounds="[0,128][147,275]" />
+                <node class="androidx.recyclerview.widget.RecyclerView" focusable="true" enabled="true" bounds="[0,598][1080,1077]">
+                  <node clickable="true" focusable="true" enabled="true" bounds="[0,598][1080,804]">
+                    <node text="Phone" enabled="true" bounds="[316,640][465,711]" />
+                    <node text="(System default)" enabled="true" bounds="[316,711][996,762]" />
+                  </node>
+                  <node text="Apps that allow you to make and receive telephone calls on your device" enabled="true" bounds="[63,920][1038,1077]" />
+                </node>
               </node>
             </hierarchy>
             """
