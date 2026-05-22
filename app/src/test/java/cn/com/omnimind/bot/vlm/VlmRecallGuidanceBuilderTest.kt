@@ -26,6 +26,7 @@ class VlmRecallGuidanceBuilderTest {
         )
 
         assertTrue(guidance.contains("OmniFlow UDEG recall context"))
+        assertTrue(guidance.contains("path=page_match -> UDEG node -> node skill-like decision context"))
         assertTrue(guidance.contains("function_id=open_network_settings"))
         assertTrue(guidance.contains("step: 1. open_app"))
         assertFalse(guidance.contains("任务已完成"))
@@ -52,7 +53,7 @@ class VlmRecallGuidanceBuilderTest {
         )
 
         assertTrue(guidance.contains("node_id=udeg_node_settings"))
-        assertTrue(guidance.contains("Use Settings node context"))
+        assertTrue(guidance.contains("node_skill_decision_context: Use Settings node context"))
     }
 
     @Test

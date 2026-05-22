@@ -254,9 +254,13 @@ OOB recall follows OmniFlow's UDEG path:
 
 1. Encode the live accessibility page into a local `PageVectorSet`.
 2. Page-match that vector to a UDEG node.
-3. Read the node's skill-like decision context.
+3. Read the UDEG node's skill-like decision context.
 4. Consider the Functions attached to that node as outgoing reusable
    transitions.
+
+The decision path is exactly: `page match -> UDEG node -> node skill-like
+decision context -> VLM/tool decision`. Do not skip the node by scanning the
+Function store directly.
 
 Do not treat recall as a flat text search over all Functions. A recalled
 Function is trusted only when the current page has been localized to its UDEG

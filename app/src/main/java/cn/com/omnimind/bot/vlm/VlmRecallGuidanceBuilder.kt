@@ -79,6 +79,7 @@ object VlmRecallGuidanceBuilder {
 
         return buildString {
             appendLine("OmniFlow UDEG recall context:")
+            appendLine("path=page_match -> UDEG node -> node skill-like decision context")
             appendLine("decision=$decision")
             nodeCandidates.forEachIndexed { index, node ->
                 val nodeId = node["node_id"]?.toString()?.trim().orEmpty()
@@ -87,7 +88,9 @@ object VlmRecallGuidanceBuilder {
                 val guidance = skill["decision_guidance"]?.toString()?.trim().orEmpty()
                     .take(MAX_DESCRIPTION_CHARS)
                 appendLine("node ${index + 1}: node_id=$nodeId page_similarity=$score")
-                if (guidance.isNotBlank()) appendLine("   skill: $guidance")
+                if (guidance.isNotBlank()) {
+                    appendLine("   node_skill_decision_context: $guidance")
+                }
             }
             candidates.forEachIndexed { index, candidate ->
                 val functionId = candidate["function_id"]?.toString()?.trim().orEmpty()

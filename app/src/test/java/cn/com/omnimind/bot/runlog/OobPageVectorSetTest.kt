@@ -47,7 +47,19 @@ class OobPageVectorSetTest {
             val first = matches.first()
             assertTrue(first.pageSimilarity > 0.80f)
             assertEquals(listOf("open_network_settings"), OobUdegNodeStore.functionIds(first.node))
-            assertNotNull((first.node["skill"] as? Map<*, *>)?.get("decision_guidance"))
+            val nodeSkill = first.node["skill"] as? Map<*, *>
+            assertEquals("udeg_node_skill", nodeSkill?.get("kind"))
+            assertEquals("page_match", nodeSkill?.get("activation"))
+            assertEquals("decision_context", nodeSkill?.get("role"))
+            assertNotNull(nodeSkill?.get("decision_guidance"))
+            assertTrue(nodeSkill?.get("body")?.toString().orEmpty().contains("## Decision Context"))
+
+            val decisionContext = first.node["decision_context"] as? Map<*, *>
+            assertEquals("decision", decisionContext?.get("role"))
+            assertEquals("page_match_to_udeg_node", decisionContext?.get("entry_policy"))
+            val recallMap = first.toMap()
+            val recallDecisionContext = recallMap["decision_context"] as? Map<*, *>
+            assertEquals("page_match_to_udeg_node", recallDecisionContext?.get("entry_policy"))
         } finally {
             context.root.deleteRecursively()
         }

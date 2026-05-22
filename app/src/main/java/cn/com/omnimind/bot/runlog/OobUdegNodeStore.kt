@@ -26,6 +26,7 @@ class OobUdegNodeStore(
             "page_similarity" to pageSimilarity,
             "reason" to reason,
             "skill" to node["skill"],
+            "decision_context" to mapArg(node["decision_context"]).takeIf { it.isNotEmpty() },
             "function_ids" to functionIds(node),
             "page_vector_set" to mapArg(node["page_vector_set"]).let { vectorSet ->
                 linkedMapOf(
@@ -36,7 +37,7 @@ class OobUdegNodeStore(
                     "privacy" to vectorSet["privacy"],
                 ).filterValues { it != null }
             },
-        )
+        ).filterValues { it != null }
     }
 
     fun upsertFunction(functionId: String, functionSpec: Map<String, Any?>): Map<String, Any?> {
@@ -78,6 +79,11 @@ class OobUdegNodeStore(
                 nodeId = pageVector.nodeId,
                 packageName = pageVector.packageName,
                 functions = mergedFunctions,
+            ),
+            "decision_context" to buildDecisionContext(
+                nodeId = pageVector.nodeId,
+                packageName = pageVector.packageName,
+                functionCount = mergedFunctions.size,
             ),
             "functions" to mergedFunctions,
             "updated_at" to System.currentTimeMillis(),
@@ -181,15 +187,67 @@ class OobUdegNodeStore(
             append("otherwise continue with live VLM screen actions.")
         }
         return linkedMapOf(
+            "schema_version" to NODE_SKILL_SCHEMA_VERSION,
             "id" to "udeg_node_skill_$nodeId",
             "kind" to "udeg_node_skill",
             "name" to "UDEG node context",
             "description" to "Skill-like decision context attached to a page-matched UDEG node.",
+            "activation" to "page_match",
+            "role" to "decision_context",
             "decision_guidance" to guidance,
+            "body" to renderNodeSkillBody(
+                nodeId = nodeId,
+                packageName = packageName,
+                guidance = guidance,
+                capabilities = capabilities,
+            ),
             "capabilities" to capabilities,
             "function_count" to capabilities.size,
         )
     }
+
+    private fun buildDecisionContext(
+        nodeId: String,
+        packageName: String,
+        functionCount: Int,
+    ): Map<String, Any?> = linkedMapOf(
+        "schema_version" to NODE_DECISION_CONTEXT_SCHEMA_VERSION,
+        "role" to "decision",
+        "entry_policy" to "page_match_to_udeg_node",
+        "node_id" to nodeId,
+        "package_name" to packageName.takeIf { it.isNotBlank() },
+        "skill_id" to "udeg_node_skill_$nodeId",
+        "function_count" to functionCount,
+        "instruction" to "Use this UDEG node's skill-like context as VLM decision context after page match localizes the current screen to this node.",
+    ).filterValues { it != null }
+
+    private fun renderNodeSkillBody(
+        nodeId: String,
+        packageName: String,
+        guidance: String,
+        capabilities: List<Map<String, Any?>>,
+    ): String = buildString {
+        appendLine("# UDEG Node Skill")
+        appendLine()
+        appendLine("Use only after page match localizes the current page to `$nodeId`.")
+        if (packageName.isNotBlank()) {
+            appendLine("Package: `$packageName`.")
+        }
+        appendLine()
+        appendLine("## Decision Context")
+        appendLine()
+        appendLine(guidance)
+        if (capabilities.isNotEmpty()) {
+            appendLine()
+            appendLine("## Attached Functions")
+            capabilities.forEach { capability ->
+                val functionId = capability["function_id"]?.toString()?.trim().orEmpty()
+                if (functionId.isBlank()) return@forEach
+                val description = firstNonBlank(capability["description"], capability["name"], functionId)
+                appendLine("- `$functionId`: $description")
+            }
+        }
+    }.trim()
 
     private fun functionSummary(
         functionSpec: Map<String, Any?>,
@@ -293,6 +351,8 @@ class OobUdegNodeStore(
         private const val INDEX_KEY = "oob_udeg_node_index_v1"
         private const val NODE_PREFIX = "oob_udeg_node_v1:"
         private const val NODE_SCHEMA_VERSION = "oob.udeg.node.v1"
+        private const val NODE_SKILL_SCHEMA_VERSION = "oob.udeg.node_skill.v1"
+        private const val NODE_DECISION_CONTEXT_SCHEMA_VERSION = "oob.udeg.decision_context.v1"
         const val MIN_PAGE_MATCH_SCORE = 0.30f
         const val STRONG_PAGE_MATCH_SCORE = 0.87f
         private const val MAX_NODE_SCAN = 1_000
