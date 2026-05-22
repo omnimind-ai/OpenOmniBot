@@ -195,6 +195,59 @@ void main() {
     );
   });
 
+  test('keeps nested VLM step cards inside the outer agent run group', () {
+    final messages = <ChatMessageModel>[
+      _cardMessage(
+        id: 'agent-run-vlm-tool',
+        taskId: 'agent-run-vlm',
+        kind: 'tool_started',
+        seq: 30,
+        cardData: <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'taskId': 'agent-run-vlm',
+          'cardId': 'agent-run-vlm-tool',
+          'status': 'running',
+          'toolType': 'vlm',
+          'toolName': 'vlm_task',
+          'argsJson': '{"goal":"添加联系人"}',
+        },
+      ),
+      _cardMessage(
+        id: 'vlm-run-1-vlm-1',
+        taskId: 'agent-run-vlm',
+        kind: 'tool_completed',
+        seq: 20,
+        cardData: <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'taskId': 'vlm-run-1',
+          'runLogId': 'vlm-run-1',
+          'cardId': 'vlm-run-1-vlm-1',
+          'status': 'success',
+          'toolType': 'vlm',
+          'toolName': 'click',
+          'compile_kind': 'vlm_step',
+          'argsJson': '{"target_description":"First name"}',
+        },
+      ),
+      ChatMessageModel.userMessage('添加联系人', id: 'user-vlm'),
+    ];
+
+    final entries = buildAgentRunTimelineEntries(
+      messages,
+      activeTaskIds: const <String>{'agent-run-vlm'},
+    );
+
+    expect(entries, hasLength(2));
+    final group = entries.first.group;
+    expect(group?.taskId, 'agent-run-vlm');
+    expect(group?.toolCount, 2);
+    expect(group?.processMessagesNewestFirst.map((message) => message.id), [
+      'agent-run-vlm-tool',
+      'vlm-run-1-vlm-1',
+    ]);
+    expect(entries.last.message?.id, 'user-vlm');
+  });
+
   test('groups active thinking-only task into one running entry', () {
     final messages = <ChatMessageModel>[
       _thinkingCard(id: 'task-5-thinking', taskId: 'task-5', seq: 10),
