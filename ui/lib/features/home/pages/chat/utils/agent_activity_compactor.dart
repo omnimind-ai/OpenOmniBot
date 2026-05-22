@@ -225,13 +225,21 @@ class _ActivityBuilder {
   AgentProcessItem buildItem() => _cached ??= _buildItem();
 
   AgentProcessItem _buildItem() {
-    final deduped = _cardIdOrder
+    final rawDeduped = _cardIdOrder
         .map((id) => _latestByCardId[id]!)
         .toList(growable: false);
+    final hasDetailedVlmSteps =
+        kind == AgentToolActivityKind.vlm && rawDeduped.any(_isDetailedVlmStep);
+    final deduped = hasDetailedVlmSteps
+        ? rawDeduped
+              .where((candidate) => !_isVlmTaskWrapper(candidate))
+              .toList(growable: false)
+        : rawDeduped;
+    final displayCandidates = deduped.isEmpty ? rawDeduped : deduped;
 
     int lastRunningIdx = -1;
-    for (var i = deduped.length - 1; i >= 0; i--) {
-      if (deduped[i].status == 'running') {
+    for (var i = displayCandidates.length - 1; i >= 0; i--) {
+      if (displayCandidates[i].status == 'running') {
         lastRunningIdx = i;
         break;
       }
@@ -240,8 +248,8 @@ class _ActivityBuilder {
     final steps = <AgentToolActivityStep>[];
     String previousActionKey = '';
     String previousStatus = '';
-    for (var i = 0; i < deduped.length; i++) {
-      final c = deduped[i];
+    for (var i = 0; i < displayCandidates.length; i++) {
+      final c = displayCandidates[i];
       final actionKey = c.actionKey;
       final isRetry =
           actionKey.isNotEmpty &&
@@ -260,16 +268,16 @@ class _ActivityBuilder {
     }
 
     final id = AgentToolCardPolicy.firstNonBlank(<Object?>[
-      deduped.first.taskId,
-      deduped.first.cardId,
+      displayCandidates.first.taskId,
+      displayCandidates.first.cardId,
       activityKey,
     ]);
-    final resolvedStatus = _resolveActivityStatus(deduped);
+    final resolvedStatus = _resolveActivityStatus(rawDeduped);
     return AgentProcessItem.activity(
       AgentToolActivity(
         id: '$id-${kind.name}-activity',
         kind: kind,
-        title: _activityTitle(kind, deduped, resolvedStatus),
+        title: _activityTitle(kind, displayCandidates, resolvedStatus),
         status: resolvedStatus,
         taskId: taskId,
         messages: List.unmodifiable(_allMessages),
@@ -277,6 +285,35 @@ class _ActivityBuilder {
       ),
     );
   }
+}
+
+bool _isDetailedVlmStep(_ToolActivityCandidate candidate) {
+  if (candidate.kind != AgentToolActivityKind.vlm) {
+    return false;
+  }
+  final compileKind = AgentToolCardPolicy.firstNonBlank(<Object?>[
+    candidate.cardData['compile_kind'],
+    candidate.cardData['compileKind'],
+  ]).toLowerCase();
+  if (compileKind == 'vlm_step') {
+    return true;
+  }
+  return candidate.cardData['toolName']?.toString().trim() != 'vlm_task';
+}
+
+bool _isVlmTaskWrapper(_ToolActivityCandidate candidate) {
+  if (candidate.kind != AgentToolActivityKind.vlm) {
+    return false;
+  }
+  final toolName = candidate.cardData['toolName']?.toString().trim() ?? '';
+  if (toolName != 'vlm_task') {
+    return false;
+  }
+  final compileKind = AgentToolCardPolicy.firstNonBlank(<Object?>[
+    candidate.cardData['compile_kind'],
+    candidate.cardData['compileKind'],
+  ]).toLowerCase();
+  return compileKind != 'vlm_step';
 }
 
 class _ToolActivityCandidate {

@@ -349,8 +349,82 @@ void main() {
     final activity = items.single.activity;
     expect(activity?.kind, AgentToolActivityKind.vlm);
     expect(activity?.taskId, 'run-vlm');
-    expect(activity?.stepCount, 2);
-    expect(activity?.steps.map((step) => step.target), ['设置按钮', '打开设置']);
+    expect(activity?.stepCount, 1);
+    expect(activity?.steps.map((step) => step.target), ['设置按钮']);
+  });
+
+  test('merges VLM wrapper and nested step cards under parent task', () {
+    final items = compactAgentProcessItems(<ChatMessageModel>[
+      ChatMessageModel.cardMessage(
+        const <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'taskId': 'agent-run-1',
+          'status': 'running',
+          'toolType': 'vlm',
+          'toolName': 'vlm_task',
+          'cardId': 'agent-run-1-tool-1',
+          'argsJson': '{"goal":"添加联系人"}',
+          'summary': '添加联系人',
+        },
+        id: 'agent-run-1-tool-1',
+        streamMeta: const <String, dynamic>{
+          'parentTaskId': 'agent-run-1',
+          'entryId': 'agent-run-1-tool-1',
+          'kind': 'tool_started',
+          'seq': 1,
+        },
+      ),
+      ChatMessageModel.cardMessage(
+        const <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'taskId': 'vlm-run-1',
+          'runLogId': 'vlm-run-1',
+          'status': 'success',
+          'toolType': 'vlm',
+          'toolName': 'click',
+          'cardId': 'vlm-run-1-vlm-1',
+          'compile_kind': 'vlm_step',
+          'argsJson': '{"target_description":"First name"}',
+          'summary': '点击 First name',
+        },
+        id: 'vlm-run-1-vlm-1',
+        streamMeta: const <String, dynamic>{
+          'parentTaskId': 'agent-run-1',
+          'runLogId': 'vlm-run-1',
+          'entryId': 'vlm-run-1-vlm-1',
+          'kind': 'tool_completed',
+          'seq': 2,
+        },
+      ),
+      ChatMessageModel.cardMessage(
+        const <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'taskId': 'agent-run-1',
+          'status': 'running',
+          'toolType': 'vlm',
+          'toolName': 'vlm_task',
+          'cardId': 'agent-run-1-tool-1',
+          'argsJson': '{"goal":"添加联系人"}',
+          'summary': '视觉任务执行中',
+        },
+        id: 'agent-run-1-tool-1',
+        streamMeta: const <String, dynamic>{
+          'parentTaskId': 'agent-run-1',
+          'entryId': 'agent-run-1-tool-1',
+          'kind': 'tool_progress',
+          'seq': 3,
+        },
+      ),
+    ]);
+
+    expect(items, hasLength(1));
+    final activity = items.single.activity;
+    expect(activity?.kind, AgentToolActivityKind.vlm);
+    expect(activity?.taskId, 'agent-run-1');
+    expect(activity?.status, 'running');
+    expect(activity?.stepCount, 1);
+    expect(activity?.steps.single.cardId, 'vlm-run-1-vlm-1');
+    expect(activity?.steps.single.target, 'First name');
   });
 
   test('non-tool messages break activity compaction', () {

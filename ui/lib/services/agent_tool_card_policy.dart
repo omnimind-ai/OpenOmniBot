@@ -831,11 +831,11 @@ class AgentToolCardPolicy {
   }) {
     final card = cardData ?? message?.cardData;
     final value = firstNonBlank(<Object?>[
-      card?['taskId'],
-      card?['taskID'],
       message?.streamMeta?['parentTaskId'],
       message?.streamMeta?['runLogId'],
       message?.streamMeta?['run_id'],
+      card?['taskId'],
+      card?['taskID'],
       card?['runLogId'],
       card?['run_id'],
       card?['toolTaskId'],

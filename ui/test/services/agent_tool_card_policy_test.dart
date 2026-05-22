@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/models/agent_stream_event.dart';
+import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/agent_tool_card_policy.dart';
 
 void main() {
@@ -25,5 +26,30 @@ void main() {
 
     expect(AgentToolCardPolicy.cardMatchesId(card, 'nested-call-1'), isTrue);
     expect(AgentToolCardPolicy.cardMatchesId(card, 'missing'), isFalse);
+  });
+
+  test('task id prefers agent parent task over nested tool run id', () {
+    final message = ChatMessageModel.cardMessage(
+      const <String, dynamic>{
+        'type': 'agent_tool_summary',
+        'taskId': 'vlm-run-1',
+        'runLogId': 'vlm-run-1',
+        'cardId': 'vlm-run-1-vlm-1',
+      },
+      id: 'vlm-run-1-vlm-1',
+      streamMeta: const <String, dynamic>{
+        'parentTaskId': 'agent-run-1',
+        'runLogId': 'vlm-run-1',
+      },
+    );
+
+    expect(AgentToolCardPolicy.taskIdForMessage(message), 'agent-run-1');
+    expect(
+      AgentToolCardPolicy.runLogRef(
+        message.cardData,
+        message: message,
+      ).runLogId,
+      'vlm-run-1',
+    );
   });
 }
