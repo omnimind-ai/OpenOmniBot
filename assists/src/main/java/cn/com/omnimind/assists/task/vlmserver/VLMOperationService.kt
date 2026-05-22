@@ -681,6 +681,12 @@ class VLMOperationService(
         val maxRetries = 3
         // 创建可变的工作变量
         var _context = context
+        val tokenUsageAttempts = mutableListOf<VLMTokenUsage>()
+        var tokenUsageRequestIndex = 0
+
+        fun usageAggregate(): VLMTokenUsage? = VLMTokenUsageMapper.aggregate(tokenUsageAttempts)
+
+        fun usageAttemptsSnapshot(): List<VLMTokenUsage> = tokenUsageAttempts.toList()
 
         var stabilityAttempt = 0
         while (stabilityAttempt < maxRetries) {
@@ -732,6 +738,7 @@ class VLMOperationService(
 
                     safePauseCheck("before_http_${stabilityAttempt}_retry_$toolCallRetryCount")
                     val httpClientStartTime = System.currentTimeMillis()
+                    val currentUsageAttemptIndex = ++tokenUsageRequestIndex
                     val streamedTurn = try {
                         streamClient.streamTurn(
                             request = requestEnvelope.request,
@@ -749,7 +756,9 @@ class VLMOperationService(
                             observation = "STREAM_ERROR",
                             thought = "VLM流式请求失败,忽略后面的action字段",
                             action = RecordAction(content = streamError),
-                            result = "VLM流式请求失败"
+                            result = "VLM流式请求失败",
+                            tokenUsage = usageAggregate(),
+                            tokenUsageAttempts = usageAttemptsSnapshot()
                         )
                         return VLMOperationResult(
                             success = false,
@@ -759,6 +768,20 @@ class VLMOperationService(
                         )
                     }
                     sceneTurn = streamedTurn
+                    VLMTokenUsageMapper.fromTurn(
+                        turn = streamedTurn,
+                        attemptIndex = currentUsageAttemptIndex,
+                        stabilityAttempt = stabilityAttempt,
+                        toolRetryIndex = toolCallRetryCount
+                    )?.let { usage ->
+                        tokenUsageAttempts += usage
+                        OmniLog.i(
+                            Tag,
+                            "VLM token usage: step=$stepIndex attempt=$currentUsageAttemptIndex " +
+                                "prompt=${usage.promptTokens ?: 0} completion=${usage.completionTokens ?: 0} " +
+                                "total=${usage.totalTokens ?: 0} cached=${usage.cachedTokens ?: 0}"
+                        )
+                    }
                     safePauseCheck("after_http_${stabilityAttempt}_retry_$toolCallRetryCount")
                     OmniLog.i(
                         "TimeRecord",
@@ -828,7 +851,9 @@ class VLMOperationService(
                             ?: "VLM响应解析失败",
                         thought = buildParseFailureThought(vlmResult),
                         action = RecordAction(content = "解析失败: $resolvedError"),
-                        result = "解析失败，第${parseFailureCount}次失败"
+                        result = "解析失败，第${parseFailureCount}次失败",
+                        tokenUsage = usageAggregate(),
+                        tokenUsageAttempts = usageAttemptsSnapshot()
                     )
 
                     return VLMOperationResult(
@@ -850,7 +875,9 @@ class VLMOperationService(
                         thought = processedStep.thought,
                         action = feedbackAction,
                         result = feedbackAction.value,
-                        summary = processedStep.summary
+                        summary = processedStep.summary,
+                        tokenUsage = usageAggregate(),
+                        tokenUsageAttempts = usageAttemptsSnapshot()
                     )
                     sceneTurn?.let { completedTurn ->
                         conversationState.appendRound(
@@ -942,7 +969,9 @@ class VLMOperationService(
                     summary = processedStep.summary,
                     observationXml = beforeXml,
                     packageName = beforePackageName,
-                    startedAtMs = actionStartedAtMs
+                    startedAtMs = actionStartedAtMs,
+                    tokenUsage = usageAggregate(),
+                    tokenUsageAttempts = usageAttemptsSnapshot()
                 )
                 onStepStarted(stepIndex, runningStep)
                 val executedStep = actionExecutor.act(
@@ -964,7 +993,9 @@ class VLMOperationService(
                     packageName = beforePackageName,
                     afterPackageName = afterPackageName,
                     startedAtMs = actionStartedAtMs,
-                    finishedAtMs = actionFinishedAtMs
+                    finishedAtMs = actionFinishedAtMs,
+                    tokenUsage = usageAggregate(),
+                    tokenUsageAttempts = usageAttemptsSnapshot()
                 )
                 finalStep = appendSettingsToggleStateSummary(finalStep, _context.overallTask)
 
@@ -1016,7 +1047,9 @@ class VLMOperationService(
                     observation = "429",
                     thought = "服务端请求失败,忽略后面的action字段",
                     action = RecordAction(content = "服务端请求失败"),
-                    result = "服务端请求失败"
+                    result = "服务端请求失败",
+                    tokenUsage = usageAggregate(),
+                    tokenUsageAttempts = usageAttemptsSnapshot()
                 )
                 return VLMOperationResult(
                     success = false,

@@ -188,6 +188,17 @@ Rules:
 - If `call_tool` returns `fallback=true` or `needs_agent`, switch to a bounded
   VLM task and report the fallback reason.
 
+## Function Segment Validation
+
+When validating a reusable segment, do not only check registration or recall.
+Run a parent Function whose step is `call_tool(function_id=...)`, and verify that
+the result contains:
+
+- parent step `executor=omniflow_function`
+- `nested_function_id` equal to the expected segment id
+- nested `step_results` with concrete model-free actions such as `open_app`
+- the same child Function succeeds from at least two different current pages
+
 ## No Wait Actions
 
 Never emit or preserve `wait`, `sleep`, delay, pause, or idle as a VLM or
@@ -236,6 +247,25 @@ Validation prompts should be written so success is observable from the current
 screen. Prefer final checks based on page title, row label, tab label, empty
 state, or stable visible text across at least two UI states. Do not mark success
 only because one click or one scroll was executed.
+
+## UDEG Recall Context
+
+OOB recall follows OmniFlow's UDEG path:
+
+1. Encode the live accessibility page into a local `PageVectorSet`.
+2. Page-match that vector to a UDEG node.
+3. Read the node's skill-like decision context.
+4. Consider the Functions attached to that node as outgoing reusable
+   transitions.
+
+Do not treat recall as a flat text search over all Functions. A recalled
+Function is trusted only when the current page has been localized to its UDEG
+node and the Function description/boundary fits the user goal. If the node skill
+is present but no Function clearly fits, continue with normal live VLM actions.
+
+Direct local execution is allowed only for a strong page match and a no-argument
+Function that strongly matches the goal. Parameterized or weakly matched
+Functions should remain decision context for the VLM/tool layer.
 
 ## RunLog and Function Handling
 

@@ -26,6 +26,14 @@
             </intent-filter>
         </receiver>
         <receiver
+            android:name=".debug.DebugOobFunctionSegmentReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="cn.com.omnimind.bot.debug.VALIDATE_OOB_FUNCTION_SEGMENT" />
+            </intent-filter>
+        </receiver>
+        <receiver
             android:name=".debug.DebugModelProviderConfigReceiver"
             android:enabled="true"
             android:exported="true">

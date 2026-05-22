@@ -113,6 +113,7 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
         )
         val runId = outcome.taskId
         val record = InternalRunLogStore.getRun(context, runId)
+        val timeline = record?.let { InternalRunLogStore.timelinePayload(context, runId) }
         val convert = if (outcome.status == VlmToolOutcomeStatus.FINISHED && record?.success == true) {
             OobOmniFlowToolkitService(context).convertRunLog(
                 mapOf(
@@ -127,8 +128,16 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
             null
         }
 
+        val outcomePayload = outcome.toPayload()
+        val directRecallCompleted = outcome.status == VlmToolOutcomeStatus.FINISHED &&
+            record == null &&
+            outcomePayload["executionRoute"]?.toString()?.startsWith("omniflow_recall_hit:") == true
+
         return linkedMapOf(
-            "success" to (outcome.status == VlmToolOutcomeStatus.FINISHED && convert?.get("success") == true),
+            "success" to (
+                directRecallCompleted ||
+                    (outcome.status == VlmToolOutcomeStatus.FINISHED && convert?.get("success") == true)
+                ),
             "goal" to goal,
             "packageName" to packageName,
             "prelaunch" to prelaunch,
@@ -136,11 +145,15 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
             "skipGoHome" to skipGoHome,
             "step_skill_guidance_chars" to stepSkillGuidance.length,
             "configured_binding" to configuredBinding,
-            "outcome" to outcome.toPayload(),
+            "outcome" to outcomePayload,
+            "direct_recall_completed" to directRecallCompleted,
             "run_id" to runId,
             "runlog_found" to (record != null),
             "runlog_success" to record?.success,
             "runlog_card_count" to (record?.cards?.size ?: 0),
+            "token_usage" to (timeline?.get("token_usage") ?: emptyMap<String, Any?>()),
+            "token_usage_total" to timeline?.get("token_usage_total"),
+            "token_usage_by_step" to (timeline?.get("token_usage_by_step") ?: emptyList<Map<String, Any?>>()),
             "convert" to convert,
         )
     }

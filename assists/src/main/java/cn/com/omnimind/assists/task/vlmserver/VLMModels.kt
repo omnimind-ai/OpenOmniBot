@@ -164,7 +164,11 @@ data class UIStep(
     @SerialName("started_at_ms")
     val startedAtMs: Long? = null,
     @SerialName("finished_at_ms")
-    val finishedAtMs: Long? = null
+    val finishedAtMs: Long? = null,
+    @SerialName("token_usage")
+    val tokenUsage: VLMTokenUsage? = null,
+    @SerialName("token_usage_attempts")
+    val tokenUsageAttempts: List<VLMTokenUsage> = emptyList()
 )
 
 @Serializable
@@ -173,6 +177,37 @@ data class VLMStep(
     val thought: String,
     val action: UIAction,
     val summary: String = "",  // 添加summary字段，与UIStep保持一致
+)
+
+@Serializable
+data class VLMTokenUsage(
+    @SerialName("prompt_tokens")
+    val promptTokens: Int? = null,
+    @SerialName("completion_tokens")
+    val completionTokens: Int? = null,
+    @SerialName("total_tokens")
+    val totalTokens: Int? = null,
+    @SerialName("reasoning_tokens")
+    val reasoningTokens: Int? = null,
+    @SerialName("text_tokens")
+    val textTokens: Int? = null,
+    @SerialName("cached_tokens")
+    val cachedTokens: Int? = null,
+    @SerialName("prefill_tokens_per_second")
+    val prefillTokensPerSecond: Double? = null,
+    @SerialName("decode_tokens_per_second")
+    val decodeTokensPerSecond: Double? = null,
+    @SerialName("resolved_model")
+    val resolvedModel: String? = null,
+    val route: String? = null,
+    @SerialName("attempt_index")
+    val attemptIndex: Int? = null,
+    @SerialName("stability_attempt")
+    val stabilityAttempt: Int? = null,
+    @SerialName("tool_retry_index")
+    val toolRetryIndex: Int? = null,
+    @SerialName("attempt_count")
+    val attemptCount: Int? = null
 )
 
 @Serializable

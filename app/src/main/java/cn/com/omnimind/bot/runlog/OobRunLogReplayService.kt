@@ -118,6 +118,15 @@ class OobRunLogReplayService(
         }
         val alreadyExists = workspaceFunctionStore.canHandle(functionId) ||
             OobReusableFunctionStore.get(context, functionId) != null
+        val udegResult = runCatching {
+            OobUdegNodeStore(context).upsertFunction(functionId, spec)
+        }.getOrElse { error ->
+            linkedMapOf(
+                "success" to false,
+                "indexed" to false,
+                "error_message" to error.message.orEmpty()
+            )
+        }
 
         val workspaceResult = workspaceFunctionStore.register(spec)
         val registryResult = runCatching {
@@ -145,6 +154,7 @@ class OobRunLogReplayService(
                 AgentToolFeatureStore.isOobFunctionAsToolEnabled(context),
             "workspace" to workspaceResult,
             "registry" to registryResult,
+            "udeg" to udegResult,
             "normalized_from_function_id" to rawFunctionId.takeIf { it != functionId },
             "source_run_ids" to sourceRunIds(spec)
         )

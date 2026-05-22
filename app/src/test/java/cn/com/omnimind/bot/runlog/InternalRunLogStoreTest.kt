@@ -52,6 +52,43 @@ class InternalRunLogStoreTest {
         }
     }
 
+    @Test
+    fun `timeline reports aggregate token usage`() {
+        val context = TempFilesContext()
+        try {
+            val runId = "run-token-${System.nanoTime()}"
+            InternalRunLogStore.beginRun(
+                context = context,
+                runId = runId,
+                goal = "Token usage",
+                source = "vlm",
+                toolName = "vlm"
+            )
+            InternalRunLogStore.appendCard(
+                context = context,
+                runId = runId,
+                card = tokenCard("card-1", prompt = 10, completion = 4, total = 14)
+            )
+            InternalRunLogStore.appendCard(
+                context = context,
+                runId = runId,
+                card = tokenCard("card-2", prompt = 20, completion = 6, total = 26)
+            )
+
+            val timeline = InternalRunLogStore.timelinePayload(context, runId)
+            val usage = timeline["token_usage"] as Map<*, *>
+            val byStep = timeline["token_usage_by_step"] as List<*>
+
+            assertEquals(30L, usage["prompt_tokens"])
+            assertEquals(10L, usage["completion_tokens"])
+            assertEquals(40L, usage["total_tokens"])
+            assertEquals(40L, timeline["token_usage_total"])
+            assertEquals(2, byStep.size)
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
     private fun runningCard(cardId: String, summary: String): Map<String, Any?> {
         return linkedMapOf(
             "card_id" to cardId,
@@ -61,6 +98,25 @@ class InternalRunLogStoreTest {
             "header" to linkedMapOf(
                 "status" to "running",
                 "success" to true
+            )
+        )
+    }
+
+    private fun tokenCard(
+        cardId: String,
+        prompt: Int,
+        completion: Int,
+        total: Int
+    ): Map<String, Any?> {
+        return linkedMapOf(
+            "card_id" to cardId,
+            "tool_name" to "click",
+            "step_index" to 0,
+            "token_usage" to linkedMapOf(
+                "prompt_tokens" to prompt,
+                "completion_tokens" to completion,
+                "total_tokens" to total,
+                "attempt_count" to 1
             )
         )
     }

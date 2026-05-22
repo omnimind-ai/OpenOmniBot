@@ -437,6 +437,11 @@ open class VLMOperationTask(
         val title = step.thought.trim().ifEmpty { actionTitle(step.action) }
         val success = successOverride ?: (step.action !is AbortAction)
         val cardId = vlmStepCardId(index)
+        val tokenUsage = step.tokenUsage?.let(VLMTokenUsageMapper::toRunLogMap)
+            ?.takeIf { it.isNotEmpty() }
+        val tokenUsageAttempts = step.tokenUsageAttempts
+            .map(VLMTokenUsageMapper::toRunLogMap)
+            .filter { it.isNotEmpty() }
         val header = linkedMapOf<String, Any?>(
             "step_index" to index,
             "title" to title,
@@ -445,6 +450,10 @@ open class VLMOperationTask(
             "success" to success
         )
         durationMs?.let { header["duration_ms"] = it }
+        tokenUsage?.let {
+            header["token_usage"] = it
+            header["token_usage_total"] = it["total_tokens"]
+        }
         return linkedMapOf(
             "card_id" to cardId,
             "tool_call_id" to cardId,
@@ -464,6 +473,8 @@ open class VLMOperationTask(
             "started_at_ms" to step.startedAtMs,
             "finished_at_ms" to step.finishedAtMs,
             "package_name" to step.packageName,
+            "token_usage" to tokenUsage,
+            "token_usage_attempts" to tokenUsageAttempts.takeIf { it.isNotEmpty() },
             "compile_kind" to "vlm_step",
             "tool_call" to linkedMapOf(
                 "id" to cardId,
@@ -504,6 +515,8 @@ open class VLMOperationTask(
         val argsJson = runCatching { JSONObject(actionParams).toString() }
             .getOrDefault("{}")
         val resultJson = runCatching {
+            val tokenUsage = step.tokenUsage?.let(VLMTokenUsageMapper::toRunLogMap)
+                ?.takeIf { it.isNotEmpty() }
             JSONObject(
                 linkedMapOf<String, Any?>(
                     "message" to step.result,
@@ -512,10 +525,14 @@ open class VLMOperationTask(
                     "success" to success,
                     "error_message" to errorMessage,
                     "package_name" to step.packageName,
+                    "token_usage" to tokenUsage,
+                    "token_usage_total" to tokenUsage?.get("total_tokens"),
                     "compile_kind" to "vlm_step"
                 ).filterValues { it != null }
             ).toString()
         }.getOrDefault("{}")
+        val tokenUsage = step.tokenUsage?.let(VLMTokenUsageMapper::toRunLogMap)
+            ?.takeIf { it.isNotEmpty() }
         val cardId = vlmStepCardId(index)
         val title = card["title"]?.toString()?.trim().orEmpty()
         val summary = listOf(step.summary, step.result, title)
@@ -542,6 +559,10 @@ open class VLMOperationTask(
             "rawResultJson" to if (streamKind == "tool_completed") resultJson else "",
             "success" to success,
             "stepIndex" to index,
+            "tokenUsage" to tokenUsage,
+            "token_usage" to tokenUsage,
+            "tokenUsageTotal" to tokenUsage?.get("total_tokens"),
+            "token_usage_total" to tokenUsage?.get("total_tokens"),
             "compile_kind" to "vlm_step"
         ).filterValues { it != null }
         try {

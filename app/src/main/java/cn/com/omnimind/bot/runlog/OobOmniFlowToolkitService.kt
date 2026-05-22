@@ -39,28 +39,97 @@ class OobOmniFlowToolkitService(
     fun recall(args: Map<String, Any?>?): Map<String, Any?> {
         val request = args ?: emptyMap()
         val goal = firstNonBlank(request["goal"], request["query"], request["task"])
-        val currentPackage = firstNonBlank(request["current_package"], request["currentPackage"])
+        val currentPackage = firstNonBlank(
+            request["current_package"],
+            request["currentPackage"],
+            runCatching { OmniflowActionRuntime.backend.currentPackageName() }.getOrNull(),
+        )
         val currentNodeId = firstNonBlank(request["current_node_id"], request["currentNodeId"])
         val k = intArg(request["k"], defaultValue = 8).coerceIn(1, 50)
-        val specs = replayService.listFunctionSpecs(limit = 500)
-        val ranked = specs.mapNotNull { spec ->
-            rankFunction(
-                spec = spec,
-                goal = goal,
-                currentPackage = currentPackage,
+        val currentXml = firstNonBlank(
+            request["current_xml"],
+            request["currentXml"],
+            request["xml"],
+            request["page"],
+            request["observation_xml"],
+            request["observationXml"],
+        ).ifBlank {
+            runCatching { OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty() }
+                .getOrDefault("")
+        }
+        if (currentXml.isBlank()) {
+            return linkedMapOf<String, Any?>(
+                "success" to true,
+                "decision" to "miss",
+                "hit" to null,
+                "candidates" to emptyList<Map<String, Any?>>(),
+                "node_candidates" to emptyList<Map<String, Any?>>(),
+                "count" to 0,
+                "reason" to "missing_current_page_for_udeg_page_match",
+                "current_package" to currentPackage.takeIf { it.isNotEmpty() },
+                "current_node_id" to currentNodeId.takeIf { it.isNotEmpty() },
+                "source" to "oob_native_udeg_page_match",
             )
+        }
+
+        val nodeMatches = OobUdegNodeStore(context).recall(
+            currentXml = currentXml,
+            currentPackage = currentPackage,
+            topK = k,
+        )
+        val nodeCandidates = nodeMatches.map { it.toMap() }
+        val specsById = replayService.listFunctionSpecs(limit = 500).associateBy {
+            it["function_id"]?.toString()?.trim().orEmpty()
+        }
+        val ranked = nodeMatches.flatMap { nodeMatch ->
+            OobUdegNodeStore.functionIds(nodeMatch.node).mapNotNull { functionId ->
+                val spec = specsById[functionId] ?: replayService.getFunctionSpec(functionId)
+                    ?: return@mapNotNull null
+                val textScore = scoreFunctionText(
+                    spec = spec,
+                    goal = goal,
+                    currentPackage = currentPackage,
+                )
+                val combinedScore = (
+                    PAGE_MATCH_WEIGHT * nodeMatch.pageSimilarity.toDouble() +
+                        GOAL_MATCH_WEIGHT * textScore.score
+                    ).coerceIn(0.0, 1.0)
+                RankedFunction(
+                    spec = spec,
+                    functionId = functionId,
+                    score = roundScore(combinedScore),
+                    reason = "udeg_${nodeMatch.reason};${textScore.reason}",
+                    textScore = textScore.score,
+                    pageScore = nodeMatch.pageSimilarity.toDouble(),
+                    node = nodeMatch.toMap(),
+                )
+            }
         }.sortedWith(
             compareByDescending<RankedFunction> { it.score }
                 .thenBy { it.functionId }
         ).take(k)
 
         val candidates = ranked.map { rankedFunction ->
-            candidateMap(rankedFunction.spec, rankedFunction.score, rankedFunction.reason)
+            candidateMap(
+                spec = rankedFunction.spec,
+                score = rankedFunction.score,
+                reason = rankedFunction.reason,
+                extras = linkedMapOf(
+                    "text_score" to roundScore(rankedFunction.textScore),
+                    "page_similarity" to roundScore(rankedFunction.pageScore),
+                    "udeg_node" to rankedFunction.node,
+                    "recall_scope" to "udeg_node",
+                )
+            )
         }
-        val directHit = ranked.firstOrNull { it.score >= DIRECT_HIT_SCORE && isNoArgumentFunction(it.spec) }
+        val directHit = ranked.firstOrNull {
+            it.pageScore >= OobUdegNodeStore.STRONG_PAGE_MATCH_SCORE.toDouble() &&
+                it.textScore >= DIRECT_HIT_SCORE &&
+                isNoArgumentFunction(it.spec)
+        }
         val decision = when {
             directHit != null -> "hit"
-            candidates.isNotEmpty() -> "recall"
+            nodeCandidates.isNotEmpty() -> "recall"
             else -> "miss"
         }
 
@@ -73,15 +142,25 @@ class OobOmniFlowToolkitService(
                     "inputSchema" to inputSchema(it.spec),
                     "score" to it.score,
                     "reason" to it.reason,
+                    "text_score" to roundScore(it.textScore),
+                    "page_similarity" to roundScore(it.pageScore),
+                    "udeg_node" to it.node,
                     "step_summaries" to stepSummaries(it.spec)
                 )
             },
             "candidates" to if (directHit == null) candidates else emptyList<Map<String, Any?>>(),
+            "node_candidates" to nodeCandidates,
+            "current_node" to nodeCandidates.firstOrNull(),
             "count" to candidates.size,
-            "reason" to if (candidates.isEmpty()) "no_registered_function_match" else "oob_fixed_recall",
+            "reason" to when {
+                nodeCandidates.isEmpty() -> "no_udeg_node_page_match"
+                candidates.isEmpty() -> "udeg_node_match_without_attached_function"
+                directHit != null -> "udeg_page_match_direct_function_hit"
+                else -> "udeg_page_match_recall"
+            },
             "current_package" to currentPackage.takeIf { it.isNotEmpty() },
             "current_node_id" to currentNodeId.takeIf { it.isNotEmpty() },
-            "source" to "oob_native_omniflow_toolkit"
+            "source" to "oob_native_udeg_page_match"
         )
     }
 
@@ -595,6 +674,17 @@ class OobOmniFlowToolkitService(
     ): RankedFunction? {
         val functionId = spec["function_id"]?.toString()?.trim().orEmpty()
         if (functionId.isEmpty()) return null
+        val scored = scoreFunctionText(spec, goal, currentPackage)
+        if (scored.score < MIN_RECALL_SCORE) return null
+        return RankedFunction(spec, functionId, roundScore(scored.score), scored.reason)
+    }
+
+    private fun scoreFunctionText(
+        spec: Map<String, Any?>,
+        goal: String,
+        currentPackage: String,
+    ): FunctionTextScore {
+        val functionId = spec["function_id"]?.toString()?.trim().orEmpty()
         val name = spec["name"]?.toString()?.trim().orEmpty()
         val description = spec["description"]?.toString()?.trim().orEmpty()
         val source = mapArg(spec["source"])
@@ -606,7 +696,7 @@ class OobOmniFlowToolkitService(
             source["tool_name"]?.toString().orEmpty(),
         ).joinToString(" ").trim()
         if (goal.isBlank()) {
-            return RankedFunction(spec, functionId, 0.25, "empty_goal_recent_registered")
+            return FunctionTextScore(0.25, "empty_goal")
         }
 
         val normalizedGoal = normalizeText(goal)
@@ -633,8 +723,7 @@ class OobOmniFlowToolkitService(
             score = (score + 0.05).coerceAtMost(1.0)
             reason = "${reason}_package_scope"
         }
-        if (score < MIN_RECALL_SCORE) return null
-        return RankedFunction(spec, functionId, roundScore(score), reason)
+        return FunctionTextScore(roundScore(score), reason)
     }
 
     private fun tokenOverlapScore(goal: String, corpus: String): Double {
@@ -661,9 +750,10 @@ class OobOmniFlowToolkitService(
         spec: Map<String, Any?>,
         score: Double,
         reason: String,
+        extras: Map<String, Any?> = emptyMap(),
     ): Map<String, Any?> {
         val execution = mapArg(spec["execution"])
-        return linkedMapOf(
+        return linkedMapOf<String, Any?>(
             "function_id" to spec["function_id"],
             "description" to (spec["description"] ?: spec["name"] ?: spec["function_id"]),
             "name" to spec["name"],
@@ -675,7 +765,7 @@ class OobOmniFlowToolkitService(
             "step_summaries" to stepSummaries(spec),
             "function_kind" to "oob_reusable_function",
             "asset_state" to "native_local"
-        )
+        ).apply { putAll(extras) }
     }
 
     private fun stepSummaries(spec: Map<String, Any?>): List<Map<String, Any?>> {
@@ -963,11 +1053,21 @@ class OobOmniFlowToolkitService(
         val functionId: String,
         val score: Double,
         val reason: String,
+        val textScore: Double = score,
+        val pageScore: Double = 0.0,
+        val node: Map<String, Any?> = emptyMap(),
+    )
+
+    private data class FunctionTextScore(
+        val score: Double,
+        val reason: String,
     )
 
     companion object {
         private const val MIN_RECALL_SCORE = 0.30
         private const val DIRECT_HIT_SCORE = 0.97
+        private const val PAGE_MATCH_WEIGHT = 0.70
+        private const val GOAL_MATCH_WEIGHT = 0.30
         private val CONFIRMATION_ACTION_TOKENS = setOf(
             "shell",
             "terminal",

@@ -891,6 +891,8 @@ class UtgRunLogSummary {
   final String selectorReason;
   final String errorMessage;
   final String finalPackageName;
+  final int? tokenUsageTotal;
+  final Map<String, dynamic> tokenUsage;
   final Map<String, dynamic> rawJson;
 
   const UtgRunLogSummary({
@@ -914,6 +916,8 @@ class UtgRunLogSummary {
     required this.selectorReason,
     required this.errorMessage,
     required this.finalPackageName,
+    required this.tokenUsageTotal,
+    required this.tokenUsage,
     required this.rawJson,
   });
 
@@ -942,6 +946,14 @@ class UtgRunLogSummary {
       selectorReason: (raw['selector_reason'] ?? '').toString(),
       errorMessage: (raw['error_message'] ?? '').toString(),
       finalPackageName: (raw['final_package_name'] ?? '').toString(),
+      tokenUsageTotal: raw['token_usage_total'] is num
+          ? (raw['token_usage_total'] as num).toInt()
+          : int.tryParse((raw['token_usage_total'] ?? '').toString()),
+      tokenUsage: Map<String, dynamic>.from(
+        (raw['token_usage'] as Map<dynamic, dynamic>? ?? const {}).map(
+          (k, v) => MapEntry(k.toString(), v),
+        ),
+      ),
       rawJson: Map<String, dynamic>.from(
         (raw['raw_run'] as Map<dynamic, dynamic>? ?? const {}).map(
           (k, v) => MapEntry(k.toString(), v),

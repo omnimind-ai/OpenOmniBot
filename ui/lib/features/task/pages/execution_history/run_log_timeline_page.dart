@@ -1013,6 +1013,16 @@ class _StepCard extends StatelessWidget {
                                   color: palette.textSecondary,
                                 ),
                               ),
+                            if (snapshot.totalTokens != null) ...[
+                              const SizedBox(width: 6),
+                              Text(
+                                _formatTokens(snapshot.totalTokens!),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: palette.textSecondary,
+                                ),
+                              ),
+                            ],
                             const SizedBox(width: 6),
                             Icon(
                               success
@@ -1322,6 +1332,31 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                             const SizedBox(height: 10),
                             // Status / route / duration pills
                             _SummaryGrid(snapshot: snapshot),
+                            if (snapshot.tokenUsage.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              _CollapsibleSection(
+                                title: _text(
+                                  context,
+                                  'Token 消耗',
+                                  'Token usage',
+                                ),
+                                copyValue: _prettyJson({
+                                  'token_usage': snapshot.tokenUsage,
+                                  if (snapshot.tokenUsageAttempts.isNotEmpty)
+                                    'token_usage_attempts':
+                                        snapshot.tokenUsageAttempts,
+                                }),
+                                initiallyExpanded: false,
+                                child: _JsonBlock(
+                                  value: {
+                                    'token_usage': snapshot.tokenUsage,
+                                    if (snapshot.tokenUsageAttempts.isNotEmpty)
+                                      'token_usage_attempts':
+                                          snapshot.tokenUsageAttempts,
+                                  },
+                                ),
+                              ),
+                            ],
                             if (_shouldShowVisualActionPanel(snapshot)) ...[
                               const SizedBox(height: 10),
                               _VlmStepActionPanel(
@@ -2687,6 +2722,11 @@ class _SummaryGrid extends StatelessWidget {
           _text(context, '耗时', 'Duration'),
           _formatMs(snapshot.durationMs!),
         ),
+      if (snapshot.totalTokens != null)
+        MapEntry(
+          _text(context, 'Token', 'Tokens'),
+          snapshot.tokenUsageLabel(context),
+        ),
       if (snapshot.packageName.isNotEmpty)
         MapEntry(_text(context, '应用包名', 'Package'), snapshot.packageName),
     ];
@@ -3043,6 +3083,8 @@ class _RunLogStepSnapshot {
     required this.packageName,
     required this.prompt,
     required this.promptSource,
+    required this.tokenUsage,
+    required this.tokenUsageAttempts,
   });
 
   final Map<String, dynamic> card;
@@ -3063,6 +3105,11 @@ class _RunLogStepSnapshot {
   final String packageName;
   final String prompt;
   final String promptSource;
+  final Map<String, dynamic> tokenUsage;
+  final List<Map<String, dynamic>> tokenUsageAttempts;
+
+  int? get totalTokens =>
+      _asInt(tokenUsage['total_tokens'] ?? tokenUsage['totalTokens']);
 
   bool get isVlmStep {
     final toolType = _firstNonBlank([
@@ -3171,6 +3218,16 @@ class _RunLogStepSnapshot {
       card['tool_call_id'],
       card['toolCallId'],
     ]);
+    var tokenUsage = _firstMap(card, const ['token_usage', 'tokenUsage']);
+    if (tokenUsage.isEmpty) {
+      tokenUsage = _firstMap(header, const ['token_usage', 'tokenUsage']);
+    }
+    final tokenUsageAttempts = _asStringKeyMapList(
+      _firstPresentValue(card, const [
+        'token_usage_attempts',
+        'tokenUsageAttempts',
+      ]),
+    );
 
     return _RunLogStepSnapshot(
       card: card,
@@ -3191,6 +3248,8 @@ class _RunLogStepSnapshot {
       packageName: packageName,
       prompt: promptHit.text,
       promptSource: promptHit.source,
+      tokenUsage: tokenUsage,
+      tokenUsageAttempts: tokenUsageAttempts,
     );
   }
 
@@ -3263,6 +3322,36 @@ class _RunLogStepSnapshot {
     return compileKind;
   }
 
+  String tokenUsageLabel(BuildContext context) {
+    final total = totalTokens;
+    final promptTokens = _asInt(
+      tokenUsage['prompt_tokens'] ?? tokenUsage['promptTokens'],
+    );
+    final completionTokens = _asInt(
+      tokenUsage['completion_tokens'] ?? tokenUsage['completionTokens'],
+    );
+    final cachedTokens = _asInt(
+      tokenUsage['cached_tokens'] ?? tokenUsage['cachedTokens'],
+    );
+    final parts = <String>[];
+    if (total != null) {
+      parts.add(_formatTokens(total));
+    }
+    if (promptTokens != null || completionTokens != null) {
+      parts.add('P${promptTokens ?? 0}/C${completionTokens ?? 0}');
+    }
+    if (cachedTokens != null && cachedTokens > 0) {
+      parts.add(
+        _localeValue(
+          context,
+          zh: '缓存 $cachedTokens',
+          en: 'cached $cachedTokens',
+        ),
+      );
+    }
+    return parts.isEmpty ? _text(context, '未知', 'Unknown') : parts.join(' · ');
+  }
+
   String toTranscript() {
     final lines = <String>[
       '### Step $stepNumber',
@@ -3272,6 +3361,7 @@ class _RunLogStepSnapshot {
       if (compileKind.isNotEmpty) 'Route: $compileKind',
       if (success != null) 'Success: $success',
       if (durationMs != null) 'Duration: ${_formatMs(durationMs!)}',
+      if (totalTokens != null) 'Token Usage: ${tokenUsageLabelTextOnly()}',
       if (packageName.isNotEmpty) 'Package: $packageName',
       if (prompt.isNotEmpty) 'Prompt Source: $promptSource',
     ];
@@ -3282,6 +3372,11 @@ class _RunLogStepSnapshot {
     _appendTranscriptSection(lines, 'Tool Call', toolCall);
     _appendTranscriptSection(lines, 'Arguments', params);
     _appendTranscriptSection(lines, 'Result', result);
+    _appendTranscriptSection(lines, 'Token Usage', {
+      if (tokenUsage.isNotEmpty) 'token_usage': tokenUsage,
+      if (tokenUsageAttempts.isNotEmpty)
+        'token_usage_attempts': tokenUsageAttempts,
+    });
     _appendTranscriptSection(lines, 'Route Result', compileResult);
     if (before.isNotEmpty || after.isNotEmpty) {
       _appendTranscriptSection(lines, 'Before / After', {
@@ -3291,6 +3386,29 @@ class _RunLogStepSnapshot {
     }
     _appendTranscriptSection(lines, 'Raw JSON', card);
     return lines.join('\n').trimRight();
+  }
+
+  String tokenUsageLabelTextOnly() {
+    final total = totalTokens;
+    final promptTokens = _asInt(
+      tokenUsage['prompt_tokens'] ?? tokenUsage['promptTokens'],
+    );
+    final completionTokens = _asInt(
+      tokenUsage['completion_tokens'] ?? tokenUsage['completionTokens'],
+    );
+    final cachedTokens = _asInt(
+      tokenUsage['cached_tokens'] ?? tokenUsage['cachedTokens'],
+    );
+    final parts = <String>[];
+    if (total != null) parts.add(_formatTokens(total));
+    if (promptTokens != null || completionTokens != null) {
+      parts.add('prompt=${promptTokens ?? 0}');
+      parts.add('completion=${completionTokens ?? 0}');
+    }
+    if (cachedTokens != null && cachedTokens > 0) {
+      parts.add('cached=$cachedTokens');
+    }
+    return parts.join(', ');
   }
 }
 
@@ -3485,6 +3603,13 @@ void _appendTranscriptSection(List<String> lines, String title, dynamic value) {
 String _formatMs(int ms) {
   if (ms < 1000) return '${ms}ms';
   return '${(ms / 1000).toStringAsFixed(1)}s';
+}
+
+String _formatTokens(int tokens) {
+  if (tokens >= 1000) {
+    return '${(tokens / 1000).toStringAsFixed(tokens >= 10000 ? 1 : 2)}k';
+  }
+  return '$tokens';
 }
 
 String _stepLabel(BuildContext context, int stepNumber) {
@@ -4057,6 +4182,17 @@ Map<String, dynamic> _asStringKeyMap(dynamic value) {
     return const <String, dynamic>{};
   }
   return decoded.map((key, item) => MapEntry(key.toString(), item));
+}
+
+List<Map<String, dynamic>> _asStringKeyMapList(dynamic value) {
+  final decoded = _decodeJsonIfNeeded(value);
+  if (decoded is! List) {
+    return const <Map<String, dynamic>>[];
+  }
+  return decoded
+      .map(_asStringKeyMap)
+      .where((item) => item.isNotEmpty)
+      .toList(growable: false);
 }
 
 Map<String, dynamic> _firstMap(Map<String, dynamic> source, List<String> keys) {

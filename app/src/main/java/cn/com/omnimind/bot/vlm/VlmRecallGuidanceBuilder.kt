@@ -8,14 +8,15 @@ data class VlmRecallGuidance(
     val decision: String,
     val guidance: String,
     val payload: Map<String, Any?> = emptyMap(),
+    val directHitFunctionId: String? = null,
 )
 
 /**
  * Builds online VLM guidance from OOB-native OmniFlow recall.
  *
- * This is deliberately guidance-only for `vlm_task`: the VLM still observes the
- * live screen and emits concrete actions. Direct cache execution remains owned
- * by `omniflow.call_tool` / Function replay.
+ * VLM still observes the live screen and emits concrete actions for recall
+ * candidates. A no-argument direct hit may be executed by the coordinator before
+ * starting VLM, with VLM fallback if local replay cannot complete.
  */
 object VlmRecallGuidanceBuilder {
     fun build(
@@ -28,9 +29,9 @@ object VlmRecallGuidanceBuilder {
         val normalizedGoal = goal.trim()
         if (normalizedGoal.isEmpty()) return VlmRecallGuidance(decision = "miss", guidance = "")
         val currentPackage = firstNonBlank(
-            targetPackageName,
             currentPackageName,
             runCatching { OmniflowActionRuntime.backend.currentPackageName() }.getOrNull(),
+            targetPackageName,
         )
         val payload = runCatching {
             OobOmniFlowToolkitService(context).recall(
@@ -44,14 +45,24 @@ object VlmRecallGuidanceBuilder {
             return VlmRecallGuidance(
                 decision = "error",
                 guidance = "",
-                payload = linkedMapOf("success" to false, "error_message" to error.message.orEmpty())
+                payload = linkedMapOf("success" to false, "error_message" to error.message.orEmpty()),
             )
         }
         return VlmRecallGuidance(
             decision = payload["decision"]?.toString()?.trim().orEmpty().ifBlank { "miss" },
             guidance = renderGuidance(payload),
             payload = payload,
+            directHitFunctionId = directHitFunctionId(payload),
         )
+    }
+
+    internal fun directHitFunctionId(payload: Map<String, Any?>): String? {
+        if (payload["success"] != true) return null
+        if (payload["decision"]?.toString()?.trim() != "hit") return null
+        return mapArg(payload["hit"])["function_id"]
+            ?.toString()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
     }
 
     internal fun renderGuidance(payload: Map<String, Any?>): String {
@@ -61,11 +72,23 @@ object VlmRecallGuidanceBuilder {
 
         val candidates = candidateList(payload)
             .take(MAX_GUIDANCE_CANDIDATES)
-        if (candidates.isEmpty()) return ""
+        val nodeCandidates = listArg(payload["node_candidates"]).mapNotNull { raw ->
+            mapArg(raw).takeIf { it.isNotEmpty() }
+        }.take(MAX_GUIDANCE_CANDIDATES)
+        if (candidates.isEmpty() && nodeCandidates.isEmpty()) return ""
 
         return buildString {
-            appendLine("OmniFlow recall context:")
+            appendLine("OmniFlow UDEG recall context:")
             appendLine("decision=$decision")
+            nodeCandidates.forEachIndexed { index, node ->
+                val nodeId = node["node_id"]?.toString()?.trim().orEmpty()
+                val score = node["page_similarity"]?.toString()?.trim().orEmpty()
+                val skill = mapArg(node["skill"])
+                val guidance = skill["decision_guidance"]?.toString()?.trim().orEmpty()
+                    .take(MAX_DESCRIPTION_CHARS)
+                appendLine("node ${index + 1}: node_id=$nodeId page_similarity=$score")
+                if (guidance.isNotBlank()) appendLine("   skill: $guidance")
+            }
             candidates.forEachIndexed { index, candidate ->
                 val functionId = candidate["function_id"]?.toString()?.trim().orEmpty()
                 val score = candidate["score"]?.toString()?.trim().orEmpty()

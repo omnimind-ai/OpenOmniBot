@@ -164,6 +164,7 @@ class _RunLogListItem extends StatelessWidget {
       if (run.compileStatus.trim().isNotEmpty) run.compileStatus.trim(),
       if (_formatDuration(run.durationMs).isNotEmpty)
         _formatDuration(run.durationMs),
+      if (run.tokenUsageTotal != null) _formatTokenUsage(run.tokenUsageTotal!),
     ].join(' · ');
 
     return Material(
@@ -356,6 +357,14 @@ String _formatDuration(num? durationMs) {
   }
   final minutes = seconds / 60;
   return '${minutes.toStringAsFixed(minutes >= 10 ? 0 : 1)}min';
+}
+
+String _formatTokenUsage(int totalTokens) {
+  if (totalTokens <= 0) return '';
+  if (totalTokens >= 1000) {
+    return '${(totalTokens / 1000).toStringAsFixed(totalTokens >= 10000 ? 1 : 2)}k tokens';
+  }
+  return '$totalTokens tokens';
 }
 
 String _firstNonBlank(Iterable<Object?> values) {

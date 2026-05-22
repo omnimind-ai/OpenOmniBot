@@ -11,6 +11,7 @@ import cn.com.omnimind.bot.mcp.McpTaskManager
 import cn.com.omnimind.bot.mcp.TaskState
 import cn.com.omnimind.bot.mcp.TaskStatus
 import cn.com.omnimind.bot.mcp.VlmTaskRequest
+import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
 import cn.com.omnimind.bot.util.AssistsUtil
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -43,6 +44,7 @@ data class VlmToolOutcome(
     val feedback: String? = null,
     val summaryUnavailable: Boolean = false,
     val recentActivity: List<String> = emptyList(),
+    val executionRoute: String = "",
 ) {
     fun toPayload(): Map<String, Any?> = linkedMapOf(
         "taskId" to taskId,
@@ -56,7 +58,8 @@ data class VlmToolOutcome(
         "errorMessage" to errorMessage,
         "feedback" to feedback,
         "summaryUnavailable" to summaryUnavailable,
-        "recentActivity" to recentActivity
+        "recentActivity" to recentActivity,
+        "executionRoute" to executionRoute,
     )
 }
 
@@ -137,6 +140,24 @@ object VlmToolCoordinator {
                     "omniflowRecall" to recallGuidance.payload,
                 )
             )
+        }
+        tryExecuteRecallHit(
+            taskState = taskState,
+            goal = request.goal,
+            recallGuidance = recallGuidance,
+            progressReporter = progressReporter,
+            callFunction = { functionId ->
+                OobOmniFlowToolkitService(context).callFunction(
+                    mapOf(
+                        "function_id" to functionId,
+                        "goal" to request.goal,
+                        "arguments" to emptyMap<String, Any?>(),
+                    )
+                )
+            },
+        )?.let { outcome ->
+            McpTaskManager.scheduleTaskCleanup(taskId, scope)
+            return@withContext outcome
         }
 
         val startResult = startVlmTaskInternal(
@@ -224,6 +245,24 @@ object VlmToolCoordinator {
                 if (recallGuidance.guidance.isNotBlank()) {
                     taskState.executionRoute = "vlm_with_omniflow_recall:${recallGuidance.decision}"
                     taskState.markStateChanged()
+                }
+                tryExecuteRecallHit(
+                    taskState = taskState,
+                    goal = request.goal,
+                    recallGuidance = recallGuidance,
+                    progressReporter = progressReporter,
+                    callFunction = { functionId ->
+                        OobOmniFlowToolkitService(context).callFunction(
+                            mapOf(
+                                "function_id" to functionId,
+                                "goal" to request.goal,
+                                "arguments" to emptyMap<String, Any?>(),
+                            )
+                        )
+                    },
+                )?.let { outcome ->
+                    McpTaskManager.scheduleTaskCleanup(taskId, scope)
+                    return@withContext outcome
                 }
                 val startResult = startVlmTaskInternal(
                     context,
@@ -542,6 +581,98 @@ object VlmToolCoordinator {
         )
     }
 
+    internal suspend fun tryExecuteRecallHit(
+        taskState: TaskState,
+        goal: String,
+        recallGuidance: VlmRecallGuidance,
+        progressReporter: VlmToolProgressReporter,
+        callFunction: suspend (String) -> Map<String, Any?>,
+    ): VlmToolOutcome? {
+        val functionId = recallGuidance.directHitFunctionId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return null
+        emitProgress(
+            progressReporter,
+            taskState.taskId,
+            taskState.status,
+            "召回执行",
+            mapOf(
+                "summary" to "命中可直接执行的 OmniFlow Function",
+                "omniflowRecallDecision" to recallGuidance.decision,
+                "functionId" to functionId,
+            )
+        )
+        val result = runCatching { callFunction(functionId) }.getOrElse { error ->
+            linkedMapOf<String, Any?>(
+                "success" to false,
+                "fallback" to true,
+                "error" to error.message.orEmpty(),
+                "error_type" to error.javaClass.name,
+            )
+        }
+        val success = result["success"] == true && result["fallback"] != true
+        if (!success) {
+            taskState.executionRoute = "vlm_with_omniflow_recall_fallback:${recallGuidance.decision}"
+            taskState.addChatMessage(
+                "[SYSTEM] OmniFlow recall hit $functionId could not complete locally; continuing with VLM. reason=${recallFallbackReason(result)}"
+            )
+            taskState.markStateChanged()
+            emitProgress(
+                progressReporter,
+                taskState.taskId,
+                taskState.status,
+                "召回回退",
+                mapOf(
+                    "summary" to "召回 Function 未能本地完成，继续视觉执行",
+                    "functionId" to functionId,
+                    "omniflowRecallResult" to result,
+                )
+            )
+            return null
+        }
+
+        val runId = result["run_id"]?.toString()?.trim().orEmpty()
+        val actionsExecuted = result["actions_executed"]?.toString()?.trim().orEmpty()
+        val message = buildString {
+            append("已通过召回 Function 完成: ")
+            append(functionId)
+            if (runId.isNotEmpty()) append(" (run_id=$runId)")
+        }
+        taskState.status = TaskStatus.FINISHED
+        taskState.message = message
+        taskState.finishedContent = message
+        taskState.summaryText = listOfNotNull(
+            "OmniFlow recall hit executed successfully.",
+            "function_id=$functionId",
+            runId.takeIf { it.isNotEmpty() }?.let { "run_id=$it" },
+            actionsExecuted.takeIf { it.isNotEmpty() }?.let { "actions_executed=$it" },
+        ).joinToString("\n")
+        taskState.executionRoute = "omniflow_recall_hit:$functionId"
+        taskState.addChatMessage("[SYSTEM] $message")
+        taskState.markStateChanged()
+        emitProgress(
+            progressReporter,
+            taskState.taskId,
+            taskState.status,
+            "执行完成",
+            mapOf(
+                "summary" to message,
+                "functionId" to functionId,
+                "omniflowRecallResult" to result,
+            )
+        )
+        return taskState.toOutcome(VlmToolOutcomeStatus.FINISHED)
+    }
+
+    private fun recallFallbackReason(result: Map<String, Any?>): String =
+        listOf(
+            result["error"],
+            result["error_message"],
+            (result["control"] as? Map<*, *>)?.get("fallback_reason"),
+            result["phase"],
+        ).firstNotNullOfOrNull { value ->
+            value?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        } ?: "unknown"
+
     private fun TaskState.toOutcome(
         status: VlmToolOutcomeStatus,
         message: String = this.message,
@@ -565,7 +696,8 @@ object VlmToolCoordinator {
             errorMessage = errorMessage,
             feedback = feedback,
             summaryUnavailable = summaryUnavailable,
-            recentActivity = chatMessages.takeLast(5)
+            recentActivity = chatMessages.takeLast(5),
+            executionRoute = executionRoute,
         )
     }
 

@@ -252,6 +252,7 @@ object InternalRunLogStore {
         }
         val record = readRunLocked(context, normalizedRunId)
             ?: return notFoundPayload(normalizedRunId)
+        val tokenUsage = tokenUsageSummary(record.cards)
         return linkedMapOf(
             "success" to true,
             "provider" to PROVIDER,
@@ -271,11 +272,15 @@ object InternalRunLogStore {
             "event_log_path" to runEventsFile(runFile(context, normalizedRunId)).absolutePath,
             "done_reason" to record.doneReason,
             "error_message" to record.errorMessage,
+            "token_usage" to tokenUsage,
+            "token_usage_total" to tokenUsage["total_tokens"],
+            "token_usage_by_step" to tokenUsageByStep(record.cards),
             "cards" to record.cards
         )
     }
 
     private fun summaryMap(record: InternalRunLogRecord): Map<String, Any?> {
+        val tokenUsage = tokenUsageSummary(record.cards)
         return linkedMapOf(
             "run_id" to record.runId,
             "goal" to record.goal,
@@ -290,6 +295,8 @@ object InternalRunLogStore {
             "source" to record.source,
             "operation_description" to record.operationDescription,
             "error_message" to record.errorMessage,
+            "token_usage" to tokenUsage,
+            "token_usage_total" to tokenUsage["total_tokens"],
             "raw_run" to linkedMapOf(
                 "run_id" to record.runId,
                 "provider" to PROVIDER,
@@ -312,6 +319,66 @@ object InternalRunLogStore {
     private fun durationMs(record: InternalRunLogRecord): Long? {
         val finishedAt = record.finishedAtMs ?: return null
         return (finishedAt - record.startedAtMs).coerceAtLeast(0L)
+    }
+
+    private fun tokenUsageSummary(cards: List<Map<String, Any?>>): Map<String, Any?> {
+        val usages = cards.mapNotNull(::extractTokenUsage)
+        if (usages.isEmpty()) return emptyMap()
+        val summary = linkedMapOf<String, Any?>()
+        putSum(summary, "prompt_tokens", usages)
+        putSum(summary, "completion_tokens", usages)
+        putSum(summary, "total_tokens", usages)
+        if (!summary.containsKey("total_tokens")) {
+            val prompt = numberToLong(summary["prompt_tokens"])
+            val completion = numberToLong(summary["completion_tokens"])
+            if (prompt != null || completion != null) {
+                summary["total_tokens"] = (prompt ?: 0L) + (completion ?: 0L)
+            }
+        }
+        putSum(summary, "reasoning_tokens", usages)
+        putSum(summary, "text_tokens", usages)
+        putSum(summary, "cached_tokens", usages)
+        putSum(summary, "attempt_count", usages)
+        summary["step_count"] = usages.size
+        return summary
+    }
+
+    private fun tokenUsageByStep(cards: List<Map<String, Any?>>): List<Map<String, Any?>> {
+        return cards.mapIndexedNotNull { index, card ->
+            val usage = extractTokenUsage(card) ?: return@mapIndexedNotNull null
+            linkedMapOf<String, Any?>(
+                "step_index" to (numberToLong(card["step_index"]) ?: index.toLong()).toInt(),
+                "card_id" to textValue(card["card_id"]),
+                "tool_name" to textValue(card["tool_name"]),
+                "token_usage" to usage
+            )
+        }
+    }
+
+    private fun extractTokenUsage(card: Map<String, Any?>): Map<String, Any?>? {
+        val direct = stringMap(card["token_usage"]).takeIf { it.isNotEmpty() }
+        if (direct != null) return direct
+        val header = stringMap(card["header"])
+        return stringMap(header["token_usage"]).takeIf { it.isNotEmpty() }
+    }
+
+    private fun putSum(
+        target: MutableMap<String, Any?>,
+        key: String,
+        usages: List<Map<String, Any?>>
+    ) {
+        var hasValue = false
+        var total = 0L
+        usages.forEach { usage ->
+            val value = numberToLong(usage[key])
+            if (value != null) {
+                hasValue = true
+                total += value
+            }
+        }
+        if (hasValue) {
+            target[key] = total
+        }
     }
 
     private fun readAllRunsLocked(context: Context): List<InternalRunLogRecord> {

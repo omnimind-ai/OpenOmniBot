@@ -104,11 +104,26 @@ private object AccessibilityOmniflowActionBackend : OmniflowActionBackend {
         AccessibilityController.pressHotKey(key)
     }
 
-    override fun currentXml(): String? = AccessibilityController.getCaptureScreenShotXml(true)
+    override fun currentXml(): String? =
+        if (AccessibilityController.initController()) {
+            AccessibilityController.getCaptureScreenShotXml(true)
+        } else {
+            null
+        }
 
-    override fun currentPackageName(): String? = AccessibilityController.getPackageName()
+    override fun currentPackageName(): String? =
+        if (AccessibilityController.initController()) {
+            AccessibilityController.getPackageName()
+        } else {
+            null
+        }
 
-    override fun currentActivityName(): String? = AccessibilityController.getCurrentActivity()
+    override fun currentActivityName(): String? =
+        if (AccessibilityController.initController()) {
+            AccessibilityController.getCurrentActivity()
+        } else {
+            null
+        }
 
     private suspend fun launchApplicationByForegroundIntent(packageName: String) {
         if (!APPPackageUtil.isPackageAuthorized(packageName)) {

@@ -5,6 +5,7 @@ import android.content.ContextWrapper
 import android.content.SharedPreferences
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
+import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
@@ -87,13 +88,20 @@ class OobOmniFlowLoopAcceptanceTest {
                 mapOf(
                     "goal" to goal,
                     "current_package" to "com.example.settings",
+                    "current_xml" to SOURCE_XML,
                     "k" to 3,
                 )
             )
             assertEquals(true, recall["success"])
             assertEquals("hit", recall["decision"])
+            assertEquals("oob_native_udeg_page_match", recall["source"])
+            val currentNode = recall["current_node"] as? Map<*, *>
+            assertNotNull(currentNode)
+            val nodeSkill = currentNode?.get("skill") as? Map<*, *>
+            assertEquals("udeg_node_skill", nodeSkill?.get("kind"))
             val hit = recall["hit"] as? Map<*, *>
             assertEquals(functionId, hit?.get("function_id"))
+            assertNotNull(hit?.get("udeg_node"))
             val recalledSteps = hit?.get("step_summaries") as? List<*>
             assertEquals(1, recalledSteps?.size)
 
@@ -201,7 +209,207 @@ class OobOmniFlowLoopAcceptanceTest {
         }
     }
 
-    private class TempFilesContext : ContextWrapper(null) {
+    @Test
+    fun `parent function loads reusable open settings segment through call_tool`() = runBlocking {
+        val context = TempFilesContext()
+        val backend = RecordingOmniflowBackend(initialPackage = "com.android.launcher")
+        val backendHandle = OmniflowActionRuntime.useBackendForTesting(backend)
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val childFunctionId = "open_settings_segment"
+            val parentFunctionId = "parent_calls_open_settings_segment"
+
+            val registerChild = toolkit.registerFunction(
+                mapOf(
+                    "functionSpec" to reusableFunctionSpec(
+                        functionId = childFunctionId,
+                        name = "Open Settings",
+                        description = "Open Android Settings from any current screen.",
+                        steps = listOf(openSettingsStep())
+                    )
+                )
+            )
+            val registerParent = toolkit.registerFunction(
+                mapOf(
+                    "functionSpec" to reusableFunctionSpec(
+                        functionId = parentFunctionId,
+                        name = "Call Open Settings",
+                        description = "Parent Function that reuses the open Settings segment.",
+                        steps = listOf(callFunctionStep(childFunctionId))
+                    )
+                )
+            )
+            assertEquals(true, registerChild["success"])
+            assertEquals(true, registerParent["success"])
+
+            val storedChild = toolkit.getFunction(mapOf("function_id" to childFunctionId))
+            assertEquals(childFunctionId, storedChild["function_id"])
+            val recall = toolkit.recall(mapOf("goal" to "open settings", "current_package" to "com.android.contacts"))
+            assertEquals(true, recall["success"])
+            assertEquals("miss", recall["decision"])
+            assertEquals("missing_current_page_for_udeg_page_match", recall["reason"])
+
+            val firstRun = toolkit.callFunction(
+                mapOf(
+                    "function_id" to parentFunctionId,
+                    "goal" to "open settings",
+                )
+            )
+            assertOpenSettingsParentRun(firstRun, childFunctionId)
+            assertEquals(listOf("com.android.settings"), backend.launchedPackages)
+            assertEquals("com.android.settings", backend.currentPackageName())
+
+            backend.setCurrentPackage("com.android.contacts")
+            val secondRun = toolkit.callFunction(
+                mapOf(
+                    "function_id" to parentFunctionId,
+                    "goal" to "open settings",
+                )
+            )
+            assertOpenSettingsParentRun(secondRun, childFunctionId)
+            assertEquals(
+                listOf("com.android.settings", "com.android.settings"),
+                backend.launchedPackages
+            )
+            assertEquals("com.android.settings", backend.currentPackageName())
+        } finally {
+            backendHandle.close()
+            context.root.deleteRecursively()
+        }
+    }
+
+    private fun assertOpenSettingsParentRun(run: Map<String, Any?>, childFunctionId: String) {
+        assertEquals(true, run["success"])
+        assertEquals(false, run["fallback"])
+        assertEquals(1, (run["actions_executed"] as Number).toInt())
+        val stepResults = run["step_results"] as? List<*>
+        val parentStep = stepResults?.single() as? Map<*, *>
+        assertEquals("call_tool", parentStep?.get("tool"))
+        assertEquals("omniflow_function", parentStep?.get("executor"))
+        assertEquals(childFunctionId, parentStep?.get("nested_function_id"))
+        assertEquals(true, parentStep?.get("success"))
+        val nestedSteps = parentStep?.get("step_results") as? List<*>
+        val nestedStep = nestedSteps?.single() as? Map<*, *>
+        assertEquals("open_app", nestedStep?.get("tool"))
+        assertEquals("omniflow", nestedStep?.get("executor"))
+        assertEquals(true, nestedStep?.get("success"))
+    }
+
+    private fun reusableFunctionSpec(
+        functionId: String,
+        name: String,
+        description: String,
+        steps: List<Map<String, Any?>>
+    ): Map<String, Any?> = mapOf(
+        "schema_version" to "oob.reusable_function.v1",
+        "function_id" to functionId,
+        "name" to name,
+        "description" to description,
+        "parameters" to emptyList<Map<String, Any?>>(),
+        "source" to mapOf(
+            "source" to "unit_test",
+            "goal" to description,
+            "tool_name" to "omniflow.call_tool"
+        ),
+        "execution" to mapOf(
+            "kind" to "tool_sequence",
+            "runner" to "oob_tool_sequence",
+            "entrypoint" to "execute",
+            "capabilities" to mapOf(
+                "scriptable_step_count" to steps.size,
+                "model_free_step_count" to steps.size,
+                "omniflow_step_count" to steps.size,
+                "agent_step_count" to 0,
+                "requires_agent_fallback" to false,
+            ),
+            "steps" to steps,
+            "step_count" to steps.size,
+            "omniflow_step_count" to steps.size,
+            "agent_step_count" to 0,
+            "requires_agent_fallback" to false,
+        )
+    )
+
+    private fun openSettingsStep(): Map<String, Any?> = mapOf(
+        "id" to "open_settings",
+        "index" to 0,
+        "title" to "Open Settings",
+        "kind" to "omniflow_action",
+        "executor" to "omniflow",
+        "omniflow_action" to "open_app",
+        "local_action" to "open_app",
+        "tool" to "open_app",
+        "callable_tool" to "open_app",
+        "model_free" to true,
+        "scriptable" to true,
+        "args" to mapOf("package_name" to "com.android.settings"),
+    )
+
+    private fun callFunctionStep(functionId: String): Map<String, Any?> = mapOf(
+        "id" to "call_open_settings_segment",
+        "index" to 0,
+        "title" to "Call open Settings segment",
+        "kind" to "omniflow_function",
+        "executor" to "omniflow",
+        "tool" to "call_tool",
+        "callable_tool" to "call_tool",
+        "model_free" to true,
+        "scriptable" to true,
+        "args" to mapOf(
+            "function_id" to functionId,
+            "arguments" to emptyMap<String, Any?>(),
+        ),
+    )
+
+    private class RecordingOmniflowBackend(initialPackage: String) : OmniflowActionBackend {
+        private var currentPackage = initialPackage
+        val launchedPackages = mutableListOf<String>()
+
+        override fun isReady(): Boolean = true
+
+        override suspend fun click(x: Float, y: Float) {
+            error("click should not be used by this test")
+        }
+
+        override suspend fun longPress(x: Float, y: Float, durationMs: Long) {
+            error("longPress should not be used by this test")
+        }
+
+        override suspend fun scroll(
+            x: Float,
+            y: Float,
+            direction: ScrollDirection,
+            distance: Float,
+            durationMs: Long
+        ) {
+            error("scroll should not be used by this test")
+        }
+
+        override suspend fun inputTextToFocusedNode(text: String) {
+            error("inputTextToFocusedNode should not be used by this test")
+        }
+
+        override suspend fun launchApplication(packageName: String) {
+            launchedPackages += packageName
+            currentPackage = packageName
+        }
+
+        override suspend fun pressHotKey(key: String) {
+            error("pressHotKey should not be used by this test")
+        }
+
+        override fun currentXml(): String? = null
+
+        override fun currentPackageName(): String = currentPackage
+
+        override fun currentActivityName(): String? = null
+
+        fun setCurrentPackage(packageName: String) {
+            currentPackage = packageName
+        }
+    }
+
+    class TempFilesContext : ContextWrapper(null) {
         val root: File = Files.createTempDirectory("oob-omniflow-loop-test").toFile()
         private val prefsByName = linkedMapOf<String, InMemorySharedPreferences>()
 
