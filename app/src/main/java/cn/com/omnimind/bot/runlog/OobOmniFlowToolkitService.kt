@@ -78,13 +78,9 @@ class OobOmniFlowToolkitService(
             topK = k,
         )
         val nodeCandidates = nodeMatches.map { it.toMap() }
-        val specsById = replayService.listFunctionSpecs(limit = 500).associateBy {
-            it["function_id"]?.toString()?.trim().orEmpty()
-        }
         val ranked = nodeMatches.flatMap { nodeMatch ->
             OobUdegNodeStore.functionIds(nodeMatch.node).mapNotNull { functionId ->
-                val spec = specsById[functionId] ?: replayService.getFunctionSpec(functionId)
-                    ?: return@mapNotNull null
+                val spec = replayService.getFunctionSpec(functionId) ?: return@mapNotNull null
                 val textScore = scoreFunctionText(
                     spec = spec,
                     goal = goal,

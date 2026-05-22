@@ -776,6 +776,60 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
+    fun `allows finished when observation satisfies pending verify target`() {
+        val step = VLMStep(
+            observation = "The Display page is visible with Brightness level and Dark theme options shown.",
+            thought = "the requested page is verified",
+            summary = "Display settings page is confirmed open with Brightness level and Dark theme visible.",
+            action = FinishedAction(content = "Display page is visible with Brightness level and Dark theme.")
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = DISPLAY_VERIFY_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(displaySettingsStep())
+            ),
+            currentXml = DISPLAY_SETTINGS_PAGE_XML,
+            currentPackageName = "com.android.settings",
+            stepIndex = 1,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertFalse(result.applied)
+        assertTrue(result.step.action is FinishedAction)
+    }
+
+    @Test
+    fun `allows finished when repeated terms appear in pending verify target`() {
+        val step = VLMStep(
+            observation = "The Network & internet page is visible with options like Internet, SIMs, and others.",
+            thought = "the network page is verified",
+            summary = "Network & internet page verified with Internet and SIMs options visible.",
+            action = FinishedAction(content = "Network & internet page is visible with Internet and SIMs.")
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = NETWORK_VERIFY_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(networkSettingsStep())
+            ),
+            currentXml = NETWORK_SETTINGS_PAGE_XML,
+            currentPackageName = "com.android.settings",
+            stepIndex = 1,
+            displayWidth = 1080,
+            displayHeight = 2400
+        )
+
+        assertFalse(result.applied)
+        assertTrue(result.step.action is FinishedAction)
+    }
+
+    @Test
     fun `allows finished after every ordered target was clicked in order`() {
         val step = VLMStep(
             observation = "phone detail page",
@@ -801,6 +855,12 @@ class VLMActionPostProcessorTest {
     }
 
     companion object {
+        private const val DISPLAY_VERIFY_TASK =
+            "From the Settings home screen, open Display settings, verify the Display page is visible with Brightness level or Dark theme, then finish."
+
+        private const val NETWORK_VERIFY_TASK =
+            "From the Settings home screen, open Network & internet settings, verify the Network & internet page is visible with Internet or SIMs, then finish."
+
         private const val DEFAULT_APPS_ORDERED_TASK =
             "From Settings home, open Apps, open Default apps, open Browser app, verify the Browser app page is visible, go back to Default apps, open Phone app, verify the Phone app page is visible, then finish."
 
@@ -851,6 +911,22 @@ class VLMActionPostProcessorTest {
                 thought = "open Phone app",
                 action = ClickAction(targetDescription = "Phone app Phone LinearLayout", x = 540f, y = 1525f),
                 result = "clicked Phone app"
+            )
+
+        private fun displaySettingsStep(): UIStep =
+            UIStep(
+                observation = "settings home",
+                thought = "open Display settings",
+                action = ClickAction(targetDescription = "click on Display settings", x = 360f, y = 857f),
+                result = "clicked Display settings"
+            )
+
+        private fun networkSettingsStep(): UIStep =
+            UIStep(
+                observation = "settings home",
+                thought = "open Network & internet settings",
+                action = ClickAction(targetDescription = "Network & internet option", x = 540f, y = 885.5f),
+                result = "clicked Network & internet"
             )
 
         private fun pressBackStep(): UIStep =
@@ -1028,6 +1104,43 @@ class VLMActionPostProcessorTest {
                   <node clickable="true" focusable="true" bounds="[0,508][720,664]">
                     <node text="Brightness level" bounds="[48,540][330,594]" />
                     <node text="100%" bounds="[48,594][117,632]" />
+                  </node>
+                </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val DISPLAY_SETTINGS_PAGE_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][720,1280]">
+                <node content-desc="Navigate up" clickable="true" focusable="true" enabled="true" bounds="[0,48][112,160]" />
+                <node scrollable="true" bounds="[0,406][720,1232]">
+                  <node text="Brightness" bounds="[48,454][688,492]" />
+                  <node clickable="true" focusable="true" bounds="[0,508][720,664]">
+                    <node text="Brightness level" bounds="[48,540][330,594]" />
+                    <node text="100%" bounds="[48,594][117,632]" />
+                  </node>
+                  <node text="Appearance" bounds="[48,1126][688,1164]" />
+                  <node clickable="true" focusable="true" bounds="[0,1180][720,1232]">
+                    <node text="Dark theme" bounds="[48,1212][252,1232]" />
+                  </node>
+                </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val NETWORK_SETTINGS_PAGE_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][1080,2400]">
+                <node content-desc="Navigate up" clickable="true" focusable="true" enabled="true" bounds="[80,128][227,275]" />
+                <node scrollable="true" bounds="[80,598][1160,2337]">
+                  <node clickable="true" focusable="true" bounds="[80,598][1160,804]">
+                    <node text="Internet" bounds="[269,640][449,711]" />
+                  </node>
+                  <node clickable="true" focusable="true" bounds="[80,1010][1160,1216]">
+                    <node text="SIMs" bounds="[269,1052][387,1123]" />
                   </node>
                 </node>
               </node>

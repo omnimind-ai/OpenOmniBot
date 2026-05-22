@@ -12,6 +12,7 @@ PROFILE_ID="${OOB_PROVIDER_PROFILE_ID:-profile-dashscope}"
 MODEL_ID="${OMNIMIND_MODEL:-${OPENAI_MODEL:-qwen-vl-max-latest}}"
 BASE_URL="${OMNIMIND_API_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}"
 API_KEY_ENV="${OMNIMIND_API_KEY_ENV:-DASHSCOPE_API_KEY}"
+SKILL_ID="${OOB_E2E_SKILL_ID:-vlm-android-gui}"
 MAX_STEPS="${OOB_E2E_MAX_STEPS:-10}"
 TIMEOUT_SECONDS="${OOB_E2E_TIMEOUT_SECONDS:-240}"
 CONFIGURE_PROVIDER=1
@@ -33,6 +34,7 @@ Options:
   --api-key-env <name>       Env var for API key. Default: DASHSCOPE_API_KEY.
   --model <model>            Model id. Default: qwen-vl-max-latest.
   --profile-id <id>          Provider profile id. Default: profile-dashscope.
+  --skill-id <id>            Builtin skill guidance for VLM. Default: vlm-android-gui.
   --skip-configure-provider  Do not call scripts/configure-oob-model-provider.sh.
   --help                     Show this help text.
 EOF
@@ -102,6 +104,13 @@ while [[ $# -gt 0 ]]; do
       ;;
     --profile-id=*)
       PROFILE_ID="${1#--profile-id=}"
+      ;;
+    --skill-id)
+      SKILL_ID="$2"
+      shift
+      ;;
+    --skill-id=*)
+      SKILL_ID="${1#--skill-id=}"
       ;;
     --skip-configure-provider)
       CONFIGURE_PROVIDER=0
@@ -173,6 +182,27 @@ print("true" if data.get("success") is True else "false")
 '
 }
 
+json_validate_vlm_token_usage() {
+  python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+total = data.get("token_usage_total")
+if total is None:
+    total = (data.get("token_usage") or {}).get("total_tokens")
+try:
+    total_int = int(total)
+except Exception:
+    total_int = 0
+steps = data.get("token_usage_by_step") or []
+if total_int <= 0:
+    raise SystemExit("missing token_usage_total")
+if not steps:
+    raise SystemExit("missing token_usage_by_step")
+print(f"token_usage_total={total_int}")
+print(f"token_usage_step_count={len(steps)}")
+'
+}
+
 base64_no_wrap() {
   python3 -c 'import base64, sys; print(base64.b64encode(sys.stdin.buffer.read()).decode("ascii"))'
 }
@@ -182,6 +212,7 @@ echo "device=$DEVICE_SERIAL"
 echo "package=$PACKAGE_NAME"
 echo "model=$MODEL_ID"
 echo "profile_id=$PROFILE_ID"
+echo "skill_id=$SKILL_ID"
 echo "goal=$GOAL"
 
 if [[ "$CONFIGURE_PROVIDER" -eq 1 ]]; then
@@ -198,6 +229,7 @@ if [[ "$CONFIGURE_PROVIDER" -eq 1 ]]; then
 fi
 
 echo "== Prepare device =="
+"${ADB[@]}" shell appops set "$PACKAGE_NAME" SYSTEM_ALERT_WINDOW allow
 "${ADB[@]}" shell settings put secure enabled_accessibility_services "$PACKAGE_NAME/com.google.android.accessibility.selecttospeak.SelectToSpeakService"
 "${ADB[@]}" shell settings put secure accessibility_enabled 1
 "${ADB[@]}" shell am start -a android.settings.SETTINGS >/dev/null
@@ -214,7 +246,8 @@ goal_b64="$(printf '%s' "$GOAL" | base64_no_wrap)"
   --ei maxSteps "$MAX_STEPS" \
   --ez register true \
   --es profileId "$PROFILE_ID" \
-  --es modelId "$MODEL_ID" >/dev/null
+  --es modelId "$MODEL_ID" \
+  --es skillId "$SKILL_ID" >/dev/null
 
 vlm_result="$(wait_for_result_file "$VLM_RESULT_FILE" "VLM runlog")"
 printf '%s\n' "$vlm_result"
@@ -227,6 +260,7 @@ if [[ "$vlm_success" != "true" || -z "$function_id" ]]; then
   exit 1
 fi
 
+printf '%s' "$vlm_result" | json_validate_vlm_token_usage
 echo "registered_function_id=$function_id"
 
 echo "== Phase 2: registered function replay =="

@@ -10,6 +10,7 @@ import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -132,6 +133,60 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals(functionId, stored["function_id"])
             assertEquals(1, (execution?.get("omniflow_step_count") as Number).toInt())
             assertEquals(false, execution["requires_agent_fallback"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `recall only ranks functions attached to the page matched UDEG node`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val matchingFunctionId = "open_network_from_matched_node"
+            val otherFunctionId = "open_network_from_other_node"
+
+            val matchingRegister = toolkit.registerFunction(
+                mapOf(
+                    "functionSpec" to pageBackedFunctionSpec(
+                        functionId = matchingFunctionId,
+                        description = "open network settings",
+                        sourceXml = SOURCE_XML,
+                        packageName = "com.example.settings"
+                    )
+                )
+            )
+            val otherRegister = toolkit.registerFunction(
+                mapOf(
+                    "functionSpec" to pageBackedFunctionSpec(
+                        functionId = otherFunctionId,
+                        description = "open network settings",
+                        sourceXml = AFTER_XML,
+                        packageName = "com.example.settings"
+                    )
+                )
+            )
+            assertEquals(true, matchingRegister["success"])
+            assertEquals(true, otherRegister["success"])
+
+            val recall = toolkit.recall(
+                mapOf(
+                    "goal" to "open network settings",
+                    "current_package" to "com.example.settings",
+                    "current_xml" to SOURCE_XML,
+                    "k" to 5,
+                )
+            )
+
+            assertEquals(true, recall["success"])
+            assertEquals("hit", recall["decision"])
+            val hit = recall["hit"] as? Map<*, *>
+            assertEquals(matchingFunctionId, hit?.get("function_id"))
+
+            val currentNode = recall["current_node"] as? Map<*, *>
+            val functionIds = currentNode?.get("function_ids") as? List<*>
+            assertTrue(functionIds.orEmpty().contains(matchingFunctionId))
+            assertFalse(functionIds.orEmpty().contains(otherFunctionId))
         } finally {
             context.root.deleteRecursively()
         }
@@ -328,6 +383,46 @@ class OobOmniFlowLoopAcceptanceTest {
             "agent_step_count" to 0,
             "requires_agent_fallback" to false,
         )
+    )
+
+    private fun pageBackedFunctionSpec(
+        functionId: String,
+        description: String,
+        sourceXml: String,
+        packageName: String
+    ): Map<String, Any?> = reusableFunctionSpec(
+        functionId = functionId,
+        name = description,
+        description = description,
+        steps = listOf(pageBackedFinishedStep(sourceXml, packageName))
+    ) + mapOf(
+        "source" to mapOf(
+            "source" to "unit_test",
+            "goal" to description,
+            "tool_name" to "omniflow.call_tool",
+            "package_name" to packageName,
+        )
+    )
+
+    private fun pageBackedFinishedStep(sourceXml: String, packageName: String): Map<String, Any?> = mapOf(
+        "id" to "finished",
+        "index" to 0,
+        "title" to "Task completed",
+        "kind" to "omniflow_action",
+        "executor" to "omniflow",
+        "omniflow_action" to "finished",
+        "local_action" to "finished",
+        "tool" to "finished",
+        "callable_tool" to "finished",
+        "model_free" to true,
+        "scriptable" to true,
+        "args" to mapOf("content" to "Done"),
+        "source_context" to mapOf(
+            "src_ctx" to mapOf(
+                "page" to sourceXml,
+                "package_name" to packageName,
+            )
+        ),
     )
 
     private fun openSettingsStep(): Map<String, Any?> = mapOf(

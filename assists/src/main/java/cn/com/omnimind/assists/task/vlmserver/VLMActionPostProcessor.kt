@@ -124,6 +124,10 @@ object VLMActionPostProcessor {
         val progress = orderedGoalProgress(context) ?: return null
         val pendingTarget = progress.pendingTarget ?: return null
 
+        if (step.hasOrderedTargetCompletionEvidence(pendingTarget)) {
+            return null
+        }
+
         val visibleTarget = page.bestOrderedGoalClickTarget(pendingTarget)
         if (visibleTarget != null) {
             return corrected(
@@ -1296,13 +1300,23 @@ object VLMActionPostProcessor {
         return orderedTargetTextScore(target, actionText) >= MIN_ORDERED_TARGET_ACTION_SCORE
     }
 
+    private fun VLMStep.hasOrderedTargetCompletionEvidence(target: OrderedGoalTarget): Boolean {
+        val finishedContent = (action as? FinishedAction)?.content.orEmpty()
+        val evidence = listOf(observation, summary, finishedContent)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+        return orderedTargetTextScore(target, evidence) >= MIN_ORDERED_TARGET_VISIBLE_SCORE
+    }
+
     private fun orderedTargetTextScore(target: OrderedGoalTarget, text: String): Double {
         val normalizedText = normalizeText(text)
         if (target.normalizedLabel.isBlank() || normalizedText.isBlank()) return 0.0
         val targetTerms = semanticTerms(target.normalizedLabel)
             .filterNot { it in STOP_WORDS || it in ORDERED_TARGET_STOP_WORDS }
+            .distinct()
         val textTerms = semanticTerms(normalizedText)
             .filterNot { it in STOP_WORDS || it in ORDERED_TARGET_STOP_WORDS }
+            .distinct()
         if (targetTerms.isEmpty() || textTerms.isEmpty()) return 0.0
 
         if (targetTerms.size == 1) {
@@ -1745,6 +1759,17 @@ object VLMActionPostProcessor {
         "visibility",
         "shown",
         "showing",
+        "show",
+        "is",
+        "are",
+        "be",
+        "with",
+        "and",
+        "or",
+        "that",
+        "has",
+        "have",
+        "contains",
         "finish",
         "finished"
     )
@@ -1756,6 +1781,7 @@ object VLMActionPostProcessor {
     private const val MIN_VISIBLE_TARGET_SCORE = 0.58
     private const val MIN_ORDERED_TARGET_COUNT = 2
     private const val MIN_ORDERED_TARGET_NODE_SCORE = 0.76
+    private const val MIN_ORDERED_TARGET_VISIBLE_SCORE = 0.76
     private const val MIN_ORDERED_TARGET_ACTION_SCORE = 0.88
     private const val MIN_FORM_FIELD_NARRATIVE_SCORE = 118.0
     private const val MIN_NUMERIC_KEYPAD_KEYS = 6

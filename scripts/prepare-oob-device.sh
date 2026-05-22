@@ -199,6 +199,8 @@ fi
 
 if [[ "$ENABLE_ACCESSIBILITY" -eq 1 ]]; then
   COMPONENT="${PACKAGE_NAME}/${ACCESSIBILITY_SERVICE}"
+  echo "Allowing OOB overlay app-op: $PACKAGE_NAME"
+  "${ADB[@]}" shell appops set "$PACKAGE_NAME" SYSTEM_ALERT_WINDOW allow || true
   echo "Enabling OOB Accessibility service: $COMPONENT"
   "${ADB[@]}" shell settings put secure enabled_accessibility_services "$COMPONENT" || true
   "${ADB[@]}" shell settings put secure accessibility_enabled 1 || true
