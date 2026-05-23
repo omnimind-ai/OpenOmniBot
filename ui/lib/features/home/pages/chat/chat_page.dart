@@ -188,7 +188,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       KeyboardInsetMotionTracker();
   final Map<ChatPageMode, ChatIslandDisplayLayer>
   _chatIslandDisplayLayerByMode = {
-    ChatPageMode.normal: ChatIslandDisplayLayer.model,
+    ChatPageMode.normal: ChatIslandDisplayLayer.tools,
     ChatPageMode.openclaw: ChatIslandDisplayLayer.mode,
     ChatPageMode.codex: ChatIslandDisplayLayer.mode,
   };
@@ -499,7 +499,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       _runtimeForMode(mode)?.chatIslandDisplayLayer ??
       (_chatIslandDisplayLayerByMode[mode] ??
           (mode == ChatPageMode.normal
-              ? ChatIslandDisplayLayer.model
+              ? ChatIslandDisplayLayer.tools
               : ChatIslandDisplayLayer.mode));
   bool get _isOpenClawSurface => _activeSurfaceMode == ChatSurfaceMode.openclaw;
   bool get _isWorkspaceSurface =>
@@ -947,14 +947,14 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     });
   }
 
-  void _forceNormalSurfaceModeLayer() {
+  void _forceNormalSurfaceToolLayer() {
     if (_chatIslandDisplayLayerForMode(ChatPageMode.normal) ==
-        ChatIslandDisplayLayer.mode) {
+        ChatIslandDisplayLayer.tools) {
       return;
     }
     _setChatIslandDisplayLayerForMode(
       ChatPageMode.normal,
-      ChatIslandDisplayLayer.mode,
+      ChatIslandDisplayLayer.tools,
     );
   }
 
@@ -962,17 +962,17 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     _cancelNormalSurfaceModelReveal();
     if (!mounted) {
       _isSurfacePageScrolling = true;
-      _forceNormalSurfaceModeLayer();
+      _forceNormalSurfaceToolLayer();
       return;
     }
     if (_isSurfacePageScrolling &&
         _chatIslandDisplayLayerForMode(ChatPageMode.normal) ==
-            ChatIslandDisplayLayer.mode) {
+            ChatIslandDisplayLayer.tools) {
       return;
     }
     setState(() {
       _isSurfacePageScrolling = true;
-      _forceNormalSurfaceModeLayer();
+      _forceNormalSurfaceToolLayer();
     });
   }
 
@@ -982,7 +982,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
       _isSurfacePageScrolling = false;
       if (mode == ChatSurfaceMode.normal) {
         _resetNormalSurfaceModelRevealInterruption();
-        _forceNormalSurfaceModeLayer();
+        _forceNormalSurfaceToolLayer();
       }
       return;
     }
@@ -990,13 +990,13 @@ abstract class _ChatPageStateBase extends State<ChatPage>
         _isSurfacePageScrolling ||
         (mode == ChatSurfaceMode.normal &&
             _chatIslandDisplayLayerForMode(ChatPageMode.normal) !=
-                ChatIslandDisplayLayer.mode);
+                ChatIslandDisplayLayer.tools);
     if (shouldSettleState) {
       setState(() {
         _isSurfacePageScrolling = false;
         if (mode == ChatSurfaceMode.normal) {
           _resetNormalSurfaceModelRevealInterruption();
-          _forceNormalSurfaceModeLayer();
+          _forceNormalSurfaceToolLayer();
         }
       });
     } else {
@@ -1447,6 +1447,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     }
     if (!_isWorkspaceSurface && pageMode == _activeConversationMode) {
       unawaited(_persistVisibleThreadTargetIfNeeded());
+      unawaited(_syncVisibleChatConversation());
     }
     // Reload the embedded drawer's conversation list so newly persisted
     // conversations appear immediately, matching phone-mode behaviour where
@@ -1620,7 +1621,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
     _isInputAreaVisibleByMode[mode] = true;
     _isExecutingTaskByMode[mode] = false;
     _chatIslandDisplayLayerByMode[mode] = mode == ChatPageMode.normal
-        ? ChatIslandDisplayLayer.model
+        ? ChatIslandDisplayLayer.tools
         : ChatIslandDisplayLayer.mode;
     _lastAgentToolTypeByMode[mode] = null;
     _runtimeChromeSignatureByMode[mode] = '';
@@ -1740,6 +1741,10 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   );
 
   Future<void> _persistVisibleThreadTargetIfNeeded();
+
+  Future<void> _syncVisibleChatConversation();
+
+  Future<void> _clearVisibleChatConversation();
 
   void _notifySummarySheetReadyIfNeeded();
 

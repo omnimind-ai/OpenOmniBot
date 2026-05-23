@@ -79,7 +79,7 @@ class ChatConversationRuntimeState {
     required this.conversationId,
     required this.mode,
   }) : chatIslandDisplayLayer = mode == kChatRuntimeModeNormal
-           ? ChatIslandDisplayLayer.model
+           ? ChatIslandDisplayLayer.tools
            : ChatIslandDisplayLayer.mode;
 
   final int conversationId;

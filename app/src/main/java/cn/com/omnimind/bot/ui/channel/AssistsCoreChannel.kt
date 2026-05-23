@@ -292,6 +292,18 @@ class AssistsCoreChannel {
                 "setAutoBackToChatAfterTaskEnabled" -> {
                     assistsCoreManager!!.setAutoBackToChatAfterTaskEnabled(call, result)
                 }
+                "setPreventScreenSleepDuringTasksEnabled" -> {
+                    assistsCoreManager!!.setPreventScreenSleepDuringTasksEnabled(call, result)
+                }
+                "setTaskCompletionNotificationEnabled" -> {
+                    assistsCoreManager!!.setTaskCompletionNotificationEnabled(call, result)
+                }
+                "setVisibleChatConversation" -> {
+                    assistsCoreManager!!.setVisibleChatConversation(call, result)
+                }
+                "showTaskCompletionNotification" -> {
+                    assistsCoreManager!!.showTaskCompletionNotification(call, result)
+                }
                 "navigateToMainEngineRoute" -> {
                     assistsCoreManager!!.navigateToMainEngineRoute(call, result)
                 }

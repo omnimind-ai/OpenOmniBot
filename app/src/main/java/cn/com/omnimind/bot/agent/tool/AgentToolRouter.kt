@@ -4,6 +4,7 @@ import android.content.Context
 import cn.com.omnimind.bot.agent.tool.handlers.BrowserToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.ContextToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.FileToolHandler
+import cn.com.omnimind.bot.agent.tool.handlers.ImageGenerationToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.McpToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.MemoryLoadToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.MemoryToolHandler
@@ -45,6 +46,7 @@ class AgentToolRouter(
         privilegedHandler,
         terminalHandler,
         BrowserToolHandler(helper, workspaceManager),
+        ImageGenerationToolHandler(helper, workspaceManager),
         FileToolHandler(helper, workspaceManager),
         SkillsToolHandler(helper, workspaceManager),
         SystemToolHandler(helper, scheduleToolBridge, workspaceManager),

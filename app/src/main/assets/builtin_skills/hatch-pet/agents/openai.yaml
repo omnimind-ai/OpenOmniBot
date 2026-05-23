@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hatch Pet"
+  short_description: "Generate Omnibot animated pets"
+  default_prompt: "Use $hatch-pet and image_generate with gpt-image-2 to create an Omnibot-compatible animated pet package from a concept, company brand, or reference image."

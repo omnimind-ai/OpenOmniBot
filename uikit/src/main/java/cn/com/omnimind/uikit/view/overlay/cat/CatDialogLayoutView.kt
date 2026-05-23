@@ -135,9 +135,9 @@ class CatDialogLayoutView @JvmOverloads constructor(
         this.message(message)
     }
 
-    fun message(message: String) {
+    fun message(message: String, keepVisibleUntilClosed: Boolean = false) {
         checkLockAndChangeStatus(DraggableViewState.MESSAGE) {
-            messageView.setMessage(message)
+            messageView.setMessage(message, keepVisibleUntilClosed)
         }
     }
 

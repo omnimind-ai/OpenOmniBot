@@ -1450,6 +1450,78 @@ class AssistsMessageService {
     }
   }
 
+  static Future<bool> setPreventScreenSleepDuringTasksEnabled(
+    bool enabled,
+  ) async {
+    try {
+      final result = await assistCore.invokeMethod<String>(
+        'setPreventScreenSleepDuringTasksEnabled',
+        {'enabled': enabled},
+      );
+      return result == 'SUCCESS';
+    } on PlatformException catch (e) {
+      print('Failed to sync prevent sleep setting: ${e.message}');
+      return false;
+    }
+  }
+
+  static Future<bool> setTaskCompletionNotificationEnabled(bool enabled) async {
+    try {
+      final result = await assistCore.invokeMethod<String>(
+        'setTaskCompletionNotificationEnabled',
+        {'enabled': enabled},
+      );
+      return result == 'SUCCESS';
+    } on PlatformException catch (e) {
+      print('Failed to sync task completion notification setting: ${e.message}');
+      return false;
+    }
+  }
+
+  static Future<bool> setVisibleChatConversation({
+    int? conversationId,
+    String? conversationMode,
+    bool visible = true,
+  }) async {
+    try {
+      final result = await assistCore.invokeMethod<String>(
+        'setVisibleChatConversation',
+        {
+          'conversationId': conversationId ?? 0,
+          'visible': visible,
+          if (conversationMode != null) 'mode': conversationMode,
+        },
+      );
+      return result == 'SUCCESS';
+    } on PlatformException catch (e) {
+      print('Failed to sync visible chat conversation: ${e.message}');
+      return false;
+    }
+  }
+
+  static Future<bool> showTaskCompletionNotification({
+    required String title,
+    required String message,
+    int? conversationId,
+    String? conversationMode,
+  }) async {
+    try {
+      final result = await assistCore.invokeMethod<String>(
+        'showTaskCompletionNotification',
+        {
+          'title': title,
+          'message': message,
+          if (conversationId != null) 'conversationId': conversationId,
+          if (conversationMode != null) 'conversationMode': conversationMode,
+        },
+      );
+      return result == 'SUCCESS';
+    } on PlatformException catch (e) {
+      print('Failed to show task completion notification: ${e.message}');
+      return false;
+    }
+  }
+
   /// 跳转到主引擎路由
   static Future<bool> navigateToMainEngineRoute(String route) async {
     try {

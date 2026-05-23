@@ -25,6 +25,10 @@ object DraggableBallInstance {
     @SuppressLint("StaticFieldLeak")
     @Volatile
     private var dragBall: DraggableBallLoader? = null
+
+    @Volatile
+    private var isTaskCompletionHintVisible = false
+
     private const val TAG = "DraggableBallInstance"
 
     fun getInstance(): DraggableBallLoader? {
@@ -45,14 +49,27 @@ object DraggableBallInstance {
     /**
      * 加载小猫
      */
-    fun loadBall() {
-        getInstance()?.loadBall()
+    fun loadBall(): Boolean {
+        val instance = getInstance() ?: return false
+        instance.loadBall()
+        return instance.isAttachedToWindow
+    }
+
+    fun isShowing(): Boolean {
+        return dragBall?.isAttachedToWindow == true
+    }
+
+    fun refreshPetAppearance() {
+        dragBall?.catView?.post {
+            dragBall?.catView?.refreshPetAppearance()
+        }
     }
 
     /**
      * 收起小猫
      */
     fun collapse() {
+        isTaskCompletionHintVisible = false
         getInstance()?.collapse()
 
     }
@@ -228,6 +245,34 @@ object DraggableBallInstance {
 
     }
 
+    fun showTaskCompletionHint(message: String): Boolean {
+        val instance = dragBall ?: return false
+        if (!instance.isAttachedToWindow) {
+            return false
+        }
+        isTaskCompletionHintVisible = true
+        instance.catView.post {
+            instance.catView.visibility = View.VISIBLE
+            instance.catDialogLayoutView.visibility = View.VISIBLE
+            instance.catView.setViewState(DraggableViewState.MESSAGE)
+            instance.catDialogLayoutView.message(message, keepVisibleUntilClosed = true)
+            instance.collapseMenu()
+            instance.bringCatToFront()
+        }
+        return true
+    }
+
+    fun clearTaskCompletionHint() {
+        if (!isTaskCompletionHintVisible) return
+        isTaskCompletionHintVisible = false
+        val instance = dragBall ?: return
+        instance.catView.post {
+            if (instance.catDialogLayoutView.getCurrentState() == DraggableViewState.MESSAGE) {
+                instance.collapse()
+            }
+        }
+    }
+
     /**
      *  显示任务结束消息
      */
@@ -263,6 +308,7 @@ object DraggableBallInstance {
     }
 
     fun destroy() {
+        isTaskCompletionHintVisible = false
         // 取消待执行的动画任务
         getInstance()?.destroy()
         // 清除单例实例引用

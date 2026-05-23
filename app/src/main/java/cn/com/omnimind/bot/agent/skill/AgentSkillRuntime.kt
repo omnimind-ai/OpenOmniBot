@@ -122,14 +122,19 @@ private class BuiltinSkillAssetStore(
         val registry = registryStore.read()
         var changed = false
         listBuiltins().forEach { builtin ->
-            val targetDir = targetDirFor(builtin)
-            if (targetDir.exists()) {
+            val registryEntry = registry[builtin.id]
+            if (registryEntry?.installState == INSTALL_STATE_REMOVED_BUILTIN) {
                 return@forEach
             }
-            if (registry.containsKey(builtin.id)) {
+            if (registryEntry?.source == USER_SOURCE) {
                 return@forEach
             }
             installBuiltinInternal(builtin)
+            if (registryEntry?.source == BUILTIN_SOURCE &&
+                registryEntry.installState == INSTALL_STATE_INSTALLED
+            ) {
+                return@forEach
+            }
             registry[builtin.id] = SkillRegistryEntry(
                 enabled = true,
                 source = BUILTIN_SOURCE,
@@ -562,6 +567,8 @@ class SkillIndexService(
             .removeSuffix("/skill.md")
             .removeSuffix("/")
             .replace(Regex("\\s+"), "")
+            .replace("-", "")
+            .replace("_", "")
     }
 
     private fun sourceRank(source: String): Int {
@@ -678,7 +685,50 @@ object SkillTriggerMatcher {
                 score += 0.35
             }
         }
+        if (entry.id == "hatch-pet" && looksLikePetCreationRequest(normalizedMessage)) {
+            score += 1.0
+        }
         return min(score, 1.5)
+    }
+
+    private fun looksLikePetCreationRequest(normalizedMessage: String): Boolean {
+        val hasPetTarget = listOf(
+            "电子宠物",
+            "悬浮窗宠物",
+            "自定义宠物",
+            "宠物名称",
+            "宠物类型",
+            "视觉风格",
+            "性格设定",
+            "生成宠物",
+            "创建宠物",
+            "设计宠物",
+            "做一个宠物",
+            "hatchpet"
+        ).any { normalizedMessage.contains(normalize(it)) }
+        if (!hasPetTarget) {
+            return false
+        }
+        val hasCreationIntent = listOf(
+            "创建",
+            "生成",
+            "设计",
+            "做一",
+            "做个",
+            "新建",
+            "替换",
+            "换成",
+            "hatchpet"
+        ).any { normalizedMessage.contains(normalize(it)) }
+        val hasStructuredPetSpec = listOf(
+            "宠物名称",
+            "宠物类型",
+            "视觉风格",
+            "性格设定",
+            "标志元素",
+            "主要颜色"
+        ).count { normalizedMessage.contains(normalize(it)) } >= 2
+        return hasCreationIntent || hasStructuredPetSpec
     }
 
     private fun extractCandidatePhrases(description: String): List<String> {
@@ -695,6 +745,8 @@ object SkillTriggerMatcher {
     private fun normalize(value: String): String {
         return value.lowercase()
             .replace(Regex("\\s+"), "")
+            .replace("-", "")
+            .replace("_", "")
             .replace("“", "")
             .replace("”", "")
             .replace("\"", "")

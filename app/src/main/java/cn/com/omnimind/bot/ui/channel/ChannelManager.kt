@@ -72,6 +72,7 @@ class ChannelManager {
         LocalModelFeature.onChannelManagerCreate(context)
         mcpServerChannel.onCreate(context)
         remoteMcpConfigChannel.onCreate()
+        overlayChannel.onCreate(context)
         storageUsageChannel.onCreate(context)
         codexAppServerChannel.onCreate(context)
     }

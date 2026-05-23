@@ -35,6 +35,7 @@ class CatApiImpl : CatApi {
     }
 
     override fun onCatClick(x: Int, y: Int) {
+        DraggableBallInstance.clearTaskCompletionHint()
         doTask.cancel()
         doTask = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         doTask.launch {

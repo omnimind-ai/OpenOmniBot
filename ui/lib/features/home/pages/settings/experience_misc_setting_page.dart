@@ -8,6 +8,7 @@ import 'package:ui/l10n/l10n.dart';
 import 'package:ui/models/habitual_hand.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/hide_from_recents_service.dart';
+import 'package:ui/services/special_permission.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/cache_util.dart';
@@ -27,7 +28,10 @@ class _ExperienceMiscSettingPageState
   bool _hideFromRecentsEnabled = false;
   bool _vibrationEnabled = true;
   bool _autoBackToChatAfterTaskEnabled = true;
+  bool _preventScreenSleepDuringTasksEnabled = true;
+  bool _taskCompletionNotificationEnabled = true;
   bool _useIndependentChatSendButton = true;
+
 
   @override
   void initState() {
@@ -38,11 +42,26 @@ class _ExperienceMiscSettingPageState
           defaultValue: true,
         ) ??
         true;
+    _preventScreenSleepDuringTasksEnabled =
+        StorageService.getBool(
+          StorageService.kPreventScreenSleepDuringTasksKey,
+          defaultValue: true,
+        ) ??
+        true;
+
+    _taskCompletionNotificationEnabled =
+        StorageService.getBool(
+          StorageService.kTaskCompletionNotificationEnabledKey,
+          defaultValue: true,
+        ) ??
+        true;
+
     _useIndependentChatSendButton =
         StorageService.isIndependentChatSendButtonEnabled();
     _loadHideFromRecentsState();
     _loadVibrationState();
     _loadAutoBackToChatAfterTaskState();
+    _loadRuntimeTaskState();
   }
 
   Future<void> _loadHideFromRecentsState() async {
@@ -83,6 +102,28 @@ class _ExperienceMiscSettingPageState
       });
     } catch (e) {
       debugPrint('Error loading auto back to chat setting: $e');
+    }
+  }
+
+  Future<void> _loadRuntimeTaskState() async {
+    try {
+      final preventSleep =
+          await StorageService.isPreventScreenSleepDuringTasksEnabled();
+      final notification =
+          await StorageService.isTaskCompletionNotificationEnabled();
+      if (!mounted) return;
+      setState(() {
+        _preventScreenSleepDuringTasksEnabled = preventSleep;
+        _taskCompletionNotificationEnabled = notification;
+      });
+      await AssistsMessageService.setPreventScreenSleepDuringTasksEnabled(
+        preventSleep,
+      );
+      await AssistsMessageService.setTaskCompletionNotificationEnabled(
+        notification,
+      );
+    } catch (e) {
+      debugPrint('Error loading runtime task settings: $e');
     }
   }
 
@@ -131,6 +172,54 @@ class _ExperienceMiscSettingPageState
       showToast(context.l10n.settingsSaveFailed, type: ToastType.error);
     }
   }
+
+  Future<void> _onPreventScreenSleepDuringTasksChanged(bool value) async {
+    try {
+      await StorageService.setPreventScreenSleepDuringTasksEnabled(value);
+      final synced =
+          await AssistsMessageService.setPreventScreenSleepDuringTasksEnabled(
+            value,
+          );
+      if (!synced) {
+        throw Exception('native_sync_failed');
+      }
+      if (!mounted) return;
+      setState(() {
+        _preventScreenSleepDuringTasksEnabled = value;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      showToast(context.l10n.settingsSaveFailed, type: ToastType.error);
+    }
+  }
+
+  Future<void> _onTaskCompletionNotificationChanged(bool value) async {
+    try {
+      if (value) {
+        final granted = await ensureNotificationPermission();
+        if (!granted) {
+          if (!mounted) return;
+          showToast(
+            context.trLegacy('需要开启通知权限'),
+            type: ToastType.error,
+          );
+          return;
+        }
+      }
+      await StorageService.setTaskCompletionNotificationEnabled(value);
+      final synced =
+          await AssistsMessageService.setTaskCompletionNotificationEnabled(
+            value,
+          );
+      if (!synced) {
+        throw Exception('native_sync_failed');
+      }
+      if (!mounted) return;
+      setState(() {
+        _taskCompletionNotificationEnabled = value;
+      });
+    } catch (e) {
+      if (!mounted) return;
 
   Future<void> _onIndependentChatSendButtonChanged(bool value) async {
     final saved = await StorageService.setIndependentChatSendButtonEnabled(
@@ -219,6 +308,28 @@ class _ExperienceMiscSettingPageState
             trailing: _buildSwitchTrailing(
               value: _autoBackToChatAfterTaskEnabled,
               onToggle: _onAutoBackToChatAfterTaskChanged,
+            ),
+          ),
+          _SettingItem(
+            icon: Icons.screen_lock_portrait_outlined,
+            title: context.trLegacy('防止任务运行时屏幕休眠'),
+            subtitle: context.trLegacy(
+              '任务运行期间保持屏幕常亮，适用于 Agent、Codex 和纯聊天',
+            ),
+            trailing: _buildSwitchTrailing(
+              value: _preventScreenSleepDuringTasksEnabled,
+              onToggle: _onPreventScreenSleepDuringTasksChanged,
+            ),
+          ),
+          _SettingItem(
+            icon: Icons.notifications_active_outlined,
+            title: context.trLegacy('任务完成通知'),
+            subtitle: context.trLegacy(
+              'Agent、Codex 和纯聊天完成后推送提醒',
+            ),
+            trailing: _buildSwitchTrailing(
+              value: _taskCompletionNotificationEnabled,
+              onToggle: _onTaskCompletionNotificationChanged,
             ),
           ),
           _SettingItem(

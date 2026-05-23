@@ -78,7 +78,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       _activeSurfaceMode = ChatSurfaceMode.normal;
       _setChatIslandDisplayLayerForMode(
         ChatPageMode.normal,
-        ChatIslandDisplayLayer.model,
+        ChatIslandDisplayLayer.tools,
       );
     }
     final route = ModalRoute.of(context);
@@ -282,6 +282,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     await _applyStagedSharedDraftIfNeeded(effectiveTarget);
     if (isStaleRequest()) return;
     await _persistVisibleThreadTargetIfNeeded();
+    unawaited(_syncVisibleChatConversation());
     if (isStaleRequest()) return;
     if (syncPage) {
       _jumpToCurrentModePage(animate: false);
@@ -562,6 +563,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
 
   @override
   void dispose() {
+    unawaited(_clearVisibleChatConversation());
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_runtimeCoordinator.flushAllPendingPersistence());
     _cancelNormalSurfaceModelReveal();
@@ -600,17 +602,23 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
   @override
   void didPopNext() {
     unawaited(_handleDidPopNext());
+    unawaited(_syncVisibleChatConversation());
   }
 
   @override
-  void didPush() {}
+  void didPush() {
+    unawaited(_syncVisibleChatConversation());
+  }
 
   @override
-  void didPop() {}
+  void didPop() {
+    unawaited(_clearVisibleChatConversation());
+  }
 
   @override
   void didPushNext() {
     _dismissChatInputFocus();
+    unawaited(_clearVisibleChatConversation());
   }
 
   Future<void> _handleDidPopNext() async {
@@ -648,6 +656,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       return;
     }
     setState(() {});
+    unawaited(_syncVisibleChatConversation());
   }
 
   Future<void> _handleExternalConversationMessagesChanged(
@@ -678,6 +687,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       return;
     }
     setState(() {});
+    unawaited(_syncVisibleChatConversation());
   }
 
   @override
@@ -806,7 +816,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
         _messageController.clear();
         _setChatIslandDisplayLayerForMode(
           ChatPageMode.normal,
-          ChatIslandDisplayLayer.mode,
+          ChatIslandDisplayLayer.tools,
         );
         _isBrowserOverlayVisible = false;
       });
@@ -826,11 +836,14 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       _resetNormalSurfaceModelRevealInterruption();
       _setChatIslandDisplayLayerForMode(
         targetConversationMode,
-        ChatIslandDisplayLayer.mode,
+        targetConversationMode == ChatPageMode.normal
+            ? ChatIslandDisplayLayer.tools
+            : ChatIslandDisplayLayer.mode,
       );
     });
     _applyDraftForConversationMode(targetConversationMode);
     await _persistVisibleThreadTargetIfNeeded();
+    unawaited(_syncVisibleChatConversation());
     if (isStaleRequest()) return;
     _hideSlashCommandPanel();
     if (targetConversationMode == ChatPageMode.normal) {
@@ -957,6 +970,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       });
     }
     if (state == AppLifecycleState.resumed) {
+      unawaited(_syncVisibleChatConversation());
       _notifySummarySheetReadyIfNeeded();
       unawaited(_checkCompanionTaskState());
       unawaited(AppUpdateService.refreshIfNeeded());
@@ -966,8 +980,33 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
+      unawaited(_clearVisibleChatConversation());
       unawaited(_runtimeCoordinator.flushAllPendingPersistence());
       unawaited(_persistVisibleThreadTargetIfNeeded());
     }
+  }
+
+  Future<void> _syncVisibleChatConversation() async {
+    if (!mounted) return;
+    final route = ModalRoute.of(context);
+    if (route is PageRoute && !route.isCurrent) {
+      await _clearVisibleChatConversation();
+      return;
+    }
+    final target = _visibleThreadTarget;
+    if (target == null || target.isNewConversation) {
+      await AssistsMessageService.setVisibleChatConversation(
+        conversationMode: activeConversationModeValue.storageValue,
+      );
+      return;
+    }
+    await AssistsMessageService.setVisibleChatConversation(
+      conversationId: target.conversationId,
+      conversationMode: target.mode.storageValue,
+    );
+  }
+
+  Future<void> _clearVisibleChatConversation() {
+    return AssistsMessageService.setVisibleChatConversation(visible: false);
   }
 }

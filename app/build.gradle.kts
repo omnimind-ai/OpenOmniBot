@@ -7,7 +7,22 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-fun prop(name: String): String = (project.findProperty(name) as String?)?.trim() ?: ""
+fun prop(name: String): String = (project.findProperty(name) as String?)?.trim()
+    ?: System.getenv(name)?.trim()
+    ?: ""
+
+fun buildConfigString(value: String): String {
+    val escaped = value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+    return "\"$escaped\""
+}
+
+val omnibotImageBaseUrl = prop("OMNIBOT_IMAGE_BASE_URL")
+    .ifBlank { "https://cloud.omnimind.com.cn" }
+val omnibotImageModel = prop("OMNIBOT_IMAGE_MODEL")
+    .ifBlank { "gpt-image-2" }
+val omnibotImageApiKey = prop("OMNIBOT_IMAGE_API_KEY")
 
 val flutterWebBuildDir = rootProject.file("ui/build/web")
 val flutterWebAssetsRootDir = layout.buildDirectory.dir("generated/omnibot_assets").get().asFile
@@ -70,6 +85,10 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.5.2.6"
+        buildConfigField("String", "IMAGE_BASE_URL", buildConfigString(omnibotImageBaseUrl))
+        buildConfigField("String", "IMAGE_MODEL", buildConfigString(omnibotImageModel))
+        buildConfigField("String", "IMAGE_API_KEY", buildConfigString(omnibotImageApiKey))
+
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a"))

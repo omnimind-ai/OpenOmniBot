@@ -9,6 +9,7 @@ import com.ai.assistance.operit.terminal.setup.EnvironmentSetupLogic
 import cn.com.omnimind.baselib.database.DatabaseHelper
 import cn.com.omnimind.bot.BuildConfig
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
+import cn.com.omnimind.bot.util.TaskRuntimeSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -669,12 +670,23 @@ class CodexAppServerManager private constructor(
         val turnId = extractTurnId(message)
         if (!threadId.isNullOrBlank() && !turnId.isNullOrBlank() && method == "turn/started") {
             activeTurnsByThreadId[threadId] = turnId
+            TaskRuntimeSettings.onTaskStarted(appContext)
         }
         if (!threadId.isNullOrBlank() && method == "turn/completed") {
             activeTurnsByThreadId.remove(threadId)
         }
 
         val localConversationId = syncMessage(method, message, params, threadId)
+        if (method == "turn/completed") {
+            TaskRuntimeSettings.onTaskFinished(appContext)
+            TaskRuntimeSettings.notifyTaskFinished(
+                context = appContext,
+                title = "Codex task completed",
+                message = "Tap to view the completed Codex turn.",
+                conversationId = localConversationId,
+                conversationMode = "codex"
+            )
+        }
         emitEvent(
             linkedMapOf(
                 "method" to method,

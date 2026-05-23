@@ -146,6 +146,8 @@ class ChatAppBar extends StatelessWidget {
     const updateTint = Color(0xFFD4A017);
     final showWorkspaceButton =
         showWorkspacePaneButton && onWorkspacePaneTap != null;
+    const showUpdateShortcutButton = true;
+    const showModeShortcutButton = true;
     final appBarBackgroundColor = showSurfaceSwitcher
         ? palette.pageBackground
         : palette.surfacePrimary;
@@ -164,9 +166,9 @@ class ChatAppBar extends StatelessWidget {
                   leftActionRowWidth +
                   _kChatAppBarAccessoryGap * 2;
               final rightActionCount =
-                  (showAppUpdateIndicator ? 1 : 0) +
+                  (showUpdateShortcutButton ? 1 : 0) +
                   (showWorkspaceButton ? 1 : 0) +
-                  (showPureChatToggle ? 1 : 0);
+                  (showModeShortcutButton ? 1 : 0);
               final rightReservedSpace =
                   rightActionCount * _kChatAppBarRightActionSlotWidth +
                   _kChatAppBarAccessoryGap;
@@ -282,12 +284,15 @@ class ChatAppBar extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (showAppUpdateIndicator)
+                        if (showUpdateShortcutButton)
                           GestureDetector(
                             key: const ValueKey('chat-app-update-button'),
                             onTap: onAppUpdateTap,
                             child: Tooltip(
-                              message: appUpdateTooltip ?? '发现新版本',
+                              message: appUpdateTooltip ??
+                                  (LegacyTextLocalizer.isEnglish
+                                      ? 'Check for updates'
+                                      : '检查更新'),
                               child: Container(
                                 color: Colors.transparent,
                                 padding: const EdgeInsets.all(15),
@@ -314,7 +319,7 @@ class ChatAppBar extends StatelessWidget {
                               ),
                             ),
                           ),
-                        if (showPureChatToggle)
+                        if (showModeShortcutButton)
                           SizedBox(
                             width: _kChatAppBarRightActionSlotWidth,
                             height: _kChatAppBarRightActionSlotWidth,
