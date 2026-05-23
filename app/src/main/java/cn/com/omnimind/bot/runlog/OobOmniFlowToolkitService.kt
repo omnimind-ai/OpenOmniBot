@@ -140,9 +140,9 @@ class OobOmniFlowToolkitService(
         }
         val segmentMatches = timing.measure("segment_match_ms") {
             segmentMatches(
+                recalledFunctions = ranked,
                 currentXml = currentXml,
                 currentPackage = currentPackage,
-                goal = goal,
                 topK = k,
             )
         }
@@ -783,22 +783,19 @@ class OobOmniFlowToolkitService(
     }
 
     private fun segmentMatches(
+        recalledFunctions: List<RankedFunction>,
         currentXml: String,
         currentPackage: String,
-        goal: String,
         topK: Int,
     ): List<SegmentMatch> {
+        if (recalledFunctions.isEmpty()) return emptyList()
         val query = OobPageVectorSet.encode(currentXml, currentPackage) ?: return emptyList()
         val bySegmentKey = linkedMapOf<String, SegmentMatch>()
-        replayService.listFunctionSpecs(limit = MAX_SEGMENT_FUNCTION_SCAN).forEach { spec ->
-            val functionId = spec["function_id"]?.toString()?.trim().orEmpty()
+        recalledFunctions.forEach { recalledFunction ->
+            val spec = recalledFunction.spec
+            val functionId = recalledFunction.functionId
             if (functionId.isEmpty()) return@forEach
-            val textScore = scoreFunctionText(
-                spec = spec,
-                goal = goal,
-                currentPackage = currentPackage,
-            )
-            if (textScore.score < MIN_RECALL_SCORE) return@forEach
+            if (recalledFunction.textScore < MIN_RECALL_SCORE) return@forEach
             val steps = materializedSteps(spec)
             if (steps.size < 2) return@forEach
 
@@ -822,7 +819,7 @@ class OobOmniFlowToolkitService(
                     if (pageScore < OobUdegNodeStore.MIN_PAGE_MATCH_SCORE.toDouble()) continue
                     val combinedScore = (
                         PAGE_MATCH_WEIGHT * pageScore +
-                            GOAL_MATCH_WEIGHT * textScore.score
+                            GOAL_MATCH_WEIGHT * recalledFunction.textScore
                         ).coerceIn(0.0, 1.0)
                     val remainingSummaries = stepSummaries(spec).drop(boundary.startStepIndex)
                     if (remainingSummaries.isEmpty()) continue
@@ -830,9 +827,10 @@ class OobOmniFlowToolkitService(
                         spec = spec,
                         functionId = functionId,
                         score = roundScore(combinedScore),
-                        reason = "page_vector_${boundary.boundary};${textScore.reason}",
-                        textScore = textScore.score,
+                        reason = "recalled_function_${recalledFunction.reason};segment_${boundary.boundary}",
+                        textScore = recalledFunction.textScore,
                         pageScore = pageScore,
+                        node = recalledFunction.node,
                         matchedStepIndex = boundary.matchedStepIndex,
                         matchedBoundary = boundary.boundary,
                         startStepIndex = boundary.startStepIndex,
@@ -972,6 +970,9 @@ class OobOmniFlowToolkitService(
             "reason" to reason,
             "text_score" to roundScore(textScore),
             "page_similarity" to roundScore(pageScore),
+            "udeg_node" to node.takeIf { it.isNotEmpty() },
+            "node_skill_context" to node["node_skill_context"],
+            "recall_scope" to "recalled_function",
             "matched_boundary" to matchedBoundary,
             "matched_step_index" to matchedStepIndex,
             "start_step_index" to startStepIndex,
@@ -1401,6 +1402,7 @@ class OobOmniFlowToolkitService(
         val reason: String,
         val textScore: Double,
         val pageScore: Double,
+        val node: Map<String, Any?>,
         val matchedStepIndex: Int,
         val matchedBoundary: String,
         val startStepIndex: Int,
@@ -1448,7 +1450,6 @@ class OobOmniFlowToolkitService(
         private const val DIRECT_HIT_SCORE = 0.97
         private const val PAGE_MATCH_WEIGHT = 0.70
         private const val GOAL_MATCH_WEIGHT = 0.30
-        private const val MAX_SEGMENT_FUNCTION_SCAN = 500
         private val CONFIRMATION_ACTION_TOKENS = setOf(
             "shell",
             "terminal",

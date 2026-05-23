@@ -49,13 +49,17 @@ object VlmRecallGuidanceBuilder {
                 payload = linkedMapOf("success" to false, "error_message" to error.message.orEmpty()),
             )
         }
+        val agentPayload = agentSafePayload(payload)
         return VlmRecallGuidance(
-            decision = payload["decision"]?.toString()?.trim().orEmpty().ifBlank { "miss" },
-            guidance = renderGuidance(payload),
-            payload = payload,
-            directHitFunctionId = directHitFunctionId(payload),
+            decision = agentPayload["decision"]?.toString()?.trim().orEmpty().ifBlank { "miss" },
+            guidance = renderGuidance(agentPayload),
+            payload = agentPayload,
+            directHitFunctionId = directHitFunctionId(agentPayload),
         )
     }
+
+    internal fun agentSafePayload(payload: Map<String, Any?>): Map<String, Any?> =
+        sanitizeMapForAgent(payload)
 
     internal fun directHitFunctionId(payload: Map<String, Any?>): String? {
         if (payload["success"] != true) return null
@@ -238,6 +242,24 @@ object VlmRecallGuidanceBuilder {
             else -> emptyList()
         }
 
+    private fun sanitizeForAgent(value: Any?): Any? {
+        return when (value) {
+            is Map<*, *> -> sanitizeMapForAgent(value)
+            is List<*> -> value.map(::sanitizeForAgent)
+            is Array<*> -> value.map(::sanitizeForAgent)
+            else -> value
+        }
+    }
+
+    private fun sanitizeMapForAgent(value: Map<*, *>): Map<String, Any?> =
+        linkedMapOf<String, Any?>().apply {
+            value.forEach { (rawKey, rawItem) ->
+                val key = rawKey?.toString() ?: return@forEach
+                if (key in AGENT_HIDDEN_RECALL_KEYS) return@forEach
+                put(key, sanitizeForAgent(rawItem))
+            }
+        }
+
     private const val DEFAULT_RECALL_COUNT = 3
     private const val MAX_GUIDANCE_CANDIDATES = 3
     private const val MAX_STEP_SUMMARIES = 5
@@ -245,4 +267,12 @@ object VlmRecallGuidanceBuilder {
     private const val MAX_STEP_TITLE_CHARS = 120
     private const val MAX_SKILL_BODY_CHARS = 900
     private const val MAX_SKILL_BODY_LINES = 18
+    private val AGENT_HIDDEN_RECALL_KEYS = setOf(
+        "timing",
+        "duration_ms",
+        "started_at_ms",
+        "finished_at_ms",
+        "phase_ms",
+        "runner_duration_ms",
+    )
 }

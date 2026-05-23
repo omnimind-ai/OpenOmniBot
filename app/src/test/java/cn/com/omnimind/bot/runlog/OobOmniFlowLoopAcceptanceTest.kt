@@ -368,18 +368,18 @@ class OobOmniFlowLoopAcceptanceTest {
                     "functionSpec" to reusableFunctionSpec(
                         functionId = functionId,
                         name = "Continue from target page",
-                        description = "continue from target page by opening settings",
+                        description = "continue flow opening settings",
                         steps = listOf(
                             clickTransitionStep(
                                 sourceXml = SOURCE_XML,
-                                sourcePackage = "com.example.source",
+                                sourcePackage = "com.example.settings",
                                 destXml = TARGET_XML,
-                                destPackage = "com.example.target",
+                                destPackage = "com.example.settings",
                             ),
                             openAppStepWithSource(
                                 id = "open_settings_from_target",
-                                sourceXml = TARGET_XML,
-                                sourcePackage = "com.example.target",
+                                sourceXml = SOURCE_XML,
+                                sourcePackage = "com.example.settings",
                                 targetPackage = "com.android.settings",
                             )
                         )
@@ -390,9 +390,9 @@ class OobOmniFlowLoopAcceptanceTest {
 
             val recall = toolkit.recall(
                 mapOf(
-                    "goal" to "continue from target page by opening settings",
-                    "current_package" to "com.example.target",
-                    "current_xml" to TARGET_XML,
+                    "goal" to "settings",
+                    "current_package" to "com.example.settings",
+                    "current_xml" to SOURCE_XML,
                     "k" to 5,
                 )
             )
@@ -413,7 +413,7 @@ class OobOmniFlowLoopAcceptanceTest {
             val call = toolkit.callFunction(
                 mapOf(
                     "function_id" to functionId,
-                    "goal" to "continue from target page by opening settings",
+                    "goal" to "settings",
                     "start_step_index" to 1,
                 )
             )

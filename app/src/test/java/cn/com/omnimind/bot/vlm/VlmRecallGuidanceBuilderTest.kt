@@ -120,6 +120,38 @@ class VlmRecallGuidanceBuilderTest {
     }
 
     @Test
+    fun `agent safe payload removes recall timing fields`() {
+        val safe = VlmRecallGuidanceBuilder.agentSafePayload(
+            mapOf(
+                "success" to true,
+                "decision" to "recall",
+                "timing" to mapOf(
+                    "duration_ms" to 12,
+                    "phase_ms" to mapOf("page_match_ms" to 3),
+                ),
+                "candidates" to listOf(
+                    mapOf(
+                        "function_id" to "open_settings",
+                        "started_at_ms" to 100,
+                        "finished_at_ms" to 120,
+                        "step_summaries" to listOf(
+                            mapOf("tool" to "click", "duration_ms" to 5),
+                        ),
+                    )
+                ),
+            )
+        )
+
+        assertFalse(safe.containsKey("timing"))
+        val candidate = (safe["candidates"] as List<*>).single() as Map<*, *>
+        assertEquals("open_settings", candidate["function_id"])
+        assertFalse(candidate.containsKey("started_at_ms"))
+        assertFalse(candidate.containsKey("finished_at_ms"))
+        val step = (candidate["step_summaries"] as List<*>).single() as Map<*, *>
+        assertFalse(step.containsKey("duration_ms"))
+    }
+
+    @Test
     fun `direct hit function id is exposed only for recall hit`() {
         assertEquals(
             "open_settings",
