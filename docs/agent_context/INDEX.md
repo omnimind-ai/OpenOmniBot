@@ -20,6 +20,19 @@ Last Updated: 2026-05-11
    - `app/src/main/assets/builtin_skills/oob-project/SKILL.md`
    - `ui/lib/features/workbench/`
 
+## Fixed Read Order For OOB VLM AndroidWorld Tasks
+
+1. `AGENTS.md`
+2. `docs/reference/OOB_VLM_ANDROIDWORLD.md`
+3. `app/src/main/assets/builtin_skills/vlm-android-gui/SKILL.md`
+4. Target source files:
+   - `assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/VLMOperationService.kt`
+   - `assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/VLMClient.kt`
+   - `assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/VLMIndexedPageContext.kt`
+   - `assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/VLMPostActionObservation.kt`
+   - `app/src/debug/java/cn/com/omnimind/bot/debug/DebugVlmRunLogReceiver.kt`
+   - `scripts/demo-vlm-runlog-e2e.sh`
+
 ## Current Workbench Focus
 
 - Generic Project container with Project Tools, persistent state, logs, source assets, and export.

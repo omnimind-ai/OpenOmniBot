@@ -13,13 +13,21 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-class VLMClient {
+class VLMClient(
+    private val systemPromptBuilder: (sceneId: String) -> String = { sceneId ->
+        PromptTemplate.buildSystemPrompt(sceneId = sceneId)
+    },
+    private val turnPromptBuilder: (context: UIContext, sceneId: String) -> String = { context, sceneId ->
+        PromptTemplate.buildTurnUserPrompt(context, sceneId = sceneId)
+    }
+) {
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -29,27 +37,30 @@ class VLMClient {
     fun buildUIOperationRequest(
         context: UIContext,
         screenshot: String?,
+        markedScreenshot: String? = null,
         conversationState: VLMConversationState,
         model: String = "scene.vlm.operation.primary",
         retryState: VLMToolCallRetryState? = null
     ): VLMRequestEnvelope {
         val sceneId = resolveVlmSceneId(model)
         val modelOverride = resolveVlmModelOverride(model)
-        val systemPrompt = PromptTemplate.buildSystemPrompt(sceneId = sceneId)
-        val currentUserText = PromptTemplate.buildTurnUserPrompt(context, sceneId = sceneId)
+        val systemPrompt = systemPromptBuilder(sceneId)
+        val currentUserText = turnPromptBuilder(context, sceneId)
         val historyMessages = conversationState.historyMessages()
         val messages = buildMessages(
             systemPrompt = systemPrompt,
             historyMessages = historyMessages,
             currentUserText = currentUserText,
             screenshot = screenshot,
+            markedScreenshot = markedScreenshot,
             context = context,
             retryState = retryState
         )
+        val imageCount = listOf(screenshot, markedScreenshot).count { !it.isNullOrBlank() }
 
         OmniLog.i(
             TAG,
-            "buildUIOperationRequest scene=$model historyRounds=${conversationState.roundCount()} historyMessages=${historyMessages.size} totalMessages=${messages.size} currentImages=${if (screenshot.isNullOrBlank()) 0 else 1} retry=${retryState?.retryIndex ?: 0}"
+            "buildUIOperationRequest scene=$model historyRounds=${conversationState.roundCount()} historyMessages=${historyMessages.size} totalMessages=${messages.size} currentImages=$imageCount retry=${retryState?.retryIndex ?: 0}"
         )
 
         return VLMRequestEnvelope(
@@ -119,6 +130,28 @@ class VLMClient {
             }
             if (executedStep.summary.isNotBlank()) {
                 put("summary", JsonPrimitive(executedStep.summary))
+            }
+            VLMPostActionObservation.summarize(executedStep)?.let { post ->
+                put("screen_changed", JsonPrimitive(post.screenChanged))
+                put("package_changed", JsonPrimitive(post.packageChanged))
+                post.beforePackageName?.takeIf { it.isNotBlank() }?.let {
+                    put("before_package", JsonPrimitive(it))
+                }
+                post.afterPackageName?.takeIf { it.isNotBlank() }?.let {
+                    put("after_package", JsonPrimitive(it))
+                }
+                if (post.afterVisibleTexts.isNotEmpty()) {
+                    put(
+                        "after_visible_texts",
+                        buildJsonArray {
+                            post.afterVisibleTexts.forEach { add(JsonPrimitive(it)) }
+                        }
+                    )
+                }
+                post.afterFocusedEditable?.takeIf { it.isNotBlank() }?.let {
+                    put("after_focused_editable", JsonPrimitive(it))
+                }
+                put("post_action_observation", JsonPrimitive(post.summaryText))
             }
         }.toString()
         return VLMConversationRound(
@@ -227,6 +260,7 @@ class VLMClient {
         historyMessages: List<ChatCompletionMessage>,
         currentUserText: String,
         screenshot: String?,
+        markedScreenshot: String?,
         context: UIContext,
         retryState: VLMToolCallRetryState?
     ): List<ChatCompletionMessage> {
@@ -236,7 +270,7 @@ class VLMClient {
             content = JsonPrimitive(systemPrompt)
         )
         messages += historyMessages
-        messages += buildCurrentUserMessage(currentUserText, screenshot)
+        messages += buildCurrentUserMessage(currentUserText, screenshot, markedScreenshot)
 
         if (retryState != null) {
             buildRetryAssistantContent(retryState.thinking)?.let { assistantContent ->
@@ -255,7 +289,8 @@ class VLMClient {
 
     private fun buildCurrentUserMessage(
         currentUserText: String,
-        screenshot: String?
+        screenshot: String?,
+        markedScreenshot: String?
     ): ChatCompletionMessage {
         return ChatCompletionMessage(
             role = "user",
@@ -267,7 +302,22 @@ class VLMClient {
                     }
                 )
                 if (!screenshot.isNullOrBlank()) {
+                    add(
+                        buildJsonObject {
+                            put("type", JsonPrimitive("text"))
+                            put("text", JsonPrimitive("Raw screenshot."))
+                        }
+                    )
                     add(buildImageContent(screenshot))
+                }
+                if (!markedScreenshot.isNullOrBlank()) {
+                    add(
+                        buildJsonObject {
+                            put("type", JsonPrimitive("text"))
+                            put("text", JsonPrimitive("Marked screenshot with indexes matching OOB indexed page evidence."))
+                        }
+                    )
+                    add(buildImageContent(markedScreenshot))
                 }
             }
         )

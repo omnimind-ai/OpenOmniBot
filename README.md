@@ -104,6 +104,8 @@ Enable or disable skills from the skill repository:
 </p>
 
 Before starting a task, open the chat page and grant all required permissions from the top-right corner.
+For AndroidWorld-style development and validation of online phone automation, see
+[`docs/reference/OOB_VLM_ANDROIDWORLD.md`](docs/reference/OOB_VLM_ANDROIDWORLD.md).
 
 ### Local model inference
 

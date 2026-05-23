@@ -61,7 +61,7 @@ WORKFLOW:
                 ),
                 "maxSteps" to mapOf(
                     "type" to "integer",
-                    "description" to "Optional maximum execution steps. For AndroidWorld or acceptance tests, prefer 1-8. If the limit is reached after successful UI actions, the bounded run is returned as successful with the recorded actions."
+                    "description" to "Optional maximum execution steps. For AndroidWorld or acceptance tests, prefer 8-20. If the limit is reached after successful UI actions, the bounded run is returned as successful with the recorded actions."
                 ),
                 "startFromCurrent" to mapOf(
                     "type" to "boolean",

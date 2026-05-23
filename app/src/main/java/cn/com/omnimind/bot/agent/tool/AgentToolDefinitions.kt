@@ -237,8 +237,8 @@ object AgentToolDefinitions {
             "Target app package name.",
         "是否在结束后生成总结。设为 true 时，工具结果会尽量直接返回最终整理文本。" to
             "Whether to generate a summary after completion. When true, the tool result tries to return a final polished summary directly.",
-        "可选最大执行步数。AndroidWorld 或验收用例建议设为 1-8；达到上限时，如果已经成功执行了 UI 动作，会以有界运行成功返回。" to
-            "Optional maximum execution steps. For AndroidWorld or acceptance tests, prefer 1-8. If the limit is reached after successful UI actions, the bounded run returns as successful.",
+        "可选最大执行步数。AndroidWorld 或验收用例建议设为 8-20；达到上限时，如果已经成功执行了 UI 动作，会以有界运行成功返回。" to
+            "Optional maximum execution steps. For AndroidWorld or acceptance tests, prefer 8-20. If the limit is reached after successful UI actions, the bounded run returns as successful.",
         "仅在用户明确要求从当前页面继续时设为 true。" to
             "Only set this to true when the user explicitly asks to continue from the current screen.",
         "通过应用内置的 Alpine（proot）环境执行一次性的非交互终端命令。这是默认首选的终端工具，适合文件处理、脚本、网络诊断、git、python、包管理等绝大多数 CLI 任务；不用于手机界面操作，也不用于交互式 TUI。只有明确需要跨多轮保留 cwd、环境或后台进程时，才改用 terminal_session_*。" to
@@ -614,7 +614,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("maxSteps") {
                         put("type", "integer")
-                        put("description", "可选最大执行步数。AndroidWorld 或验收用例建议设为 1-8；达到上限时，如果已经成功执行了 UI 动作，会以有界运行成功返回。")
+                        put("description", "可选最大执行步数。AndroidWorld 或验收用例建议设为 8-20；达到上限时，如果已经成功执行了 UI 动作，会以有界运行成功返回。")
                     }
                     putJsonObject("startFromCurrent") {
                         put("type", "boolean")

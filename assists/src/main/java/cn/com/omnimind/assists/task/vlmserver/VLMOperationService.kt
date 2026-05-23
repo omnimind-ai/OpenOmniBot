@@ -718,6 +718,18 @@ class VLMOperationService(
                         stepIndex = stepIndex
                     )
                 )
+                _context = VLMIndexedPageContext.enrich(
+                    context = _context,
+                    currentXml = beforeXml,
+                    displayWidth = deviceOperator.getDisplayWidth(),
+                    displayHeight = deviceOperator.getDisplayHeight()
+                )
+                val markedScreenshot = VLMIndexedPageContext.renderMarkedScreenshot(
+                    screenshotBase64 = screenshot,
+                    currentXml = beforeXml,
+                    displayWidth = deviceOperator.getDisplayWidth(),
+                    displayHeight = deviceOperator.getDisplayHeight()
+                )
 
                 // Note: Compactor 已移至 executeTask 主循环，在超时计时之外执行
 
@@ -735,6 +747,7 @@ class VLMOperationService(
                     val requestEnvelope = vlmClient.buildUIOperationRequest(
                         context = _context,
                         screenshot = screenshot,
+                        markedScreenshot = markedScreenshot,
                         conversationState = conversationState,
                         model = model,
                         retryState = retryState

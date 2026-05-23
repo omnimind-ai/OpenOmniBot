@@ -7,15 +7,15 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 
 ## Step Guidance Essentials
 
-- AndroidWorld first-step policy lives here, not core optimizer.
+- AndroidWorld first-step policy lives here; choose the simplest action that changes one variable, then verify.
+- OOB indexed page evidence: choose by visible label/role and emit 0-1000 normalized centers.
 - Pass `packageName` when known; derive unknown packages from installed apps.
-- Permission/onboarding: continue safely; avoid Deny, Delete, Sign in, Pay unless requested.
-- Focused editable input for type/search: use `type` first; missing list target: scroll and re-check.
-- Slider/seekbar: 0-1000 normalized; `Display brightness` max: do not click, scroll x1=70,y1=110,x2=990,y2=110; min x1=990,y1=110,x2=10,y2=110.
-- Numeric keypad targets: click digit buttons; never use `type` unless focused editable.
-- OmniFlow recall is UDEG node skill-like decision context reached by page match; use it only while grounded on the current screenshot/XML.
+- Permission/onboarding: choose safe Continue/Allow/OK, not Deny/Delete/Pay.
+- Focused editable input: use `type`; otherwise click intended edit/search field first.
+- Slider/seekbar: 0-1000 normalized; `Display brightness`: do not click; max x1=70,y1=110,x2=990,y2=110; min x1=990,y1=110,x2=10,y2=110.
+- Numeric keypad targets: click visible digit buttons; do not `type`.
 - Validate after at least two visible UI states before `finished`.
-- Multi-target goals are ordered checklists; finish only after every named page/row/option is opened or verified.
+- Multi-target goals: keep ordered checklist; finish only after named targets verified.
 
 ## Overview
 
@@ -79,6 +79,19 @@ Guidelines:
 - Use `maxSteps` high enough for long tasks; prefer 8 to 20 for AndroidWorld
   validation instead of tiny click-only smoke tests.
 - Require visible verification before `finished`.
+- When the prompt includes `OOB indexed page evidence`, use it as grounded page
+  evidence: match the pending target by visible label/role, copy its normalized
+  center as action coordinates, and keep `target_description` tied to that row's
+  label. The marked screenshot uses the same indexes.
+- If the desired target is not present in the indexed element list and is not
+  visually visible, scroll a listed scrollable region once, then re-observe. Do
+  not tap the first unrelated row.
+- If an editable element is focused, use `type(content)` directly. If no input
+  is focused, first click the intended editable/search field by indexed center,
+  then type on the next step after focus is confirmed.
+- Before each action, reduce the decision to input, desired output, and the one
+  UI variable that should change. After the tool result, compare the new visible
+  state with that expected change and correct only that variable.
 - For goals with several named targets such as "open A, verify A, go back, open
   B, verify B", keep an ordered checklist. Do not skip directly to B, and do not
   call `finished` until A and B were both visited or verified in order.

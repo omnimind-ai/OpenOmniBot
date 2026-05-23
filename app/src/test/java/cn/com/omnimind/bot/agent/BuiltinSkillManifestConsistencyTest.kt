@@ -82,6 +82,7 @@ class BuiltinSkillManifestConsistencyTest {
         ).stepGuidance()
         assertFalse("Injected VLM step guidance should not be truncated", injectedStepGuidance.endsWith("..."))
         assertTrue(injectedStepGuidance.contains("AndroidWorld first-step policy"))
+        assertTrue(injectedStepGuidance.contains("OOB indexed page evidence"))
         assertTrue(injectedStepGuidance.contains("Pass `packageName` when known"))
         assertTrue(injectedStepGuidance.contains("Focused editable input"))
         assertTrue(injectedStepGuidance.contains("Slider/seekbar"))
@@ -92,6 +93,7 @@ class BuiltinSkillManifestConsistencyTest {
         assertTrue(injectedStepGuidance.contains("do not click"))
         assertTrue(injectedStepGuidance.contains("Numeric keypad targets"))
         assertTrue(injectedStepGuidance.contains("Validate after at least two visible UI states"))
+        assertTrue(injectedStepGuidance.contains("simplest action"))
     }
 
     @Test
