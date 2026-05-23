@@ -24,7 +24,7 @@ class VlmToolCoordinatorRecallExecutionTest {
             goal = state.goal,
             recallGuidance = VlmRecallGuidance(
                 decision = "hit",
-                guidance = "OmniFlow recall context",
+                guidance = "OmniFlow UDEG node skill-like decision context",
                 payload = mapOf("success" to true),
                 directHitFunctionId = "open_settings_segment",
             ),
@@ -64,7 +64,7 @@ class VlmToolCoordinatorRecallExecutionTest {
             goal = state.goal,
             recallGuidance = VlmRecallGuidance(
                 decision = "hit",
-                guidance = "OmniFlow recall context",
+                guidance = "OmniFlow UDEG node skill-like decision context",
                 payload = mapOf("success" to true),
                 directHitFunctionId = "open_settings_segment",
             ),
@@ -100,7 +100,7 @@ class VlmToolCoordinatorRecallExecutionTest {
             goal = state.goal,
             recallGuidance = VlmRecallGuidance(
                 decision = "recall",
-                guidance = "OmniFlow recall context",
+                guidance = "OmniFlow UDEG node skill-like decision context",
                 payload = mapOf("success" to true),
                 directHitFunctionId = null,
             ),

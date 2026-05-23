@@ -690,11 +690,13 @@ class _RunLogTokenSummaryCard extends StatelessWidget {
           _text(context, '总计', 'Total'),
           _formatTokens(summary.totalTokens!),
         ),
-      if (summary.stepCount != null)
+      if (summary.callCount != null)
         MapEntry(
           _text(context, 'VLM 调用', 'VLM calls'),
-          summary.stepCount.toString(),
+          summary.callCount.toString(),
         ),
+      if (summary.stepCount != null && summary.stepCount != summary.callCount)
+        MapEntry(_text(context, '步骤', 'Steps'), summary.stepCount.toString()),
       if (summary.promptTokens != null)
         MapEntry(
           _text(context, '输入', 'Prompt'),
@@ -4033,6 +4035,7 @@ class _RunLogTokenUsageAggregate {
     required this.promptTokens,
     required this.completionTokens,
     required this.cachedTokens,
+    required this.callCount,
     required this.stepCount,
   });
 
@@ -4040,6 +4043,7 @@ class _RunLogTokenUsageAggregate {
   final int? promptTokens;
   final int? completionTokens;
   final int? cachedTokens;
+  final int? callCount;
   final int? stepCount;
 
   bool get hasUsage =>
@@ -4047,6 +4051,7 @@ class _RunLogTokenUsageAggregate {
       promptTokens != null ||
       completionTokens != null ||
       cachedTokens != null ||
+      callCount != null ||
       stepCount != null;
 
   factory _RunLogTokenUsageAggregate.fromPayload(Map<String, dynamic> payload) {
@@ -4055,6 +4060,12 @@ class _RunLogTokenUsageAggregate {
       _firstPresentValue(payload, const [
         'token_usage_by_step',
         'tokenUsageByStep',
+      ]),
+    );
+    final byCall = _asStringKeyMapList(
+      _firstPresentValue(payload, const [
+        'token_usage_by_call',
+        'tokenUsageByCall',
       ]),
     );
     return _RunLogTokenUsageAggregate(
@@ -4069,6 +4080,16 @@ class _RunLogTokenUsageAggregate {
         usage['completion_tokens'] ?? usage['completionTokens'],
       ),
       cachedTokens: _asInt(usage['cached_tokens'] ?? usage['cachedTokens']),
+      callCount:
+          _asInt(
+            payload['token_usage_call_count'] ??
+                payload['tokenUsageCallCount'] ??
+                usage['call_count'] ??
+                usage['callCount'] ??
+                usage['attempt_count'] ??
+                usage['attemptCount'],
+          ) ??
+          (byCall.isNotEmpty ? byCall.length : null),
       stepCount:
           _asInt(usage['step_count'] ?? usage['stepCount']) ??
           (byStep.isNotEmpty ? byStep.length : null),

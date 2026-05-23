@@ -70,7 +70,9 @@ class McpToolDefinitionsTest {
         }
         val schema = tool["inputSchema"] as Map<*, *>
         val properties = schema["properties"] as Map<*, *>
+        val description = tool["description"]?.toString().orEmpty()
 
+        assertTrue(description.contains("page match -> UDEG node -> node skill-like decision context -> VLM/tool decision"))
         assertTrue(properties.containsKey("goal"))
         assertTrue(properties.containsKey("current_package"))
         assertTrue(properties.containsKey("current_node_id"))

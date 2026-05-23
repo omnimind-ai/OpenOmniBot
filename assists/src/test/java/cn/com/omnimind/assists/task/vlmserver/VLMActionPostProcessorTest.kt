@@ -333,6 +333,142 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
+    fun `does not convert ordered apps scroll into unrelated display click`() {
+        val step = VLMStep(
+            observation = "settings home",
+            thought = "scroll to find Apps",
+            action = ScrollAction(
+                targetDescription = "Settings list",
+                x1 = 360f,
+                y1 = 1152f,
+                x2 = 360f,
+                y2 = 384f,
+                duration = 0.6f
+            )
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = DEFAULT_APPS_VERIFY_TASK,
+                targetPackageName = "com.android.settings"
+            ),
+            currentXml = SETTINGS_WITH_DISPLAY_SUBTITLE_XML,
+            currentPackageName = "com.android.settings",
+            stepIndex = 1,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertFalse(result.applied)
+        val action = result.step.action as ScrollAction
+        assertEquals("Settings list", action.targetDescription)
+    }
+
+    @Test
+    fun `converts repeated ordered apps scroll into settings search click when row is absent`() {
+        val step = VLMStep(
+            observation = "settings home",
+            thought = "scroll to find Apps",
+            action = ScrollAction(
+                targetDescription = "Scroll down to locate the Apps option in the Settings menu",
+                x1 = 360f,
+                y1 = 1152f,
+                x2 = 360f,
+                y2 = 384f,
+                duration = 0.6f
+            )
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = DEFAULT_APPS_VERIFY_TASK,
+                targetPackageName = "com.android.settings"
+            ),
+            currentXml = SETTINGS_WITH_SEARCH_AND_DISPLAY_SUBTITLE_XML,
+            currentPackageName = "com.android.settings",
+            stepIndex = 2,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertTrue(result.applied)
+        assertEquals("semantic_search:scroll_to_search_affordance", result.reason)
+        val action = result.step.action as ClickAction
+        assertTrue(action.targetDescription, action.targetDescription.contains("Search settings", ignoreCase = true))
+        assertTrue(action.y in 80f..184f)
+    }
+
+    @Test
+    fun `redirects search input click to matching visible search result`() {
+        val step = VLMStep(
+            observation = "search results",
+            thought = "open the System result",
+            action = ClickAction(
+                targetDescription = "System open_search_view_edit_text EditText",
+                x = 352f,
+                y = 112f
+            )
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = "From the app home screen, open System, open Languages and input, verify the Languages page is visible, then finish.",
+                targetPackageName = "com.example"
+            ),
+            currentXml = GENERIC_SEARCH_RESULTS_XML,
+            currentPackageName = "com.example.search",
+            stepIndex = 5,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertTrue(result.applied)
+        assertEquals("semantic_search:click_input_to_visible_result", result.reason)
+        assertTrue(VLMActionControllerRegistry.registeredControllerIds().contains("semantic_search"))
+        val action = result.step.action as ClickAction
+        assertTrue(action.targetDescription, action.targetDescription.contains("System", ignoreCase = true))
+        assertTrue(action.y in 230f..270f)
+    }
+
+    @Test
+    fun `converts ordered apps scroll only into pending apps click when visible`() {
+        val step = VLMStep(
+            observation = "settings home",
+            thought = "scroll to find Apps",
+            action = ScrollAction(
+                targetDescription = "Settings list",
+                x1 = 360f,
+                y1 = 1152f,
+                x2 = 360f,
+                y2 = 384f,
+                duration = 0.6f
+            )
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = DEFAULT_APPS_VERIFY_TASK,
+                targetPackageName = "com.android.settings"
+            ),
+            currentXml = SETTINGS_WITH_APPS_AND_DISPLAY_XML,
+            currentPackageName = "com.android.settings",
+            stepIndex = 1,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertTrue(result.applied)
+        assertEquals("ordered_goal_target_before_scroll", result.reason)
+        val action = result.step.action as ClickAction
+        assertTrue(action.targetDescription, action.targetDescription.contains("Apps", ignoreCase = true))
+        assertFalse(action.targetDescription, action.targetDescription.contains("Display", ignoreCase = true))
+    }
+
+    @Test
     fun `does not convert explicit scroll task into visible target click`() {
         val step = VLMStep(
             observation = "settings list",
@@ -830,6 +966,33 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
+    fun `allows finished when child target implies searched settings parent`() {
+        val step = VLMStep(
+            observation = "Default apps list shows Browser app and Phone app rows.",
+            thought = "the requested Default apps page is verified",
+            summary = "Default apps page verified with Browser app and Phone app rows visible.",
+            action = FinishedAction(content = "Default apps page is visible with Browser app and Phone app rows.")
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = DEFAULT_APPS_VERIFY_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(defaultAppsStep())
+            ),
+            currentXml = DEFAULT_APPS_LIST_XML,
+            currentPackageName = "com.google.android.permissioncontroller",
+            stepIndex = 9,
+            displayWidth = 1080,
+            displayHeight = 2400
+        )
+
+        assertFalse(result.applied)
+        assertTrue(result.step.action is FinishedAction)
+    }
+
+    @Test
     fun `allows finished after every ordered target was clicked in order`() {
         val step = VLMStep(
             observation = "phone detail page",
@@ -863,6 +1026,9 @@ class VLMActionPostProcessorTest {
 
         private const val DEFAULT_APPS_ORDERED_TASK =
             "From Settings home, open Apps, open Default apps, open Browser app, verify the Browser app page is visible, go back to Default apps, open Phone app, verify the Phone app page is visible, then finish."
+
+        private const val DEFAULT_APPS_VERIFY_TASK =
+            "From the Settings home screen, open Apps, open Default apps, verify the Default apps page is visible with Browser app or Phone app rows, then finish."
 
         private fun wifiToggleStep(): UIStep =
             UIStep(
@@ -1085,6 +1251,70 @@ class VLMActionPostProcessorTest {
                   <node clickable="true" focusable="true" bounds="[0,781][720,957]">
                     <node text="Sound &amp; vibration" bounds="[144,823][458,877]" />
                     <node text="Volume, haptics, Do Not Disturb" bounds="[144,877][538,915]" />
+                  </node>
+                  <node clickable="true" focusable="true" bounds="[0,957][720,1133]">
+                    <node text="Display" bounds="[144,999][274,1053]" />
+                    <node text="Dark theme, font size, brightness" bounds="[144,1053][549,1091]" />
+                  </node>
+                </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val SETTINGS_WITH_SEARCH_AND_DISPLAY_SUBTITLE_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][720,1280]">
+                <node class="android.view.ViewGroup" resource-id="com.android.settings:id/search_action_bar" enabled="true" clickable="true" focusable="true" bounds="[32,80][688,184]">
+                  <node text="Search settings" class="android.widget.TextView" resource-id="com.android.settings:id/search_action_bar_title" enabled="true" bounds="[152,105][421,159]" />
+                </node>
+                <node scrollable="true" bounds="[0,216][720,1232]">
+                  <node clickable="true" focusable="true" bounds="[0,593][720,769]">
+                    <node text="Sound &amp; vibration" bounds="[144,635][458,689]" />
+                    <node text="Volume, haptics, Do Not Disturb" bounds="[144,689][538,727]" />
+                  </node>
+                  <node clickable="true" focusable="true" bounds="[0,769][720,945]">
+                    <node text="Display" bounds="[144,811][274,865]" />
+                    <node text="Dark theme, font size, brightness" bounds="[144,865][549,903]" />
+                  </node>
+                  <node clickable="true" focusable="true" bounds="[0,945][720,1121]">
+                    <node text="Wallpaper &amp; style" bounds="[144,987][451,1041]" />
+                    <node text="Colors, themed icons, app grid" bounds="[144,1041][521,1079]" />
+                  </node>
+                </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val GENERIC_SEARCH_RESULTS_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][720,1280]">
+                <node class="android.widget.EditText" resource-id="com.example:id/search_src_text" text="System" enabled="true" editable="true" focused="true" focusable="true" bounds="[40,64][680,156]" />
+                <node class="androidx.recyclerview.widget.RecyclerView" resource-id="com.example:id/results" enabled="true" scrollable="true" bounds="[0,176][720,1280]">
+                  <node class="android.widget.LinearLayout" enabled="true" clickable="true" focusable="true" bounds="[0,210][720,298]">
+                    <node text="System" class="android.widget.TextView" enabled="true" bounds="[72,226][240,270]" />
+                  </node>
+                  <node class="android.widget.LinearLayout" enabled="true" clickable="true" focusable="true" bounds="[0,298][720,386]">
+                    <node text="Display" class="android.widget.TextView" enabled="true" bounds="[72,314][260,358]" />
+                  </node>
+                </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val SETTINGS_WITH_APPS_AND_DISPLAY_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][720,1280]">
+                <node scrollable="true" bounds="[0,216][720,1232]">
+                  <node clickable="true" focusable="true" bounds="[0,429][720,605]">
+                    <node text="Battery" bounds="[144,471][283,525]" />
+                    <node text="100%" bounds="[144,525][225,563]" />
+                  </node>
+                  <node clickable="true" focusable="true" bounds="[0,605][720,781]">
+                    <node text="Apps" bounds="[144,647][246,701]" />
+                    <node text="Default apps, screen time" bounds="[144,701][508,739]" />
                   </node>
                   <node clickable="true" focusable="true" bounds="[0,957][720,1133]">
                     <node text="Display" bounds="[144,999][274,1053]" />

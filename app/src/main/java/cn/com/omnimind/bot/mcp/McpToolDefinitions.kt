@@ -297,7 +297,7 @@ BEHAVIOR:
 
     val omniflowRecallTool = mapOf(
         "name" to "omniflow.recall",
-        "description" to """Recall reusable OOB Functions for a goal and current app/page scope. This only returns a direct hit or ranked candidates; parameterized Functions must be selected and filled by the calling agent before `omniflow.call_tool` with function_id.""".trimIndent(),
+        "description" to """Recall by the UDEG path: page match -> UDEG node -> node skill-like decision context -> VLM/tool decision. The result returns the page-matched UDEG node, its skill-like decision context, and only the Functions attached to that node; parameterized Functions must be selected and filled by the calling agent before `omniflow.call_tool` with function_id.""".trimIndent(),
         "inputSchema" to mapOf(
             "type" to "object",
             "properties" to mapOf(

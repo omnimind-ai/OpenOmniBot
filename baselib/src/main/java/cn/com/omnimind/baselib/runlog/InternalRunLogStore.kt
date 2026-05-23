@@ -275,6 +275,7 @@ object InternalRunLogStore {
             "token_usage" to tokenUsage,
             "token_usage_total" to tokenUsage["total_tokens"],
             "token_usage_by_step" to tokenUsageByStep(record.cards),
+            "token_usage_by_call" to tokenUsageByCall(record.cards),
             "cards" to record.cards
         )
     }
@@ -340,6 +341,10 @@ object InternalRunLogStore {
         putSum(summary, "cached_tokens", usages)
         putSum(summary, "attempt_count", usages)
         summary["step_count"] = usages.size
+        val callCount = tokenUsageCallCount(cards)
+        if (callCount > 0) {
+            summary["call_count"] = callCount
+        }
         return summary
     }
 
@@ -355,11 +360,54 @@ object InternalRunLogStore {
         }
     }
 
+    private fun tokenUsageByCall(cards: List<Map<String, Any?>>): List<Map<String, Any?>> {
+        val calls = mutableListOf<Map<String, Any?>>()
+        cards.forEachIndexed { index, card ->
+            val attempts = extractTokenUsageAttempts(card)
+            val usages = attempts.ifEmpty {
+                extractTokenUsage(card)?.let { listOf(it) } ?: emptyList()
+            }
+            usages.forEach { usage ->
+                calls += linkedMapOf(
+                    "call_index" to calls.size,
+                    "step_index" to (numberToLong(card["step_index"]) ?: index.toLong()).toInt(),
+                    "card_id" to textValue(card["card_id"]),
+                    "tool_name" to textValue(card["tool_name"]),
+                    "attempt_index" to numberToLong(usage["attempt_index"])?.toInt(),
+                    "stability_attempt" to numberToLong(usage["stability_attempt"])?.toInt(),
+                    "tool_retry_index" to numberToLong(usage["tool_retry_index"])?.toInt(),
+                    "token_usage" to usage
+                ).filterValues { it != null }
+            }
+        }
+        return calls
+    }
+
+    private fun tokenUsageCallCount(cards: List<Map<String, Any?>>): Int {
+        return cards.sumOf { card ->
+            val attempts = extractTokenUsageAttempts(card)
+            val usage = extractTokenUsage(card)
+            when {
+                attempts.isNotEmpty() -> attempts.size
+                usage != null -> (numberToLong(usage["attempt_count"]) ?: 1L).coerceAtLeast(1L).toInt()
+                else -> 0
+            }
+        }
+    }
+
     private fun extractTokenUsage(card: Map<String, Any?>): Map<String, Any?>? {
         val direct = stringMap(card["token_usage"]).takeIf { it.isNotEmpty() }
         if (direct != null) return direct
         val header = stringMap(card["header"])
         return stringMap(header["token_usage"]).takeIf { it.isNotEmpty() }
+    }
+
+    private fun extractTokenUsageAttempts(card: Map<String, Any?>): List<Map<String, Any?>> {
+        val direct = listOfMaps(card["token_usage_attempts"]).takeIf { it.isNotEmpty() }
+        if (direct != null) return direct
+        val header = stringMap(card["header"])
+        return listOfMaps(header["token_usage_attempts"]).takeIf { it.isNotEmpty() }
+            ?: emptyList()
     }
 
     private fun putSum(

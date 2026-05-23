@@ -1,5 +1,13 @@
 # Part Iteration Log
 
+## OOB OmniFlow Replay
+
+- 完成情况：本轮只调整测试契约，不改 OOB native replay 产品逻辑。当前 OOB native recall 已要求 current page XML 做 UDEG/page-match gate；instrumented MCP acceptance 的 inline RunLog 原先没有 source page，`omniflow.recall` 也没有传 current XML，导致注册后无法进入 UDEG node index 并返回 `miss`。已在 `OobOmniFlowDeviceLoopInstrumentedTest` 中给 inline RunLog card 补 `before.observation_xml/package_name/activity_name`，并给直接 recall 与 JSON-RPC recall 补 `current_xml`，使测试验证的是“有页面证据的 Function 可被 recall 并本地 replay”，不是无页面上下文的裸命中。
+- 功能是否完全验证：已验证。外部 host MCP acceptance 在两台 emulator 上均因设备侧 `/mcp` HTTP 502 未进入 tools/list，不能作为有效结果；instrumented acceptance 在测试进程内启动 `McpServerManager`、拿真实 token，并走 `tools/list -> omniflow.ingest_run_log -> omniflow.recall -> omniflow.call_tool` 完整链路，SmallPhone 与 AndroidWorldAvd 均通过。
+- UI显示：无 UI 变更。
+- 测试：`./gradlew --no-daemon :app:connectedDevelopStandardDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=cn.com.omnimind.bot.runlog.OobOmniFlowDeviceLoopInstrumentedTest#mcpJsonRpcRunsOmniFlowLoopThroughDeviceServer`，结果 BUILD SUCCESSFUL，两个在线 AVD 各执行 1 个测试。外部脚本 `scripts/omniflow_acceptance_oob_mcp_explore_replay.sh` 在 5556/5554 均返回 HTTP 502，记录为设备侧 MCP 运行状态阻塞。
+- 是否需要优化：需要单独修复设备侧常驻 MCP `/mcp` 502，之后再跑外部 host acceptance；不要降低 recall gate 去支持缺 source/current page 的 direct hit。
+
 ## OOB Workbench Backend Runtime
 
 - 完成情况：后端框架已完成本轮基座。已新增 Project 运行时后端骨架，包括 `workbench_project_progress_get`、`workbench_project_ingest_oss`、`source/manifest.json`、`logs/project_progress.jsonl`、`logs/oss_ingest.jsonl`、Project payload `sourceAssets/lastProgress`、`backend/api_spec.json` executor runtime metadata，并把 source/progress 写入 Project payload、active Project prompt context 和 export manifest。新增 Toolbox over MCP v0.1：active Project 动态 tools、Tool Contract、MCP resources/prompts、`mcp_toolbox` caller 日志和 `lastError`。

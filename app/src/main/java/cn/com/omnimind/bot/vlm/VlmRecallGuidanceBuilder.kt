@@ -2,6 +2,7 @@ package cn.com.omnimind.bot.vlm
 
 import android.content.Context
 import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
+import cn.com.omnimind.bot.runlog.OobUdegNodeStore
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 
 data class VlmRecallGuidance(
@@ -78,15 +79,18 @@ object VlmRecallGuidanceBuilder {
         if (candidates.isEmpty() && nodeCandidates.isEmpty()) return ""
 
         return buildString {
-            appendLine("OmniFlow UDEG recall context:")
-            appendLine("path=page_match -> UDEG node -> node skill-like decision context -> VLM/tool decision")
+            appendLine("OmniFlow UDEG node skill-like decision context:")
+            appendLine("path=${OobUdegNodeStore.UDEG_DECISION_PATH}")
             appendLine("decision=$decision")
             nodeCandidates.forEachIndexed { index, node ->
                 val nodeId = node["node_id"]?.toString()?.trim().orEmpty()
                 val score = node["page_similarity"]?.toString()?.trim().orEmpty()
+                val nodeSkillContext = mapArg(node["node_skill_context"])
                 val skill = mapArg(node["skill"])
-                val decisionContext = mapArg(node["decision_context"])
+                val decisionContext = mapArg(nodeSkillContext["decision_context"])
+                    .ifEmpty { mapArg(node["decision_context"]) }
                 val decisionPath = firstNonBlank(
+                    nodeSkillContext["decision_path"],
                     decisionContext["decision_path"],
                     skill["decision_path"],
                     payload["decision_path"],
@@ -99,6 +103,9 @@ object VlmRecallGuidanceBuilder {
                 }
                 renderDecisionContext(decisionContext).takeIf { it.isNotBlank() }?.let {
                     appendLine("   node_decision_context: $it")
+                }
+                renderNodeSkillContext(nodeSkillContext).takeIf { it.isNotBlank() }?.let {
+                    appendLine("   node_skill_context: $it")
                 }
                 if (guidance.isNotBlank()) {
                     appendLine("   node_skill_decision_context: $guidance")
@@ -155,6 +162,23 @@ object VlmRecallGuidanceBuilder {
             "role=$role".takeIf { role.isNotBlank() },
             "entry_policy=$entryPolicy".takeIf { entryPolicy.isNotBlank() },
             "skill_id=$skillId".takeIf { skillId.isNotBlank() },
+        ).filterNotNull().joinToString(" ")
+    }
+
+    private fun renderNodeSkillContext(nodeSkillContext: Map<String, Any?>): String {
+        if (nodeSkillContext.isEmpty()) return ""
+        val role = firstNonBlank(nodeSkillContext["role"])
+        val contextKind = firstNonBlank(nodeSkillContext["context_kind"])
+        val entryPolicy = firstNonBlank(nodeSkillContext["entry_policy"])
+        val pageMatch = mapArg(nodeSkillContext["page_match"])
+        val nodeId = firstNonBlank(pageMatch["node_id"], mapArg(nodeSkillContext["udeg_node"])["node_id"])
+        val pageSimilarity = firstNonBlank(pageMatch["page_similarity"])
+        return listOf(
+            "role=$role".takeIf { role.isNotBlank() },
+            "context_kind=$contextKind".takeIf { contextKind.isNotBlank() },
+            "entry_policy=$entryPolicy".takeIf { entryPolicy.isNotBlank() },
+            "node_id=$nodeId".takeIf { nodeId.isNotBlank() },
+            "page_similarity=$pageSimilarity".takeIf { pageSimilarity.isNotBlank() },
         ).filterNotNull().joinToString(" ")
     }
 

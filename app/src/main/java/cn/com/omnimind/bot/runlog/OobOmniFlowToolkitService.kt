@@ -115,6 +115,7 @@ class OobOmniFlowToolkitService(
                     "text_score" to roundScore(rankedFunction.textScore),
                     "page_similarity" to roundScore(rankedFunction.pageScore),
                     "udeg_node" to rankedFunction.node,
+                    "node_skill_context" to rankedFunction.node["node_skill_context"],
                     "recall_scope" to "udeg_node",
                 )
             )
@@ -143,6 +144,7 @@ class OobOmniFlowToolkitService(
                     "text_score" to roundScore(it.textScore),
                     "page_similarity" to roundScore(it.pageScore),
                     "udeg_node" to it.node,
+                    "node_skill_context" to it.node["node_skill_context"],
                     "step_summaries" to stepSummaries(it.spec)
                 )
             },
@@ -150,6 +152,7 @@ class OobOmniFlowToolkitService(
             "node_candidates" to nodeCandidates,
             "current_node" to nodeCandidates.firstOrNull(),
             "node_skill" to (nodeCandidates.firstOrNull()?.get("skill")),
+            "node_skill_context" to (nodeCandidates.firstOrNull()?.get("node_skill_context")),
             "decision_context" to (nodeCandidates.firstOrNull()?.get("decision_context")),
             "count" to candidates.size,
             "reason" to when {

@@ -709,6 +709,15 @@ class VLMOperationService(
                     currentPackageName = AccessibilityController.Companion.getPackageName(),
                     stepIndex = stepIndex
                 )
+                _context = VLMPageContextProviderRegistry.enrich(
+                    VLMPageContextRequest(
+                        context = _context,
+                        currentXml = beforeXml,
+                        currentPackageName = _context.currentPackageName,
+                        screenshotBase64 = screenshot,
+                        stepIndex = stepIndex
+                    )
+                )
 
                 // Note: Compactor 已移至 executeTask 主循环，在超时计时之外执行
 

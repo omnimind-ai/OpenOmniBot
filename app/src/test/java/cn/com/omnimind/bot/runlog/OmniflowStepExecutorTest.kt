@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class OmniflowStepExecutorTest {
@@ -125,9 +126,88 @@ class OmniflowStepExecutorTest {
         }
     }
 
+    @Test
+    fun `execute allows package-only postcondition for transient settings search page`() = runBlocking {
+        val backend = FakeBackend(
+            beforeXml = SETTINGS_XML,
+            afterXml = SETTINGS_SEARCH_CURRENT_XML,
+            currentPackage = "com.google.android.settings.intelligence",
+        )
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "title" to "点击 Search settings search_action_bar ViewGroup",
+                    "args" to mapOf(
+                        "x" to 500,
+                        "y" to 120,
+                        "target_description" to "Search settings search_action_bar ViewGroup",
+                    ),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to SETTINGS_XML),
+                        "dst_ctx" to mapOf(
+                            "page" to SETTINGS_SEARCH_RECORDED_XML,
+                            "package_name" to "com.google.android.settings.intelligence",
+                        ),
+                    ),
+                    "postcondition" to mapOf(
+                        "kind" to "recorded_after_page_similarity",
+                        "min_score" to 0.95,
+                        "allow_package_only_for_transient_search" to true,
+                    ),
+                ),
+                stepId = "step_search",
+                stepTitle = "click search settings",
+            )
+
+            assertEquals(true, result["success"])
+            val postcondition = result["postcondition"] as Map<*, *>
+            assertEquals(true, postcondition["success"])
+            assertEquals("settings_search_transition", postcondition["semantic_fallback"])
+        }
+    }
+
+    @Test
+    fun `execute still fails low similarity postcondition without transient search marker`() = runBlocking {
+        val backend = FakeBackend(
+            beforeXml = SETTINGS_XML,
+            afterXml = SETTINGS_SEARCH_CURRENT_XML,
+            currentPackage = "com.google.android.settings.intelligence",
+        )
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            try {
+                OmniflowStepExecutor.execute(
+                    step = mapOf(
+                        "executor" to "omniflow",
+                        "omniflow_action" to "click",
+                        "args" to mapOf("x" to 500, "y" to 120),
+                        "source_context" to mapOf(
+                            "src_ctx" to mapOf("page" to SETTINGS_XML),
+                            "dst_ctx" to mapOf(
+                                "page" to SETTINGS_SEARCH_RECORDED_XML,
+                                "package_name" to "com.google.android.settings.intelligence",
+                            ),
+                        ),
+                        "postcondition" to mapOf(
+                            "kind" to "recorded_after_page_similarity",
+                            "min_score" to 0.95,
+                        ),
+                    ),
+                    stepId = "step_search",
+                    stepTitle = "click search settings",
+                )
+                fail("Expected low-similarity postcondition to fail")
+            } catch (expected: IllegalStateException) {
+                assertTrue(expected.message.orEmpty().contains("Postcondition failed"))
+            }
+        }
+    }
+
     private class FakeBackend(
         private val beforeXml: String,
         private val afterXml: String,
+        private val currentPackage: String = "com.example",
     ) : OmniflowActionBackend {
         private var clicked = false
 
@@ -165,7 +245,7 @@ class OmniflowStepExecutorTest {
 
         override fun currentXml(): String = if (clicked) afterXml else beforeXml
 
-        override fun currentPackageName(): String = "com.example"
+        override fun currentPackageName(): String = currentPackage
 
         override fun currentActivityName(): String = "ExampleActivity"
     }
@@ -175,5 +255,11 @@ class OmniflowStepExecutorTest {
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[100,200][300,280]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"Open\" class=\"android.widget.Button\" resource-id=\"app:id/open\"/></hierarchy>"
         private const val AFTER_XML =
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[100,200][300,280]\" enabled=\"true\" visible-to-user=\"true\" text=\"Done\" class=\"android.widget.TextView\" resource-id=\"app:id/done\"/></hierarchy>"
+        private const val SETTINGS_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[30,40][1050,140]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"Search settings\" class=\"android.view.ViewGroup\" resource-id=\"com.android.settings:id/search_action_bar\"/></hierarchy>"
+        private const val SETTINGS_SEARCH_RECORDED_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[20,40][1060,140]\" enabled=\"true\" visible-to-user=\"true\" text=\"Search settings\" class=\"android.widget.EditText\" resource-id=\"com.google.android.settings.intelligence:id/search_action_bar\"/></hierarchy>"
+        private const val SETTINGS_SEARCH_CURRENT_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[40,220][1040,320]\" enabled=\"true\" visible-to-user=\"true\" text=\"No recent searches\" class=\"android.widget.TextView\" resource-id=\"com.google.android.settings.intelligence:id/empty\"/></hierarchy>"
     }
 }

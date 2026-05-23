@@ -52,6 +52,7 @@ void main() {
                 'completion_tokens': 234,
                 'total_tokens': 1234,
                 'step_count': 1,
+                'call_count': 2,
               },
               'token_usage_total': 1234,
               'token_usage_by_step': <Map<String, dynamic>>[
@@ -63,6 +64,32 @@ void main() {
                     'prompt_tokens': 1000,
                     'completion_tokens': 234,
                     'total_tokens': 1234,
+                  },
+                },
+              ],
+              'token_usage_by_call': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'call_index': 0,
+                  'step_index': 0,
+                  'card_id': 'run-vlm-1',
+                  'tool_name': 'open_app',
+                  'attempt_index': 1,
+                  'token_usage': <String, dynamic>{
+                    'prompt_tokens': 600,
+                    'completion_tokens': 100,
+                    'total_tokens': 700,
+                  },
+                },
+                <String, dynamic>{
+                  'call_index': 1,
+                  'step_index': 0,
+                  'card_id': 'run-vlm-1',
+                  'tool_name': 'open_app',
+                  'attempt_index': 2,
+                  'token_usage': <String, dynamic>{
+                    'prompt_tokens': 400,
+                    'completion_tokens': 134,
+                    'total_tokens': 534,
                   },
                 },
               ],
@@ -128,7 +155,8 @@ void main() {
     expect(find.text('1 步'), findsOneWidget);
     expect(find.text('Token 消耗'), findsOneWidget);
     expect(_richTextContaining('总计  1.23k'), findsOneWidget);
-    expect(_richTextContaining('VLM 调用  1'), findsOneWidget);
+    expect(_richTextContaining('VLM 调用  2'), findsOneWidget);
+    expect(_richTextContaining('步骤  1'), findsOneWidget);
     expect(_richTextContaining('输入  1.00k'), findsOneWidget);
     expect(_richTextContaining('输出  234'), findsOneWidget);
     expect(find.text('第 1 步'), findsOneWidget);

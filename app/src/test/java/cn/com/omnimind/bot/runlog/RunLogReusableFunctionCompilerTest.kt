@@ -120,6 +120,34 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
+    fun `settings search transition compiles weak transient postcondition`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf(
+                        "target_description" to "Search settings search_action_bar ViewGroup",
+                        "x" to 500,
+                        "y" to 120,
+                    ),
+                    beforeXml = SETTINGS_XML,
+                    afterXml = SETTINGS_SEARCH_XML,
+                    afterPackage = "com.google.android.settings.intelligence",
+                    title = "点击 Search settings search_action_bar ViewGroup",
+                ),
+            ),
+            runId = "run-settings-search",
+        )
+
+        val click = stepsFrom(spec).single()
+        val postcondition = click["postcondition"] as Map<*, *>
+
+        assertEquals("recorded_after_page_similarity", postcondition["kind"])
+        assertEquals(true, postcondition["allow_package_only_for_transient_search"])
+        assertEquals("settings_search_transition", postcondition["semantic_fallback"])
+    }
+
+    @Test
     fun `failed replay card does not suppress vlm fallback`() {
         val spec = compile(
             listOf(
@@ -474,6 +502,8 @@ class RunLogReusableFunctionCompilerTest {
         args: Map<String, Any?>,
         beforeXml: String = "",
         afterXml: String = "",
+        beforePackage: String = "com.example",
+        afterPackage: String = beforePackage,
         success: Boolean? = null,
         title: String? = null,
         compileKind: String? = null,
@@ -487,11 +517,11 @@ class RunLogReusableFunctionCompilerTest {
             "compile_kind" to compileKind,
             "source" to source,
             "before" to linkedMapOf(
-                "package_name" to "com.example",
+                "package_name" to beforePackage,
                 "observation_xml" to beforeXml,
             ),
             "after" to linkedMapOf(
-                "package_name" to "com.example",
+                "package_name" to afterPackage,
                 "observation_xml" to afterXml,
             ).takeIf { afterXml.isNotBlank() },
         ).filterValues { it != null }
@@ -550,5 +580,9 @@ class RunLogReusableFunctionCompilerTest {
             "<hierarchy><node bounds=\"[100,200][300,280]\" clickable=\"true\" text=\"Open\"/></hierarchy>"
         private const val AFTER_XML =
             "<hierarchy><node bounds=\"[100,200][300,280]\" text=\"Done\"/></hierarchy>"
+        private const val SETTINGS_XML =
+            "<hierarchy><node bounds=\"[32,64][1048,160]\" clickable=\"true\" text=\"Search settings\" resource-id=\"com.android.settings:id/search_action_bar\"/></hierarchy>"
+        private const val SETTINGS_SEARCH_XML =
+            "<hierarchy><node bounds=\"[20,40][1060,140]\" text=\"Search settings\" resource-id=\"com.google.android.settings.intelligence:id/search_action_bar\"/></hierarchy>"
     }
 }

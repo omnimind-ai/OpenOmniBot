@@ -13,7 +13,7 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 - Focused editable input for type/search: use `type` first; missing list target: scroll and re-check.
 - Slider/seekbar: 0-1000 normalized; `Display brightness` max: do not click, scroll x1=70,y1=110,x2=990,y2=110; min x1=990,y1=110,x2=10,y2=110.
 - Numeric keypad targets: click digit buttons; never use `type` unless focused editable.
-- OmniFlow recall is only a historical hint; reuse only when current screenshot/XML matches.
+- OmniFlow recall is UDEG node skill-like decision context reached by page match; use it only while grounded on the current screenshot/XML.
 - Validate after at least two visible UI states before `finished`.
 - Multi-target goals are ordered checklists; finish only after every named page/row/option is opened or verified.
 
@@ -89,13 +89,17 @@ Guidelines:
 Keep AndroidWorld first-step behavior in this skill guidance. Do not encode
 task-suite-specific prompt policy in the core VLM first-step optimizer.
 
-## OmniFlow Recall Guidance
+## OmniFlow UDEG Node Skill Decision Context
 
-OOB may inject an `OmniFlow recall context` section into the VLM dynamic
-context. Treat it as a compressed history of prior successful Functions:
+OOB may inject an `OmniFlow UDEG node skill-like decision context` section into
+the VLM dynamic context. Treat it as decision context reached through:
+`page match -> UDEG node -> node skill-like decision context -> VLM/tool
+decision`.
 
-- Use it to prefer known app entry points, target labels, action ordering, and
-  common scroll/type/click patterns.
+- Use the page-matched UDEG node's skill-like information to choose the next
+  VLM/tool decision on the live screen.
+- Consider only Functions attached to that UDEG node as outgoing reusable
+  transitions.
 - Do not call `finished` just because recall returned `hit` or a prior Function
   finished. Finish only after the current visible page satisfies the user's
   requested end state.
@@ -121,9 +125,12 @@ context. Treat it as a compressed history of prior successful Functions:
 - If an editable field is already focused and the task asks to search, type, or
   enter specific text, the first action should be `type`; do not click the same
   input field again.
-- For list pages such as Settings, if the requested target is not visible, use a
+- For list pages, if the requested target is not visible, use a
   deliberate vertical scroll within the list and then re-check visible text. Do
   not tap the first unrelated row.
+- If a searchable list still does not expose the requested target after bounded
+  scanning, use a visible search affordance instead of continuing a scroll loop.
+  Search for the pending target label, then click the matching result.
 - For sliders, seekbars, and system panels such as brightness or volume, never
   repeat the same `click` on the slider. Use the `scroll` action as a horizontal
   drag to the actual endpoint: to set max, set `x1` near the left/current thumb

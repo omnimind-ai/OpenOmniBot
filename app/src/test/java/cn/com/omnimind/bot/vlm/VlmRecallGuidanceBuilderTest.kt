@@ -1,5 +1,10 @@
 package cn.com.omnimind.bot.vlm
 
+import cn.com.omnimind.assists.task.vlmserver.UIContext
+import cn.com.omnimind.assists.task.vlmserver.VLMPageContextRequest
+import cn.com.omnimind.bot.runlog.OobOmniFlowLoopAcceptanceTest
+import cn.com.omnimind.bot.runlog.OobUdegNodeStore
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -25,8 +30,8 @@ class VlmRecallGuidanceBuilderTest {
             )
         )
 
-        assertTrue(guidance.contains("OmniFlow UDEG recall context"))
-        assertTrue(guidance.contains("path=page_match -> UDEG node -> node skill-like decision context -> VLM/tool decision"))
+        assertTrue(guidance.contains("OmniFlow UDEG node skill-like decision context"))
+        assertTrue(guidance.contains("path=page match -> UDEG node -> node skill-like decision context -> VLM/tool decision"))
         assertTrue(guidance.contains("function_id=open_network_settings"))
         assertTrue(guidance.contains("step: 1. open_app"))
         assertFalse(guidance.contains("任务已完成"))
@@ -47,7 +52,18 @@ class VlmRecallGuidanceBuilderTest {
                             "role" to "decision",
                             "entry_policy" to "page_match_to_udeg_node",
                             "skill_id" to "udeg_node_skill_udeg_node_settings",
-                            "decision_path" to "page_match -> UDEG node -> node skill-like decision context -> VLM/tool decision",
+                            "decision_path" to "page match -> UDEG node -> node skill-like decision context -> VLM/tool decision",
+                        ),
+                        "node_skill_context" to mapOf(
+                            "role" to "decision",
+                            "context_kind" to "udeg_node_skill_like_decision_context",
+                            "entry_policy" to "page_match_to_udeg_node",
+                            "decision_path" to "page match -> UDEG node -> node skill-like decision context -> VLM/tool decision",
+                            "page_match" to mapOf(
+                                "node_id" to "udeg_node_settings",
+                                "page_similarity" to 0.91,
+                                "reason" to "page_vector_strong_match",
+                            ),
                         ),
                         "skill" to mapOf(
                             "decision_guidance" to "Use Settings node context before choosing actions.",
@@ -65,8 +81,9 @@ class VlmRecallGuidanceBuilderTest {
         )
 
         assertTrue(guidance.contains("node_id=udeg_node_settings"))
-        assertTrue(guidance.contains("node_decision_path: page_match -> UDEG node -> node skill-like decision context -> VLM/tool decision"))
+        assertTrue(guidance.contains("node_decision_path: page match -> UDEG node -> node skill-like decision context -> VLM/tool decision"))
         assertTrue(guidance.contains("node_decision_context: role=decision entry_policy=page_match_to_udeg_node"))
+        assertTrue(guidance.contains("node_skill_context: role=decision context_kind=udeg_node_skill_like_decision_context entry_policy=page_match_to_udeg_node node_id=udeg_node_settings page_similarity=0.91"))
         assertTrue(guidance.contains("node_skill_decision_context: Use Settings node context"))
         assertTrue(guidance.contains("node_skill_body:"))
         assertTrue(guidance.contains("# UDEG Node Skill"))
@@ -102,5 +119,44 @@ class VlmRecallGuidanceBuilderTest {
                 )
             )
         )
+    }
+
+    @Test
+    fun `online page context provider observes page and injects udeg node context`() = runBlocking {
+        val context = OobOmniFlowLoopAcceptanceTest.TempFilesContext()
+        try {
+            val provider = OobVlmPageContextProvider(context)
+            val enriched = provider.enrich(
+                VLMPageContextRequest(
+                    context = UIContext(
+                        overallTask = "Open Network settings",
+                        targetPackageName = "com.example.settings",
+                    ),
+                    currentXml = SETTINGS_XML,
+                    currentPackageName = "com.example.settings",
+                    screenshotBase64 = "fake-screenshot",
+                    stepIndex = 0,
+                )
+            )
+
+            assertTrue(enriched.currentPageSummary.contains("UDEG page-match context"))
+            assertTrue(enriched.currentPageSummary.contains(OobUdegNodeStore.UDEG_DECISION_PATH))
+            assertTrue(enriched.currentPageSummary.contains("Network"))
+            assertTrue(enriched.currentPageSummary.contains("live screenshot/XML page match"))
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    private companion object {
+        const val SETTINGS_XML = """
+            <hierarchy>
+              <node class="android.widget.FrameLayout" package="com.example.settings" bounds="[0,0][1080,1920]">
+                <node class="android.widget.TextView" package="com.example.settings" text="Settings" bounds="[32,64][400,160]" />
+                <node class="android.widget.TextView" package="com.example.settings" text="Network" clickable="true" enabled="true" bounds="[32,240][1048,360]" />
+                <node class="android.widget.TextView" package="com.example.settings" text="Display" clickable="true" enabled="true" bounds="[32,380][1048,500]" />
+              </node>
+            </hierarchy>
+        """
     }
 }

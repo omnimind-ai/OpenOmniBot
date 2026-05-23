@@ -46,6 +46,20 @@ object VLMActionPostProcessor {
             )
         }
 
+        VLMActionControllerRegistry.correct(
+            VLMActionControllerRequest(
+                step = step,
+                context = context,
+                currentXml = currentXml,
+                currentPackageName = currentPackageName,
+                stepIndex = stepIndex,
+                displayWidth = displayWidth,
+                displayHeight = displayHeight
+            )
+        )?.let { decision ->
+            return controllerCorrected(decision)
+        }
+
         val page = parsePage(currentXml)
         correctPrematureFinishedForOrderedTarget(
             step = step,
@@ -378,6 +392,23 @@ object VLMActionPostProcessor {
         if (wantsScroll(goalText)) return null
         if (!isVerticalGesture(action)) return null
 
+        val progress = orderedGoalProgress(context)
+        val pendingTarget = progress?.pendingTarget
+        if (pendingTarget != null) {
+            val orderedTarget = page.bestOrderedGoalClickTarget(pendingTarget) ?: return null
+            if (orderedTarget.bounds.area > page.maxNodeArea() * MAX_SCROLL_TO_CLICK_AREA_RATIO) return null
+            return corrected(
+                step = step,
+                action = ClickAction(
+                    targetDescription = orderedTarget.label,
+                    x = orderedTarget.bounds.centerX,
+                    y = orderedTarget.bounds.centerY
+                ),
+                reason = "ordered_goal_target_before_scroll",
+                extraSummary = "Pending ordered target: ${pendingTarget.label}"
+            )
+        }
+
         val goal = visibleGoal(context, step, page)
         val best = page.bestGoalClickTarget(goal.text, goal.preferredSettingsDomain) ?: return null
         if (best.bounds.area > page.maxNodeArea() * MAX_SCROLL_TO_CLICK_AREA_RATIO) return null
@@ -526,6 +557,23 @@ object VLMActionPostProcessor {
             }
         }
         return Result(step = step.copy(action = action, summary = summary), applied = true, reason = reason)
+    }
+
+    private fun controllerCorrected(decision: VLMActionControllerDecision): Result {
+        val summary = buildString {
+            append(decision.step.summary)
+            if (isNotBlank()) append(' ')
+            append("[controller_corrected:${decision.reason}]")
+            if (decision.summary.isNotBlank()) {
+                append(' ')
+                append(decision.summary)
+            }
+        }
+        return Result(
+            step = decision.step.copy(summary = summary),
+            applied = true,
+            reason = decision.reason
+        )
     }
 
     private fun PageModel.hasSliderSemanticSignal(context: UIContext, action: UIAction): Boolean {
@@ -1228,6 +1276,15 @@ object VLMActionPostProcessor {
             val pending = targets.getOrNull(pendingIndex) ?: break
             if (stepCompletesOrderedTarget(traceStep, pending)) {
                 pendingIndex++
+                continue
+            }
+            val next = targets.getOrNull(pendingIndex + 1)
+            if (
+                next != null &&
+                orderedTargetCanImplyPrevious(previous = pending, next = next) &&
+                stepCompletesOrderedTarget(traceStep, next)
+            ) {
+                pendingIndex += 2
             }
         }
 
@@ -1340,6 +1397,20 @@ object VLMActionPostProcessor {
             else -> 0.0
         }
     }
+
+    private fun orderedTargetCanImplyPrevious(
+        previous: OrderedGoalTarget,
+        next: OrderedGoalTarget
+    ): Boolean {
+        val previousTerms = orderedTargetTerms(previous.normalizedLabel)
+        val nextTerms = orderedTargetTerms(next.normalizedLabel).toSet()
+        return previousTerms.isNotEmpty() && previousTerms.all { it in nextTerms }
+    }
+
+    private fun orderedTargetTerms(value: String): List<String> =
+        semanticTerms(value)
+            .filterNot { it in STOP_WORDS || it in ORDERED_TARGET_STOP_WORDS }
+            .distinct()
 
     private fun stepIntentText(step: VLMStep): String =
         listOf(actionSemanticText(step.action), step.thought, step.summary).joinToString(" ")

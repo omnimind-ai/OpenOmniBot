@@ -154,6 +154,7 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
             "token_usage" to (timeline?.get("token_usage") ?: emptyMap<String, Any?>()),
             "token_usage_total" to timeline?.get("token_usage_total"),
             "token_usage_by_step" to (timeline?.get("token_usage_by_step") ?: emptyList<Map<String, Any?>>()),
+            "token_usage_by_call" to (timeline?.get("token_usage_by_call") ?: emptyList<Map<String, Any?>>()),
             "convert" to convert,
         )
     }

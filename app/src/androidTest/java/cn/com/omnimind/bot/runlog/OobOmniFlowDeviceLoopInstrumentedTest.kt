@@ -133,6 +133,7 @@ class OobOmniFlowDeviceLoopInstrumentedTest {
                 mapOf(
                     "goal" to goal,
                     "current_package" to "com.example.settings",
+                    "current_xml" to SOURCE_XML,
                     "k" to 3,
                 )
             )
@@ -387,6 +388,7 @@ class OobOmniFlowDeviceLoopInstrumentedTest {
                         "arguments" to mapOf(
                             "goal" to goal,
                             "current_package" to "com.example.settings",
+                            "current_xml" to SOURCE_XML,
                             "k" to 3,
                         )
                     )
@@ -723,6 +725,11 @@ class OobOmniFlowDeviceLoopInstrumentedTest {
                     "summary" to "Terminal deterministic OmniFlow step",
                     "success" to true,
                     "args" to emptyMap<String, Any?>(),
+                    "before" to mapOf(
+                        "observation_xml" to SOURCE_XML,
+                        "package_name" to "com.example.settings",
+                        "activity_name" to "SettingsActivity",
+                    ),
                 )
             ),
         )

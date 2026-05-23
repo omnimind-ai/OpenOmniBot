@@ -313,6 +313,17 @@ object OmniflowStepExecutor {
         val minScore = numberArg(postcondition, "min_score", "minScore")?.toFloat()
             ?: MIN_POSTCONDITION_PAGE_SCORE
         if (!packageMatched || score < minScore) {
+            transientSettingsSearchPostcondition(
+                step = step,
+                postcondition = postcondition,
+                expectedXml = expectedXml,
+                currentXml = currentXml,
+                expectedPackage = expectedPackage,
+                currentPackage = currentPackage,
+                packageMatched = packageMatched,
+                score = score,
+                minScore = minScore,
+            )?.let { return it }
             throw IllegalStateException(
                 "Postcondition failed: page_similarity=$score min=$minScore " +
                     "package_matched=$packageMatched expected_package=$expectedPackage current_package=$currentPackage"
@@ -328,6 +339,67 @@ object OmniflowStepExecutor {
             "current_package" to currentPackage.takeIf { it.isNotBlank() },
         ).filterValues { it != null }
     }
+
+    private fun transientSettingsSearchPostcondition(
+        step: Map<String, Any?>,
+        postcondition: Map<String, Any?>,
+        expectedXml: String,
+        currentXml: String,
+        expectedPackage: String,
+        currentPackage: String,
+        packageMatched: Boolean,
+        score: Float,
+        minScore: Float,
+    ): Map<String, Any?>? {
+        if (!booleanArg(postcondition["allow_package_only_for_transient_search"])) return null
+        if (!packageMatched) return null
+        val isSettingsSearchPackage =
+            expectedPackage == SETTINGS_SEARCH_PACKAGE || currentPackage == SETTINGS_SEARCH_PACKAGE
+        if (!isSettingsSearchPackage) return null
+        val hasSearchCue = isSettingsSearchTransitionStep(step) ||
+            containsSearchCue(expectedXml) ||
+            containsSearchCue(currentXml)
+        if (!hasSearchCue) return null
+        return linkedMapOf(
+            "kind" to "recorded_after_page_similarity",
+            "success" to true,
+            "score" to score,
+            "min_score" to minScore,
+            "package_matched" to true,
+            "expected_package" to expectedPackage.takeIf { it.isNotBlank() },
+            "current_package" to currentPackage.takeIf { it.isNotBlank() },
+            "semantic_fallback" to "settings_search_transition",
+            "semantic_fallback_reason" to "package_matched_for_transient_settings_search",
+        ).filterValues { it != null }
+    }
+
+    private fun isSettingsSearchTransitionStep(step: Map<String, Any?>): Boolean {
+        val args = normalizeArgsMap(step["args"])
+        val sourceContext = (step["source_context"] as? Map<*, *>)
+            ?: (args["source_context"] as? Map<*, *>)
+        val action = sourceContext?.get("action") as? Map<*, *>
+        val haystack = listOf(
+            step["title"],
+            args["target_description"],
+            args["targetDescription"],
+            args["label"],
+            action?.get("target_description"),
+            action?.get("targetDescription"),
+        ).joinToString(" ").lowercase()
+        return haystack.contains("search settings") ||
+            haystack.contains("search_action_bar") ||
+            haystack.contains("settings search")
+    }
+
+    private fun containsSearchCue(xml: String): Boolean {
+        val lower = xml.lowercase()
+        return lower.contains("search settings") ||
+            lower.contains("search_action_bar") ||
+            lower.contains(SETTINGS_SEARCH_PACKAGE)
+    }
+
+    private fun booleanArg(value: Any?): Boolean =
+        value == true || value?.toString()?.equals("true", ignoreCase = true) == true
 
     private fun pageSimilarityScore(expectedXml: String, currentXml: String): Float {
         val expected = parsePageModel(expectedXml) ?: return 0f
@@ -1057,4 +1129,5 @@ object OmniflowStepExecutor {
     private const val MIN_POSTCONDITION_PAGE_SCORE = 0.12f
     private const val MIN_POSTCONDITION_NODE_SIMILARITY = 0.50f
     private const val MAX_POSTCONDITION_NODES = 24
+    private const val SETTINGS_SEARCH_PACKAGE = "com.google.android.settings.intelligence"
 }

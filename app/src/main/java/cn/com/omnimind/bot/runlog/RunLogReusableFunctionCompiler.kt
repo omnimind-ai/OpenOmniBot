@@ -412,6 +412,13 @@ object RunLogReusableFunctionCompiler {
             ?.toString()
             ?.trim()
             ?.isNotEmpty() == true
+        val postcondition = postconditionFor(
+            replayAction = replayAction,
+            title = title,
+            args = args,
+            sourceContext = sourceContext,
+            hasRecordedAfterPage = hasRecordedAfterPage,
+        )
         return nullableMap(
             "title" to title,
             "kind" to "omniflow_action",
@@ -426,19 +433,55 @@ object RunLogReusableFunctionCompiler {
             "args" to args,
             "source_context" to sourceContext.takeIf { it.isNotEmpty() },
             "coordinate_hook" to if (usesCoordinateHook) "omniflow" else null,
-            "postcondition" to if (hasRecordedAfterPage && replayAction != "finished") {
-                linkedMapOf(
-                    "kind" to "recorded_after_page_similarity",
-                    "source" to "run_log_after_observation",
-                    "min_score" to 0.12,
-                    "fallback" to "agent"
-                )
-            } else {
-                null
-            },
+            "postcondition" to postcondition,
             "replay_engine" to if (utg.isNotEmpty()) "omniflow_utg" else null,
             "utg" to utg.takeIf { it.isNotEmpty() },
         )
+    }
+
+    private fun postconditionFor(
+        replayAction: String,
+        title: String,
+        args: Map<String, Any?>,
+        sourceContext: Map<String, Any?>,
+        hasRecordedAfterPage: Boolean,
+    ): Map<String, Any?>? {
+        if (!hasRecordedAfterPage || replayAction == "finished") return null
+        val postcondition = linkedMapOf<String, Any?>(
+            "kind" to "recorded_after_page_similarity",
+            "source" to "run_log_after_observation",
+            "min_score" to 0.12,
+            "fallback" to "agent",
+        )
+        if (isSettingsSearchTransition(replayAction, title, args, sourceContext)) {
+            postcondition["allow_package_only_for_transient_search"] = true
+            postcondition["semantic_fallback"] = "settings_search_transition"
+        }
+        return postcondition
+    }
+
+    private fun isSettingsSearchTransition(
+        replayAction: String,
+        title: String,
+        args: Map<String, Any?>,
+        sourceContext: Map<String, Any?>,
+    ): Boolean {
+        if (replayAction != "click") return false
+        val dstCtx = asMap(sourceContext["dst_ctx"])
+        val expectedPackage = firstNonBlank(dstCtx["package_name"], dstCtx["packageName"])
+        if (expectedPackage != SETTINGS_SEARCH_PACKAGE) return false
+        val action = asMap(sourceContext["action"])
+        val haystack = listOf(
+            title,
+            args["target_description"],
+            args["targetDescription"],
+            args["label"],
+            action["target_description"],
+            action["targetDescription"],
+        ).joinToString(" ").lowercase()
+        return haystack.contains("search settings") ||
+            haystack.contains("search_action_bar") ||
+            haystack.contains("settings search")
     }
 
     private fun toolNameForCard(card: Map<String, Any?>): String {
@@ -559,7 +602,7 @@ object RunLogReusableFunctionCompiler {
                 "page" to afterXml,
                 "package_name" to firstNonBlank(after["package_name"], after["packageName"]),
             ).filterValues { value ->
-                value?.toString()?.trim()?.isNotEmpty() == true
+                value.trim().isNotEmpty()
             }.takeIf { it.isNotEmpty() },
             "action" to sourceAction,
         ).filterValues { it != null }
@@ -697,4 +740,5 @@ object RunLogReusableFunctionCompiler {
 
     private val INPUT_TEXT_ACTIONS = setOf("type", "input_text")
     private val INPUT_TEXT_ARG_KEYS = listOf("text", "content", "value")
+    private const val SETTINGS_SEARCH_PACKAGE = "com.google.android.settings.intelligence"
 }

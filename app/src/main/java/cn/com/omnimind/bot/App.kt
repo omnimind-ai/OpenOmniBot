@@ -21,6 +21,7 @@ import cn.com.omnimind.bot.quicklog.QuickLogWidgetUpdater
 import cn.com.omnimind.bot.terminal.EmbeddedTerminalRuntime
 import cn.com.omnimind.bot.update.AppUpdateManager
 import cn.com.omnimind.bot.util.NestedBackgroundStateUtil
+import cn.com.omnimind.bot.vlm.OobVlmPageContextProvider
 import com.rk.resources.Res
 import com.tencent.mmkv.MMKV
 import io.flutter.FlutterInjector
@@ -157,6 +158,11 @@ class App : BaseApplication() {
         }
         runCatching {
             ShizukuCapabilityManager.get(this)
+        }
+        runCatching {
+            cn.com.omnimind.assists.task.vlmserver.VLMPageContextProviderRegistry.register(
+                OobVlmPageContextProvider(this)
+            )
         }
 
         initSDKsAfterPrivacyConsent()

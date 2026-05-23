@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.runlog
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -67,6 +68,82 @@ class OobPageVectorSetTest {
             val recallDecisionContext = recallMap["decision_context"] as? Map<*, *>
             assertEquals("page_match_to_udeg_node", recallDecisionContext?.get("entry_policy"))
             assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, recallDecisionContext?.get("decision_path"))
+            val nodeSkillContext = recallMap["node_skill_context"] as? Map<*, *>
+            assertEquals("decision", nodeSkillContext?.get("role"))
+            assertEquals("udeg_node_skill_like_decision_context", nodeSkillContext?.get("context_kind"))
+            assertEquals("page_match_to_udeg_node", nodeSkillContext?.get("entry_policy"))
+            assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, nodeSkillContext?.get("decision_path"))
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `observed page creates reusable udeg node analysis with vector match`() {
+        val context = OobOmniFlowLoopAcceptanceTest.TempFilesContext()
+        try {
+            val store = OobUdegNodeStore(context)
+            val first = requireNotNull(
+                store.observePage(
+                    OobUdegNodeStore.ObservedPage(
+                        pageXml = SOURCE_XML,
+                        packageName = "com.example.settings",
+                        screenshotBase64 = "fake-screenshot",
+                        goal = "open display settings",
+                    )
+                )
+            )
+
+            assertTrue(first.firstSeen)
+            assertEquals(1.0f, first.pageSimilarity)
+            val pageAnalysis = first.node["page_analysis"] as? Map<*, *>
+            assertNotNull(pageAnalysis)
+            val privacy = pageAnalysis?.get("privacy") as? Map<*, *>
+            assertEquals(false, privacy?.get("raw_xml_stored"))
+            assertEquals(false, privacy?.get("raw_screenshot_stored"))
+            val visual = pageAnalysis?.get("visual_observation") as? Map<*, *>
+            assertEquals(true, visual?.get("screenshot_present"))
+            assertNotNull(visual?.get("screenshot_sha256"))
+            assertTrue(pageAnalysis?.toString().orEmpty().contains("Display"))
+            val summary = pageAnalysis?.get("summary") as? Map<*, *>
+            assertTrue(summary?.get("actionables").toString().contains("Network"))
+            assertTrue(first.toMap().toString().contains(OobUdegNodeStore.UDEG_DECISION_PATH))
+
+            val second = requireNotNull(
+                store.observePage(
+                    OobUdegNodeStore.ObservedPage(
+                        pageXml = SOURCE_XML,
+                        packageName = "com.example.settings",
+                    )
+                )
+            )
+            assertEquals(false, second.firstSeen)
+            assertEquals(first.node["node_id"], second.node["node_id"])
+            val registry = second.node["_oob_registry"] as? Map<*, *>
+            assertEquals(2, (registry?.get("seen_count") as Number).toInt())
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `observed page analysis does not persist editable field text`() {
+        val context = OobOmniFlowLoopAcceptanceTest.TempFilesContext()
+        try {
+            val store = OobUdegNodeStore(context)
+            val observed = requireNotNull(
+                store.observePage(
+                    OobUdegNodeStore.ObservedPage(
+                        pageXml = EDITABLE_SECRET_XML,
+                        packageName = "com.example.contacts",
+                    )
+                )
+            )
+            val pageAnalysisText = observed.node["page_analysis"].toString()
+            assertTrue(pageAnalysisText.contains("Phone"))
+            assertFalse(pageAnalysisText.contains("415-555-0130"))
+            val privacy = ((observed.node["page_analysis"] as? Map<*, *>)?.get("privacy") as? Map<*, *>)
+            assertEquals(false, privacy?.get("editable_text_stored"))
         } finally {
             context.root.deleteRecursively()
         }
@@ -124,6 +201,16 @@ class OobPageVectorSetTest {
                 <node class="android.widget.TextView" package="com.example.settings" text="Contacts" bounds="[32,64][400,160]" />
                 <node class="android.widget.EditText" package="com.example.settings" text="" hint-text="First name" editable="true" focusable="true" bounds="[32,240][1048,340]" />
                 <node class="android.widget.EditText" package="com.example.settings" text="" hint-text="Phone" editable="true" focusable="true" bounds="[32,380][1048,480]" />
+              </node>
+            </hierarchy>
+        """
+
+        const val EDITABLE_SECRET_XML = """
+            <hierarchy>
+              <node class="android.widget.FrameLayout" package="com.example.contacts" bounds="[0,0][1080,1920]">
+                <node class="android.widget.TextView" package="com.example.contacts" text="Create contact" bounds="[32,64][520,160]" />
+                <node class="android.widget.EditText" package="com.example.contacts" text="415-555-0130" hint-text="Phone" editable="true" focusable="true" bounds="[32,240][1048,340]" />
+                <node class="android.widget.TextView" package="com.example.contacts" text="Save" clickable="true" enabled="true" bounds="[850,64][1048,160]" />
               </node>
             </hierarchy>
         """

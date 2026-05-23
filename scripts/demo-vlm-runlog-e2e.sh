@@ -194,12 +194,23 @@ try:
 except Exception:
     total_int = 0
 steps = data.get("token_usage_by_step") or []
+calls = data.get("token_usage_by_call") or []
 if total_int <= 0:
     raise SystemExit("missing token_usage_total")
 if not steps:
     raise SystemExit("missing token_usage_by_step")
+if not calls:
+    raise SystemExit("missing token_usage_by_call")
+reported_calls = (data.get("token_usage") or {}).get("call_count")
+if reported_calls is not None and int(reported_calls) != len(calls):
+    raise SystemExit(f"token_usage_by_call count mismatch: summary={reported_calls} calls={len(calls)}")
+for index, call in enumerate(calls):
+    usage = call.get("token_usage") or {}
+    if int(usage.get("total_tokens") or 0) <= 0:
+        raise SystemExit(f"missing token usage total for VLM call {index}")
 print(f"token_usage_total={total_int}")
 print(f"token_usage_step_count={len(steps)}")
+print(f"token_usage_call_count={len(calls)}")
 '
 }
 
