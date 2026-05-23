@@ -97,6 +97,13 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals("hit", recall["decision"])
             assertEquals("oob_native_udeg_page_match", recall["source"])
             assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, recall["decision_path"])
+            val recallTiming = requireNotNull(recall["timing"] as? Map<*, *>)
+            assertEquals("oob_omniflow_recall", recallTiming["source"])
+            assertTrue((recallTiming["duration_ms"] as Number).toLong() >= 0L)
+            val recallPhases = recallTiming["phase_ms"] as? Map<*, *>
+            assertTrue(recallPhases.orEmpty().containsKey("page_match_ms"))
+            assertTrue(recallPhases.orEmpty().containsKey("rank_functions_ms"))
+            assertTrue(recallPhases.orEmpty().containsKey("segment_match_ms"))
             val currentNode = recall["current_node"] as? Map<*, *>
             assertNotNull(currentNode)
             val nodeSkill = currentNode?.get("skill") as? Map<*, *>
@@ -313,6 +320,11 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals(true, recall["success"])
             assertEquals("miss", recall["decision"])
             assertEquals("missing_current_page_for_udeg_page_match", recall["reason"])
+            val recallTiming = requireNotNull(recall["timing"] as? Map<*, *>)
+            assertEquals("oob_omniflow_recall", recallTiming["source"])
+            assertTrue((recallTiming["duration_ms"] as Number).toLong() >= 0L)
+            val recallCounts = recallTiming["counts"] as? Map<*, *>
+            assertEquals(0, (recallCounts?.get("segment_candidates") as Number).toInt())
 
             val firstRun = toolkit.callFunction(
                 mapOf(
@@ -337,6 +349,84 @@ class OobOmniFlowLoopAcceptanceTest {
                 backend.launchedPackages
             )
             assertEquals("com.android.settings", backend.currentPackageName())
+        } finally {
+            backendHandle.close()
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `recall returns segment hit and callFunction can run only the suffix`() = runBlocking {
+        val context = TempFilesContext()
+        val backend = RecordingOmniflowBackend(initialPackage = "com.example.target")
+        val backendHandle = OmniflowActionRuntime.useBackendForTesting(backend)
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val functionId = "continue_from_internal_page_segment"
+            val register = toolkit.registerFunction(
+                mapOf(
+                    "functionSpec" to reusableFunctionSpec(
+                        functionId = functionId,
+                        name = "Continue from target page",
+                        description = "continue from target page by opening settings",
+                        steps = listOf(
+                            clickTransitionStep(
+                                sourceXml = SOURCE_XML,
+                                sourcePackage = "com.example.source",
+                                destXml = TARGET_XML,
+                                destPackage = "com.example.target",
+                            ),
+                            openAppStepWithSource(
+                                id = "open_settings_from_target",
+                                sourceXml = TARGET_XML,
+                                sourcePackage = "com.example.target",
+                                targetPackage = "com.android.settings",
+                            )
+                        )
+                    )
+                )
+            )
+            assertEquals(true, register["success"])
+
+            val recall = toolkit.recall(
+                mapOf(
+                    "goal" to "continue from target page by opening settings",
+                    "current_package" to "com.example.target",
+                    "current_xml" to TARGET_XML,
+                    "k" to 5,
+                )
+            )
+            assertEquals(true, recall["success"])
+            assertEquals("segment_hit", recall["decision"])
+            assertEquals("page_vector_segment_function_hit", recall["reason"])
+            val segmentHit = requireNotNull(recall["segment_hit"] as? Map<*, *>)
+            assertEquals(functionId, segmentHit["function_id"])
+            assertEquals(1, (segmentHit["start_step_index"] as Number).toInt())
+            assertEquals(1, (segmentHit["remaining_step_count"] as Number).toInt())
+            assertEquals("function_suffix", segmentHit["execution_scope"])
+            val timing = requireNotNull(recall["timing"] as? Map<*, *>)
+            val phases = timing["phase_ms"] as? Map<*, *>
+            assertTrue(phases.orEmpty().containsKey("segment_match_ms"))
+            val counts = timing["counts"] as? Map<*, *>
+            assertEquals(1, (counts?.get("segment_candidates") as Number).toInt())
+
+            val call = toolkit.callFunction(
+                mapOf(
+                    "function_id" to functionId,
+                    "goal" to "continue from target page by opening settings",
+                    "start_step_index" to 1,
+                )
+            )
+            assertEquals(true, call["success"])
+            assertEquals(false, call["fallback"])
+            assertEquals(listOf("com.android.settings"), backend.launchedPackages)
+            val oobResult = call["oob_result"] as? Map<*, *>
+            val segment = requireNotNull(oobResult?.get("segment") as? Map<*, *>)
+            assertEquals(1, (segment["start_step_index"] as Number).toInt())
+            assertEquals(1, (segment["remaining_step_count"] as Number).toInt())
+            val stepResults = call["step_results"] as? List<*>
+            val replayedStep = stepResults?.single() as? Map<*, *>
+            assertEquals("open_app", replayedStep?.get("tool"))
         } finally {
             backendHandle.close()
             context.root.deleteRecursively()
@@ -448,6 +538,62 @@ class OobOmniFlowLoopAcceptanceTest {
         "model_free" to true,
         "scriptable" to true,
         "args" to mapOf("package_name" to "com.android.settings"),
+    )
+
+    private fun openAppStepWithSource(
+        id: String,
+        sourceXml: String,
+        sourcePackage: String,
+        targetPackage: String,
+    ): Map<String, Any?> = mapOf(
+        "id" to id,
+        "index" to 1,
+        "title" to "Open $targetPackage",
+        "kind" to "omniflow_action",
+        "executor" to "omniflow",
+        "omniflow_action" to "open_app",
+        "local_action" to "open_app",
+        "tool" to "open_app",
+        "callable_tool" to "open_app",
+        "model_free" to true,
+        "scriptable" to true,
+        "args" to mapOf("package_name" to targetPackage),
+        "source_context" to mapOf(
+            "src_ctx" to mapOf(
+                "page" to sourceXml,
+                "package_name" to sourcePackage,
+            )
+        ),
+    )
+
+    private fun clickTransitionStep(
+        sourceXml: String,
+        sourcePackage: String,
+        destXml: String,
+        destPackage: String,
+    ): Map<String, Any?> = mapOf(
+        "id" to "click_into_target_page",
+        "index" to 0,
+        "title" to "Click into target page",
+        "kind" to "omniflow_action",
+        "executor" to "omniflow",
+        "omniflow_action" to "click",
+        "local_action" to "click",
+        "tool" to "click",
+        "callable_tool" to "click",
+        "model_free" to true,
+        "scriptable" to true,
+        "args" to mapOf("x" to 100, "y" to 260),
+        "source_context" to mapOf(
+            "src_ctx" to mapOf(
+                "page" to sourceXml,
+                "package_name" to sourcePackage,
+            ),
+            "dst_ctx" to mapOf(
+                "page" to destXml,
+                "package_name" to destPackage,
+            ),
+        ),
     )
 
     private fun callFunctionStep(functionId: String): Map<String, Any?> = mapOf(
@@ -627,6 +773,15 @@ class OobOmniFlowLoopAcceptanceTest {
         private const val AFTER_XML = """
             <hierarchy bounds="[0,0][1080,1920]">
               <node index="0" package="com.example.settings" class="android.widget.TextView" text="Internet" content-desc="" resource-id="android:id/internet" clickable="true" enabled="true" visible-to-user="true" bounds="[40,200][1040,320]" />
+            </hierarchy>
+        """
+
+        private const val TARGET_XML = """
+            <hierarchy bounds="[0,0][1080,1920]">
+              <node index="0" package="com.example.target" class="android.widget.LinearLayout" text="" content-desc="" bounds="[0,0][1080,1920]">
+                <node index="1" package="com.example.target" class="android.widget.TextView" text="Target details" content-desc="" resource-id="target:title" clickable="false" enabled="true" visible-to-user="true" bounds="[40,80][800,180]" />
+                <node index="2" package="com.example.target" class="android.widget.Button" text="Open settings" content-desc="" resource-id="target:open_settings" clickable="true" enabled="true" visible-to-user="true" bounds="[80,620][1000,760]" />
+              </node>
             </hierarchy>
         """
     }

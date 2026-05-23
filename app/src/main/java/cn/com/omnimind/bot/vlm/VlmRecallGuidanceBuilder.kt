@@ -73,10 +73,12 @@ object VlmRecallGuidanceBuilder {
 
         val candidates = candidateList(payload)
             .take(MAX_GUIDANCE_CANDIDATES)
+        val segmentCandidates = segmentCandidateList(payload)
+            .take(MAX_GUIDANCE_CANDIDATES)
         val nodeCandidates = listArg(payload["node_candidates"]).mapNotNull { raw ->
             mapArg(raw).takeIf { it.isNotEmpty() }
         }.take(MAX_GUIDANCE_CANDIDATES)
-        if (candidates.isEmpty() && nodeCandidates.isEmpty()) return ""
+        if (candidates.isEmpty() && segmentCandidates.isEmpty() && nodeCandidates.isEmpty()) return ""
 
         return buildString {
             appendLine("OmniFlow UDEG node skill-like decision context:")
@@ -127,6 +129,26 @@ object VlmRecallGuidanceBuilder {
                     appendLine("   step: $summary")
                 }
             }
+            segmentCandidates.forEachIndexed { index, candidate ->
+                val functionId = candidate["function_id"]?.toString()?.trim().orEmpty()
+                val score = candidate["score"]?.toString()?.trim().orEmpty()
+                val pageSimilarity = candidate["page_similarity"]?.toString()?.trim().orEmpty()
+                val startStepIndex = candidate["start_step_index"]?.toString()?.trim().orEmpty()
+                val remainingStepCount = candidate["remaining_step_count"]?.toString()?.trim().orEmpty()
+                val matchedBoundary = candidate["matched_boundary"]?.toString()?.trim().orEmpty()
+                val description = firstNonBlank(candidate["description"], candidate["name"], functionId)
+                    .take(MAX_DESCRIPTION_CHARS)
+                appendLine(
+                    "segment ${index + 1}: function_id=$functionId score=$score " +
+                        "page_similarity=$pageSimilarity start_step_index=$startStepIndex " +
+                        "remaining_step_count=$remainingStepCount matched_boundary=$matchedBoundary " +
+                        "description=$description"
+                )
+                appendLine("   call: call_tool function_id=$functionId start_step_index=$startStepIndex")
+                renderStepSummaries(candidate).take(MAX_STEP_SUMMARIES).forEach { summary ->
+                    appendLine("   remaining_step: $summary")
+                }
+            }
         }.trim()
     }
 
@@ -134,6 +156,14 @@ object VlmRecallGuidanceBuilder {
         val hit = mapArg(payload["hit"])
         if (hit.isNotEmpty()) return listOf(hit)
         return listArg(payload["candidates"]).mapNotNull { raw -> mapArg(raw).takeIf { it.isNotEmpty() } }
+    }
+
+    private fun segmentCandidateList(payload: Map<String, Any?>): List<Map<String, Any?>> {
+        val hit = mapArg(payload["segment_hit"])
+        if (hit.isNotEmpty()) return listOf(hit)
+        return listArg(payload["segment_candidates"]).mapNotNull { raw ->
+            mapArg(raw).takeIf { it.isNotEmpty() }
+        }
     }
 
     private fun renderStepSummaries(candidate: Map<String, Any?>): List<String> {
