@@ -120,6 +120,31 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
+    fun `compiler infers page package when recorded package disagrees with xml`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf("target_description" to "Apps", "x" to 360, "y" to 977),
+                    beforeXml = SETTINGS_XML,
+                    afterXml = SETTINGS_APPS_XML,
+                    beforePackage = "cn.com.omnimind.bot.debug",
+                    afterPackage = "cn.com.omnimind.bot.debug",
+                ),
+            ),
+            runId = "run-click-package-infer",
+        )
+
+        val click = stepsFrom(spec).single()
+        val sourceContext = click["source_context"] as Map<*, *>
+        val srcCtx = sourceContext["src_ctx"] as Map<*, *>
+        val dstCtx = sourceContext["dst_ctx"] as Map<*, *>
+
+        assertEquals("com.android.settings", srcCtx["package_name"])
+        assertEquals("com.android.settings", dstCtx["package_name"])
+    }
+
+    @Test
     fun `settings search transition compiles weak transient postcondition`() {
         val spec = compile(
             listOf(
@@ -582,6 +607,8 @@ class RunLogReusableFunctionCompilerTest {
             "<hierarchy><node bounds=\"[100,200][300,280]\" text=\"Done\"/></hierarchy>"
         private const val SETTINGS_XML =
             "<hierarchy><node bounds=\"[32,64][1048,160]\" clickable=\"true\" text=\"Search settings\" resource-id=\"com.android.settings:id/search_action_bar\"/></hierarchy>"
+        private const val SETTINGS_APPS_XML =
+            "<hierarchy><node bounds=\"[0,0][720,1280]\" text=\"Apps\" resource-id=\"com.android.settings:id/content_parent\"/><node bounds=\"[48,594][273,648]\" text=\"Default apps\" resource-id=\"android:id/title\"/></hierarchy>"
         private const val SETTINGS_SEARCH_XML =
             "<hierarchy><node bounds=\"[20,40][1060,140]\" text=\"Search settings\" resource-id=\"com.google.android.settings.intelligence:id/search_action_bar\"/></hierarchy>"
     }

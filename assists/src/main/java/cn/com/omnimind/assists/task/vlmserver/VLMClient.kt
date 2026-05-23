@@ -404,6 +404,12 @@ class VLMClient(
             "type" -> TypeAction(
                 content = requireString(args, "content")
             )
+            "input_text" -> InputTextAction(
+                targetDescription = requireString(args, "target_description"),
+                content = requireString(args, "content", "text", "value"),
+                x = requireFloat(args, "x"),
+                y = requireFloat(args, "y")
+            )
             "scroll" -> ScrollAction(
                 targetDescription = requireString(args, "target_description"),
                 x1 = requireFloat(args, "x1"),
@@ -602,9 +608,13 @@ class VLMClient(
         return if (normalized.length <= maxLen) normalized else normalized.take(maxLen) + "..."
     }
 
-    private fun requireString(obj: JsonObject, key: String): String {
-        return obj[key]?.jsonPrimitive?.content?.trim()?.takeIf { it.isNotEmpty() }
-            ?: throw IllegalArgumentException("Missing or empty '$key'")
+    private fun requireString(obj: JsonObject, key: String, vararg aliases: String): String {
+        val keys = listOf(key) + aliases
+        keys.forEach { candidate ->
+            val value = obj[candidate]?.jsonPrimitive?.content?.trim()?.takeIf { it.isNotEmpty() }
+            if (value != null) return value
+        }
+        throw IllegalArgumentException("Missing or empty '${keys.first()}'")
     }
 
     private fun optionalString(obj: JsonObject, key: String): String? {

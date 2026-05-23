@@ -69,6 +69,7 @@ object VLMActionPostProcessor {
             displayHeight = displayHeight
         )?.let { return it }
         correctTypeToNumericKeypadClick(step, page)?.let { return it }
+        correctTypeToNarrativeFormFieldTarget(step, context, page)?.let { return it }
 
         if (step.action is ClickAction) {
             correctOrderedGoalClickTarget(
@@ -241,6 +242,49 @@ object VLMActionPostProcessor {
             ),
             reason = "type_to_numeric_key_click",
             extraSummary = "Converted numeric keypad type to first key; remaining=${content.drop(1)}"
+        )
+    }
+
+    private fun correctTypeToNarrativeFormFieldTarget(
+        step: VLMStep,
+        context: UIContext,
+        page: PageModel
+    ): Result? {
+        val typeAction = step.action as? TypeAction ?: return null
+        if (typeAction.content.isBlank()) return null
+
+        val segments = narrativeTargetSegments(context, step)
+        if (segments.isEmpty()) return null
+        val best = page.bestNarrativeFormFieldTarget(context, step) ?: return null
+        val bestScore = best.bestFormFieldNarrativeScore(segments)
+        val focused = page.focusedEditableNode()
+        if (focused != null) {
+            val focusedScore = focused.bestFormFieldNarrativeScore(segments)
+            val focusedIsBest = focused.bounds == best.bounds
+            if (focusedIsBest) return null
+            if (focusedScore >= MIN_FORM_FIELD_NARRATIVE_SCORE) return null
+            if (focusedScore >= bestScore - MIN_FORM_FIELD_REDIRECT_SCORE_DELTA) return null
+        }
+
+        val correctedAction = if (best.isSelectionFieldLike) {
+            ClickAction(
+                targetDescription = best.formTargetLabel,
+                x = best.bounds.centerX,
+                y = best.bounds.centerY
+            )
+        } else {
+            InputTextAction(
+                targetDescription = best.formTargetLabel,
+                content = typeAction.content,
+                x = best.bounds.centerX,
+                y = best.bounds.centerY
+            )
+        }
+        return corrected(
+            step = step,
+            action = correctedAction,
+            reason = "type_to_form_field_target",
+            extraSummary = "Prepared matching form target before typing."
         )
     }
 
@@ -784,6 +828,9 @@ object VLMActionPostProcessor {
     private fun PageModel.hasFocusedEditable(): Boolean =
         nodes.any { it.enabled && it.editable && it.focused }
 
+    private fun PageModel.focusedEditableNode(): PageNode? =
+        nodes.firstOrNull { it.enabled && it.editable && it.focused }
+
     private fun PageModel.numericKeyCount(): Int =
         nodes.count { node ->
             node.actionable &&
@@ -859,7 +906,7 @@ object VLMActionPostProcessor {
                 bounds = bounds,
                 text = element.attr("text"),
                 contentDesc = element.attr("content-desc"),
-                hintText = element.attr("hintText"),
+                hintText = firstNonBlank(element.attr("hintText"), element.attr("hint")),
                 resourceId = element.attr("resource-id"),
                 className = element.attr("class"),
                 descendantText = descendantSemanticText(element),
@@ -883,7 +930,7 @@ object VLMActionPostProcessor {
         for (index in 0 until descendants.length) {
             val child = descendants.item(index) as? Element ?: continue
             if (child === element) continue
-            listOf(child.attr("text"), child.attr("content-desc"), child.attr("hintText"))
+            listOf(child.attr("text"), child.attr("content-desc"), child.attr("hintText"), child.attr("hint"))
                 .filter { it.isNotBlank() }
                 .forEach { parts += it }
             if (parts.joinToString(" ").length >= MAX_DESCENDANT_CHARS) break
@@ -994,6 +1041,16 @@ object VLMActionPostProcessor {
             if (currentGoal.isNotBlank() && currentGoal != overall) {
                 add(NarrativeSegment(currentGoal, 36.0))
             }
+            if (step.action is TypeAction || step.action is InputTextAction) {
+                addNarrativeSegment(
+                    when (val action = step.action) {
+                        is TypeAction -> action.content
+                        is InputTextAction -> listOf(action.targetDescription, action.content).joinToString(" ")
+                        else -> ""
+                    },
+                    28.0
+                )
+            }
             addNarrativeSegment(step.thought, 32.0)
             addNarrativeSegment(step.summary, 18.0)
             addNarrativeSegment(step.observation, 10.0)
@@ -1010,13 +1067,26 @@ object VLMActionPostProcessor {
         if (phrases.isEmpty()) return 0.0
         return segments.maxOfOrNull { segment ->
             phrases.maxOfOrNull { phrase ->
-                formFieldPhraseScore(segment, phrase)
+                val score = formFieldPhraseScore(segment, phrase)
+                if (score <= 0.0) {
+                    0.0
+                } else {
+                    score + formFieldRoleBonus(segment)
+                }
             } ?: 0.0
         } ?: 0.0
     }
 
     private fun PageNode.formFieldLabelPhrases(): List<String> =
-        directSemanticValues()
+        buildList {
+            addAll(directSemanticValues())
+            directSemanticValues().forEach { value ->
+                semanticTerms(normalizeText(value))
+                    .filterNot { it in STOP_WORDS }
+                    .filter { it in FORM_FIELD_TERMS || it in SELECTION_FIELD_TERMS }
+                    .forEach(::add)
+            }
+        }
             .asSequence()
             .map(::normalizeText)
             .filter { it.isNotBlank() && it.length <= MAX_FORM_FIELD_LABEL_CHARS }
@@ -1027,6 +1097,16 @@ object VLMActionPostProcessor {
     private fun PageNode.directSemanticValues(): List<String> =
         listOf(text, contentDesc, hintText)
             .filter { it.isNotBlank() }
+
+    private fun PageNode.formFieldRoleBonus(segment: NarrativeSegment): Double {
+        val segmentTerms = semanticTerms(segment.text).filterNot { it in STOP_WORDS }.toSet()
+        if (segmentTerms.isEmpty()) return 0.0
+        return when {
+            isSelectionFieldLike && segmentTerms.any { it in SELECTION_FIELD_TERMS } -> SELECTION_FIELD_INTENT_BONUS
+            editable && !isSelectionFieldLike && segmentTerms.any { it in SELECTION_FIELD_TERMS } -> -EDITABLE_FIELD_SELECTION_INTENT_PENALTY
+            else -> 0.0
+        }
+    }
 
     private fun formFieldPhraseScore(segment: NarrativeSegment, phrase: String): Double {
         val index = phraseLastIndex(segment.text, phrase)
@@ -1053,6 +1133,11 @@ object VLMActionPostProcessor {
 
     private fun isLikelyFormFieldPhrase(value: String): Boolean {
         val terms = semanticTerms(value).filterNot { it in STOP_WORDS }.toSet()
+        return terms.isNotEmpty() && terms.any { it in FORM_FIELD_TERMS }
+    }
+
+    private fun formFieldTermSignal(value: String): Boolean {
+        val terms = semanticTerms(normalizeText(value)).filterNot { it in STOP_WORDS }.toSet()
         return terms.isNotEmpty() && terms.any { it in FORM_FIELD_TERMS }
     }
 
@@ -1421,6 +1506,7 @@ object VLMActionPostProcessor {
             is ScrollAction -> action.targetDescription
             is LongPressAction -> action.targetDescription
             is TypeAction -> action.content
+            is InputTextAction -> listOf(action.targetDescription, action.content).joinToString(" ")
             is RecordAction -> action.content
             is InfoAction -> action.value
             is FeedbackAction -> action.value
@@ -1473,7 +1559,33 @@ object VLMActionPostProcessor {
                 return editable ||
                     lower.contains("edittext") ||
                     lower.contains("spinner") ||
-                    lower.contains("textfield")
+                    lower.contains("textfield") ||
+                    isSelectionFieldLike ||
+                    (
+                        actionable &&
+                            descendantText.isNotBlank() &&
+                            formFieldTermSignal(
+                                listOf(text, contentDesc, hintText, descendantText, resourceId, className)
+                                    .joinToString(" ")
+                            )
+                        )
+            }
+
+        val isSelectionFieldLike: Boolean
+            get() {
+                val lower = listOf(className, resourceId, text, contentDesc, hintText, descendantText)
+                    .joinToString(" ")
+                    .lowercase()
+                val classOrResourceLooksSelectable =
+                    lower.contains("spinner") ||
+                        lower.contains("dropdown") ||
+                        lower.contains("select") ||
+                        lower.contains("menu")
+                val rowLooksSelectable =
+                    actionable &&
+                        descendantText.isNotBlank() &&
+                        SELECTION_FIELD_TERMS.any { lower.contains(it) }
+                return classOrResourceLooksSelectable || rowLooksSelectable
             }
 
         val isSliderClass: Boolean
@@ -1506,6 +1618,13 @@ object VLMActionPostProcessor {
             get() = listOf(text, contentDesc, hintText, descendantText, resourceTail(), classSuffix())
                 .filter { it.isNotBlank() }
                 .joinToString(" ")
+
+        val formTargetLabel: String
+            get() = if (editable) {
+                firstNonBlank(hintText, contentDesc, resourceTail(), text, descendantText, classSuffix())
+            } else {
+                firstNonBlank(contentDesc, text, hintText, descendantText, resourceTail(), classSuffix())
+            }
 
         fun matchesNumericKey(key: String): Boolean {
             val direct = listOf(text, contentDesc, hintText)
@@ -1696,6 +1815,13 @@ object VLMActionPostProcessor {
         "email",
         "mail",
         "label",
+        "type",
+        "category",
+        "account",
+        "country",
+        "language",
+        "number",
+        "value",
         "company",
         "title",
         "address",
@@ -1724,6 +1850,28 @@ object VLMActionPostProcessor {
         "地址",
         "日期",
         "时间"
+    )
+    private val SELECTION_FIELD_TERMS = setOf(
+        "label",
+        "type",
+        "category",
+        "account",
+        "country",
+        "language",
+        "option",
+        "choice",
+        "select",
+        "selector",
+        "dropdown",
+        "spinner",
+        "标签",
+        "类型",
+        "类别",
+        "账号",
+        "国家",
+        "语言",
+        "选项",
+        "选择"
     )
     private val FORM_ACTION_CUE_TERMS = setOf(
         "click",
@@ -1855,6 +2003,9 @@ object VLMActionPostProcessor {
     private const val MIN_ORDERED_TARGET_VISIBLE_SCORE = 0.76
     private const val MIN_ORDERED_TARGET_ACTION_SCORE = 0.88
     private const val MIN_FORM_FIELD_NARRATIVE_SCORE = 118.0
+    private const val MIN_FORM_FIELD_REDIRECT_SCORE_DELTA = 18.0
+    private const val SELECTION_FIELD_INTENT_BONUS = 36.0
+    private const val EDITABLE_FIELD_SELECTION_INTENT_PENALTY = 24.0
     private const val MIN_NUMERIC_KEYPAD_KEYS = 6
     private const val MAX_DESCENDANT_CHARS = 120
     private const val MAX_FORM_FIELD_LABEL_CHARS = 48

@@ -576,6 +576,7 @@ open class VLMOperationTask(
         return when (action) {
             is ClickAction -> "点击 ${action.targetDescription}"
             is TypeAction -> "输入文本"
+            is InputTextAction -> "输入文本 ${action.targetDescription}"
             is ScrollAction -> "滚动 ${action.targetDescription}"
             is LongPressAction -> "长按 ${action.targetDescription}"
             is OpenAppAction -> "打开应用"
@@ -601,6 +602,13 @@ open class VLMOperationTask(
                 "y" to action.y
             )
             is TypeAction -> linkedMapOf("content" to action.content)
+            is InputTextAction -> linkedMapOf(
+                "target_description" to action.targetDescription,
+                "content" to action.content,
+                "text" to action.content,
+                "x" to action.x,
+                "y" to action.y
+            )
             is ScrollAction -> linkedMapOf(
                 "target_description" to action.targetDescription,
                 "x1" to action.x1,

@@ -110,6 +110,14 @@ object ActionTargetGrounder {
                 nodes = page,
             ) { groundedX, groundedY -> action.copy(x = groundedX, y = groundedY) }
 
+            is InputTextAction -> groundPointAction(
+                action = action,
+                x = action.x,
+                y = action.y,
+                targetDescription = action.targetDescription,
+                nodes = page,
+            ) { groundedX, groundedY -> action.copy(x = groundedX, y = groundedY) }
+
             else -> Result(action = action, applied = false, reason = "unsupported_action")
         }
     }
@@ -345,7 +353,7 @@ object ActionTargetGrounder {
                 bounds = bounds,
                 text = element.attr("text"),
                 contentDesc = element.attr("content-desc"),
-                hintText = element.attr("hintText"),
+                hintText = firstNonBlank(element.attr("hintText"), element.attr("hint")),
                 descendantText = descendantSemanticText(element),
                 descendantTextParts = descendantSemanticParts(element),
                 resourceId = element.attr("resource-id"),
@@ -365,6 +373,9 @@ object ActionTargetGrounder {
     private fun Element.attr(name: String): String =
         if (hasAttribute(name)) getAttribute(name).trim() else ""
 
+    private fun firstNonBlank(vararg values: String): String =
+        values.firstOrNull { it.isNotBlank() }.orEmpty()
+
     private fun Element.boolAttr(name: String): Boolean =
         attr(name).equals("true", ignoreCase = true)
 
@@ -374,7 +385,7 @@ object ActionTargetGrounder {
         for (index in 0 until descendants.length) {
             val child = descendants.item(index) as? Element ?: continue
             if (child === element) continue
-            listOf(child.attr("text"), child.attr("content-desc"), child.attr("hintText"))
+            listOf(child.attr("text"), child.attr("content-desc"), child.attr("hintText"), child.attr("hint"))
                 .filter { it.isNotBlank() }
                 .forEach { parts += it }
             if (parts.joinToString(" ").length >= MAX_DESCENDANT_LABEL_LENGTH) break
@@ -388,7 +399,7 @@ object ActionTargetGrounder {
         for (index in 0 until descendants.length) {
             val child = descendants.item(index) as? Element ?: continue
             if (child === element) continue
-            listOf(child.attr("text"), child.attr("content-desc"), child.attr("hintText"))
+            listOf(child.attr("text"), child.attr("content-desc"), child.attr("hintText"), child.attr("hint"))
                 .map { it.trim() }
                 .filter { it.isNotBlank() }
                 .forEach { parts += it }

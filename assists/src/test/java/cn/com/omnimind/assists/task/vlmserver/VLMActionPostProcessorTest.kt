@@ -266,6 +266,92 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
+    fun `redirects type to matching form selection row when editable focus is stale`() {
+        val step = VLMStep(
+            observation = "contact editor with phone field focused",
+            thought = "The phone number is already entered. Open the Mobile Phone label selector so the label can be changed to Work.",
+            action = TypeAction(content = "Work"),
+            summary = "Next change the phone label to Work."
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = "Create a new contact with first name Alice and last name Smith.",
+                targetPackageName = "com.google.android.contacts"
+            ),
+            currentXml = CONTACT_EDITOR_PHONE_FOCUSED_XML,
+            currentPackageName = "com.google.android.contacts",
+            stepIndex = 6,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertTrue(result.applied)
+        assertEquals("type_to_form_field_target", result.reason)
+        val action = result.step.action as ClickAction
+        assertEquals("Mobile Phone", action.targetDescription)
+        assertEquals(275f, action.x, 0.01f)
+        assertEquals(1213.5f, action.y, 0.01f)
+    }
+
+    @Test
+    fun `redirects type to matching editable field when focus is stale`() {
+        val step = VLMStep(
+            observation = "contact editor with first name already focused",
+            thought = "The next step is to enter the last name Smith in the Last name field.",
+            action = TypeAction(content = "Smith"),
+            summary = "Next change the last name to Smith."
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = "Create a new contact with first name Alice, last name Smith, phone number 415-555-0130, and phone label Work.",
+                targetPackageName = "com.google.android.contacts"
+            ),
+            currentXml = CONTACT_EDITOR_PHONE_FOCUSED_XML,
+            currentPackageName = "com.google.android.contacts",
+            stepIndex = 7,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertTrue(result.applied)
+        assertEquals("type_to_form_field_target", result.reason)
+        val action = result.step.action as InputTextAction
+        assertEquals("Last name", action.targetDescription)
+        assertEquals("Smith", action.content)
+        assertEquals(356f, action.x, 0.01f)
+        assertEquals(799.5f, action.y, 0.01f)
+    }
+
+    @Test
+    fun `keeps type when focused form field matches narrative intent`() {
+        val step = VLMStep(
+            observation = "contact editor with phone field focused",
+            thought = "Enter the phone number in the Phone field.",
+            action = TypeAction(content = "415-555-0130")
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = "Create a new contact with first name Alice, last name Smith, phone number 415-555-0130, and phone label Work.",
+                targetPackageName = "com.google.android.contacts"
+            ),
+            currentXml = CONTACT_EDITOR_PHONE_FOCUSED_XML,
+            currentPackageName = "com.google.android.contacts",
+            stepIndex = 5,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertFalse(result.applied)
+        assertEquals(step.action, result.step.action)
+    }
+
+    @Test
     fun `does not convert brightness level row click before slider dialog is open`() {
         val step = VLMStep(
             observation = "display settings",
@@ -1237,6 +1323,20 @@ class VLMActionPostProcessorTest {
                   <node id="33" text="First name" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" focused="true" editable="true" bounds="[104,603][608,716]" />
                   <node id="36" text="Last name" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,743][608,856]" />
                   <node id="56" text="Phone" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,1055][608,1168]" />
+                  <node id="59" text="Mobile" content-desc="Mobile Phone" class="android.widget.Spinner" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,1195][446,1232]" />
+                </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val CONTACT_EDITOR_PHONE_FOCUSED_XML =
+            """
+            <hierarchy>
+              <node id="0" class="android.widget.FrameLayout" enabled="true" bounds="[0,0][720,1280]">
+                <node id="15" class="android.widget.ScrollView" enabled="true" focusable="true" scrollable="true" bounds="[0,176][720,1232]">
+                  <node id="33" text="Alice" hint="First name" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,603][608,716]" />
+                  <node id="36" text="Smith" hint="Last name" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,743][608,856]" />
+                  <node id="56" text="Phone" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" focused="true" editable="true" bounds="[104,1055][608,1168]" />
                   <node id="59" text="Mobile" content-desc="Mobile Phone" class="android.widget.Spinner" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,1195][446,1232]" />
                 </node>
               </node>

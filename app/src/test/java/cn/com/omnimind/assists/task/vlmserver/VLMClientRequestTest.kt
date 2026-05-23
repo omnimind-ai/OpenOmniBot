@@ -133,6 +133,41 @@ class VLMClientRequestTest {
         assertTrue(payload["post_action_observation"].toString().contains("after action screen changed"))
     }
 
+    @Test
+    fun `openai tool action parser supports input_text with target grounding`() {
+        val client = VLMClient()
+        val result = client.parseVLMResponse(
+            SceneChatCompletionTurn(
+                parser = ModelSceneRegistry.ResponseParser.OPENAI_TOOL_ACTIONS,
+                route = "scene.vlm.operation.primary",
+                resolvedModel = "vlm-test-model",
+                turn = ChatCompletionTurn(
+                    message = ChatCompletionMessage(
+                        role = "assistant",
+                        toolCalls = listOf(
+                            AssistantToolCall(
+                                id = "call_1",
+                                function = AssistantToolCallFunction(
+                                    name = "input_text",
+                                    arguments = """{"target_description":"Last name","content":"Smith","x":356,"y":799.5}"""
+                                )
+                            )
+                        )
+                    )
+                )
+            ),
+            modelOrScene = "scene.vlm.operation.primary"
+        )
+
+        assertTrue(result.success)
+        val step = requireNotNull(result.step)
+        val action = step.action as InputTextAction
+        assertEquals("Last name", action.targetDescription)
+        assertEquals("Smith", action.content)
+        assertEquals(356f, action.x, 0.01f)
+        assertEquals(799.5f, action.y, 0.01f)
+    }
+
     companion object {
         private const val BEFORE_XML =
             """

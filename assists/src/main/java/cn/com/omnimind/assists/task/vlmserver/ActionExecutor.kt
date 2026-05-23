@@ -85,6 +85,26 @@ class ActionExecutor(
                 deviceOperator.inputText(action.content)
             }
 
+            is InputTextAction -> {
+                val clickResult = deviceOperator.clickCoordinate(action.x, action.y)
+                if (!clickResult.success) {
+                    clickResult
+                } else {
+                    ensureActionActive()
+                    kotlinx.coroutines.delay(INPUT_TEXT_FOCUS_DELAY_MS)
+                    val inputResult = deviceOperator.inputText(action.content)
+                    if (inputResult.success) {
+                        OperationResult(
+                            success = true,
+                            message = "点击 ${action.targetDescription} 并输入文本成功",
+                            data = inputResult.data
+                        )
+                    } else {
+                        inputResult
+                    }
+                }
+            }
+
             is ScrollAction -> {
                 // VLM 模型返回的 duration 是秒，需要转换为毫秒
                 val durationMs = (action.duration * 1000).toLong()
@@ -181,8 +201,9 @@ class ActionExecutor(
             }
         }
 
-        val needsPostDelay = when (vlmStep.action) {
+        val needsPostDelay = result.success && when (vlmStep.action) {
             is ClickAction,
+            is InputTextAction,
             is LongPressAction,
             is ScrollAction,
             is OpenAppAction,
@@ -213,5 +234,9 @@ class ActionExecutor(
 
     suspend fun act(vlmStep: VLMStep): UIStep {
         return executeAction(vlmStep)
+    }
+
+    private companion object {
+        private const val INPUT_TEXT_FOCUS_DELAY_MS = 350L
     }
 }

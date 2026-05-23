@@ -34,6 +34,17 @@ data class TypeAction(
 ) : UIAction()
 
 @Serializable
+@SerialName("input_text")
+data class InputTextAction(
+    override val name: String = "input_text",
+    @SerialName("target_description")
+    val targetDescription: String,
+    val content: String,
+    var x: Float,
+    var y: Float
+) : UIAction()
+
+@Serializable
 @SerialName("scroll")
 data class ScrollAction(
     override val name: String = "scroll",

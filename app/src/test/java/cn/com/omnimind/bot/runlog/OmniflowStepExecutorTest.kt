@@ -127,6 +127,81 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
+    fun `execute normalizes recorded package from expected xml`() = runBlocking {
+        val backend = FakeBackend(
+            beforeXml = SETTINGS_XML,
+            afterXml = SETTINGS_APPS_XML,
+            currentPackage = "com.android.settings",
+        )
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "args" to mapOf("x" to 360, "y" to 977),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to SETTINGS_XML),
+                        "dst_ctx" to mapOf(
+                            "page" to SETTINGS_APPS_XML,
+                            "package_name" to "cn.com.omnimind.bot.debug",
+                        ),
+                    ),
+                    "postcondition" to mapOf(
+                        "kind" to "recorded_after_page_similarity",
+                        "min_score" to 0.1,
+                    ),
+                ),
+                stepId = "step_package_infer",
+                stepTitle = "click Apps",
+            )
+
+            assertEquals(true, result["success"])
+            val postcondition = result["postcondition"] as Map<*, *>
+            assertEquals(true, postcondition["success"])
+            assertEquals("com.android.settings", postcondition["expected_package"])
+            assertEquals("cn.com.omnimind.bot.debug", postcondition["recorded_expected_package"])
+            assertEquals(true, postcondition["package_matched"])
+        }
+    }
+
+    @Test
+    fun `execute accepts android system package namespace alias`() = runBlocking {
+        val backend = FakeBackend(
+            beforeXml = SETTINGS_APPS_XML,
+            afterXml = PERMISSION_CONTROLLER_XML,
+            currentPackage = "com.google.android.permissioncontroller",
+        )
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "args" to mapOf("x" to 360, "y" to 640),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to SETTINGS_APPS_XML),
+                        "dst_ctx" to mapOf(
+                            "page" to PERMISSION_CONTROLLER_XML,
+                            "package_name" to "com.android.permissioncontroller",
+                        ),
+                    ),
+                    "postcondition" to mapOf(
+                        "kind" to "recorded_after_page_similarity",
+                        "min_score" to 0.1,
+                    ),
+                ),
+                stepId = "step_permission_controller",
+                stepTitle = "click default apps",
+            )
+
+            assertEquals(true, result["success"])
+            val postcondition = result["postcondition"] as Map<*, *>
+            assertEquals(true, postcondition["success"])
+            assertEquals(true, postcondition["package_matched"])
+            assertEquals("android_system_alias", postcondition["package_match_mode"])
+        }
+    }
+
+    @Test
     fun `execute allows package-only postcondition for transient settings search page`() = runBlocking {
         val backend = FakeBackend(
             beforeXml = SETTINGS_XML,
@@ -165,6 +240,41 @@ class OmniflowStepExecutorTest {
             val postcondition = result["postcondition"] as Map<*, *>
             assertEquals(true, postcondition["success"])
             assertEquals("settings_search_transition", postcondition["semantic_fallback"])
+        }
+    }
+
+    @Test
+    fun `execute retries postcondition xml capture after app launch`() = runBlocking {
+        val backend = FakeBackend(
+            beforeXml = SOURCE_XML,
+            afterXml = AFTER_XML,
+            currentPackage = "com.example",
+            missingXmlReadsAfterAction = 2,
+        )
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "open_app",
+                    "args" to mapOf("package_name" to "com.example"),
+                    "source_context" to mapOf(
+                        "dst_ctx" to mapOf(
+                            "page" to AFTER_XML,
+                            "package_name" to "com.example",
+                        ),
+                    ),
+                    "postcondition" to mapOf(
+                        "kind" to "recorded_after_page_similarity",
+                        "min_score" to 0.1,
+                    ),
+                ),
+                stepId = "step_open_app",
+                stepTitle = "open app",
+            )
+
+            assertEquals(true, result["success"])
+            val postcondition = result["postcondition"] as Map<*, *>
+            assertEquals(true, postcondition["success"])
         }
     }
 
@@ -208,8 +318,10 @@ class OmniflowStepExecutorTest {
         private val beforeXml: String,
         private val afterXml: String,
         private val currentPackage: String = "com.example",
+        private val missingXmlReadsAfterAction: Int = 0,
     ) : OmniflowActionBackend {
         private var clicked = false
+        private var actionXmlReadCount = 0
 
         override fun isReady(): Boolean = true
 
@@ -243,7 +355,14 @@ class OmniflowStepExecutorTest {
             clicked = true
         }
 
-        override fun currentXml(): String = if (clicked) afterXml else beforeXml
+        override fun currentXml(): String? {
+            if (!clicked) return beforeXml
+            if (actionXmlReadCount < missingXmlReadsAfterAction) {
+                actionXmlReadCount += 1
+                return null
+            }
+            return afterXml
+        }
 
         override fun currentPackageName(): String = currentPackage
 
@@ -257,6 +376,10 @@ class OmniflowStepExecutorTest {
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[100,200][300,280]\" enabled=\"true\" visible-to-user=\"true\" text=\"Done\" class=\"android.widget.TextView\" resource-id=\"app:id/done\"/></hierarchy>"
         private const val SETTINGS_XML =
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[30,40][1050,140]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"Search settings\" class=\"android.view.ViewGroup\" resource-id=\"com.android.settings:id/search_action_bar\"/></hierarchy>"
+        private const val SETTINGS_APPS_XML =
+            "<hierarchy bounds=\"[0,0][720,1280]\"><node bounds=\"[0,0][720,1232]\" enabled=\"true\" visible-to-user=\"true\" text=\"Apps\" class=\"android.widget.TextView\" resource-id=\"com.android.settings:id/content_parent\"/><node bounds=\"[48,594][273,648]\" enabled=\"true\" visible-to-user=\"true\" text=\"Default apps\" class=\"android.widget.TextView\" resource-id=\"android:id/title\"/></hierarchy>"
+        private const val PERMISSION_CONTROLLER_XML =
+            "<hierarchy bounds=\"[0,0][720,1280]\"><node bounds=\"[0,0][720,1232]\" enabled=\"true\" visible-to-user=\"true\" text=\"Default apps\" class=\"android.widget.TextView\" resource-id=\"com.android.permissioncontroller:id/content_parent\"/><node bounds=\"[144,438][368,492]\" enabled=\"true\" visible-to-user=\"true\" text=\"Browser app\" class=\"android.widget.TextView\" resource-id=\"android:id/title\"/></hierarchy>"
         private const val SETTINGS_SEARCH_RECORDED_XML =
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[20,40][1060,140]\" enabled=\"true\" visible-to-user=\"true\" text=\"Search settings\" class=\"android.widget.EditText\" resource-id=\"com.google.android.settings.intelligence:id/search_action_bar\"/></hierarchy>"
         private const val SETTINGS_SEARCH_CURRENT_XML =

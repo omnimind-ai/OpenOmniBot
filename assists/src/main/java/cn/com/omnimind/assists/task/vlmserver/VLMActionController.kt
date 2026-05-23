@@ -307,6 +307,7 @@ private object SemanticSearchController : VLMActionController {
             is ScrollAction -> action.targetDescription
             is LongPressAction -> action.targetDescription
             is TypeAction -> action.content
+            is InputTextAction -> listOf(action.targetDescription, action.content).joinToString(" ")
             is RecordAction -> action.content
             is InfoAction -> action.value
             is FeedbackAction -> action.value
@@ -403,7 +404,7 @@ private object SemanticSearchController : VLMActionController {
                         bounds = bounds,
                         text = element.attr("text"),
                         contentDesc = element.attr("content-desc"),
-                        hintText = element.attr("hintText"),
+                        hintText = firstNonBlank(element.attr("hintText"), element.attr("hint")),
                         resourceId = element.attr("resource-id"),
                         className = element.attr("class"),
                         descendantText = descendantSemanticText(element),
@@ -426,7 +427,8 @@ private object SemanticSearchController : VLMActionController {
                     val label = listOf(
                         child.attr("text"),
                         child.attr("content-desc"),
-                        child.attr("hintText")
+                        child.attr("hintText"),
+                        child.attr("hint")
                     ).firstOrNull { it.isNotBlank() }.orEmpty()
                     if (label.isNotBlank() && !isOverlayLabel(label)) {
                         parts += label
@@ -543,6 +545,9 @@ private object SemanticSearchController : VLMActionController {
 
     private fun Element.attr(name: String): String =
         if (hasAttribute(name)) getAttribute(name).trim() else ""
+
+    private fun firstNonBlank(vararg values: String): String =
+        values.firstOrNull { it.isNotBlank() }.orEmpty()
 
     private fun Element.boolAttr(name: String): Boolean =
         attr(name).equals("true", ignoreCase = true)

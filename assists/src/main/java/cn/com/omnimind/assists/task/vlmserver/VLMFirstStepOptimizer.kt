@@ -159,7 +159,8 @@ object VLMFirstStepOptimizer {
             val text = normalizeLabel(firstNonBlank(
                 element.attr("text"),
                 element.attr("content-desc"),
-                element.attr("hintText")
+                element.attr("hintText"),
+                element.attr("hint")
             ))
             if (text.isNotBlank() && !isOverlayLabel(text)) {
                 visibleTexts += text
@@ -261,7 +262,8 @@ object VLMFirstStepOptimizer {
             val label = normalizeLabel(firstNonBlank(
                 child.attr("text"),
                 child.attr("content-desc"),
-                child.attr("hintText")
+                child.attr("hintText"),
+                child.attr("hint")
             ))
             if (label.isNotBlank() && !isOverlayLabel(label)) {
                 parts += label

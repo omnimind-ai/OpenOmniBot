@@ -4,12 +4,14 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Base64
+import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
 import com.google.gson.GsonBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -24,6 +26,7 @@ class DebugOobFunctionRunReceiver : BroadcastReceiver() {
 
         scope.launch {
             val result = runCatching {
+                waitForAccessibility()
                 OobOmniFlowToolkitService(appContext).callFunction(
                     mapOf(
                         "function_id" to functionId,
@@ -44,6 +47,14 @@ class DebugOobFunctionRunReceiver : BroadcastReceiver() {
             File(appContext.filesDir, "debug-oob-function-run-result.json").writeText(json)
             OmniLog.i(TAG, json)
         }
+    }
+
+    private suspend fun waitForAccessibility() {
+        repeat(50) {
+            if (AssistsService.instance != null) return
+            delay(200L)
+        }
+        error("OOB accessibility service is not bound")
     }
 
     companion object {

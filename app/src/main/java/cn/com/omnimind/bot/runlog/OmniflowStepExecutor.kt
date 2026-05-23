@@ -283,7 +283,7 @@ object OmniflowStepExecutor {
         }
     }
 
-    private fun verifyPostcondition(step: Map<String, Any?>): Map<String, Any?> {
+    private suspend fun verifyPostcondition(step: Map<String, Any?>): Map<String, Any?> {
         val postcondition = normalizeArgsMap(step["postcondition"])
         if (postcondition.isEmpty()) return emptyMap()
         val kind = postcondition["kind"]?.toString()?.trim().orEmpty()
@@ -300,18 +300,21 @@ object OmniflowStepExecutor {
         if (expectedXml.isEmpty()) {
             throw IllegalStateException("Postcondition failed: missing_recorded_after_xml")
         }
-        val currentXml = OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
+        val currentXml = readCurrentXmlForPostcondition()
         if (currentXml.isEmpty()) {
             throw IllegalStateException("Postcondition failed: missing_current_xml")
         }
-        val expectedPackage = firstNonBlank(dstCtx["package_name"], dstCtx["packageName"])
-        val currentPackage = OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
-        val packageMatched = expectedPackage.isEmpty() ||
-            currentPackage.isEmpty() ||
-            expectedPackage == currentPackage
+        val recordedExpectedPackage = firstNonBlank(dstCtx["package_name"], dstCtx["packageName"])
+        val expectedPackage = RunLogPagePackageInference.effectivePackage(
+            recordedExpectedPackage,
+            expectedXml,
+        )
         val score = pageSimilarityScore(expectedXml, currentXml)
         val minScore = numberArg(postcondition, "min_score", "minScore")?.toFloat()
             ?: MIN_POSTCONDITION_PAGE_SCORE
+        val currentPackage = OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
+        val packageMatchMode = packageMatchMode(expectedPackage, currentPackage)
+        val packageMatched = packageMatchMode != null
         if (!packageMatched || score < minScore) {
             transientSettingsSearchPostcondition(
                 step = step,
@@ -335,9 +338,51 @@ object OmniflowStepExecutor {
             "score" to score,
             "min_score" to minScore,
             "package_matched" to packageMatched,
+            "package_match_mode" to packageMatchMode.takeIf {
+                it != "exact" && it != "expected_missing" && it != "current_missing"
+            },
             "expected_package" to expectedPackage.takeIf { it.isNotBlank() },
+            "recorded_expected_package" to recordedExpectedPackage
+                .takeIf { it.isNotBlank() && it != expectedPackage },
             "current_package" to currentPackage.takeIf { it.isNotBlank() },
         ).filterValues { it != null }
+    }
+
+    private fun packageMatchMode(expectedPackage: String, currentPackage: String): String? {
+        if (expectedPackage.isBlank()) return "expected_missing"
+        if (currentPackage.isBlank()) return "current_missing"
+        if (expectedPackage == currentPackage) return "exact"
+        return if (isAndroidSystemPackageAlias(expectedPackage, currentPackage)) {
+            "android_system_alias"
+        } else {
+            null
+        }
+    }
+
+    private fun isAndroidSystemPackageAlias(expectedPackage: String, currentPackage: String): Boolean {
+        val expectedTail = expectedPackage.substringAfterLast('.')
+        val currentTail = currentPackage.substringAfterLast('.')
+        if (expectedTail.isBlank() || expectedTail != currentTail) return false
+        val expectedSystem = expectedPackage.startsWith("com.android.") ||
+            expectedPackage.startsWith("com.google.android.")
+        val currentSystem = currentPackage.startsWith("com.android.") ||
+            currentPackage.startsWith("com.google.android.")
+        return expectedSystem && currentSystem
+    }
+
+    private suspend fun readCurrentXmlForPostcondition(): String {
+        var latest = ""
+        repeat(POSTCONDITION_XML_READ_ATTEMPTS) { index ->
+            runCatching { OmniflowActionRuntime.backend.isReady() }
+            latest = runCatching {
+                OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
+            }.getOrDefault("")
+            if (latest.isNotEmpty()) return latest
+            if (index < POSTCONDITION_XML_READ_ATTEMPTS - 1) {
+                delay(POSTCONDITION_XML_RETRY_DELAY_MS)
+            }
+        }
+        return latest
     }
 
     private fun transientSettingsSearchPostcondition(
@@ -1118,6 +1163,8 @@ object OmniflowStepExecutor {
         }
 
     private const val POST_STEP_DELAY_MS = 1000L
+    private const val POSTCONDITION_XML_READ_ATTEMPTS = 5
+    private const val POSTCONDITION_XML_RETRY_DELAY_MS = 400L
     private const val DEFAULT_SCREEN_CENTER_X = 540f
     private const val DEFAULT_SCREEN_CENTER_Y = 960f
     private const val DEFAULT_SWIPE_DISTANCE = 600f

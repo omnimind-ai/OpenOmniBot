@@ -63,6 +63,7 @@ object VLMPostActionObservation {
                     element.attr("content-desc"),
                     element.attr("hintText"),
                     element.attr("hint-text"),
+                    element.attr("hint"),
                     element.attr("state-description")
                 )
             )
@@ -85,6 +86,7 @@ object VLMPostActionObservation {
                         element.attr("content-desc"),
                         element.attr("hintText"),
                         element.attr("hint-text"),
+                        element.attr("hint"),
                         element.attr("resource-id").substringAfterLast('/').substringAfterLast(':')
                     )
                 )

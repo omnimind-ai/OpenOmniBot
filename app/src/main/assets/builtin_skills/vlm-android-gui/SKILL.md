@@ -12,6 +12,7 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 - Pass `packageName` when known; derive unknown packages from installed apps.
 - Permission/onboarding: choose safe Continue/Allow/OK, not Deny/Delete/Pay.
 - Focused editable input: use `type`; otherwise click intended edit/search field first.
+- Visible but not focused editable input: use `input_text(target_description, content, x, y)` so the field is grounded before typing.
 - Slider/seekbar: 0-1000 normalized; `Display brightness`: do not click; max x1=70,y1=110,x2=990,y2=110; min x1=990,y1=110,x2=10,y2=110.
 - Numeric keypad targets: click visible digit buttons; do not `type`.
 - Validate after at least two visible UI states before `finished`.
@@ -138,6 +139,8 @@ decision`.
 - If an editable field is already focused and the task asks to search, type, or
   enter specific text, the first action should be `type`; do not click the same
   input field again.
+- If the desired editable field is visible but a different field is focused,
+  prefer `input_text` over typing into the stale focus.
 - For list pages, if the requested target is not visible, use a
   deliberate vertical scroll within the list and then re-check visible text. Do
   not tap the first unrelated row.

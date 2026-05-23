@@ -559,6 +559,14 @@ object RunLogReusableFunctionCompiler {
             after["xml"],
             after["page"],
         )
+        val sourcePackage = RunLogPagePackageInference.effectivePackage(
+            firstNonBlank(before["package_name"], before["packageName"]),
+            sourceXml,
+        )
+        val afterPackage = RunLogPagePackageInference.effectivePackage(
+            firstNonBlank(after["package_name"], after["packageName"]),
+            afterXml,
+        )
         val rawToolName = toolNameForCard(card)
         val normalizedToolName = RunLogReplayPolicy.normalizeToolName(rawToolName)
         val actionArgs = if (normalizedToolName == "android_privileged_action") {
@@ -595,12 +603,12 @@ object RunLogReusableFunctionCompiler {
         return linkedMapOf(
             "src_ctx" to linkedMapOf(
                 "page" to sourceXml,
-                "package_name" to firstNonBlank(before["package_name"], before["packageName"]),
+                "package_name" to sourcePackage,
                 "require_unique_action_signature" to false,
             ),
             "dst_ctx" to linkedMapOf(
                 "page" to afterXml,
-                "package_name" to firstNonBlank(after["package_name"], after["packageName"]),
+                "package_name" to afterPackage,
             ).filterValues { value ->
                 value.trim().isNotEmpty()
             }.takeIf { it.isNotEmpty() },

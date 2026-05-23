@@ -55,6 +55,20 @@ class VLMIndexedPageContextTest {
     }
 
     @Test
+    fun `renders form anchors for editable fields and selection rows`() {
+        val rendered = VLMIndexedPageContext.render(
+            currentXml = CONTACT_FORM_XML,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertTrue(rendered.contains("Form anchors:"))
+        assertTrue(rendered.contains("role=focused_editable label=\"First name\""))
+        assertTrue(rendered.contains("role=editable label=\"Last name\""))
+        assertTrue(rendered.contains("role=selection_row label=\"Mobile Phone\""))
+    }
+
+    @Test
     fun `marked screenshot renderer is optional when screenshot is absent`() {
         val marked = VLMIndexedPageContext.renderMarkedScreenshot(
             screenshotBase64 = null,
@@ -77,6 +91,20 @@ class VLMIndexedPageContextTest {
                 <node text="Mobile, Wi-Fi, hotspot" bounds="[144,633][412,671]" />
                 <node text="Connected devices" bounds="[144,755][482,809]" clickable="true" />
                 <node text="Bluetooth, pairing" bounds="[144,809][361,847]" />
+              </node>
+            </hierarchy>
+            """
+
+        private const val CONTACT_FORM_XML =
+            """
+            <hierarchy>
+              <node id="0" class="android.widget.FrameLayout" enabled="true" bounds="[0,0][720,1280]">
+                <node id="15" class="android.widget.ScrollView" enabled="true" focusable="true" scrollable="true" bounds="[0,176][720,1232]">
+                  <node id="33" text="First name" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" focused="true" editable="true" bounds="[104,603][608,716]" />
+                  <node id="36" text="Last name" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,743][608,856]" />
+                  <node id="56" text="Phone" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,1055][608,1168]" />
+                  <node id="59" text="Mobile" content-desc="Mobile Phone" class="android.widget.Spinner" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,1195][446,1232]" />
+                </node>
               </node>
             </hierarchy>
             """

@@ -58,9 +58,12 @@ object VLMIndexedPageContext {
         val screen = snapshot.screen
         val candidates = snapshot.candidates
         val focusedEditable = snapshot.focusedEditable
+        val formFields = snapshot.formFields
         val scrollables = snapshot.scrollables
 
-        if (candidates.isEmpty() && scrollables.isEmpty() && focusedEditable == null) return ""
+        if (candidates.isEmpty() && scrollables.isEmpty() && focusedEditable == null && formFields.isEmpty()) {
+            return ""
+        }
 
         return buildString {
             appendLine("OOB indexed page evidence (live Accessibility XML; coordinates are 0-1000 normalized and match the marked screenshot indexes):")
@@ -85,6 +88,20 @@ object VLMIndexedPageContext {
                     .append(") label=\"")
                     .append(focusedEditable.displayLabel.take(MAX_LABEL_CHARS))
                     .appendLine("\"")
+            }
+            if (formFields.isNotEmpty()) {
+                appendLine("Form anchors:")
+                formFields.forEachIndexed { index, node ->
+                    append("F").append(index)
+                        .append(" center=(").append(norm(node.bounds.centerX, screen.left, screen.width))
+                        .append(",").append(norm(node.bounds.centerY, screen.top, screen.height)).append(")")
+                        .append(" role=").append(node.formRole())
+                        .append(" label=\"").append(node.formLabel.take(MAX_LABEL_CHARS)).append("\"")
+                    node.formValueHint.takeIf { it.isNotBlank() }?.let { valueHint ->
+                        append(" value_hint=\"").append(valueHint.take(MAX_LABEL_CHARS)).append("\"")
+                    }
+                    appendLine()
+                }
             }
             if (scrollables.isNotEmpty()) {
                 appendLine("Scrollable regions:")
@@ -193,6 +210,25 @@ object VLMIndexedPageContext {
             .take(MAX_SCROLLABLES)
             .toList()
 
+        val formFields = page.nodes
+            .asSequence()
+            .filter { it.visible && it.enabled }
+            .filter { it.bounds.area >= MIN_FORM_FIELD_AREA }
+            .filter { it.bounds.area <= screenArea * MAX_FORM_FIELD_AREA_RATIO }
+            .filter { !isOverlayLabel(it.displayLabel) }
+            .filter { it.isFormFieldLike }
+            .distinctBy { it.dedupKey() }
+            .sortedWith(
+                compareByDescending<PageNode> { if (it.focused && it.editable) 1 else 0 }
+                    .thenByDescending { if (it.editable) 1 else 0 }
+                    .thenByDescending { if (it.isSelectionRowLike) 1 else 0 }
+                    .thenBy { it.bounds.top }
+                    .thenBy { it.bounds.left }
+                    .thenBy { it.bounds.area }
+            )
+            .take(MAX_FORM_FIELDS)
+            .toList()
+
         val focusedEditable = page.nodes.firstOrNull {
             it.visible && it.enabled && it.editable && it.focused && !isOverlayLabel(it.label)
         }
@@ -200,7 +236,8 @@ object VLMIndexedPageContext {
             screen = screen,
             candidates = candidates,
             scrollables = scrollables,
-            focusedEditable = focusedEditable
+            focusedEditable = focusedEditable,
+            formFields = formFields
         )
     }
 
@@ -227,7 +264,7 @@ object VLMIndexedPageContext {
                 bounds = bounds,
                 text = element.attr("text"),
                 contentDesc = element.attr("content-desc"),
-                hintText = firstNonBlank(element.attr("hintText"), element.attr("hint-text")),
+                hintText = firstNonBlank(element.attr("hintText"), element.attr("hint-text"), element.attr("hint")),
                 resourceId = element.attr("resource-id"),
                 className = firstNonBlank(element.attr("class"), element.attr("class-name")),
                 packageName = element.attr("package"),
@@ -263,7 +300,13 @@ object VLMIndexedPageContext {
         for (index in 0 until descendants.length) {
             val child = descendants.item(index) as? Element ?: continue
             if (child === element) continue
-            listOf(child.attr("text"), child.attr("content-desc"), child.attr("hintText"), child.attr("hint-text"))
+            listOf(
+                child.attr("text"),
+                child.attr("content-desc"),
+                child.attr("hintText"),
+                child.attr("hint-text"),
+                child.attr("hint")
+            )
                 .map { it.trim() }
                 .filter { it.isNotBlank() }
                 .forEach { parts += it }
@@ -311,7 +354,8 @@ object VLMIndexedPageContext {
         val screen: Rect,
         val candidates: List<PageNode>,
         val scrollables: List<PageNode>,
-        val focusedEditable: PageNode?
+        val focusedEditable: PageNode?,
+        val formFields: List<PageNode>
     )
 
     private data class PageNode(
@@ -346,6 +390,65 @@ object VLMIndexedPageContext {
                 .replace(Regex("""\s+"""), " ")
                 .trim()
 
+        val formLabel: String
+            get() = if (editable) {
+                firstNonBlank(hintText, contentDesc, resourceTail(), text, role)
+            } else {
+                firstNonBlank(text, contentDesc, hintText, resourceTail(), role)
+            }
+                .replace(Regex("""\s+"""), " ")
+                .trim()
+
+        val formValueHint: String
+            get() = if (editable) {
+                firstNonBlank(text, contentDesc)
+            } else {
+                firstNonBlank(descendantText, contentDesc, text)
+            }
+                .replace(Regex("""\s+"""), " ")
+                .trim()
+
+        val isSelectionRowLike: Boolean
+            get() {
+                val normalized = formSemanticText()
+                val spinnerLike = normalized.contains("spinner") ||
+                    normalized.contains("dropdown") ||
+                    normalized.contains("select")
+                if (spinnerLike) return actionable
+                if (editable) return false
+                return actionable &&
+                    descendantText.isNotBlank() &&
+                    (
+                        normalized.contains("label") ||
+                            normalized.contains("type") ||
+                            normalized.contains("category") ||
+                            normalized.contains("account") ||
+                            normalized.contains("country") ||
+                            normalized.contains("language")
+                        )
+            }
+
+        val isFormFieldLike: Boolean
+            get() {
+                val normalized = formSemanticText()
+                return editable ||
+                    normalized.contains("edittext") ||
+                    normalized.contains("textfield") ||
+                    normalized.contains("autocompletetextview") ||
+                    normalized.contains("spinner") ||
+                    isSelectionRowLike ||
+                    (actionable && FORM_FIELD_TERMS.any { term -> normalized.contains(term) })
+            }
+
+        fun formRole(): String =
+            when {
+                isSelectionRowLike -> "selection_row"
+                editable && focused -> "focused_editable"
+                editable -> "editable"
+                checkable -> "toggle"
+                else -> "field"
+            }
+
         val label: String
             get() = listOf(text, contentDesc, hintText, descendantText, resourceTail(), role)
                 .filter { it.isNotBlank() }
@@ -377,6 +480,11 @@ object VLMIndexedPageContext {
 
         private fun resourceTail(): String =
             resourceId.substringAfterLast('/').substringAfterLast(':')
+
+        private fun formSemanticText(): String =
+            listOf(text, contentDesc, hintText, descendantText, resourceTail(), role)
+                .joinToString(" ")
+                .lowercase()
     }
 
     private data class Rect(
@@ -425,13 +533,43 @@ object VLMIndexedPageContext {
     )
     private const val MIN_ELEMENT_AREA = 18f
     private const val MIN_SCROLLABLE_AREA = 2_500f
+    private const val MIN_FORM_FIELD_AREA = 200f
     private const val MAX_ELEMENT_AREA_RATIO = 0.72f
+    private const val MAX_FORM_FIELD_AREA_RATIO = 0.60f
     private const val MAX_ELEMENTS = 24
     private const val MAX_SCROLLABLES = 4
+    private const val MAX_FORM_FIELDS = 8
     private const val MAX_LABEL_CHARS = 90
     private const val MAX_DESCENDANT_PARTS = 8
     private const val MAX_DESCENDANT_CHARS = 120
     private const val MAX_SECTION_CHARS = 3_600
     private const val MAX_CONTEXT_CHARS = 5_000
     private const val MARKED_SCREENSHOT_JPEG_QUALITY = 92
+    private val FORM_FIELD_TERMS = setOf(
+        "name",
+        "phone",
+        "mobile",
+        "email",
+        "mail",
+        "label",
+        "company",
+        "title",
+        "address",
+        "city",
+        "state",
+        "zip",
+        "postal",
+        "note",
+        "contact",
+        "type",
+        "category",
+        "account",
+        "country",
+        "language",
+        "birthday",
+        "date",
+        "time",
+        "number",
+        "value"
+    )
 }

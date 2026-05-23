@@ -926,6 +926,11 @@ class VLMOperationService(
                         position = listOf(processedStep.action.x, processedStep.action.y)
                     )
 
+                    is InputTextAction -> processedStep = updateActionWithCoordinates(
+                        processedStep,
+                        position = listOf(processedStep.action.x, processedStep.action.y)
+                    )
+
                     is ScrollAction -> processedStep = updateActionWithCoordinates(
                         processedStep,
                         position = listOf(
@@ -1182,7 +1187,7 @@ class VLMOperationService(
 
     private fun needsPreciseLocation(action: UIAction): Boolean {
         return when (action) {
-            is ClickAction, is ScrollAction, is LongPressAction -> true
+            is ClickAction, is InputTextAction, is ScrollAction, is LongPressAction -> true
             else -> false
         }
     }
@@ -1220,6 +1225,26 @@ class VLMOperationService(
                 OmniLog.d(
                     Tag,
                     "Coord mapping(click): raw=(${position[0]}, ${position[1]}) type=(${
+                        coordType(
+                            position[0],
+                            encodedWidth
+                        )
+                    }, ${
+                        coordType(
+                            position[1],
+                            encodedHeight
+                        )
+                    }), encoded=${encodedWidth}x${encodedHeight}, mapped=(${absoluteX}, ${absoluteY}), display=${displayWidth}x${displayHeight}"
+                )
+                action.copy(x = absoluteX.toFloat(), y = absoluteY.toFloat())
+            }
+
+            is InputTextAction -> {
+                val absoluteX = toScreenCoord(position[0], encodedWidth, scaleX, displayWidth)
+                val absoluteY = toScreenCoord(position[1], encodedHeight, scaleY, displayHeight)
+                OmniLog.d(
+                    Tag,
+                    "Coord mapping(input_text): raw=(${position[0]}, ${position[1]}) type=(${
                         coordType(
                             position[0],
                             encodedWidth
@@ -1305,7 +1330,7 @@ class VLMOperationService(
     }
 
     private fun groundActionTarget(step: VLMStep, currentXml: String?): VLMStep {
-        if (step.action !is ClickAction && step.action !is LongPressAction) {
+        if (step.action !is ClickAction && step.action !is InputTextAction && step.action !is LongPressAction) {
             return step
         }
         val result = ActionTargetGrounder.ground(step.action, currentXml)

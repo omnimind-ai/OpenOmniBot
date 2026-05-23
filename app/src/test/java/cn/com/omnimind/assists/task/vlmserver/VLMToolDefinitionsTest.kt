@@ -14,6 +14,7 @@ class VLMToolDefinitionsTest {
 
         assertFalse(toolNames.contains("wait"))
         assertTrue(toolNames.contains("click"))
+        assertTrue(toolNames.contains("input_text"))
         assertTrue(toolNames.contains("type"))
         assertTrue(toolNames.contains("scroll"))
         assertTrue(toolNames.contains("finished"))
@@ -25,6 +26,7 @@ class VLMToolDefinitionsTest {
 
         assertFalse(promptGuide.contains("wait("))
         assertFalse(promptGuide.contains("waiting actions"))
+        assertTrue(promptGuide.contains("input_text(target_description, content, x, y)"))
         assertTrue(promptGuide.contains("page settling and stability detection are handled internally"))
     }
 }

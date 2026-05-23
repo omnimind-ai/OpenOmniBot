@@ -61,6 +61,36 @@ object VLMToolDefinitions {
             )
         ),
         ToolSpec(
+            name = "input_text",
+            description = t(
+                locale,
+                "点击一个可见输入目标并输入文本。",
+                "Tap a visible input target and type text into it."
+            ),
+            parameters = objectSchema(
+                properties = linkedMapOf(
+                    "target_description" to stringSchema(
+                        t(locale, "要输入文本的目标输入框描述。", "Description of the input target.")
+                    ),
+                    "content" to stringSchema(
+                        t(locale, "要输入的文本内容。", "Text content to type.")
+                    ),
+                    "x" to coordinateNumberSchema(
+                        t(locale, "目标输入框中心的 X 坐标。", "X coordinate of the input target center.")
+                    ),
+                    "y" to coordinateNumberSchema(
+                        t(locale, "目标输入框中心的 Y 坐标。", "Y coordinate of the input target center.")
+                    )
+                ),
+                required = listOf("target_description", "content", "x", "y")
+            ),
+            promptGuide = t(
+                locale,
+                "- input_text(target_description, content, x, y): 点击可见输入框并输入文本；当目标输入框未聚焦时优先使用。",
+                "- input_text(target_description, content, x, y): Tap a visible input field and type text; prefer this when the target field is not focused."
+            )
+        ),
+        ToolSpec(
             name = "type",
             description = t(locale, "在当前输入焦点中输入文本。", "Type text into the current focused input."),
             parameters = objectSchema(
@@ -322,8 +352,13 @@ object VLMToolDefinitions {
         if (arguments.isEmpty()) return arguments
         val normalized = arguments.toMutableMap()
         when (toolName) {
-            "click", "long_press" -> normalizePointArguments(normalized)
+            "click", "long_press", "input_text" -> normalizePointArguments(normalized)
             "scroll" -> normalizeScrollArguments(normalized)
+        }
+        if (toolName == "input_text" && normalized["content"] == null) {
+            listOf("text", "value").firstNotNullOfOrNull { alias ->
+                normalized[alias]?.let { normalized["content"] = it }
+            }
         }
         return JsonObject(normalized)
     }
