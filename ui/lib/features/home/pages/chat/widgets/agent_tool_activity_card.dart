@@ -91,9 +91,7 @@ class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
                 'agent-tool-activity-compact-surface-${widget.activity.id}',
               ),
               constraints: BoxConstraints(
-                minWidth: needsReadableTimeline
-                    ? maxWidth
-                    : _compactMinWidth,
+                minWidth: needsReadableTimeline ? maxWidth : _compactMinWidth,
                 maxWidth: maxWidth,
               ),
               child: Padding(
@@ -176,6 +174,9 @@ class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
             activity: widget.activity,
             expanded: showExpandedSteps || _expanded,
             compact: widget.compactSurface,
+            onOpenRunLog: _hasActivityRunLog(widget.activity)
+                ? () => _openActivityRunLog(context, widget.activity)
+                : null,
           ),
           _buildDetailSection(showExpandedSteps: showExpandedSteps),
         ],
@@ -247,6 +248,13 @@ class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
   }
 
   void _handleSurfaceTap() {
+    if (widget.compactSurface &&
+        widget.activity.kind == AgentToolActivityKind.vlm &&
+        widget.activity.stepCount == 1 &&
+        _hasActivityRunLog(widget.activity)) {
+      unawaited(_openActivityRunLog(context, widget.activity));
+      return;
+    }
     if (widget.compactSurface && widget.activity.stepCount == 1) {
       final step = widget.activity.steps.single;
       unawaited(
@@ -268,11 +276,13 @@ class _ActivityHeader extends StatelessWidget {
     required this.activity,
     required this.expanded,
     this.compact = false,
+    this.onOpenRunLog,
   });
 
   final AgentToolActivity activity;
   final bool expanded;
   final bool compact;
+  final VoidCallback? onOpenRunLog;
 
   @override
   Widget build(BuildContext context) {
@@ -365,6 +375,13 @@ class _ActivityHeader extends StatelessWidget {
                   ],
                 ],
               ),
+              if (compact &&
+                  onOpenRunLog != null &&
+                  activity.kind == AgentToolActivityKind.vlm)
+                Padding(
+                  padding: const EdgeInsets.only(top: 5),
+                  child: _RunLogInlineButton(onTap: onOpenRunLog!),
+                ),
               if (title.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
@@ -388,6 +405,12 @@ class _ActivityHeader extends StatelessWidget {
             ],
           ),
         ),
+        if (compact &&
+            onOpenRunLog != null &&
+            activity.kind != AgentToolActivityKind.vlm) ...[
+          const SizedBox(width: 6),
+          _RunLogIconButton(onTap: onOpenRunLog!),
+        ],
         if (!compact) ...[
           const SizedBox(width: 8),
           Container(
@@ -466,6 +489,78 @@ class _ActivityStatusIcon extends StatelessWidget {
                 size: 10,
                 color: iconColor,
               ),
+      ),
+    );
+  }
+}
+
+class _RunLogInlineButton extends StatelessWidget {
+  const _RunLogInlineButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final locale = Localizations.localeOf(context);
+    final label = AppTextLocalizer.choose(
+      zh: '查看完整 RunLog',
+      en: 'View full RunLog',
+      locale: locale,
+    );
+    return Tooltip(
+      message: label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(0, 2, 8, 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.route_rounded, size: 13, color: palette.textSecondary),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.textSecondary,
+                  fontSize: _AgentToolActivityCardState._processFontSize,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0,
+                  height: 1.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RunLogIconButton extends StatelessWidget {
+  const _RunLogIconButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: AppTextLocalizer.choose(
+        zh: '查看完整 RunLog',
+        en: 'View full RunLog',
+        locale: Localizations.localeOf(context),
+      ),
+      child: InkResponse(
+        onTap: onTap,
+        radius: 16,
+        child: Icon(
+          Icons.route_rounded,
+          size: 15,
+          color: context.omniPalette.textSecondary,
+        ),
       ),
     );
   }
@@ -915,6 +1010,25 @@ Future<void> _openActivityStepDetail(
     );
   }
   return showAgentToolDetailSheet(context, cardData: cardData);
+}
+
+Future<void> _openActivityRunLog(
+  BuildContext context,
+  AgentToolActivity activity,
+) {
+  final runLogId = _resolveActivityRunLogId(activity);
+  if (runLogId.isEmpty) {
+    return Future<void>.value();
+  }
+  return showRunLogTimelineSheet(
+    context,
+    runId: runLogId,
+    title: _activityLabel(context, activity.kind, status: activity.status),
+  );
+}
+
+bool _hasActivityRunLog(AgentToolActivity activity) {
+  return _resolveActivityRunLogId(activity).trim().isNotEmpty;
 }
 
 String _resolveActivityRunLogId(AgentToolActivity activity) {

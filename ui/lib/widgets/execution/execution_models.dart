@@ -23,6 +23,7 @@ class ExecutionStep {
   final String? startedAt;
   final String? finishedAt;
   final int? durationMs;
+  final TokenUsageSummary? tokenUsage;
 
   const ExecutionStep({
     required this.index,
@@ -38,6 +39,7 @@ class ExecutionStep {
     this.startedAt,
     this.finishedAt,
     this.durationMs,
+    this.tokenUsage,
   });
 
   /// 是否是 compile hit（复用已有技能）
@@ -105,6 +107,7 @@ class ExecutionStep {
       startedAt: step['started_at']?.toString(),
       finishedAt: step['finished_at']?.toString(),
       durationMs: (step['duration_ms'] as num?)?.toInt(),
+      tokenUsage: TokenUsageSummary.fromStep(step),
     );
   }
 
@@ -159,6 +162,134 @@ class ExecutionStep {
     }
 
     return parts.isEmpty ? displayName : '$displayName: ${parts.join(' ')}';
+  }
+}
+
+/// Token 消耗统计。只用于 UI / 调试显示，不注入 agent 上下文。
+class TokenUsageSummary {
+  final int? totalTokens;
+  final int? promptTokens;
+  final int? completionTokens;
+  final int? cachedTokens;
+  final int? reasoningTokens;
+  final int? callCount;
+  final int? stepCount;
+  final Map<String, dynamic> raw;
+
+  const TokenUsageSummary({
+    this.totalTokens,
+    this.promptTokens,
+    this.completionTokens,
+    this.cachedTokens,
+    this.reasoningTokens,
+    this.callCount,
+    this.stepCount,
+    this.raw = const {},
+  });
+
+  bool get hasUsage =>
+      totalTokens != null ||
+      promptTokens != null ||
+      completionTokens != null ||
+      cachedTokens != null ||
+      reasoningTokens != null ||
+      callCount != null ||
+      stepCount != null ||
+      raw.isNotEmpty;
+
+  factory TokenUsageSummary.fromStep(Map<String, dynamic> step) {
+    final header = _asStringMap(step['header']);
+    final usage = _firstMap(step, const [
+      'token_usage',
+      'tokenUsage',
+    ]).ifEmpty(() => _firstMap(header, const ['token_usage', 'tokenUsage']));
+    return TokenUsageSummary.fromMap(usage);
+  }
+
+  factory TokenUsageSummary.fromRunLog(Map<String, dynamic> runLog) {
+    final usage = _firstMap(runLog, const ['token_usage', 'tokenUsage']);
+    final byStep = _asMapList(
+      _firstPresentValue(runLog, const [
+        'token_usage_by_step',
+        'tokenUsageByStep',
+      ]),
+    );
+    final byCall = _asMapList(
+      _firstPresentValue(runLog, const [
+        'token_usage_by_call',
+        'tokenUsageByCall',
+      ]),
+    );
+    return TokenUsageSummary.fromMap(
+      usage,
+      totalTokens: _asInt(
+        runLog['token_usage_total'] ??
+            runLog['tokenUsageTotal'] ??
+            usage['total_tokens'] ??
+            usage['totalTokens'],
+      ),
+      callCount:
+          _asInt(
+            runLog['token_usage_call_count'] ??
+                runLog['tokenUsageCallCount'] ??
+                usage['call_count'] ??
+                usage['callCount'] ??
+                usage['attempt_count'] ??
+                usage['attemptCount'],
+          ) ??
+          (byCall.isNotEmpty ? byCall.length : null),
+      stepCount:
+          _asInt(usage['step_count'] ?? usage['stepCount']) ??
+          (byStep.isNotEmpty ? byStep.length : null),
+    );
+  }
+
+  factory TokenUsageSummary.fromMap(
+    Map<String, dynamic> map, {
+    int? totalTokens,
+    int? callCount,
+    int? stepCount,
+  }) {
+    if (map.isEmpty &&
+        totalTokens == null &&
+        callCount == null &&
+        stepCount == null) {
+      return const TokenUsageSummary();
+    }
+    return TokenUsageSummary(
+      totalTokens:
+          totalTokens ??
+          _asInt(map['total_tokens'] ?? map['totalTokens'] ?? map['total']),
+      promptTokens: _asInt(map['prompt_tokens'] ?? map['promptTokens']),
+      completionTokens: _asInt(
+        map['completion_tokens'] ?? map['completionTokens'],
+      ),
+      cachedTokens: _asInt(map['cached_tokens'] ?? map['cachedTokens']),
+      reasoningTokens: _asInt(
+        map['reasoning_tokens'] ?? map['reasoningTokens'],
+      ),
+      callCount: callCount ?? _asInt(map['call_count'] ?? map['callCount']),
+      stepCount: stepCount ?? _asInt(map['step_count'] ?? map['stepCount']),
+      raw: Map<String, dynamic>.from(map),
+    );
+  }
+
+  String get compactText {
+    final parts = <String>[];
+    if (totalTokens != null) parts.add(_formatTokenCount(totalTokens!));
+    if (promptTokens != null || completionTokens != null) {
+      parts.add('P${promptTokens ?? 0}/C${completionTokens ?? 0}');
+    }
+    if (reasoningTokens != null && reasoningTokens! > 0) {
+      parts.add('R$reasoningTokens');
+    }
+    if (cachedTokens != null && cachedTokens! > 0) {
+      parts.add('cached $cachedTokens');
+    }
+    if (callCount != null && callCount! > 0) {
+      parts.add('$callCount calls');
+    }
+    return parts.join(' · ');
   }
 }
 
@@ -244,6 +375,7 @@ class ExecutionDetail {
   final List<String> sourceRunIds;
   final String? packageName;
   final String? appName;
+  final TokenUsageSummary? tokenUsage;
 
   const ExecutionDetail({
     required this.id,
@@ -260,6 +392,7 @@ class ExecutionDetail {
     this.sourceRunIds = const [],
     this.packageName,
     this.appName,
+    this.tokenUsage,
   });
 
   /// 从 function 创建
@@ -327,6 +460,7 @@ class ExecutionDetail {
       finishedAt: runLog['finished_at']?.toString(),
       durationMs: (runLog['duration_ms'] as num?)?.toInt(),
       packageName: (runLog['final_package_name'] ?? '').toString().trim(),
+      tokenUsage: TokenUsageSummary.fromRunLog(runLog),
     );
   }
 
@@ -342,3 +476,54 @@ class ExecutionDetail {
 }
 
 enum ExecutionDetailType { function, runLog }
+
+Map<String, dynamic> _asStringMap(Object? value) {
+  if (value is Map<String, dynamic>) {
+    return value;
+  }
+  if (value is Map) {
+    return value.map((key, value) => MapEntry(key.toString(), value));
+  }
+  return const <String, dynamic>{};
+}
+
+Map<String, dynamic> _firstMap(Map<String, dynamic> source, List<String> keys) {
+  for (final key in keys) {
+    final map = _asStringMap(source[key]);
+    if (map.isNotEmpty) return map;
+  }
+  return const <String, dynamic>{};
+}
+
+Object? _firstPresentValue(Map<String, dynamic> source, List<String> keys) {
+  for (final key in keys) {
+    if (source.containsKey(key)) {
+      return source[key];
+    }
+  }
+  return null;
+}
+
+List<Map<String, dynamic>> _asMapList(Object? value) {
+  if (value is! List) return const <Map<String, dynamic>>[];
+  return value.map(_asStringMap).where((item) => item.isNotEmpty).toList();
+}
+
+int? _asInt(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value.trim());
+  return null;
+}
+
+String _formatTokenCount(int value) {
+  if (value >= 1000000) return '${(value / 1000000).toStringAsFixed(1)}M';
+  if (value >= 1000) return '${(value / 1000).toStringAsFixed(1)}K';
+  return '$value';
+}
+
+extension _MapIfEmpty on Map<String, dynamic> {
+  Map<String, dynamic> ifEmpty(Map<String, dynamic> Function() fallback) {
+    return isEmpty ? fallback() : this;
+  }
+}

@@ -427,6 +427,60 @@ void main() {
     expect(activity?.steps.single.target, 'First name');
   });
 
+  test('keeps VLM activity runlog id from nested step for full timeline', () {
+    final items = compactAgentProcessItems(<ChatMessageModel>[
+      ChatMessageModel.cardMessage(
+        const <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'taskId': 'agent-run-2',
+          'status': 'running',
+          'toolType': 'vlm',
+          'toolName': 'vlm_task',
+          'cardId': 'agent-run-2-vlm-wrapper',
+          'argsJson': '{"goal":"打开设置"}',
+        },
+        id: 'agent-run-2-vlm-wrapper',
+        streamMeta: const <String, dynamic>{
+          'parentTaskId': 'agent-run-2',
+          'entryId': 'agent-run-2-vlm-wrapper',
+          'kind': 'tool_started',
+          'seq': 1,
+        },
+      ),
+      ChatMessageModel.cardMessage(
+        const <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'taskId': 'vlm-run-2',
+          'runLogId': 'vlm-run-2',
+          'status': 'success',
+          'toolType': 'vlm',
+          'toolName': 'click',
+          'cardId': 'vlm-run-2-vlm-1',
+          'compile_kind': 'vlm_step',
+          'argsJson': '{"target_description":"Settings"}',
+        },
+        id: 'vlm-run-2-vlm-1',
+        streamMeta: const <String, dynamic>{
+          'parentTaskId': 'agent-run-2',
+          'runLogId': 'vlm-run-2',
+          'entryId': 'vlm-run-2-vlm-1',
+          'kind': 'tool_completed',
+          'seq': 2,
+        },
+      ),
+    ]);
+
+    expect(items, hasLength(1));
+    final activity = items.single.activity;
+    expect(activity?.taskId, 'agent-run-2');
+    expect(activity?.messages.map((message) => message.id), [
+      'agent-run-2-vlm-wrapper',
+      'vlm-run-2-vlm-1',
+    ]);
+    expect(activity?.steps, hasLength(1));
+    expect(activity?.steps.single.cardId, 'vlm-run-2-vlm-1');
+  });
+
   test('non-tool messages break activity compaction', () {
     final thinking = ChatMessageModel.cardMessage(<String, dynamic>{
       'type': 'deep_thinking',

@@ -403,14 +403,6 @@ class _ChatToolActivityStripState extends State<ChatToolActivityStrip> {
   }) {
     final locale = Localizations.localeOf(context);
     final runLogRef = AgentToolCardPolicy.runLogRef(cardData);
-    if (runLogRef.hasStep) {
-      return showRunLogStepDetailSheet(
-        context,
-        runId: runLogRef.runLogId,
-        cardId: runLogRef.cardId,
-        title: resolveAgentToolTitle(cardData, locale: locale),
-      );
-    }
     if (runLogRef.hasRunLog) {
       return showRunLogTimelineSheet(
         context,
@@ -1137,7 +1129,7 @@ class _RunLogActivityButton extends StatelessWidget {
         : const Color(0xFF657891);
     return Tooltip(
       message: AppTextLocalizer.text(
-        '查看执行记录',
+        '查看完整执行记录',
         locale: Localizations.localeOf(context),
       ),
       child: GestureDetector(

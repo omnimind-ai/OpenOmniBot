@@ -681,6 +681,52 @@ void main() {
     },
   );
 
+  testWidgets('VLM activity row exposes full RunLog affordance', (
+    tester,
+  ) async {
+    final messages = [
+      ChatMessageModel.cardMessage(
+        {
+          'type': 'agent_tool_summary',
+          'taskId': 'vlm-run-ui',
+          'runLogId': 'vlm-run-ui',
+          'status': 'running',
+          'toolType': 'vlm',
+          'toolName': 'click',
+          'cardId': 'vlm-run-ui-vlm-1',
+          'compile_kind': 'vlm_step',
+          'argsJson': jsonEncode({'target_description': 'Settings'}),
+        },
+        id: 'vlm-run-ui-vlm-1',
+        streamMeta: const {
+          'parentTaskId': 'agent-run-ui',
+          'runLogId': 'vlm-run-ui',
+          'entryId': 'vlm-run-ui-vlm-1',
+          'kind': 'tool_progress',
+          'seq': 1,
+        },
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        home: Scaffold(body: ChatToolActivityStrip(messages: messages)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Settings'), findsOneWidget);
+    expect(find.byIcon(Icons.description_outlined), findsOneWidget);
+    expect(find.byTooltip('查看完整执行记录'), findsOneWidget);
+  });
+
   testWidgets('running-only strip hides completed tool cards entirely', (
     tester,
   ) async {

@@ -102,6 +102,15 @@ class ExecutionStepTile extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                   ],
+                  if (step.tokenUsage?.compactText.isNotEmpty == true) ...[
+                    _buildPill(
+                      context,
+                      step.tokenUsage!.compactText,
+                      backgroundColor: palette.surfaceSecondary,
+                      textColor: palette.textSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   // 展开/收起图标
                   if (onTap != null)
                     Icon(
@@ -218,6 +227,23 @@ class ExecutionStepTile extends StatelessWidget {
                     color: step.success!
                         ? const Color(0xFF117A37)
                         : const Color(0xFFB42318),
+                  ),
+                ),
+              ],
+              if (step.tokenUsage?.compactText.isNotEmpty == true) ...[
+                const SizedBox(width: 12),
+                Icon(
+                  Icons.data_usage_rounded,
+                  size: 14,
+                  color: palette.textTertiary,
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    step.tokenUsage!.compactText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: palette.textTertiary),
                   ),
                 ),
               ],

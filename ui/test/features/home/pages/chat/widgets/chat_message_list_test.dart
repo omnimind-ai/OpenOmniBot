@@ -1080,6 +1080,49 @@ void main() {
     },
   );
 
+  testWidgets('multi-step VLM card keeps full RunLog as explicit action', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    final messages = _buildVlmProcessRunMessages(includeThinking: false);
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        child: SizedBox(
+          width: 400,
+          height: 560,
+          child: ChatMessageList(
+            messages: messages,
+            scrollController: controller,
+            onBeforeTaskExecute: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('agent-run-summary-task-vlm')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(find.byType(AgentToolActivityCard), findsOneWidget);
+    expect(find.text('查看完整 RunLog'), findsOneWidget);
+    expect(find.textContaining('设置按钮'), findsWidgets);
+
+    final surface = find.byKey(
+      const ValueKey(
+        'agent-tool-activity-compact-surface-task-vlm-vlm-activity',
+      ),
+    );
+    await tester.tap(surface);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(find.textContaining('hello'), findsWidgets);
+    expect(find.text('暂无步骤数据'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('VLM run header exposes full runlog without expanding steps', (
     tester,
   ) async {

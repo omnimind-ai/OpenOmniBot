@@ -124,7 +124,8 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
                           detail.type == ExecutionDetailType.function
                               ? 'Function'
                               : 'Run Log',
-                          backgroundColor: detail.type == ExecutionDetailType.function
+                          backgroundColor:
+                              detail.type == ExecutionDetailType.function
                               ? const Color(0xFFE8F0FF)
                               : const Color(0xFFF0E8FF),
                           textColor: detail.type == ExecutionDetailType.function
@@ -170,20 +171,19 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
 
           // 应用信息
           if ((detail.appName != null && detail.appName!.isNotEmpty) ||
-              (detail.packageName != null && detail.packageName!.isNotEmpty)) ...[
+              (detail.packageName != null &&
+                  detail.packageName!.isNotEmpty)) ...[
             const SizedBox(height: 10),
             Row(
               children: [
                 Icon(Icons.android, size: 14, color: palette.textTertiary),
                 const SizedBox(width: 6),
                 Text(
-                  [detail.appName, detail.packageName]
-                      .where((e) => e != null && e.isNotEmpty)
-                      .join(' · '),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: palette.textTertiary,
-                  ),
+                  [
+                    detail.appName,
+                    detail.packageName,
+                  ].where((e) => e != null && e.isNotEmpty).join(' · '),
+                  style: TextStyle(fontSize: 12, color: palette.textTertiary),
                 ),
               ],
             ),
@@ -195,7 +195,11 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
             Row(
               children: [
                 if (detail.durationMs != null) ...[
-                  Icon(Icons.timer_outlined, size: 14, color: palette.textTertiary),
+                  Icon(
+                    Icons.timer_outlined,
+                    size: 14,
+                    color: palette.textTertiary,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     detail.durationText,
@@ -215,6 +219,29 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
             ),
           ],
 
+          if (detail.tokenUsage?.compactText.isNotEmpty == true) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildMetricChip(
+                  context,
+                  icon: Icons.data_usage_rounded,
+                  label: 'Token',
+                  value: detail.tokenUsage!.compactText,
+                ),
+                if (detail.tokenUsage!.stepCount != null)
+                  _buildMetricChip(
+                    context,
+                    icon: Icons.timeline_rounded,
+                    label: '统计步数',
+                    value: '${detail.tokenUsage!.stepCount}',
+                  ),
+              ],
+            ),
+          ],
+
           // 关联的 run_ids
           if (detail.sourceRunIds.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -226,15 +253,48 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
                 Expanded(
                   child: Text(
                     '关联执行: ${detail.sourceRunIds.length} 条',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: palette.textTertiary,
-                    ),
+                    style: TextStyle(fontSize: 12, color: palette.textTertiary),
                   ),
                 ),
               ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricChip(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    final palette = context.omniPalette;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: palette.surfaceSecondary,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: palette.textTertiary),
+          const SizedBox(width: 5),
+          Text(
+            '$label ',
+            style: TextStyle(fontSize: 12, color: palette.textTertiary),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: palette.textSecondary,
+            ),
+          ),
         ],
       ),
     );
@@ -338,20 +398,22 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
           ],
         ),
         const SizedBox(height: 12),
-        ...steps.map((step) => ExecutionStepTile(
-              step: step,
-              expanded: _expandedSteps.contains(step.index),
-              onTap: () {
-                setState(() {
-                  if (_expandedSteps.contains(step.index)) {
-                    _expandedSteps.remove(step.index);
-                  } else {
-                    _expandedSteps.add(step.index);
-                  }
-                });
-              },
-              onCopyJson: () => _copyStepJson(step),
-            )),
+        ...steps.map(
+          (step) => ExecutionStepTile(
+            step: step,
+            expanded: _expandedSteps.contains(step.index),
+            onTap: () {
+              setState(() {
+                if (_expandedSteps.contains(step.index)) {
+                  _expandedSteps.remove(step.index);
+                } else {
+                  _expandedSteps.add(step.index);
+                }
+              });
+            },
+            onCopyJson: () => _copyStepJson(step),
+          ),
+        ),
       ],
     );
   }
@@ -363,6 +425,8 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
       'params': step.params,
       'target_description': step.targetDescription,
       'compile_label': step.compileLabel,
+      if (step.tokenUsage?.raw.isNotEmpty == true)
+        'token_usage': step.tokenUsage!.raw,
       'success': step.success,
     });
     await Clipboard.setData(ClipboardData(text: json));
