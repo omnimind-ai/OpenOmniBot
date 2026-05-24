@@ -158,9 +158,12 @@ void main() {
     expect(find.text('Debug VLM RunLog'), findsNothing);
     expect(find.text('打开 WiFi'), findsOneWidget);
     expect(find.text('类型 OmniFlow'), findsWidgets);
+    expect(find.text('状态 已注册'), findsWidgets);
     expect(find.text('步骤 3'), findsOneWidget);
     expect(find.text('参数 1'), findsOneWidget);
+    expect(find.text('RunLog 2'), findsOneWidget);
     expect(find.text('变体 2'), findsOneWidget);
+    expect(find.textContaining('来自 2 条 RunLog'), findsOneWidget);
     expect(find.text('package_name'), findsOneWidget);
     expect(find.textContaining('1. 打开 Settings · open_app'), findsOneWidget);
     expect(find.textContaining('卡片'), findsNothing);
@@ -176,6 +179,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Function 详情'), findsOneWidget);
+    expect(find.text('离线来源'), findsOneWidget);
+    expect(find.textContaining('由 RunLog 注册'), findsOneWidget);
     expect(find.text('动作预览'), findsOneWidget);
     expect(find.text('步骤'), findsOneWidget);
     expect(find.text('参数'), findsOneWidget);

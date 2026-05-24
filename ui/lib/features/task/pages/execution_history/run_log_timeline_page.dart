@@ -354,6 +354,26 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
       children: [
+        _RunLogOfflineFlowCard(
+          canRegister: _runLogConvertEligibility(
+            context,
+            _payload,
+            _cards,
+          ).canConvert,
+          isRegistering: _isConvertingFunction,
+          isReplaying: _isReplayingRunLog,
+          onReplay:
+              _cards.isEmpty || _isConvertingFunction || _isReplayingRunLog
+              ? null
+              : _executeCurrentRunLog,
+          onRegister:
+              _runLogConvertEligibility(context, _payload, _cards).canConvert &&
+                  !_isConvertingFunction &&
+                  !_isReplayingRunLog
+              ? _registerCurrentRunLog
+              : null,
+        ),
+        const SizedBox(height: 14),
         if (tokenSummary.hasUsage) ...[
           _RunLogTokenSummaryCard(summary: tokenSummary),
           const SizedBox(height: 14),
@@ -771,6 +791,239 @@ class _RunLogTokenSummaryCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RunLogOfflineFlowCard extends StatelessWidget {
+  const _RunLogOfflineFlowCard({
+    required this.canRegister,
+    required this.isRegistering,
+    required this.isReplaying,
+    required this.onReplay,
+    required this.onRegister,
+  });
+
+  final bool canRegister;
+  final bool isRegistering;
+  final bool isReplaying;
+  final VoidCallback? onReplay;
+  final VoidCallback? onRegister;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final accent = _modelFreeColor(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(
+          accent.withValues(alpha: isDark ? 0.16 : 0.07),
+          isDark ? palette.surfaceSecondary : Colors.white,
+        ),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: accent.withValues(alpha: isDark ? 0.36 : 0.18),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: isDark ? 0.22 : 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.route_rounded, color: accent, size: 16),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _text(context, '离线复用流程', 'Offline reuse flow'),
+                      style: TextStyle(
+                        color: palette.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _text(
+                        context,
+                        '这条 RunLog 可以直接重放，也可以注册成 Function 后从功能库复用。',
+                        'Replay this RunLog directly, or register it as a Function for library reuse.',
+                      ),
+                      style: TextStyle(
+                        color: palette.textSecondary,
+                        fontSize: 12,
+                        height: 1.35,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _FlowStepPill(
+                icon: Icons.history_toggle_off_rounded,
+                label: _text(context, 'RunLog 已收集', 'RunLog collected'),
+                active: true,
+              ),
+              _FlowStepPill(
+                icon: Icons.inventory_2_outlined,
+                label: canRegister
+                    ? _text(context, '可注册 Function', 'Function ready')
+                    : _text(context, '等待成功结果', 'Awaiting success'),
+                active: canRegister,
+              ),
+              _FlowStepPill(
+                icon: Icons.play_arrow_rounded,
+                label: _text(context, '本地执行', 'Local execution'),
+                active: onReplay != null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _InlineActionButton(
+                  icon: Icons.play_arrow_rounded,
+                  label: isReplaying
+                      ? _text(context, '重放中', 'Replaying')
+                      : _text(context, '重放 RunLog', 'Replay RunLog'),
+                  onTap: onReplay,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _InlineActionButton(
+                  icon: Icons.cloud_upload_outlined,
+                  label: isRegistering
+                      ? _text(context, '注册中', 'Registering')
+                      : _text(context, '注册 Function', 'Register Function'),
+                  onTap: onRegister,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FlowStepPill extends StatelessWidget {
+  const _FlowStepPill({
+    required this.icon,
+    required this.label,
+    required this.active,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final color = active ? _modelFreeColor(context) : palette.textTertiary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: context.isDarkTheme ? 0.16 : 0.09),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: active ? palette.textPrimary : palette.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InlineActionButton extends StatelessWidget {
+  const _InlineActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final enabled = onTap != null;
+    return Material(
+      color: enabled
+          ? _modelFreeColor(
+              context,
+            ).withValues(alpha: context.isDarkTheme ? 0.18 : 0.10)
+          : palette.surfaceSecondary,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: enabled ? palette.textPrimary : palette.textTertiary,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: enabled ? palette.textPrimary : palette.textTertiary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1534,11 +1787,7 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                             if (!_isEmptyJsonValue(snapshot.compileResult)) ...[
                               const SizedBox(height: 8),
                               _CollapsibleSection(
-                                title: _text(
-                                  context,
-                                  '路由/编译结果',
-                                  'Route result',
-                                ),
+                                title: _text(context, '路由结果', 'Route result'),
                                 copyValue: _prettyJson(snapshot.compileResult),
                                 initiallyExpanded: false,
                                 child: _JsonBlock(

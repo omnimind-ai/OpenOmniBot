@@ -2440,7 +2440,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get functionLibraryViewDetails => 'View Details';
 
   @override
-  String get functionLibraryDetailCompileSurface => 'Compile Surface';
+  String get functionLibraryDetailCompileSurface => 'Route Surface';
 
   @override
   String get functionLibraryDetailGraphAnchors => 'Graph Anchors';

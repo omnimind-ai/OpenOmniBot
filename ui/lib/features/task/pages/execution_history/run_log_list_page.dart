@@ -161,7 +161,8 @@ class _RunLogListItem extends StatelessWidget {
     final meta = [
       if (run.stepCount > 0) l10n.runLogTimelineStepCount(run.stepCount),
       if (run.toolName.trim().isNotEmpty) run.toolName.trim(),
-      if (run.compileStatus.trim().isNotEmpty) run.compileStatus.trim(),
+      if (_routeStatusLabel(context, run.compileStatus).isNotEmpty)
+        _routeStatusLabel(context, run.compileStatus),
       if (_formatDuration(run.durationMs).isNotEmpty)
         _formatDuration(run.durationMs),
       if (run.tokenUsageTotal != null) _formatTokenUsage(run.tokenUsageTotal!),
@@ -320,11 +321,34 @@ String _titleForRun(BuildContext context, UtgRunLogSummary run) {
   final title = _firstNonBlank([
     run.goal,
     run.operationDescription,
-    run.compileSummary,
+    _routeSummaryLabel(context, run.compileSummary),
     run.selectorLabel,
     run.runId,
   ]);
   return title.isEmpty ? context.l10n.runLogTimelineUnknown : title;
+}
+
+String _routeStatusLabel(BuildContext context, String raw) {
+  final normalized = raw.trim().toLowerCase();
+  if (normalized.isEmpty) return '';
+  if (normalized.contains('hit') || normalized.contains('reuse')) {
+    return _text(context, '复用命中', 'Reuse hit');
+  }
+  if (normalized.contains('miss') || normalized.contains('vlm')) {
+    return _text(context, 'VLM 执行', 'VLM execution');
+  }
+  return raw
+      .trim()
+      .replaceAll(RegExp('compile', caseSensitive: false), 'route')
+      .replaceAll('编译', '路由');
+}
+
+String _routeSummaryLabel(BuildContext context, String raw) {
+  final text = raw.trim();
+  if (text.isEmpty) return '';
+  return text
+      .replaceAll(RegExp('compile', caseSensitive: false), 'route')
+      .replaceAll('编译', '路由');
 }
 
 String _timeLabel(UtgRunLogSummary run) {

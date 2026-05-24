@@ -824,7 +824,7 @@
   "functionLibraryTestNeedParams": "需要输入参数：{params}",
   "functionLibraryTestStarted": "已发起测试执行",
   "functionLibraryViewDetails": "查看详情",
-  "functionLibraryDetailCompileSurface": "编译面",
+  "functionLibraryDetailCompileSurface": "路由面",
   "functionLibraryDetailGraphAnchors": "图锚点",
   "functionLibraryDetailRunUsage": "运行统计",
   "functionLibraryDetailLifecycle": "生命周期",

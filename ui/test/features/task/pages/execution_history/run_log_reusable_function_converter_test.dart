@@ -597,6 +597,32 @@ void main() {
 
     expect(normalized['function_id'], fallback['function_id']);
   });
+
+  test('AI organizer prompt avoids user-facing compile wording', () async {
+    final fallback = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+      runId: 'run-prompt-wording',
+      title: 'Open settings',
+      payload: const {'goal': 'Open settings'},
+      cards: [
+        card('open_app', const {'package_name': 'com.android.settings'}),
+      ],
+      useEnglish: true,
+    );
+
+    final englishPrompt =
+        await RunLogReusableFunctionConverter.buildAiPromptAsync(
+          fallback,
+          useEnglish: true,
+        );
+    final zhPrompt = await RunLogReusableFunctionConverter.buildAiPromptAsync(
+      fallback,
+    );
+
+    expect(englishPrompt, contains('trajectory organizer'));
+    expect(englishPrompt.toLowerCase(), isNot(contains('compiler')));
+    expect(zhPrompt, contains('轨迹整理器'));
+    expect(zhPrompt, isNot(contains('轨迹编译器')));
+  });
 }
 
 Set<String> _stringSet(Object? value) {

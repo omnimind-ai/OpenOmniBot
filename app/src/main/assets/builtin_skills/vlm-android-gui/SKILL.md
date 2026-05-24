@@ -242,6 +242,42 @@ the result contains:
 - nested `step_results` with concrete model-free actions such as `open_app`
 - the same child Function succeeds from at least two different current pages
 
+## Offline Flow UI Contract
+
+The user-facing flow is `RunLog -> Function registration -> local execution`.
+Keep this contract visible and separate from runtime tests:
+
+- A RunLog detail surface should expose direct RunLog replay and Function
+  registration as adjacent actions.
+- A Function library surface should show that a Function is registered, which
+  RunLog(s) it came from, the step count, parameter count, and a local execution
+  action.
+- Function execution results should show diagnostic timing such as
+  `duration_ms`, `started_at_ms`, `finished_at_ms`, and phase timings when the
+  runtime returns them.
+- Do not show internal route-building jargon to users. Keep legacy
+  route-building field names only as compatibility keys.
+
+## Validation Plan Separation
+
+Keep user experience validation and actual phone execution validation separate:
+
+- UX/widget validation: verify labels, buttons, disabled states, source RunLog
+  badges, Function execution result sheets, and timing chips with mocked channel
+  payloads. These tests must not start emulators, call VLM, or depend on
+  AndroidWorld.
+- Runtime/unit validation: verify RunLog collection, conversion to Function,
+  nested Function calls, replay timing propagation, UDEG node recall, segment
+  recall, and no timing leakage into VLM prompts.
+- Device validation: run bounded tasks on emulator-5554 or emulator-5556 only
+  when explicitly requested. Record run id, package, goal, step count, success,
+  `duration_ms`, token usage, replay result, and whether recall hit a UDEG node
+  or Function segment.
+- AndroidWorld method validation: by default export or inspect the method only.
+  Do not claim benchmark success unless a live runner initialized the task,
+  OOB executed the task through the native VLM loop, and AndroidWorld evaluated
+  the reward.
+
 ## No Wait Actions
 
 Never emit or preserve `wait`, `sleep`, delay, pause, or idle as a VLM or

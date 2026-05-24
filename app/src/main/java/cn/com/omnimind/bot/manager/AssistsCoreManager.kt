@@ -2923,6 +2923,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         "function_id" to functionId,
                         "error_code" to startErrorCode,
                         "error_message" to startErrorMessage,
+                        "timing" to runPayload["timing"],
                         "terminal_state" to linkedMapOf(
                             "status" to if (started) "started" else "error",
                             "taskId" to taskId,
@@ -2931,13 +2932,15 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             "agent_steps_pending" to pendingAgentSteps.size,
                             "arguments_applied" to true,
                             "model_required" to (runPayload["model_required"] == true),
-                            "fallback_available" to (runPayload["fallback_available"] == true)
+                            "fallback_available" to (runPayload["fallback_available"] == true),
+                            "timing" to runPayload["timing"]
                         ),
                         "context" to linkedMapOf(
                             "source" to "oob_reusable_function",
                             "function_id" to functionId,
                             "argument_count" to callArguments.size,
-                            "step_results" to stepResults
+                            "step_results" to stepResults,
+                            "timing" to runPayload["timing"]
                         )
                     ))
                 }
@@ -2963,6 +2966,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     "function_id" to functionId,
                     "error_code" to if (localSuccess) null else "OOB_FUNCTION_STEP_FAILED",
                     "error_message" to runPayload["error_message"],
+                    "timing" to runPayload["timing"],
                     "terminal_state" to linkedMapOf(
                         "status" to if (localSuccess) "completed" else "error",
                         "runner" to (runPayload["runner"] ?: "oob_mixed_runner"),
@@ -2972,13 +2976,15 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         "model_required" to (runPayload["model_required"] == true),
                         "delegated_tool_used" to (runPayload["delegated_tool_used"] == true),
                         "arguments_applied" to true,
-                        "fallback_available" to (runPayload["fallback_available"] == true)
+                        "fallback_available" to (runPayload["fallback_available"] == true),
+                        "timing" to runPayload["timing"]
                     ),
                     "context" to linkedMapOf(
                         "source" to "oob_reusable_function",
                         "function_id" to functionId,
                         "argument_count" to callArguments.size,
-                        "step_results" to stepResults
+                        "step_results" to stepResults,
+                        "timing" to runPayload["timing"]
                     )
                 ))
             }

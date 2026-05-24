@@ -737,6 +737,80 @@ class UtgManualRunResult {
           .toString()
           .trim();
 
+  int get startedAtMs => _intValue(
+    _firstPresent([
+      rawJson['started_at_ms'],
+      rawJson['startedAtMs'],
+      terminalState['started_at_ms'],
+      terminalState['startedAtMs'],
+      _timing['started_at_ms'],
+      _timing['startedAtMs'],
+    ]),
+  );
+
+  int get finishedAtMs => _intValue(
+    _firstPresent([
+      rawJson['finished_at_ms'],
+      rawJson['finishedAtMs'],
+      terminalState['finished_at_ms'],
+      terminalState['finishedAtMs'],
+      _timing['finished_at_ms'],
+      _timing['finishedAtMs'],
+    ]),
+  );
+
+  int get durationMs {
+    final explicit = _intValue(
+      _firstPresent([
+        rawJson['duration_ms'],
+        rawJson['durationMs'],
+        terminalState['duration_ms'],
+        terminalState['durationMs'],
+        _timing['duration_ms'],
+        _timing['durationMs'],
+        _timing['runner_duration_ms'],
+        _timing['runnerDurationMs'],
+      ]),
+    );
+    if (explicit > 0) return explicit;
+    final started = startedAtMs;
+    final finished = finishedAtMs;
+    if (started > 0 && finished >= started) return finished - started;
+    return 0;
+  }
+
+  Map<String, dynamic> get phaseMs {
+    final raw =
+        rawJson['phase_ms'] ??
+        rawJson['phaseMs'] ??
+        terminalState['phase_ms'] ??
+        terminalState['phaseMs'] ??
+        _timing['phase_ms'] ??
+        _timing['phaseMs'];
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      return raw.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return const <String, dynamic>{};
+  }
+
+  Map<String, dynamic> get _timing {
+    final raw =
+        rawJson['timing'] ?? terminalState['timing'] ?? context['timing'];
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      return raw.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return const <String, dynamic>{};
+  }
+
+  static dynamic _firstPresent(Iterable<dynamic> values) {
+    for (final value in values) {
+      if (value != null) return value;
+    }
+    return null;
+  }
+
   static bool _truthy(dynamic value) {
     if (value is bool) return value;
     if (value is num) return value != 0;

@@ -20,6 +20,8 @@ void main() {
               return <String, dynamic>{
                 'success': true,
                 'run_id': 'run-vlm-only',
+                'run_finished': true,
+                'run_success': true,
                 'done_reason': 'finished',
                 'goal': '识别当前屏幕',
                 'cards': <Map<String, dynamic>>[
@@ -45,6 +47,8 @@ void main() {
             return <String, dynamic>{
               'success': true,
               'run_id': 'run-vlm',
+              'run_finished': true,
+              'run_success': true,
               'done_reason': 'finished',
               'goal': '打开 Settings',
               'token_usage': <String, dynamic>{
@@ -152,6 +156,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('执行步骤'), findsOneWidget);
+    expect(find.text('离线复用流程'), findsOneWidget);
+    expect(find.text('RunLog 已收集'), findsOneWidget);
+    expect(find.text('可注册 Function'), findsOneWidget);
+    expect(find.text('本地执行'), findsOneWidget);
+    expect(find.text('重放 RunLog'), findsOneWidget);
+    expect(find.text('注册 Function'), findsOneWidget);
     expect(find.text('1 步'), findsOneWidget);
     expect(find.text('Token 消耗'), findsOneWidget);
     expect(_richTextContaining('总计  1.23k'), findsOneWidget);

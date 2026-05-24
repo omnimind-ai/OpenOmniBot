@@ -824,7 +824,7 @@
   "functionLibraryTestNeedParams": "Parameters needed: {params}",
   "functionLibraryTestStarted": "Test execution started",
   "functionLibraryViewDetails": "View Details",
-  "functionLibraryDetailCompileSurface": "Compile Surface",
+  "functionLibraryDetailCompileSurface": "Route Surface",
   "functionLibraryDetailGraphAnchors": "Graph Anchors",
   "functionLibraryDetailRunUsage": "Run Usage",
   "functionLibraryDetailLifecycle": "Lifecycle",

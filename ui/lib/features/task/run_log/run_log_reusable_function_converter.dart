@@ -524,7 +524,7 @@ class RunLogReusableFunctionConverter {
     final compact = const JsonEncoder.withIndent('  ').convert(baseJson);
     if (useEnglish) {
       return '''
-You are the OOB/OmniFlow trajectory compiler. Convert the draft extracted from RunLog below into reusable function JSON.
+You are the OOB/OmniFlow trajectory organizer. Convert the draft extracted from RunLog below into reusable function JSON.
 
 Requirements:
 - Output exactly one JSON object. Do not use Markdown and do not explain.
@@ -546,7 +546,7 @@ $compact
 ''';
     }
     return '''
-你是 OOB/OmniFlow 的轨迹编译器。请把下面由 RunLog 抽取得到的草稿，整理成可复用的 function JSON。
+你是 OOB/OmniFlow 的轨迹整理器。请把下面由 RunLog 抽取得到的草稿，整理成可复用的 function JSON。
 
 要求：
 - 只能输出一个 JSON object，不要 Markdown，不要解释。

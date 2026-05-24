@@ -640,6 +640,10 @@ class _FunctionCard extends StatelessWidget {
                       value: functionKind,
                     ),
                     _MetricPill(
+                      label: _text(context, '状态', 'State'),
+                      value: _text(context, '已注册', 'Registered'),
+                    ),
+                    _MetricPill(
                       label: _text(context, '步骤', 'Steps'),
                       value: function.stepCount.toString(),
                     ),
@@ -647,6 +651,11 @@ class _FunctionCard extends StatelessWidget {
                       label: _text(context, '参数', 'Params'),
                       value: function.parameterNames.length.toString(),
                     ),
+                    if (group.sourceRunIds.isNotEmpty)
+                      _MetricPill(
+                        label: 'RunLog',
+                        value: group.sourceRunIds.length.toString(),
+                      ),
                     if (group.variantCount > 1)
                       _MetricPill(
                         label: _text(context, '变体', 'Variants'),
@@ -658,6 +667,24 @@ class _FunctionCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     parameterPreview,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: palette.textTertiary,
+                      height: 1.35,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ],
+                if (group.sourceRunIds.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    _text(
+                      context,
+                      '来自 ${group.sourceRunIds.length} 条 RunLog，可本地重放执行',
+                      'From ${group.sourceRunIds.length} RunLogs, executable by local replay',
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -919,6 +946,10 @@ class _FunctionDetailSheet extends StatelessWidget {
                         runSpacing: 7,
                         children: [
                           _MetricPill(
+                            label: _text(context, '状态', 'State'),
+                            value: _text(context, '已注册', 'Registered'),
+                          ),
+                          _MetricPill(
                             label: _text(context, '类型', 'Kind'),
                             value: _stepListKindLabel(context, detail.steps),
                           ),
@@ -939,8 +970,19 @@ class _FunctionDetailSheet extends StatelessWidget {
                               label: _text(context, '变体', 'Variants'),
                               value: detail.group.variantCount.toString(),
                             ),
+                          if (detail.sourceRunIds.isNotEmpty)
+                            _MetricPill(
+                              label: 'RunLog',
+                              value: detail.sourceRunIds.length.toString(),
+                            ),
                         ],
                       ),
+                      if (detail.sourceRunIds.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        _DetailSectionTitle(zh: '离线来源', en: 'Offline Source'),
+                        const SizedBox(height: 10),
+                        _FunctionSourcePanel(sourceRunIds: detail.sourceRunIds),
+                      ],
                       const SizedBox(height: 18),
                       _DetailSectionTitle(zh: '动作预览', en: 'Action Preview'),
                       const SizedBox(height: 10),
@@ -1098,6 +1140,73 @@ class _FunctionPreviewPanel extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FunctionSourcePanel extends StatelessWidget {
+  const _FunctionSourcePanel({required this.sourceRunIds});
+
+  final List<String> sourceRunIds;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final preview = sourceRunIds.take(3).join(' · ');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: context.isDarkTheme
+            ? palette.surfaceSecondary
+            : palette.accentPrimary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.history_toggle_off_rounded,
+            size: 17,
+            color: palette.accentPrimary,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _text(
+                    context,
+                    '由 RunLog 注册，可通过 Function 库本地执行。',
+                    'Registered from RunLog and executable from the Function Library.',
+                  ),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: palette.textPrimary,
+                    height: 1.35,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  preview,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: palette.textTertiary,
+                    fontFamily: 'monospace',
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

@@ -2311,7 +2311,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get functionLibraryViewDetails => '查看详情';
 
   @override
-  String get functionLibraryDetailCompileSurface => '编译面';
+  String get functionLibraryDetailCompileSurface => '路由面';
 
   @override
   String get functionLibraryDetailGraphAnchors => '图锚点';

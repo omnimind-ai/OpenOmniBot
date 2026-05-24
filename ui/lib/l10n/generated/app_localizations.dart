@@ -4427,7 +4427,7 @@ abstract class AppLocalizations {
   /// No description provided for @functionLibraryDetailCompileSurface.
   ///
   /// In zh, this message translates to:
-  /// **'编译面'**
+  /// **'路由面'**
   String get functionLibraryDetailCompileSurface;
 
   /// No description provided for @functionLibraryDetailGraphAnchors.
