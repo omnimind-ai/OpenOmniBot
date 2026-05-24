@@ -3,7 +3,10 @@ package cn.com.omnimind.bot.runlog
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
+import android.content.pm.ApplicationInfo
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
+import cn.com.omnimind.bot.agent.AgentWorkspaceManager
+import cn.com.omnimind.bot.agent.SkillIndexService
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import java.io.File
@@ -116,12 +119,19 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals("decision", nodeSkillContext?.get("role"))
             assertEquals("udeg_node_skill_like_decision_context", nodeSkillContext?.get("context_kind"))
             assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, nodeSkillContext?.get("decision_path"))
+            val skillArtifact = currentNode?.get("skill_artifact") as? Map<*, *>
+            assertStructuredSkillArtifact(
+                context = context,
+                artifact = skillArtifact,
+                expectedPackage = "com.example.settings",
+            )
             assertEquals(null, recall["hit"])
             val candidates = recall["candidates"] as? List<*>
             val firstCandidate = candidates?.firstOrNull() as? Map<*, *>
             assertEquals(functionId, firstCandidate?.get("function_id"))
             assertNotNull(firstCandidate?.get("udeg_node"))
             assertNotNull(firstCandidate?.get("node_skill_context"))
+            assertNotNull((firstCandidate?.get("node_skill_context") as? Map<*, *>)?.get("skill_artifact"))
             val decisionPolicy = recall["decision_policy"] as? Map<*, *>
             assertEquals("node_skill_context_only", decisionPolicy?.get("mode"))
             assertEquals(true, decisionPolicy?.get("requires_vlm_or_tool_decision"))
@@ -210,6 +220,11 @@ class OobOmniFlowLoopAcceptanceTest {
             val functionIds = currentNode?.get("function_ids") as? List<*>
             assertTrue(functionIds.orEmpty().contains(matchingFunctionId))
             assertFalse(functionIds.orEmpty().contains(otherFunctionId))
+            assertStructuredSkillArtifact(
+                context = context,
+                artifact = currentNode?.get("skill_artifact") as? Map<*, *>,
+                expectedPackage = "com.example.settings",
+            )
             val nodeCapabilities = recall["node_capabilities"] as? List<*>
             val functionCapabilities = recall["node_function_capabilities"] as? List<*>
             val segmentCapabilities = recall["node_segment_capabilities"] as? List<*>
@@ -436,6 +451,11 @@ class OobOmniFlowLoopAcceptanceTest {
             val currentNode = requireNotNull(recall["current_node"] as? Map<*, *>)
             val functionIds = currentNode["function_ids"] as? List<*>
             assertFalse(functionIds.orEmpty().contains(functionId))
+            assertStructuredSkillArtifact(
+                context = context,
+                artifact = currentNode["skill_artifact"] as? Map<*, *>,
+                expectedPackage = "com.example.target",
+            )
             val segmentSummaries = currentNode["segments"] as? List<*>
             val nodeSegment = segmentSummaries.orEmpty()
                 .mapNotNull { it as? Map<*, *> }
@@ -499,6 +519,48 @@ class OobOmniFlowLoopAcceptanceTest {
         }
     }
 
+    @Test
+    fun `observed UDEG page writes structured skill artifact and skill index can scan it`() {
+        val context = TempFilesContext()
+        try {
+            val nodeStore = OobUdegNodeStore(context)
+            val observed = requireNotNull(
+                nodeStore.observePage(
+                    OobUdegNodeStore.ObservedPage(
+                        pageXml = SOURCE_XML,
+                        packageName = "com.example.settings",
+                        activityName = "SettingsActivity",
+                        goal = "open network settings",
+                    )
+                )
+            )
+            val observedMap = observed.toMap()
+            val artifact = observedMap["skill_artifact"] as? Map<*, *>
+            val nodeId = observedMap["node_id"]?.toString().orEmpty()
+            assertStructuredSkillArtifact(
+                context = context,
+                artifact = artifact,
+                expectedPackage = "com.example.settings",
+            )
+
+            val nodeFromArtifact = nodeStore.getNode(nodeId)
+            assertEquals(nodeId, nodeFromArtifact["node_id"])
+            assertNotNull(nodeFromArtifact["page_vector_set"])
+            assertNotNull(nodeFromArtifact["skill_artifact"])
+
+            val workspaceManager = AgentWorkspaceManager(context)
+            val indexed = SkillIndexService(context, workspaceManager)
+                .listInstalledSkills()
+                .firstOrNull { it.metadata["node_id"] == nodeId }
+            assertNotNull(indexed)
+            assertEquals("oob_udeg_node_skill", indexed?.metadata?.get("kind"))
+            assertEquals(nodeId, indexed?.metadata?.get("node_id"))
+            assertEquals("page_match", indexed?.metadata?.get("activation"))
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
     private fun assertOpenSettingsParentRun(run: Map<String, Any?>, childFunctionId: String) {
         assertEquals(true, run["success"])
         assertEquals(false, run["fallback"])
@@ -518,6 +580,30 @@ class OobOmniFlowLoopAcceptanceTest {
 
     private fun firstCapabilityId(capabilities: List<*>?): Any? =
         (capabilities?.firstOrNull() as? Map<*, *>)?.get("function_id")
+
+    private fun assertStructuredSkillArtifact(
+        context: TempFilesContext,
+        artifact: Map<*, *>?,
+        expectedPackage: String,
+    ) {
+        assertNotNull(artifact)
+        assertEquals("oob.udeg.node_skill_artifact.v1", artifact?.get("schema_version"))
+        assertEquals("oob_udeg_node_skill_artifact", artifact?.get("kind"))
+        assertEquals(expectedPackage, artifact?.get("package_name"))
+        assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, artifact?.get("decision_path"))
+        val paths = artifact?.get("paths") as? Map<*, *>
+        val skillFile = File(paths?.get("skill_file_path")?.toString().orEmpty())
+        val payloadFile = File(paths?.get("payload_path")?.toString().orEmpty())
+        assertTrue(skillFile.exists())
+        assertTrue(payloadFile.exists())
+        assertTrue(skillFile.readText().contains("metadata:"))
+        assertTrue(skillFile.readText().contains("structured_payload:"))
+        val payloadText = payloadFile.readText()
+        assertTrue(payloadText.contains("\"page_match\""))
+        assertTrue(payloadText.contains("\"page_vector\""))
+        val indexFile = File(context.root, "workspace/.omnibot/skills/oob-udeg-node-skills/index.json")
+        assertTrue(indexFile.exists())
+    }
 
     private fun reusableFunctionSpec(
         functionId: String,
@@ -732,10 +818,18 @@ class OobOmniFlowLoopAcceptanceTest {
     class TempFilesContext : ContextWrapper(null) {
         val root: File = Files.createTempDirectory("oob-omniflow-loop-test").toFile()
         private val prefsByName = linkedMapOf<String, InMemorySharedPreferences>()
+        private val appInfo = ApplicationInfo().apply {
+            dataDir = root.absolutePath
+            packageName = "cn.com.omnimind.bot.test"
+        }
 
         override fun getApplicationContext(): Context = this
 
+        override fun getApplicationInfo(): ApplicationInfo = appInfo
+
         override fun getFilesDir(): File = root
+
+        override fun getPackageName(): String = appInfo.packageName
 
         override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences {
             return prefsByName.getOrPut(name.orEmpty()) { InMemorySharedPreferences() }

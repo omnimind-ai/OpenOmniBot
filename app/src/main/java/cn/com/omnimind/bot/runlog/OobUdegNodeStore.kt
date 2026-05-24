@@ -1,9 +1,11 @@
 package cn.com.omnimind.bot.runlog
 
 import android.content.Context
+import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import com.google.gson.GsonBuilder
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
+import java.io.File
 import java.io.StringReader
 import java.security.MessageDigest
 import java.util.Locale
@@ -44,6 +46,7 @@ class OobUdegNodeStore(
             "reason" to reason,
             "page_analysis" to mapArg(node["page_analysis"]).takeIf { it.isNotEmpty() },
             "decision_context" to mapArg(node["decision_context"]).takeIf { it.isNotEmpty() },
+            "skill_artifact" to mapArg(node["skill_artifact"]).takeIf { it.isNotEmpty() },
             "node_skill_context" to nodeSkillContext(
                 node = node,
                 pageSimilarity = pageSimilarity,
@@ -66,6 +69,7 @@ class OobUdegNodeStore(
             "reason" to reason,
             "skill" to node["skill"],
             "decision_context" to mapArg(node["decision_context"]).takeIf { it.isNotEmpty() },
+            "skill_artifact" to mapArg(node["skill_artifact"]).takeIf { it.isNotEmpty() },
             "node_skill_context" to nodeSkillContext(
                 node = node,
                 pageSimilarity = pageSimilarity,
@@ -191,6 +195,7 @@ class OobUdegNodeStore(
                 "actionable_count" to pageVector.actionableCount,
             ),
             "skill_id" to mapArg(node["skill"])["id"],
+            "skill_artifact" to mapArg(node["skill_artifact"]).takeIf { it.isNotEmpty() },
             "function_count" to mergedFunctions.size,
             "segment_count" to mergedSegments.size,
             "source" to "oob_udeg_node_store",
@@ -255,24 +260,282 @@ class OobUdegNodeStore(
     }
 
     fun listNodes(limit: Int = 100): List<Map<String, Any?>> {
-        return listNodeIds()
+        val normalizedLimit = limit.coerceIn(1, MAX_NODE_SCAN)
+        val nodesById = linkedMapOf<String, Map<String, Any?>>()
+        listNodeIds()
             .asReversed()
-            .take(limit.coerceIn(1, MAX_NODE_SCAN))
-            .mapNotNull(::getNode)
+            .take(normalizedLimit)
+            .mapNotNull(::getNodeFromPreferences)
+            .forEach { node ->
+                val nodeId = firstNonBlank(node["node_id"])
+                if (nodeId.isNotBlank()) {
+                    nodesById[nodeId] = node
+                }
+            }
+        listArtifactNodes(normalizedLimit).forEach { node ->
+            val nodeId = firstNonBlank(node["node_id"])
+            if (nodeId.isNotBlank() && nodeId !in nodesById) {
+                nodesById[nodeId] = node
+            }
+        }
+        return nodesById.values
+            .sortedByDescending { node ->
+                val registry = mapArg(node["_oob_registry"])
+                longArg(node["updated_at"], node["last_seen_at"], registry["updated_at"], defaultValue = 0L)
+            }
+            .take(normalizedLimit)
     }
 
     fun getNode(nodeId: String): Map<String, Any?> {
+        return getNodeFromPreferences(nodeId).takeIf { it.isNotEmpty() }
+            ?: getNodeFromArtifact(nodeId)
+    }
+
+    private fun getNodeFromPreferences(nodeId: String): Map<String, Any?> {
         val raw = prefs().getString(nodeKey(nodeId.trim()), null)?.takeIf { it.isNotBlank() }
             ?: return emptyMap()
         return runCatching { decodeMap(raw) }.getOrDefault(emptyMap())
     }
 
-    private fun saveNode(nodeId: String, node: Map<String, Any?>) {
+    private fun saveNode(nodeId: String, node: MutableMap<String, Any?>) {
         val normalizedNodeId = nodeId.trim()
+        exportNodeSkillArtifact(node)?.let { artifact ->
+            node["skill_artifact"] = artifact
+        }
         prefs().edit()
             .putString(nodeKey(normalizedNodeId), gson.toJson(node))
             .putString(INDEX_KEY, gson.toJson((listNodeIds() - normalizedNodeId) + normalizedNodeId))
             .apply()
+    }
+
+    private fun exportNodeSkillArtifact(node: Map<String, Any?>): Map<String, Any?>? {
+        val nodeId = firstNonBlank(node["node_id"])
+        if (nodeId.isBlank()) return null
+        val skill = mapArg(node["skill"])
+        val body = firstNonBlank(skill["body"])
+        if (body.isBlank()) return null
+        val packageName = firstNonBlank(node["package_name"])
+        val activityName = firstNonBlank(node["activity_name"])
+        val skillId = firstNonBlank(skill["id"], "udeg_node_skill_$nodeId")
+        val safeNodeId = safePathSegment(nodeId)
+        val safePackage = safePathSegment(packageName.ifBlank { "unknown_package" })
+        val artifactDir = File(udegSkillArtifactsRoot(), "$safePackage/$safeNodeId")
+        val skillFile = File(artifactDir, "SKILL.md")
+        val payloadFile = File(artifactDir, "skill.json")
+        val updatedAt = longArg(node["updated_at"], defaultValue = System.currentTimeMillis())
+        val artifact = linkedMapOf<String, Any?>(
+            "schema_version" to NODE_SKILL_ARTIFACT_SCHEMA_VERSION,
+            "kind" to "oob_udeg_node_skill_artifact",
+            "skill_id" to skillId,
+            "node_id" to nodeId,
+            "package_name" to packageName.takeIf { it.isNotBlank() },
+            "activity_name" to activityName.takeIf { it.isNotBlank() },
+            "activation" to linkedMapOf(
+                "type" to "page_match",
+                "page_vector_set_schema" to OobPageVectorSet.SCHEMA_VERSION,
+                "min_page_similarity" to MIN_PAGE_MATCH_SCORE,
+                "strong_page_similarity" to STRONG_PAGE_MATCH_SCORE,
+            ),
+            "decision_path" to UDEG_DECISION_PATH,
+            "paths" to linkedMapOf(
+                "root_path" to artifactDir.absolutePath,
+                "skill_file_path" to skillFile.absolutePath,
+                "payload_path" to payloadFile.absolutePath,
+            ),
+            "indexed_by" to "AgentWorkspaceManager.skillsRoot",
+            "updated_at" to updatedAt,
+        ).filterValues { it != null }
+
+        val payload = buildSkillArtifactPayload(
+            node = node,
+            artifact = artifact,
+        )
+        return runCatching {
+            artifactDir.mkdirs()
+            skillFile.writeText(renderSkillArtifactMarkdown(node, artifact, body))
+            payloadFile.writeText(gson.toJson(payload))
+            writeSkillArtifactIndex(artifact)
+            artifact
+        }.getOrNull()
+    }
+
+    private fun buildSkillArtifactPayload(
+        node: Map<String, Any?>,
+        artifact: Map<String, Any?>,
+    ): Map<String, Any?> {
+        val vectorSet = mapArg(node["page_vector_set"])
+        val vectorStats = linkedMapOf(
+            "schema_version" to vectorSet["schema_version"],
+            "node_id" to vectorSet["node_id"],
+            "package_name" to vectorSet["package_name"],
+            "page_vector_dim" to vectorSet["page_vector_dim"],
+            "element_count" to vectorSet["element_count"],
+            "actionable_count" to vectorSet["actionable_count"],
+            "focus_target_count" to vectorSet["focus_target_count"],
+            "display_text_count" to vectorSet["display_text_count"],
+            "signature" to vectorSet["signature"],
+            "privacy" to vectorSet["privacy"],
+        ).filterValues { it != null }
+        return linkedMapOf(
+            "schema_version" to NODE_SKILL_ARTIFACT_SCHEMA_VERSION,
+            "artifact" to artifact,
+            "node" to linkedMapOf(
+                "schema_version" to node["schema_version"],
+                "node_id" to node["node_id"],
+                "package_name" to node["package_name"],
+                "activity_name" to node["activity_name"],
+                "first_seen_at" to node["first_seen_at"],
+                "last_seen_at" to node["last_seen_at"],
+                "updated_at" to node["updated_at"],
+                "source" to node["source"],
+            ).filterValues { it != null },
+            "page_match" to linkedMapOf(
+                "page_vector_set" to vectorStats,
+                "page_vector" to OobPageVectorSet.vectorFrom(vectorSet["page_vector"]),
+            ),
+            "page_analysis" to mapArg(node["page_analysis"]).takeIf { it.isNotEmpty() },
+            "skill" to mapArg(node["skill"]).takeIf { it.isNotEmpty() },
+            "decision_context" to mapArg(node["decision_context"]).takeIf { it.isNotEmpty() },
+            "functions" to functionSummaries(node),
+            "segments" to segmentSummaries(node),
+            "registry" to mapArg(node["_oob_registry"]).takeIf { it.isNotEmpty() },
+            "privacy" to linkedMapOf(
+                "raw_xml_stored" to false,
+                "raw_screenshot_stored" to false,
+                "editable_text_stored" to false,
+                "artifact_contains_page_vector" to true,
+            ),
+        ).filterValues { it != null }
+    }
+
+    private fun renderSkillArtifactMarkdown(
+        node: Map<String, Any?>,
+        artifact: Map<String, Any?>,
+        body: String,
+    ): String {
+        val skill = mapArg(node["skill"])
+        val nodeId = firstNonBlank(node["node_id"])
+        val skillName = firstNonBlank(mapArg(skill["frontmatter"])["name"], "udeg-node-$nodeId")
+        val description = firstNonBlank(
+            mapArg(skill["frontmatter"])["description"],
+            skill["description"],
+            "Decision context for a page-matched UDEG node."
+        )
+        val packageName = firstNonBlank(node["package_name"])
+        val activityName = firstNonBlank(node["activity_name"])
+        val payloadPath = firstNonBlank(mapArg(artifact["paths"])["payload_path"])
+        val metadata = buildList {
+            add("  kind: oob_udeg_node_skill")
+            add("  schema_version: $NODE_SKILL_ARTIFACT_SCHEMA_VERSION")
+            add("  node_id: $nodeId")
+            if (packageName.isNotBlank()) add("  package_name: $packageName")
+            if (activityName.isNotBlank()) add("  activity_name: $activityName")
+            add("  activation: page_match")
+            add("  decision_path: $UDEG_DECISION_PATH")
+            if (payloadPath.isNotBlank()) add("  structured_payload: $payloadPath")
+        }.joinToString("\n")
+        return buildString {
+            appendLine("---")
+            appendLine("name: $skillName")
+            appendLine("description: $description")
+            appendLine("compatibility: android,oob,udeg")
+            appendLine("metadata:")
+            appendLine(metadata)
+            appendLine("---")
+            appendLine()
+            appendLine(body)
+            appendLine()
+            appendLine("## Structured Payload")
+            appendLine()
+            appendLine("This UDEG node skill is backed by `skill.json`. The online VLM should receive it only after page match localizes the current screen to this node.")
+        }.trim() + "\n"
+    }
+
+    private fun writeSkillArtifactIndex(artifact: Map<String, Any?>) {
+        val root = udegSkillArtifactsRoot()
+        val indexFile = File(root, ARTIFACT_INDEX_FILE)
+        val existing = runCatching {
+            gson.fromJson(indexFile.readText(), List::class.java)
+                ?.mapNotNull { raw -> mapArg(raw).takeIf { it.isNotEmpty() } }
+        }.getOrNull().orEmpty()
+        val nodeId = firstNonBlank(artifact["node_id"])
+        val merged = existing
+            .filterNot { firstNonBlank(it["node_id"]) == nodeId }
+            .plus(artifact)
+            .sortedByDescending { longArg(it["updated_at"], defaultValue = 0L) }
+        root.mkdirs()
+        indexFile.writeText(gson.toJson(merged))
+    }
+
+    private fun listArtifactNodes(limit: Int): List<Map<String, Any?>> {
+        val root = udegSkillArtifactsRoot()
+        if (!root.exists()) return emptyList()
+        return root.walkTopDown()
+            .onEnter { directory -> directory.name != ".git" }
+            .filter { file -> file.isFile && file.name == "skill.json" }
+            .take(limit.coerceIn(1, MAX_NODE_SCAN))
+            .mapNotNull { file ->
+                runCatching {
+                    val payload = decodeMap(file.readText())
+                    nodeFromArtifactPayload(payload)
+                }.getOrNull()?.takeIf { it.isNotEmpty() }
+            }
+            .toList()
+    }
+
+    private fun getNodeFromArtifact(nodeId: String): Map<String, Any?> {
+        val safeNodeId = safePathSegment(nodeId.trim())
+        if (safeNodeId.isBlank()) return emptyMap()
+        val root = udegSkillArtifactsRoot()
+        if (!root.exists()) return emptyMap()
+        return root.walkTopDown()
+            .onEnter { directory -> directory.name != ".git" }
+            .filter { file -> file.isFile && file.name == "skill.json" && file.parentFile?.name == safeNodeId }
+            .mapNotNull { file ->
+                runCatching {
+                    nodeFromArtifactPayload(decodeMap(file.readText()))
+                }.getOrNull()
+            }
+            .firstOrNull()
+            .orEmpty()
+    }
+
+    private fun nodeFromArtifactPayload(payload: Map<String, Any?>): Map<String, Any?> {
+        val node = mapArg(payload["node"])
+        val pageMatch = mapArg(payload["page_match"])
+        val pageVectorSet = mapArg(pageMatch["page_vector_set"]).toMutableMap()
+        val pageVector = OobPageVectorSet.vectorFrom(pageMatch["page_vector"])
+        if (pageVector.isNotEmpty()) {
+            pageVectorSet["page_vector"] = pageVector
+        }
+        val nodeId = firstNonBlank(node["node_id"], pageVectorSet["node_id"])
+        if (nodeId.isBlank()) return emptyMap()
+        return linkedMapOf<String, Any?>(
+            "schema_version" to firstNonBlank(node["schema_version"], NODE_SCHEMA_VERSION),
+            "node_id" to nodeId,
+            "package_name" to firstNonBlank(node["package_name"], pageVectorSet["package_name"]).takeIf { it.isNotBlank() },
+            "activity_name" to firstNonBlank(node["activity_name"]).takeIf { it.isNotBlank() },
+            "page_vector_set" to pageVectorSet.takeIf { it.isNotEmpty() },
+            "page_analysis" to mapArg(payload["page_analysis"]).takeIf { it.isNotEmpty() },
+            "skill" to mapArg(payload["skill"]).takeIf { it.isNotEmpty() },
+            "decision_context" to mapArg(payload["decision_context"]).takeIf { it.isNotEmpty() },
+            "functions" to listArg(payload["functions"]).mapNotNull { mapArg(it).takeIf(Map<String, Any?>::isNotEmpty) },
+            "segments" to listArg(payload["segments"]).mapNotNull { mapArg(it).takeIf(Map<String, Any?>::isNotEmpty) },
+            "skill_artifact" to mapArg(payload["artifact"]).takeIf { it.isNotEmpty() },
+            "_oob_registry" to mapArg(payload["registry"]).takeIf { it.isNotEmpty() },
+            "first_seen_at" to node["first_seen_at"],
+            "last_seen_at" to node["last_seen_at"],
+            "updated_at" to node["updated_at"],
+            "source" to firstNonBlank(node["source"], "oob_native_udeg_artifact"),
+        ).filterValues { it != null }
+    }
+
+    private fun udegSkillArtifactsRoot(): File {
+        return runCatching {
+            File(AgentWorkspaceManager(context).skillsRoot(), UDEG_SKILL_ARTIFACTS_DIR)
+        }.getOrElse {
+            File(context.filesDir, "workspace/.omnibot/skills/$UDEG_SKILL_ARTIFACTS_DIR")
+        }
     }
 
     private fun buildNodeSkill(
@@ -689,6 +952,14 @@ class OobUdegNodeStore(
             normalized == "已接管控制，完成操作后点击继续" ||
             normalized.contains("omnibot") ||
             normalized.contains("oob")
+    }
+
+    private fun safePathSegment(value: String): String {
+        return value.trim()
+            .replace(Regex("[^A-Za-z0-9._-]+"), "_")
+            .trim('_')
+            .take(MAX_ARTIFACT_SEGMENT_CHARS)
+            .ifBlank { "unknown" }
     }
 
     private fun sha256(value: String): String {
@@ -1123,8 +1394,11 @@ class OobUdegNodeStore(
         private const val NODE_PREFIX = "oob_udeg_node_v1:"
         private const val NODE_SCHEMA_VERSION = "oob.udeg.node.v1"
         private const val NODE_SKILL_SCHEMA_VERSION = "oob.udeg.node_skill.v1"
+        private const val NODE_SKILL_ARTIFACT_SCHEMA_VERSION = "oob.udeg.node_skill_artifact.v1"
         private const val NODE_DECISION_CONTEXT_SCHEMA_VERSION = "oob.udeg.decision_context.v1"
         private const val PAGE_ANALYSIS_SCHEMA_VERSION = "oob.udeg.page_analysis.v1"
+        private const val UDEG_SKILL_ARTIFACTS_DIR = "oob-udeg-node-skills"
+        private const val ARTIFACT_INDEX_FILE = "index.json"
         const val UDEG_DECISION_PATH =
             "page match -> UDEG node -> node skill-like decision context -> VLM/tool decision"
         const val MIN_PAGE_MATCH_SCORE = 0.30f
@@ -1136,6 +1410,7 @@ class OobUdegNodeStore(
         private const val MAX_LABEL_CHARS = 80
         private const val MAX_RENDERED_TEXT_CHARS = 400
         private const val MAX_DESCENDANT_LABELS_FOR_ACTION = 3
+        private const val MAX_ARTIFACT_SEGMENT_CHARS = 96
         private val NODE_DECISION_RULES = listOf(
             "Use the node skill only after page match localizes the current page to this node.",
             "Treat attached Functions as outgoing reusable transitions from this node.",
@@ -1183,6 +1458,7 @@ class OobUdegNodeStore(
                 "package_name" to node["package_name"],
                 "activity_name" to node["activity_name"],
             ).filterValues { it != null },
+            "skill_artifact" to mapArg(node["skill_artifact"]).takeIf { it.isNotEmpty() },
             "skill" to mapArg(node["skill"]).takeIf { it.isNotEmpty() },
             "decision_context" to mapArg(node["decision_context"]).takeIf { it.isNotEmpty() },
             "attached_functions" to functionSummaries(node),
