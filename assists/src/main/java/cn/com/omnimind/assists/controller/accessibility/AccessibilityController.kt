@@ -257,21 +257,46 @@ class AccessibilityController() {
                 y2 = y2,
                 targetDescription = targetDescription
             ) ?: return false
-            val range = candidate.info.rangeInfo ?: return false
-            val progress = if (x2 >= x1) {
-                max(range.min, range.max)
-            } else {
-                min(range.min, range.max)
-            }
             return runCatching {
-                withTimeout(2000) {
-                    actionController?.setProgress(candidate.info, progress)
-                        ?: throw IllegalStateException("Accessibility action controller is not ready")
+                val range = candidate.info.rangeInfo
+                if (range != null) {
+                    val progress = if (x2 >= x1) {
+                        max(range.min, range.max)
+                    } else {
+                        min(range.min, range.max)
+                    }
+                    withTimeout(2000) {
+                        actionController?.setProgress(candidate.info, progress)
+                            ?: throw IllegalStateException("Accessibility action controller is not ready")
+                    }
+                } else {
+                    val direction = if (x2 >= x1) {
+                        AccessibilityScrollDirection.RIGHT
+                    } else {
+                        AccessibilityScrollDirection.LEFT
+                    }
+                    val bounds = candidate.bounds
+                    val startX = if (x2 >= x1) {
+                        bounds.left + bounds.width() * SLIDER_GESTURE_EDGE_FRACTION
+                    } else {
+                        bounds.right - bounds.width() * SLIDER_GESTURE_EDGE_FRACTION
+                    }
+                    val distance = (bounds.width() * SLIDER_GESTURE_DISTANCE_FRACTION)
+                        .coerceAtLeast(MIN_SLIDER_WIDTH_PX.toFloat())
+                    withTimeout(2000) {
+                        actionController?.scrollCoordinate(
+                            startX,
+                            bounds.exactCenterY(),
+                            direction,
+                            distance,
+                            duration = 700L
+                        )?.await() ?: throw IllegalStateException("Accessibility action controller is not ready")
+                    }
                 }
                 OmniLog.i(
                     TAG,
                     "setSliderProgressFromGesture semantic success target=$targetDescription " +
-                        "progress=$progress bounds=${candidate.bounds} " +
+                        "range=${range != null} bounds=${candidate.bounds} " +
                         "label=${nodeSemanticLabel(candidate.info).take(80)}"
                 )
                 true
@@ -369,7 +394,6 @@ class AccessibilityController() {
                         node.bounds.width() >= MIN_SLIDER_WIDTH_PX &&
                         node.bounds.height() > 0 &&
                         node.info.isEnabled &&
-                        node.info.rangeInfo != null &&
                         hasSliderSignal(node.info, targetTerms)
                 }
                 .mapNotNull { node ->
@@ -824,6 +848,8 @@ class AccessibilityController() {
         )
         private const val MIN_SLIDER_WIDTH_PX = 40
         private const val MIN_SLIDER_Y_TOLERANCE_PX = 96f
+        private const val SLIDER_GESTURE_EDGE_FRACTION = 0.08f
+        private const val SLIDER_GESTURE_DISTANCE_FRACTION = 0.84f
         private const val MIN_SCROLLABLE_WIDTH_PX = 120
         private const val MIN_SCROLLABLE_HEIGHT_PX = 160
     }

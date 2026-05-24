@@ -25,6 +25,22 @@ import kotlin.math.roundToInt
  * coordinate guessing.
  */
 object VLMIndexedPageContext {
+    data class IndexedTarget(
+        val index: Int,
+        val label: String,
+        val centerX: Float,
+        val centerY: Float
+    )
+
+    data class IndexedScrollTarget(
+        val index: Int,
+        val label: String,
+        val x1: Float,
+        val y1: Float,
+        val x2: Float,
+        val y2: Float
+    )
+
     fun enrich(
         context: UIContext,
         currentXml: String?,
@@ -170,6 +186,62 @@ object VLMIndexedPageContext {
             canvas.drawText(label, labelLeft + padding, labelTop + textSize + padding * 0.25f, labelTextPaint)
         }
         return encodeJpegDataUri(bitmap)
+    }
+
+    fun elementTarget(
+        currentXml: String?,
+        displayWidth: Int,
+        displayHeight: Int,
+        index: Int
+    ): IndexedTarget? {
+        if (index < 0) return null
+        val snapshot = buildIndexedSnapshot(currentXml, displayWidth, displayHeight) ?: return null
+        val node = snapshot.candidates.getOrNull(index) ?: return null
+        return IndexedTarget(
+            index = index,
+            label = node.displayLabel.take(MAX_LABEL_CHARS),
+            centerX = node.bounds.centerX,
+            centerY = node.bounds.centerY
+        )
+    }
+
+    fun scrollTarget(
+        currentXml: String?,
+        displayWidth: Int,
+        displayHeight: Int,
+        index: Int,
+        direction: String?
+    ): IndexedScrollTarget? {
+        if (index < 0) return null
+        val snapshot = buildIndexedSnapshot(currentXml, displayWidth, displayHeight) ?: return null
+        val node = snapshot.scrollables.getOrNull(index) ?: return null
+        val dir = direction?.lowercase()?.trim().orEmpty().ifBlank { "down" }
+        val left = node.bounds.left
+        val right = node.bounds.right
+        val top = node.bounds.top
+        val bottom = node.bounds.bottom
+        val width = node.bounds.width.coerceAtLeast(1f)
+        val height = node.bounds.height.coerceAtLeast(1f)
+        val centerX = node.bounds.centerX
+        val centerY = node.bounds.centerY
+        val startX = left + width * 0.76f
+        val endX = left + width * 0.24f
+        val startY = bottom - height * 0.16f
+        val endY = top + height * 0.24f
+        val (x1, y1, x2, y2) = when (dir) {
+            "up" -> listOf(centerX, endY, centerX, startY)
+            "left" -> listOf(startX, centerY, endX, centerY)
+            "right" -> listOf(endX, centerY, startX, centerY)
+            else -> listOf(centerX, startY, centerX, endY)
+        }
+        return IndexedScrollTarget(
+            index = index,
+            label = node.displayLabel.take(MAX_LABEL_CHARS),
+            x1 = x1,
+            y1 = y1,
+            x2 = x2,
+            y2 = y2
+        )
     }
 
     private fun buildIndexedSnapshot(

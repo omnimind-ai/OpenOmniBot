@@ -34,6 +34,14 @@
             </intent-filter>
         </receiver>
         <receiver
+            android:name=".debug.DebugOobRecallReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="cn.com.omnimind.bot.debug.RUN_OOB_RECALL" />
+            </intent-filter>
+        </receiver>
+        <receiver
             android:name=".debug.DebugModelProviderConfigReceiver"
             android:enabled="true"
             android:exported="true">

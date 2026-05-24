@@ -148,6 +148,22 @@ class VLMClient(
                         }
                     )
                 }
+                if (post.appearedTexts.isNotEmpty()) {
+                    put(
+                        "appeared_texts",
+                        buildJsonArray {
+                            post.appearedTexts.forEach { add(JsonPrimitive(it)) }
+                        }
+                    )
+                }
+                if (post.disappearedTexts.isNotEmpty()) {
+                    put(
+                        "disappeared_texts",
+                        buildJsonArray {
+                            post.disappearedTexts.forEach { add(JsonPrimitive(it)) }
+                        }
+                    )
+                }
                 post.afterFocusedEditable?.takeIf { it.isNotBlank() }?.let {
                     put("after_focused_editable", JsonPrimitive(it))
                 }
@@ -399,7 +415,8 @@ class VLMClient(
             "click" -> ClickAction(
                 targetDescription = requireString(args, "target_description"),
                 x = requireFloat(args, "x"),
-                y = requireFloat(args, "y")
+                y = requireFloat(args, "y"),
+                elementIndex = optionalInt(args, "element_index")
             )
             "type" -> TypeAction(
                 content = requireString(args, "content")
@@ -408,7 +425,8 @@ class VLMClient(
                 targetDescription = requireString(args, "target_description"),
                 content = requireString(args, "content", "text", "value"),
                 x = requireFloat(args, "x"),
-                y = requireFloat(args, "y")
+                y = requireFloat(args, "y"),
+                elementIndex = optionalInt(args, "element_index")
             )
             "scroll" -> ScrollAction(
                 targetDescription = requireString(args, "target_description"),
@@ -416,12 +434,15 @@ class VLMClient(
                 y1 = requireFloat(args, "y1"),
                 x2 = requireFloat(args, "x2"),
                 y2 = requireFloat(args, "y2"),
-                duration = optionalFloat(args, "duration") ?: 1.5f
+                duration = optionalFloat(args, "duration") ?: 1.5f,
+                scrollableIndex = optionalInt(args, "scrollable_index"),
+                direction = optionalString(args, "direction")?.lowercase()
             )
             "long_press" -> LongPressAction(
                 targetDescription = requireString(args, "target_description"),
                 x = requireFloat(args, "x"),
-                y = requireFloat(args, "y")
+                y = requireFloat(args, "y"),
+                elementIndex = optionalInt(args, "element_index")
             )
             "open_app" -> OpenAppAction(
                 packageName = requireString(args, "package_name")
@@ -549,6 +570,7 @@ class VLMClient(
 
     private fun toolNames(): Set<String> = setOf(
         "click",
+        "input_text",
         "type",
         "scroll",
         "long_press",
@@ -628,6 +650,11 @@ class VLMClient(
 
     private fun optionalFloat(obj: JsonObject, key: String): Float? {
         return obj[key]?.jsonPrimitive?.contentOrNull?.toFloatOrNull()
+    }
+
+    private fun optionalInt(obj: JsonObject, key: String): Int? {
+        val raw = obj[key]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+        return raw.toIntOrNull() ?: raw.toDoubleOrNull()?.toInt()
     }
 
     private fun requireStringList(obj: JsonObject, key: String): List<String> {

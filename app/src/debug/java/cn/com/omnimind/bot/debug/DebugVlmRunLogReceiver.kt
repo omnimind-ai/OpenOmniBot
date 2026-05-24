@@ -41,10 +41,17 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
             null
         }
         val maxSteps = intent?.getIntExtra("maxSteps", 1)?.takeIf { it > 0 } ?: 1
+        val waitTimeoutMs = intent.readWaitTimeoutMs()
         val register = intent?.getBooleanExtra("register", true) ?: true
         val profileId = intent?.getStringExtra("profileId")?.trim().orEmpty()
         val modelId = intent?.getStringExtra("modelId")?.trim().orEmpty()
         val skillId = intent?.getStringExtra("skillId")?.trim().orEmpty()
+        val disableOmniFlowRecall = intent.readBooleanExtra(
+            "disableOmniFlowRecall",
+            "disable_omniflow_recall",
+            "disableRecall",
+            "disable_recall"
+        )
         val stepSkillGuidance = intent.decodeBase64Extra("stepSkillGuidanceBase64")
             ?: intent?.getStringExtra("stepSkillGuidance")?.trim().orEmpty()
                 .takeIf { it.isNotBlank() }
@@ -57,6 +64,7 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
                     goal,
                     packageName,
                     maxSteps,
+                    waitTimeoutMs,
                     register,
                     profileId,
                     modelId,
@@ -64,6 +72,7 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
                     startFromCurrent,
                     skipGoHome,
                     stepSkillGuidance,
+                    disableOmniFlowRecall,
                 )
             }.getOrElse { error ->
                 linkedMapOf<String, Any?>(
@@ -84,6 +93,7 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
         goal: String,
         packageName: String?,
         maxSteps: Int,
+        waitTimeoutMs: Long?,
         register: Boolean,
         profileId: String,
         modelId: String,
@@ -91,6 +101,7 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
         startFromCurrent: Boolean,
         skipGoHome: Boolean,
         stepSkillGuidance: String,
+        disableOmniFlowRecall: Boolean,
     ): Map<String, Any?> {
         if (!AssistsUtil.Core.isInitialized()) {
             AssistsUtil.Core.initCore(context)
@@ -105,9 +116,11 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
                 model = modelId.ifEmpty { null },
                 packageName = if (startFromCurrent || skipGoHome) null else packageName,
                 maxSteps = maxSteps,
+                waitTimeoutMs = waitTimeoutMs,
                 needSummary = false,
                 skipGoHome = startFromCurrent || skipGoHome,
                 stepSkillGuidance = stepSkillGuidance,
+                disableOmniFlowRecall = disableOmniFlowRecall,
             ),
             scope = scope,
         )
@@ -131,7 +144,9 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
         val outcomePayload = outcome.toPayload()
         val directRecallCompleted = outcome.status == VlmToolOutcomeStatus.FINISHED &&
             record == null &&
-            outcomePayload["executionRoute"]?.toString()?.startsWith("omniflow_recall_hit:") == true
+            outcomePayload["executionRoute"]?.toString()?.let {
+                it.startsWith("omniflow_recall_hit:") || it.startsWith("omniflow_recall_segment_hit:")
+            } == true
 
         return linkedMapOf(
             "success" to (
@@ -143,6 +158,8 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
             "prelaunch" to prelaunch,
             "startFromCurrent" to startFromCurrent,
             "skipGoHome" to skipGoHome,
+            "disable_omniflow_recall" to disableOmniFlowRecall,
+            "wait_timeout_ms" to waitTimeoutMs,
             "step_skill_guidance_chars" to stepSkillGuidance.length,
             "configured_binding" to configuredBinding,
             "outcome" to outcomePayload,
@@ -206,6 +223,34 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
             String(Base64.decode(raw, Base64.DEFAULT), Charsets.UTF_8).trim()
                 .takeIf { it.isNotEmpty() }
         }.getOrNull()
+    }
+
+    private fun Intent?.readWaitTimeoutMs(): Long? {
+        val intent = this ?: return null
+        if (intent.hasExtra("timeoutMs")) {
+            return intent.getLongExtra("timeoutMs", 0L).takeIf { it > 0L }
+        }
+        if (intent.hasExtra("waitTimeoutMs")) {
+            return intent.getLongExtra("waitTimeoutMs", 0L).takeIf { it > 0L }
+        }
+        if (intent.hasExtra("timeoutSeconds")) {
+            val seconds = intent.getIntExtra("timeoutSeconds", 0)
+            return seconds.takeIf { it > 0 }?.toLong()?.times(1000L)
+        }
+        return null
+    }
+
+    private fun Intent?.readBooleanExtra(vararg names: String): Boolean {
+        val intent = this ?: return false
+        names.forEach { name ->
+            if (!intent.hasExtra(name)) return@forEach
+            intent.getStringExtra(name)?.trim()?.toBooleanStrictOrNull()?.let { return it }
+            if (intent.getBooleanExtra(name, false)) return true
+            if (intent.getIntExtra(name, 0) != 0) return true
+            if (intent.getLongExtra(name, 0L) != 0L) return true
+            return false
+        }
+        return false
     }
 
     private fun loadBuiltinSkillGuidance(context: Context, skillId: String): String {

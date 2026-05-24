@@ -69,7 +69,7 @@ object VLMActionPostProcessor {
             displayHeight = displayHeight
         )?.let { return it }
         correctTypeToNumericKeypadClick(step, page)?.let { return it }
-        correctTypeToNarrativeFormFieldTarget(step, context, page)?.let { return it }
+        correctTextInputToNarrativeFormFieldTarget(step, context, page)?.let { return it }
 
         if (step.action is ClickAction) {
             correctOrderedGoalClickTarget(
@@ -115,6 +115,7 @@ object VLMActionPostProcessor {
         }
 
         if (step.action is ClickAction) {
+            correctPendingFormGoalClickTarget(step, context, page)?.let { return it }
             correctFirstClickToVisibleGoal(step, context, page)?.let { return it }
             correctGenericClickToSearchScroll(
                 step = step,
@@ -245,18 +246,24 @@ object VLMActionPostProcessor {
         )
     }
 
-    private fun correctTypeToNarrativeFormFieldTarget(
+    private fun correctTextInputToNarrativeFormFieldTarget(
         step: VLMStep,
         context: UIContext,
         page: PageModel
     ): Result? {
-        val typeAction = step.action as? TypeAction ?: return null
-        if (typeAction.content.isBlank()) return null
+        val content = textInputContent(step.action) ?: return null
+        if (content.isBlank()) return null
 
         val segments = narrativeTargetSegments(context, step)
         if (segments.isEmpty()) return null
         val best = page.bestNarrativeFormFieldTarget(context, step) ?: return null
         val bestScore = best.bestFormFieldNarrativeScore(segments)
+        if (step.action is InputTextAction &&
+            best.bounds.contains(step.action.x, step.action.y) &&
+            textSimilarity(step.action.targetDescription, best.label) >= MIN_FORM_FIELD_TARGET_TEXT_SCORE
+        ) {
+            return null
+        }
         val focused = page.focusedEditableNode()
         if (focused != null) {
             val focusedScore = focused.bestFormFieldNarrativeScore(segments)
@@ -272,10 +279,17 @@ object VLMActionPostProcessor {
                 x = best.bounds.centerX,
                 y = best.bounds.centerY
             )
+        } else if (step.action is InputTextAction) {
+            step.action.copy(
+                targetDescription = best.formTargetLabel,
+                content = content,
+                x = best.bounds.centerX,
+                y = best.bounds.centerY
+            )
         } else {
             InputTextAction(
                 targetDescription = best.formTargetLabel,
-                content = typeAction.content,
+                content = content,
                 x = best.bounds.centerX,
                 y = best.bounds.centerY
             )
@@ -285,6 +299,32 @@ object VLMActionPostProcessor {
             action = correctedAction,
             reason = "type_to_form_field_target",
             extraSummary = "Prepared matching form target before typing."
+        )
+    }
+
+    private fun correctPendingFormGoalClickTarget(
+        step: VLMStep,
+        context: UIContext,
+        page: PageModel
+    ): Result? {
+        val action = step.action as? ClickAction ?: return null
+        val progress = page.formGoalProgress(context) ?: return null
+        val pending = progress.pendingPair ?: return null
+        val target = page.bestFormGoalTarget(pending) ?: return null
+        if (target.bounds.contains(action.x, action.y)) return null
+        if (textSimilarity(action.targetDescription, target.label) >= MIN_FORM_FIELD_TARGET_TEXT_SCORE) {
+            return null
+        }
+
+        return corrected(
+            step = step,
+            action = action.copy(
+                targetDescription = target.formTargetLabel,
+                x = target.bounds.centerX,
+                y = target.bounds.centerY
+            ),
+            reason = "pending_form_goal_target",
+            extraSummary = "Pending form field: ${pending.label}"
         )
     }
 
@@ -621,23 +661,9 @@ object VLMActionPostProcessor {
     }
 
     private fun PageModel.hasSliderSemanticSignal(context: UIContext, action: UIAction): Boolean {
-        if (nodes.any { it.isSliderClass }) return true
-        if (nodes.any { it.hasDirectSliderLabel }) return true
-        val actionText = when (action) {
-            is ClickAction -> action.targetDescription
-            is ScrollAction -> action.targetDescription
-            is LongPressAction -> action.targetDescription
-            else -> ""
-        }.lowercase()
-        if (!CONCRETE_SLIDER_TERMS.any { actionText.contains(it) }) return false
-
-        val text = listOf(
-            context.activeGoal(),
-            context.overallTask,
-            actionText,
-            nodes.joinToString(" ") { it.label }
-        ).joinToString(" ").lowercase()
-        return SLIDER_TERMS.any { text.contains(it) }
+        val hasConcreteSlider = nodes.any { it.isSliderClass } || nodes.any { it.hasDirectSliderLabel }
+        if (hasConcreteSlider) return true
+        return false
     }
 
     private fun PageModel.bestSliderY(context: UIContext, targetDescription: String): Float? {
@@ -677,6 +703,105 @@ object VLMActionPostProcessor {
             )
             .firstOrNull()
             ?.first
+    }
+
+    private fun PageModel.formGoalProgress(context: UIContext): FormGoalProgress? {
+        val pairs = formGoalPairs(context)
+        if (pairs.isEmpty()) return null
+        val pending = pairs.firstOrNull { !isFormGoalPairSatisfied(it) } ?: return null
+        return FormGoalProgress(pairs = pairs, pendingPair = pending)
+    }
+
+    private fun PageModel.isFormGoalPairSatisfied(pair: FormGoalPair): Boolean {
+        val value = normalizeComparableValue(pair.value)
+        if (value.isBlank()) return false
+        return nodes.any { node ->
+            val values = node.directSemanticValues() + node.descendantText
+            values.any { semanticValue ->
+                valuesMatch(pair.value, semanticValue) ||
+                    normalizeComparableValue(semanticValue) == value
+            }
+        }
+    }
+
+    private fun PageModel.bestFormGoalTarget(pair: FormGoalPair): PageNode? {
+        bestVisibleFormValueOption(pair)?.let { return it }
+        val screenArea = nodes.maxOfOrNull { it.bounds.area }?.coerceAtLeast(1f) ?: return null
+        return nodes
+            .asSequence()
+            .filter { it.actionable && it.enabled }
+            .filter { it.bounds.area >= MIN_TARGET_AREA }
+            .filter { it.bounds.area <= screenArea * MAX_TARGET_AREA_RATIO }
+            .filter { it.isFormFieldLike }
+            .filterNot { isOverlayLabel(it.label) }
+            .mapNotNull { node ->
+                val score = node.formGoalTargetScore(pair)
+                if (score >= MIN_FORM_GOAL_TARGET_SCORE) node to score else null
+            }
+            .sortedWith(
+                compareByDescending<Pair<PageNode, Double>> { it.second }
+                    .thenByDescending { if (it.first.isSelectionFieldLike) 1 else 0 }
+                    .thenBy { it.first.bounds.area }
+            )
+            .firstOrNull()
+            ?.first
+    }
+
+    private fun PageModel.bestVisibleFormValueOption(pair: FormGoalPair): PageNode? {
+        val desired = pair.value.trim()
+        if (desired.isBlank()) return null
+        val screenArea = nodes.maxOfOrNull { it.bounds.area }?.coerceAtLeast(1f) ?: return null
+        return nodes
+            .asSequence()
+            .filter { it.enabled && it.bounds.area >= MIN_TARGET_AREA }
+            .filter { it.bounds.area <= screenArea * MAX_TARGET_AREA_RATIO }
+            .filterNot { isOverlayLabel(it.label) }
+            .mapNotNull { node ->
+                val directScore = node.directSemanticValues()
+                    .maxOfOrNull { if (valuesMatch(desired, it)) 1.0 else textSimilarity(desired, it) }
+                    ?: 0.0
+                val descendantScore = if (node.actionable) {
+                    textSimilarity(desired, node.descendantText)
+                } else {
+                    0.0
+                }
+                val score = max(directScore, descendantScore)
+                if (score >= MIN_FORM_VALUE_OPTION_SCORE) node to score else null
+            }
+            .sortedWith(
+                compareByDescending<Pair<PageNode, Double>> { if (it.first.actionable) 1 else 0 }
+                    .thenByDescending { it.second }
+                    .thenBy { it.first.bounds.area }
+            )
+            .firstOrNull()
+            ?.first
+    }
+
+    private fun PageNode.formGoalTargetScore(pair: FormGoalPair): Double {
+        val labelTerms = pair.labelTerms
+        if (labelTerms.isEmpty()) return 0.0
+        val nodeTerms = semanticTerms(normalizeText(label))
+            .filterNot { it in STOP_WORDS }
+            .toSet()
+        if (nodeTerms.isEmpty()) return 0.0
+
+        val overlap = labelTerms.intersect(nodeTerms).size.toDouble() / labelTerms.size.toDouble()
+        val exactPhraseScore = max(
+            textSimilarity(pair.label, formTargetLabel),
+            textSimilarity(pair.label, label)
+        )
+        val fieldTypeBonus = when {
+            pair.isSelectionLike && isSelectionFieldLike -> 0.34
+            pair.isSelectionLike && editable && !isSelectionFieldLike -> -0.28
+            !pair.isSelectionLike && editable -> 0.12
+            else -> 0.0
+        }
+        val valuePenalty = if (valuesMatch(pair.value, text) || valuesMatch(pair.value, contentDesc)) {
+            -0.16
+        } else {
+            0.0
+        }
+        return max(overlap, exactPhraseScore) + fieldTypeBonus + valuePenalty
     }
 
     private fun PageModel.bestGoalClickTarget(
@@ -1034,6 +1159,94 @@ object VLMActionPostProcessor {
             .replace(Regex("""[^\p{L}\p{N}\u4e00-\u9fff ]"""), "")
             .trim()
 
+    private fun normalizeComparableValue(value: String): String =
+        normalizeText(value)
+
+    private fun normalizeDigits(value: String): String =
+        value.filter { it.isDigit() }
+
+    private fun valuesMatch(expected: String, actual: String): Boolean {
+        val left = normalizeComparableValue(expected)
+        val right = normalizeComparableValue(actual)
+        if (left.isBlank() || right.isBlank()) return false
+        if (left == right) return true
+        val leftDigits = normalizeDigits(expected)
+        val rightDigits = normalizeDigits(actual)
+        if (leftDigits.length >= MIN_DIGIT_VALUE_MATCH_LENGTH && leftDigits == rightDigits) {
+            return true
+        }
+        return false
+    }
+
+    private fun formGoalPairs(context: UIContext): List<FormGoalPair> {
+        val candidates = linkedMapOf<String, FormGoalPair>()
+        extractRawFormGoalPairs(context.overallTask).forEach { (rawLabel, rawValue) ->
+            val pair = buildFormGoalPair(rawLabel, rawValue) ?: return@forEach
+            candidates.putIfAbsent(pair.normalizedLabel, pair)
+        }
+        extractRawFormGoalPairs(context.currentStepGoal).forEach { (rawLabel, rawValue) ->
+            val pair = buildFormGoalPair(rawLabel, rawValue) ?: return@forEach
+            candidates.putIfAbsent(pair.normalizedLabel, pair)
+        }
+        return candidates.values.toList()
+    }
+
+    private fun extractRawFormGoalPairs(text: String): List<Pair<String, String>> {
+        if (text.isBlank()) return emptyList()
+        return buildList {
+            text.forEachIndexed { index, char ->
+                if (char != ':') return@forEachIndexed
+                val labelStart = (index - 1 downTo 0)
+                    .firstOrNull { text[it] in FORM_PAIR_DELIMITERS }
+                    ?.plus(1)
+                    ?: 0
+                val valueEnd = (index + 1 until text.length)
+                    .firstOrNull { text[it] in FORM_PAIR_DELIMITERS }
+                    ?: text.length
+                val label = text.substring(labelStart, index)
+                val value = text.substring(index + 1, valueEnd)
+                add(label to value)
+            }
+        }
+    }
+
+    private fun buildFormGoalPair(rawLabel: String, rawValue: String): FormGoalPair? {
+        val label = cleanFormGoalLabel(rawLabel)
+        val value = cleanFormGoalValue(rawValue)
+        val normalizedLabel = normalizeText(label)
+        val labelTerms = semanticTerms(normalizedLabel)
+            .filterNot { it in STOP_WORDS }
+            .filter { it in FORM_FIELD_TERMS || it in SELECTION_FIELD_TERMS }
+            .distinct()
+        if (labelTerms.isEmpty() || value.isBlank()) return null
+        val valueTerms = semanticTerms(normalizeText(value)).filterNot { it in STOP_WORDS }
+        if (valueTerms.isEmpty() && normalizeDigits(value).isBlank()) return null
+        return FormGoalPair(
+            label = label,
+            normalizedLabel = normalizedLabel,
+            value = value,
+            labelTerms = labelTerms.toSet(),
+            isSelectionLike = labelTerms.any { it in SELECTION_FIELD_TERMS }
+        )
+    }
+
+    private fun cleanFormGoalLabel(raw: String): String =
+        raw.replace(Regex("""["'“”‘’]"""), "")
+            .replace(Regex("""(?i)\b(?:following|details?|with|and|then|enter|input|fill|set|choose|select|the|a|an)\b"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+            .trim(',', '.', ';', ':')
+            .take(MAX_FORM_GOAL_LABEL_CHARS)
+
+    private fun cleanFormGoalValue(raw: String): String =
+        raw.replace(Regex("""["“”]"""), "")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+            .trim(',', '.', ';')
+            .replace(Regex("""(?i)\s+do\s+not\s+.*$"""), "")
+            .trim()
+            .take(MAX_FORM_GOAL_VALUE_CHARS)
+
     private fun narrativeTargetSegments(context: UIContext, step: VLMStep): List<NarrativeSegment> {
         val overall = normalizeText(context.overallTask)
         return buildList {
@@ -1054,8 +1267,18 @@ object VLMActionPostProcessor {
             addNarrativeSegment(step.thought, 32.0)
             addNarrativeSegment(step.summary, 18.0)
             addNarrativeSegment(step.observation, 10.0)
+            formGoalPairs(context).forEach { pair ->
+                addNarrativeSegment("${pair.label} ${pair.value}", 16.0)
+            }
         }
     }
+
+    private fun textInputContent(action: UIAction): String? =
+        when (action) {
+            is TypeAction -> action.content
+            is InputTextAction -> action.content
+            else -> null
+        }
 
     private fun MutableList<NarrativeSegment>.addNarrativeSegment(value: String, weight: Double) {
         val normalized = normalizeText(value)
@@ -1691,6 +1914,19 @@ object VLMActionPostProcessor {
         val normalizedLabel: String
     )
 
+    private data class FormGoalProgress(
+        val pairs: List<FormGoalPair>,
+        val pendingPair: FormGoalPair?
+    )
+
+    private data class FormGoalPair(
+        val label: String,
+        val normalizedLabel: String,
+        val value: String,
+        val labelTerms: Set<String>,
+        val isSelectionLike: Boolean
+    )
+
     private data class NarrativeSegment(
         val text: String,
         val weight: Double
@@ -1704,6 +1940,7 @@ object VLMActionPostProcessor {
     private val ORDERED_VERIFY_TARGET_REGEX = Regex(
         """(?i)\bverify\s+(?:that\s+)?(?:the\s+)?(.+?)(?=,|\bthen\b|\band\b|$)"""
     )
+    private val FORM_PAIR_DELIMITERS = setOf(',', ';', '.', '\n', ':')
     private val NUMERIC_KEYS = setOf("0", "1", "2", "3", "4", "5", "6", "7", "8", "9")
     private val SLIDER_TERMS = setOf(
         "slider",
@@ -2004,11 +2241,17 @@ object VLMActionPostProcessor {
     private const val MIN_ORDERED_TARGET_ACTION_SCORE = 0.88
     private const val MIN_FORM_FIELD_NARRATIVE_SCORE = 118.0
     private const val MIN_FORM_FIELD_REDIRECT_SCORE_DELTA = 18.0
+    private const val MIN_FORM_FIELD_TARGET_TEXT_SCORE = 0.72
+    private const val MIN_FORM_GOAL_TARGET_SCORE = 0.58
+    private const val MIN_FORM_VALUE_OPTION_SCORE = 0.86
+    private const val MIN_DIGIT_VALUE_MATCH_LENGTH = 3
     private const val SELECTION_FIELD_INTENT_BONUS = 36.0
     private const val EDITABLE_FIELD_SELECTION_INTENT_PENALTY = 24.0
     private const val MIN_NUMERIC_KEYPAD_KEYS = 6
     private const val MAX_DESCENDANT_CHARS = 120
     private const val MAX_FORM_FIELD_LABEL_CHARS = 48
+    private const val MAX_FORM_GOAL_LABEL_CHARS = 48
+    private const val MAX_FORM_GOAL_VALUE_CHARS = 80
     private const val MAX_ORDERED_TARGET_LABEL_CHARS = 48
     private const val FORM_ACTION_CUE_WINDOW = 36
 }

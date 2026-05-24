@@ -42,11 +42,19 @@ object McpToolExecutors {
 
         val request = VlmTaskRequest(
             goal = goal,
-            model = args["model"] as? String,
+            model = args?.get("model") as? String,
             maxSteps = intArg(args, "maxSteps", "max_steps")?.coerceIn(1, 64),
+            waitTimeoutMs = waitTimeoutMsArg(args),
             packageName = if (startFromCurrent) null else firstString(args, "packageName", "package_name"),
             needSummary = shouldSummary,
-            skipGoHome = startFromCurrent
+            skipGoHome = startFromCurrent,
+            disableOmniFlowRecall = boolArg(
+                args,
+                "disableOmniFlowRecall",
+                "disable_omniflow_recall",
+                "disableRecall",
+                "disable_recall",
+            )
         )
 
         try {
@@ -77,6 +85,26 @@ object McpToolExecutors {
                 is Number -> raw.toInt()
                 is String -> raw.trim().toIntOrNull() ?: raw.trim().toDoubleOrNull()?.toInt()
                 else -> raw.toString().trim().toIntOrNull()
+            }
+            if (parsed != null) return parsed
+        }
+        return null
+    }
+
+    private fun waitTimeoutMsArg(args: Map<String, Any?>?): Long? {
+        val explicitMs = longArg(args, "waitTimeoutMs", "wait_timeout_ms", "timeoutMs", "timeout_ms")
+        if (explicitMs != null) return explicitMs
+        return longArg(args, "timeoutSeconds", "timeout_seconds")?.times(1000L)
+    }
+
+    private fun longArg(args: Map<String, Any?>?, vararg keys: String): Long? {
+        if (args == null) return null
+        for (key in keys) {
+            val raw = args[key] ?: continue
+            val parsed = when (raw) {
+                is Number -> raw.toLong()
+                is String -> raw.trim().toLongOrNull() ?: raw.trim().toDoubleOrNull()?.toLong()
+                else -> raw.toString().trim().toLongOrNull()
             }
             if (parsed != null) return parsed
         }

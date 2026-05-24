@@ -61,7 +61,11 @@ WORKFLOW:
                 ),
                 "maxSteps" to mapOf(
                     "type" to "integer",
-                    "description" to "Optional maximum execution steps. For AndroidWorld or acceptance tests, prefer 8-20. If the limit is reached after successful UI actions, the bounded run is returned as successful with the recorded actions."
+                    "description" to "Optional maximum execution steps. For AndroidWorld or acceptance tests, prefer 8-20."
+                ),
+                "timeoutMs" to mapOf(
+                    "type" to "integer",
+                    "description" to "Optional control-plane wait timeout in milliseconds. Default is 120000; acceptance tests may use a larger value while the on-device VLM keeps executing."
                 ),
                 "startFromCurrent" to mapOf(
                     "type" to "boolean",
@@ -70,6 +74,10 @@ WORKFLOW:
                 "needSummary" to mapOf(
                     "type" to "boolean",
                     "description" to "Optional: Set true for summarization/report tasks so the summary is generated and returned in the tool result. Default: false."
+                ),
+                "disableOmniFlowRecall" to mapOf(
+                    "type" to "boolean",
+                    "description" to "Optional validation/debug flag: set true to force a fresh online VLM run instead of executing a recalled OmniFlow Function. Default false."
                 )
             ),
             "required" to listOf("goal")

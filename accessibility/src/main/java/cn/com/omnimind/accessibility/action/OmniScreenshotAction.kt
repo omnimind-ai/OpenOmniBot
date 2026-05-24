@@ -12,7 +12,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.graphics.Point
 import android.view.Display
-import android.view.WindowManager
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.annotation.RequiresApi
 import androidx.core.graphics.createBitmap
@@ -86,11 +85,11 @@ class OmniScreenshotAction(
                 try {
                     val windows = service.windows ?: return null
 
-                    // 获取屏幕实际尺寸（包括状态栏和导航栏）
-                    // 使用 getRealSize() 而不是 displayMetrics，因为 displayMetrics 不包括系统UI
-                    val windowManager = service.getSystemService(WindowManager::class.java)
-                    val screenSize = Point()
-                    windowManager.defaultDisplay.getRealSize(screenSize)
+                    // AccessibilityService runs from a non-visual Context on
+                    // Android 14+, so WindowManager.defaultDisplay can throw.
+                    // Window bounds are already in screen coordinates and are
+                    // the safest source for the merge canvas size.
+                    val screenSize = resolveScreenSizeFromWindows(windows)
                     val screenWidth = screenSize.x
                     val screenHeight = screenSize.y
 
@@ -277,6 +276,51 @@ class OmniScreenshotAction(
                 }
             }
         }
+    }
+
+    private fun resolveScreenSizeFromWindows(
+        windows: List<AccessibilityWindowInfo>
+    ): Point {
+        val fallbackMetrics = service.resources.displayMetrics
+        var minLeft = 0
+        var minTop = 0
+        var maxRight = 0
+        var maxBottom = 0
+        var sawBounds = false
+        windows.forEach { window ->
+            val bounds = Rect()
+            val success = runCatching {
+                window.getBoundsInScreen(bounds)
+            }.isSuccess
+            if (!success || bounds.isEmpty) return@forEach
+            if (!sawBounds) {
+                minLeft = bounds.left
+                minTop = bounds.top
+                maxRight = bounds.right
+                maxBottom = bounds.bottom
+                sawBounds = true
+            } else {
+                minLeft = minOf(minLeft, bounds.left)
+                minTop = minOf(minTop, bounds.top)
+                maxRight = maxOf(maxRight, bounds.right)
+                maxBottom = maxOf(maxBottom, bounds.bottom)
+            }
+        }
+
+        val boundsWidth = if (sawBounds) {
+            maxOf(maxRight, maxRight - minLeft)
+        } else {
+            0
+        }
+        val boundsHeight = if (sawBounds) {
+            maxOf(maxBottom, maxBottom - minTop)
+        } else {
+            0
+        }
+        return Point(
+            maxOf(boundsWidth, fallbackMetrics.widthPixels, 1),
+            maxOf(boundsHeight, fallbackMetrics.heightPixels, 1)
+        )
     }
 
     /**

@@ -68,7 +68,7 @@ object OmniflowStepExecutor {
         if (action.requiresAccessibility() && !backend.isReady()) {
             throw IllegalStateException("OmniFlow action backend is not ready")
         }
-        val remapResult = remapStepArgs(step)
+        val remapResult = remapStepArgsWithRetries(step)
         if (action in RunLogReplayPolicy.coordinateActions && shouldUseCoordinateHook(step)) {
             val applied = remapResult.meta["applied"] as? Boolean
             if (applied == false) {
@@ -103,12 +103,13 @@ object OmniflowStepExecutor {
 
             "scroll", "swipe" -> {
                 val swipe = swipeSpec(args)
-                backend.scroll(
+                backend.scrollWithContext(
                     x = swipe.x,
                     y = swipe.y,
                     direction = swipe.direction,
                     distance = swipe.distance,
-                    durationMs = durationMs(args, defaultMs = 1500L)
+                    durationMs = durationMs(args, defaultMs = 1500L),
+                    targetDescription = stringArg(args, "target_description", "targetDescription").orEmpty()
                 )
                 action
             }
@@ -123,7 +124,13 @@ object OmniflowStepExecutor {
             "open_app" -> {
                 val packageName = stringArg(args, "package_name", "packageName")
                     ?: throw IllegalArgumentException("open_app requires package_name")
-                backend.launchApplication(packageName)
+                val resetTask = booleanArg(args["reset_task"]) ||
+                    stringArg(args, "launch_mode")?.equals("fresh_task", ignoreCase = true) == true
+                if (resetTask) {
+                    backend.launchApplication(packageName, true)
+                } else {
+                    backend.launchApplication(packageName)
+                }
                 "open_app"
             }
 
@@ -143,7 +150,7 @@ object OmniflowStepExecutor {
             else -> throw IllegalArgumentException("Unsupported omniflow action: $action")
         }
         delay(POST_STEP_DELAY_MS)
-        val postcondition = verifyPostcondition(step)
+        val postcondition = verifyPostcondition(step, action, args)
         return linkedMapOf<String, Any?>(
             "step_id" to stepId,
             "tool" to action,
@@ -200,6 +207,25 @@ object OmniflowStepExecutor {
             else -> StepArgsResult(args)
         }
     }
+
+    private suspend fun remapStepArgsWithRetries(step: Map<String, Any?>): StepArgsResult {
+        var last = remapStepArgs(step)
+        if (!shouldRetryCoordinateRemap(last)) {
+            return last
+        }
+        repeat(COORDINATE_REMAP_XML_READ_ATTEMPTS - 1) {
+            delay(COORDINATE_REMAP_XML_RETRY_DELAY_MS)
+            last = remapStepArgs(step)
+            if (!shouldRetryCoordinateRemap(last)) {
+                return last
+            }
+        }
+        return last
+    }
+
+    private fun shouldRetryCoordinateRemap(result: StepArgsResult): Boolean =
+        result.meta["applied"] == false &&
+            result.meta["reason"]?.toString() in RETRYABLE_COORDINATE_REMAP_REASONS
 
     private fun shouldUseCoordinateHook(step: Map<String, Any?>): Boolean {
         val coordinateHook = step["coordinate_hook"]?.toString()?.trim()?.lowercase().orEmpty()
@@ -283,7 +309,14 @@ object OmniflowStepExecutor {
         }
     }
 
-    private suspend fun verifyPostcondition(step: Map<String, Any?>): Map<String, Any?> {
+    private suspend fun verifyPostcondition(
+        step: Map<String, Any?>,
+        action: String = actionNameForStep(step),
+        args: Map<String, Any?> = normalizeArgsMap(step["args"]),
+    ): Map<String, Any?> {
+        if (action == "open_app") {
+            return verifyOpenAppPackagePostcondition(args)
+        }
         val postcondition = normalizeArgsMap(step["postcondition"])
         if (postcondition.isEmpty()) return emptyMap()
         val kind = postcondition["kind"]?.toString()?.trim().orEmpty()
@@ -300,20 +333,25 @@ object OmniflowStepExecutor {
         if (expectedXml.isEmpty()) {
             throw IllegalStateException("Postcondition failed: missing_recorded_after_xml")
         }
-        val currentXml = readCurrentXmlForPostcondition()
-        if (currentXml.isEmpty()) {
-            throw IllegalStateException("Postcondition failed: missing_current_xml")
-        }
         val recordedExpectedPackage = firstNonBlank(dstCtx["package_name"], dstCtx["packageName"])
         val expectedPackage = RunLogPagePackageInference.effectivePackage(
             recordedExpectedPackage,
             expectedXml,
         )
-        val score = pageSimilarityScore(expectedXml, currentXml)
         val minScore = numberArg(postcondition, "min_score", "minScore")?.toFloat()
             ?: MIN_POSTCONDITION_PAGE_SCORE
-        val currentPackage = OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
-        val packageMatchMode = packageMatchMode(expectedPackage, currentPackage)
+        val observation = readCurrentObservationForPostcondition(
+            expectedXml = expectedXml,
+            expectedPackage = expectedPackage,
+            minScore = minScore,
+        )
+        val currentXml = observation.xml
+        if (currentXml.isEmpty()) {
+            throw IllegalStateException("Postcondition failed: missing_current_xml")
+        }
+        val score = observation.score
+        val currentPackage = observation.packageName
+        val packageMatchMode = observation.packageMatchMode
         val packageMatched = packageMatchMode != null
         if (!packageMatched || score < minScore) {
             transientSettingsSearchPostcondition(
@@ -348,6 +386,39 @@ object OmniflowStepExecutor {
         ).filterValues { it != null }
     }
 
+    private suspend fun verifyOpenAppPackagePostcondition(args: Map<String, Any?>): Map<String, Any?> {
+        val expectedPackage = stringArg(args, "package_name", "packageName")?.trim().orEmpty()
+        if (expectedPackage.isEmpty()) return emptyMap()
+        var lastPackage = ""
+        repeat(POSTCONDITION_XML_READ_ATTEMPTS) { index ->
+            runCatching { OmniflowActionRuntime.backend.isReady() }
+            lastPackage = runCatching {
+                val currentXml = OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
+                val rawPackage = OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
+                RunLogPagePackageInference.effectivePackage(rawPackage, currentXml)
+            }.getOrDefault(lastPackage)
+            val packageMatchMode = packageMatchMode(expectedPackage, lastPackage)
+            if (packageMatchMode != null) {
+                return linkedMapOf(
+                    "kind" to "open_app_package",
+                    "success" to true,
+                    "package_matched" to true,
+                    "package_match_mode" to packageMatchMode.takeIf {
+                        it != "exact" && it != "expected_missing" && it != "current_missing"
+                    },
+                    "expected_package" to expectedPackage,
+                    "current_package" to lastPackage.takeIf { it.isNotBlank() },
+                ).filterValues { it != null }
+            }
+            if (index < POSTCONDITION_XML_READ_ATTEMPTS - 1) {
+                delay(POSTCONDITION_XML_RETRY_DELAY_MS)
+            }
+        }
+        throw IllegalStateException(
+            "Postcondition failed: open_app_package expected_package=$expectedPackage current_package=$lastPackage"
+        )
+    }
+
     private fun packageMatchMode(expectedPackage: String, currentPackage: String): String? {
         if (expectedPackage.isBlank()) return "expected_missing"
         if (currentPackage.isBlank()) return "current_missing"
@@ -370,19 +441,72 @@ object OmniflowStepExecutor {
         return expectedSystem && currentSystem
     }
 
-    private suspend fun readCurrentXmlForPostcondition(): String {
-        var latest = ""
+    private data class PostconditionObservation(
+        val xml: String,
+        val packageName: String,
+        val score: Float,
+        val packageMatchMode: String?,
+    )
+
+    private suspend fun readCurrentObservationForPostcondition(
+        expectedXml: String,
+        expectedPackage: String,
+        minScore: Float,
+    ): PostconditionObservation {
+        var best = PostconditionObservation(
+            xml = "",
+            packageName = "",
+            score = 0f,
+            packageMatchMode = null,
+        )
         repeat(POSTCONDITION_XML_READ_ATTEMPTS) { index ->
             runCatching { OmniflowActionRuntime.backend.isReady() }
-            latest = runCatching {
+            val currentXml = runCatching {
                 OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
             }.getOrDefault("")
-            if (latest.isNotEmpty()) return latest
+            if (currentXml.isNotEmpty()) {
+                val rawPackage = runCatching {
+                    OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
+                }.getOrDefault("")
+                val currentPackage = RunLogPagePackageInference.effectivePackage(
+                    rawPackage,
+                    currentXml,
+                )
+                val score = pageSimilarityScore(expectedXml, currentXml)
+                val packageMatchMode = packageMatchMode(expectedPackage, currentPackage)
+                val observation = PostconditionObservation(
+                    xml = currentXml,
+                    packageName = currentPackage,
+                    score = score,
+                    packageMatchMode = packageMatchMode,
+                )
+                if (packageMatchMode != null && score >= minScore) {
+                    return observation
+                }
+                if (isBetterPostconditionObservation(observation, best)) {
+                    best = observation
+                }
+            }
             if (index < POSTCONDITION_XML_READ_ATTEMPTS - 1) {
                 delay(POSTCONDITION_XML_RETRY_DELAY_MS)
             }
         }
-        return latest
+        return best
+    }
+
+    private fun isBetterPostconditionObservation(
+        candidate: PostconditionObservation,
+        currentBest: PostconditionObservation,
+    ): Boolean {
+        val candidatePackageMatched = candidate.packageMatchMode != null
+        val bestPackageMatched = currentBest.packageMatchMode != null
+        if (candidatePackageMatched != bestPackageMatched) {
+            return candidatePackageMatched
+        }
+        if (candidate.score != currentBest.score) {
+            return candidate.score > currentBest.score
+        }
+        return candidate.xml.length > currentBest.xml.length
     }
 
     private fun transientSettingsSearchPostcondition(
@@ -581,10 +705,12 @@ object OmniflowStepExecutor {
             args,
             meta = mapOf("applied" to false, "reason" to "invalid_current_page", "algorithm" to "anchor_projection")
         )
-        val mapped = remapPointWithinPages(sourcePage, targetPage, x, y) ?: return StepArgsResult(
-            args,
-            meta = mapOf("applied" to false, "reason" to "no_anchor_match", "algorithm" to "anchor_projection")
-        )
+        val mapped = remapPointWithinPages(sourcePage, targetPage, x, y)
+            ?: remapPointWithinRoots(sourcePage, targetPage, x, y)
+            ?: return StepArgsResult(
+                args,
+                meta = mapOf("applied" to false, "reason" to "no_anchor_match", "algorithm" to "anchor_projection")
+            )
         return StepArgsResult(
             args = args + mapOf("x" to mapped.newX, "y" to mapped.newY),
             meta = mapOf(
@@ -640,10 +766,7 @@ object OmniflowStepExecutor {
                 meta = mapOf("applied" to false, "reason" to "missing_scroll_source_element", "algorithm" to "anchor_projection")
             )
         val targetMatch = matchTargetNode(sourcePage, targetPage, sourceContainer)
-            ?: return StepArgsResult(
-                args,
-                meta = mapOf("applied" to false, "reason" to "no_anchor_match", "algorithm" to "anchor_projection")
-            )
+            ?: return rootProjectionFallbackForScroll(tool, args, sourceContainer, sourcePage.rootBounds, targetPage.rootBounds)
 
         val start = projectPoint(sourceContainer.bounds, targetMatch.node.bounds, x1, y1)
         val end = projectPoint(sourceContainer.bounds, targetMatch.node.bounds, x2, y2)
@@ -671,6 +794,96 @@ object OmniflowStepExecutor {
                 "source_element" to summarizeNode(sourceContainer),
                 "target_element" to summarizeNode(targetMatch.node),
                 "debug" to targetMatch.debug,
+            )
+        )
+    }
+
+    private fun remapPointWithinRoots(
+        sourcePage: PageModel,
+        targetPage: PageModel,
+        sourceX: Float,
+        sourceY: Float,
+    ): PointMapping? {
+        if (sourcePage.rootBounds.area <= 0f || targetPage.rootBounds.area <= 0f) {
+            return null
+        }
+        val mapped = projectPoint(sourcePage.rootBounds, targetPage.rootBounds, sourceX, sourceY)
+        return PointMapping(
+            newX = mapped.first,
+            newY = mapped.second,
+            sourceNode = sourcePage.nodes.first(),
+            targetNode = targetPage.nodes.first(),
+            confidence = 0f,
+            anchorCount = 0,
+            mode = "root_projection_fallback",
+            debug = mapOf(
+                "source_root" to summarizeBounds(sourcePage.rootBounds),
+                "target_root" to summarizeBounds(targetPage.rootBounds),
+            )
+        )
+    }
+
+    private fun rootProjectionFallbackForScroll(
+        tool: String,
+        args: Map<String, Any?>,
+        sourceContainer: UiNode,
+        sourceRoot: Rect,
+        targetRoot: Rect,
+    ): StepArgsResult {
+        val x1 = floatArg(args["x1"]) ?: return StepArgsResult(
+            args,
+            meta = mapOf("applied" to false, "reason" to "missing_x1", "algorithm" to "anchor_projection")
+        )
+        val y1 = floatArg(args["y1"]) ?: return StepArgsResult(
+            args,
+            meta = mapOf("applied" to false, "reason" to "missing_y1", "algorithm" to "anchor_projection")
+        )
+        val x2 = floatArg(args["x2"]) ?: return StepArgsResult(
+            args,
+            meta = mapOf("applied" to false, "reason" to "missing_x2", "algorithm" to "anchor_projection")
+        )
+        val y2 = floatArg(args["y2"]) ?: return StepArgsResult(
+            args,
+            meta = mapOf("applied" to false, "reason" to "missing_y2", "algorithm" to "anchor_projection")
+        )
+        if (sourceRoot.area <= 0f || targetRoot.area <= 0f) {
+            return StepArgsResult(
+                args,
+                meta = mapOf("applied" to false, "reason" to "no_anchor_match", "algorithm" to "anchor_projection")
+            )
+        }
+        val start = projectPoint(sourceRoot, targetRoot, x1, y1)
+        val end = projectPoint(sourceRoot, targetRoot, x2, y2)
+        return StepArgsResult(
+            args = args + mapOf(
+                "x1" to start.first,
+                "y1" to start.second,
+                "x2" to end.first,
+                "y2" to end.second,
+            ),
+            meta = mapOf(
+                "applied" to true,
+                "tool" to tool,
+                "mode" to "root_projection_fallback",
+                "algorithm" to "root_projection",
+                "confidence" to 0f,
+                "anchor_count" to 0,
+                "old" to mapOf("x1" to x1, "y1" to y1, "x2" to x2, "y2" to y2),
+                "new" to mapOf(
+                    "x1" to start.first,
+                    "y1" to start.second,
+                    "x2" to end.first,
+                    "y2" to end.second,
+                ),
+                "source_element" to summarizeNode(sourceContainer),
+                "target_element" to mapOf(
+                    "bounds" to summarizeBounds(targetRoot),
+                    "fallback" to true,
+                ),
+                "debug" to mapOf(
+                    "source_root" to summarizeBounds(sourceRoot),
+                    "target_root" to summarizeBounds(targetRoot),
+                ),
             )
         )
     }
@@ -1002,11 +1215,7 @@ object OmniflowStepExecutor {
         if (source.resourceId.isNotBlank()) {
             add(
                 6f,
-                when {
-                    source.resourceId == target.resourceId -> 1f
-                    source.resourceTail.isNotBlank() && source.resourceTail == target.resourceTail -> 0.72f
-                    else -> 0f
-                }
+                resourceAffinity(source, target)
             )
         }
         if (source.text.isNotBlank()) {
@@ -1026,6 +1235,25 @@ object OmniflowStepExecutor {
             return 0f
         }
         return (score / total).coerceIn(0f, 1f)
+    }
+
+    private fun resourceAffinity(source: UiNode, target: UiNode): Float {
+        val generic = isGenericResourceId(source.resourceId)
+        return when {
+            source.resourceId == target.resourceId -> if (generic) 0.25f else 1f
+            source.resourceTail.isNotBlank() && source.resourceTail == target.resourceTail ->
+                if (generic || isGenericResourceId(target.resourceId)) 0.18f else 0.72f
+            else -> 0f
+        }
+    }
+
+    private fun isGenericResourceId(resourceId: String): Boolean {
+        val tail = resourceTail(resourceId)
+        if (tail.isBlank()) return false
+        if (resourceId.startsWith("android:id/")) {
+            return tail in GENERIC_RESOURCE_TAILS
+        }
+        return tail in GENERIC_RESOURCE_TAILS
     }
 
     private fun textAffinity(source: String, target: String): Float {
@@ -1116,6 +1344,14 @@ object OmniflowStepExecutor {
         "editable" to node.editable,
     )
 
+    private fun summarizeBounds(bounds: Rect): Map<String, Any?> = mapOf(
+        "bounds" to listOf(bounds.left, bounds.top, bounds.right, bounds.bottom),
+        "center_x" to bounds.centerX,
+        "center_y" to bounds.centerY,
+        "width" to bounds.width,
+        "height" to bounds.height,
+    )
+
     private fun parseBounds(bounds: String?): Rect? {
         val text = bounds?.trim().orEmpty()
         if (text.isEmpty()) {
@@ -1165,6 +1401,8 @@ object OmniflowStepExecutor {
     private const val POST_STEP_DELAY_MS = 1000L
     private const val POSTCONDITION_XML_READ_ATTEMPTS = 5
     private const val POSTCONDITION_XML_RETRY_DELAY_MS = 400L
+    private const val COORDINATE_REMAP_XML_READ_ATTEMPTS = 5
+    private const val COORDINATE_REMAP_XML_RETRY_DELAY_MS = 300L
     private const val DEFAULT_SCREEN_CENTER_X = 540f
     private const val DEFAULT_SCREEN_CENTER_Y = 960f
     private const val DEFAULT_SWIPE_DISTANCE = 600f
@@ -1177,4 +1415,24 @@ object OmniflowStepExecutor {
     private const val MIN_POSTCONDITION_NODE_SIMILARITY = 0.50f
     private const val MAX_POSTCONDITION_NODES = 24
     private const val SETTINGS_SEARCH_PACKAGE = "com.google.android.settings.intelligence"
+    private val RETRYABLE_COORDINATE_REMAP_REASONS = setOf(
+        "missing_current_xml",
+        "invalid_current_page",
+        "no_anchor_match",
+        "missing_scroll_source_element",
+    )
+    private val GENERIC_RESOURCE_TAILS = setOf(
+        "title",
+        "summary",
+        "content",
+        "content_parent",
+        "content_frame",
+        "main_content",
+        "container_material",
+        "list_container",
+        "recycler_view",
+        "icon",
+        "icon_frame",
+        "widget_frame",
+    )
 }

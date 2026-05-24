@@ -1,0 +1,115 @@
+# AndroidWorld M3A Alignment Method
+
+This note records the method only. It is not a benchmark result and does not
+require running AndroidWorld episodes.
+
+## M3A Reference
+
+AndroidWorld M3A uses a host-side loop:
+
+1. Observe current AndroidWorld state.
+2. Build one action prompt from the user goal, short history, raw screenshot,
+   marked screenshot, and UI element list.
+3. Ask the VLM for exactly one JSON action.
+4. Execute the action through AndroidWorld.
+5. Wait for screen stabilization.
+6. Ask the VLM to summarize the before/after screenshots and UI element lists.
+7. Append the summary to history.
+8. Finish only through an explicit status action after the visible state
+   satisfies the goal.
+
+The important properties are indexed target grounding, one action per turn,
+before/after feedback, concise action history, and explicit completion.
+
+## OOB Mapping
+
+OOB should keep the runtime Kotlin-native:
+
+- Python AndroidWorld code is only a control-plane adapter.
+- The adapter defaults to method-only export and must not run AndroidWorld
+  episodes unless a caller explicitly opts into live validation with
+  `--run-live`.
+- The adapter sends the goal, target package, maxSteps, waitTimeoutMs, model,
+  and skillId to OOB.
+- The OOB APK owns VLM planning, accessibility execution, RunLog collection,
+  RunLog conversion, replay, UDEG recall, and token/timing statistics.
+- The adapter must not reimplement GUI policy, task heuristics, or replay.
+
+## Online VLM Alignment
+
+OOB mirrors the M3A method through native components:
+
+- `vlm-android-gui` skill guidance supplies task policy.
+- Indexed page evidence and marked screenshot provide target grounding.
+- `VLMToolDefinitions` forces one native tool call per turn.
+- `VLMPostActionObservation` records after-action XML/package evidence into
+  the next turn history.
+- `waitTimeoutMs` is only the control-plane wait budget; `maxSteps` remains the
+  execution bound.
+
+## RunLog And Replay Method
+
+After a successful VLM run:
+
+- Store concrete action cards with `started_at_ms`, `finished_at_ms`,
+  `duration_ms`, `token_usage_total`, per-step token usage, and per-call token
+  usage.
+- Convert replayable cards into an OOB OmniFlow Function.
+- Replay model-free actions with `OobRunLogReplayService`.
+- Treat recorded page similarity as a compatibility gate, not as task reward.
+
+## Recall Method
+
+Recall is not a flat Function-store search:
+
+1. Match the current page to a UDEG node.
+2. Read that node's skill-like decision context.
+3. Consider Functions attached to that node.
+4. Rank attached Functions and segment candidates.
+5. Execute a safe no-argument hit locally, or fall back to bounded VLM.
+
+Timing fields such as `parse_request_ms`, `read_current_package_ms`,
+`read_current_page_ms`, `page_match_ms`, `rank_functions_ms`, and
+`segment_match_ms` are internal diagnostics and must not be injected into the
+VLM prompt.
+
+## Validation Without Running AndroidWorld
+
+Use static and unit checks for the method:
+
+- Kotlin tests for VLM request building, indexed grounding, post-action
+  observation, RunLog conversion/replay, UDEG recall, and timeout clamping.
+- Python `--method-only` export from `scripts/androidworld_oob_eval.py`.
+- Running `scripts/androidworld_oob_eval.py` without `--run-live` is also
+  method-only and must not import AndroidWorld, start an emulator, or evaluate a
+  reward.
+- Artifact inspection that verifies RunLog token usage, action durations, and
+  recall timing fields are present.
+
+If a real runner is needed later, AndroidWorld or DroidRun should call the same
+OOB control-plane entry. DroidRun is optional runner plumbing only; it should not
+replace the Kotlin VLM, RunLog, replay, or recall runtime.
+
+## Live Adapter Verification Shape
+
+When a maintainer explicitly opts into live validation, use the same adapter for
+three phases:
+
+1. `online_vlm`: AndroidWorld initializes the task, OOB executes the goal with a
+   bounded `maxSteps`, and AndroidWorld polls the task reward after OOB reports.
+2. `replay`: convert the successful OOB RunLog to a Function, reset the same
+   task params, then replay the Function without a model call.
+3. `recall_repeat`: reset the same task params again and call OOB VLM. A good
+   run should hit direct or segment recall before falling back to live VLM.
+
+Use simple AndroidWorld tasks first, such as opening Settings pages or verifying
+Clock/Contacts read-only pages. These are validation gates for the adapter and
+runtime plumbing, not final benchmark claims.
+
+## DroidRun Reuse Decision
+
+DroidRun can be used as an alternate external runner only if it calls the same
+OOB control-plane entry. Its useful ideas are the same as M3A/OOB already need:
+accessibility tree + screenshot observations, action tracing, state summaries,
+and app-specific cards. Do not replace the Kotlin online VLM, RunLog, replay, or
+UDEG recall with DroidRun internals.

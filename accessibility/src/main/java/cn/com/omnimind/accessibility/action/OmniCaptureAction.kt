@@ -15,11 +15,27 @@ class OmniCaptureAction(
 ) {
     companion object {
         const val TAG = "OmniScreenshotController"
+        private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
+        private const val MAX_CAPTURE_NODE_SCAN_COUNT = 120
+        private val SYSTEM_UI_CAPTURE_TERMS = setOf(
+            "brightness",
+            "volume",
+            "slider",
+            "seekbar",
+            "quick_settings",
+            "qs_tile",
+            "tile_label",
+            "dialog",
+            "media"
+        )
         /**
          * 判断是否应该忽略窗口变化
          * 屏蔽状态栏、输入法等系统组件
          */
         fun shouldIgnoreWindowChange(packageName: String, className: String): Boolean {
+            if (packageName == SYSTEM_UI_PACKAGE) {
+                return isIgnoredSystemUiClass(className)
+            }
 
             // 检查包名
             if (Constant.IGNORED_PACKAGES.any { packageName.startsWith(it) }) {
@@ -61,6 +77,17 @@ class OmniCaptureAction(
                 }
             }
         }
+
+        private fun isIgnoredSystemUiClass(className: String): Boolean {
+            val normalizedClass = className.lowercase()
+            return normalizedClass.contains("statusbar") ||
+                normalizedClass.contains("navigationbar") ||
+                normalizedClass.contains("notification") ||
+                normalizedClass.contains("keyguard") ||
+                normalizedClass.contains("volumeui") ||
+                normalizedClass.contains("screenrecord") ||
+                normalizedClass.contains("toast")
+        }
     }
 
     private var packageName: String = BaseApplication.instance.packageName
@@ -76,9 +103,7 @@ class OmniCaptureAction(
     }
 
     fun getCurrentPackageName(): String {
-        val windowPackage = service.windows.find {
-            it.type == AccessibilityWindowInfo.TYPE_APPLICATION
-        }?.root?.packageName?.toString()
+        val windowPackage = selectForegroundWindowRoot()?.packageName
 //        if (isMineHalfScreen()) {
 //            return packageName
 //        }
@@ -86,7 +111,9 @@ class OmniCaptureAction(
     }
 
     fun getCurrentActivity(): String {
-        return service.rootInActiveWindow?.className?.toString() ?: packageName
+        return selectForegroundWindowRoot()?.className
+            ?: service.rootInActiveWindow?.className?.toString()
+            ?: packageName
     }
 
 
@@ -122,7 +149,6 @@ class OmniCaptureAction(
     private fun shouldIgnoreWindowChange(packageName: String, className: String): Boolean {
         // 屏蔽系统UI组件
         val ignoredPackages = listOf(
-            "com.android.systemui",           // 状态栏、通知栏
             "com.google.android.inputmethod.latin", // Google输入法
             "com.samsung.android.app.clipboardedge", // Samsung边缘面板
             "com.android.quickstep"           // 最近任务
@@ -145,6 +171,9 @@ class OmniCaptureAction(
 
         )
         // 检查包名
+        if (packageName == SYSTEM_UI_PACKAGE) {
+            return isIgnoredSystemUiClass(className)
+        }
         if (ignoredPackages.any { packageName.startsWith(it) }) {
             return true
         }
@@ -171,19 +200,121 @@ class OmniCaptureAction(
 
         return false
     }
-    private fun getActualRootNode(): AccessibilityNodeInfo? {
-        val windows = service.windows
-        windows?.forEach { window ->
-            // 排除悬浮窗类型的窗口
-            if (window.type == AccessibilityWindowInfo.TYPE_APPLICATION) {
-                val root = window.root
-                if (root != null) {
-                    return root
+    private fun getActualRootNode(): AccessibilityNodeInfo? =
+        selectForegroundWindowRoot()?.root
+
+    private data class WindowRoot(
+        val root: AccessibilityNodeInfo,
+        val packageName: String,
+        val className: String,
+        val type: Int,
+        val layer: Int,
+        val active: Boolean,
+        val focused: Boolean,
+        val accessibilityFocused: Boolean,
+    )
+
+    private fun selectForegroundWindowRoot(): WindowRoot? {
+        val windows = service.windows ?: emptyList()
+        return windows
+            .asSequence()
+            .mapNotNull { window ->
+                val root = window.root ?: return@mapNotNull null
+                val packageName = root.packageName?.toString().orEmpty()
+                val className = root.className?.toString().orEmpty()
+                if (shouldIgnoreCaptureWindow(window, root, packageName, className)) {
+                    null
+                } else {
+                    WindowRoot(
+                        root = root,
+                        packageName = packageName,
+                        className = className,
+                        type = window.type,
+                        layer = window.layer,
+                        active = window.isActive,
+                        focused = window.isFocused,
+                        accessibilityFocused = window.isAccessibilityFocused,
+                    )
                 }
             }
-        }
-        return null
+            .sortedWith(
+                compareByDescending<WindowRoot> { it.layer }
+                    .thenByDescending { captureWindowTypePriority(it.type) }
+                    .thenByDescending { if (it.active) 1 else 0 }
+                    .thenByDescending { if (it.accessibilityFocused) 1 else 0 }
+                    .thenByDescending { if (it.focused) 1 else 0 }
+            )
+            .firstOrNull()
     }
+
+    private fun shouldIgnoreCaptureWindow(
+        window: AccessibilityWindowInfo,
+        root: AccessibilityNodeInfo,
+        packageName: String,
+        className: String,
+    ): Boolean {
+        if (window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD ||
+            window.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY
+        ) {
+            return true
+        }
+        if (packageName == BaseApplication.instance.packageName ||
+            packageName.startsWith("cn.com.omnimind.")
+        ) {
+            return true
+        }
+        if (packageName.startsWith("com.google.android.inputmethod") ||
+            packageName.startsWith("com.android.inputmethod")
+        ) {
+            return true
+        }
+        val normalizedClass = className.lowercase()
+        if (normalizedClass.contains("toast") ||
+            normalizedClass.contains("softinputwindow") ||
+            normalizedClass.contains("ime")
+        ) {
+            return true
+        }
+        if (packageName == SYSTEM_UI_PACKAGE && isIgnoredSystemUiClass(className)) {
+            return true
+        }
+        if (packageName == SYSTEM_UI_PACKAGE && !hasMeaningfulSystemUiContent(root)) {
+            return true
+        }
+        return false
+    }
+
+    private fun hasMeaningfulSystemUiContent(root: AccessibilityNodeInfo): Boolean {
+        val stack = ArrayDeque<AccessibilityNodeInfo>()
+        stack.add(root)
+        var visited = 0
+        while (stack.isNotEmpty() && visited < MAX_CAPTURE_NODE_SCAN_COUNT) {
+            val node = stack.removeLast()
+            visited++
+            val text = node.text?.toString()?.trim().orEmpty()
+            val contentDescription = node.contentDescription?.toString()?.trim().orEmpty()
+            val resourceId = node.viewIdResourceName?.trim().orEmpty()
+            val className = node.className?.toString()?.lowercase().orEmpty()
+            val semantic = listOf(text, contentDescription, resourceId, className)
+                .joinToString(" ")
+                .lowercase()
+            if (SYSTEM_UI_CAPTURE_TERMS.any { semantic.contains(it) }) {
+                return true
+            }
+            for (index in 0 until node.childCount) {
+                node.getChild(index)?.let(stack::add)
+            }
+        }
+        return false
+    }
+
+    private fun captureWindowTypePriority(type: Int): Int =
+        when (type) {
+            AccessibilityWindowInfo.TYPE_APPLICATION -> 3
+            AccessibilityWindowInfo.TYPE_SYSTEM -> 2
+            AccessibilityWindowInfo.TYPE_SPLIT_SCREEN_DIVIDER -> 1
+            else -> 0
+        }
 
     fun captureScreenshotXml(withOld: Boolean): String? {
         val startTime=System.currentTimeMillis()

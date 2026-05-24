@@ -7,13 +7,15 @@ import android.content.ClipboardManager
 import android.content.Context.CLIPBOARD_SERVICE
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.display.DisplayManager
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.Bundle
-import android.view.WindowManager
+import android.util.DisplayMetrics
+import android.view.Display
 import android.view.accessibility.AccessibilityNodeInfo
 import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.baselib.util.APPPackageUtil
@@ -38,17 +40,13 @@ class OmniAction(
     }
 
     private val windowBounds: Rect by lazy {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            service.getSystemService(WindowManager::class.java).currentWindowMetrics.bounds;
-        } else {
-            // 获取屏幕宽高rect
-            val display =
-                service.getSystemService(AccessibilityService.WINDOW_SERVICE) as WindowManager
-            val displayMetrics = display.defaultDisplay
-            val rect = Rect()
-            displayMetrics.getRectSize(rect)
-            rect
+        val metrics = DisplayMetrics().apply { setTo(service.resources.displayMetrics) }
+        runCatching {
+            val displayManager = service.getSystemService(DisplayManager::class.java)
+            @Suppress("DEPRECATION")
+            displayManager?.getDisplay(Display.DEFAULT_DISPLAY)?.getRealMetrics(metrics)
         }
+        Rect(0, 0, metrics.widthPixels.coerceAtLeast(1), metrics.heightPixels.coerceAtLeast(1))
     }
     private val screenWidth: Float by lazy { windowBounds.width().toFloat() }
     private val screenHeight: Float by lazy { windowBounds.height().toFloat() }

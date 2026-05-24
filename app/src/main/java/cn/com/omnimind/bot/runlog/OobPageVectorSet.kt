@@ -89,8 +89,12 @@ object OobPageVectorSet {
         val rootBounds = parseBounds(root.getAttribute("bounds"))?.takeIf {
             it.width > 0f && it.height > 0f
         } ?: fallbackRoot
-        val effectivePackage = packageName.ifBlank {
-            elements.map { it.packageName }.firstOrNull { it.isNotBlank() }.orEmpty()
+        val xmlPackages = elements.map { it.packageName }.filter { it.isNotBlank() }.distinct()
+        val suppliedPackage = packageName.trim()
+        val effectivePackage = when {
+            suppliedPackage.isBlank() -> xmlPackages.firstOrNull().orEmpty()
+            xmlPackages.isEmpty() || suppliedPackage in xmlPackages -> suppliedPackage
+            else -> xmlPackages.firstOrNull().orEmpty()
         }
 
         val vectors = elements.map { elementVector(it, elements, rootBounds) }

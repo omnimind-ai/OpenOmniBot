@@ -8,13 +8,19 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 ## Step Guidance Essentials
 
 - AndroidWorld first-step policy lives here; choose the simplest action that changes one variable, then verify.
-- OOB indexed page evidence: choose by visible label/role and emit 0-1000 normalized centers.
+- M3A-style per-step loop: observe raw screenshot, marked screenshot, UI element/index list, short history, choose one action, then use after-action feedback to correct the next step.
+- OOB indexed page evidence: choose by visible label/role; include `element_index`
+  or `scrollable_index` when available and emit 0-1000 normalized centers as fallback.
 - Pass `packageName` when known; derive unknown packages from installed apps.
 - Permission/onboarding: choose safe Continue/Allow/OK, not Deny/Delete/Pay.
 - Focused editable input: use `type`; otherwise click intended edit/search field first.
 - Visible but not focused editable input: use `input_text(target_description, content, x, y)` so the field is grounded before typing.
 - Slider/seekbar: 0-1000 normalized; `Display brightness`: do not click; max x1=70,y1=110,x2=990,y2=110; min x1=990,y1=110,x2=10,y2=110.
 - Numeric keypad targets: click visible digit buttons; do not `type`.
+- After each action, read `screen_changed`, `appeared_texts`,
+  `disappeared_texts`, `after_visible_texts`, and `after_focused_editable` from
+  the tool result before choosing the next action. If an action does not change
+  the expected variable, re-ground instead of repeating it.
 - Validate after at least two visible UI states before `finished`.
 - Multi-target goals: keep ordered checklist; finish only after named targets verified.
 
@@ -82,11 +88,15 @@ Guidelines:
 - Require visible verification before `finished`.
 - When the prompt includes `OOB indexed page evidence`, use it as grounded page
   evidence: match the pending target by visible label/role, copy its normalized
-  center as action coordinates, and keep `target_description` tied to that row's
-  label. The marked screenshot uses the same indexes.
+  center as action coordinates, include `element_index` for `#N` rows or
+  `scrollable_index` for `S<N>` rows, and keep `target_description` tied to that
+  row's label. The marked screenshot uses the same indexes.
 - If the desired target is not present in the indexed element list and is not
   visually visible, scroll a listed scrollable region once, then re-observe. Do
   not tap the first unrelated row.
+- For scrollable regions, use `scrollable_index` plus `direction` (`down` to
+  reveal lower content, `up` to reveal previous content) and provide the listed
+  0-1000 swipe coordinates as fallback.
 - If an editable element is focused, use `type(content)` directly. If no input
   is focused, first click the intended editable/search field by indexed center,
   then type on the next step after focus is confirmed.
@@ -102,6 +112,16 @@ Guidelines:
 
 Keep AndroidWorld first-step behavior in this skill guidance. Do not encode
 task-suite-specific prompt policy in the core VLM first-step optimizer.
+
+For the AndroidWorld/M3A alignment method, see
+`references/androidworld-m3a-method.md`. This is a method record only: it does
+not claim benchmark results and does not require running AndroidWorld episodes.
+
+The live adapter should remain a thin verification shell. AndroidWorld may
+initialize tasks and compute reward, but OOB owns the online VLM loop, RunLog
+collection, convert, replay, and recall. Use `scripts/androidworld_oob_eval.py`
+with `--run-live` only for explicit validation, and use the same simple task set
+for online VLM, replay, and recall-repeat phases.
 
 ## OmniFlow UDEG Node Skill Decision Context
 

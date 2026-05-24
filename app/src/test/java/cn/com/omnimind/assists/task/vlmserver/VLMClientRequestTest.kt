@@ -130,6 +130,7 @@ class VLMClientRequestTest {
         assertTrue(payload["package_changed"]!!.jsonPrimitive.boolean)
         assertEquals("com.android.settings", payload["after_package"]!!.jsonPrimitive.contentOrNull)
         assertTrue(payload["after_visible_texts"].toString().contains("Network & internet"))
+        assertTrue(payload["appeared_texts"].toString().contains("Network & internet"))
         assertTrue(payload["post_action_observation"].toString().contains("after action screen changed"))
     }
 
@@ -166,6 +167,91 @@ class VLMClientRequestTest {
         assertEquals("Smith", action.content)
         assertEquals(356f, action.x, 0.01f)
         assertEquals(799.5f, action.y, 0.01f)
+    }
+
+    @Test
+    fun `text fallback tool parser supports input_text`() {
+        val client = VLMClient()
+        val result = client.parseVLMResponse(
+            SceneChatCompletionTurn(
+                parser = ModelSceneRegistry.ResponseParser.OPENAI_TOOL_ACTIONS,
+                route = "scene.vlm.operation.primary",
+                resolvedModel = "vlm-test-model",
+                turn = ChatCompletionTurn(
+                    message = ChatCompletionMessage(
+                        role = "assistant",
+                        content = JsonPrimitive(
+                            """{"name":"input_text","arguments":{"target_description":"Phone","content":"415-555-0130","x":480,"y":702}}"""
+                        )
+                    )
+                )
+            ),
+            modelOrScene = "scene.vlm.operation.primary"
+        )
+
+        assertTrue(result.success)
+        val action = requireNotNull(result.step).action as InputTextAction
+        assertEquals("Phone", action.targetDescription)
+        assertEquals("415-555-0130", action.content)
+    }
+
+    @Test
+    fun `openai tool action parser preserves indexed grounding fields`() {
+        val client = VLMClient()
+        val clickResult = client.parseVLMResponse(
+            SceneChatCompletionTurn(
+                parser = ModelSceneRegistry.ResponseParser.OPENAI_TOOL_ACTIONS,
+                route = "scene.vlm.operation.primary",
+                resolvedModel = "vlm-test-model",
+                turn = ChatCompletionTurn(
+                    message = ChatCompletionMessage(
+                        role = "assistant",
+                        toolCalls = listOf(
+                            AssistantToolCall(
+                                id = "call_1",
+                                function = AssistantToolCallFunction(
+                                    name = "click",
+                                    arguments = """{"target_description":"Display","element_index":3,"x":500,"y":740}"""
+                                )
+                            )
+                        )
+                    )
+                )
+            ),
+            modelOrScene = "scene.vlm.operation.primary"
+        )
+
+        assertTrue(clickResult.success)
+        val click = requireNotNull(clickResult.step).action as ClickAction
+        assertEquals(3, click.elementIndex)
+
+        val scrollResult = client.parseVLMResponse(
+            SceneChatCompletionTurn(
+                parser = ModelSceneRegistry.ResponseParser.OPENAI_TOOL_ACTIONS,
+                route = "scene.vlm.operation.primary",
+                resolvedModel = "vlm-test-model",
+                turn = ChatCompletionTurn(
+                    message = ChatCompletionMessage(
+                        role = "assistant",
+                        toolCalls = listOf(
+                            AssistantToolCall(
+                                id = "call_2",
+                                function = AssistantToolCallFunction(
+                                    name = "scroll",
+                                    arguments = """{"target_description":"Settings list","scrollable_index":0,"direction":"down","x1":500,"y1":880,"x2":500,"y2":250}"""
+                                )
+                            )
+                        )
+                    )
+                )
+            ),
+            modelOrScene = "scene.vlm.operation.primary"
+        )
+
+        assertTrue(scrollResult.success)
+        val scroll = requireNotNull(scrollResult.step).action as ScrollAction
+        assertEquals(0, scroll.scrollableIndex)
+        assertEquals("down", scroll.direction)
     }
 
     companion object {

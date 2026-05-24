@@ -790,6 +790,7 @@ class OobOmniFlowToolkitService(
     ): List<SegmentMatch> {
         if (recalledFunctions.isEmpty()) return emptyList()
         val query = OobPageVectorSet.encode(currentXml, currentPackage) ?: return emptyList()
+        val queryPackage = query.packageName
         val bySegmentKey = linkedMapOf<String, SegmentMatch>()
         recalledFunctions.forEach { recalledFunction ->
             val spec = recalledFunction.spec
@@ -804,18 +805,16 @@ class OobOmniFlowToolkitService(
                     if (boundary.startStepIndex <= 0 || boundary.startStepIndex >= steps.size) {
                         continue
                     }
-                    if (currentPackage.isNotBlank() &&
-                        boundary.packageName.isNotBlank() &&
-                        currentPackage != boundary.packageName
-                    ) {
-                        continue
-                    }
                     val boundaryVector = OobPageVectorSet.encode(
                         xml = boundary.pageXml,
-                        packageName = boundary.packageName.ifBlank { currentPackage },
+                        packageName = boundary.packageName.ifBlank { queryPackage },
                     ) ?: continue
-                    val pageScore = OobPageVectorSet.cosine(query.vector, boundaryVector.vector)
-                        .toDouble()
+                    val rawPageScore = OobPageVectorSet.cosine(query.vector, boundaryVector.vector)
+                    val packageMultiplier = segmentPackageMatchMultiplier(
+                        queryPackage = queryPackage,
+                        boundaryPackage = boundaryVector.packageName,
+                    )
+                    val pageScore = (rawPageScore * packageMultiplier).toDouble()
                     if (pageScore < OobUdegNodeStore.MIN_PAGE_MATCH_SCORE.toDouble()) continue
                     val combinedScore = (
                         PAGE_MATCH_WEIGHT * pageScore +
@@ -827,7 +826,12 @@ class OobOmniFlowToolkitService(
                         spec = spec,
                         functionId = functionId,
                         score = roundScore(combinedScore),
-                        reason = "recalled_function_${recalledFunction.reason};segment_${boundary.boundary}",
+                        reason = segmentMatchReason(
+                            recalledFunction = recalledFunction,
+                            boundary = boundary.boundary,
+                            packageMultiplier = packageMultiplier,
+                            rawPageScore = rawPageScore,
+                        ),
                         textScore = recalledFunction.textScore,
                         pageScore = pageScore,
                         node = recalledFunction.node,
@@ -857,6 +861,26 @@ class OobOmniFlowToolkitService(
                     .thenBy { it.startStepIndex }
             )
             .take(topK.coerceIn(1, 50))
+    }
+
+    private fun segmentPackageMatchMultiplier(queryPackage: String, boundaryPackage: String): Float {
+        if (queryPackage.isBlank() || boundaryPackage.isBlank()) return 1.0f
+        if (queryPackage == boundaryPackage) return 1.0f
+        return SEGMENT_PACKAGE_MISMATCH_MULTIPLIER
+    }
+
+    private fun segmentMatchReason(
+        recalledFunction: RankedFunction,
+        boundary: String,
+        packageMultiplier: Float,
+        rawPageScore: Float,
+    ): String {
+        val suffix = if (packageMultiplier >= 1.0f) {
+            ""
+        } else {
+            ";package_soft_mismatch;raw_page_similarity=${roundScore(rawPageScore.toDouble())}"
+        }
+        return "recalled_function_${recalledFunction.reason};segment_$boundary$suffix"
     }
 
     private fun segmentBoundaryContexts(
@@ -1450,6 +1474,7 @@ class OobOmniFlowToolkitService(
         private const val DIRECT_HIT_SCORE = 0.97
         private const val PAGE_MATCH_WEIGHT = 0.70
         private const val GOAL_MATCH_WEIGHT = 0.30
+        private const val SEGMENT_PACKAGE_MISMATCH_MULTIPLIER = 0.82f
         private val CONFIRMATION_ACTION_TOKENS = setOf(
             "shell",
             "terminal",

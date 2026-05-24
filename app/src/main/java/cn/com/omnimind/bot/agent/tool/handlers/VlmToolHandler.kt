@@ -31,7 +31,9 @@ class VlmToolHandler(
         val needSummary: Boolean,
         val startFromCurrent: Boolean,
         val maxSteps: Int?,
-        val model: String?
+        val waitTimeoutMs: Long?,
+        val model: String?,
+        val disableOmniFlowRecall: Boolean
     )
 
     data class VlmArgsSanitizeResult(
@@ -66,14 +68,24 @@ class VlmToolHandler(
             val needSummary = firstBoolean(args, "needSummary", "need_summary") ?: false
             val startFromCurrent = firstBoolean(args, "startFromCurrent", "start_from_current", "skipGoHome", "skip_go_home") ?: false
             val maxSteps = firstInt(args, "maxSteps", "max_steps")?.coerceIn(1, 64)
+            val waitTimeoutMs = firstWaitTimeoutMs(args)
             val model = firstString(args, "model", "modelId", "model_id")
+            val disableOmniFlowRecall = firstBoolean(
+                args,
+                "disableOmniFlowRecall",
+                "disable_omniflow_recall",
+                "disableRecall",
+                "disable_recall"
+            ) ?: false
             val rawArgs = VlmExecutionArgs(
                 goal = goal,
                 packageName = packageName?.takeIf { it.isNotBlank() },
                 needSummary = needSummary,
                 startFromCurrent = startFromCurrent,
                 maxSteps = maxSteps,
-                model = model?.takeIf { it.isNotBlank() }
+                waitTimeoutMs = waitTimeoutMs,
+                model = model?.takeIf { it.isNotBlank() },
+                disableOmniFlowRecall = disableOmniFlowRecall
             )
             val appNameToPackage = runtimeContextRepository.getAppNameToPackageMap()
             val detectedTargetPackage = detectTargetAppPackage(userMessage, appNameToPackage)
@@ -116,10 +128,12 @@ class VlmToolHandler(
                     goal = safeArgs.goal,
                     model = safeArgs.model,
                     maxSteps = safeArgs.maxSteps,
+                    waitTimeoutMs = safeArgs.waitTimeoutMs,
                     packageName = if (safeArgs.startFromCurrent) null else safeArgs.packageName,
                     needSummary = safeArgs.needSummary,
                     skipGoHome = safeArgs.startFromCurrent,
-                    stepSkillGuidance = resolvedSkills.joinToString("\n\n") { it.stepGuidance() }
+                    stepSkillGuidance = resolvedSkills.joinToString("\n\n") { it.stepGuidance() },
+                    disableOmniFlowRecall = safeArgs.disableOmniFlowRecall
                 ),
                 scope = scope,
                 progressReporter = { progress, extras ->
@@ -215,6 +229,24 @@ class VlmToolHandler(
             return parsed
         }
         return null
+    }
+
+    private fun firstLong(args: JsonObject, vararg keys: String): Long? {
+        for (key in keys) {
+            val primitive = args[key]?.jsonPrimitive ?: continue
+            val raw = primitive.contentOrNull?.trim().orEmpty()
+            val parsed = raw.toLongOrNull()
+                ?: raw.toDoubleOrNull()?.toLong()
+                ?: continue
+            return parsed
+        }
+        return null
+    }
+
+    private fun firstWaitTimeoutMs(args: JsonObject): Long? {
+        firstLong(args, "waitTimeoutMs", "wait_timeout_ms", "timeoutMs", "timeout_ms")
+            ?.let { return it }
+        return firstLong(args, "timeoutSeconds", "timeout_seconds")?.times(1000L)
     }
 
     private fun firstString(args: JsonObject, vararg keys: String): String? {

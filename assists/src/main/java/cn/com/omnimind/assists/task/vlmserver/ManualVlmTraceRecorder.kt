@@ -6,7 +6,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.accessibility.service.AssistsServiceListener
-import cn.com.omnimind.accessibility.util.XmlTreeUtils
+import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.baselib.util.OmniLog
 import kotlin.math.abs
 import kotlin.math.max
@@ -390,9 +390,7 @@ class ManualVlmTraceRecorder(
 
     private fun captureCurrentXml(): String? {
         return try {
-            val rootNode = AssistsService.instance?.rootInActiveWindow ?: return null
-            val xmlTree = XmlTreeUtils.buildXmlTree(rootNode) ?: return null
-            XmlTreeUtils.serializeXml(xmlTree)
+            AccessibilityController.getCaptureScreenShotXml(true)
         } catch (e: Exception) {
             OmniLog.w(TAG, "manual trace xml capture failed: ${e.message}")
             null

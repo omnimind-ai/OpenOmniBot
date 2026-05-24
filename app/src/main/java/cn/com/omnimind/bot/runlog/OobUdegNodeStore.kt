@@ -219,22 +219,20 @@ class OobUdegNodeStore(
         return listNodes(limit = MAX_NODE_SCAN)
             .mapNotNull { node ->
                 val nodePackage = node["package_name"]?.toString()?.trim().orEmpty()
-                if (currentPackage.isNotBlank() && nodePackage.isNotBlank() && currentPackage != nodePackage) {
-                    return@mapNotNull null
-                }
                 val vector = OobPageVectorSet.vectorFrom(
                     mapArg(node["page_vector_set"])["page_vector"]
                 )
-                val score = OobPageVectorSet.cosine(query.vector, vector)
+                val rawScore = OobPageVectorSet.cosine(query.vector, vector)
+                val packageMultiplier = packageMatchMultiplier(
+                    queryPackage = query.packageName,
+                    nodePackage = nodePackage,
+                )
+                val score = rawScore * packageMultiplier
                 if (score < minScore) return@mapNotNull null
                 RecallMatch(
                     node = node,
                     pageSimilarity = roundScore(score),
-                    reason = if (score >= STRONG_PAGE_MATCH_SCORE) {
-                        "page_vector_strong_match"
-                    } else {
-                        "page_vector_candidate"
-                    },
+                    reason = pageMatchReason(score, rawScore, packageMultiplier),
                 )
             }
             .sortedByDescending { it.pageSimilarity }
@@ -836,6 +834,22 @@ class OobUdegNodeStore(
 
     private fun nodeKey(nodeId: String): String = "$NODE_PREFIX$nodeId"
 
+    private fun packageMatchMultiplier(queryPackage: String, nodePackage: String): Float {
+        if (queryPackage.isBlank() || nodePackage.isBlank()) return 1.0f
+        if (queryPackage == nodePackage) return 1.0f
+        return PACKAGE_MISMATCH_MULTIPLIER
+    }
+
+    private fun pageMatchReason(score: Float, rawScore: Float, packageMultiplier: Float): String {
+        val base = if (score >= STRONG_PAGE_MATCH_SCORE) {
+            "page_vector_strong_match"
+        } else {
+            "page_vector_candidate"
+        }
+        if (packageMultiplier >= 1.0f) return base
+        return "$base;package_soft_mismatch;raw_page_similarity=${roundScore(rawScore)}"
+    }
+
     private fun error(code: String, message: String): Map<String, Any?> = linkedMapOf(
         "success" to false,
         "indexed" to false,
@@ -862,6 +876,7 @@ class OobUdegNodeStore(
             "page match -> UDEG node -> node skill-like decision context -> VLM/tool decision"
         const val MIN_PAGE_MATCH_SCORE = 0.30f
         const val STRONG_PAGE_MATCH_SCORE = 0.87f
+        private const val PACKAGE_MISMATCH_MULTIPLIER = 0.82f
         private const val MAX_NODE_SCAN = 1_000
         private const val MAX_ANALYSIS_TEXTS = 16
         private const val MAX_ANALYSIS_ACTIONABLES = 16

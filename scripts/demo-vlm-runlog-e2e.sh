@@ -16,6 +16,8 @@ SKILL_ID="${OOB_E2E_SKILL_ID:-vlm-android-gui}"
 MAX_STEPS="${OOB_E2E_MAX_STEPS:-10}"
 TIMEOUT_SECONDS="${OOB_E2E_TIMEOUT_SECONDS:-240}"
 CONFIGURE_PROVIDER=1
+DISABLE_RECALL=1
+EXPECT_RECALL=0
 GOAL="${OOB_E2E_GOAL:-当前在设置首页。打开蓝牙。如果蓝牙已经开启，就直接完成。不要重复点击同一位置，不要循环返回。}"
 
 usage() {
@@ -36,6 +38,8 @@ Options:
   --profile-id <id>          Provider profile id. Default: profile-dashscope.
   --skill-id <id>            Builtin skill guidance for VLM. Default: vlm-android-gui.
   --skip-configure-provider  Do not call scripts/configure-oob-model-provider.sh.
+  --allow-recall             Allow OmniFlow recall during phase 1. Default disables recall so the demo validates fresh VLM RunLog capture.
+  --expect-recall            Validate direct OmniFlow recall and skip replay. Implies --allow-recall.
   --help                     Show this help text.
 EOF
 }
@@ -114,6 +118,13 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-configure-provider)
       CONFIGURE_PROVIDER=0
+      ;;
+    --allow-recall)
+      DISABLE_RECALL=0
+      ;;
+    --expect-recall)
+      DISABLE_RECALL=0
+      EXPECT_RECALL=1
       ;;
     --help|-h)
       usage
@@ -214,6 +225,23 @@ print(f"token_usage_call_count={len(calls)}")
 '
 }
 
+json_get_direct_recall_completed() {
+  python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+print("true" if data.get("direct_recall_completed") is True else "false")
+'
+}
+
+json_get_execution_route() {
+  python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+outcome = data.get("outcome") or {}
+print(outcome.get("executionRoute") or outcome.get("execution_route") or "")
+'
+}
+
 base64_no_wrap() {
   python3 -c 'import base64, sys; print(base64.b64encode(sys.stdin.buffer.read()).decode("ascii"))'
 }
@@ -256,6 +284,7 @@ goal_b64="$(printf '%s' "$GOAL" | base64_no_wrap)"
   --ez prelaunch false \
   --ei maxSteps "$MAX_STEPS" \
   --ez register true \
+  --ez disableOmniFlowRecall "$( [[ "$DISABLE_RECALL" -eq 1 ]] && printf true || printf false )" \
   --es profileId "$PROFILE_ID" \
   --es modelId "$MODEL_ID" \
   --es skillId "$SKILL_ID" >/dev/null
@@ -266,8 +295,23 @@ vlm_success="$(printf '%s' "$vlm_result" | json_get_success)"
 function_id="$(printf '%s' "$vlm_result" | json_get_function_id)"
 
 if [[ "$vlm_success" != "true" || -z "$function_id" ]]; then
+  if [[ "$EXPECT_RECALL" -eq 1 ]]; then
+    direct_recall="$(printf '%s' "$vlm_result" | json_get_direct_recall_completed)"
+    execution_route="$(printf '%s' "$vlm_result" | json_get_execution_route)"
+    if [[ "$vlm_success" == "true" && "$direct_recall" == "true" && "$execution_route" == omniflow_recall* ]]; then
+      echo "direct_recall_completed=true"
+      echo "execution_route=$execution_route"
+      echo "== Recall validation passed =="
+      exit 0
+    fi
+  fi
   echo "VLM phase did not produce a registered reusable function." >&2
   echo "success=$vlm_success function_id=${function_id:-<empty>}" >&2
+  exit 1
+fi
+
+if [[ "$EXPECT_RECALL" -eq 1 ]]; then
+  echo "Expected direct recall, but VLM produced a new function: $function_id" >&2
   exit 1
 fi
 

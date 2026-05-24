@@ -12,10 +12,12 @@ object RunLogReusableFunctionCompiler {
     fun compile(record: InternalRunLogRecord): Map<String, Any?>? {
         val replayableCards = record.cards.filter(::isSuccessfulCard)
         val hasRecordedReplayStep = replayableCards.any(::hasRecordedReplayStep)
-        val steps = replayableCards
+        val rawSteps = replayableCards
             .mapNotNull { card ->
                 cardToStep(card, skipPerceptionTools = hasRecordedReplayStep)
             }
+        val stepsWithStart = prependInitialOpenAppStepIfNeeded(replayableCards, rawSteps)
+        val steps = stepsWithStart
             .mapIndexed { index, rawStep ->
                 linkedMapOf<String, Any?>().apply {
                     putAll(rawStep)
@@ -71,6 +73,71 @@ object RunLogReusableFunctionCompiler {
                 "storage" to "workspace",
             ),
         )
+    }
+
+    private fun prependInitialOpenAppStepIfNeeded(
+        replayableCards: List<Map<String, Any?>>,
+        steps: List<Map<String, Any?>>,
+    ): List<Map<String, Any?>> {
+        if (steps.isEmpty()) return steps
+        val firstAction = RunLogReplayPolicy.omniflowActionForToolName(
+            firstNonBlank(
+                steps.first()["omniflow_action"],
+                steps.first()["local_action"],
+                steps.first()["tool"],
+                steps.first()["callable_tool"],
+            )
+        ) ?: RunLogReplayPolicy.normalizeToolName(
+            firstNonBlank(steps.first()["tool"], steps.first()["callable_tool"])
+        )
+        if (firstAction == "open_app") return steps
+
+        val packageName = initialReplayPackage(replayableCards) ?: return steps
+        val openAppStep = nullableMap(
+            "title" to "open_app: $packageName",
+            "kind" to "omniflow_action",
+            "executor" to "omniflow",
+            "omniflow_action" to "open_app",
+            "local_action" to "open_app",
+            "model_free" to true,
+            "scriptable" to true,
+            "tool" to "open_app",
+            "callable_tool" to "open_app",
+            "args" to linkedMapOf(
+                "package_name" to packageName,
+                "reset_task" to true,
+                "launch_mode" to "fresh_task",
+            ),
+            "compile_note" to "injected_initial_package_from_runlog",
+        )
+        return listOf(openAppStep) + steps
+    }
+
+    private fun initialReplayPackage(replayableCards: List<Map<String, Any?>>): String? {
+        val packageName = replayableCards.asSequence()
+            .mapNotNull { card ->
+                firstNonBlank(
+                    card["package_name"],
+                    card["packageName"],
+                    asMap(card["before"])["package_name"],
+                    asMap(card["before"])["packageName"],
+                ).takeIf { it.isNotBlank() }
+            }
+            .firstOrNull()
+            ?: return null
+        return packageName.takeIf(::isLaunchableInitialPackageCandidate)
+    }
+
+    private fun isLaunchableInitialPackageCandidate(packageName: String): Boolean {
+        val normalized = packageName.trim()
+        if (!PACKAGE_NAME_PATTERN.matches(normalized)) return false
+        if (normalized.startsWith("cn.com.omnimind.")) return false
+        if (normalized == "android") return false
+        if (normalized == "com.android.systemui") return false
+        if (normalized.startsWith("com.android.inputmethod")) return false
+        if (normalized.startsWith("com.google.android.inputmethod")) return false
+        if (normalized.startsWith("com.example")) return false
+        return true
     }
 
     private fun inferParameters(steps: List<Map<String, Any?>>): List<Map<String, Any?>> {
@@ -446,7 +513,7 @@ object RunLogReusableFunctionCompiler {
         sourceContext: Map<String, Any?>,
         hasRecordedAfterPage: Boolean,
     ): Map<String, Any?>? {
-        if (!hasRecordedAfterPage || replayAction == "finished") return null
+        if (!hasRecordedAfterPage || replayAction == "finished" || replayAction == "open_app") return null
         val postcondition = linkedMapOf<String, Any?>(
             "kind" to "recorded_after_page_similarity",
             "source" to "run_log_after_observation",
@@ -748,5 +815,6 @@ object RunLogReusableFunctionCompiler {
 
     private val INPUT_TEXT_ACTIONS = setOf("type", "input_text")
     private val INPUT_TEXT_ARG_KEYS = listOf("text", "content", "value")
+    private val PACKAGE_NAME_PATTERN = Regex("""[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+""")
     private const val SETTINGS_SEARCH_PACKAGE = "com.google.android.settings.intelligence"
 }

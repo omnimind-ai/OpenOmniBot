@@ -614,7 +614,11 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("maxSteps") {
                         put("type", "integer")
-                        put("description", "可选最大执行步数。AndroidWorld 或验收用例建议设为 8-20；达到上限时，如果已经成功执行了 UI 动作，会以有界运行成功返回。")
+                        put("description", "可选最大执行步数。AndroidWorld 或验收用例建议设为 8-20。")
+                    }
+                    putJsonObject("timeoutMs") {
+                        put("type", "integer")
+                        put("description", "可选控制面等待超时，单位毫秒。默认 120000；长流程验收可显式放大，设备端 VLM 会继续按 maxSteps 执行。")
                     }
                     putJsonObject("startFromCurrent") {
                         put("type", "boolean")

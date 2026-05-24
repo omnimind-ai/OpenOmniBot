@@ -27,9 +27,24 @@ interface OmniflowActionBackend {
         durationMs: Long,
     )
 
+    suspend fun scrollWithContext(
+        x: Float,
+        y: Float,
+        direction: ScrollDirection,
+        distance: Float,
+        durationMs: Long,
+        targetDescription: String,
+    ) {
+        scroll(x, y, direction, distance, durationMs)
+    }
+
     suspend fun inputTextToFocusedNode(text: String)
 
     suspend fun launchApplication(packageName: String)
+
+    suspend fun launchApplication(packageName: String, resetTask: Boolean) {
+        launchApplication(packageName)
+    }
 
     suspend fun pressHotKey(key: String)
 
@@ -80,12 +95,53 @@ private object AccessibilityOmniflowActionBackend : OmniflowActionBackend {
         AccessibilityController.scrollCoordinate(x, y, direction, distance, durationMs)
     }
 
+    override suspend fun scrollWithContext(
+        x: Float,
+        y: Float,
+        direction: ScrollDirection,
+        distance: Float,
+        durationMs: Long,
+        targetDescription: String,
+    ) {
+        val x2 = when (direction) {
+            ScrollDirection.RIGHT -> x + distance
+            ScrollDirection.LEFT -> x - distance
+            else -> x
+        }
+        val y2 = when (direction) {
+            ScrollDirection.DOWN -> y + distance
+            ScrollDirection.UP -> y - distance
+            else -> y
+        }
+        val usedSemanticSlider = AccessibilityController.setSliderProgressFromGesture(
+            x1 = x,
+            y1 = y,
+            x2 = x2,
+            y2 = y2,
+            targetDescription = targetDescription,
+        )
+        if (usedSemanticSlider) return
+        val usedSemanticScroll = AccessibilityController.scrollScrollableNodeFromGesture(
+            x1 = x,
+            y1 = y,
+            x2 = x2,
+            y2 = y2,
+            targetDescription = targetDescription,
+        )
+        if (usedSemanticScroll) return
+        scroll(x, y, direction, distance, durationMs)
+    }
+
     override suspend fun inputTextToFocusedNode(text: String) {
         AccessibilityController.inputTextToFocusedNode(text)
     }
 
     override suspend fun launchApplication(packageName: String) {
-        if (AccessibilityController.initController()) {
+        launchApplication(packageName = packageName, resetTask = false)
+    }
+
+    override suspend fun launchApplication(packageName: String, resetTask: Boolean) {
+        if (!resetTask && AccessibilityController.initController()) {
             runCatching {
                 AccessibilityController.launchApplication(packageName) { x, y ->
                     AccessibilityController.clickCoordinate(x, y)
@@ -97,7 +153,7 @@ private object AccessibilityOmniflowActionBackend : OmniflowActionBackend {
                 OmniLog.w(TAG, "accessibility launchApplication failed: ${error.message}")
             }
         }
-        launchApplicationByForegroundIntent(packageName)
+        launchApplicationByForegroundIntent(packageName, resetTask)
     }
 
     override suspend fun pressHotKey(key: String) {
@@ -125,7 +181,10 @@ private object AccessibilityOmniflowActionBackend : OmniflowActionBackend {
             null
         }
 
-    private suspend fun launchApplicationByForegroundIntent(packageName: String) {
+    private suspend fun launchApplicationByForegroundIntent(
+        packageName: String,
+        resetTask: Boolean = false,
+    ) {
         if (!APPPackageUtil.isPackageAuthorized(packageName)) {
             val appName = APPPackageUtil.getAppName(BaseApplication.instance, packageName)
                 .takeIf { it.isNotBlank() }
@@ -139,11 +198,15 @@ private object AccessibilityOmniflowActionBackend : OmniflowActionBackend {
                 ?: throw IllegalArgumentException(
                     "Application with package name $packageName not found"
                 )
-            launchIntent.addFlags(
-                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
-                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-            )
+            if (resetTask) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            } else {
+                launchIntent.addFlags(
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+            }
             if (startContext !is Activity) {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }

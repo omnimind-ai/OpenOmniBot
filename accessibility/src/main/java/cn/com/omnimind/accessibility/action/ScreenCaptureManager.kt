@@ -15,7 +15,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.util.DisplayMetrics
-import android.view.WindowManager
+import android.view.Display
 import androidx.core.graphics.createBitmap
 import BaseApplication
 import cn.com.omnimind.baselib.permission.ServiceRequest
@@ -154,16 +154,7 @@ class ScreenCaptureManager private constructor() {
         return screenshotMutex.withLock {
             withTimeoutOrNull(2000L) {
                 suspendCancellableCoroutine<Bitmap?> { cont ->
-                    val windowManager =
-                        BaseApplication.instance.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-                    val metrics = DisplayMetrics()
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        val display = BaseApplication.instance.display ?: windowManager.defaultDisplay
-                        display?.getRealMetrics(metrics)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        windowManager.defaultDisplay.getRealMetrics(metrics)
-                    }
+                    val metrics = resolveDisplayMetrics()
                     val width = metrics.widthPixels
                     val height = metrics.heightPixels
                     val densityDpi = metrics.densityDpi
@@ -246,6 +237,22 @@ class ScreenCaptureManager private constructor() {
                 }
             }
         }
+    }
+
+    private fun resolveDisplayMetrics(): DisplayMetrics {
+        val metrics = DisplayMetrics().apply {
+            setTo(BaseApplication.instance.resources.displayMetrics)
+        }
+        runCatching {
+            val displayManager =
+                BaseApplication.instance.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+            @Suppress("DEPRECATION")
+            displayManager.getDisplay(Display.DEFAULT_DISPLAY)?.getRealMetrics(metrics)
+        }
+        if (metrics.widthPixels <= 0 || metrics.heightPixels <= 0) {
+            metrics.setTo(BaseApplication.instance.resources.displayMetrics)
+        }
+        return metrics
     }
 
     /**

@@ -120,6 +120,63 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
+    fun `compiler prepends initial app launch for app scoped replay`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf("target_description" to "Display", "x" to 360, "y" to 760),
+                    beforeXml = SOURCE_XML,
+                    beforePackage = "com.android.settings",
+                ),
+            ),
+            runId = "run-app-scoped-click",
+        )
+
+        val steps = stepsFrom(spec)
+        assertEquals(2, steps.size)
+        val openApp = steps[0]
+        val click = steps[1]
+
+        assertEquals("open_app", openApp["tool"])
+        assertEquals("omniflow", openApp["executor"])
+        assertEquals("injected_initial_package_from_runlog", openApp["compile_note"])
+        assertEquals(
+            "com.android.settings",
+            (openApp["args"] as Map<*, *>)["package_name"],
+        )
+        assertEquals(true, (openApp["args"] as Map<*, *>)["reset_task"])
+        assertEquals("fresh_task", (openApp["args"] as Map<*, *>)["launch_mode"])
+        assertEquals("step_1", openApp["id"])
+        assertEquals(0, (openApp["index"] as Number).toInt())
+        assertEquals("click", click["tool"])
+        assertEquals("step_2", click["id"])
+        assertEquals(1, (click["index"] as Number).toInt())
+    }
+
+    @Test
+    fun `open app replay step does not inherit transient recorded page postcondition`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "open_app",
+                    mapOf("package_name" to "com.google.android.deskclock"),
+                    beforeXml = ANDROID_CRASH_DIALOG_XML,
+                    afterXml = ANDROID_CRASH_DIALOG_XML,
+                    beforePackage = "android",
+                    afterPackage = "android",
+                    title = "打开应用",
+                ),
+            ),
+            runId = "run-open-app-transient-dialog",
+        )
+
+        val step = stepsFrom(spec).single()
+        assertEquals("open_app", step["tool"])
+        assertFalse(step.containsKey("postcondition"))
+    }
+
+    @Test
     fun `compiler infers page package when recorded package disagrees with xml`() {
         val spec = compile(
             listOf(
@@ -611,5 +668,7 @@ class RunLogReusableFunctionCompilerTest {
             "<hierarchy><node bounds=\"[0,0][720,1280]\" text=\"Apps\" resource-id=\"com.android.settings:id/content_parent\"/><node bounds=\"[48,594][273,648]\" text=\"Default apps\" resource-id=\"android:id/title\"/></hierarchy>"
         private const val SETTINGS_SEARCH_XML =
             "<hierarchy><node bounds=\"[20,40][1060,140]\" text=\"Search settings\" resource-id=\"com.google.android.settings.intelligence:id/search_action_bar\"/></hierarchy>"
+        private const val ANDROID_CRASH_DIALOG_XML =
+            "<hierarchy><node class=\"android.widget.FrameLayout\" package=\"android\" bounds=\"[28,952][1052,1513]\"><node text=\"com.google.androidenv.accessibilityforwarder keeps stopping\" class=\"android.widget.TextView\" package=\"android\" bounds=\"[133,1041][947,1159]\"/><node text=\"Close app\" clickable=\"true\" class=\"android.widget.Button\" package=\"android\" bounds=\"[70,1324][1010,1450]\"/></node></hierarchy>"
     }
 }

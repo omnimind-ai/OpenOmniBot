@@ -10,6 +10,7 @@ data class VlmRecallGuidance(
     val guidance: String,
     val payload: Map<String, Any?> = emptyMap(),
     val directHitFunctionId: String? = null,
+    val directHitStartStepIndex: Int = 0,
 )
 
 /**
@@ -25,6 +26,7 @@ object VlmRecallGuidanceBuilder {
         goal: String,
         targetPackageName: String?,
         currentPackageName: String? = null,
+        currentXml: String? = null,
         k: Int = DEFAULT_RECALL_COUNT,
     ): VlmRecallGuidance {
         val normalizedGoal = goal.trim()
@@ -36,11 +38,15 @@ object VlmRecallGuidanceBuilder {
         )
         val payload = runCatching {
             OobOmniFlowToolkitService(context).recall(
-                linkedMapOf(
+                linkedMapOf<String, Any?>(
                     "goal" to normalizedGoal,
                     "current_package" to currentPackage,
                     "k" to k,
-                )
+                ).apply {
+                    currentXml?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                        put("current_xml", it)
+                    }
+                }
             )
         }.getOrElse { error ->
             return VlmRecallGuidance(
@@ -55,6 +61,7 @@ object VlmRecallGuidanceBuilder {
             guidance = renderGuidance(agentPayload),
             payload = agentPayload,
             directHitFunctionId = directHitFunctionId(agentPayload),
+            directHitStartStepIndex = directHitStartStepIndex(agentPayload),
         )
     }
 
@@ -63,17 +70,32 @@ object VlmRecallGuidanceBuilder {
 
     internal fun directHitFunctionId(payload: Map<String, Any?>): String? {
         if (payload["success"] != true) return null
-        if (payload["decision"]?.toString()?.trim() != "hit") return null
-        return mapArg(payload["hit"])["function_id"]
+        val decision = payload["decision"]?.toString()?.trim().orEmpty()
+        val source = when (decision) {
+            "hit" -> mapArg(payload["hit"])
+            "segment_hit" -> mapArg(payload["segment_hit"]).takeUnless { requiresArguments(it) }
+            else -> null
+        } ?: return null
+        return source["function_id"]
             ?.toString()
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
+    }
+
+    internal fun directHitStartStepIndex(payload: Map<String, Any?>): Int {
+        if (payload["success"] != true) return 0
+        if (payload["decision"]?.toString()?.trim() != "segment_hit") return 0
+        val segmentHit = mapArg(payload["segment_hit"])
+        if (requiresArguments(segmentHit)) return 0
+        return intArg(segmentHit["start_step_index"], segmentHit["startStepIndex"])
+            .coerceAtLeast(0)
     }
 
     internal fun renderGuidance(payload: Map<String, Any?>): String {
         if (payload["success"] != true) return ""
         val decision = payload["decision"]?.toString()?.trim().orEmpty()
         if (decision == "miss" || decision.isBlank()) return ""
+        if (decision != "hit" && decision != "segment_hit") return ""
 
         val candidates = candidateList(payload)
             .take(MAX_GUIDANCE_CANDIDATES)
@@ -222,6 +244,26 @@ object VlmRecallGuidanceBuilder {
             if (text.isNotEmpty()) return text
         }
         return ""
+    }
+
+    private fun requiresArguments(payload: Map<String, Any?>): Boolean {
+        val raw = payload["requires_arguments"] ?: payload["requiresArguments"]
+        return when (raw) {
+            is Boolean -> raw
+            is Number -> raw.toInt() != 0
+            is String -> raw.trim().lowercase() in setOf("true", "1", "yes")
+            else -> false
+        }
+    }
+
+    private fun intArg(vararg values: Any?): Int {
+        values.forEach { value ->
+            when (value) {
+                is Number -> return value.toInt()
+                is String -> value.trim().toIntOrNull()?.let { return it }
+            }
+        }
+        return 0
     }
 
     private fun mapArg(value: Any?): Map<String, Any?> {

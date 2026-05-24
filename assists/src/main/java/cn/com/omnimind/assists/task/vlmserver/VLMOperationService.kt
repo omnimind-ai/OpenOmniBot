@@ -1,7 +1,6 @@
 package cn.com.omnimind.assists.task.vlmserver
 
 import cn.com.omnimind.accessibility.service.AssistsService
-import cn.com.omnimind.accessibility.util.XmlTreeUtils
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.baselib.http.Http429Exception
 import cn.com.omnimind.baselib.llm.contentText
@@ -35,6 +34,17 @@ class VLMOperationService(
     private val isSubTask: Boolean = false // 标识当前是否为子任务
 
 ) {
+    private data class XmlHealth(
+        val nodeCount: Int,
+        val largestArea: Int,
+        val hasAppSizedRoot: Boolean
+    ) {
+        val isUsable: Boolean
+            get() = nodeCount >= MIN_USABLE_XML_NODE_COUNT ||
+                largestArea >= MIN_USABLE_XML_AREA ||
+                hasAppSizedRoot
+    }
+
     private val Tag = "VLMOperationService"
     private val vlmClient = VLMClient()
     private val contextManager = UIContextManager()
@@ -61,6 +71,7 @@ class VLMOperationService(
     private val conversationState = VLMConversationState()
     private var lastReasoningOverlay = ""
     private var lastReasoningOverlayAt = 0L
+    private var lastUsableXml: String? = null
 
     // Priority event management
     private var priorityEvent: Triple<String, String, Boolean>? = null  // (message, type, suggestCompletion)
@@ -965,6 +976,7 @@ class VLMOperationService(
                     )
                     processedStep = postProcessResult.step
                 }
+                processedStep = groundIndexedActionTarget(processedStep, beforeXml)
                 processedStep = groundActionTarget(processedStep, beforeXml)
 
                 if (needsPreciseLocation(processedStep.action)) {
@@ -1011,7 +1023,7 @@ class VLMOperationService(
                 )
                 val actionFinishedAtMs = System.currentTimeMillis()
                 safePauseCheck("after_action_${processedStep.action.name}_${stabilityAttempt}")
-                val afterActionXml = runCatching { captureCurrentXml().orEmpty() }.getOrDefault("")
+                val afterActionXml = waitForPostActionStableXml()
                 val afterPackageName = AccessibilityController.Companion.getPackageName()
                 var finalStep = executedStep.copy(
                     summary = processedStep.summary,
@@ -1353,6 +1365,133 @@ class VLMOperationService(
         return step.copy(action = result.action, summary = groundingSummary)
     }
 
+    private fun groundIndexedActionTarget(step: VLMStep, currentXml: String?): VLMStep {
+        val displayWidth = deviceOperator.getDisplayWidth()
+        val displayHeight = deviceOperator.getDisplayHeight()
+        return when (val action = step.action) {
+            is ClickAction -> {
+                val index = action.elementIndex ?: return step
+                val target = VLMIndexedPageContext.elementTarget(
+                    currentXml = currentXml,
+                    displayWidth = displayWidth,
+                    displayHeight = displayHeight,
+                    index = index
+                ) ?: run {
+                    OmniLog.w(Tag, "Indexed click grounding failed: missing element_index=$index")
+                    return step
+                }
+                OmniLog.i(
+                    Tag,
+                    "Indexed click grounding applied: index=$index label=${target.label} (${action.x},${action.y})->(${target.centerX},${target.centerY})"
+                )
+                step.copy(
+                    action = action.copy(
+                        targetDescription = target.label.ifBlank { action.targetDescription },
+                        x = target.centerX,
+                        y = target.centerY
+                    ),
+                    summary = appendRuntimeTag(step.summary, "indexed_element:$index")
+                )
+            }
+
+            is InputTextAction -> {
+                val index = action.elementIndex ?: return step
+                val target = VLMIndexedPageContext.elementTarget(
+                    currentXml = currentXml,
+                    displayWidth = displayWidth,
+                    displayHeight = displayHeight,
+                    index = index
+                ) ?: run {
+                    OmniLog.w(Tag, "Indexed input grounding failed: missing element_index=$index")
+                    return step
+                }
+                OmniLog.i(
+                    Tag,
+                    "Indexed input grounding applied: index=$index label=${target.label} (${action.x},${action.y})->(${target.centerX},${target.centerY})"
+                )
+                step.copy(
+                    action = action.copy(
+                        targetDescription = target.label.ifBlank { action.targetDescription },
+                        x = target.centerX,
+                        y = target.centerY
+                    ),
+                    summary = appendRuntimeTag(step.summary, "indexed_element:$index")
+                )
+            }
+
+            is LongPressAction -> {
+                val index = action.elementIndex ?: return step
+                val target = VLMIndexedPageContext.elementTarget(
+                    currentXml = currentXml,
+                    displayWidth = displayWidth,
+                    displayHeight = displayHeight,
+                    index = index
+                ) ?: run {
+                    OmniLog.w(Tag, "Indexed long_press grounding failed: missing element_index=$index")
+                    return step
+                }
+                OmniLog.i(
+                    Tag,
+                    "Indexed long_press grounding applied: index=$index label=${target.label} (${action.x},${action.y})->(${target.centerX},${target.centerY})"
+                )
+                step.copy(
+                    action = action.copy(
+                        targetDescription = target.label.ifBlank { action.targetDescription },
+                        x = target.centerX,
+                        y = target.centerY
+                    ),
+                    summary = appendRuntimeTag(step.summary, "indexed_element:$index")
+                )
+            }
+
+            is ScrollAction -> {
+                val index = action.scrollableIndex ?: return step
+                val target = VLMIndexedPageContext.scrollTarget(
+                    currentXml = currentXml,
+                    displayWidth = displayWidth,
+                    displayHeight = displayHeight,
+                    index = index,
+                    direction = action.direction
+                ) ?: run {
+                    OmniLog.w(Tag, "Indexed scroll grounding failed: missing scrollable_index=$index")
+                    return step
+                }
+                val safeScroll = sanitizeScrollGestureCoordinates(
+                    x1 = target.x1.roundToInt(),
+                    y1 = target.y1.roundToInt(),
+                    x2 = target.x2.roundToInt(),
+                    y2 = target.y2.roundToInt(),
+                    displayWidth = displayWidth,
+                    displayHeight = displayHeight
+                )
+                OmniLog.i(
+                    Tag,
+                    "Indexed scroll grounding applied: index=$index direction=${action.direction.orEmpty()} label=${target.label} -> (${safeScroll.x1},${safeScroll.y1},${safeScroll.x2},${safeScroll.y2})"
+                )
+                step.copy(
+                    action = action.copy(
+                        targetDescription = target.label.ifBlank { action.targetDescription },
+                        x1 = safeScroll.x1.toFloat(),
+                        y1 = safeScroll.y1.toFloat(),
+                        x2 = safeScroll.x2.toFloat(),
+                        y2 = safeScroll.y2.toFloat()
+                    ),
+                    summary = appendRuntimeTag(step.summary, "indexed_scroll:$index")
+                )
+            }
+
+            else -> step
+        }
+    }
+
+    private fun appendRuntimeTag(summary: String, tag: String): String {
+        return buildString {
+            append(summary)
+            if (isNotBlank()) append(" ")
+            append("[grounded:$tag]")
+        }
+    }
+
     /**
      * 将 open_app 动作中的应用名/别名映射为真实包名
      */
@@ -1437,15 +1576,58 @@ class VLMOperationService(
      * 获取当前屏幕的XML表示
      */
     private fun captureCurrentXml(): String? {
-        return try {
-            val service = AssistsService.instance
-            val rootNode = service?.rootInActiveWindow ?: return null
-            val xmlTree = XmlTreeUtils.buildXmlTree(rootNode) ?: return null
-            XmlTreeUtils.serializeXml(xmlTree)
-        } catch (e: Exception) {
-            println("获取XML失败: ${e.message}")
-            null
+        var bestCandidate: String? = null
+        var bestHealth = XmlHealth(0, 0, false)
+        repeat(XML_CAPTURE_MAX_ATTEMPTS) { attempt ->
+            val current = try {
+                AccessibilityController.getCaptureScreenShotXml(true)
+            } catch (e: Exception) {
+                println("获取XML失败: ${e.message}")
+                null
+            }
+            val health = xmlHealth(current)
+            if (health.nodeCount > bestHealth.nodeCount || health.largestArea > bestHealth.largestArea) {
+                bestCandidate = current
+                bestHealth = health
+            }
+            if (current != null && health.isUsable) {
+                lastUsableXml = current
+                return current
+            }
+            if (attempt < XML_CAPTURE_MAX_ATTEMPTS - 1) {
+                Thread.sleep(XML_CAPTURE_RETRY_DELAY_MS)
+            }
         }
+        val fallback = lastUsableXml
+        if (fallback != null && bestHealth.nodeCount <= MIN_TINY_XML_NODE_COUNT) {
+            OmniLog.w(
+                Tag,
+                "Using last usable accessibility XML after tiny capture: nodes=${bestHealth.nodeCount}, area=${bestHealth.largestArea}"
+            )
+            return fallback
+        }
+        return bestCandidate
+    }
+
+    private fun xmlHealth(xml: String?): XmlHealth {
+        if (xml.isNullOrBlank()) return XmlHealth(0, 0, false)
+        val nodeCount = Regex("<node\\b").findAll(xml).count()
+        var largestArea = 0
+        var hasAppSizedRoot = false
+        val screenArea = deviceOperator.getDisplayWidth().coerceAtLeast(1) *
+            deviceOperator.getDisplayHeight().coerceAtLeast(1)
+        Regex("""bounds="\[(\d+),(\d+)]\[(\d+),(\d+)]"""").findAll(xml).forEach { match ->
+            val left = match.groupValues.getOrNull(1)?.toIntOrNull() ?: return@forEach
+            val top = match.groupValues.getOrNull(2)?.toIntOrNull() ?: return@forEach
+            val right = match.groupValues.getOrNull(3)?.toIntOrNull() ?: return@forEach
+            val bottom = match.groupValues.getOrNull(4)?.toIntOrNull() ?: return@forEach
+            val area = ((right - left).coerceAtLeast(0)) * ((bottom - top).coerceAtLeast(0))
+            largestArea = maxOf(largestArea, area)
+            if (area >= (screenArea * MIN_APP_XML_AREA_RATIO).toInt()) {
+                hasAppSizedRoot = true
+            }
+        }
+        return XmlHealth(nodeCount, largestArea, hasAppSizedRoot)
     }
 
     private fun isPageStableByXml(beforeXml: String?, afterXml: String?): Boolean {
@@ -1465,7 +1647,49 @@ class VLMOperationService(
             false
         }
     }
+
+    private suspend fun waitForPostActionStableXml(): String {
+        var previous: String? = null
+        var best: String? = null
+        var bestHealth = XmlHealth(0, 0, false)
+        repeat(POST_ACTION_XML_STABLE_MAX_CHECKS) { attempt ->
+            val current = runCatching { captureCurrentXml() }.getOrNull()
+            val health = xmlHealth(current)
+            if (health.nodeCount > bestHealth.nodeCount || health.largestArea > bestHealth.largestArea) {
+                best = current
+                bestHealth = health
+            }
+            val previousSnapshot = previous
+            if (!current.isNullOrBlank() && !previousSnapshot.isNullOrBlank()) {
+                val similarity = runCatching {
+                    TreeEditDistance.getSimilarity(previousSnapshot, current).toDouble()
+                }.getOrDefault(0.0)
+                if (similarity >= POST_ACTION_XML_STABLE_SIMILARITY) {
+                    OmniLog.d(
+                        Tag,
+                        "Post-action XML stable: attempt=$attempt similarity=$similarity nodes=${health.nodeCount}"
+                    )
+                    return current
+                }
+            }
+            previous = current
+            if (attempt < POST_ACTION_XML_STABLE_MAX_CHECKS - 1) {
+                delay(POST_ACTION_XML_STABLE_INTERVAL_MS)
+            }
+        }
+        return best.orEmpty()
+    }
 }
+
+private const val XML_CAPTURE_MAX_ATTEMPTS = 4
+private const val XML_CAPTURE_RETRY_DELAY_MS = 180L
+private const val MIN_USABLE_XML_NODE_COUNT = 3
+private const val MIN_TINY_XML_NODE_COUNT = 1
+private const val MIN_USABLE_XML_AREA = 180_000
+private const val MIN_APP_XML_AREA_RATIO = 0.28
+private const val POST_ACTION_XML_STABLE_MAX_CHECKS = 4
+private const val POST_ACTION_XML_STABLE_INTERVAL_MS = 350L
+private const val POST_ACTION_XML_STABLE_SIMILARITY = 0.86
 
 object VLMTaskCompletionPolicy {
     fun shouldTreatMaxStepsAsBoundedSuccess(

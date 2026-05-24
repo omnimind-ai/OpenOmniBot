@@ -45,6 +45,13 @@ object VLMToolDefinitions {
                     "target_description" to stringSchema(
                         t(locale, "要点击的目标描述。", "Description of the target to tap.")
                     ),
+                    "element_index" to integerSchema(
+                        t(
+                            locale,
+                            "可选。OOB indexed page evidence 中目标元素的 #index；提供后系统会用该元素中心覆盖坐标。",
+                            "Optional. The #index of the target element in OOB indexed page evidence; when provided, the runtime uses that element center over raw coordinates."
+                        )
+                    ),
                     "x" to coordinateNumberSchema(
                         t(locale, "点击位置的 X 坐标。", "X coordinate of the tap target.")
                     ),
@@ -74,6 +81,13 @@ object VLMToolDefinitions {
                     ),
                     "content" to stringSchema(
                         t(locale, "要输入的文本内容。", "Text content to type.")
+                    ),
+                    "element_index" to integerSchema(
+                        t(
+                            locale,
+                            "可选。OOB indexed page evidence 中目标输入框的 #index；提供后系统会用该元素中心覆盖坐标。",
+                            "Optional. The #index of the input target in OOB indexed page evidence; when provided, the runtime uses that element center over raw coordinates."
+                        )
                     ),
                     "x" to coordinateNumberSchema(
                         t(locale, "目标输入框中心的 X 坐标。", "X coordinate of the input target center.")
@@ -115,6 +129,17 @@ object VLMToolDefinitions {
                     "target_description" to stringSchema(
                         t(locale, "本次滚动想浏览或定位的目标描述。", "Description of what this scroll action is trying to browse or locate.")
                     ),
+                    "scrollable_index" to integerSchema(
+                        t(
+                            locale,
+                            "可选。OOB indexed page evidence 中 Scrollable regions 的 Sindex；提供后系统会在该区域内生成安全滑动坐标。",
+                            "Optional. The Sindex of the target Scrollable region in OOB indexed page evidence; when provided, the runtime generates safe swipe coordinates inside that region."
+                        )
+                    ),
+                    "direction" to enumSchema(
+                        description = t(locale, "配合 scrollable_index 使用的浏览方向。", "Browsing direction used with scrollable_index."),
+                        values = listOf("up", "down", "left", "right")
+                    ),
                     "x1" to coordinateNumberSchema(t(locale, "起点 X 坐标。", "Start X coordinate.")),
                     "y1" to coordinateNumberSchema(t(locale, "起点 Y 坐标。", "Start Y coordinate.")),
                     "x2" to coordinateNumberSchema(t(locale, "终点 X 坐标。", "End X coordinate.")),
@@ -136,6 +161,13 @@ object VLMToolDefinitions {
                 properties = linkedMapOf(
                     "target_description" to stringSchema(
                         t(locale, "要长按的目标描述。", "Description of the target to long-press.")
+                    ),
+                    "element_index" to integerSchema(
+                        t(
+                            locale,
+                            "可选。OOB indexed page evidence 中目标元素的 #index；提供后系统会用该元素中心覆盖坐标。",
+                            "Optional. The #index of the target element in OOB indexed page evidence; when provided, the runtime uses that element center over raw coordinates."
+                        )
                     ),
                     "x" to coordinateNumberSchema(t(locale, "长按位置的 X 坐标。", "X coordinate of the long press.")),
                     "y" to coordinateNumberSchema(t(locale, "长按位置的 Y 坐标。", "Y coordinate of the long press."))
@@ -319,8 +351,8 @@ object VLMToolDefinitions {
             append(
                 t(
                     locale,
-                    "注意：所有 function.arguments 必须是严格合法的 JSON object。坐标必须分别写入 x / y / x1 / y1 / x2 / y2 字段，不要写成 \"x\": 827, 76 这类非法格式。不要返回停留、延时或空操作类动作；页面停留和稳定检测由系统内部处理。",
-                    "Important: every function.arguments value must be a strictly valid JSON object. Coordinates must be written into x / y / x1 / y1 / x2 / y2 as separate scalar fields. Do not emit invalid forms such as \"x\": 827, 76. Do not return idle, delay, or no-op actions; page settling and stability detection are handled internally."
+                    "注意：所有 function.arguments 必须是严格合法的 JSON object。坐标必须分别写入 x / y / x1 / y1 / x2 / y2 字段，不要写成 \"x\": 827, 76 这类非法格式。若上下文提供 OOB indexed page evidence，优先填写 element_index 或 scrollable_index，并仍给出坐标兜底。不要返回停留、延时或空操作类动作；页面停留和稳定检测由系统内部处理。",
+                    "Important: every function.arguments value must be a strictly valid JSON object. Coordinates must be written into x / y / x1 / y1 / x2 / y2 as separate scalar fields. Do not emit invalid forms such as \"x\": 827, 76. If OOB indexed page evidence is available, prefer element_index or scrollable_index while still providing fallback coordinates. Do not return idle, delay, or no-op actions; page settling and stability detection are handled internally."
                 )
             )
         }
@@ -764,6 +796,7 @@ object VLMToolDefinitions {
         return buildJsonObject {
             put("type", JsonPrimitive("integer"))
             put("description", JsonPrimitive(description))
+            put("minimum", JsonPrimitive(0))
         }
     }
 

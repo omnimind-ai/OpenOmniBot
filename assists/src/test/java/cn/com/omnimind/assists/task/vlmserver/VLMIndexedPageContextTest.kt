@@ -1,6 +1,7 @@
 package cn.com.omnimind.assists.task.vlmserver
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -78,6 +79,41 @@ class VLMIndexedPageContextTest {
         )
 
         assertNull(marked)
+    }
+
+    @Test
+    fun `resolves indexed element target to XML center`() {
+        val target = VLMIndexedPageContext.elementTarget(
+            currentXml = SETTINGS_XML,
+            displayWidth = 720,
+            displayHeight = 1280,
+            index = 1
+        )
+
+        requireNotNull(target)
+        assertEquals(1, target.index)
+        assertEquals("Network & internet", target.label)
+        assertEquals(309.5f, target.centerX, 0.01f)
+        assertEquals(606f, target.centerY, 0.01f)
+    }
+
+    @Test
+    fun `resolves indexed scroll target inside scrollable bounds`() {
+        val target = VLMIndexedPageContext.scrollTarget(
+            currentXml = SETTINGS_XML,
+            displayWidth = 720,
+            displayHeight = 1280,
+            index = 0,
+            direction = "down"
+        )
+
+        requireNotNull(target)
+        assertEquals(0, target.index)
+        assertEquals(360f, target.x1, 0.01f)
+        assertEquals(360f, target.x2, 0.01f)
+        assertTrue(target.y1 > target.y2)
+        assertTrue(target.y1 in 1000f..1100f)
+        assertTrue(target.y2 in 300f..330f)
     }
 
     companion object {

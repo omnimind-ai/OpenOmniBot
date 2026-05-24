@@ -196,8 +196,15 @@ object PromptTemplate {
             appendLine(
                 t(
                     locale,
-                    "7. 不要输出停留、延时或空操作类动作；页面停留、加载和 XML 稳定判断由系统内部完成。若页面已经稳定，请选择一个可推进任务的语义动作：click、type、scroll、press_back、press_home、open_app、info、abort 或 finished。",
-                    "7. Do not output any idle, delay, or no-op action. Page settling, loading delay, and XML stability checks are handled internally. Once the page is stable, choose a semantic task-progressing action: click, type, scroll, press_back, press_home, open_app, info, abort, or finished."
+                    "7. 像 M3A 一样每轮只推进一个可验证变化：先用 raw screenshot、marked screenshot、OOB indexed page evidence 和上一轮 tool 结果判断当前页；动作后根据 appeared/disappeared/visible 文本继续，不要忽略失败或无变化反馈。",
+                    "7. Follow an M3A-style one-change loop: use the raw screenshot, marked screenshot, OOB indexed page evidence, and previous tool result to judge the current page; after each action, continue from appeared/disappeared/visible text feedback and do not ignore failed or unchanged actions."
+                )
+            )
+            appendLine(
+                t(
+                    locale,
+                    "8. 不要输出停留、延时或空操作类动作；页面停留、加载和 XML 稳定判断由系统内部完成。若页面已经稳定，请选择一个可推进任务的语义动作：click、input_text、type、scroll、press_back、press_home、open_app、info、abort 或 finished。",
+                    "8. Do not output any idle, delay, or no-op action. Page settling, loading delay, and XML stability checks are handled internally. Once the page is stable, choose a semantic task-progressing action: click, input_text, type, scroll, press_back, press_home, open_app, info, abort, or finished."
                 )
             )
         }.trim()

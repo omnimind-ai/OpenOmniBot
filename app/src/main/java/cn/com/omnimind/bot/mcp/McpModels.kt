@@ -29,10 +29,12 @@ data class VlmTaskRequest(
     val goal: String = "",
     val model: String? = null,
     val maxSteps: Int? = null,
+    val waitTimeoutMs: Long? = null,
     val packageName: String? = null,
     val needSummary: Boolean? = null,
     val skipGoHome: Boolean = false,
     val stepSkillGuidance: String = "",
+    val disableOmniFlowRecall: Boolean = false,
 )
 
 /**

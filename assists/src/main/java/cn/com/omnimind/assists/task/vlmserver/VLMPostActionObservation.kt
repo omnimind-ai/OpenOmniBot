@@ -12,6 +12,8 @@ object VLMPostActionObservation {
         val beforePackageName: String?,
         val afterPackageName: String?,
         val afterVisibleTexts: List<String>,
+        val appearedTexts: List<String>,
+        val disappearedTexts: List<String>,
         val afterFocusedEditable: String?,
         val summaryText: String
     )
@@ -23,6 +25,12 @@ object VLMPostActionObservation {
 
         val beforeTexts = visibleTexts(beforeXml)
         val afterTexts = visibleTexts(afterXml)
+        val appearedTexts = afterTexts.filterNot { after ->
+            beforeTexts.any { before -> before.equals(after, ignoreCase = true) }
+        }.take(POST_TEXT_COUNT)
+        val disappearedTexts = beforeTexts.filterNot { before ->
+            afterTexts.any { after -> after.equals(before, ignoreCase = true) }
+        }.take(POST_TEXT_COUNT)
         val focused = focusedEditable(afterXml)
         val packageChanged = !step.packageName.isNullOrBlank() &&
             !step.afterPackageName.isNullOrBlank() &&
@@ -36,6 +44,12 @@ object VLMPostActionObservation {
             if (afterTexts.isNotEmpty()) {
                 append("; visible=").append(afterTexts.take(POST_TEXT_COUNT).joinToString(" / "))
             }
+            if (appearedTexts.isNotEmpty()) {
+                append("; appeared=").append(appearedTexts.joinToString(" / "))
+            }
+            if (disappearedTexts.isNotEmpty()) {
+                append("; disappeared=").append(disappearedTexts.joinToString(" / "))
+            }
             if (!focused.isNullOrBlank()) {
                 append("; focused_editable=").append(focused)
             }
@@ -47,6 +61,8 @@ object VLMPostActionObservation {
             beforePackageName = step.packageName,
             afterPackageName = step.afterPackageName,
             afterVisibleTexts = afterTexts.take(POST_TEXT_COUNT),
+            appearedTexts = appearedTexts,
+            disappearedTexts = disappearedTexts,
             afterFocusedEditable = focused,
             summaryText = summaryText
         )

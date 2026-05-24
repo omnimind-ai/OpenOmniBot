@@ -3,7 +3,6 @@ package cn.com.omnimind.assists.controller.accessibility
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
 import cn.com.omnimind.accessibility.service.AssistsService
-import cn.com.omnimind.accessibility.util.XmlTreeUtils
 import cn.com.omnimind.assists.util.TreeEditDistance
 import kotlinx.coroutines.delay
 
@@ -77,9 +76,7 @@ class ScreenStableDetector(
      * 获取当前屏幕的XML表示
      */
     private fun captureScreenshotXml(): String? {
-        val rootNode = service?.rootInActiveWindow ?: return null
-        val xmlTree = XmlTreeUtils.buildXmlTree(rootNode) ?: return null
-        return XmlTreeUtils.serializeXml(xmlTree)
+        return AccessibilityController.getCaptureScreenShotXml(true)
     }
 
 

@@ -80,17 +80,11 @@ class VlmRecallGuidanceBuilderTest {
             )
         )
 
-        assertTrue(guidance.contains("node_id=udeg_node_settings"))
-        assertTrue(guidance.contains("node_decision_path: page match -> UDEG node -> node skill-like decision context -> VLM/tool decision"))
-        assertTrue(guidance.contains("node_decision_context: role=decision entry_policy=page_match_to_udeg_node"))
-        assertTrue(guidance.contains("node_skill_context: role=decision context_kind=udeg_node_skill_like_decision_context entry_policy=page_match_to_udeg_node node_id=udeg_node_settings page_similarity=0.91"))
-        assertTrue(guidance.contains("node_skill_decision_context: Use Settings node context"))
-        assertTrue(guidance.contains("node_skill_body:"))
-        assertTrue(guidance.contains("# UDEG Node Skill"))
+        assertEquals("", guidance)
     }
 
     @Test
-    fun `render guidance exposes segment hit without direct execution id`() {
+    fun `render guidance exposes segment hit with suffix execution id`() {
         val payload = mapOf(
             "success" to true,
             "decision" to "segment_hit",
@@ -116,7 +110,46 @@ class VlmRecallGuidanceBuilderTest {
         assertTrue(guidance.contains("start_step_index=2"))
         assertTrue(guidance.contains("remaining_step: 1. click"))
         assertTrue(guidance.contains("call: call_tool function_id=continue_from_internal_page_segment start_step_index=2"))
+        assertEquals("continue_from_internal_page_segment", VlmRecallGuidanceBuilder.directHitFunctionId(payload))
+        assertEquals(2, VlmRecallGuidanceBuilder.directHitStartStepIndex(payload))
+    }
+
+    @Test
+    fun `weak recall candidates are kept out of online VLM step guidance`() {
+        val guidance = VlmRecallGuidanceBuilder.renderGuidance(
+            mapOf(
+                "success" to true,
+                "decision" to "recall",
+                "candidates" to listOf(
+                    mapOf(
+                        "function_id" to "open_settings_from_history",
+                        "score" to 0.71,
+                        "description" to "Historical Settings path",
+                        "step_summaries" to listOf(
+                            mapOf("tool" to "click", "title" to "click: Network"),
+                        ),
+                    )
+                ),
+            )
+        )
+
+        assertEquals("", guidance)
+    }
+
+    @Test
+    fun `segment hit requiring arguments is not exposed as direct execution`() {
+        val payload = mapOf(
+            "success" to true,
+            "decision" to "segment_hit",
+            "segment_hit" to mapOf(
+                "function_id" to "fill_contact_segment",
+                "start_step_index" to 3,
+                "requires_arguments" to true,
+            ),
+        )
+
         assertNull(VlmRecallGuidanceBuilder.directHitFunctionId(payload))
+        assertEquals(0, VlmRecallGuidanceBuilder.directHitStartStepIndex(payload))
     }
 
     @Test

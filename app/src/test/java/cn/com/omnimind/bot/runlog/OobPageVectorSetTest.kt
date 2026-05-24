@@ -19,6 +19,13 @@ class OobPageVectorSetTest {
     }
 
     @Test
+    fun `page vector prefers xml package when supplied foreground package is stale`() {
+        val vector = requireNotNull(OobPageVectorSet.encode(SOURCE_XML, "com.android.launcher"))
+
+        assertEquals("com.example.settings", vector.packageName)
+    }
+
+    @Test
     fun `page similarity is high for same page family and lower for different page`() {
         val source = requireNotNull(OobPageVectorSet.encode(SOURCE_XML, "com.example.settings"))
         val sameFamily = requireNotNull(OobPageVectorSet.encode(SOURCE_XML_VARIANT, "com.example.settings"))
@@ -73,6 +80,31 @@ class OobPageVectorSetTest {
             assertEquals("udeg_node_skill_like_decision_context", nodeSkillContext?.get("context_kind"))
             assertEquals("page_match_to_udeg_node", nodeSkillContext?.get("entry_policy"))
             assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, nodeSkillContext?.get("decision_path"))
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `udeg node recall soft penalizes package mismatch instead of hard filtering`() {
+        val context = OobOmniFlowLoopAcceptanceTest.TempFilesContext()
+        try {
+            val store = OobUdegNodeStore(context)
+            store.upsertFunction(
+                functionId = "open_network_settings",
+                functionSpec = functionSpecWithSourcePage("open_network_settings", SOURCE_XML),
+            )
+
+            val staleForegroundMatches = store.recall(SOURCE_XML_VARIANT, "com.android.launcher", topK = 3)
+            assertTrue(staleForegroundMatches.isNotEmpty())
+            assertEquals(listOf("open_network_settings"), OobUdegNodeStore.functionIds(staleForegroundMatches.first().node))
+
+            val crossPackageMatches = store.recall(SOURCE_XML_OTHER_PACKAGE, "com.example.other", topK = 3)
+            assertTrue(crossPackageMatches.isNotEmpty())
+            val first = crossPackageMatches.first()
+            assertTrue(first.reason.contains("package_soft_mismatch"))
+            assertTrue(first.pageSimilarity < OobUdegNodeStore.STRONG_PAGE_MATCH_SCORE)
+            assertEquals(listOf("open_network_settings"), OobUdegNodeStore.functionIds(first.node))
         } finally {
             context.root.deleteRecursively()
         }
@@ -191,6 +223,16 @@ class OobPageVectorSetTest {
                 <node class="android.widget.TextView" package="com.example.settings" text="Settings" bounds="[40,70][410,165]" />
                 <node class="android.widget.TextView" package="com.example.settings" text="Network" clickable="true" enabled="true" bounds="[40,250][1040,372]" resource-id="com.example.settings:id/network" />
                 <node class="android.widget.TextView" package="com.example.settings" text="Display" clickable="true" enabled="true" bounds="[40,392][1040,514]" />
+              </node>
+            </hierarchy>
+        """
+
+        const val SOURCE_XML_OTHER_PACKAGE = """
+            <hierarchy>
+              <node class="android.widget.FrameLayout" package="com.example.other" bounds="[0,0][1080,1920]">
+                <node class="android.widget.TextView" package="com.example.other" text="Settings" bounds="[40,70][410,165]" />
+                <node class="android.widget.TextView" package="com.example.other" text="Network" clickable="true" enabled="true" bounds="[40,250][1040,372]" resource-id="com.example.other:id/network" />
+                <node class="android.widget.TextView" package="com.example.other" text="Display" clickable="true" enabled="true" bounds="[40,392][1040,514]" />
               </node>
             </hierarchy>
         """

@@ -21,7 +21,7 @@ import cn.com.omnimind.assists.api.bean.TaskParams
 import cn.com.omnimind.assists.api.interfaces.OnMessagePushListener
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.assists.task.scheduled.worker.ScheduledStates
-import cn.com.omnimind.assists.task.scheduled.worker.toScheduledVLMOperationTaskParamsData
+import cn.com.omnimind.assists.task.scheduled.worker.ScheduledVLMOperationTaskParamsData
 import cn.com.omnimind.baselib.database.DatabaseHelper
 import cn.com.omnimind.baselib.database.Conversation
 import cn.com.omnimind.baselib.database.TokenUsageRecord
@@ -3123,8 +3123,18 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             val scheduleTaskParams = AssistsUtil.Core.getScheduleParams()
             val taskParamsJson = when (scheduleTaskParams?.taskParams) {
                 is TaskParams.ScheduledVLMOperationTaskParams -> {
-                    val params =
-                        (scheduleTaskParams.taskParams as TaskParams.ScheduledVLMOperationTaskParams).toScheduledVLMOperationTaskParamsData()
+                    val scheduledParams =
+                        scheduleTaskParams.taskParams as TaskParams.ScheduledVLMOperationTaskParams
+                    val params = ScheduledVLMOperationTaskParamsData(
+                        goal = scheduledParams.goal,
+                        name = scheduledParams.name,
+                        subTitle = scheduledParams.subTitle,
+                        extraJson = scheduledParams.extraJson,
+                        model = scheduledParams.model,
+                        maxSteps = scheduledParams.maxSteps,
+                        packageName = scheduledParams.packageName,
+                        needSummary = scheduledParams.needSummary
+                    )
                     Gson().toJson(params)
                 }
 

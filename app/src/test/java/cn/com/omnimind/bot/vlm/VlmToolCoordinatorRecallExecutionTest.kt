@@ -2,6 +2,7 @@ package cn.com.omnimind.bot.vlm
 
 import cn.com.omnimind.bot.mcp.TaskState
 import cn.com.omnimind.bot.mcp.TaskStatus
+import cn.com.omnimind.bot.mcp.VlmTaskRequest
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -29,7 +30,8 @@ class VlmToolCoordinatorRecallExecutionTest {
                 directHitFunctionId = "open_settings_segment",
             ),
             progressReporter = { _, extras -> events += extras },
-            callFunction = { functionId ->
+            callFunction = { functionId, startStepIndex ->
+                assertEquals(0, startStepIndex)
                 mapOf(
                     "success" to true,
                     "fallback" to false,
@@ -51,6 +53,46 @@ class VlmToolCoordinatorRecallExecutionTest {
     }
 
     @Test
+    fun `segment recall hit passes suffix start index to function runner`() = runBlocking {
+        val state = TaskState(
+            taskId = "task-segment-recall-hit",
+            goal = "continue settings flow",
+            status = TaskStatus.RUNNING,
+        )
+        var capturedFunctionId = ""
+
+        val outcome = VlmToolCoordinator.tryExecuteRecallHit(
+            taskState = state,
+            goal = state.goal,
+            recallGuidance = VlmRecallGuidance(
+                decision = "segment_hit",
+                guidance = "OmniFlow UDEG node skill-like decision context",
+                payload = mapOf("success" to true),
+                directHitFunctionId = "open_settings_segment",
+                directHitStartStepIndex = 2,
+            ),
+            progressReporter = { _, _ -> },
+            callFunction = { functionId, startStepIndex ->
+                capturedFunctionId = functionId
+                assertEquals(2, startStepIndex)
+                mapOf(
+                    "success" to true,
+                    "fallback" to false,
+                    "function_id" to functionId,
+                    "run_id" to "omniflow_segment_run_test",
+                    "actions_executed" to 2,
+                )
+            },
+        )
+
+        assertNotNull(outcome)
+        assertEquals("open_settings_segment", capturedFunctionId)
+        assertEquals(VlmToolOutcomeStatus.FINISHED, outcome?.status)
+        assertEquals("omniflow_recall_segment_hit:open_settings_segment:2", state.executionRoute)
+        assertTrue(state.summaryText?.contains("segment_start_step_index=2") == true)
+    }
+
+    @Test
     fun `direct recall hit falls back to VLM when function needs fallback`() = runBlocking {
         val state = TaskState(
             taskId = "task-recall-fallback",
@@ -69,7 +111,7 @@ class VlmToolCoordinatorRecallExecutionTest {
                 directHitFunctionId = "open_settings_segment",
             ),
             progressReporter = { _, extras -> events += extras },
-            callFunction = {
+            callFunction = { _, _ ->
                 mapOf(
                     "success" to false,
                     "fallback" to true,
@@ -105,7 +147,7 @@ class VlmToolCoordinatorRecallExecutionTest {
                 directHitFunctionId = null,
             ),
             progressReporter = { _, _ -> },
-            callFunction = {
+            callFunction = { _, _ ->
                 called = true
                 emptyMap()
             },
@@ -114,5 +156,24 @@ class VlmToolCoordinatorRecallExecutionTest {
         assertNull(outcome)
         assertEquals(false, called)
         assertEquals(TaskStatus.RUNNING, state.status)
+    }
+
+    @Test
+    fun `request can disable omniflow recall for fresh VLM validation`() = runBlocking {
+        val request = VlmTaskRequest(
+            goal = "open settings",
+            packageName = "com.android.settings",
+            disableOmniFlowRecall = true,
+        )
+
+        val result = VlmToolCoordinator.buildRecallGuidanceAfterOptionalPrelaunch(
+            context = cn.com.omnimind.bot.runlog.OobOmniFlowLoopAcceptanceTest.TempFilesContext(),
+            request = request,
+        )
+
+        assertEquals("disabled", result.first.decision)
+        assertTrue(result.first.guidance.isBlank())
+        assertEquals(true, result.first.payload["recall_disabled"])
+        assertEquals(request, result.second)
     }
 }

@@ -6,6 +6,7 @@ import android.os.Looper
 import cn.com.omnimind.accessibility.util.ScreenStateUtil
 import cn.com.omnimind.assists.api.bean.VlmTaskTerminalResult
 import cn.com.omnimind.assists.api.interfaces.OnMessagePushListener
+import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.mcp.McpTaskManager
 import cn.com.omnimind.bot.mcp.TaskState
@@ -68,6 +69,11 @@ typealias VlmToolProgressReporter = suspend (progress: String, extras: Map<Strin
 object VlmToolCoordinator {
     private const val TAG = "[VlmToolCoordinator]"
     private const val SUMMARY_WAIT_GRACE_MS = 20_000L
+    private const val PRELAUNCH_OBSERVE_DELAY_MS = 700L
+    private const val RECALL_OBSERVE_ATTEMPTS = 8
+    private const val RECALL_OBSERVE_INTERVAL_MS = 250L
+    private const val MIN_WAIT_TIMEOUT_MS = 30_000L
+    private const val MAX_WAIT_TIMEOUT_MS = 600_000L
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -119,12 +125,11 @@ object VlmToolCoordinator {
             mapOf("summary" to "正在启动视觉执行任务")
         )
 
-        val recallGuidance = VlmRecallGuidanceBuilder.build(
+        val (recallGuidance, recallBaseRequest) = buildRecallGuidanceAfterOptionalPrelaunch(
             context = context,
-            goal = request.goal,
-            targetPackageName = request.packageName,
+            request = request,
         )
-        val augmentedRequest = request.withRecallGuidance(recallGuidance.guidance)
+        val augmentedRequest = recallBaseRequest.withRecallGuidance(recallGuidance.guidance)
         taskState.vlmRequest = augmentedRequest
         if (recallGuidance.guidance.isNotBlank()) {
             taskState.executionRoute = "vlm_with_omniflow_recall:${recallGuidance.decision}"
@@ -146,12 +151,13 @@ object VlmToolCoordinator {
             goal = request.goal,
             recallGuidance = recallGuidance,
             progressReporter = progressReporter,
-            callFunction = { functionId ->
+            callFunction = { functionId, startStepIndex ->
                 OobOmniFlowToolkitService(context).callFunction(
                     mapOf(
                         "function_id" to functionId,
                         "goal" to request.goal,
                         "arguments" to emptyMap<String, Any?>(),
+                        "start_step_index" to startStepIndex,
                     )
                 )
             },
@@ -200,7 +206,12 @@ object VlmToolCoordinator {
             "执行中",
             mapOf("summary" to "视觉任务执行中")
         )
-        return@withContext awaitTask(taskId, request.goal, progressReporter)
+        return@withContext awaitTask(
+            taskId = taskId,
+            goal = request.goal,
+            progressReporter = progressReporter,
+            waitTimeoutMs = request.waitTimeoutMs
+        )
     }
 
     suspend fun waitForTask(
@@ -208,7 +219,8 @@ object VlmToolCoordinator {
         goal: String,
         progressReporter: VlmToolProgressReporter = { _, _ -> }
     ): VlmToolOutcome = withContext(Dispatchers.IO) {
-        awaitTask(taskId, goal, progressReporter)
+        val waitTimeoutMs = McpTaskManager.getTask(taskId)?.vlmRequest?.waitTimeoutMs
+        awaitTask(taskId, goal, progressReporter, waitTimeoutMs)
     }
 
     suspend fun resumeAfterUnlock(
@@ -226,7 +238,8 @@ object VlmToolCoordinator {
             "等待解锁",
             mapOf("summary" to "等待用户解锁设备")
         )
-        while (System.currentTimeMillis() - startTime < McpTaskManager.MAX_WAIT_TIME_MS) {
+        val waitTimeoutMs = resolveWaitTimeoutMs(taskState.vlmRequest?.waitTimeoutMs)
+        while (System.currentTimeMillis() - startTime < waitTimeoutMs) {
             if (ScreenStateUtil.isOperable()) {
                 taskState.addChatMessage("[SYSTEM] Screen unlocked, starting task...")
                 taskState.status = TaskStatus.RUNNING
@@ -235,12 +248,11 @@ object VlmToolCoordinator {
                     goal = taskState.goal,
                     needSummary = taskState.needSummary
                 )
-                val recallGuidance = VlmRecallGuidanceBuilder.build(
+                val (recallGuidance, recallBaseRequest) = buildRecallGuidanceAfterOptionalPrelaunch(
                     context = context,
-                    goal = request.goal,
-                    targetPackageName = request.packageName,
+                    request = request,
                 )
-                val augmentedRequest = request.withRecallGuidance(recallGuidance.guidance)
+                val augmentedRequest = recallBaseRequest.withRecallGuidance(recallGuidance.guidance)
                 taskState.vlmRequest = augmentedRequest
                 if (recallGuidance.guidance.isNotBlank()) {
                     taskState.executionRoute = "vlm_with_omniflow_recall:${recallGuidance.decision}"
@@ -251,12 +263,13 @@ object VlmToolCoordinator {
                     goal = request.goal,
                     recallGuidance = recallGuidance,
                     progressReporter = progressReporter,
-                    callFunction = { functionId ->
+                    callFunction = { functionId, startStepIndex ->
                         OobOmniFlowToolkitService(context).callFunction(
                             mapOf(
                                 "function_id" to functionId,
                                 "goal" to request.goal,
                                 "arguments" to emptyMap<String, Any?>(),
+                                "start_step_index" to startStepIndex,
                             )
                         )
                     },
@@ -295,7 +308,12 @@ object VlmToolCoordinator {
                     "执行中",
                     mapOf("summary" to "视觉任务执行中")
                 )
-                return@withContext awaitTask(taskId, taskState.goal, progressReporter)
+                return@withContext awaitTask(
+                    taskId = taskId,
+                    goal = taskState.goal,
+                    progressReporter = progressReporter,
+                    waitTimeoutMs = request.waitTimeoutMs
+                )
             }
             delay(McpTaskManager.POLL_INTERVAL_MS)
         }
@@ -309,14 +327,16 @@ object VlmToolCoordinator {
     private suspend fun awaitTask(
         taskId: String,
         goal: String,
-        progressReporter: VlmToolProgressReporter
+        progressReporter: VlmToolProgressReporter,
+        waitTimeoutMs: Long? = null
     ): VlmToolOutcome {
         val startWaitTime = System.currentTimeMillis()
+        val resolvedWaitTimeoutMs = resolveWaitTimeoutMs(waitTimeoutMs)
         var lastScreenState = ScreenStateUtil.isOperable()
         var summaryWaitStart: Long? = null
         var lastProgress = ""
 
-        while (System.currentTimeMillis() - startWaitTime < McpTaskManager.MAX_WAIT_TIME_MS) {
+        while (System.currentTimeMillis() - startWaitTime < resolvedWaitTimeoutMs) {
             val state = McpTaskManager.getTask(taskId)
                 ?: return VlmToolOutcome(
                     taskId = taskId,
@@ -423,6 +443,12 @@ object VlmToolCoordinator {
             status = VlmToolOutcomeStatus.TIMEOUT,
             message = "任务在等待时间内仍未结束，仍在设备上继续执行。"
         )
+    }
+
+    internal fun resolveWaitTimeoutMs(requestedWaitTimeoutMs: Long?): Long {
+        val requested = requestedWaitTimeoutMs?.takeIf { it > 0L }
+            ?: return McpTaskManager.MAX_WAIT_TIME_MS
+        return requested.coerceIn(MIN_WAIT_TIMEOUT_MS, MAX_WAIT_TIMEOUT_MS)
     }
 
     private suspend fun startVlmTaskInternal(
@@ -555,6 +581,80 @@ object VlmToolCoordinator {
         }
     }
 
+    internal suspend fun buildRecallGuidanceAfterOptionalPrelaunch(
+        context: Context,
+        request: VlmTaskRequest,
+    ): Pair<VlmRecallGuidance, VlmTaskRequest> {
+        val targetPackage = request.packageName?.trim().orEmpty()
+        if (request.disableOmniFlowRecall) {
+            return VlmRecallGuidance(
+                decision = "disabled",
+                guidance = "",
+                payload = mapOf(
+                    "success" to false,
+                    "recall_disabled" to true,
+                    "reason" to "request_disable_omniflow_recall",
+                ),
+            ) to request
+        }
+        val shouldPrelaunchForRecall = targetPackage.isNotEmpty() && !request.skipGoHome
+        val observedRequest = if (shouldPrelaunchForRecall) {
+            val launched = runCatching {
+                AccessibilityController.launchApplication(targetPackage) { _, _ -> }
+            }.onFailure { error ->
+                OmniLog.w(TAG, "Recall prelaunch failed target=$targetPackage error=${error.message}")
+            }.isSuccess
+            if (launched) {
+                delay(PRELAUNCH_OBSERVE_DELAY_MS)
+                request.copy(skipGoHome = true)
+            } else {
+                request
+            }
+        } else {
+            request
+        }
+        val observation = waitForRecallObservation(
+            targetPackage = targetPackage.takeIf { shouldPrelaunchForRecall }
+        )
+        val currentPackage = observation.packageName
+        val guidance = VlmRecallGuidanceBuilder.build(
+            context = context,
+            goal = request.goal,
+            targetPackageName = request.packageName,
+            currentPackageName = currentPackage,
+            currentXml = observation.xml,
+        )
+        return guidance to observedRequest
+    }
+
+    private data class RecallObservation(
+        val packageName: String?,
+        val xml: String?,
+    )
+
+    private suspend fun waitForRecallObservation(targetPackage: String?): RecallObservation {
+        var lastPackage: String? = null
+        var lastXml: String? = null
+        repeat(RECALL_OBSERVE_ATTEMPTS) { attempt ->
+            val currentPackage = runCatching { AccessibilityController.getPackageName() }.getOrNull()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+            val currentXml = runCatching { AccessibilityController.getCaptureScreenShotXml(true) }.getOrNull()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+            if (currentPackage != null) lastPackage = currentPackage
+            if (currentXml != null) lastXml = currentXml
+            val packageReady = targetPackage.isNullOrBlank() || currentPackage == targetPackage
+            if (packageReady && currentXml != null) {
+                return RecallObservation(currentPackage, currentXml)
+            }
+            if (attempt < RECALL_OBSERVE_ATTEMPTS - 1) {
+                delay(RECALL_OBSERVE_INTERVAL_MS)
+            }
+        }
+        return RecallObservation(lastPackage, lastXml)
+    }
+
     private fun fallbackMarkFinished(taskState: TaskState) {
         if (taskState.status == TaskStatus.RUNNING) {
             taskState.status = TaskStatus.FINISHED
@@ -586,7 +686,7 @@ object VlmToolCoordinator {
         goal: String,
         recallGuidance: VlmRecallGuidance,
         progressReporter: VlmToolProgressReporter,
-        callFunction: suspend (String) -> Map<String, Any?>,
+        callFunction: suspend (String, Int) -> Map<String, Any?>,
     ): VlmToolOutcome? {
         val functionId = recallGuidance.directHitFunctionId?.trim()?.takeIf { it.isNotEmpty() }
             ?: return null
@@ -599,9 +699,10 @@ object VlmToolCoordinator {
                 "summary" to "命中可直接执行的 OmniFlow Function",
                 "omniflowRecallDecision" to recallGuidance.decision,
                 "functionId" to functionId,
+                "segmentStartStepIndex" to recallGuidance.directHitStartStepIndex.takeIf { it > 0 },
             )
         )
-        val result = runCatching { callFunction(functionId) }.getOrElse { error ->
+        val result = runCatching { callFunction(functionId, recallGuidance.directHitStartStepIndex) }.getOrElse { error ->
             linkedMapOf<String, Any?>(
                 "success" to false,
                 "fallback" to true,
@@ -643,10 +744,15 @@ object VlmToolCoordinator {
         taskState.summaryText = listOfNotNull(
             "OmniFlow recall hit executed successfully.",
             "function_id=$functionId",
+            recallGuidance.directHitStartStepIndex.takeIf { it > 0 }?.let { "segment_start_step_index=$it" },
             runId.takeIf { it.isNotEmpty() }?.let { "run_id=$it" },
             actionsExecuted.takeIf { it.isNotEmpty() }?.let { "actions_executed=$it" },
         ).joinToString("\n")
-        taskState.executionRoute = "omniflow_recall_hit:$functionId"
+        taskState.executionRoute = if (recallGuidance.directHitStartStepIndex > 0) {
+            "omniflow_recall_segment_hit:$functionId:${recallGuidance.directHitStartStepIndex}"
+        } else {
+            "omniflow_recall_hit:$functionId"
+        }
         taskState.addChatMessage("[SYSTEM] $message")
         taskState.markStateChanged()
         emitProgress(
@@ -657,6 +763,7 @@ object VlmToolCoordinator {
             mapOf(
                 "summary" to message,
                 "functionId" to functionId,
+                "segmentStartStepIndex" to recallGuidance.directHitStartStepIndex.takeIf { it > 0 },
                 "omniflowRecallResult" to result,
             )
         )

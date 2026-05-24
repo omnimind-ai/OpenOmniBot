@@ -117,6 +117,75 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
+    fun `redirects click on already satisfied form value to remaining selection field`() {
+        val step = VLMStep(
+            observation = "contact editor",
+            thought = "Phone number is present; now set the phone label to Work.",
+            action = ClickAction(
+                targetDescription = "415-555-0130 EditText",
+                x = 356f,
+                y = 1111.5f
+            ),
+            summary = "First name, last name, and phone number are filled."
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = "Go to the new contact screen and enter the following details: First Name: Alice, Last Name: Smith, Phone: 415-555-0130, Phone Label: Work. Do NOT hit save.",
+                targetPackageName = "com.google.android.contacts"
+            ),
+            currentXml = CONTACT_EDITOR_PHONE_FILLED_XML,
+            currentPackageName = "com.google.android.contacts",
+            stepIndex = 8,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertTrue(result.applied)
+        assertEquals("pending_form_goal_target", result.reason)
+        val action = result.step.action as ClickAction
+        assertEquals("Mobile Phone", action.targetDescription)
+        assertEquals(275f, action.x, 0.01f)
+        assertEquals(1213.5f, action.y, 0.01f)
+    }
+
+    @Test
+    fun `redirects input text away from stale focused value to remaining selection field`() {
+        val step = VLMStep(
+            observation = "contact editor",
+            thought = "Set the phone label to Work.",
+            action = InputTextAction(
+                targetDescription = "415-555-0130 EditText",
+                content = "Work",
+                x = 356f,
+                y = 1111.5f
+            ),
+            summary = "Phone field remained focused after entering the number."
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = "Go to the new contact screen and enter the following details: First Name: Alice, Last Name: Smith, Phone: 415-555-0130, Phone Label: Work. Do NOT hit save.",
+                targetPackageName = "com.google.android.contacts"
+            ),
+            currentXml = CONTACT_EDITOR_PHONE_FILLED_XML,
+            currentPackageName = "com.google.android.contacts",
+            stepIndex = 8,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertTrue(result.applied)
+        assertEquals("type_to_form_field_target", result.reason)
+        val action = result.step.action as ClickAction
+        assertEquals("Mobile Phone", action.targetDescription)
+        assertEquals(275f, action.x, 0.01f)
+        assertEquals(1213.5f, action.y, 0.01f)
+    }
+
+    @Test
     fun `flips horizontal slider scroll toward minimum endpoint`() {
         val step = VLMStep(
             observation = "brightness slider",
@@ -367,6 +436,37 @@ class VLMActionPostProcessorTest {
             step = step,
             context = UIContext(
                 overallTask = "Turn brightness to the min value.",
+                targetPackageName = "com.android.settings"
+            ),
+            currentXml = DISPLAY_BRIGHTNESS_ROW_XML,
+            currentPackageName = "com.android.settings",
+            stepIndex = 3,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertFalse(result.applied)
+    }
+
+    @Test
+    fun `does not convert brightness level row horizontal scroll before slider dialog is open`() {
+        val step = VLMStep(
+            observation = "display settings",
+            thought = "adjust the brightness level option to access the slider",
+            action = ScrollAction(
+                targetDescription = "Brightness level option to access the slider",
+                x1 = 18f,
+                y1 = 819f,
+                x2 = 702f,
+                y2 = 819f,
+                duration = 0.6f
+            )
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = "Turn brightness to the max value.",
                 targetPackageName = "com.android.settings"
             ),
             currentXml = DISPLAY_BRIGHTNESS_ROW_XML,
@@ -1338,6 +1438,21 @@ class VLMActionPostProcessorTest {
                   <node id="36" text="Smith" hint="Last name" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,743][608,856]" />
                   <node id="56" text="Phone" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" focused="true" editable="true" bounds="[104,1055][608,1168]" />
                   <node id="59" text="Mobile" content-desc="Mobile Phone" class="android.widget.Spinner" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,1195][446,1232]" />
+                </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val CONTACT_EDITOR_PHONE_FILLED_XML =
+            """
+            <hierarchy>
+              <node id="0" class="android.widget.FrameLayout" enabled="true" bounds="[0,0][720,1280]">
+                <node id="15" class="android.widget.ScrollView" enabled="true" focusable="true" scrollable="true" bounds="[0,176][720,1232]">
+                  <node id="33" text="Alice" hint="First name" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,603][608,716]" />
+                  <node id="36" text="Smith" hint="Last name" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,743][608,856]" />
+                  <node id="56" text="415-555-0130" hint="Phone" class="android.widget.EditText" enabled="true" clickable="true" long-clickable="true" focusable="true" focused="true" editable="true" bounds="[104,1055][608,1168]" />
+                  <node id="59" text="Mobile" content-desc="Mobile Phone" class="android.widget.Spinner" enabled="true" clickable="true" long-clickable="true" focusable="true" editable="true" bounds="[104,1195][446,1232]" />
+                  <node id="62" content-desc="Show dropdown menu" resource-id="com.google.android.contacts:id/text_input_end_icon" class="android.widget.ImageButton" enabled="true" clickable="true" focusable="true" checkable="true" bounds="[350,1203][446,1232]" />
                 </node>
               </node>
             </hierarchy>

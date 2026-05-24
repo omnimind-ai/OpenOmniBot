@@ -82,6 +82,7 @@ class BuiltinSkillManifestConsistencyTest {
         ).stepGuidance()
         assertFalse("Injected VLM step guidance should not be truncated", injectedStepGuidance.endsWith("..."))
         assertTrue(injectedStepGuidance.contains("AndroidWorld first-step policy"))
+        assertTrue(injectedStepGuidance.contains("M3A-style per-step loop"))
         assertTrue(injectedStepGuidance.contains("OOB indexed page evidence"))
         assertTrue(injectedStepGuidance.contains("Pass `packageName` when known"))
         assertTrue(injectedStepGuidance.contains("Focused editable input"))
