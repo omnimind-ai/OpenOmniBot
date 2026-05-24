@@ -23,6 +23,8 @@ class DebugOobRecallReceiver : BroadcastReceiver() {
             ?: intent?.getStringExtra("currentXml")?.trim()?.takeIf { it.isNotEmpty() }
             ?: runCatching { AccessibilityController.getCaptureScreenShotXml(true) }.getOrNull().orEmpty()
         val topK = intent?.getIntExtra("k", 8)?.coerceIn(1, 50) ?: 8
+        val autoExecute = intent?.getBooleanExtra("autoExecute", false) == true ||
+            intent?.getBooleanExtra("auto_execute", false) == true
 
         val result = runCatching {
             OobOmniFlowToolkitService(appContext).recall(
@@ -31,6 +33,7 @@ class DebugOobRecallReceiver : BroadcastReceiver() {
                     "current_package" to currentPackage,
                     "current_xml" to currentXml,
                     "k" to topK,
+                    "auto_execute" to autoExecute,
                 )
             )
         }.getOrElse { error ->

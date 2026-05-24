@@ -202,6 +202,48 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
+    fun `execute skips click when current page already satisfies recorded after page`() = runBlocking {
+        val backend = FakeBackend(
+            beforeXml = SETTINGS_APPS_XML,
+            afterXml = SETTINGS_APPS_XML,
+            currentPackage = "com.android.settings",
+        )
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "coordinate_hook" to "omniflow",
+                    "args" to mapOf("x" to 360, "y" to 977),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf(
+                            "page" to SETTINGS_XML,
+                            "package_name" to "com.android.settings",
+                        ),
+                        "dst_ctx" to mapOf(
+                            "page" to SETTINGS_APPS_XML,
+                            "package_name" to "com.android.settings",
+                        ),
+                    ),
+                    "postcondition" to mapOf(
+                        "kind" to "recorded_after_page_similarity",
+                        "min_score" to 0.1,
+                    ),
+                ),
+                stepId = "step_already_done",
+                stepTitle = "click Apps",
+            )
+
+            assertEquals(true, result["success"])
+            assertEquals(true, result["skipped"])
+            assertEquals("pre_action_postcondition_satisfied", result["skip_reason"])
+            assertFalse(backend.clicked)
+            val postcondition = result["postcondition"] as Map<*, *>
+            assertEquals(true, postcondition["pre_action_satisfied"])
+        }
+    }
+
+    @Test
     fun `execute allows package-only postcondition for transient settings search page`() = runBlocking {
         val backend = FakeBackend(
             beforeXml = SETTINGS_XML,
@@ -478,7 +520,8 @@ class OmniflowStepExecutorTest {
         private val postActionXmls: List<String>? = null,
         private val postActionPackages: List<String>? = null,
     ) : OmniflowActionBackend {
-        private var clicked = false
+        var clicked = false
+            private set
         private var preActionXmlReadCount = 0
         private var actionXmlReadCount = 0
         val launchRequests = mutableListOf<String>()

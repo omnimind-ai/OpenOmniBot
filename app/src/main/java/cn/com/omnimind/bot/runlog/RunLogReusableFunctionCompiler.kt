@@ -13,8 +13,12 @@ object RunLogReusableFunctionCompiler {
         val replayableCards = record.cards.filter(::isSuccessfulCard)
         val hasRecordedReplayStep = replayableCards.any(::hasRecordedReplayStep)
         val rawSteps = replayableCards
-            .mapNotNull { card ->
-                cardToStep(card, skipPerceptionTools = hasRecordedReplayStep)
+            .mapIndexedNotNull { index, card ->
+                cardToStep(
+                    card = card,
+                    skipPerceptionTools = hasRecordedReplayStep,
+                    nextReplayableCard = replayableCards.getOrNull(index + 1),
+                )
             }
         val stepsWithStart = prependInitialOpenAppStepIfNeeded(replayableCards, rawSteps)
         val steps = stepsWithStart
@@ -222,6 +226,7 @@ object RunLogReusableFunctionCompiler {
     private fun cardToStep(
         card: Map<String, Any?>,
         skipPerceptionTools: Boolean,
+        nextReplayableCard: Map<String, Any?>? = null,
     ): Map<String, Any?>? {
         val toolName = toolNameForCard(card).ifBlank { "unknown_tool" }
         val normalizedToolName = RunLogReplayPolicy.normalizeToolName(toolName)
@@ -239,7 +244,7 @@ object RunLogReusableFunctionCompiler {
             args = args,
         )
         val result = jsonSafe(extractResult(card))
-        val sourceContext = sourceContextForCard(card, args)
+        val sourceContext = sourceContextForCard(card, args, nextReplayableCard)
         val utg = jsonSafeMap(card["utg"])
 
         return when {
@@ -603,6 +608,7 @@ object RunLogReusableFunctionCompiler {
     private fun sourceContextForCard(
         card: Map<String, Any?>,
         args: Map<String, Any?>,
+        nextReplayableCard: Map<String, Any?>? = null,
     ): Map<String, Any?> {
         val explicit = asMap(args["source_context"]).ifEmpty { asMap(card["source_context"]) }
         if (explicit.isNotEmpty()) return explicit
@@ -626,14 +632,28 @@ object RunLogReusableFunctionCompiler {
             after["xml"],
             after["page"],
         )
+        val nextBefore = nextReplayableCard?.let(::beforeObservationForCard).orEmpty()
+        val nextBeforeXml = firstNonBlank(
+            nextBefore["observation_xml"],
+            nextBefore["observationXml"],
+            nextBefore["xml"],
+            nextBefore["page"],
+        )
         val sourcePackage = RunLogPagePackageInference.effectivePackage(
             firstNonBlank(before["package_name"], before["packageName"]),
             sourceXml,
         )
-        val afterPackage = RunLogPagePackageInference.effectivePackage(
-            firstNonBlank(after["package_name"], after["packageName"]),
-            afterXml,
-        )
+        val repairedAfterXml = if (shouldUseNextBeforeAsAfter(afterXml, nextBeforeXml)) {
+            nextBeforeXml
+        } else {
+            afterXml
+        }
+        val rawAfterPackage = if (repairedAfterXml == nextBeforeXml && nextBeforeXml.isNotBlank()) {
+            firstNonBlank(nextBefore["package_name"], nextBefore["packageName"])
+        } else {
+            firstNonBlank(after["package_name"], after["packageName"])
+        }
+        val afterPackage = RunLogPagePackageInference.effectivePackage(rawAfterPackage, repairedAfterXml)
         val rawToolName = toolNameForCard(card)
         val normalizedToolName = RunLogReplayPolicy.normalizeToolName(rawToolName)
         val actionArgs = if (normalizedToolName == "android_privileged_action") {
@@ -674,13 +694,45 @@ object RunLogReusableFunctionCompiler {
                 "require_unique_action_signature" to false,
             ),
             "dst_ctx" to linkedMapOf(
-                "page" to afterXml,
+                "page" to repairedAfterXml,
                 "package_name" to afterPackage,
+                "repair_source" to "next_before_observation".takeIf {
+                    repairedAfterXml == nextBeforeXml && nextBeforeXml.isNotBlank() && repairedAfterXml != afterXml
+                },
             ).filterValues { value ->
-                value.trim().isNotEmpty()
+                value?.toString()?.trim()?.isNotEmpty() == true
             }.takeIf { it.isNotEmpty() },
             "action" to sourceAction,
         ).filterValues { it != null }
+    }
+
+    private fun beforeObservationForCard(card: Map<String, Any?>): Map<String, Any?> {
+        return asMap(card["before"])
+            .ifEmpty { asMap(card["observation_before_act"]) }
+            .ifEmpty { asMap(card["before_observation"]) }
+            .ifEmpty { asMap(card["observation"]) }
+    }
+
+    private fun shouldUseNextBeforeAsAfter(afterXml: String, nextBeforeXml: String): Boolean {
+        if (nextBeforeXml.isBlank()) return false
+        if (afterXml.isBlank()) return true
+        val afterVector = OobPageVectorSet.encode(afterXml)
+        val nextVector = OobPageVectorSet.encode(nextBeforeXml) ?: return false
+        if (afterVector == null) return true
+        if (!isWeakObservation(afterVector)) return false
+        return observationStrength(nextVector) > observationStrength(afterVector)
+    }
+
+    private fun isWeakObservation(vector: OobPageVectorSet.PageVector): Boolean {
+        return vector.elementCount <= 1 ||
+            (vector.actionableCount == 0 && vector.displayTextCount == 0 && vector.focusTargetCount == 0)
+    }
+
+    private fun observationStrength(vector: OobPageVectorSet.PageVector): Int {
+        return vector.displayTextCount * 4 +
+            vector.actionableCount * 3 +
+            vector.focusTargetCount * 2 +
+            vector.elementCount
     }
 
     private fun agentFallbackPrompt(

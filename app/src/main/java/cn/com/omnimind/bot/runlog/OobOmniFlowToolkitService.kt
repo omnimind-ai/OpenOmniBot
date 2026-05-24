@@ -49,6 +49,16 @@ class OobOmniFlowToolkitService(
         }
         val currentNodeId = firstNonBlank(request["current_node_id"], request["currentNodeId"])
         val k = intArg(request["k"], defaultValue = 8).coerceIn(1, 50)
+        val allowDirectExecutionDecision = boolArg(request["auto_execute"]) ||
+            boolArg(request["autoExecute"]) ||
+            boolArg(request["allow_direct_hit"]) ||
+            boolArg(request["allowDirectHit"]) ||
+            firstNonBlank(
+                request["decision_mode"],
+                request["decisionMode"],
+                request["execution_policy"],
+                request["executionPolicy"],
+            ).lowercase() in setOf("direct", "auto_execute", "auto-execute")
         val currentXml = timing.measure("read_current_page_ms") {
             firstNonBlank(
                 request["current_xml"],
@@ -99,35 +109,16 @@ class OobOmniFlowToolkitService(
             )
         }
         val nodeCandidates = nodeMatches.map { it.toMap() }
-        val ranked = timing.measure("rank_functions_ms") {
-            nodeMatches.flatMap { nodeMatch ->
-                OobUdegNodeStore.functionIds(nodeMatch.node).mapNotNull { functionId ->
-                    val spec = replayService.getFunctionSpec(functionId) ?: return@mapNotNull null
-                    val textScore = scoreFunctionText(
-                        spec = spec,
-                        goal = goal,
-                        currentPackage = currentPackage,
-                    )
-                    val combinedScore = (
-                        PAGE_MATCH_WEIGHT * nodeMatch.pageSimilarity.toDouble() +
-                            GOAL_MATCH_WEIGHT * textScore.score
-                        ).coerceIn(0.0, 1.0)
-                    RankedFunction(
-                        spec = spec,
-                        functionId = functionId,
-                        score = roundScore(combinedScore),
-                        reason = "udeg_${nodeMatch.reason};${textScore.reason}",
-                        textScore = textScore.score,
-                        pageScore = nodeMatch.pageSimilarity.toDouble(),
-                        node = nodeMatch.toMap(),
-                        recallScope = "udeg_node",
-                    )
-                }
-            }.sortedWith(
-                compareByDescending<RankedFunction> { it.score }
-                    .thenBy { it.functionId }
-            ).take(k)
+        val decisionNodeMatches = nodeMatches.take(1)
+        val nodeCapabilityRanking = timing.measure("rank_functions_ms") {
+            rankNodeCapabilities(
+                nodeMatches = decisionNodeMatches,
+                goal = goal,
+                currentPackage = currentPackage,
+                topK = k,
+            )
         }
+        val ranked = nodeCapabilityRanking.functions
 
         val candidates = ranked.map { rankedFunction ->
             candidateMap(
@@ -146,6 +137,7 @@ class OobOmniFlowToolkitService(
         val segmentMatches = timing.measure("segment_match_ms") {
             segmentMatches(
                 recalledFunctions = ranked,
+                nodeMatches = decisionNodeMatches,
                 goal = goal,
                 currentXml = currentXml,
                 currentPackage = currentPackage,
@@ -157,17 +149,17 @@ class OobOmniFlowToolkitService(
             it.pageScore >= OobUdegNodeStore.STRONG_PAGE_MATCH_SCORE.toDouble() &&
                 it.textScore >= MIN_RECALL_SCORE &&
                 it.noArgumentFunction
-        }
+        }.takeIf { allowDirectExecutionDecision }
         val directHit = ranked.firstOrNull {
             it.pageScore >= OobUdegNodeStore.STRONG_PAGE_MATCH_SCORE.toDouble() &&
                 it.textScore >= DIRECT_HIT_SCORE &&
                 isNoArgumentFunction(it.spec)
-        }
+        }.takeIf { allowDirectExecutionDecision }
         val decision = when {
             directHit != null -> "hit"
             segmentHit != null -> "segment_hit"
-            nodeCandidates.isNotEmpty() -> "recall"
             segmentCandidates.isNotEmpty() -> "segment_recall"
+            nodeCandidates.isNotEmpty() -> "recall"
             else -> "miss"
         }
 
@@ -191,20 +183,31 @@ class OobOmniFlowToolkitService(
             "segment_hit" to segmentHit?.toMap(),
             "candidates" to if (directHit == null) candidates else emptyList<Map<String, Any?>>(),
             "segment_candidates" to if (segmentHit == null) segmentCandidates else emptyList<Map<String, Any?>>(),
+            "capability_candidates" to nodeCapabilityRanking.capabilities,
+            "node_capabilities" to nodeCapabilityRanking.capabilities,
+            "node_function_capabilities" to nodeCapabilityRanking.functionCapabilities,
+            "node_segment_capabilities" to nodeCapabilityRanking.segmentCapabilities,
             "node_candidates" to nodeCandidates,
             "current_node" to nodeCandidates.firstOrNull(),
             "node_skill" to (nodeCandidates.firstOrNull()?.get("skill")),
             "node_skill_context" to (nodeCandidates.firstOrNull()?.get("node_skill_context")),
             "decision_context" to (nodeCandidates.firstOrNull()?.get("decision_context")),
+            "decision_policy" to linkedMapOf(
+                "mode" to if (allowDirectExecutionDecision) "direct_execution_allowed" else "node_skill_context_only",
+                "requires_vlm_or_tool_decision" to !allowDirectExecutionDecision,
+                "direct_hit_requested" to allowDirectExecutionDecision,
+            ),
             "count" to candidates.size,
             "segment_count" to segmentCandidates.size,
             "reason" to when {
                 directHit != null -> "udeg_page_match_direct_function_hit"
                 segmentHit != null -> "page_vector_segment_function_hit"
                 nodeCandidates.isEmpty() && segmentCandidates.isEmpty() -> "no_udeg_node_or_segment_page_match"
-                nodeCandidates.isEmpty() -> "page_vector_segment_recall_without_udeg_node"
+                nodeCandidates.isEmpty() -> "no_udeg_node_for_segment_recall"
+                nodeCapabilityRanking.capabilities.isEmpty() -> "udeg_node_match_without_attached_capability"
+                candidates.isEmpty() && segmentCandidates.isNotEmpty() -> "udeg_node_segment_recall"
                 candidates.isEmpty() -> "udeg_node_match_without_attached_function"
-                else -> "udeg_page_match_recall"
+                else -> "udeg_node_skill_context_recall"
             },
             "current_package" to currentPackage.takeIf { it.isNotEmpty() },
             "current_node_id" to currentNodeId.takeIf { it.isNotEmpty() },
@@ -212,7 +215,11 @@ class OobOmniFlowToolkitService(
                 decision = decision,
                 counts = linkedMapOf(
                     "node_candidates" to nodeCandidates.size,
+                    "decision_node_candidates" to decisionNodeMatches.size,
                     "function_candidates" to ranked.size,
+                    "node_capabilities" to nodeCapabilityRanking.capabilities.size,
+                    "node_function_capabilities" to nodeCapabilityRanking.functionCapabilities.size,
+                    "node_segment_capabilities" to nodeCapabilityRanking.segmentCapabilities.size,
                     "segment_candidates" to segmentCandidates.size,
                     "segment_scanned_functions" to segmentMatches.scannedFunctionCount,
                     "segment_text_candidates" to segmentMatches.textEligibleFunctionCount,
@@ -794,6 +801,7 @@ class OobOmniFlowToolkitService(
 
     private fun segmentMatches(
         recalledFunctions: List<RankedFunction>,
+        nodeMatches: List<OobUdegNodeStore.RecallMatch>,
         goal: String,
         currentXml: String,
         currentPackage: String,
@@ -810,12 +818,10 @@ class OobOmniFlowToolkitService(
                 specsByFunctionId[recalledFunction.functionId] = recalledFunction.spec
             }
         }
-        replayService.listFunctionSpecs(MAX_SEGMENT_FUNCTION_SCAN).forEach { spec ->
-            val functionId = spec["function_id"]?.toString()?.trim().orEmpty()
-            if (functionId.isNotEmpty()) {
-                specsByFunctionId.putIfAbsent(functionId, spec)
-            }
-        }
+        val nodeSegmentBoundaries = nodeSegmentBoundaries(
+            recalledFunctions = recalledFunctions,
+            nodeMatches = nodeMatches,
+        )
 
         var scannedFunctionCount = 0
         var textEligibleFunctionCount = 0
@@ -878,13 +884,69 @@ class OobOmniFlowToolkitService(
                     )
                     val key = "${match.functionId}:${match.startStepIndex}"
                     val existing = bySegmentKey[key]
-                    if (existing == null ||
-                        match.score > existing.score ||
-                        (match.score == existing.score && match.pageScore > existing.pageScore)
-                    ) {
+                    if (shouldReplaceSegmentMatch(existing, match)) {
                         bySegmentKey[key] = match
                     }
                 }
+            }
+        }
+        nodeSegmentBoundaries.forEach { nodeSegment ->
+            scannedFunctionCount += 1
+            val functionId = nodeSegment.functionId
+            val spec = specsByFunctionId[functionId]
+                ?: replayService.getFunctionSpec(functionId)
+                ?: return@forEach
+            val rankedFromNode = nodeRankedByFunctionId[functionId]
+            val recalledFunction = rankedFromNode
+                ?: rankNodeSegmentFunction(
+                    spec = spec,
+                    nodeSegment = nodeSegment,
+                    goal = goal,
+                    currentPackage = currentPackage,
+                )
+                ?: return@forEach
+            if (recalledFunction.textScore < MIN_RECALL_SCORE) return@forEach
+            textEligibleFunctionCount += 1
+            val steps = materializedSteps(spec)
+            if (nodeSegment.startStepIndex <= 0 || nodeSegment.startStepIndex >= steps.size) {
+                return@forEach
+            }
+            boundaryCount += 1
+            if (nodeSegment.pageScore < OobUdegNodeStore.MIN_PAGE_MATCH_SCORE.toDouble()) {
+                return@forEach
+            }
+            boundaryPageHitCount += 1
+            val combinedScore = (
+                PAGE_MATCH_WEIGHT * nodeSegment.pageScore +
+                    GOAL_MATCH_WEIGHT * recalledFunction.textScore
+            ).coerceIn(0.0, 1.0)
+            val remainingSummaries = stepSummaries(spec).drop(nodeSegment.startStepIndex)
+            if (remainingSummaries.isEmpty()) return@forEach
+            val match = SegmentMatch(
+                spec = spec,
+                functionId = functionId,
+                score = roundScore(combinedScore),
+                reason = segmentMatchReason(
+                    recalledFunction = recalledFunction,
+                    boundary = nodeSegment.matchedBoundary,
+                    packageMultiplier = 1.0f,
+                    rawPageScore = nodeSegment.pageScore.toFloat(),
+                ),
+                textScore = recalledFunction.textScore,
+                pageScore = nodeSegment.pageScore,
+                node = nodeSegment.node,
+                recallScope = "udeg_node_segment",
+                matchedStepIndex = nodeSegment.matchedStepIndex,
+                matchedBoundary = nodeSegment.matchedBoundary,
+                startStepIndex = nodeSegment.startStepIndex,
+                remainingStepCount = remainingSummaries.size,
+                stepSummaries = remainingSummaries,
+                noArgumentFunction = isNoArgumentFunction(spec),
+            )
+            val key = "${match.functionId}:${match.startStepIndex}"
+            val existing = bySegmentKey[key]
+            if (shouldReplaceSegmentMatch(existing, match)) {
+                bySegmentKey[key] = match
             }
         }
         val matches = bySegmentKey.values
@@ -904,6 +966,28 @@ class OobOmniFlowToolkitService(
         )
     }
 
+    private fun shouldReplaceSegmentMatch(
+        existing: SegmentMatch?,
+        candidate: SegmentMatch,
+    ): Boolean {
+        if (existing == null) return true
+        val candidateIsNodeSegment = candidate.recallScope == "udeg_node_segment"
+        val existingIsNodeSegment = existing.recallScope == "udeg_node_segment"
+        if (candidateIsNodeSegment != existingIsNodeSegment) {
+            return candidateIsNodeSegment
+        }
+        if (candidate.score != existing.score) {
+            return candidate.score > existing.score
+        }
+        if (candidate.pageScore != existing.pageScore) {
+            return candidate.pageScore > existing.pageScore
+        }
+        if (candidate.remainingStepCount != existing.remainingStepCount) {
+            return candidate.remainingStepCount < existing.remainingStepCount
+        }
+        return candidate.matchedBoundary < existing.matchedBoundary
+    }
+
     private fun emptySegmentRecallResult(): SegmentRecallResult =
         SegmentRecallResult(
             matches = emptyList(),
@@ -912,6 +996,175 @@ class OobOmniFlowToolkitService(
             boundaryCount = 0,
             boundaryPageHitCount = 0,
         )
+
+    private fun rankNodeCapabilities(
+        nodeMatches: List<OobUdegNodeStore.RecallMatch>,
+        goal: String,
+        currentPackage: String,
+        topK: Int,
+    ): NodeCapabilityRanking {
+        val rankedFunctions = mutableListOf<RankedFunction>()
+        val functionCapabilities = mutableListOf<Map<String, Any?>>()
+        val segmentCapabilities = mutableListOf<Map<String, Any?>>()
+        nodeMatches.forEach { nodeMatch ->
+            val node = nodeMatch.toMap()
+            val pageScore = nodeMatch.pageSimilarity.toDouble()
+            OobUdegNodeStore.functionSummaries(nodeMatch.node).forEach { functionSummary ->
+                val functionId = firstNonBlank(functionSummary["function_id"])
+                if (functionId.isBlank()) return@forEach
+                val spec = replayService.getFunctionSpec(functionId) ?: return@forEach
+                val textScore = scoreNodeFunctionText(
+                    spec = spec,
+                    function = functionSummary,
+                    goal = goal,
+                    currentPackage = currentPackage,
+                )
+                val combinedScore = (
+                    PAGE_MATCH_WEIGHT * pageScore +
+                        GOAL_MATCH_WEIGHT * textScore.score
+                    ).coerceIn(0.0, 1.0)
+                val rankedFunction = RankedFunction(
+                    spec = spec,
+                    functionId = functionId,
+                    score = roundScore(combinedScore),
+                    reason = "udeg_${nodeMatch.reason};${textScore.reason}",
+                    textScore = textScore.score,
+                    pageScore = pageScore,
+                    node = node,
+                    recallScope = "udeg_node",
+                )
+                rankedFunctions += rankedFunction
+                functionCapabilities += nodeCapabilityMap(
+                    node = node,
+                    functionId = functionId,
+                    capabilityType = "function",
+                    score = rankedFunction.score,
+                    textScore = textScore.score,
+                    pageScore = pageScore,
+                    reason = rankedFunction.reason,
+                    spec = spec,
+                    nodeCapability = functionSummary,
+                )
+            }
+            OobUdegNodeStore.segmentSummaries(nodeMatch.node).forEach { segment ->
+                val functionId = firstNonBlank(segment["function_id"])
+                if (functionId.isBlank()) return@forEach
+                val spec = replayService.getFunctionSpec(functionId) ?: return@forEach
+                val textScore = scoreNodeSegmentText(
+                    spec = spec,
+                    segment = segment,
+                    goal = goal,
+                    currentPackage = currentPackage,
+                )
+                val combinedScore = (
+                    PAGE_MATCH_WEIGHT * pageScore +
+                        GOAL_MATCH_WEIGHT * textScore.score
+                    ).coerceIn(0.0, 1.0)
+                segmentCapabilities += nodeCapabilityMap(
+                    node = node,
+                    functionId = functionId,
+                    capabilityType = "function_segment",
+                    score = roundScore(combinedScore),
+                    textScore = textScore.score,
+                    pageScore = pageScore,
+                    reason = "udeg_${nodeMatch.reason};udeg_node_attached_segment;${textScore.reason}",
+                    spec = spec,
+                    segment = segment,
+                )
+            }
+        }
+        val limit = topK.coerceIn(1, 50)
+        val sortedFunctionCapabilities = functionCapabilities.sortedWith(capabilityComparator())
+        val sortedSegmentCapabilities = segmentCapabilities.sortedWith(capabilityComparator())
+        return NodeCapabilityRanking(
+            functions = rankedFunctions
+                .sortedWith(
+                    compareByDescending<RankedFunction> { it.score }
+                        .thenBy { it.functionId }
+                )
+                .take(limit),
+            capabilities = (sortedFunctionCapabilities + sortedSegmentCapabilities)
+                .sortedWith(capabilityComparator())
+                .take(limit),
+            functionCapabilities = sortedFunctionCapabilities.take(limit),
+            segmentCapabilities = sortedSegmentCapabilities.take(limit),
+        )
+    }
+
+    private fun capabilityComparator(): Comparator<Map<String, Any?>> =
+        compareByDescending<Map<String, Any?>> { numberDouble(it["score"]) }
+            .thenByDescending { numberDouble(it["page_similarity"]) }
+            .thenBy { it["function_id"]?.toString().orEmpty() }
+            .thenBy { intArg(it["start_step_index"], defaultValue = 0) }
+
+    private fun nodeCapabilityMap(
+        node: Map<String, Any?>,
+        functionId: String,
+        capabilityType: String,
+        score: Double,
+        textScore: Double,
+        pageScore: Double,
+        reason: String,
+        spec: Map<String, Any?>,
+        nodeCapability: Map<String, Any?> = emptyMap(),
+        segment: Map<String, Any?> = emptyMap(),
+    ): Map<String, Any?> {
+        val startStepIndex = intArg(
+            segment["start_step_index"],
+            segment["startStepIndex"],
+            defaultValue = 0,
+        )
+        val functionSteps = stepSummaries(spec)
+        val segmentSteps = listArg(segment["step_summaries"]).mapNotNull { raw ->
+            mapArg(raw).takeIf { it.isNotEmpty() }
+        }
+        val effectiveSteps = if (capabilityType == "function_segment") {
+            segmentSteps.ifEmpty { functionSteps.drop(startStepIndex) }
+        } else {
+            functionSteps
+        }
+        val call = linkedMapOf<String, Any?>(
+            "tool" to "call_tool",
+            "function_id" to functionId,
+            "arguments" to emptyMap<String, Any?>(),
+        ).apply {
+            if (capabilityType == "function_segment") {
+                put("start_step_index", startStepIndex)
+            }
+        }
+        return linkedMapOf(
+            "capability_type" to capabilityType,
+            "recall_scope" to if (capabilityType == "function_segment") "udeg_node_segment" else "udeg_node",
+            "function_id" to functionId,
+            "name" to firstNonBlank(segment["name"], nodeCapability["name"], spec["name"], functionId),
+            "description" to firstNonBlank(
+                segment["description"],
+                nodeCapability["description"],
+                spec["description"],
+                spec["name"],
+                functionId
+            ),
+            "score" to roundScore(score),
+            "text_score" to roundScore(textScore),
+            "page_similarity" to roundScore(pageScore),
+            "reason" to reason,
+            "node_id" to firstNonBlank(node["node_id"]),
+            "udeg_node" to node.takeIf { it.isNotEmpty() },
+            "node_skill_context" to node["node_skill_context"],
+            "node_capability" to nodeCapability.takeIf { it.isNotEmpty() },
+            "inputSchema" to inputSchema(spec),
+            "start_step_index" to startStepIndex.takeIf { capabilityType == "function_segment" },
+            "remaining_step_count" to effectiveSteps.size,
+            "matched_boundary" to segment["matched_boundary"],
+            "matched_step_index" to segment["matched_step_index"],
+            "execution_scope" to if (capabilityType == "function_segment") "function_suffix" else "function",
+            "call" to call,
+            "step_summaries" to effectiveSteps,
+            "function_kind" to "oob_reusable_function",
+            "asset_state" to "native_local",
+            "source" to "oob_udeg_node_capability",
+        ).filterValues { it != null }
+    }
 
     private fun segmentPackageMatchMultiplier(queryPackage: String, boundaryPackage: String): Float {
         if (queryPackage.isBlank() || boundaryPackage.isBlank()) return 1.0f
@@ -932,9 +1185,68 @@ class OobOmniFlowToolkitService(
         }
         val prefix = when (recalledFunction.recallScope) {
             "udeg_node" -> "udeg_node_function"
+            "udeg_node_segment" -> "udeg_node_segment"
             else -> "function_boundary_page_match"
         }
         return "${prefix}_${recalledFunction.reason};segment_$boundary$suffix"
+    }
+
+    private fun nodeSegmentBoundaries(
+        recalledFunctions: List<RankedFunction>,
+        nodeMatches: List<OobUdegNodeStore.RecallMatch>,
+    ): List<NodeSegmentBoundary> {
+        val byKey = linkedMapOf<String, NodeSegmentBoundary>()
+        recalledFunctions.forEach { rankedFunction ->
+            addNodeSegmentBoundaries(
+                output = byKey,
+                node = rankedFunction.node,
+                pageScore = rankedFunction.pageScore,
+            )
+        }
+        nodeMatches.forEach { nodeMatch ->
+            addNodeSegmentBoundaries(
+                output = byKey,
+                node = nodeMatch.toMap(),
+                pageScore = nodeMatch.pageSimilarity.toDouble(),
+            )
+        }
+        return byKey.values.toList()
+    }
+
+    private fun addNodeSegmentBoundaries(
+        output: MutableMap<String, NodeSegmentBoundary>,
+        node: Map<String, Any?>,
+        pageScore: Double,
+    ) {
+        val segments = OobUdegNodeStore.segmentSummaries(node)
+        segments.forEach { segment ->
+            val functionId = firstNonBlank(segment["function_id"])
+            val startStepIndex = intArg(
+                segment["start_step_index"],
+                segment["startStepIndex"],
+                defaultValue = 0,
+            )
+            if (functionId.isBlank() || startStepIndex <= 0) return@forEach
+            val boundary = NodeSegmentBoundary(
+                functionId = functionId,
+                startStepIndex = startStepIndex,
+                matchedStepIndex = intArg(
+                    segment["matched_step_index"],
+                    segment["matchedStepIndex"],
+                    defaultValue = (startStepIndex - 1).coerceAtLeast(0),
+                ),
+                matchedBoundary = firstNonBlank(segment["matched_boundary"], segment["matchedBoundary"])
+                    .ifBlank { "node_segment" },
+                pageScore = pageScore,
+                node = node,
+                segment = segment,
+            )
+            val key = "${boundary.functionId}:${boundary.startStepIndex}"
+            val existing = output[key]
+            if (existing == null || boundary.pageScore > existing.pageScore) {
+                output[key] = boundary
+            }
+        }
     }
 
     private fun segmentBoundaryContexts(
@@ -1040,6 +1352,7 @@ class OobOmniFlowToolkitService(
 
     private fun SegmentMatch.toMap(): Map<String, Any?> =
         linkedMapOf(
+            "capability_type" to "function_segment",
             "function_id" to functionId,
             "description" to (spec["description"] ?: spec["name"] ?: functionId),
             "name" to spec["name"],
@@ -1086,6 +1399,90 @@ class OobOmniFlowToolkitService(
             textScore = scored.score,
             recallScope = "function_boundary_page_match",
         )
+    }
+
+    private fun rankNodeSegmentFunction(
+        spec: Map<String, Any?>,
+        nodeSegment: NodeSegmentBoundary,
+        goal: String,
+        currentPackage: String,
+    ): RankedFunction? {
+        val scored = scoreNodeSegmentText(
+            spec = spec,
+            segment = nodeSegment.segment,
+            goal = goal,
+            currentPackage = currentPackage,
+        )
+        if (scored.score < MIN_RECALL_SCORE) return null
+        return RankedFunction(
+            spec = spec,
+            functionId = nodeSegment.functionId,
+            score = roundScore(scored.score),
+            reason = "udeg_node_attached_segment;${scored.reason}",
+            textScore = scored.score,
+            pageScore = nodeSegment.pageScore,
+            node = nodeSegment.node,
+            recallScope = "udeg_node_segment",
+        )
+    }
+
+    private fun scoreNodeFunctionText(
+        spec: Map<String, Any?>,
+        function: Map<String, Any?>,
+        goal: String,
+        currentPackage: String,
+    ): FunctionTextScore {
+        val base = scoreFunctionText(spec, goal, currentPackage)
+        val capabilityCorpus = listOf(
+            function["function_id"],
+            function["name"],
+            function["description"],
+            listArg(function["step_summaries"]).joinToString(" ") { raw ->
+                val step = mapArg(raw)
+                listOf(step["title"], step["tool"], step["id"])
+                    .joinToString(" ")
+            },
+        ).joinToString(" ").trim()
+        val capabilityScore = if (goal.isBlank() || capabilityCorpus.isBlank()) {
+            0.0
+        } else {
+            tokenOverlapScore(goal, capabilityCorpus)
+        }
+        return if (capabilityScore > base.score) {
+            FunctionTextScore(capabilityScore, "node_function_capability_match")
+        } else {
+            base
+        }
+    }
+
+    private fun scoreNodeSegmentText(
+        spec: Map<String, Any?>,
+        segment: Map<String, Any?>,
+        goal: String,
+        currentPackage: String,
+    ): FunctionTextScore {
+        val base = scoreFunctionText(spec, goal, currentPackage)
+        val segmentCorpus = listOf(
+            segment["function_id"],
+            segment["name"],
+            segment["description"],
+            segment["matched_boundary"],
+            listArg(segment["step_summaries"]).joinToString(" ") { raw ->
+                val step = mapArg(raw)
+                listOf(step["title"], step["tool"], step["id"])
+                    .joinToString(" ")
+            },
+        ).joinToString(" ").trim()
+        val segmentScore = if (goal.isBlank() || segmentCorpus.isBlank()) {
+            0.0
+        } else {
+            tokenOverlapScore(goal, segmentCorpus)
+        }
+        return if (segmentScore > base.score) {
+            FunctionTextScore(segmentScore, "segment_text_match")
+        } else {
+            base
+        }
     }
 
     private fun scoreFunctionText(
@@ -1383,6 +1780,13 @@ class OobOmniFlowToolkitService(
     private fun roundScore(value: Double): Double =
         ((value.coerceIn(0.0, 1.0) * 1000.0).roundToInt() / 1000.0)
 
+    private fun numberDouble(value: Any?): Double =
+        when (value) {
+            is Number -> value.toDouble()
+            is String -> value.trim().toDoubleOrNull() ?: 0.0
+            else -> 0.0
+        }
+
     private fun firstNonBlank(vararg values: Any?): String {
         for (value in values) {
             val text = value?.toString()?.trim().orEmpty()
@@ -1481,6 +1885,16 @@ class OobOmniFlowToolkitService(
         val startStepIndex: Int,
     )
 
+    private data class NodeSegmentBoundary(
+        val functionId: String,
+        val startStepIndex: Int,
+        val matchedStepIndex: Int,
+        val matchedBoundary: String,
+        val pageScore: Double,
+        val node: Map<String, Any?>,
+        val segment: Map<String, Any?>,
+    )
+
     private data class SegmentMatch(
         val spec: Map<String, Any?>,
         val functionId: String,
@@ -1504,6 +1918,13 @@ class OobOmniFlowToolkitService(
         val textEligibleFunctionCount: Int,
         val boundaryCount: Int,
         val boundaryPageHitCount: Int,
+    )
+
+    private data class NodeCapabilityRanking(
+        val functions: List<RankedFunction>,
+        val capabilities: List<Map<String, Any?>>,
+        val functionCapabilities: List<Map<String, Any?>>,
+        val segmentCapabilities: List<Map<String, Any?>>,
     )
 
     private class RecallTiming {

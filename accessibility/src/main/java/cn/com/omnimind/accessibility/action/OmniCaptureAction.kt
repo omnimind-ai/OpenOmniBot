@@ -33,6 +33,9 @@ class OmniCaptureAction(
          * 屏蔽状态栏、输入法等系统组件
          */
         fun shouldIgnoreWindowChange(packageName: String, className: String): Boolean {
+            if (isOobPackage(packageName)) {
+                return true
+            }
             if (packageName == SYSTEM_UI_PACKAGE) {
                 return isIgnoredSystemUiClass(className)
             }
@@ -88,9 +91,13 @@ class OmniCaptureAction(
                 normalizedClass.contains("screenrecord") ||
                 normalizedClass.contains("toast")
         }
+
+        private fun isOobPackage(packageName: String): Boolean =
+            packageName == BaseApplication.instance.packageName ||
+                packageName.startsWith("cn.com.omnimind.")
     }
 
-    private var packageName: String = BaseApplication.instance.packageName
+    private var packageName: String = ""
     private var className: String = ""
     private var xml: String = ""
 
@@ -103,7 +110,7 @@ class OmniCaptureAction(
     }
 
     fun getCurrentPackageName(): String {
-        val windowPackage = selectForegroundWindowRoot()?.packageName
+        val windowPackage = selectCurrentWindowRoot()?.packageName
 //        if (isMineHalfScreen()) {
 //            return packageName
 //        }
@@ -111,9 +118,7 @@ class OmniCaptureAction(
     }
 
     fun getCurrentActivity(): String {
-        return selectForegroundWindowRoot()?.className
-            ?: service.rootInActiveWindow?.className?.toString()
-            ?: packageName
+        return selectCurrentWindowRoot()?.className ?: className
     }
 
 
@@ -147,6 +152,9 @@ class OmniCaptureAction(
      * 屏蔽状态栏、输入法等系统组件
      */
     private fun shouldIgnoreWindowChange(packageName: String, className: String): Boolean {
+        if (isOobPackage(packageName)) {
+            return true
+        }
         // 屏蔽系统UI组件
         val ignoredPackages = listOf(
             "com.google.android.inputmethod.latin", // Google输入法
@@ -201,7 +209,7 @@ class OmniCaptureAction(
         return false
     }
     private fun getActualRootNode(): AccessibilityNodeInfo? =
-        selectForegroundWindowRoot()?.root
+        selectCurrentWindowRoot()?.root
 
     private data class WindowRoot(
         val root: AccessibilityNodeInfo,
@@ -247,6 +255,28 @@ class OmniCaptureAction(
             .firstOrNull()
     }
 
+    private fun selectCurrentWindowRoot(): WindowRoot? =
+        selectForegroundWindowRoot() ?: activeWindowRoot()
+
+    private fun activeWindowRoot(): WindowRoot? {
+        val root = service.rootInActiveWindow ?: return null
+        val packageName = root.packageName?.toString().orEmpty()
+        val className = root.className?.toString().orEmpty()
+        if (shouldIgnoreCaptureRoot(root, packageName, className)) {
+            return null
+        }
+        return WindowRoot(
+            root = root,
+            packageName = packageName,
+            className = className,
+            type = AccessibilityWindowInfo.TYPE_APPLICATION,
+            layer = Int.MIN_VALUE,
+            active = true,
+            focused = root.isFocused,
+            accessibilityFocused = root.isAccessibilityFocused,
+        )
+    }
+
     private fun shouldIgnoreCaptureWindow(
         window: AccessibilityWindowInfo,
         root: AccessibilityNodeInfo,
@@ -258,9 +288,15 @@ class OmniCaptureAction(
         ) {
             return true
         }
-        if (packageName == BaseApplication.instance.packageName ||
-            packageName.startsWith("cn.com.omnimind.")
-        ) {
+        return shouldIgnoreCaptureRoot(root, packageName, className)
+    }
+
+    private fun shouldIgnoreCaptureRoot(
+        root: AccessibilityNodeInfo,
+        packageName: String,
+        className: String,
+    ): Boolean {
+        if (isOobPackage(packageName)) {
             return true
         }
         if (packageName.startsWith("com.google.android.inputmethod") ||
@@ -322,10 +358,7 @@ class OmniCaptureAction(
 //        if (isMineHalfScreen()) {
 //            return xml
 //        }
-        var rootNode = getActualRootNode()
-        if (rootNode == null) {
-            rootNode = service.rootInActiveWindow
-        }
+        val rootNode = getActualRootNode()
 //        val rstartTime=System.currentTimeMillis()
         // 在 API 33+ 上，先预取整个树结构
 
@@ -350,7 +383,7 @@ class OmniCaptureAction(
     }
 
     fun getNodeMap(): Map<String, AccessibilityNode>? {
-        val rootNode = getActualRootNode() ?: service.rootInActiveWindow ?: return null
+        val rootNode = getActualRootNode() ?: return null
         val xmlTree = XmlTreeUtils.buildXmlTree(rootNode) ?: return null
         return XmlTreeUtils.extractNodeMap(xmlTree)
     }

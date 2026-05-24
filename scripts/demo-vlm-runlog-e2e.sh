@@ -269,7 +269,10 @@ fi
 
 echo "== Prepare device =="
 "${ADB[@]}" shell appops set "$PACKAGE_NAME" SYSTEM_ALERT_WINDOW allow
-"${ADB[@]}" shell settings put secure enabled_accessibility_services "$PACKAGE_NAME/com.google.android.accessibility.selecttospeak.SelectToSpeakService"
+"${ADB[@]}" shell settings --user 0 delete secure enabled_accessibility_services >/dev/null 2>&1 || true
+"${ADB[@]}" shell settings --user 0 put secure accessibility_enabled 0 || true
+sleep 1
+"${ADB[@]}" shell settings --user 0 put secure enabled_accessibility_services "$PACKAGE_NAME/com.google.android.accessibility.selecttospeak.SelectToSpeakService"
 "${ADB[@]}" shell settings put secure accessibility_enabled 1
 "${ADB[@]}" shell am start -a android.settings.SETTINGS >/dev/null
 "${ADB[@]}" shell run-as "$PACKAGE_NAME" rm -f "$VLM_RESULT_FILE" "$FUNCTION_RESULT_FILE" 2>/dev/null || true

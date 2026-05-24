@@ -202,8 +202,11 @@ if [[ "$ENABLE_ACCESSIBILITY" -eq 1 ]]; then
   echo "Allowing OOB overlay app-op: $PACKAGE_NAME"
   "${ADB[@]}" shell appops set "$PACKAGE_NAME" SYSTEM_ALERT_WINDOW allow || true
   echo "Enabling OOB Accessibility service: $COMPONENT"
-  "${ADB[@]}" shell settings put secure enabled_accessibility_services "$COMPONENT" || true
-  "${ADB[@]}" shell settings put secure accessibility_enabled 1 || true
+  "${ADB[@]}" shell settings --user 0 delete secure enabled_accessibility_services >/dev/null 2>&1 || true
+  "${ADB[@]}" shell settings --user 0 put secure accessibility_enabled 0 || true
+  sleep 1
+  "${ADB[@]}" shell settings --user 0 put secure enabled_accessibility_services "$COMPONENT" || true
+  "${ADB[@]}" shell settings --user 0 put secure accessibility_enabled 1 || true
 fi
 
 if [[ "$LAUNCH_APP" -eq 1 ]]; then

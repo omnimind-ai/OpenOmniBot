@@ -72,6 +72,8 @@ class OobUdegNodeStore(
                 reason = reason,
             ),
             "function_ids" to functionIds(node),
+            "segment_count" to segmentSummaries(node).size,
+            "segments" to segmentSummaries(node),
             "page_vector_set" to mapArg(node["page_vector_set"]).let { vectorSet ->
                 linkedMapOf(
                     "schema_version" to vectorSet["schema_version"],
@@ -121,6 +123,8 @@ class OobUdegNodeStore(
         val mergedFunctions = existingFunctions
             .filterNot { it["function_id"]?.toString() == normalizedFunctionId }
             .plus(newSummary)
+        val mergedSegments = segmentSummaries(existing)
+            .filterNot { it["function_id"]?.toString() == normalizedFunctionId }
         val existingPageAnalysis = mapArg(existing["page_analysis"]).takeIf { it.isNotEmpty() }
             ?: buildPageAnalysis(
                 observedPage = ObservedPage(
@@ -143,15 +147,18 @@ class OobUdegNodeStore(
                 nodeId = targetNodeId,
                 packageName = pageVector.packageName,
                 functions = mergedFunctions,
+                segments = mergedSegments,
                 pageAnalysis = existingPageAnalysis,
             ),
             "decision_context" to buildDecisionContext(
                 nodeId = targetNodeId,
                 packageName = pageVector.packageName,
                 functionCount = mergedFunctions.size,
+                segmentCount = mergedSegments.size,
                 pageAnalysis = existingPageAnalysis,
             ),
             "functions" to mergedFunctions,
+            "segments" to mergedSegments,
             "first_seen_at" to longArg(existing["first_seen_at"], defaultValue = System.currentTimeMillis()),
             "last_seen_at" to mapArg(existing["_oob_registry"])["last_seen_at"],
             "updated_at" to System.currentTimeMillis(),
@@ -161,11 +168,17 @@ class OobUdegNodeStore(
         node["_oob_registry"] = registry.apply {
             put("node_kind", "page")
             put("function_count", mergedFunctions.size)
+            put("segment_count", mergedSegments.size)
             put("last_function_id", normalizedFunctionId)
             put("updated_at", System.currentTimeMillis())
         }
 
         saveNode(targetNodeId, node)
+        upsertFunctionSegmentNodes(
+            functionSpec = functionSpec,
+            functionId = normalizedFunctionId,
+            startNodeId = targetNodeId,
+        )
         return linkedMapOf(
             "success" to true,
             "indexed" to true,
@@ -178,6 +191,8 @@ class OobUdegNodeStore(
                 "actionable_count" to pageVector.actionableCount,
             ),
             "skill_id" to mapArg(node["skill"])["id"],
+            "function_count" to mergedFunctions.size,
+            "segment_count" to mergedSegments.size,
             "source" to "oob_udeg_node_store",
         )
     }
@@ -264,6 +279,7 @@ class OobUdegNodeStore(
         nodeId: String,
         packageName: String,
         functions: List<Map<String, Any?>>,
+        segments: List<Map<String, Any?>> = emptyList(),
         pageAnalysis: Map<String, Any?> = emptyMap(),
     ): Map<String, Any?> {
         val capabilities = functions.mapNotNull { function ->
@@ -277,12 +293,27 @@ class OobUdegNodeStore(
                 "step_summaries" to function["step_summaries"],
             ).filterValues { it != null }
         }
+        val segmentCapabilities = segments.mapNotNull { segment ->
+            val functionId = segment["function_id"]?.toString()?.trim().orEmpty()
+            if (functionId.isEmpty()) return@mapNotNull null
+            linkedMapOf(
+                "function_id" to functionId,
+                "name" to segment["name"],
+                "description" to segment["description"],
+                "input_schema" to segment["input_schema"],
+                "matched_boundary" to segment["matched_boundary"],
+                "matched_step_index" to segment["matched_step_index"],
+                "start_step_index" to segment["start_step_index"],
+                "remaining_step_count" to segment["remaining_step_count"],
+                "step_summaries" to segment["step_summaries"],
+            ).filterValues { it != null }
+        }
         val guidance = buildString {
             append("UDEG page-match localized the current screen to node ")
             append(nodeId)
             if (packageName.isNotBlank()) append(" in ").append(packageName)
             append(". Use this node skill as decision context. ")
-            append("Prefer an attached Function only when its description and boundary fit the user's goal; ")
+            append("Prefer an attached Function or segment only when its description and boundary fit the user's goal; ")
             append("otherwise continue with live VLM screen actions.")
         }
         return linkedMapOf(
@@ -309,10 +340,13 @@ class OobUdegNodeStore(
                 packageName = packageName,
                 guidance = guidance,
                 capabilities = capabilities,
+                segmentCapabilities = segmentCapabilities,
                 pageAnalysis = pageAnalysis,
             ),
             "capabilities" to capabilities,
+            "segment_capabilities" to segmentCapabilities,
             "function_count" to capabilities.size,
+            "segment_count" to segmentCapabilities.size,
         )
     }
 
@@ -320,6 +354,7 @@ class OobUdegNodeStore(
         nodeId: String,
         packageName: String,
         functionCount: Int,
+        segmentCount: Int = 0,
         pageAnalysis: Map<String, Any?> = emptyMap(),
     ): Map<String, Any?> = linkedMapOf(
         "schema_version" to NODE_DECISION_CONTEXT_SCHEMA_VERSION,
@@ -331,10 +366,11 @@ class OobUdegNodeStore(
         "package_name" to packageName.takeIf { it.isNotBlank() },
         "skill_id" to "udeg_node_skill_$nodeId",
         "function_count" to functionCount,
+        "segment_count" to segmentCount,
         "page_analysis" to compactPageAnalysisForDecision(pageAnalysis).takeIf { it.isNotEmpty() },
         "usage" to listOf(
             "choose the next live VLM action from the current page",
-            "select an attached Function only when the node, boundary, and goal match",
+            "select an attached Function or Function segment only when the node, boundary, and goal match",
             "fall back to normal VLM execution when the node skill does not fit",
         ),
         "constraints" to listOf(
@@ -350,6 +386,7 @@ class OobUdegNodeStore(
         packageName: String,
         guidance: String,
         capabilities: List<Map<String, Any?>>,
+        segmentCapabilities: List<Map<String, Any?>> = emptyList(),
         pageAnalysis: Map<String, Any?> = emptyMap(),
     ): String = buildString {
         appendLine("# UDEG Node Skill")
@@ -383,6 +420,17 @@ class OobUdegNodeStore(
                 if (functionId.isBlank()) return@forEach
                 val description = firstNonBlank(capability["description"], capability["name"], functionId)
                 appendLine("- `$functionId`: $description")
+            }
+        }
+        if (segmentCapabilities.isNotEmpty()) {
+            appendLine()
+            appendLine("## Attached Function Segments")
+            segmentCapabilities.forEach { capability ->
+                val functionId = capability["function_id"]?.toString()?.trim().orEmpty()
+                if (functionId.isBlank()) return@forEach
+                val description = firstNonBlank(capability["description"], capability["name"], functionId)
+                val startStepIndex = firstNonBlank(capability["start_step_index"])
+                appendLine("- `$functionId` from step `$startStepIndex`: $description")
             }
         }
     }.trim()
@@ -683,6 +731,36 @@ class OobUdegNodeStore(
         )
     }
 
+    private fun segmentSummaries(
+        functionSpec: Map<String, Any?>,
+        functionId: String,
+    ): List<Map<String, Any?>> {
+        val steps = materializedSteps(functionSpec)
+        if (steps.size < 2) return emptyList()
+        val summaries = stepSummaries(functionSpec)
+        return steps.flatMapIndexed { index, step ->
+            segmentBoundaryContexts(step, index).mapNotNull { boundary ->
+                if (boundary.startStepIndex <= 0 || boundary.startStepIndex >= steps.size) {
+                    return@mapNotNull null
+                }
+                val remainingSummaries = summaries.drop(boundary.startStepIndex)
+                if (remainingSummaries.isEmpty()) return@mapNotNull null
+                linkedMapOf(
+                    "function_id" to functionId,
+                    "name" to firstNonBlank(functionSpec["name"], functionId),
+                    "description" to firstNonBlank(functionSpec["description"], functionSpec["name"], functionId),
+                    "input_schema" to OobFunctionSchemaBuilder.inputSchema(functionSpec),
+                    "matched_boundary" to boundary.boundary,
+                    "matched_step_index" to boundary.matchedStepIndex,
+                    "start_step_index" to boundary.startStepIndex,
+                    "remaining_step_count" to remainingSummaries.size,
+                    "step_summaries" to remainingSummaries,
+                    "source" to mapArg(functionSpec["source"]),
+                )
+            }
+        }
+    }
+
     private fun stepSummaries(functionSpec: Map<String, Any?>): List<Map<String, Any?>> {
         val execution = mapArg(functionSpec["execution"])
         return listArg(execution["steps"]).mapIndexedNotNull { index, raw ->
@@ -701,6 +779,168 @@ class OobUdegNodeStore(
                 "tool" to tool,
             )
         }
+    }
+
+    private fun materializedSteps(functionSpec: Map<String, Any?>): List<Map<String, Any?>> =
+        listArg(mapArg(functionSpec["execution"])["steps"]).mapNotNull { raw ->
+            mapArg(raw).takeIf { it.isNotEmpty() }
+        }
+
+    private fun segmentBoundaryContexts(
+        step: Map<String, Any?>,
+        stepIndex: Int,
+    ): List<SegmentBoundaryContext> {
+        val sourceContext = mapArg(step["source_context"])
+            .ifEmpty { mapArg(mapArg(step["args"])["source_context"]) }
+        if (sourceContext.isEmpty()) return emptyList()
+        val output = mutableListOf<SegmentBoundaryContext>()
+        val srcCtx = mapArg(sourceContext["src_ctx"])
+        val srcPage = firstNonBlank(
+            srcCtx["page"],
+            srcCtx["xml"],
+            srcCtx["observation_xml"],
+            srcCtx["observationXml"],
+        )
+        if (srcPage.isNotBlank()) {
+            output += SegmentBoundaryContext(
+                boundary = "src_ctx",
+                pageXml = srcPage,
+                packageName = firstNonBlank(srcCtx["package_name"], srcCtx["packageName"]),
+                matchedStepIndex = stepIndex,
+                startStepIndex = stepIndex,
+            )
+        }
+        val dstCtx = mapArg(sourceContext["dst_ctx"])
+        val dstPage = firstNonBlank(
+            dstCtx["page"],
+            dstCtx["xml"],
+            dstCtx["observation_xml"],
+            dstCtx["observationXml"],
+        )
+        if (dstPage.isNotBlank()) {
+            output += SegmentBoundaryContext(
+                boundary = "dst_ctx",
+                pageXml = dstPage,
+                packageName = firstNonBlank(dstCtx["package_name"], dstCtx["packageName"]),
+                matchedStepIndex = stepIndex,
+                startStepIndex = stepIndex + 1,
+            )
+        }
+        return output
+    }
+
+    private fun upsertFunctionSegmentNodes(
+        functionSpec: Map<String, Any?>,
+        functionId: String,
+        startNodeId: String,
+    ) {
+        val steps = materializedSteps(functionSpec)
+        if (steps.size < 2) return
+        val summaries = stepSummaries(functionSpec)
+        steps.forEachIndexed { index, step ->
+            segmentBoundaryContexts(step, index).forEach { boundary ->
+                if (boundary.startStepIndex <= 0 || boundary.startStepIndex >= steps.size) {
+                    return@forEach
+                }
+                val pageVector = OobPageVectorSet.encode(
+                    xml = boundary.pageXml,
+                    packageName = boundary.packageName,
+                ) ?: return@forEach
+                val existingMatch = findBestNodeMatch(
+                    pageVector = pageVector,
+                    currentPackage = boundary.packageName,
+                    minScore = MIN_PAGE_MATCH_SCORE,
+                )
+                val targetNodeId = existingMatch?.node?.get("node_id")?.toString()?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: pageVector.nodeId
+                if (targetNodeId == startNodeId && boundary.startStepIndex == 0) return@forEach
+                val existing = existingMatch?.node ?: getNode(targetNodeId)
+                val existingFunctions = functionSummaries(existing)
+                val existingSegments = segmentSummaries(existing).toMutableList()
+                val newSegment = functionSegmentSummary(
+                    functionSpec = functionSpec,
+                    functionId = functionId,
+                    boundary = boundary,
+                    remainingStepSummaries = summaries.drop(boundary.startStepIndex),
+                ) ?: return@forEach
+                val mergedSegments = existingSegments
+                    .filterNot {
+                        it["function_id"]?.toString() == functionId &&
+                            intArg(it["start_step_index"], defaultValue = -1) == boundary.startStepIndex
+                    }
+                    .plus(newSegment)
+                val now = System.currentTimeMillis()
+                val pageAnalysis = mapArg(existing["page_analysis"]).takeIf { it.isNotEmpty() }
+                    ?: buildPageAnalysis(
+                        observedPage = ObservedPage(
+                            pageXml = boundary.pageXml,
+                            packageName = boundary.packageName,
+                        ),
+                        pageVector = pageVector,
+                        existing = existing,
+                        now = now,
+                    )
+                val registry = mapArg(existing["_oob_registry"]).toMutableMap()
+                val node = linkedMapOf<String, Any?>(
+                    "schema_version" to NODE_SCHEMA_VERSION,
+                    "node_id" to targetNodeId,
+                    "package_name" to pageVector.packageName,
+                    "activity_name" to firstNonBlank(existing["activity_name"]).takeIf { it.isNotBlank() },
+                    "page_vector_set" to pageVector.toMap(),
+                    "page_analysis" to pageAnalysis,
+                    "skill" to buildNodeSkill(
+                        nodeId = targetNodeId,
+                        packageName = pageVector.packageName,
+                        functions = existingFunctions,
+                        segments = mergedSegments,
+                        pageAnalysis = pageAnalysis,
+                    ),
+                    "decision_context" to buildDecisionContext(
+                        nodeId = targetNodeId,
+                        packageName = pageVector.packageName,
+                        functionCount = existingFunctions.size,
+                        segmentCount = mergedSegments.size,
+                        pageAnalysis = pageAnalysis,
+                    ),
+                    "functions" to existingFunctions,
+                    "segments" to mergedSegments,
+                    "first_seen_at" to longArg(existing["first_seen_at"], registry["first_seen_at"], defaultValue = now),
+                    "last_seen_at" to longArg(existing["last_seen_at"], registry["last_seen_at"], defaultValue = now),
+                    "updated_at" to now,
+                    "source" to "oob_native_udeg",
+                ).filterValues { it != null }.toMutableMap()
+                node["_oob_registry"] = registry.apply {
+                    put("node_kind", "page")
+                    put("function_count", existingFunctions.size)
+                    put("segment_count", mergedSegments.size)
+                    put("last_function_id", functionId)
+                    put("updated_at", now)
+                }.filterValues { it != null }
+                saveNode(targetNodeId, node)
+            }
+        }
+    }
+
+    private fun functionSegmentSummary(
+        functionSpec: Map<String, Any?>,
+        functionId: String,
+        boundary: SegmentBoundaryContext,
+        remainingStepSummaries: List<Map<String, Any?>>,
+    ): Map<String, Any?>? {
+        if (remainingStepSummaries.isEmpty()) return null
+        return linkedMapOf(
+            "function_id" to functionId,
+            "name" to firstNonBlank(functionSpec["name"], functionId),
+            "description" to firstNonBlank(functionSpec["description"], functionSpec["name"], functionId),
+            "input_schema" to OobFunctionSchemaBuilder.inputSchema(functionSpec),
+            "matched_boundary" to boundary.boundary,
+            "matched_step_index" to boundary.matchedStepIndex,
+            "start_step_index" to boundary.startStepIndex,
+            "remaining_step_count" to remainingStepSummaries.size,
+            "step_summaries" to remainingStepSummaries,
+            "source" to mapArg(functionSpec["source"]),
+        )
     }
 
     fun observePage(observedPage: ObservedPage): PageObservationResult? {
@@ -726,6 +966,7 @@ class OobUdegNodeStore(
         val existingFirstSeen = longArg(existing["first_seen_at"], existingRegistry["first_seen_at"], defaultValue = now)
         val firstSeen = existing.isEmpty()
         val functions = functionSummaries(existing)
+        val segments = segmentSummaries(existing)
         val pageAnalysis = buildPageAnalysis(
             observedPage = observedPage,
             pageVector = pageVector,
@@ -743,15 +984,18 @@ class OobUdegNodeStore(
                 nodeId = targetNodeId,
                 packageName = pageVector.packageName,
                 functions = functions,
+                segments = segments,
                 pageAnalysis = pageAnalysis,
             ),
             "decision_context" to buildDecisionContext(
                 nodeId = targetNodeId,
                 packageName = pageVector.packageName,
                 functionCount = functions.size,
+                segmentCount = segments.size,
                 pageAnalysis = pageAnalysis,
             ),
             "functions" to functions,
+            "segments" to segments,
             "first_seen_at" to existingFirstSeen,
             "last_seen_at" to now,
             "updated_at" to now,
@@ -763,6 +1007,7 @@ class OobUdegNodeStore(
         node["_oob_registry"] = registry.apply {
             put("node_kind", "page")
             put("function_count", functions.size)
+            put("segment_count", segments.size)
             put("seen_count", seenCount)
             put("first_seen_at", existingFirstSeen)
             put("last_seen_at", now)
@@ -864,6 +1109,14 @@ class OobUdegNodeStore(
         val activityName: String,
     )
 
+    private data class SegmentBoundaryContext(
+        val boundary: String,
+        val pageXml: String,
+        val packageName: String,
+        val matchedStepIndex: Int,
+        val startStepIndex: Int,
+    )
+
     companion object {
         private const val PREFS_NAME = "oob_udeg_nodes"
         private const val INDEX_KEY = "oob_udeg_node_index_v1"
@@ -905,6 +1158,11 @@ class OobUdegNodeStore(
                 mapArg(raw).takeIf { it.isNotEmpty() }
             }
 
+        fun segmentSummaries(node: Map<String, Any?>): List<Map<String, Any?>> =
+            listArg(node["segments"]).mapNotNull { raw ->
+                mapArg(raw).takeIf { it.isNotEmpty() }
+            }
+
         fun nodeSkillContext(
             node: Map<String, Any?>,
             pageSimilarity: Float,
@@ -928,6 +1186,7 @@ class OobUdegNodeStore(
             "skill" to mapArg(node["skill"]).takeIf { it.isNotEmpty() },
             "decision_context" to mapArg(node["decision_context"]).takeIf { it.isNotEmpty() },
             "attached_functions" to functionSummaries(node),
+            "attached_segments" to segmentSummaries(node),
         ).filterValues { it != null }
 
         fun mapArg(value: Any?): Map<String, Any?> {

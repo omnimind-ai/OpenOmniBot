@@ -68,6 +68,19 @@ object OmniflowStepExecutor {
         if (action.requiresAccessibility() && !backend.isReady()) {
             throw IllegalStateException("OmniFlow action backend is not ready")
         }
+        preActionSatisfiedPostcondition(step, action)?.let { postcondition ->
+            return linkedMapOf<String, Any?>(
+                "step_id" to stepId,
+                "tool" to action,
+                "executor" to "omniflow",
+                "model_free" to true,
+                "success" to true,
+                "skipped" to true,
+                "skip_reason" to "pre_action_postcondition_satisfied",
+                "summary" to (stepTitle.takeIf { it.isNotBlank() } ?: action),
+                "postcondition" to postcondition,
+            )
+        }
         val remapResult = remapStepArgsWithRetries(step)
         if (action in RunLogReplayPolicy.coordinateActions && shouldUseCoordinateHook(step)) {
             val applied = remapResult.meta["applied"] as? Boolean
@@ -131,6 +144,7 @@ object OmniflowStepExecutor {
                 } else {
                     backend.launchApplication(packageName)
                 }
+                stabilizeOpenAppLaunch(packageName, resetTask)
                 "open_app"
             }
 
@@ -194,7 +208,7 @@ object OmniflowStepExecutor {
                 meta = mapOf("applied" to false, "reason" to "missing_source_xml", "algorithm" to "anchor_projection")
             )
         }
-        val currentXml = OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
+        val currentXml = readCurrentXmlForCoordinateRemap()
         if (currentXml.isEmpty()) {
             return StepArgsResult(
                 args,
@@ -221,6 +235,13 @@ object OmniflowStepExecutor {
             }
         }
         return last
+    }
+
+    private fun readCurrentXmlForCoordinateRemap(): String {
+        runCatching { OmniflowActionRuntime.backend.isReady() }
+        return runCatching {
+            OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
+        }.getOrDefault("")
     }
 
     private fun shouldRetryCoordinateRemap(result: StepArgsResult): Boolean =
@@ -309,6 +330,34 @@ object OmniflowStepExecutor {
         }
     }
 
+    private suspend fun stabilizeOpenAppLaunch(packageName: String, resetTask: Boolean) {
+        if (packageName.isBlank()) return
+        var lastPackage = effectiveCurrentPackage()
+        repeat(OPEN_APP_STABILITY_ATTEMPTS) { index ->
+            val matchMode = packageMatchMode(packageName, lastPackage)
+            if (matchMode != null) return
+            if (resetTask && index == OPEN_APP_RELAUNCH_ATTEMPT_INDEX) {
+                runCatching { OmniflowActionRuntime.backend.pressHotKey("BACK") }
+                delay(OPEN_APP_STABILITY_DELAY_MS)
+                runCatching { OmniflowActionRuntime.backend.launchApplication(packageName, true) }
+            }
+            if (index < OPEN_APP_STABILITY_ATTEMPTS - 1) {
+                delay(OPEN_APP_STABILITY_DELAY_MS)
+                lastPackage = effectiveCurrentPackage()
+            }
+        }
+    }
+
+    private fun effectiveCurrentPackage(): String {
+        val currentXml = runCatching {
+            OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
+        }.getOrDefault("")
+        val rawPackage = runCatching {
+            OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
+        }.getOrDefault("")
+        return RunLogPagePackageInference.effectivePackage(rawPackage, currentXml)
+    }
+
     private suspend fun verifyPostcondition(
         step: Map<String, Any?>,
         action: String = actionNameForStep(step),
@@ -340,10 +389,11 @@ object OmniflowStepExecutor {
         )
         val minScore = numberArg(postcondition, "min_score", "minScore")?.toFloat()
             ?: MIN_POSTCONDITION_PAGE_SCORE
+        val requiredScore = postconditionRequiredScore(expectedXml, minScore)
         val observation = readCurrentObservationForPostcondition(
             expectedXml = expectedXml,
             expectedPackage = expectedPackage,
-            minScore = minScore,
+            minScore = requiredScore,
         )
         val currentXml = observation.xml
         if (currentXml.isEmpty()) {
@@ -353,7 +403,7 @@ object OmniflowStepExecutor {
         val currentPackage = observation.packageName
         val packageMatchMode = observation.packageMatchMode
         val packageMatched = packageMatchMode != null
-        if (!packageMatched || score < minScore) {
+        if (!packageMatched || score < requiredScore) {
             transientSettingsSearchPostcondition(
                 step = step,
                 postcondition = postcondition,
@@ -363,10 +413,10 @@ object OmniflowStepExecutor {
                 currentPackage = currentPackage,
                 packageMatched = packageMatched,
                 score = score,
-                minScore = minScore,
+                minScore = requiredScore,
             )?.let { return it }
             throw IllegalStateException(
-                "Postcondition failed: page_similarity=$score min=$minScore " +
+                "Postcondition failed: page_similarity=$score min=$requiredScore " +
                     "package_matched=$packageMatched expected_package=$expectedPackage current_package=$currentPackage"
             )
         }
@@ -375,6 +425,7 @@ object OmniflowStepExecutor {
             "success" to true,
             "score" to score,
             "min_score" to minScore,
+            "required_score" to requiredScore.takeIf { it > minScore },
             "package_matched" to packageMatched,
             "package_match_mode" to packageMatchMode.takeIf {
                 it != "exact" && it != "expected_missing" && it != "current_missing"
@@ -383,6 +434,81 @@ object OmniflowStepExecutor {
             "recorded_expected_package" to recordedExpectedPackage
                 .takeIf { it.isNotBlank() && it != expectedPackage },
             "current_package" to currentPackage.takeIf { it.isNotBlank() },
+        ).filterValues { it != null }
+    }
+
+    private fun preActionSatisfiedPostcondition(
+        step: Map<String, Any?>,
+        action: String,
+    ): Map<String, Any?>? {
+        if (action == "open_app" || action == "input_text" || action == "type") return null
+        val postcondition = normalizeArgsMap(step["postcondition"])
+        if (postcondition["kind"]?.toString()?.trim() != "recorded_after_page_similarity") return null
+        val sourceContext = (step["source_context"] as? Map<*, *>)
+            ?: (normalizeArgsMap(step["args"])["source_context"] as? Map<*, *>)
+            ?: return null
+        val dstCtx = sourceContext["dst_ctx"] as? Map<*, *> ?: return null
+        val expectedXml = firstNonBlank(
+            dstCtx["page"],
+            dstCtx["xml"],
+        )
+        if (expectedXml.isBlank()) return null
+        val recordedExpectedPackage = firstNonBlank(dstCtx["package_name"], dstCtx["packageName"])
+        val expectedPackage = RunLogPagePackageInference.effectivePackage(
+            recordedExpectedPackage,
+            expectedXml,
+        )
+        val minScore = numberArg(postcondition, "min_score", "minScore")?.toFloat()
+            ?: MIN_POSTCONDITION_PAGE_SCORE
+        val requiredScore = postconditionRequiredScore(expectedXml, minScore)
+        val observation = readCurrentObservationSnapshot(
+            expectedXml = expectedXml,
+            expectedPackage = expectedPackage,
+        ) ?: return null
+        val preActionRequiredScore = max(requiredScore, PRE_ACTION_ALREADY_SATISFIED_MIN_SCORE)
+        if (observation.packageMatchMode == null || observation.score < preActionRequiredScore) return null
+
+        val srcCtx = sourceContext["src_ctx"] as? Map<*, *>
+        val sourceXml = firstNonBlank(
+            srcCtx?.get("page"),
+            srcCtx?.get("xml"),
+            sourceContext["page"],
+            sourceContext["xml"],
+        )
+        val sourceScore = if (sourceXml.isNotBlank()) {
+            pageSimilarityScore(sourceXml, observation.xml)
+        } else {
+            0f
+        }
+        if (sourceXml.isNotBlank()) {
+            val sourcePackage = RunLogPagePackageInference.effectivePackage(
+                firstNonBlank(srcCtx?.get("package_name"), srcCtx?.get("packageName")),
+                sourceXml,
+            )
+            val sourcePackageMatched = packageMatchMode(sourcePackage, observation.packageName) != null
+            if (sourcePackageMatched &&
+                sourceScore >= observation.score - PRE_ACTION_ALREADY_SATISFIED_SOURCE_MARGIN
+            ) {
+                return null
+            }
+        }
+
+        return linkedMapOf(
+            "kind" to "recorded_after_page_similarity",
+            "success" to true,
+            "score" to observation.score,
+            "min_score" to minScore,
+            "required_score" to preActionRequiredScore.takeIf { it > minScore },
+            "package_matched" to true,
+            "package_match_mode" to observation.packageMatchMode.takeIf {
+                it != "exact" && it != "expected_missing" && it != "current_missing"
+            },
+            "expected_package" to expectedPackage.takeIf { it.isNotBlank() },
+            "recorded_expected_package" to recordedExpectedPackage
+                .takeIf { it.isNotBlank() && it != expectedPackage },
+            "current_package" to observation.packageName.takeIf { it.isNotBlank() },
+            "pre_action_satisfied" to true,
+            "source_score" to sourceScore.takeIf { sourceXml.isNotBlank() },
         ).filterValues { it != null }
     }
 
@@ -421,7 +547,7 @@ object OmniflowStepExecutor {
 
     private fun packageMatchMode(expectedPackage: String, currentPackage: String): String? {
         if (expectedPackage.isBlank()) return "expected_missing"
-        if (currentPackage.isBlank()) return "current_missing"
+        if (currentPackage.isBlank()) return null
         if (expectedPackage == currentPackage) return "exact"
         return if (isAndroidSystemPackageAlias(expectedPackage, currentPackage)) {
             "android_system_alias"
@@ -447,6 +573,51 @@ object OmniflowStepExecutor {
         val score: Float,
         val packageMatchMode: String?,
     )
+
+    private fun readCurrentObservationSnapshot(
+        expectedXml: String,
+        expectedPackage: String,
+    ): PostconditionObservation? {
+        runCatching { OmniflowActionRuntime.backend.isReady() }
+        val currentXml = runCatching {
+            OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
+        }.getOrDefault("")
+        if (currentXml.isEmpty()) return null
+        val rawPackage = runCatching {
+            OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
+        }.getOrDefault("")
+        val currentPackage = RunLogPagePackageInference.effectivePackage(
+            rawPackage,
+            currentXml,
+        )
+        return PostconditionObservation(
+            xml = currentXml,
+            packageName = currentPackage,
+            score = pageSimilarityScore(expectedXml, currentXml),
+            packageMatchMode = packageMatchMode(expectedPackage, currentPackage),
+        )
+    }
+
+    private fun postconditionRequiredScore(expectedXml: String, recordedMinScore: Float): Float {
+        val page = parsePageModel(expectedXml) ?: return recordedMinScore
+        val anchors = page.nodes
+            .filter { isAnchorCandidate(it, page.rootBounds) }
+            .take(MAX_POSTCONDITION_NODES)
+        if (anchors.size <= 1) return recordedMinScore
+        val meaningfulAnchorCount = anchors.count(::isMeaningfulPostconditionAnchor)
+        val adaptiveScore = if (meaningfulAnchorCount >= 3) {
+            MIN_RICH_POSTCONDITION_PAGE_SCORE
+        } else {
+            MIN_POSTCONDITION_PAGE_SCORE
+        }
+        return max(recordedMinScore, adaptiveScore)
+    }
+
+    private fun isMeaningfulPostconditionAnchor(node: UiNode): Boolean =
+        node.text.isNotBlank() ||
+            node.contentDesc.isNotBlank() ||
+            node.hintText.isNotBlank() ||
+            (node.resourceId.isNotBlank() && !isGenericResourceId(node.resourceId))
 
     private suspend fun readCurrentObservationForPostcondition(
         expectedXml: String,
@@ -1412,8 +1583,14 @@ object OmniflowStepExecutor {
     private const val MIN_ANCHOR_MATCH_SCORE = 0.12f
     private const val MIN_DIRECT_FALLBACK_SIMILARITY = 0.58f
     private const val MIN_POSTCONDITION_PAGE_SCORE = 0.12f
+    private const val MIN_RICH_POSTCONDITION_PAGE_SCORE = 0.70f
     private const val MIN_POSTCONDITION_NODE_SIMILARITY = 0.50f
     private const val MAX_POSTCONDITION_NODES = 24
+    private const val PRE_ACTION_ALREADY_SATISFIED_MIN_SCORE = 0.72f
+    private const val PRE_ACTION_ALREADY_SATISFIED_SOURCE_MARGIN = 0.25f
+    private const val OPEN_APP_STABILITY_ATTEMPTS = 5
+    private const val OPEN_APP_STABILITY_DELAY_MS = 350L
+    private const val OPEN_APP_RELAUNCH_ATTEMPT_INDEX = 1
     private const val SETTINGS_SEARCH_PACKAGE = "com.google.android.settings.intelligence"
     private val RETRYABLE_COORDINATE_REMAP_REASONS = setOf(
         "missing_current_xml",

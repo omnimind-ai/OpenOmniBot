@@ -94,7 +94,7 @@ class OobOmniFlowLoopAcceptanceTest {
                 )
             )
             assertEquals(true, recall["success"])
-            assertEquals("hit", recall["decision"])
+            assertEquals("recall", recall["decision"])
             assertEquals("oob_native_udeg_page_match", recall["source"])
             assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, recall["decision_path"])
             val recallTiming = requireNotNull(recall["timing"] as? Map<*, *>)
@@ -116,11 +116,16 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals("decision", nodeSkillContext?.get("role"))
             assertEquals("udeg_node_skill_like_decision_context", nodeSkillContext?.get("context_kind"))
             assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, nodeSkillContext?.get("decision_path"))
-            val hit = recall["hit"] as? Map<*, *>
-            assertEquals(functionId, hit?.get("function_id"))
-            assertNotNull(hit?.get("udeg_node"))
-            assertNotNull(hit?.get("node_skill_context"))
-            val recalledSteps = hit?.get("step_summaries") as? List<*>
+            assertEquals(null, recall["hit"])
+            val candidates = recall["candidates"] as? List<*>
+            val firstCandidate = candidates?.firstOrNull() as? Map<*, *>
+            assertEquals(functionId, firstCandidate?.get("function_id"))
+            assertNotNull(firstCandidate?.get("udeg_node"))
+            assertNotNull(firstCandidate?.get("node_skill_context"))
+            val decisionPolicy = recall["decision_policy"] as? Map<*, *>
+            assertEquals("node_skill_context_only", decisionPolicy?.get("mode"))
+            assertEquals(true, decisionPolicy?.get("requires_vlm_or_tool_decision"))
+            val recalledSteps = firstCandidate?.get("step_summaries") as? List<*>
             assertEquals(1, recalledSteps?.size)
 
             val call = toolkit.callFunction(
@@ -196,14 +201,26 @@ class OobOmniFlowLoopAcceptanceTest {
             )
 
             assertEquals(true, recall["success"])
-            assertEquals("hit", recall["decision"])
-            val hit = recall["hit"] as? Map<*, *>
-            assertEquals(matchingFunctionId, hit?.get("function_id"))
+            assertEquals("recall", recall["decision"])
+            val candidates = recall["candidates"] as? List<*>
+            val firstCandidate = candidates?.firstOrNull() as? Map<*, *>
+            assertEquals(matchingFunctionId, firstCandidate?.get("function_id"))
 
             val currentNode = recall["current_node"] as? Map<*, *>
             val functionIds = currentNode?.get("function_ids") as? List<*>
             assertTrue(functionIds.orEmpty().contains(matchingFunctionId))
             assertFalse(functionIds.orEmpty().contains(otherFunctionId))
+            val nodeCapabilities = recall["node_capabilities"] as? List<*>
+            val functionCapabilities = recall["node_function_capabilities"] as? List<*>
+            val segmentCapabilities = recall["node_segment_capabilities"] as? List<*>
+            assertEquals(matchingFunctionId, firstCapabilityId(nodeCapabilities))
+            assertEquals(matchingFunctionId, firstCapabilityId(functionCapabilities))
+            assertFalse(
+                functionCapabilities.orEmpty()
+                    .mapNotNull { (it as? Map<*, *>)?.get("function_id") }
+                    .contains(otherFunctionId)
+            )
+            assertEquals(0, segmentCapabilities.orEmpty().size)
         } finally {
             context.root.deleteRecursively()
         }
@@ -405,25 +422,59 @@ class OobOmniFlowLoopAcceptanceTest {
                 )
             )
             assertEquals(true, recall["success"])
-            assertEquals("segment_hit", recall["decision"])
-            assertEquals("page_vector_segment_function_hit", recall["reason"])
-            val segmentHit = requireNotNull(recall["segment_hit"] as? Map<*, *>)
+            assertEquals("segment_recall", recall["decision"])
+            assertEquals("udeg_node_segment_recall", recall["reason"])
+            assertEquals(null, recall["segment_hit"])
+            val segmentCandidates = recall["segment_candidates"] as? List<*>
+            val segmentHit = requireNotNull(segmentCandidates?.firstOrNull() as? Map<*, *>)
             assertEquals(functionId, segmentHit["function_id"])
             assertEquals(1, (segmentHit["start_step_index"] as Number).toInt())
             assertEquals(1, (segmentHit["remaining_step_count"] as Number).toInt())
             assertEquals("function_suffix", segmentHit["execution_scope"])
-            assertEquals("function_boundary_page_match", segmentHit["recall_scope"])
+            assertEquals("udeg_node_segment", segmentHit["recall_scope"])
+            assertEquals("function_segment", segmentHit["capability_type"])
             val currentNode = requireNotNull(recall["current_node"] as? Map<*, *>)
             val functionIds = currentNode["function_ids"] as? List<*>
             assertFalse(functionIds.orEmpty().contains(functionId))
+            val segmentSummaries = currentNode["segments"] as? List<*>
+            val nodeSegment = segmentSummaries.orEmpty()
+                .mapNotNull { it as? Map<*, *> }
+                .firstOrNull { it["function_id"] == functionId }
+            assertNotNull(nodeSegment)
+            assertEquals(1, (nodeSegment?.get("start_step_index") as Number).toInt())
             val timing = requireNotNull(recall["timing"] as? Map<*, *>)
             val phases = timing["phase_ms"] as? Map<*, *>
             assertTrue(phases.orEmpty().containsKey("segment_match_ms"))
             val counts = requireNotNull(timing["counts"] as? Map<*, *>)
             assertEquals(1, (counts["segment_candidates"] as Number).toInt())
             assertEquals(1, (counts["segment_scanned_functions"] as Number).toInt())
+            assertEquals(1, (counts["node_capabilities"] as Number).toInt())
+            assertEquals(0, (counts["node_function_capabilities"] as Number).toInt())
+            assertEquals(1, (counts["node_segment_capabilities"] as Number).toInt())
             assertTrue((counts["segment_boundaries"] as Number).toInt() >= 1)
             assertTrue((counts["segment_boundary_page_hits"] as Number).toInt() >= 1)
+            val nodeCapabilities = recall["node_capabilities"] as? List<*>
+            val segmentCapabilities = recall["node_segment_capabilities"] as? List<*>
+            assertEquals(functionId, firstCapabilityId(nodeCapabilities))
+            assertEquals(functionId, firstCapabilityId(segmentCapabilities))
+            val capability = requireNotNull(segmentCapabilities?.firstOrNull() as? Map<*, *>)
+            assertEquals("function_segment", capability["capability_type"])
+            assertEquals("udeg_node_segment", capability["recall_scope"])
+            assertEquals(1, (capability["start_step_index"] as Number).toInt())
+            assertEquals("oob_udeg_node_capability", capability["source"])
+
+            val directRecall = toolkit.recall(
+                mapOf(
+                    "goal" to "settings",
+                    "current_package" to "com.example.target",
+                    "current_xml" to TARGET_XML,
+                    "k" to 5,
+                    "auto_execute" to true,
+                )
+            )
+            assertEquals(true, directRecall["success"])
+            assertEquals("segment_hit", directRecall["decision"])
+            assertEquals("page_vector_segment_function_hit", directRecall["reason"])
 
             val call = toolkit.callFunction(
                 mapOf(
@@ -464,6 +515,9 @@ class OobOmniFlowLoopAcceptanceTest {
         assertEquals("omniflow", nestedStep?.get("executor"))
         assertEquals(true, nestedStep?.get("success"))
     }
+
+    private fun firstCapabilityId(capabilities: List<*>?): Any? =
+        (capabilities?.firstOrNull() as? Map<*, *>)?.get("function_id")
 
     private fun reusableFunctionSpec(
         functionId: String,

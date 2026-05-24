@@ -244,11 +244,13 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
         val intent = this ?: return false
         names.forEach { name ->
             if (!intent.hasExtra(name)) return@forEach
-            intent.getStringExtra(name)?.trim()?.toBooleanStrictOrNull()?.let { return it }
-            if (intent.getBooleanExtra(name, false)) return true
-            if (intent.getIntExtra(name, 0) != 0) return true
-            if (intent.getLongExtra(name, 0L) != 0L) return true
-            return false
+            @Suppress("DEPRECATION")
+            return when (val value = intent.extras?.get(name)) {
+                is Boolean -> value
+                is String -> value.trim().toBooleanStrictOrNull() ?: value.trim().toIntOrNull()?.let { it != 0 } ?: false
+                is Number -> value.toLong() != 0L
+                else -> false
+            }
         }
         return false
     }

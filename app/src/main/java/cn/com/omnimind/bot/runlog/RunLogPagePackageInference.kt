@@ -1,6 +1,6 @@
 package cn.com.omnimind.bot.runlog
 
-internal object RunLogPagePackageInference {
+object RunLogPagePackageInference {
     fun effectivePackage(recordedPackage: String, xml: String): String {
         val recorded = recordedPackage.trim()
         val inferred = dominantPackage(xml)

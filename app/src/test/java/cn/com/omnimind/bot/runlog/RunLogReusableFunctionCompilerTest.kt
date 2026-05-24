@@ -120,6 +120,35 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
+    fun `weak after observation is repaired from next card before observation`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf("target_description" to "Open", "x" to 120, "y" to 240),
+                    beforeXml = SOURCE_XML,
+                    afterXml = EMPTY_FRAME_XML,
+                ),
+                card(
+                    "click",
+                    mapOf("target_description" to "Done", "x" to 120, "y" to 240),
+                    beforeXml = AFTER_XML,
+                ),
+            ),
+            runId = "run-click-weak-after",
+        )
+
+        val firstClick = stepsFrom(spec).first { it["tool"] == "click" }
+        val sourceContext = firstClick["source_context"] as Map<*, *>
+        val dstCtx = sourceContext["dst_ctx"] as Map<*, *>
+        val postcondition = firstClick["postcondition"] as Map<*, *>
+
+        assertEquals(AFTER_XML, dstCtx["page"])
+        assertEquals("next_before_observation", dstCtx["repair_source"])
+        assertEquals("recorded_after_page_similarity", postcondition["kind"])
+    }
+
+    @Test
     fun `compiler prepends initial app launch for app scoped replay`() {
         val spec = compile(
             listOf(
@@ -662,6 +691,8 @@ class RunLogReusableFunctionCompilerTest {
             "<hierarchy><node bounds=\"[100,200][300,280]\" clickable=\"true\" text=\"Open\"/></hierarchy>"
         private const val AFTER_XML =
             "<hierarchy><node bounds=\"[100,200][300,280]\" text=\"Done\"/></hierarchy>"
+        private const val EMPTY_FRAME_XML =
+            "<hierarchy><node class=\"android.widget.FrameLayout\" enabled=\"true\" bounds=\"[0,0][1080,2400]\" /></hierarchy>"
         private const val SETTINGS_XML =
             "<hierarchy><node bounds=\"[32,64][1048,160]\" clickable=\"true\" text=\"Search settings\" resource-id=\"com.android.settings:id/search_action_bar\"/></hierarchy>"
         private const val SETTINGS_APPS_XML =

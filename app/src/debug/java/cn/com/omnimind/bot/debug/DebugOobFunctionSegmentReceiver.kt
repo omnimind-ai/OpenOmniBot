@@ -1,17 +1,23 @@
 package cn.com.omnimind.bot.debug
 
+import BaseApplication
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import cn.com.omnimind.accessibility.service.AssistsService
+import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
+import cn.com.omnimind.bot.runlog.RunLogPagePackageInference
 import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
+import cn.com.omnimind.bot.util.AssistsUtil
 import com.google.gson.GsonBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -71,15 +77,17 @@ class DebugOobFunctionSegmentReceiver : BroadcastReceiver() {
         goal: String,
     ): Map<String, Any?> {
         val toolkit = OobOmniFlowToolkitService(context)
-        val beforePackage = currentPackageName()
-        val beforeXml = currentXml()
+        waitForAccessibility(context)
+        val beforeObservation = waitForPageObservation()
+        val beforePackage = beforeObservation.packageName
+        val beforeXml = beforeObservation.xml
         val registerChild = toolkit.registerFunction(
             mapOf(
                 "functionSpec" to openSettingsChildSpec(
                     functionId = childFunctionId,
                     packageName = packageName,
                     sourcePageXml = beforeXml,
-                    sourcePackageName = beforePackage.orEmpty(),
+                    sourcePackageName = beforePackage,
                 )
             )
         )
@@ -90,9 +98,10 @@ class DebugOobFunctionSegmentReceiver : BroadcastReceiver() {
         val recall = toolkit.recall(
             mapOf(
                 "goal" to goal,
-                "current_package" to beforePackage.orEmpty(),
-                "current_xml" to beforeXml.orEmpty(),
+                "current_package" to beforePackage,
+                "current_xml" to beforeXml,
                 "k" to 3,
+                "auto_execute" to true,
             )
         )
         val parentRun = toolkit.callFunction(
@@ -103,7 +112,8 @@ class DebugOobFunctionSegmentReceiver : BroadcastReceiver() {
             )
         )
         delay(POST_RUN_DEVICE_SETTLE_MS)
-        val afterPackage = currentPackageName()
+        val afterObservation = waitForPageObservation(expectedPackage = packageName)
+        val afterPackage = afterObservation.packageName
         val nestedSummary = nestedSummary(parentRun)
         val loaded = storedChild["function_id"] == childFunctionId
         val parentSucceeded = parentRun["success"] == true
@@ -126,8 +136,9 @@ class DebugOobFunctionSegmentReceiver : BroadcastReceiver() {
             "parent_function_id" to parentFunctionId,
             "package_name" to packageName,
             "before_package" to beforePackage,
-            "before_xml_present" to !beforeXml.isNullOrBlank(),
+            "before_xml_present" to beforeXml.isNotBlank(),
             "after_package" to afterPackage,
+            "after_xml_present" to afterObservation.xml.isNotBlank(),
             "device_package_match" to packageMatched,
             "loaded_child" to loaded,
             "nested_loaded" to nestedLoaded,
@@ -139,6 +150,25 @@ class DebugOobFunctionSegmentReceiver : BroadcastReceiver() {
             "parent_nested_summary" to nestedSummary,
             "source" to "debug_oob_function_segment_validation",
         )
+    }
+
+    private data class PageObservation(
+        val packageName: String,
+        val xml: String,
+        val rawPackageName: String = "",
+        val xmlChars: Int = xml.length,
+        val reason: String = "",
+    )
+
+    private suspend fun waitForAccessibility(context: Context) {
+        if (!AssistsUtil.Core.isInitialized()) {
+            AssistsUtil.Core.initCore(context)
+        }
+        repeat(50) {
+            if (AssistsService.instance != null && AccessibilityController.initController()) return
+            delay(200L)
+        }
+        error("OOB accessibility service is not bound")
     }
 
     private fun nestedSummary(parentRun: Map<String, Any?>): Map<String, Any?> {
@@ -255,15 +285,105 @@ class DebugOobFunctionSegmentReceiver : BroadcastReceiver() {
         ),
     )
 
-    private fun currentPackageName(): String? =
-        runCatching {
-            OmniflowActionRuntime.backend.currentPackageName()?.trim()?.takeIf { it.isNotEmpty() }
-        }.getOrNull()
+    private suspend fun waitForPageObservation(
+        expectedPackage: String? = null,
+    ): PageObservation {
+        var last = PageObservation(packageName = "", xml = "", reason = "not_observed")
+        repeat(PAGE_OBSERVE_ATTEMPTS) { attempt ->
+            val observation = currentObservation()
+            last = observation
+            val packageReady = expectedPackage.isNullOrBlank() ||
+                packageMatches(expectedPackage, observation.packageName)
+            if (packageReady && observation.xml.isNotBlank()) {
+                return observation
+            }
+            if (attempt < PAGE_OBSERVE_ATTEMPTS - 1) {
+                delay(PAGE_OBSERVE_INTERVAL_MS)
+            }
+        }
+        if (last.xml.isBlank()) {
+            error(
+                "OOB current page XML is unavailable; " +
+                    "last_package=${last.packageName.ifBlank { last.rawPackageName }} " +
+                    "last_xml_chars=${last.xmlChars} reason=${last.reason}"
+            )
+        }
+        return last
+    }
 
-    private fun currentXml(): String? =
-        runCatching {
-            OmniflowActionRuntime.backend.currentXml()?.trim()?.takeIf { it.isNotEmpty() }
-        }.getOrNull()
+    private suspend fun currentObservation(): PageObservation {
+        val accessibilityReady = AccessibilityController.initController()
+        val xml = firstNonBlank(
+            if (accessibilityReady) {
+                captureXmlOnMain()
+            } else {
+                null
+            },
+            OmniflowActionRuntime.backend.currentXml(),
+        ).orEmpty()
+        val rawPackage = firstNonBlank(
+            if (accessibilityReady) {
+                packageNameOnMain()
+            } else {
+                null
+            },
+            OmniflowActionRuntime.backend.currentPackageName(),
+        ).orEmpty()
+        val effectivePackage = RunLogPagePackageInference.effectivePackage(rawPackage, xml)
+        if (effectivePackage.isBlank() || isOobPackage(effectivePackage)) {
+            return PageObservation(
+                packageName = effectivePackage,
+                xml = xml,
+                rawPackageName = rawPackage,
+                reason = if (!accessibilityReady) {
+                    "accessibility_controller_not_ready"
+                } else if (effectivePackage.isBlank()) {
+                    "blank_effective_package"
+                } else {
+                    "oob_package_filtered"
+                },
+            )
+        }
+        return PageObservation(
+            packageName = effectivePackage,
+            xml = xml,
+            rawPackageName = rawPackage,
+            reason = "observed",
+        )
+    }
+
+    private suspend fun captureXmlOnMain(): String? = withContext(Dispatchers.Main.immediate) {
+        runCatching { AccessibilityController.getCaptureScreenShotXml(true) }
+            .getOrNull()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    private suspend fun packageNameOnMain(): String? = withContext(Dispatchers.Main.immediate) {
+        runCatching { AccessibilityController.getPackageName() }
+            .getOrNull()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun isOobPackage(packageName: String): Boolean =
+        packageName == BaseApplication.instance.packageName ||
+            packageName.startsWith("cn.com.omnimind.")
+
+    private fun packageMatches(expectedPackage: String, currentPackage: String): Boolean =
+        expectedPackage == currentPackage ||
+            (
+                expectedPackage.substringAfterLast('.') == currentPackage.substringAfterLast('.') &&
+                    (expectedPackage.startsWith("com.android.") ||
+                        expectedPackage.startsWith("com.google.android.")) &&
+                    (currentPackage.startsWith("com.android.") ||
+                        currentPackage.startsWith("com.google.android."))
+                )
+
+    private fun firstNonBlank(vararg values: String?): String? =
+        values.firstNotNullOfOrNull { value ->
+            value?.trim()?.takeIf { it.isNotEmpty() }
+        }
 
     companion object {
         private const val TAG = "DebugOobFunctionSegmentReceiver"
@@ -272,6 +392,8 @@ class DebugOobFunctionSegmentReceiver : BroadcastReceiver() {
         private const val DEFAULT_PARENT_FUNCTION_ID = "debug_parent_calls_open_settings_segment"
         private const val DEFAULT_PACKAGE_NAME = "com.android.settings"
         private const val POST_RUN_DEVICE_SETTLE_MS = 1_200L
+        private const val PAGE_OBSERVE_ATTEMPTS = 80
+        private const val PAGE_OBSERVE_INTERVAL_MS = 250L
         private val gson = GsonBuilder().disableHtmlEscaping().create()
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }

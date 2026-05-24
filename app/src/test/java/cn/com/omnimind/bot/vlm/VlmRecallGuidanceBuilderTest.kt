@@ -80,7 +80,54 @@ class VlmRecallGuidanceBuilderTest {
             )
         )
 
-        assertEquals("", guidance)
+        assertTrue(guidance.contains("decision=recall"))
+        assertTrue(guidance.contains("node 1: node_id=udeg_node_settings"))
+        assertTrue(guidance.contains("Use Settings node context before choosing actions."))
+    }
+
+    @Test
+    fun `render guidance exposes node attached capabilities for VLM decision`() {
+        val guidance = VlmRecallGuidanceBuilder.renderGuidance(
+            mapOf(
+                "success" to true,
+                "decision" to "recall",
+                "decision_policy" to mapOf(
+                    "mode" to "node_skill_context_only",
+                    "requires_vlm_or_tool_decision" to true,
+                ),
+                "node_candidates" to listOf(
+                    mapOf(
+                        "node_id" to "udeg_node_settings",
+                        "page_similarity" to 0.94,
+                    )
+                ),
+                "capability_candidates" to listOf(
+                    mapOf(
+                        "capability_type" to "function",
+                        "recall_scope" to "udeg_node",
+                        "function_id" to "open_network_settings",
+                        "score" to 0.98,
+                        "description" to "Open Network settings from the Settings page.",
+                        "step_summaries" to listOf(
+                            mapOf("tool" to "click", "title" to "click: Network & internet"),
+                        ),
+                    )
+                ),
+            )
+        )
+
+        assertTrue(guidance.contains("decision_policy: mode=node_skill_context_only"))
+        assertTrue(guidance.contains("capability 1: type=function scope=udeg_node function_id=open_network_settings"))
+        assertTrue(guidance.contains("capability_step: 1. click"))
+        assertNull(
+            VlmRecallGuidanceBuilder.directHitFunctionId(
+                mapOf(
+                    "success" to true,
+                    "decision" to "recall",
+                    "capability_candidates" to listOf(mapOf("function_id" to "open_network_settings")),
+                )
+            )
+        )
     }
 
     @Test

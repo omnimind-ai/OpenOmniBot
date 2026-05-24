@@ -17,8 +17,8 @@ data class VlmRecallGuidance(
  * Builds online VLM guidance from OOB-native OmniFlow recall.
  *
  * VLM still observes the live screen and emits concrete actions for recall
- * candidates. A no-argument direct hit may be executed by the coordinator before
- * starting VLM, with VLM fallback if local replay cannot complete.
+ * candidates. Recall defaults to UDEG node skill context; direct local execution
+ * is only used when the recall payload explicitly contains a hit.
  */
 object VlmRecallGuidanceBuilder {
     fun build(
@@ -39,10 +39,11 @@ object VlmRecallGuidanceBuilder {
         val payload = runCatching {
             OobOmniFlowToolkitService(context).recall(
                 linkedMapOf<String, Any?>(
-                    "goal" to normalizedGoal,
-                    "current_package" to currentPackage,
-                    "k" to k,
-                ).apply {
+                "goal" to normalizedGoal,
+                "current_package" to currentPackage,
+                "k" to k,
+                "decision_mode" to "context_only",
+            ).apply {
                     currentXml?.trim()?.takeIf { it.isNotEmpty() }?.let {
                         put("current_xml", it)
                     }
@@ -95,7 +96,6 @@ object VlmRecallGuidanceBuilder {
         if (payload["success"] != true) return ""
         val decision = payload["decision"]?.toString()?.trim().orEmpty()
         if (decision == "miss" || decision.isBlank()) return ""
-        if (decision != "hit" && decision != "segment_hit") return ""
 
         val candidates = candidateList(payload)
             .take(MAX_GUIDANCE_CANDIDATES)
@@ -104,12 +104,20 @@ object VlmRecallGuidanceBuilder {
         val nodeCandidates = listArg(payload["node_candidates"]).mapNotNull { raw ->
             mapArg(raw).takeIf { it.isNotEmpty() }
         }.take(MAX_GUIDANCE_CANDIDATES)
+        val directDecision = decision == "hit" || decision == "segment_hit"
+        if (!directDecision && nodeCandidates.isEmpty()) return ""
         if (candidates.isEmpty() && segmentCandidates.isEmpty() && nodeCandidates.isEmpty()) return ""
 
         return buildString {
             appendLine("OmniFlow UDEG node skill-like decision context:")
             appendLine("path=${OobUdegNodeStore.UDEG_DECISION_PATH}")
             appendLine("decision=$decision")
+            val decisionPolicy = mapArg(payload["decision_policy"])
+            if (decisionPolicy.isNotEmpty()) {
+                val mode = firstNonBlank(decisionPolicy["mode"])
+                val requiresDecision = firstNonBlank(decisionPolicy["requires_vlm_or_tool_decision"])
+                appendLine("decision_policy: mode=$mode requires_vlm_or_tool_decision=$requiresDecision")
+            }
             nodeCandidates.forEachIndexed { index, node ->
                 val nodeId = node["node_id"]?.toString()?.trim().orEmpty()
                 val score = node["page_similarity"]?.toString()?.trim().orEmpty()
@@ -153,6 +161,25 @@ object VlmRecallGuidanceBuilder {
                 appendLine("${index + 1}. function_id=$functionId score=$score description=$description")
                 renderStepSummaries(candidate).take(MAX_STEP_SUMMARIES).forEach { summary ->
                     appendLine("   step: $summary")
+                }
+            }
+            val capabilityCandidates = listArg(payload["capability_candidates"])
+                .mapNotNull { raw -> mapArg(raw).takeIf { it.isNotEmpty() } }
+                .take(MAX_GUIDANCE_CANDIDATES)
+            capabilityCandidates.forEachIndexed { index, capability ->
+                val functionId = capability["function_id"]?.toString()?.trim().orEmpty()
+                val type = capability["capability_type"]?.toString()?.trim().orEmpty()
+                val scope = capability["recall_scope"]?.toString()?.trim().orEmpty()
+                val score = capability["score"]?.toString()?.trim().orEmpty()
+                val startStepIndex = capability["start_step_index"]?.toString()?.trim().orEmpty()
+                val description = firstNonBlank(capability["description"], capability["name"], functionId)
+                    .take(MAX_DESCRIPTION_CHARS)
+                appendLine(
+                    "capability ${index + 1}: type=$type scope=$scope function_id=$functionId " +
+                        "score=$score start_step_index=$startStepIndex description=$description"
+                )
+                renderStepSummaries(capability).take(MAX_STEP_SUMMARIES).forEach { summary ->
+                    appendLine("   capability_step: $summary")
                 }
             }
             segmentCandidates.forEachIndexed { index, candidate ->

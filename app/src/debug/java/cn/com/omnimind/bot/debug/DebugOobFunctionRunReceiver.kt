@@ -5,14 +5,19 @@ import android.content.Context
 import android.content.Intent
 import android.util.Base64
 import cn.com.omnimind.accessibility.service.AssistsService
+import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
+import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
+import cn.com.omnimind.bot.runlog.RunLogPagePackageInference
+import cn.com.omnimind.bot.util.AssistsUtil
 import com.google.gson.GsonBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class DebugOobFunctionRunReceiver : BroadcastReceiver() {
@@ -26,7 +31,7 @@ class DebugOobFunctionRunReceiver : BroadcastReceiver() {
 
         scope.launch {
             val result = runCatching {
-                waitForAccessibility()
+                waitForReplayPage(appContext)
                 OobOmniFlowToolkitService(appContext).callFunction(
                     mapOf(
                         "function_id" to functionId,
@@ -51,14 +56,70 @@ class DebugOobFunctionRunReceiver : BroadcastReceiver() {
 
     private suspend fun waitForAccessibility() {
         repeat(50) {
-            if (AssistsService.instance != null) return
+            if (AssistsService.instance != null && AccessibilityController.initController()) return
             delay(200L)
         }
         error("OOB accessibility service is not bound")
     }
 
+    private suspend fun waitForReplayPage(context: Context) {
+        if (!AssistsUtil.Core.isInitialized()) {
+            AssistsUtil.Core.initCore(context)
+        }
+        waitForAccessibility()
+        var lastPackage = ""
+        var lastXmlChars = 0
+        repeat(PAGE_OBSERVE_ATTEMPTS) { attempt ->
+            val xml = currentXml()
+            val rawPackage = currentPackageName()
+            val effectivePackage = RunLogPagePackageInference.effectivePackage(rawPackage, xml)
+            lastPackage = effectivePackage.ifBlank { rawPackage }
+            lastXmlChars = xml.length
+            if (xml.isNotBlank() && effectivePackage.isNotBlank() && !isOobPackage(context, effectivePackage)) {
+                return
+            }
+            if (attempt < PAGE_OBSERVE_ATTEMPTS - 1) {
+                delay(PAGE_OBSERVE_INTERVAL_MS)
+            }
+        }
+        OmniLog.w(
+            TAG,
+            "Replay page XML is not ready; continuing and letting runner retry observations " +
+                "last_package=$lastPackage last_xml_chars=$lastXmlChars"
+        )
+    }
+
+    private suspend fun currentXml(): String =
+        runCatching {
+            if (AccessibilityController.initController()) {
+                withContext(Dispatchers.Main.immediate) {
+                    AccessibilityController.getCaptureScreenShotXml(true)
+                }
+            } else {
+                null
+            }
+        }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: runCatching { OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty() }.getOrDefault("")
+
+    private suspend fun currentPackageName(): String =
+        runCatching {
+            if (AccessibilityController.initController()) {
+                withContext(Dispatchers.Main.immediate) {
+                    AccessibilityController.getPackageName()
+                }
+            } else {
+                null
+            }
+        }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: runCatching { OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty() }.getOrDefault("")
+
+    private fun isOobPackage(context: Context, packageName: String): Boolean =
+        packageName == context.packageName || packageName.startsWith("cn.com.omnimind.")
+
     companion object {
         private const val TAG = "DebugOobFunctionRunReceiver"
+        private const val PAGE_OBSERVE_ATTEMPTS = 80
+        private const val PAGE_OBSERVE_INTERVAL_MS = 250L
         private val gson = GsonBuilder().disableHtmlEscaping().create()
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
