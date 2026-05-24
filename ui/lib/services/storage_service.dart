@@ -172,18 +172,16 @@ class StorageService {
     String modelId,
     int threshold,
   ) async {
-    final map = getJson<Map<String, dynamic>>(
-          _kManualModelContextThresholdsKey,
-        ) ??
+    final map =
+        getJson<Map<String, dynamic>>(_kManualModelContextThresholdsKey) ??
         <String, dynamic>{};
     map[modelId] = threshold;
     return setJson(_kManualModelContextThresholdsKey, map);
   }
 
   static Future<bool> clearManualModelContextThreshold(String modelId) async {
-    final map = getJson<Map<String, dynamic>>(
-          _kManualModelContextThresholdsKey,
-        ) ??
+    final map =
+        getJson<Map<String, dynamic>>(_kManualModelContextThresholdsKey) ??
         <String, dynamic>{};
     if (!map.containsKey(modelId)) return true;
     map.remove(modelId);
@@ -210,7 +208,6 @@ class StorageService {
     await setBool(kAutoBackToChatAfterTaskKey, enabled);
   }
 
-
   static Future<bool> isPreventScreenSleepDuringTasksEnabled() async {
     final enabled = getBool(
       kPreventScreenSleepDuringTasksKey,
@@ -233,9 +230,7 @@ class StorageService {
     return enabled ?? true;
   }
 
-  static Future<void> setTaskCompletionNotificationEnabled(
-    bool enabled,
-  ) async {
+  static Future<void> setTaskCompletionNotificationEnabled(bool enabled) async {
     await setBool(kTaskCompletionNotificationEnabledKey, enabled);
   }
 
@@ -248,7 +243,10 @@ class StorageService {
   }
 
   static String getPetOverlaySelectedId() {
-    return getString(kPetOverlaySelectedIdKey, defaultValue: 'builtin:xiaowan') ??
+    return getString(
+          kPetOverlaySelectedIdKey,
+          defaultValue: 'builtin:xiaowan',
+        ) ??
         'builtin:xiaowan';
   }
 
@@ -262,6 +260,7 @@ class StorageService {
 
   static Future<void> setPetOverlayVisible(bool visible) async {
     await setBool(kPetOverlayVisibleKey, visible);
+  }
 
   static bool isIndependentChatSendButtonEnabled() {
     return getBool(kUseIndependentChatSendButtonKey, defaultValue: true) ??
@@ -283,7 +282,6 @@ class StorageService {
 
   static Future<bool> setHabitualHand(HabitualHand hand) async {
     return setString(kHabitualHandKey, hand.storageValue);
-
   }
 
   static AppThemeMode getThemeMode() {

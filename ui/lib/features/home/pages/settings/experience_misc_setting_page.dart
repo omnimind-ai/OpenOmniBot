@@ -32,7 +32,6 @@ class _ExperienceMiscSettingPageState
   bool _taskCompletionNotificationEnabled = true;
   bool _useIndependentChatSendButton = true;
 
-
   @override
   void initState() {
     super.initState();
@@ -199,10 +198,7 @@ class _ExperienceMiscSettingPageState
         final granted = await ensureNotificationPermission();
         if (!granted) {
           if (!mounted) return;
-          showToast(
-            context.trLegacy('需要开启通知权限'),
-            type: ToastType.error,
-          );
+          showToast(context.trLegacy('需要开启通知权限'), type: ToastType.error);
           return;
         }
       }
@@ -220,6 +216,9 @@ class _ExperienceMiscSettingPageState
       });
     } catch (e) {
       if (!mounted) return;
+      showToast(context.l10n.settingsSaveFailed, type: ToastType.error);
+    }
+  }
 
   Future<void> _onIndependentChatSendButtonChanged(bool value) async {
     final saved = await StorageService.setIndependentChatSendButtonEnabled(
@@ -313,9 +312,7 @@ class _ExperienceMiscSettingPageState
           _SettingItem(
             icon: Icons.screen_lock_portrait_outlined,
             title: context.trLegacy('防止任务运行时屏幕休眠'),
-            subtitle: context.trLegacy(
-              '任务运行期间保持屏幕常亮，适用于 Agent、Codex 和纯聊天',
-            ),
+            subtitle: context.trLegacy('任务运行期间保持屏幕常亮，适用于 Agent、Codex 和纯聊天'),
             trailing: _buildSwitchTrailing(
               value: _preventScreenSleepDuringTasksEnabled,
               onToggle: _onPreventScreenSleepDuringTasksChanged,
@@ -324,9 +321,7 @@ class _ExperienceMiscSettingPageState
           _SettingItem(
             icon: Icons.notifications_active_outlined,
             title: context.trLegacy('任务完成通知'),
-            subtitle: context.trLegacy(
-              'Agent、Codex 和纯聊天完成后推送提醒',
-            ),
+            subtitle: context.trLegacy('Agent、Codex 和纯聊天完成后推送提醒'),
             trailing: _buildSwitchTrailing(
               value: _taskCompletionNotificationEnabled,
               onToggle: _onTaskCompletionNotificationChanged,
