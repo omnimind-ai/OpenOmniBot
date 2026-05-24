@@ -80,6 +80,10 @@ class OobOmniFlowToolkitService(
                         "node_candidates" to 0,
                         "function_candidates" to 0,
                         "segment_candidates" to 0,
+                        "segment_scanned_functions" to 0,
+                        "segment_text_candidates" to 0,
+                        "segment_boundaries" to 0,
+                        "segment_boundary_page_hits" to 0,
                     )
                 ),
                 "source" to "oob_native_udeg_page_match",
@@ -116,6 +120,7 @@ class OobOmniFlowToolkitService(
                         textScore = textScore.score,
                         pageScore = nodeMatch.pageSimilarity.toDouble(),
                         node = nodeMatch.toMap(),
+                        recallScope = "udeg_node",
                     )
                 }
             }.sortedWith(
@@ -141,13 +146,14 @@ class OobOmniFlowToolkitService(
         val segmentMatches = timing.measure("segment_match_ms") {
             segmentMatches(
                 recalledFunctions = ranked,
+                goal = goal,
                 currentXml = currentXml,
                 currentPackage = currentPackage,
                 topK = k,
             )
         }
-        val segmentCandidates = segmentMatches.map { it.toMap() }
-        val segmentHit = segmentMatches.firstOrNull {
+        val segmentCandidates = segmentMatches.matches.map { it.toMap() }
+        val segmentHit = segmentMatches.matches.firstOrNull {
             it.pageScore >= OobUdegNodeStore.STRONG_PAGE_MATCH_SCORE.toDouble() &&
                 it.textScore >= MIN_RECALL_SCORE &&
                 it.noArgumentFunction
@@ -206,8 +212,12 @@ class OobOmniFlowToolkitService(
                 decision = decision,
                 counts = linkedMapOf(
                     "node_candidates" to nodeCandidates.size,
-                    "function_candidates" to candidates.size,
+                    "function_candidates" to ranked.size,
                     "segment_candidates" to segmentCandidates.size,
+                    "segment_scanned_functions" to segmentMatches.scannedFunctionCount,
+                    "segment_text_candidates" to segmentMatches.textEligibleFunctionCount,
+                    "segment_boundaries" to segmentMatches.boundaryCount,
+                    "segment_boundary_page_hits" to segmentMatches.boundaryPageHitCount,
                 )
             ),
             "source" to "oob_native_udeg_page_match"
@@ -784,19 +794,40 @@ class OobOmniFlowToolkitService(
 
     private fun segmentMatches(
         recalledFunctions: List<RankedFunction>,
+        goal: String,
         currentXml: String,
         currentPackage: String,
         topK: Int,
-    ): List<SegmentMatch> {
-        if (recalledFunctions.isEmpty()) return emptyList()
-        val query = OobPageVectorSet.encode(currentXml, currentPackage) ?: return emptyList()
+    ): SegmentRecallResult {
+        val query = OobPageVectorSet.encode(currentXml, currentPackage)
+            ?: return emptySegmentRecallResult()
         val queryPackage = query.packageName
         val bySegmentKey = linkedMapOf<String, SegmentMatch>()
+        val nodeRankedByFunctionId = recalledFunctions.associateBy { it.functionId }
+        val specsByFunctionId = linkedMapOf<String, Map<String, Any?>>()
         recalledFunctions.forEach { recalledFunction ->
-            val spec = recalledFunction.spec
-            val functionId = recalledFunction.functionId
-            if (functionId.isEmpty()) return@forEach
+            if (recalledFunction.functionId.isNotEmpty()) {
+                specsByFunctionId[recalledFunction.functionId] = recalledFunction.spec
+            }
+        }
+        replayService.listFunctionSpecs(MAX_SEGMENT_FUNCTION_SCAN).forEach { spec ->
+            val functionId = spec["function_id"]?.toString()?.trim().orEmpty()
+            if (functionId.isNotEmpty()) {
+                specsByFunctionId.putIfAbsent(functionId, spec)
+            }
+        }
+
+        var scannedFunctionCount = 0
+        var textEligibleFunctionCount = 0
+        var boundaryCount = 0
+        var boundaryPageHitCount = 0
+        specsByFunctionId.forEach { (functionId, spec) ->
+            scannedFunctionCount += 1
+            val recalledFunction = nodeRankedByFunctionId[functionId]
+                ?: rankFunction(spec, goal, currentPackage)
+                ?: return@forEach
             if (recalledFunction.textScore < MIN_RECALL_SCORE) return@forEach
+            textEligibleFunctionCount += 1
             val steps = materializedSteps(spec)
             if (steps.size < 2) return@forEach
 
@@ -805,6 +836,7 @@ class OobOmniFlowToolkitService(
                     if (boundary.startStepIndex <= 0 || boundary.startStepIndex >= steps.size) {
                         continue
                     }
+                    boundaryCount += 1
                     val boundaryVector = OobPageVectorSet.encode(
                         xml = boundary.pageXml,
                         packageName = boundary.packageName.ifBlank { queryPackage },
@@ -816,6 +848,7 @@ class OobOmniFlowToolkitService(
                     )
                     val pageScore = (rawPageScore * packageMultiplier).toDouble()
                     if (pageScore < OobUdegNodeStore.MIN_PAGE_MATCH_SCORE.toDouble()) continue
+                    boundaryPageHitCount += 1
                     val combinedScore = (
                         PAGE_MATCH_WEIGHT * pageScore +
                             GOAL_MATCH_WEIGHT * recalledFunction.textScore
@@ -835,6 +868,7 @@ class OobOmniFlowToolkitService(
                         textScore = recalledFunction.textScore,
                         pageScore = pageScore,
                         node = recalledFunction.node,
+                        recallScope = recalledFunction.recallScope,
                         matchedStepIndex = boundary.matchedStepIndex,
                         matchedBoundary = boundary.boundary,
                         startStepIndex = boundary.startStepIndex,
@@ -853,7 +887,7 @@ class OobOmniFlowToolkitService(
                 }
             }
         }
-        return bySegmentKey.values
+        val matches = bySegmentKey.values
             .sortedWith(
                 compareByDescending<SegmentMatch> { it.score }
                     .thenByDescending { it.pageScore }
@@ -861,7 +895,23 @@ class OobOmniFlowToolkitService(
                     .thenBy { it.startStepIndex }
             )
             .take(topK.coerceIn(1, 50))
+        return SegmentRecallResult(
+            matches = matches,
+            scannedFunctionCount = scannedFunctionCount,
+            textEligibleFunctionCount = textEligibleFunctionCount,
+            boundaryCount = boundaryCount,
+            boundaryPageHitCount = boundaryPageHitCount,
+        )
     }
+
+    private fun emptySegmentRecallResult(): SegmentRecallResult =
+        SegmentRecallResult(
+            matches = emptyList(),
+            scannedFunctionCount = 0,
+            textEligibleFunctionCount = 0,
+            boundaryCount = 0,
+            boundaryPageHitCount = 0,
+        )
 
     private fun segmentPackageMatchMultiplier(queryPackage: String, boundaryPackage: String): Float {
         if (queryPackage.isBlank() || boundaryPackage.isBlank()) return 1.0f
@@ -880,7 +930,11 @@ class OobOmniFlowToolkitService(
         } else {
             ";package_soft_mismatch;raw_page_similarity=${roundScore(rawPageScore.toDouble())}"
         }
-        return "recalled_function_${recalledFunction.reason};segment_$boundary$suffix"
+        val prefix = when (recalledFunction.recallScope) {
+            "udeg_node" -> "udeg_node_function"
+            else -> "function_boundary_page_match"
+        }
+        return "${prefix}_${recalledFunction.reason};segment_$boundary$suffix"
     }
 
     private fun segmentBoundaryContexts(
@@ -996,7 +1050,7 @@ class OobOmniFlowToolkitService(
             "page_similarity" to roundScore(pageScore),
             "udeg_node" to node.takeIf { it.isNotEmpty() },
             "node_skill_context" to node["node_skill_context"],
-            "recall_scope" to "recalled_function",
+            "recall_scope" to recallScope,
             "matched_boundary" to matchedBoundary,
             "matched_step_index" to matchedStepIndex,
             "start_step_index" to startStepIndex,
@@ -1024,7 +1078,14 @@ class OobOmniFlowToolkitService(
         if (functionId.isEmpty()) return null
         val scored = scoreFunctionText(spec, goal, currentPackage)
         if (scored.score < MIN_RECALL_SCORE) return null
-        return RankedFunction(spec, functionId, roundScore(scored.score), scored.reason)
+        return RankedFunction(
+            spec = spec,
+            functionId = functionId,
+            score = roundScore(scored.score),
+            reason = "page_vector_boundary_candidate;${scored.reason}",
+            textScore = scored.score,
+            recallScope = "function_boundary_page_match",
+        )
     }
 
     private fun scoreFunctionText(
@@ -1404,6 +1465,7 @@ class OobOmniFlowToolkitService(
         val textScore: Double = score,
         val pageScore: Double = 0.0,
         val node: Map<String, Any?> = emptyMap(),
+        val recallScope: String = "udeg_node",
     )
 
     private data class FunctionTextScore(
@@ -1427,12 +1489,21 @@ class OobOmniFlowToolkitService(
         val textScore: Double,
         val pageScore: Double,
         val node: Map<String, Any?>,
+        val recallScope: String,
         val matchedStepIndex: Int,
         val matchedBoundary: String,
         val startStepIndex: Int,
         val remainingStepCount: Int,
         val stepSummaries: List<Map<String, Any?>>,
         val noArgumentFunction: Boolean,
+    )
+
+    private data class SegmentRecallResult(
+        val matches: List<SegmentMatch>,
+        val scannedFunctionCount: Int,
+        val textEligibleFunctionCount: Int,
+        val boundaryCount: Int,
+        val boundaryPageHitCount: Int,
     )
 
     private class RecallTiming {
@@ -1475,6 +1546,7 @@ class OobOmniFlowToolkitService(
         private const val PAGE_MATCH_WEIGHT = 0.70
         private const val GOAL_MATCH_WEIGHT = 0.30
         private const val SEGMENT_PACKAGE_MISMATCH_MULTIPLIER = 0.82f
+        private const val MAX_SEGMENT_FUNCTION_SCAN = 500
         private val CONFIRMATION_ACTION_TOKENS = setOf(
             "shell",
             "terminal",

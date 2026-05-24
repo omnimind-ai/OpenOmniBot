@@ -156,7 +156,7 @@ class OobOmniFlowLoopAcceptanceTest {
     }
 
     @Test
-    fun `recall only ranks functions attached to the page matched UDEG node`() = runBlocking {
+    fun `direct recall ranks functions attached to the page matched UDEG node`() = runBlocking {
         val context = TempFilesContext()
         try {
             val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
@@ -363,6 +363,14 @@ class OobOmniFlowLoopAcceptanceTest {
         try {
             val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
             val functionId = "continue_from_internal_page_segment"
+            OobUdegNodeStore(context).observePage(
+                OobUdegNodeStore.ObservedPage(
+                    pageXml = TARGET_XML,
+                    packageName = "com.example.target",
+                    activityName = "TargetActivity",
+                    goal = "open settings",
+                )
+            )
             val register = toolkit.registerFunction(
                 mapOf(
                     "functionSpec" to reusableFunctionSpec(
@@ -378,8 +386,8 @@ class OobOmniFlowLoopAcceptanceTest {
                             ),
                             openAppStepWithSource(
                                 id = "open_settings_from_target",
-                                sourceXml = SOURCE_XML,
-                                sourcePackage = "com.example.settings",
+                                sourceXml = TARGET_XML,
+                                sourcePackage = "com.example.target",
                                 targetPackage = "com.android.settings",
                             )
                         )
@@ -391,8 +399,8 @@ class OobOmniFlowLoopAcceptanceTest {
             val recall = toolkit.recall(
                 mapOf(
                     "goal" to "settings",
-                    "current_package" to "com.example.settings",
-                    "current_xml" to SOURCE_XML,
+                    "current_package" to "com.example.target",
+                    "current_xml" to TARGET_XML,
                     "k" to 5,
                 )
             )
@@ -404,11 +412,18 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals(1, (segmentHit["start_step_index"] as Number).toInt())
             assertEquals(1, (segmentHit["remaining_step_count"] as Number).toInt())
             assertEquals("function_suffix", segmentHit["execution_scope"])
+            assertEquals("function_boundary_page_match", segmentHit["recall_scope"])
+            val currentNode = requireNotNull(recall["current_node"] as? Map<*, *>)
+            val functionIds = currentNode["function_ids"] as? List<*>
+            assertFalse(functionIds.orEmpty().contains(functionId))
             val timing = requireNotNull(recall["timing"] as? Map<*, *>)
             val phases = timing["phase_ms"] as? Map<*, *>
             assertTrue(phases.orEmpty().containsKey("segment_match_ms"))
-            val counts = timing["counts"] as? Map<*, *>
-            assertEquals(1, (counts?.get("segment_candidates") as Number).toInt())
+            val counts = requireNotNull(timing["counts"] as? Map<*, *>)
+            assertEquals(1, (counts["segment_candidates"] as Number).toInt())
+            assertEquals(1, (counts["segment_scanned_functions"] as Number).toInt())
+            assertTrue((counts["segment_boundaries"] as Number).toInt() >= 1)
+            assertTrue((counts["segment_boundary_page_hits"] as Number).toInt() >= 1)
 
             val call = toolkit.callFunction(
                 mapOf(
