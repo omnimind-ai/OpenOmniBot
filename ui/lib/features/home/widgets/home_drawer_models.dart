@@ -18,9 +18,14 @@ class _DrawerShortcutAction {
 }
 
 class _ConversationSection {
-  _ConversationSection({required this.label, required this.results});
+  _ConversationSection({
+    required this.label,
+    required this.sectionKey,
+    required this.results,
+  });
 
   final String label;
+  final String sectionKey;
   final List<_ConversationSearchResult> results;
 }
 

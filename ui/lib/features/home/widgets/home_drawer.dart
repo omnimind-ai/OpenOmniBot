@@ -121,7 +121,6 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       <String, String>{};
   static Map<String, Set<String>> _conversationImagePreviewFailureSnapshot =
       <String, Set<String>>{};
-
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   final Map<String, _ConversationSearchIndex> _conversationSearchCache =
@@ -151,6 +150,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
   List<ScheduledTask> _scheduledTasks = <ScheduledTask>[];
   StreamSubscription<Map<String, dynamic>>?
   _conversationListChangedSubscription;
+  StreamSubscription<List<ScheduledTask>>? _scheduledTasksChangedSubscription;
 
   @override
   void initState() {
@@ -158,12 +158,16 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
     _searchController.addListener(_handleSearchQueryChanged);
     _searchFocusNode.addListener(_handleSearchFocusChanged);
     _titleEditingFocusNode.addListener(_handleTitleEditingFocusChanged);
+    _restoreExpandedConversationSections();
     _restoreDrawerSnapshotCache();
     _conversationListChangedSubscription = AssistsMessageService
         .conversationListChangedStream
         .listen((_) {
           unawaited(_loadConversations());
         });
+    _scheduledTasksChangedSubscription = ScheduledTaskStorageService
+        .scheduledTasksChangedStream
+        .listen(_handleScheduledTasksChanged);
     _loadConversations();
   }
 
@@ -171,6 +175,7 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
   void dispose() {
     _searchDebounceTimer?.cancel();
     _conversationListChangedSubscription?.cancel();
+    _scheduledTasksChangedSubscription?.cancel();
     _searchController
       ..removeListener(_handleSearchQueryChanged)
       ..dispose();
@@ -182,6 +187,18 @@ class HomeDrawerState extends ConsumerState<HomeDrawer> {
       ..dispose();
     _titleEditingController.dispose();
     super.dispose();
+  }
+
+  void _handleScheduledTasksChanged(List<ScheduledTask> tasks) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _scheduledTasks = List<ScheduledTask>.from(tasks);
+    });
+    if (_isSearchActive) {
+      _scheduleConversationSearch(immediate: true);
+    }
   }
 
   void reloadConversations() {

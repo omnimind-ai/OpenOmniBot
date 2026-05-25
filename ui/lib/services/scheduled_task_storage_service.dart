@@ -1,16 +1,31 @@
+import 'dart:async';
 import 'dart:convert';
+
 import 'package:ui/models/scheduled_task.dart';
 import 'package:ui/services/storage_service.dart';
 
 /// 定时任务存储服务
 class ScheduledTaskStorageService {
   static const String _scheduledTasksKey = 'scheduled_tasks';
+  static final StreamController<List<ScheduledTask>>
+  _scheduledTasksChangedController =
+      StreamController<List<ScheduledTask>>.broadcast();
+
+  static Stream<List<ScheduledTask>> get scheduledTasksChangedStream =>
+      _scheduledTasksChangedController.stream;
 
   /// 保存所有定时任务
   static Future<bool> saveScheduledTasks(List<ScheduledTask> tasks) async {
     try {
       final jsonList = tasks.map((task) => jsonEncode(task.toJson())).toList();
-      return await StorageService.setStringList(_scheduledTasksKey, jsonList);
+      final saved = await StorageService.setStringList(
+        _scheduledTasksKey,
+        jsonList,
+      );
+      if (saved) {
+        _notifyScheduledTasksChanged(tasks);
+      }
+      return saved;
     } catch (e) {
       print('保存定时任务失败: $e');
       return false;
@@ -113,7 +128,11 @@ class ScheduledTaskStorageService {
   /// 清空所有定时任务
   static Future<bool> clearScheduledTasks() async {
     try {
-      return await StorageService.remove(_scheduledTasksKey);
+      final cleared = await StorageService.remove(_scheduledTasksKey);
+      if (cleared) {
+        _notifyScheduledTasksChanged(const <ScheduledTask>[]);
+      }
+      return cleared;
     } catch (e) {
       print('清空定时任务失败: $e');
       return false;
@@ -134,5 +153,11 @@ class ScheduledTaskStorageService {
     } catch (e) {
       return null;
     }
+  }
+
+  static void _notifyScheduledTasksChanged(List<ScheduledTask> tasks) {
+    _scheduledTasksChangedController.add(
+      List<ScheduledTask>.unmodifiable(tasks),
+    );
   }
 }

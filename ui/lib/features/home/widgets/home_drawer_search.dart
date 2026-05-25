@@ -66,16 +66,20 @@ extension _HomeDrawerSearch on HomeDrawerState {
         conversation.threadKey: conversation,
     };
     final parentKeys = <String>{};
+    final activeScheduledTaskIds = <String>{};
+    final activeParentKeys = <String>{};
     final taskCountByParentKey = <String, int>{};
 
     for (final task in _scheduledTasks) {
       if (task.targetKind != 'subagent') {
         continue;
       }
+      activeScheduledTaskIds.add(task.id);
       final parentKey = _scheduledTaskParentThreadKey(task, conversationsByKey);
       if (parentKey == null || !conversationsByKey.containsKey(parentKey)) {
         continue;
       }
+      activeParentKeys.add(parentKey);
       parentKeys.add(parentKey);
       taskCountByParentKey[parentKey] =
           (taskCountByParentKey[parentKey] ?? 0) + 1;
@@ -88,6 +92,13 @@ extension _HomeDrawerSearch on HomeDrawerState {
         conversationsByKey,
       );
       if (parentKey == null || !conversationsByKey.containsKey(parentKey)) {
+        continue;
+      }
+      final scheduledTaskId = (conversation.scheduledTaskId ?? '').trim();
+      final belongsToActiveScheduledTask = scheduledTaskId.isNotEmpty
+          ? activeScheduledTaskIds.contains(scheduledTaskId)
+          : activeParentKeys.contains(parentKey);
+      if (!belongsToActiveScheduledTask) {
         continue;
       }
       parentKeys.add(parentKey);

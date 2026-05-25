@@ -371,9 +371,10 @@ extension _HomeDrawerActions on HomeDrawerState {
   }
 
   List<ConversationSlideAction> _buildDrawerActions(
-    ConversationModel conversation,
-  ) {
-    return [
+    ConversationModel conversation, {
+    bool includePinAction = true,
+  }) {
+    final actions = <ConversationSlideAction>[
       ConversationSlideAction(
         onPressed: () => _deleteConversation(conversation),
         backgroundColor: AppColors.alertRed,
@@ -386,27 +387,33 @@ extension _HomeDrawerActions on HomeDrawerState {
           ),
         ),
       ),
-      ConversationSlideAction(
-        onPressed: () => _setConversationPinned(
-          conversation,
-          pinned: !conversation.isPinned,
-        ),
-        backgroundColor: context.isDarkTheme
-            ? Color.lerp(
-                context.omniPalette.surfaceElevated,
-                context.omniPalette.accentPrimary,
-                0.18,
-              )!
-            : AppColors.text.withValues(alpha: 0.72),
-        child: Center(
-          child: SvgPicture.asset(
-            'assets/home/pin_icon.svg',
-            width: HomeDrawerState._conversationActionIconSize,
-            height: HomeDrawerState._conversationActionIconSize,
-            colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+      if (includePinAction)
+        ConversationSlideAction(
+          onPressed: () => _setConversationPinned(
+            conversation,
+            pinned: !conversation.isPinned,
+          ),
+          backgroundColor: context.isDarkTheme
+              ? Color.lerp(
+                  context.omniPalette.surfaceElevated,
+                  context.omniPalette.accentPrimary,
+                  0.18,
+                )!
+              : AppColors.text.withValues(alpha: 0.72),
+          child: Center(
+            child: SvgPicture.asset(
+              conversation.isPinned
+                  ? 'assets/home/pin_off_icon.svg'
+                  : 'assets/home/pin_icon.svg',
+              width: HomeDrawerState._conversationActionIconSize,
+              height: HomeDrawerState._conversationActionIconSize,
+              colorFilter: const ColorFilter.mode(
+                Colors.white,
+                BlendMode.srcIn,
+              ),
+            ),
           ),
         ),
-      ),
       ConversationSlideAction(
         onPressed: () => conversation.isArchived
             ? _unarchiveConversation(conversation)
@@ -438,6 +445,7 @@ extension _HomeDrawerActions on HomeDrawerState {
         ),
       ),
     ];
+    return actions;
   }
 
   String _resolveConversationTitle(ConversationModel conversation) {
