@@ -128,6 +128,10 @@ void main() {
                     },
                   },
                   'result': <String, dynamic>{'message': '目标应用已打开'},
+                  'compile_result': <String, dynamic>{
+                    'compile_status': 'hit',
+                    'function_id': 'fn_open_settings',
+                  },
                   'before': <String, dynamic>{
                     'package_name': 'com.android.settings',
                   },
@@ -190,6 +194,28 @@ void main() {
     expect(_richTextContaining('重放  OmniFlow 本地'), findsNothing);
     expect(find.textContaining('VLM'), findsNothing);
     expect(find.textContaining('Visual task'), findsNothing);
+
+    await tester.scrollUntilVisible(
+      find.text('路由结果'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(find.text('路由结果'));
+    await tester.pumpAndSettle();
+    expect(_selectableTextContaining('route_status'), findsOneWidget);
+    expect(_selectableTextContaining('compile_status'), findsNothing);
+
+    await tester.scrollUntilVisible(
+      find.text('原始 JSON'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(find.text('原始 JSON'));
+    await tester.pumpAndSettle();
+    expect(_selectableTextContaining('route_kind'), findsOneWidget);
+    expect(_selectableTextContaining('route_result'), findsOneWidget);
+    expect(_selectableTextContaining('compile_kind'), findsNothing);
+    expect(_selectableTextContaining('compile_result'), findsNothing);
   });
 
   testWidgets('VLM-only runlog uses a single red VLM source badge', (
@@ -396,6 +422,10 @@ Map<String, dynamic> _runLogTimelinePayload({required String runId}) {
           },
         },
         'result': <String, dynamic>{'message': '目标应用已打开'},
+        'compile_result': <String, dynamic>{
+          'compile_status': 'hit',
+          'function_id': 'fn_from_runlog',
+        },
         'before': <String, dynamic>{'package_name': 'com.android.settings'},
       },
     ],
@@ -415,5 +445,12 @@ Finder _richTextContaining(String text) {
   return find.byWidgetPredicate(
     (widget) => widget is RichText && widget.text.toPlainText().contains(text),
     description: 'RichText containing "$text"',
+  );
+}
+
+Finder _selectableTextContaining(String text) {
+  return find.byWidgetPredicate(
+    (widget) => widget is SelectableText && widget.data?.contains(text) == true,
+    description: 'SelectableText containing "$text"',
   );
 }

@@ -602,7 +602,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
     if (_payload.isNotEmpty) {
       lines.add('');
       lines.add('## ${_text(context, '原始时间线数据', 'Raw timeline payload')}');
-      lines.add(_prettyJson(_payload));
+      lines.add(_prettyUserJson(_payload));
     }
 
     return lines.join('\n').trimRight();
@@ -1768,9 +1768,11 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                               const SizedBox(height: 12),
                               _CollapsibleSection(
                                 title: _text(context, '参数', 'Arguments'),
-                                copyValue: _prettyJson(snapshot.params),
+                                copyValue: _prettyUserJson(snapshot.params),
                                 initiallyExpanded: true,
-                                child: _JsonBlock(value: snapshot.params),
+                                child: _JsonBlock(
+                                  value: _userVisibleJson(snapshot.params),
+                                ),
                               ),
                             ],
                             // Result — expanded by default
@@ -1778,9 +1780,11 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                               const SizedBox(height: 8),
                               _CollapsibleSection(
                                 title: _text(context, '结果', 'Result'),
-                                copyValue: _prettyJson(snapshot.result),
+                                copyValue: _prettyUserJson(snapshot.result),
                                 initiallyExpanded: true,
-                                child: _JsonBlock(value: snapshot.result),
+                                child: _JsonBlock(
+                                  value: _userVisibleJson(snapshot.result),
+                                ),
                               ),
                             ],
                             // Route result — collapsed by default
@@ -1788,10 +1792,14 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                               const SizedBox(height: 8),
                               _CollapsibleSection(
                                 title: _text(context, '路由结果', 'Route result'),
-                                copyValue: _prettyJson(snapshot.compileResult),
+                                copyValue: _prettyUserJson(
+                                  snapshot.compileResult,
+                                ),
                                 initiallyExpanded: false,
                                 child: _JsonBlock(
-                                  value: snapshot.compileResult,
+                                  value: _userVisibleJson(
+                                    snapshot.compileResult,
+                                  ),
                                 ),
                               ),
                             ],
@@ -1801,7 +1809,7 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                               const SizedBox(height: 8),
                               _CollapsibleSection(
                                 title: _text(context, '前后状态', 'Before / after'),
-                                copyValue: _prettyJson({
+                                copyValue: _prettyUserJson({
                                   if (snapshot.before.isNotEmpty)
                                     'before': snapshot.before,
                                   if (snapshot.after.isNotEmpty)
@@ -1822,9 +1830,11 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                             const SizedBox(height: 8),
                             _CollapsibleSection(
                               title: _text(context, '原始 JSON', 'Raw JSON'),
-                              copyValue: _prettyJson(widget.card),
+                              copyValue: _prettyUserJson(widget.card),
                               initiallyExpanded: false,
-                              child: _JsonBlock(value: widget.card),
+                              child: _JsonBlock(
+                                value: _userVisibleJson(widget.card),
+                              ),
                             ),
                           ],
                         ),
@@ -3955,7 +3965,7 @@ void _appendTranscriptSection(List<String> lines, String title, dynamic value) {
   lines
     ..add('')
     ..add('$title:')
-    ..add(_prettyJson(value));
+    ..add(_prettyUserJson(value));
 }
 
 String _formatMs(int ms) {
@@ -4730,6 +4740,42 @@ String _prettyJson(dynamic value) {
   } catch (_) {
     return value?.toString() ?? '';
   }
+}
+
+String _prettyUserJson(dynamic value) {
+  try {
+    return const JsonEncoder.withIndent('  ').convert(_userVisibleJson(value));
+  } catch (_) {
+    return _userVisibleString(value?.toString() ?? '');
+  }
+}
+
+dynamic _userVisibleJson(dynamic value) {
+  final safe = _jsonSafe(value);
+  if (safe is String) {
+    return _userVisibleString(safe);
+  }
+  if (safe == null || safe is num || safe is bool) {
+    return safe;
+  }
+  if (safe is Map) {
+    return safe.map(
+      (key, item) =>
+          MapEntry(_userVisibleJsonKey(key.toString()), _userVisibleJson(item)),
+    );
+  }
+  if (safe is Iterable) {
+    return safe.map(_userVisibleJson).toList(growable: false);
+  }
+  return _userVisibleString(safe.toString());
+}
+
+String _userVisibleJsonKey(String key) => _userVisibleString(key);
+
+String _userVisibleString(String value) {
+  return value
+      .replaceAll(RegExp('compile', caseSensitive: false), 'route')
+      .replaceAll('编译', '路由');
 }
 
 dynamic _jsonSafe(dynamic value) {
