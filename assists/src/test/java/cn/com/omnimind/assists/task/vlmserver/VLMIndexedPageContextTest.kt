@@ -19,8 +19,27 @@ class VLMIndexedPageContextTest {
         assertTrue(rendered.contains("label=\"Network & internet\""))
         assertTrue(rendered.contains("center=(430,473)"))
         assertTrue(rendered.contains("flags=click"))
+        assertFalse(rendered.contains("bounds="))
         assertTrue(rendered.contains("Scrollable regions:"))
         assertTrue(rendered.contains("vertical_down="))
+    }
+
+    @Test
+    fun `indexed context caps visible candidates for compact per turn prompt`() {
+        val rows = buildString {
+            repeat(30) { index ->
+                append("""<node text="Row $index" bounds="[0,${index * 40}][720,${index * 40 + 36}]" clickable="true" />""")
+            }
+        }
+        val rendered = VLMIndexedPageContext.render(
+            currentXml = "<hierarchy><node bounds=\"[0,0][720,1280]\">$rows</node></hierarchy>",
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertTrue(rendered.contains("#0 center="))
+        assertTrue(rendered.contains("#17 center="))
+        assertFalse(rendered.contains("#18 center="))
     }
 
     @Test

@@ -82,6 +82,69 @@ class OobOmniFlowLoopAcceptanceTest {
     }
 
     @Test
+    fun `simple function registration captures current page for UDEG recall when source page omitted`() = runBlocking {
+        val context = TempFilesContext()
+        val backend = RecordingOmniflowBackend(
+            initialPackage = "com.example.settings",
+            currentXml = SOURCE_XML,
+        )
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            try {
+                val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+                val functionId = "simple_settings_current_page_capture"
+
+                val register = toolkit.registerFunction(
+                    mapOf(
+                        "functionId" to functionId,
+                        "name" to "Open Settings From Current Page",
+                        "description" to "Open Android Settings from the current page",
+                        "steps" to listOf(
+                            mapOf(
+                                "action" to "open_app",
+                                "packageName" to "com.android.settings",
+                            ),
+                            mapOf(
+                                "action" to "finished",
+                                "content" to "Settings opened",
+                            ),
+                        ),
+                    )
+                )
+
+                assertEquals(true, register["success"])
+                val udeg = register["udeg"] as? Map<*, *>
+                assertEquals(true, udeg?.get("indexed"))
+
+                val stored = toolkit.getFunction(mapOf("function_id" to functionId))
+                val execution = stored["execution"] as? Map<*, *>
+                val steps = execution?.get("steps") as? List<*>
+                val firstStep = steps?.firstOrNull() as? Map<*, *>
+                val sourceContext = firstStep?.get("source_context") as? Map<*, *>
+                val srcCtx = sourceContext?.get("src_ctx") as? Map<*, *>
+                assertEquals(SOURCE_XML.trim(), srcCtx?.get("page")?.toString()?.trim())
+                assertEquals("com.example.settings", srcCtx?.get("package_name"))
+
+                val recall = toolkit.recall(
+                    mapOf(
+                        "goal" to "open settings",
+                        "current_package" to "com.example.settings",
+                        "current_xml" to SOURCE_XML,
+                        "k" to 3,
+                    )
+                )
+                assertEquals(true, recall["success"])
+                assertEquals("node_skill_context_only", (recall["decision_policy"] as? Map<*, *>)?.get("mode"))
+                val candidates = recall["candidates"] as? List<*>
+                val firstCandidate = candidates?.firstOrNull() as? Map<*, *>
+                assertEquals(functionId, firstCandidate?.get("function_id"))
+                assertEquals(null, recall["hit"])
+            } finally {
+                context.root.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
     fun `explored run log registers recalls and replays through local omniflow runner`() = runBlocking {
         val context = TempFilesContext()
         try {
@@ -937,7 +1000,11 @@ class OobOmniFlowLoopAcceptanceTest {
         ),
     )
 
-    private class RecordingOmniflowBackend(initialPackage: String) : OmniflowActionBackend {
+    private class RecordingOmniflowBackend(
+        initialPackage: String,
+        private var currentXml: String? = null,
+        private var currentActivity: String? = null,
+    ) : OmniflowActionBackend {
         private var currentPackage = initialPackage
         val launchedPackages = mutableListOf<String>()
 
@@ -974,11 +1041,11 @@ class OobOmniFlowLoopAcceptanceTest {
             error("pressHotKey should not be used by this test")
         }
 
-        override fun currentXml(): String? = null
+        override fun currentXml(): String? = currentXml
 
         override fun currentPackageName(): String = currentPackage
 
-        override fun currentActivityName(): String? = null
+        override fun currentActivityName(): String? = currentActivity
 
         fun setCurrentPackage(packageName: String) {
             currentPackage = packageName

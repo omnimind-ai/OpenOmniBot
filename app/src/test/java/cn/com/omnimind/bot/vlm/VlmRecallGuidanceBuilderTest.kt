@@ -220,6 +220,35 @@ class VlmRecallGuidanceBuilderTest {
     }
 
     @Test
+    fun `strict direct hit payload is candidate only unless caller enables auto execution`() {
+        val payload = mapOf(
+            "success" to true,
+            "decision" to "hit",
+            "hit" to mapOf(
+                "function_id" to "open_network_settings",
+                "score" to 1.0,
+                "page_similarity" to 1.0,
+                "text_score" to 1.0,
+                "strict_direct_hit" to true,
+                "requires_arguments" to false,
+            ),
+        )
+
+        val contextOnly = VlmRecallGuidanceBuilder.fromAgentPayload(
+            payload = payload,
+            allowDirectExecutionDecision = false,
+        )
+        val directAllowed = VlmRecallGuidanceBuilder.fromAgentPayload(
+            payload = payload,
+            allowDirectExecutionDecision = true,
+        )
+
+        assertNull(contextOnly.directHitFunctionId)
+        assertEquals(0, contextOnly.directHitStartStepIndex)
+        assertEquals("open_network_settings", directAllowed.directHitFunctionId)
+    }
+
+    @Test
     fun `render guidance exposes segment hit with suffix execution id`() {
         val payload = mapOf(
             "success" to true,

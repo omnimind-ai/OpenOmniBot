@@ -1,20 +1,14 @@
 package cn.com.omnimind.assists.task.vlmserver
 
-import cn.com.omnimind.baselib.llm.ModelSceneRegistry
 import cn.com.omnimind.baselib.util.OmniLog
-import cn.com.omnimind.assists.controller.http.HttpController
-import cn.com.omnimind.omniintelligence.models.AgentRequest.Payload.VLMChatPayload
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
  * Loading Sprite Agent - 赛博精灵加载状态生成器
- * 在任务开始时根据任务目标一次性生成多个加载提示词
+ * 在任务开始时从本地候选中准备多个加载提示词。
  * Compactor 工作期间按顺序取用
  */
 class LoadingSpriteAgent {
     private val Tag = "LoadingSpriteAgent"
-    private val sceneId = "scene.loading.sprite"
 
     // 当前任务的加载词列表
     private var loadingPhrases: MutableList<String> = mutableListOf()
@@ -47,57 +41,8 @@ class LoadingSpriteAgent {
     suspend fun prepareForTask(taskGoal: String) {
         currentIndex = 0
         loadingPhrases.clear()
-
-        try {
-            OmniLog.i(Tag, "为任务预生成加载提示词: $taskGoal")
-            
-            // 获取 prompt 模板并渲染
-            val promptTemplate = ModelSceneRegistry.getPrompt(sceneId)
-            if (promptTemplate == null) {
-                OmniLog.w(Tag, "未找到 $sceneId 的 prompt 模板，使用本地候选")
-                loadingPhrases.addAll(fallbackPhrases.shuffled().take(5))
-                return
-            }
-
-            val prompt = ModelSceneRegistry.renderPrompt(
-                promptTemplate,
-                mapOf("task" to taskGoal)
-            )
-
-            // 调用 LLM 生成
-            val payload = VLMChatPayload(
-                model = sceneId,
-                text = prompt,
-                images = emptyList()
-            )
-
-            val response = withContext(Dispatchers.IO) {
-                HttpController.postVLMRequest(payload)
-            }
-
-            val content = response?.message?.trim()
-            if (!content.isNullOrBlank()) {
-                // 解析多行输出
-                val phrases = content.lines()
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() && it.length in 4..20 }
-                    .take(5)
-                
-                if (phrases.isNotEmpty()) {
-                    loadingPhrases.addAll(phrases)
-                    OmniLog.i(Tag, "预生成了 ${loadingPhrases.size} 个加载提示词: $loadingPhrases")
-                    return
-                }
-            }
-
-            // 如果解析失败，使用本地候选
-            loadingPhrases.addAll(fallbackPhrases.shuffled().take(5))
-            OmniLog.w(Tag, "LLM 返回格式异常，使用本地候选")
-
-        } catch (e: Exception) {
-            OmniLog.e(Tag, "预生成加载提示词失败: ${e.message}")
-            loadingPhrases.addAll(fallbackPhrases.shuffled().take(5))
-        }
+        loadingPhrases.addAll(fallbackPhrases.shuffled().take(5))
+        OmniLog.i(Tag, "使用本地加载提示词，跳过远程生成: $taskGoal")
     }
 
     /**

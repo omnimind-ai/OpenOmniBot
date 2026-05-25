@@ -87,10 +87,6 @@ object VLMIndexedPageContext {
                 append("#").append(index)
                     .append(" center=(").append(norm(node.bounds.centerX, screen.left, screen.width))
                     .append(",").append(norm(node.bounds.centerY, screen.top, screen.height)).append(")")
-                    .append(" bounds=(").append(norm(node.bounds.left, screen.left, screen.width))
-                    .append(",").append(norm(node.bounds.top, screen.top, screen.height))
-                    .append(")-(").append(norm(node.bounds.right, screen.left, screen.width))
-                    .append(",").append(norm(node.bounds.bottom, screen.top, screen.height)).append(")")
                     .append(" flags=").append(node.flags())
                     .append(" role=").append(node.role)
                     .append(" label=\"").append(node.displayLabel.take(MAX_LABEL_CHARS)).append("\"")
@@ -608,14 +604,14 @@ object VLMIndexedPageContext {
     private const val MIN_FORM_FIELD_AREA = 200f
     private const val MAX_ELEMENT_AREA_RATIO = 0.72f
     private const val MAX_FORM_FIELD_AREA_RATIO = 0.60f
-    private const val MAX_ELEMENTS = 24
-    private const val MAX_SCROLLABLES = 4
-    private const val MAX_FORM_FIELDS = 8
-    private const val MAX_LABEL_CHARS = 90
+    private const val MAX_ELEMENTS = 18
+    private const val MAX_SCROLLABLES = 3
+    private const val MAX_FORM_FIELDS = 6
+    private const val MAX_LABEL_CHARS = 72
     private const val MAX_DESCENDANT_PARTS = 8
     private const val MAX_DESCENDANT_CHARS = 120
-    private const val MAX_SECTION_CHARS = 3_600
-    private const val MAX_CONTEXT_CHARS = 5_000
+    private const val MAX_SECTION_CHARS = 2_600
+    private const val MAX_CONTEXT_CHARS = 3_600
     private const val MARKED_SCREENSHOT_JPEG_QUALITY = 92
     private val FORM_FIELD_TERMS = setOf(
         "name",

@@ -173,6 +173,14 @@ Guidelines:
   `scrollable_index` for `S<N>` rows, and keep `target_description` tied to that
   row's label. Treat the screenshot as visual confirmation and the indexed tree
   as the coordinate source.
+- The per-turn `Relevant installed apps` section is intentionally a compact
+  focused list, not the full package inventory. Use an exact package from that
+  list or the request `packageName` when opening an app; if the needed app is
+  absent, observe or ask for clarification instead of guessing a hidden package.
+- The per-turn prompt keeps stable tool/coordinate rules in the system prompt
+  and sends only a compact reminder plus live page evidence. Do not compensate
+  by adding long repeated protocol text to user goals; put validation criteria
+  in the goal and rely on the tool schema/system prompt for the action contract.
 - If the desired target is not present in the indexed element list and is not
   visually visible, scroll a listed scrollable region once, then re-observe. Do
   not tap the first unrelated row.
@@ -244,8 +252,10 @@ external clients can call the same names through MCP:
 - `oob_function_register` to register/update a reusable instruction. Prefer
   the simple shape (`functionId`, `name`, `description`, `steps`,
   optional `sourcePage`) during conversation; use full `functionSpec` only when
-  converting/importing an existing structured artifact. Include source page
-  context when available so it can attach to a UDEG node.
+  converting/importing an existing structured artifact. If `sourcePage` is
+  omitted, OOB tries to capture the current Accessibility XML/package as the
+  UDEG page anchor, so registration from the current screen can naturally become
+  page-match recall context.
 - `oob_function_guard_check` to check arguments, guard policy, and whether the
   Function can replay locally before any execution.
 - `oob_function_delete` to delete one Function and remove UDEG node references.
@@ -304,6 +314,11 @@ Simple registration example:
   ]
 }
 ```
+
+For screen-local Functions, call `oob_function_register` while the source page is
+visible and omit `sourcePage` unless you already have a captured XML. The stored
+Function should then attach to the current UDEG node and appear later as an
+optional candidate when the same page is matched.
 
 For page-scoped recall, include:
 

@@ -570,6 +570,11 @@ class OobOmniFlowToolkitService(
         val functionId = rawFunctionId.ifBlank {
             simpleFunctionIdFrom(name = name, description = description, now = now)
         }
+        val sourceContext = sourceContextFromRegistration(request)
+        val sourcePackageName = firstNonBlank(
+            mapArg(sourceContext["src_ctx"])["package_name"],
+            mapArg(sourceContext["src_ctx"])["packageName"],
+        )
         val packageName = firstNonBlank(
             request["packageName"],
             request["package_name"],
@@ -579,8 +584,8 @@ class OobOmniFlowToolkitService(
             mapArg(request["sourcePage"])["packageName"],
             mapArg(request["source_page"])["package_name"],
             mapArg(request["source_page"])["packageName"],
+            sourcePackageName,
         )
-        val sourceContext = sourceContextFromRegistration(request)
         val normalizedSteps = steps.mapIndexed { index, raw ->
             normalizeSimpleRegisteredStep(
                 raw = raw,
@@ -605,6 +610,10 @@ class OobOmniFlowToolkitService(
                 "goal" to firstNonBlank(request["goal"], description),
                 "package_name" to packageName.takeIf { it.isNotBlank() },
                 "registered_via" to "oob_function_register.simple",
+                "source_context_mode" to firstNonBlank(
+                    mapArg(sourceContext["_oob_meta"])["mode"],
+                    "none"
+                ).takeIf { sourceContext.isNotEmpty() },
                 "registered_at" to now,
             ).filterValues { it != null },
             "execution" to linkedMapOf(
@@ -822,7 +831,7 @@ class OobOmniFlowToolkitService(
             .ifEmpty { mapArg(request["source_page"]) }
             .ifEmpty { mapArg(request["currentPage"]) }
             .ifEmpty { mapArg(request["current_page"]) }
-        val pageXml = firstNonBlank(
+        val pageXmlFromRequest = firstNonBlank(
             sourcePage["page"],
             sourcePage["xml"],
             sourcePage["observation_xml"],
@@ -833,8 +842,7 @@ class OobOmniFlowToolkitService(
             request["sourceXml"],
             request["xml"],
         )
-        if (pageXml.isBlank()) return emptyMap()
-        val packageName = firstNonBlank(
+        val requestPackageName = firstNonBlank(
             sourcePage["package_name"],
             sourcePage["packageName"],
             request["package_name"],
@@ -842,12 +850,61 @@ class OobOmniFlowToolkitService(
             request["current_package"],
             request["currentPackage"],
         )
-        val activityName = firstNonBlank(
+        val requestActivityName = firstNonBlank(
             sourcePage["activity_name"],
             sourcePage["activityName"],
             request["activity_name"],
             request["activityName"],
         )
+        val autoCaptureDisabled = boolArg(request["disable_current_page_capture"]) ||
+            boolArg(request["disableCurrentPageCapture"]) ||
+            boolArg(request["no_current_page_capture"]) ||
+            boolArg(request["noCurrentPageCapture"])
+        val autoCaptureAllowed = !autoCaptureDisabled
+        val capturedPage = if (pageXmlFromRequest.isBlank() && autoCaptureAllowed) {
+            currentPageSourceContext()
+        } else {
+            emptyMap()
+        }
+        val capturedSrcCtx = mapArg(capturedPage["src_ctx"])
+        val pageXml = firstNonBlank(pageXmlFromRequest, capturedSrcCtx["page"])
+        if (pageXml.isBlank()) return emptyMap()
+        val packageName = firstNonBlank(
+            requestPackageName,
+            capturedSrcCtx["package_name"],
+            capturedSrcCtx["packageName"],
+        )
+        val activityName = firstNonBlank(
+            requestActivityName,
+            capturedSrcCtx["activity_name"],
+            capturedSrcCtx["activityName"],
+        )
+        val mode = if (pageXmlFromRequest.isBlank()) "current_page_capture" else "explicit_request"
+        return linkedMapOf(
+            "src_ctx" to linkedMapOf(
+                "page" to pageXml,
+                "package_name" to packageName.takeIf { it.isNotBlank() },
+                "activity_name" to activityName.takeIf { it.isNotBlank() },
+                "require_unique_action_signature" to false,
+            ).filterValues { it != null },
+            "_oob_meta" to linkedMapOf(
+                "mode" to mode,
+                "captured_current_page" to (mode == "current_page_capture"),
+            ),
+        )
+    }
+
+    private fun currentPageSourceContext(): Map<String, Any?> {
+        val pageXml = runCatching {
+            OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
+        }.getOrDefault("")
+        if (pageXml.isBlank()) return emptyMap()
+        val packageName = runCatching {
+            OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
+        }.getOrDefault("")
+        val activityName = runCatching {
+            OmniflowActionRuntime.backend.currentActivityName()?.trim().orEmpty()
+        }.getOrDefault("")
         return linkedMapOf(
             "src_ctx" to linkedMapOf(
                 "page" to pageXml,

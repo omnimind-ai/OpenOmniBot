@@ -63,12 +63,26 @@ object VlmRecallGuidanceBuilder {
             )
         }
         val agentPayload = agentSafePayload(payload)
-        return VlmRecallGuidance(
-            decision = agentPayload["decision"]?.toString()?.trim().orEmpty().ifBlank { "miss" },
-            guidance = renderGuidance(agentPayload),
+        return fromAgentPayload(
             payload = agentPayload,
-            directHitFunctionId = directHitFunctionId(agentPayload),
-            directHitStartStepIndex = directHitStartStepIndex(agentPayload),
+            allowDirectExecutionDecision = allowDirectExecutionDecision,
+        )
+    }
+
+    internal fun fromAgentPayload(
+        payload: Map<String, Any?>,
+        allowDirectExecutionDecision: Boolean = false,
+    ): VlmRecallGuidance {
+        return VlmRecallGuidance(
+            decision = payload["decision"]?.toString()?.trim().orEmpty().ifBlank { "miss" },
+            guidance = renderGuidance(payload),
+            payload = payload,
+            directHitFunctionId = directHitFunctionId(payload).takeIf { allowDirectExecutionDecision },
+            directHitStartStepIndex = if (allowDirectExecutionDecision) {
+                directHitStartStepIndex(payload)
+            } else {
+                0
+            },
         )
     }
 

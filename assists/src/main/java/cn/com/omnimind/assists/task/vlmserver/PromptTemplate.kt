@@ -4,6 +4,7 @@ import cn.com.omnimind.assists.util.TimeUtil
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.i18n.PromptLocale
 import cn.com.omnimind.baselib.llm.ModelSceneRegistry
+import java.util.Locale
 
 /**
  * 主 VLM prompt 构造器：
@@ -76,13 +77,7 @@ object PromptTemplate {
         } else {
             t(locale, "暂无历史操作", "No prior execution history yet")
         }
-        val installedApps = if (context.installedApplications.isNotEmpty()) {
-            context.installedApplications.entries.joinToString("\n") { (packageName, appName) ->
-                "- ${packageName} -> ${appName}"
-            }
-        } else {
-            t(locale, "暂无数据", "No data")
-        }
+        val installedApps = renderFocusedInstalledApps(context, locale)
         val completedMilestones = if (context.completedMilestones.isNotEmpty()) {
             context.completedMilestones.joinToString(
                 separator = if (locale == PromptLocale.ZH_CN) "、" else ", "
@@ -148,66 +143,117 @@ object PromptTemplate {
             appendLine("${t(locale, "已完成里程碑", "Completed milestones")}: $completedMilestones")
             appendLine("${t(locale, "关键记忆", "Key memory")}: $keyMemory")
             appendLine("${t(locale, "历史总结", "History summary")}: $summaryHistory")
-            appendLine("${t(locale, "已安装应用", "Installed apps")}: $installedApps")
+            appendLine("${t(locale, "相关已安装应用", "Relevant installed apps")}: $installedApps")
             appendLine()
-            appendLine("${t(locale, "输出要求", "Output requirements")}:")
+            appendLine("${t(locale, "本轮提醒", "Turn reminder")}:")
             appendLine(
                 t(
                     locale,
-                    "1. 直接从 tools 列表中选择下一步动作，每轮只调用一个工具。",
-                    "1. Pick the next action directly from the tools list, and call exactly one tool per turn."
-                )
-            )
-            appendLine(
-                t(
-                    locale,
-                    "2. click/long_press 只填 x、y；scroll 只填 x1、y1、x2、y2；每个坐标字段都必须是单个数值。",
-                    "2. For click and long_press, only fill x and y. For scroll, only fill x1, y1, x2, and y2. Every coordinate field must be a single numeric scalar."
-                )
-            )
-            appendLine(
-                t(
-                    locale,
-                    "3. assistant.content 只写 observation/thought/summary 元信息；只有真正完成任务时才调用 finished。",
-                    "3. assistant.content may only contain observation / thought / summary metadata. Call finished only when the task is truly complete."
-                )
-            )
-            appendLine(
-                t(
-                    locale,
-                    "4. 只要返回 package_name 或 open_app.package_name，必须从上面的已安装应用列表中原样选择一个 package name；禁止猜测常见默认包名。",
-                    "4. When returning a package_name or open_app.package_name, you must select it verbatim from the installed apps list above. Never guess common default package names."
-                )
-            )
-            appendLine(
-                t(
-                    locale,
-                    "5. 如果目标应用有多个候选，优先使用已安装列表里的精确 package；例如联系人若存在 com.google.android.contacts，就必须使用它，不要改成 com.android.contacts。",
-                    "5. If the target app has multiple candidates, prefer the exact package from the installed list; e.g., if com.google.android.contacts exists, use it rather than com.android.contacts."
-                )
-            )
-            appendLine(
-                t(
-                    locale,
-                    "6. 如果当前任务需要打开某个应用，但已安装应用列表里没有明确 package，就不要猜；改用 info/feedback 请求更多信息或先通过界面观察确认。",
-                    "6. If the current task requires opening an app but the installed list lacks a clear package, do not guess; instead, use info/feedback to request more information or confirm by observing the UI."
-                )
-            )
-            appendLine(
-                t(
-                    locale,
-                    "7. 像 M3A/Mobilerun 一样每轮只推进一个可验证变化：先用当前 screenshot、Accessibility tree / OOB indexed page evidence 和上一轮 tool 结果判断当前页；动作后根据 appeared/disappeared/visible 文本继续，不要忽略失败或无变化反馈。",
-                    "7. Follow an M3A/Mobilerun-style one-change loop: use the current screenshot, Accessibility tree / OOB indexed page evidence, and previous tool result to judge the current page; after each action, continue from appeared/disappeared/visible text feedback and do not ignore failed or unchanged actions."
-                )
-            )
-            appendLine(
-                t(
-                    locale,
-                    "8. 不要输出停留、延时或空操作类动作；页面停留、加载和 XML 稳定判断由系统内部完成。若页面已经稳定，请选择一个可推进任务的语义动作：click、input_text、type、scroll、press_back、press_home、open_app、info、abort 或 finished。",
-                    "8. Do not output any idle, delay, or no-op action. Page settling, loading delay, and XML stability checks are handled internally. Once the page is stable, choose a semantic task-progressing action: click, input_text, type, scroll, press_back, press_home, open_app, info, abort, or finished."
+                    "遵守 system 协议：每轮恰好一个原生 tool_call；坐标必须是 0-1000 单个数值；优先使用 indexed evidence 的 element_index/scrollable_index；只有当前截图或工具结果证明任务已完成才调用 finished；不要输出等待/空操作。",
+                    "Follow the system protocol: exactly one native tool_call; coordinates are 0-1000 scalar values; prefer indexed evidence element_index/scrollable_index; call finished only when the current screenshot or tool result proves completion; do not output wait/no-op actions."
                 )
             )
         }.trim()
+    }
+
+    private fun renderFocusedInstalledApps(context: UIContext, locale: PromptLocale): String {
+        if (context.installedApplications.isEmpty()) {
+            return t(locale, "暂无数据", "No data")
+        }
+
+        val ranked = focusedInstalledAppEntries(context)
+        if (ranked.isEmpty()) {
+            return t(
+                locale,
+                "未找到与任务直接相关的候选；如需打开 App，请只使用已知 targetPackage 或先观察确认。",
+                "No directly relevant candidate found. If opening an app is required, use only the known targetPackage or observe first."
+            )
+        }
+
+        val rendered = ranked.joinToString("\n") { (packageName, appName) ->
+            "- $packageName -> $appName"
+        }
+        val hiddenCount = (context.installedApplications.size - ranked.size).coerceAtLeast(0)
+        val note = if (hiddenCount > 0) {
+            "\n" + t(
+                locale,
+                "注：这里只展示聚焦候选；不要猜未展示 package。",
+                "Note: only focused candidates are shown; do not guess hidden package names."
+            )
+        } else {
+            ""
+        }
+        return rendered + note
+    }
+
+    internal fun focusedInstalledAppEntries(context: UIContext): List<Map.Entry<String, String>> {
+        if (context.installedApplications.isEmpty()) return emptyList()
+        val targetPackage = context.targetPackageName.trim()
+        val currentPackage = context.currentPackageName.trim()
+        val queryTerms = appQueryTerms(context)
+
+        data class ScoredApp(
+            val entry: Map.Entry<String, String>,
+            val score: Int,
+            val originalIndex: Int
+        )
+
+        return context.installedApplications.entries
+            .mapIndexedNotNull { index, entry ->
+                val packageName = entry.key.trim()
+                val appName = entry.value.trim()
+                if (packageName.isBlank()) return@mapIndexedNotNull null
+                val packageLower = packageName.lowercase(Locale.ROOT)
+                val appLower = appName.lowercase(Locale.ROOT)
+                val packageTail = packageLower.substringAfterLast('.')
+
+                var score = 0
+                if (targetPackage.isNotBlank() && packageName.equals(targetPackage, ignoreCase = true)) score += 1000
+                if (currentPackage.isNotBlank() && packageName.equals(currentPackage, ignoreCase = true)) score += 800
+                queryTerms.forEach { term ->
+                    when {
+                        term.length <= 1 -> Unit
+                        appLower == term -> score += 120
+                        packageTail == term -> score += 110
+                        packageLower.endsWith(".$term") -> score += 90
+                        appLower.contains(term) -> score += 60
+                        packageLower.contains(term) -> score += 35
+                    }
+                }
+                if (score <= 0) return@mapIndexedNotNull null
+                ScoredApp(entry, score, index)
+            }
+            .sortedWith(
+                compareByDescending<ScoredApp> { it.score }
+                    .thenBy { it.originalIndex }
+            )
+            .map { it.entry }
+            .take(MAX_FOCUSED_INSTALLED_APPS)
+    }
+
+    private fun appQueryTerms(context: UIContext): Set<String> {
+        val raw = listOf(
+            context.overallTask,
+            context.currentStepGoal,
+            context.stepSkillGuidance,
+            context.currentState,
+            context.nextStepHint,
+            context.targetPackageName,
+            context.currentPackageName,
+        ).joinToString(" ")
+
+        val terms = linkedSetOf<String>()
+        Regex("""[\p{L}\p{N}._-]+""").findAll(raw.lowercase(Locale.ROOT)).forEach { match ->
+            val token = match.value.trim('.', '_', '-')
+            if (token.length < 2) return@forEach
+            if (token in APP_QUERY_STOP_WORDS) return@forEach
+            terms += token
+            token.split('.', '_', '-')
+                .map { it.trim() }
+                .filter { it.length >= 2 && it !in APP_QUERY_STOP_WORDS }
+                .forEach { terms += it }
+        }
+        return terms.take(MAX_APP_QUERY_TERMS).toSet()
     }
 
     fun buildToolCallRetryPrompt(context: UIContext, retryState: VLMToolCallRetryState): String {
@@ -298,4 +344,35 @@ object PromptTemplate {
         val normalized = text.replace("\r\n", "\n").trim()
         return if (normalized.length <= maxLen) normalized else normalized.take(maxLen) + "..."
     }
+
+    private const val MAX_FOCUSED_INSTALLED_APPS = 12
+    private const val MAX_APP_QUERY_TERMS = 24
+    private val APP_QUERY_STOP_WORDS = setOf(
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "into",
+        "then",
+        "after",
+        "open",
+        "start",
+        "stop",
+        "page",
+        "screen",
+        "task",
+        "app",
+        "application",
+        "android",
+        "com",
+        "设置",
+        "打开",
+        "应用",
+        "页面",
+        "任务",
+        "当前",
+        "然后",
+        "完成",
+    )
 }

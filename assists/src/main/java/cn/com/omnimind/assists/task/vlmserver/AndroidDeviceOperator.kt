@@ -4,17 +4,23 @@ package cn.com.omnimind.assists.task.vlmserver
  * Android设备操作器 - 基于现有的AccessibilityController实现
  */
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import BaseApplication
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.assists.api.eventapi.ExecutionTaskEventApi
+import cn.com.omnimind.baselib.util.APPPackageUtil
 import cn.com.omnimind.baselib.shizuku.ShizukuCapabilityManager
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.baselib.util.exception.PrivacyBlockedException
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import cn.com.omnimind.baselib.util.ImageQuality
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import kotlin.math.abs
@@ -429,18 +435,41 @@ class AndroidDeviceOperator(
      */
     override suspend fun launchApplication(packageName: String): OperationResult {
         return try {
+            if (!APPPackageUtil.isPackageAuthorized(packageName)) {
+                val appContext = context ?: BaseApplication.instance
+                val appName = APPPackageUtil.getAppName(appContext, packageName)
+                    .takeIf { it.isNotBlank() }
+                    ?: packageName
+                throw PrivacyBlockedException("应用 $appName 未授权，已被隐私设置限制")
+            }
 
-            AccessibilityController.launchApplication(packageName) { x, y ->
-
-                if (executionTaskEventApi != null) {
-                    executionTaskEventApi.clickCoordinate(x, y) {
-                        AccessibilityController.clickCoordinate(x, y)
+            val accessibilityReady = AccessibilityController.initController()
+            if (accessibilityReady) {
+                val accessibilityLaunch = runCatching {
+                    AccessibilityController.launchApplication(packageName) { x, y ->
+                        if (executionTaskEventApi != null) {
+                            executionTaskEventApi.clickCoordinate(x, y) {
+                                AccessibilityController.clickCoordinate(x, y)
+                            }
+                        } else {
+                            AccessibilityController.clickCoordinate(x, y)
+                        }
                     }
-                } else {
-                    AccessibilityController.clickCoordinate(x, y)
+                }
+                if (accessibilityLaunch.isSuccess) {
+                    return OperationResult(true, "启动应用 $packageName 成功", null)
+                }
+                accessibilityLaunch.exceptionOrNull()?.let { error ->
+                    if (error is PrivacyBlockedException) throw error
+                    OmniLog.w(Tag, "Accessibility launchApplication failed: ${error.message}")
                 }
             }
-            OperationResult(true, "启动应用 $packageName 成功", null)
+
+            if (launchApplicationByIntent(packageName)) {
+                OperationResult(true, "通过系统启动应用 $packageName 成功", null)
+            } else {
+                OperationResult(false, "启动应用失败: 无法通过无障碍或系统 Intent 启动 $packageName", null)
+            }
         } catch (e: PrivacyBlockedException) {
             // 隐私限制异常需要终止任务，重新抛出
             throw e
@@ -452,6 +481,30 @@ class AndroidDeviceOperator(
             OperationResult(false, "启动应用失败: ${e.message}", null)
         }
     }
+
+    private suspend fun launchApplicationByIntent(packageName: String): Boolean =
+        withContext(Dispatchers.Main) {
+            val appContext = context ?: BaseApplication.instance
+            val startContext = BaseApplication.foregroundActivity ?: appContext
+            val launchIntent = appContext.packageManager.getLaunchIntentForPackage(packageName)
+                ?: return@withContext false
+            return@withContext try {
+                launchIntent.addFlags(
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+                if (startContext !is Activity) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startContext.startActivity(launchIntent)
+                delay(800L)
+                true
+            } catch (e: Exception) {
+                OmniLog.e(Tag, "launchApplicationByIntent failed: ${e.message}", e)
+                false
+            }
+        }
 
     private suspend fun launchApplicationViaShizuku(packageName: String): OperationResult {
         val ctx = context ?: return OperationResult(false, "Shizuku 不可用", null)
