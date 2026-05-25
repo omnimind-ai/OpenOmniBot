@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -373,10 +374,19 @@ class HttpAgentLlmClient(
     private fun buildRequestVariants(request: ChatCompletionRequest): List<StreamRequestVariant> {
         val variants = mutableListOf<StreamRequestVariant>()
         val seenPayloads = LinkedHashSet<String>()
-        fun add(name: String, candidate: ChatCompletionRequest) {
+        fun addSingle(name: String, candidate: ChatCompletionRequest) {
             val encoded = json.encodeToString(candidate)
             if (seenPayloads.add(encoded)) {
                 variants.add(StreamRequestVariant(name = name, requestJson = encoded))
+            }
+        }
+        fun add(name: String, candidate: ChatCompletionRequest) {
+            addSingle(name, candidate)
+            rewriteToolImageMessagesForUserInput(candidate)?.let { rewritten ->
+                addSingle("${name}_tool_images_as_user", rewritten)
+            }
+            stripToolImageMessages(candidate)?.let { stripped ->
+                addSingle("${name}_tool_images_text_only", stripped)
             }
         }
 
@@ -577,4 +587,147 @@ class HttpAgentLlmClient(
             haystack.contains("no such model") ||
             haystack.contains("not found")
     }
+}
+
+private data class ToolImageMessageSplit(
+    val textOnlyMessage: ChatCompletionMessage,
+    val imageBlocks: List<JsonObject>
+)
+
+internal fun rewriteToolImageMessagesForUserInput(
+    request: ChatCompletionRequest
+): ChatCompletionRequest? {
+    val rewrittenMessages = mutableListOf<ChatCompletionMessage>()
+    val pendingImageMessages = mutableListOf<ChatCompletionMessage>()
+    var changed = false
+
+    fun flushPendingImageMessages() {
+        if (pendingImageMessages.isEmpty()) return
+        rewrittenMessages += pendingImageMessages
+        pendingImageMessages.clear()
+    }
+
+    request.messages.forEach { message ->
+        if (message.role == "tool") {
+            val split = splitToolImageMessage(message)
+            if (split == null) {
+                rewrittenMessages += message
+            } else {
+                changed = true
+                rewrittenMessages += split.textOnlyMessage
+                pendingImageMessages += buildToolImageUserMessage(
+                    toolCallId = message.toolCallId,
+                    imageBlocks = split.imageBlocks
+                )
+            }
+        } else {
+            flushPendingImageMessages()
+            rewrittenMessages += message
+        }
+    }
+    flushPendingImageMessages()
+
+    return if (changed) {
+        request.copy(messages = rewrittenMessages)
+    } else {
+        null
+    }
+}
+
+internal fun stripToolImageMessages(request: ChatCompletionRequest): ChatCompletionRequest? {
+    var changed = false
+    val strippedMessages = request.messages.map { message ->
+        val split = splitToolImageMessage(message)
+        if (split == null) {
+            message
+        } else {
+            changed = true
+            split.textOnlyMessage
+        }
+    }
+    return if (changed) {
+        request.copy(messages = strippedMessages)
+    } else {
+        null
+    }
+}
+
+private fun splitToolImageMessage(message: ChatCompletionMessage): ToolImageMessageSplit? {
+    if (message.role != "tool") return null
+    val content = message.content as? JsonArray ?: return null
+    val imageBlocks = content.mapNotNull { it as? JsonObject }
+        .filter(::isImageContentBlock)
+    if (imageBlocks.isEmpty()) return null
+
+    val textContent = content.mapNotNull(::extractTextFromNonImageBlock)
+        .joinToString(separator = "")
+        .ifBlank { message.contentText() }
+        .ifBlank { buildImageOmittedToolPayload(message) }
+    return ToolImageMessageSplit(
+        textOnlyMessage = message.copy(content = JsonPrimitive(textContent)),
+        imageBlocks = imageBlocks
+    )
+}
+
+private fun buildToolImageUserMessage(
+    toolCallId: String?,
+    imageBlocks: List<JsonObject>
+): ChatCompletionMessage {
+    val text = buildString {
+        append("The previous tool result")
+        toolCallId?.takeIf { it.isNotBlank() }?.let {
+            append(" (tool_call_id=")
+            append(it)
+            append(")")
+        }
+        append(" included image context. Use the attached image")
+        if (imageBlocks.size != 1) append("s")
+        append(" as visual context for that tool result.")
+    }
+    return ChatCompletionMessage(
+        role = "user",
+        content = JsonArray(
+            listOf(
+                JsonObject(
+                    mapOf(
+                        "type" to JsonPrimitive("text"),
+                        "text" to JsonPrimitive(text)
+                    )
+                )
+            ) + imageBlocks
+        )
+    )
+}
+
+private fun isImageContentBlock(block: JsonObject): Boolean {
+    val type = block.stringValue("type")
+    return type == "image_url" ||
+        type == "input_image" ||
+        block.containsKey("image_url")
+}
+
+private fun extractTextFromNonImageBlock(block: JsonElement): String? {
+    val obj = block as? JsonObject ?: return block.toString()
+    if (isImageContentBlock(obj)) return null
+    return when (obj.stringValue("type")) {
+        "text", "input_text" -> obj.stringValue("text")
+            ?: obj.stringValue("content")
+            ?: obj.toString()
+        else -> obj.stringValue("content")
+            ?: obj.stringValue("text")
+            ?: obj.toString()
+    }
+}
+
+private fun buildImageOmittedToolPayload(message: ChatCompletionMessage): String {
+    val toolCallId = message.toolCallId.orEmpty()
+    return if (toolCallId.isBlank()) {
+        "Tool returned image content omitted for provider compatibility."
+    } else {
+        "Tool returned image content omitted for provider compatibility. tool_call_id=$toolCallId"
+    }
+}
+
+private fun JsonObject.stringValue(key: String): String? {
+    return (this[key] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
 }
