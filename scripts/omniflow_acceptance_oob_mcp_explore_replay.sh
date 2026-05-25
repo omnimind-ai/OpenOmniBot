@@ -218,12 +218,12 @@ if guard.get("decision") not in {"allow", "needs_agent"}:
 
 function_spec = client.get_function(function_id)
 execution = as_dict(function_spec.get("execution"))
-compiled_steps = number_value(
+replayable_steps = number_value(
     execution.get("omniflow_step_count"),
     number_value(execution.get("step_count"), len(as_list(execution.get("steps")))),
 )
-if compiled_steps < 1:
-    fail("compiled_function_empty", "Generated Function does not contain replayable steps", function_spec)
+if replayable_steps < 1:
+    fail("replayable_function_empty", "Generated Function does not contain replayable steps", function_spec)
 
 print("explore_replay=ok")
 print(f"phase={result.get('phase')}")
@@ -232,7 +232,7 @@ print(f"function_id={function_id}")
 print("utg_schema=oob.omniflow_utg.v1")
 print(f"utg_edge_count={edge_count}")
 print(f"explore_step_count={step_count}")
-print(f"compiled_step_count={compiled_steps}")
+print(f"replayable_step_count={replayable_steps}")
 if replay:
     print("replay=ok")
 else:

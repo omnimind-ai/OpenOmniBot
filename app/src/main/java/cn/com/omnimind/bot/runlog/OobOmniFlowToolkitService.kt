@@ -1946,13 +1946,27 @@ class OobOmniFlowToolkitService(
             counts: Map<String, Any?>,
         ): Map<String, Any?> {
             val finishedAtMs = System.currentTimeMillis()
+            val completedPhases = linkedMapOf<String, Long>()
+            listOf(
+                "parse_request_ms",
+                "read_current_package_ms",
+                "read_current_page_ms",
+                "page_match_ms",
+                "rank_functions_ms",
+                "segment_match_ms",
+            ).forEach { phaseName ->
+                completedPhases[phaseName] = phases[phaseName] ?: 0L
+            }
+            phases.forEach { (phaseName, durationMs) ->
+                completedPhases.putIfAbsent(phaseName, durationMs)
+            }
             return linkedMapOf(
                 "source" to "oob_omniflow_recall",
                 "decision" to decision,
                 "started_at_ms" to startedAtMs,
                 "finished_at_ms" to finishedAtMs,
                 "duration_ms" to elapsedMs(startedAtNanos),
-                "phase_ms" to LinkedHashMap(phases),
+                "phase_ms" to completedPhases,
                 "counts" to counts,
             )
         }

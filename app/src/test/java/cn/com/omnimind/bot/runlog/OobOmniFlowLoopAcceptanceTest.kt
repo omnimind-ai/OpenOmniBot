@@ -103,10 +103,7 @@ class OobOmniFlowLoopAcceptanceTest {
             val recallTiming = requireNotNull(recall["timing"] as? Map<*, *>)
             assertEquals("oob_omniflow_recall", recallTiming["source"])
             assertTrue((recallTiming["duration_ms"] as Number).toLong() >= 0L)
-            val recallPhases = recallTiming["phase_ms"] as? Map<*, *>
-            assertTrue(recallPhases.orEmpty().containsKey("page_match_ms"))
-            assertTrue(recallPhases.orEmpty().containsKey("rank_functions_ms"))
-            assertTrue(recallPhases.orEmpty().containsKey("segment_match_ms"))
+            assertRecallTimingPhases(recallTiming)
             val currentNode = recall["current_node"] as? Map<*, *>
             assertNotNull(currentNode)
             val nodeSkill = currentNode?.get("skill") as? Map<*, *>
@@ -355,6 +352,7 @@ class OobOmniFlowLoopAcceptanceTest {
             val recallTiming = requireNotNull(recall["timing"] as? Map<*, *>)
             assertEquals("oob_omniflow_recall", recallTiming["source"])
             assertTrue((recallTiming["duration_ms"] as Number).toLong() >= 0L)
+            assertRecallTimingPhases(recallTiming)
             val recallCounts = recallTiming["counts"] as? Map<*, *>
             assertEquals(0, (recallCounts?.get("segment_candidates") as Number).toInt())
 
@@ -463,8 +461,7 @@ class OobOmniFlowLoopAcceptanceTest {
             assertNotNull(nodeSegment)
             assertEquals(1, (nodeSegment?.get("start_step_index") as Number).toInt())
             val timing = requireNotNull(recall["timing"] as? Map<*, *>)
-            val phases = timing["phase_ms"] as? Map<*, *>
-            assertTrue(phases.orEmpty().containsKey("segment_match_ms"))
+            assertRecallTimingPhases(timing)
             val counts = requireNotNull(timing["counts"] as? Map<*, *>)
             assertEquals(1, (counts["segment_candidates"] as Number).toInt())
             assertEquals(1, (counts["segment_scanned_functions"] as Number).toInt())
@@ -603,6 +600,24 @@ class OobOmniFlowLoopAcceptanceTest {
         assertTrue(payloadText.contains("\"page_vector\""))
         val indexFile = File(context.root, "workspace/.omnibot/skills/oob-udeg-node-skills/index.json")
         assertTrue(indexFile.exists())
+    }
+
+    private fun assertRecallTimingPhases(timing: Map<*, *>) {
+        val phases = requireNotNull(timing["phase_ms"] as? Map<*, *>)
+        listOf(
+            "parse_request_ms",
+            "read_current_package_ms",
+            "read_current_page_ms",
+            "page_match_ms",
+            "rank_functions_ms",
+            "segment_match_ms",
+        ).forEach { phaseName ->
+            assertTrue("missing timing phase $phaseName", phases.containsKey(phaseName))
+            assertTrue(
+                "negative timing phase $phaseName",
+                (phases[phaseName] as Number).toLong() >= 0L
+            )
+        }
     }
 
     private fun reusableFunctionSpec(
