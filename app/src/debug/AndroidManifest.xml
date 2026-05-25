@@ -42,6 +42,14 @@
             </intent-filter>
         </receiver>
         <receiver
+            android:name=".debug.DebugManualTraceReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="cn.com.omnimind.bot.debug.RUN_MANUAL_TRACE" />
+            </intent-filter>
+        </receiver>
+        <receiver
             android:name=".debug.DebugModelProviderConfigReceiver"
             android:enabled="true"
             android:exported="true">

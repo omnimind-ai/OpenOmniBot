@@ -2,6 +2,7 @@ package cn.com.omnimind.assists.task.vlmserver
 
 import android.content.Context
 import android.graphics.Rect
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import cn.com.omnimind.accessibility.service.AssistsService
@@ -166,7 +167,7 @@ class ManualVlmTraceRecorder(
             packageName = packageName,
             beforeXml = beforeXml,
             afterXml = afterXml,
-            startedAtMs = event.eventTime.takeIf { it > 0L } ?: now,
+            startedAtMs = eventWallTime(event.eventTime, now),
             finishedAtMs = now,
             summary = title
         ))
@@ -194,8 +195,7 @@ class ManualVlmTraceRecorder(
             text = safeText,
             beforeXml = pendingBeforeXml,
             startedAtMs = pendingText?.takeIf { it.nodeKey == key }?.startedAtMs
-                ?: event.eventTime.takeIf { it > 0L }
-                ?: now,
+                ?: eventWallTime(event.eventTime, now),
             updatedAtMs = now
         )
         lastXmlSnapshot = captureCurrentXml()
@@ -243,13 +243,15 @@ class ManualVlmTraceRecorder(
         val current = ScrollSnapshot(
             scrollX = event.scrollX,
             scrollY = event.scrollY,
+            scrollDeltaX = event.scrollDeltaX,
+            scrollDeltaY = event.scrollDeltaY,
             fromIndex = event.fromIndex,
             toIndex = event.toIndex,
             itemCount = event.itemCount
         )
         nodeScrollState[key] = current
 
-        val direction = inferScrollDirection(previous, current) ?: return
+        val direction = inferScrollDirection(previous, current) ?: fallbackScrollDirection(bounds)
         val now = System.currentTimeMillis()
         val pendingBeforeXml = pendingScroll?.takeIf { it.nodeKey == key }?.beforeXml ?: beforeXml
         pendingScroll = PendingScrollAction(
@@ -260,8 +262,7 @@ class ManualVlmTraceRecorder(
             direction = direction,
             beforeXml = pendingBeforeXml,
             startedAtMs = pendingScroll?.takeIf { it.nodeKey == key }?.startedAtMs
-                ?: event.eventTime.takeIf { it > 0L }
-                ?: now,
+                ?: eventWallTime(event.eventTime, now),
             updatedAtMs = now
         )
         lastXmlSnapshot = captureCurrentXml()
@@ -299,6 +300,12 @@ class ManualVlmTraceRecorder(
         previous: ScrollSnapshot?,
         current: ScrollSnapshot
     ): ManualScrollDirection? {
+        if (abs(current.scrollDeltaY) >= MIN_SCROLL_DELTA) {
+            return if (current.scrollDeltaY > 0) ManualScrollDirection.UP else ManualScrollDirection.DOWN
+        }
+        if (abs(current.scrollDeltaX) >= MIN_SCROLL_DELTA) {
+            return if (current.scrollDeltaX > 0) ManualScrollDirection.LEFT else ManualScrollDirection.RIGHT
+        }
         if (previous != null) {
             val dy = current.scrollY - previous.scrollY
             if (abs(dy) >= MIN_SCROLL_DELTA) {
@@ -317,6 +324,14 @@ class ManualVlmTraceRecorder(
             return ManualScrollDirection.UP
         }
         return null
+    }
+
+    private fun fallbackScrollDirection(bounds: Rect): ManualScrollDirection {
+        return if (bounds.height() >= bounds.width()) {
+            ManualScrollDirection.UP
+        } else {
+            ManualScrollDirection.LEFT
+        }
     }
 
     private fun swipeFromBounds(bounds: Rect, direction: ManualScrollDirection): SwipeParams {
@@ -411,6 +426,12 @@ class ManualVlmTraceRecorder(
         OmniLog.d(TAG, "manual trace recorded: ${action.actionName} ${action.summary}")
     }
 
+    private fun eventWallTime(eventTimeMs: Long, nowWallMs: Long): Long {
+        if (eventTimeMs <= 0L) return nowWallMs
+        val ageMs = (SystemClock.uptimeMillis() - eventTimeMs).coerceAtLeast(0L)
+        return (nowWallMs - ageMs).coerceAtMost(nowWallMs)
+    }
+
     private fun firstNonBlank(vararg values: String?): String {
         for (value in values) {
             val normalized = value?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
@@ -443,6 +464,8 @@ class ManualVlmTraceRecorder(
     private data class ScrollSnapshot(
         val scrollX: Int,
         val scrollY: Int,
+        val scrollDeltaX: Int,
+        val scrollDeltaY: Int,
         val fromIndex: Int,
         val toIndex: Int,
         val itemCount: Int
