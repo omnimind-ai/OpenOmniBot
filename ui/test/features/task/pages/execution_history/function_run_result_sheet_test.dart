@@ -12,6 +12,8 @@ void main() {
       'success': true,
       'goal': 'oob_reusable_function_run:open_settings',
       'function_id': 'open_settings',
+      'compile_kind': 'hit',
+      'compile_status': 'hit',
       'timing': <String, dynamic>{
         'started_at_ms': 1700000000000,
         'finished_at_ms': 1700000002450,
@@ -38,6 +40,11 @@ void main() {
             'tool': 'open_app',
             'executor': 'omniflow',
             'duration_ms': 120,
+            'compile_kind': 'hit',
+            'compile_result': <String, dynamic>{
+              'compile_status': 'hit',
+              'function_id': 'open_settings',
+            },
           },
         ],
       },
@@ -60,7 +67,10 @@ void main() {
         supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: SingleChildScrollView(
-            child: FunctionRunResultInlinePanel(result: result),
+            child: FunctionRunResultInlinePanel(
+              result: result,
+              showRawJson: true,
+            ),
           ),
         ),
       ),
@@ -83,6 +93,19 @@ void main() {
     expect(find.text('120ms'), findsNothing);
     expect(find.text('模型'), findsNothing);
     expect(find.text('Fallback'), findsNothing);
+
+    await tester.tap(find.text('原始结果'));
+    await tester.pumpAndSettle();
+
+    expect(_selectableTextContaining('route_kind'), findsOneWidget);
+    expect(_selectableTextContaining('route_status'), findsWidgets);
+    expect(_selectableTextContaining('route_result'), findsOneWidget);
+    expect(_selectableTextContaining('compile_kind'), findsNothing);
+    expect(_selectableTextContaining('compile_status'), findsNothing);
+    expect(_selectableTextContaining('compile_result'), findsNothing);
+    expect(_selectableTextContaining('duration_ms'), findsNothing);
+    expect(_selectableTextContaining('started_at_ms'), findsNothing);
+    expect(_selectableTextContaining('phase_ms'), findsNothing);
   });
 }
 

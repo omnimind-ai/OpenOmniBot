@@ -913,10 +913,35 @@ dynamic _stripInternalTiming(dynamic value) {
 
 String _prettyJson(dynamic value) {
   try {
-    return const JsonEncoder.withIndent('  ').convert(value);
+    return const JsonEncoder.withIndent('  ').convert(_userVisibleJson(value));
   } catch (_) {
-    return value.toString();
+    return _userVisibleString(value.toString());
   }
+}
+
+dynamic _userVisibleJson(dynamic value) {
+  if (value is String) {
+    return _userVisibleString(value);
+  }
+  if (value == null || value is num || value is bool) {
+    return value;
+  }
+  if (value is Map) {
+    return value.map(
+      (key, item) =>
+          MapEntry(_userVisibleString(key.toString()), _userVisibleJson(item)),
+    );
+  }
+  if (value is Iterable) {
+    return value.map(_userVisibleJson).toList(growable: false);
+  }
+  return _userVisibleString(value.toString());
+}
+
+String _userVisibleString(String value) {
+  return value
+      .replaceAll(RegExp('compile', caseSensitive: false), 'route')
+      .replaceAll('编译', '路由');
 }
 
 String _text(BuildContext context, String zh, String en) {
