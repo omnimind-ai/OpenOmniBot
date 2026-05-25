@@ -191,10 +191,12 @@ void main() {
     'Function run button invokes reusable function and shows running state',
     (tester) async {
       final runCompleter = Completer<Map<String, dynamic>>();
+      final methodCalls = <MethodCall>[];
       var runCalls = 0;
 
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(assistCoreChannel, (call) async {
+            methodCalls.add(call);
             if (call.method == 'listOobReusableFunctions') {
               return <String, dynamic>{
                 'success': true,
@@ -242,16 +244,65 @@ void main() {
 
       expect(runCalls, 1);
       expect(find.text('执行中'), findsOneWidget);
+      final runCall = methodCalls.singleWhere(
+        (call) => call.method == 'runOobReusableFunction',
+      );
+      expect(
+        Map<String, dynamic>.from(runCall.arguments as Map)['functionId'],
+        'open_settings',
+      );
 
       runCompleter.complete(<String, dynamic>{
         'success': true,
         'function_id': 'open_settings',
         'goal': 'oob_reusable_function_run:open_settings',
+        'timing': <String, dynamic>{
+          'started_at_ms': 1700000000000,
+          'finished_at_ms': 1700000002450,
+          'runner_duration_ms': 2450,
+          'phase_ms': <String, dynamic>{
+            'parse_request_ms': 3,
+            'read_current_package_ms': 4,
+            'read_current_page_ms': 5,
+            'page_match_ms': 6,
+            'rank_functions_ms': 7,
+            'segment_match_ms': 8,
+          },
+        },
         'terminal_state': <String, dynamic>{'status': 'completed'},
+        'context': <String, dynamic>{
+          'step_results': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'success': true,
+              'tool': 'open_app',
+              'executor': 'omniflow',
+              'duration_ms': 120,
+              'compile_kind': 'hit',
+              'compile_result': <String, dynamic>{
+                'compile_status': 'hit',
+                'function_id': 'open_settings',
+              },
+            },
+          ],
+        },
       });
       await tester.pumpAndSettle();
 
+      expect(find.text('Function 执行结果'), findsOneWidget);
+      expect(find.text('执行步骤 · 1'), findsOneWidget);
+      expect(_selectableTextContaining('duration_ms'), findsNothing);
+      expect(_selectableTextContaining('phase_ms'), findsNothing);
+      expect(_selectableTextContaining('parse_request_ms'), findsNothing);
+      expect(_selectableTextContaining('compile_kind'), findsNothing);
+
       expect(find.text('执行 Function'), findsOneWidget);
     },
+  );
+}
+
+Finder _selectableTextContaining(String text) {
+  return find.byWidgetPredicate(
+    (widget) => widget is SelectableText && widget.data?.contains(text) == true,
+    description: 'SelectableText containing "$text"',
   );
 }
