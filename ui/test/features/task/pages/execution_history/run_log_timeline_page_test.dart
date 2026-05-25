@@ -216,6 +216,190 @@ void main() {
     expect(_richTextContaining('执行方式  VLM'), findsOneWidget);
     expect(_richTextContaining('OmniFlow'), findsNothing);
   });
+
+  testWidgets(
+    'RunLog local execution registers the run and executes the generated Function',
+    (tester) async {
+      final methodCalls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(assistCoreChannel, (call) async {
+            methodCalls.add(call);
+            if (call.method == 'getInternalRunLogTimeline') {
+              return _runLogTimelinePayload(runId: 'run-vlm');
+            }
+            if (call.method == 'convertInternalRunLogToOobFunction') {
+              return <String, dynamic>{
+                'success': true,
+                'created_function_id': 'fn_from_runlog',
+                'function_id': 'fn_from_runlog',
+                'function_spec': <String, dynamic>{
+                  'schema_version': 'oob.reusable_function.v1',
+                  'function_id': 'fn_from_runlog',
+                  'name': '打开 Settings',
+                  'description': '打开 Android 设置',
+                  'parameters': <dynamic>[],
+                  'execution': <String, dynamic>{
+                    'kind': 'tool_sequence',
+                    'steps': <Map<String, dynamic>>[
+                      <String, dynamic>{
+                        'id': 'step_1',
+                        'index': 0,
+                        'tool': 'open_app',
+                        'executor': 'omniflow',
+                        'args': <String, dynamic>{
+                          'package_name': 'com.android.settings',
+                        },
+                      },
+                    ],
+                  },
+                },
+              };
+            }
+            if (call.method == 'runOobReusableFunction') {
+              return <String, dynamic>{
+                'success': true,
+                'function_id': 'fn_from_runlog',
+                'goal': 'oob_reusable_function_run:fn_from_runlog',
+                'terminal_state': <String, dynamic>{
+                  'runner': 'oob_omniflow_replay',
+                  'step_count': 1,
+                  'success_step_count': 1,
+                },
+                'step_results': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'success': true,
+                    'tool': 'open_app',
+                    'executor': 'omniflow',
+                    'duration_ms': 12,
+                  },
+                ],
+              };
+            }
+            return null;
+          });
+
+      await tester.pumpWidget(
+        _buildLocalizedApp(
+          locale: const Locale('zh'),
+          child: const RunLogTimelinePage(runId: 'run-vlm', title: ''),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('本地执行'), findsOneWidget);
+      await tester.tap(find.text('重放 RunLog'));
+      await tester.pumpAndSettle();
+
+      final convertCall = methodCalls.singleWhere(
+        (call) => call.method == 'convertInternalRunLogToOobFunction',
+      );
+      final convertArgs = Map<String, dynamic>.from(
+        convertCall.arguments as Map,
+      );
+      expect(convertArgs['runId'], 'run-vlm');
+      expect(convertArgs['register'], isTrue);
+
+      final runCall = methodCalls.singleWhere(
+        (call) => call.method == 'runOobReusableFunction',
+      );
+      final runArgs = Map<String, dynamic>.from(runCall.arguments as Map);
+      expect(runArgs['functionId'], 'fn_from_runlog');
+      expect(runArgs['arguments'], isA<Map>());
+      expect(find.text('RunLog 重放结果'), findsOneWidget);
+      expect(find.text('执行步骤 · 1'), findsOneWidget);
+    },
+  );
+}
+
+Map<String, dynamic> _runLogTimelinePayload({required String runId}) {
+  return <String, dynamic>{
+    'success': true,
+    'run_id': runId,
+    'run_finished': true,
+    'run_success': true,
+    'done_reason': 'finished',
+    'goal': '打开 Settings',
+    'token_usage': <String, dynamic>{
+      'prompt_tokens': 1000,
+      'completion_tokens': 234,
+      'total_tokens': 1234,
+      'step_count': 1,
+      'call_count': 2,
+    },
+    'token_usage_total': 1234,
+    'token_usage_by_step': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'step_index': 0,
+        'card_id': '$runId-1',
+        'tool_name': 'open_app',
+        'token_usage': <String, dynamic>{
+          'prompt_tokens': 1000,
+          'completion_tokens': 234,
+          'total_tokens': 1234,
+        },
+      },
+    ],
+    'token_usage_by_call': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'call_index': 0,
+        'step_index': 0,
+        'card_id': '$runId-1',
+        'tool_name': 'open_app',
+        'attempt_index': 1,
+        'token_usage': <String, dynamic>{
+          'prompt_tokens': 600,
+          'completion_tokens': 100,
+          'total_tokens': 700,
+        },
+      },
+      <String, dynamic>{
+        'call_index': 1,
+        'step_index': 0,
+        'card_id': '$runId-1',
+        'tool_name': 'open_app',
+        'attempt_index': 2,
+        'token_usage': <String, dynamic>{
+          'prompt_tokens': 400,
+          'completion_tokens': 134,
+          'total_tokens': 534,
+        },
+      },
+    ],
+    'cards': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'card_id': '$runId-1',
+        'compile_kind': 'vlm_step',
+        'source': 'vlm',
+        'header': <String, dynamic>{
+          'step_index': 0,
+          'success': true,
+          'duration_ms': 0,
+          'compile_kind': 'vlm_step',
+          'token_usage_total': 1234,
+          'token_usage': <String, dynamic>{
+            'prompt_tokens': 1000,
+            'completion_tokens': 234,
+            'total_tokens': 1234,
+          },
+        },
+        'token_usage': <String, dynamic>{
+          'prompt_tokens': 1000,
+          'completion_tokens': 234,
+          'total_tokens': 1234,
+        },
+        'tool_call': <String, dynamic>{
+          'id': '$runId-1',
+          'name': 'open_app',
+          'arguments': <String, dynamic>{
+            'package_name': 'com.android.settings',
+            'goal': '目标应用已打开',
+          },
+        },
+        'result': <String, dynamic>{'message': '目标应用已打开'},
+        'before': <String, dynamic>{'package_name': 'com.android.settings'},
+      },
+    ],
+  };
 }
 
 Widget _buildLocalizedApp({required Locale locale, required Widget child}) {

@@ -254,7 +254,7 @@ Keep v1 small:
 
 Default output is static HTML/CSS/native JS under `frontend/html/`.
 
-Do not generate React by default. If React is justified, it must compile to static files that the Project WebView can load from `frontend/html/`. The WebView must never depend on a dev server.
+Do not generate React by default. If React is justified, it must be bundled into static files that the Project WebView can load from `frontend/html/`. The WebView must never depend on a dev server.
 
 ### Required UI Contract
 
