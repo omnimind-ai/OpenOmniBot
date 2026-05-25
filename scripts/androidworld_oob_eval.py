@@ -396,6 +396,17 @@ def nested_get(data: dict[str, Any], *keys: str) -> Any:
     return current
 
 
+def as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def first_present(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
 def now_ms() -> int:
     return time.time_ns() // 1_000_000
 
@@ -476,9 +487,10 @@ def extract_function_id(vlm_result: dict[str, Any]) -> str:
 
 
 def summarize_vlm_result(result: dict[str, Any]) -> dict[str, Any]:
-    outcome = result.get("outcome") if isinstance(result.get("outcome"), dict) else {}
-    token_usage = result.get("token_usage") if isinstance(result.get("token_usage"), dict) else {}
-    convert = result.get("convert") if isinstance(result.get("convert"), dict) else {}
+    outcome = as_dict(result.get("outcome"))
+    token_usage = as_dict(result.get("token_usage"))
+    convert = as_dict(result.get("convert"))
+    timing = as_dict(result.get("timing"))
     return {
         "success": result.get("success"),
         "run_id": result.get("run_id"),
@@ -494,18 +506,46 @@ def summarize_vlm_result(result: dict[str, Any]) -> dict[str, Any]:
         "convert_success": convert.get("success"),
         "function_id": extract_function_id(result),
         "direct_recall_completed": result.get("direct_recall_completed"),
+        "started_at_ms": first_present(
+            result.get("started_at_ms"),
+            timing.get("started_at_ms"),
+        ),
+        "finished_at_ms": first_present(
+            result.get("finished_at_ms"),
+            timing.get("finished_at_ms"),
+        ),
+        "duration_ms": first_present(
+            result.get("duration_ms"),
+            timing.get("duration_ms"),
+            timing.get("runner_duration_ms"),
+        ),
+        "phase_ms": first_present(result.get("phase_ms"), timing.get("phase_ms")),
     }
 
 
 def summarize_function_result(result: dict[str, Any]) -> dict[str, Any]:
     step_results = result.get("step_results") or nested_get(result, "result", "step_results") or []
-    timing = result.get("timing") or nested_get(result, "result", "timing") or {}
+    timing = as_dict(result.get("timing") or nested_get(result, "result", "timing"))
     return {
         "success": result.get("success"),
         "fallback": result.get("fallback"),
         "guard_decision": nested_get(result, "guard", "decision") or result.get("guard_decision"),
         "step_count": len(step_results) if isinstance(step_results, list) else None,
-        "runner_duration_ms": timing.get("runner_duration_ms") if isinstance(timing, dict) else None,
+        "runner_duration_ms": timing.get("runner_duration_ms"),
+        "started_at_ms": first_present(
+            result.get("started_at_ms"),
+            timing.get("started_at_ms"),
+        ),
+        "finished_at_ms": first_present(
+            result.get("finished_at_ms"),
+            timing.get("finished_at_ms"),
+        ),
+        "duration_ms": first_present(
+            result.get("duration_ms"),
+            timing.get("duration_ms"),
+            timing.get("runner_duration_ms"),
+        ),
+        "phase_ms": first_present(result.get("phase_ms"), timing.get("phase_ms")),
     }
 
 

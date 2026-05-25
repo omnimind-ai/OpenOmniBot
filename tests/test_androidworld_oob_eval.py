@@ -112,6 +112,61 @@ class AndroidWorldOobEvalTest(unittest.TestCase):
 
         self.assertEqual(module.resolve_live_tasks(args), module.SIMPLE_VALIDATION_TASKS)
 
+    def test_oob_summaries_preserve_runtime_statistics(self):
+        module = load_script_module()
+
+        vlm_summary = module.summarize_vlm_result(
+            {
+                "success": True,
+                "run_id": "run-1",
+                "outcome": {"status": "FINISHED", "executionRoute": "vlm"},
+                "token_usage": {"total_tokens": 42, "call_count": 2},
+                "token_usage_by_step": [{"step_index": 0}],
+                "token_usage_by_call": [{"call_index": 0}, {"call_index": 1}],
+                "convert": {"success": True, "function_id": "fn-1"},
+                "timing": {
+                    "started_at_ms": 100,
+                    "finished_at_ms": 250,
+                    "duration_ms": 150,
+                    "phase_ms": {
+                        "parse_request_ms": 1,
+                        "read_current_page_ms": 2,
+                    },
+                },
+            }
+        )
+        self.assertEqual(vlm_summary["token_usage_total"], 42)
+        self.assertEqual(vlm_summary["token_usage_call_count"], 2)
+        self.assertEqual(vlm_summary["token_usage_by_step_count"], 1)
+        self.assertEqual(vlm_summary["token_usage_by_call_count"], 2)
+        self.assertEqual(vlm_summary["started_at_ms"], 100)
+        self.assertEqual(vlm_summary["finished_at_ms"], 250)
+        self.assertEqual(vlm_summary["duration_ms"], 150)
+        self.assertEqual(vlm_summary["phase_ms"]["read_current_page_ms"], 2)
+
+        function_summary = module.summarize_function_result(
+            {
+                "success": True,
+                "guard": {"decision": "allow"},
+                "result": {
+                    "step_results": [{"success": True}],
+                    "timing": {
+                        "started_at_ms": 300,
+                        "finished_at_ms": 340,
+                        "runner_duration_ms": 40,
+                        "phase_ms": {"execute_steps_ms": 39},
+                    },
+                },
+            }
+        )
+        self.assertEqual(function_summary["step_count"], 1)
+        self.assertEqual(function_summary["guard_decision"], "allow")
+        self.assertEqual(function_summary["started_at_ms"], 300)
+        self.assertEqual(function_summary["finished_at_ms"], 340)
+        self.assertEqual(function_summary["duration_ms"], 40)
+        self.assertEqual(function_summary["runner_duration_ms"], 40)
+        self.assertEqual(function_summary["phase_ms"]["execute_steps_ms"], 39)
+
 
 if __name__ == "__main__":
     unittest.main()
