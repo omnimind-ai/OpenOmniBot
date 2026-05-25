@@ -1963,6 +1963,8 @@ class _ReusableFunctionSpecSheetState
     final isDark = context.isDarkTheme;
     final sheetHeight = MediaQuery.of(context).size.height * 0.55;
     final hasRegisteredFunction = _registeredFunctionId.isNotEmpty;
+    final functionJsonForUser = _functionJsonForUser;
+    final agentPromptForUser = _agentPromptForUser;
 
     return GestureDetector(
       onTap: () => Navigator.of(context, rootNavigator: true).maybePop(),
@@ -2078,7 +2080,7 @@ class _ReusableFunctionSpecSheetState
                               color: palette.textSecondary,
                               onPressed: () => _copyText(
                                 context,
-                                spec.prettyJson,
+                                functionJsonForUser,
                                 _text(
                                   context,
                                   '已复制 Function JSON',
@@ -2226,7 +2228,7 @@ class _ReusableFunctionSpecSheetState
                                     ),
                                     onTap: () => _copyText(
                                       context,
-                                      spec.prettyJson,
+                                      functionJsonForUser,
                                       _text(
                                         context,
                                         '已复制 Function JSON',
@@ -2246,7 +2248,7 @@ class _ReusableFunctionSpecSheetState
                                     ),
                                     onTap: () => _copyText(
                                       context,
-                                      spec.agentPrompt,
+                                      agentPromptForUser,
                                       _text(
                                         context,
                                         '已复制 Agent 提示',
@@ -2264,8 +2266,8 @@ class _ReusableFunctionSpecSheetState
                                 'Function JSON',
                                 'Function JSON',
                               ),
-                              copyValue: spec.prettyJson,
-                              child: _JsonText(text: spec.prettyJson),
+                              copyValue: functionJsonForUser,
+                              child: _JsonText(text: functionJsonForUser),
                             ),
                             const SizedBox(height: 12),
                             _DetailSection(
@@ -2274,8 +2276,8 @@ class _ReusableFunctionSpecSheetState
                                 'Agent 复用提示',
                                 'Agent reuse prompt',
                               ),
-                              copyValue: spec.agentPrompt,
-                              child: _JsonText(text: spec.agentPrompt),
+                              copyValue: agentPromptForUser,
+                              child: _JsonText(text: agentPromptForUser),
                             ),
                             if (_apiCallJson.trim().isNotEmpty) ...[
                               const SizedBox(height: 12),
@@ -2520,6 +2522,10 @@ class _ReusableFunctionSpecSheetState
     return _defaultArgumentsForFunctionSpec(spec.json);
   }
 
+  String get _functionJsonForUser => _prettyUserJson(spec.json);
+
+  String get _agentPromptForUser => _userVisibleString(spec.agentPrompt);
+
   Map<String, dynamic> _scheduleSuggestionData(String functionId) {
     return {
       'targetKind': 'subagent',
@@ -2533,9 +2539,7 @@ class _ReusableFunctionSpecSheetState
   }
 
   String _scheduledFunctionPrompt(String functionId) {
-    final argumentsJson = const JsonEncoder.withIndent(
-      '  ',
-    ).convert(_defaultArguments);
+    final argumentsJson = _prettyUserJson(_defaultArguments);
     if (_localeValue(context, zh: false, en: true)) {
       return [
         'Execute this already registered OOB function now. Do not create, update, or discuss the schedule.',
@@ -2547,7 +2551,7 @@ class _ReusableFunctionSpecSheetState
         'Execution rule: call the OOB function API with the arguments above. The runtime executes executor=omniflow/model_free steps locally without a model call; executor=tool uses step.callable_tool; executor=agent or validation mismatch may re-plan with step.agent_call/fallback prompt.',
         '',
         'Function JSON:',
-        spec.prettyJson,
+        _functionJsonForUser,
       ].join('\n');
     }
     return [
@@ -2560,7 +2564,7 @@ class _ReusableFunctionSpecSheetState
       '执行规则：用上面的参数调用 OOB function API。运行时会把 executor=omniflow/model_free 的步骤本地执行，不调用模型；executor=tool 调用 step.callable_tool；executor=agent 或 validation 不匹配时可使用 step.agent_call/fallback prompt 重规划。',
       '',
       'Function JSON:',
-      spec.prettyJson,
+      _functionJsonForUser,
     ].join('\n');
   }
 
@@ -2582,7 +2586,7 @@ class _ReusableFunctionSpecSheetState
     if (functionId.isEmpty) {
       return '';
     }
-    return const JsonEncoder.withIndent('  ').convert({
+    return _prettyUserJson({
       'api': 'AssistsMessageService.runOobReusableFunction',
       'body': {
         'function_id': functionId,

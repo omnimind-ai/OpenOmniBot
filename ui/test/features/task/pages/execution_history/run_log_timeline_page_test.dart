@@ -335,6 +335,92 @@ void main() {
       expect(find.text('执行步骤 · 1'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'RunLog registration sheet hides compile keys in generated Function JSON',
+    (tester) async {
+      final methodCalls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(assistCoreChannel, (call) async {
+            methodCalls.add(call);
+            if (call.method == 'getInternalRunLogTimeline') {
+              return _runLogTimelinePayload(runId: 'run-vlm');
+            }
+            if (call.method == 'convertInternalRunLogToOobFunction') {
+              return <String, dynamic>{
+                'success': true,
+                'registered': true,
+                'created_function_id': 'fn_from_runlog',
+                'function_id': 'fn_from_runlog',
+                'function_spec': <String, dynamic>{
+                  'schema_version': 'oob.reusable_function.v1',
+                  'function_id': 'fn_from_runlog',
+                  'name': '打开 Settings',
+                  'description': '打开 Android 设置',
+                  'compile_kind': 'hit',
+                  'parameters': <dynamic>[],
+                  'execution': <String, dynamic>{
+                    'kind': 'tool_sequence',
+                    'steps': <Map<String, dynamic>>[
+                      <String, dynamic>{
+                        'id': 'step_1',
+                        'index': 0,
+                        'title': '打开 Settings',
+                        'kind': 'omniflow_action',
+                        'tool': 'open_app',
+                        'executor': 'omniflow',
+                        'compile_result': <String, dynamic>{
+                          'compile_status': 'hit',
+                          'function_id': 'fn_from_runlog',
+                        },
+                        'args': <String, dynamic>{
+                          'package_name': 'com.android.settings',
+                        },
+                      },
+                    ],
+                  },
+                },
+              };
+            }
+            return null;
+          });
+
+      await tester.pumpWidget(
+        _buildLocalizedApp(
+          locale: const Locale('zh'),
+          child: const RunLogTimelinePage(runId: 'run-vlm', title: ''),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('注册 Function').last);
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 500)),
+      );
+
+      final convertCall = methodCalls.singleWhere(
+        (call) => call.method == 'convertInternalRunLogToOobFunction',
+      );
+      final convertArgs = Map<String, dynamic>.from(
+        convertCall.arguments as Map,
+      );
+      expect(convertArgs['runId'], 'run-vlm');
+      expect(convertArgs['register'], isTrue);
+
+      await _pumpUntilFound(
+        tester,
+        find.text('Function JSON', skipOffstage: false),
+      );
+      expect(find.text('Function JSON', skipOffstage: false), findsOneWidget);
+      expect(_selectableTextContaining('route_kind'), findsWidgets);
+      expect(_selectableTextContaining('route_result'), findsWidgets);
+      expect(_selectableTextContaining('route_status'), findsWidgets);
+      expect(_selectableTextContaining('compile_kind'), findsNothing);
+      expect(_selectableTextContaining('compile_result'), findsNothing);
+      expect(_selectableTextContaining('compile_status'), findsNothing);
+    },
+  );
 }
 
 Map<String, dynamic> _runLogTimelinePayload({required String runId}) {
@@ -453,4 +539,13 @@ Finder _selectableTextContaining(String text) {
     (widget) => widget is SelectableText && widget.data?.contains(text) == true,
     description: 'SelectableText containing "$text"',
   );
+}
+
+Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
+  for (var i = 0; i < 50; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (finder.evaluate().isNotEmpty) {
+      return;
+    }
+  }
 }
