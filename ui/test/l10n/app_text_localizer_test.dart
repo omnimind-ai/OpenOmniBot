@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
@@ -6,6 +9,25 @@ import 'package:ui/models/chat_message_model.dart';
 
 void main() {
   tearDown(AppTextLocalizer.clearResolvedLocale);
+
+  test('localized user-facing strings do not expose compile wording', () {
+    for (final path in const ['lib/l10n/app_en.arb', 'lib/l10n/app_zh.arb']) {
+      final file = File(path);
+      final data = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      for (final entry in data.entries) {
+        if (entry.key.startsWith('@') || entry.value is! String) {
+          continue;
+        }
+        final value = (entry.value as String).toLowerCase();
+        expect(value, isNot(contains('compile')), reason: '$path:${entry.key}');
+        expect(
+          entry.value,
+          isNot(contains('编译')),
+          reason: '$path:${entry.key}',
+        );
+      }
+    }
+  });
 
   test('uses active locale override for source-text translations', () {
     AppTextLocalizer.setResolvedLocale(const Locale('zh'));
