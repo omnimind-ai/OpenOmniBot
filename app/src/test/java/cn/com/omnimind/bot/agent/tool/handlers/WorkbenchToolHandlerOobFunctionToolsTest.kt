@@ -40,6 +40,82 @@ import org.junit.Test
 
 class WorkbenchToolHandlerOobFunctionToolsTest {
     @Test
+    fun `agent workbench handler registers simple oob functions without full spec`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val helper = SharedHelper(
+                context = context,
+                json = Json {
+                    ignoreUnknownKeys = true
+                    isLenient = true
+                    encodeDefaults = false
+                },
+            )
+            val handler = WorkbenchToolHandler(helper)
+            val env = FakeEnv(context)
+            val functionId = "agent_simple_open_settings"
+
+            val register = handler.execute(
+                toolCall = toolCall("oob_function_register"),
+                args = buildJsonObject {
+                    put("functionId", JsonPrimitive(functionId))
+                    put("name", JsonPrimitive("Open Settings"))
+                    put("description", JsonPrimitive("Launch Android Settings"))
+                    put("steps", mapToJson(listOf(
+                        mapOf(
+                            "action" to "open_app",
+                            "packageName" to "com.android.settings",
+                        ),
+                        mapOf(
+                            "action" to "finished",
+                            "content" to "Settings opened",
+                        ),
+                    )))
+                },
+                runtimeDescriptor = descriptor("oob_function_register"),
+                env = env,
+                callback = NoOpAgentCallback,
+                toolHandle = NoOpAgentRunControl.beginToolExecution(
+                    "oob_function_register",
+                    "register-simple",
+                ),
+            )
+            assertContextSuccess(register)
+            val registerPayload = payloadObject(register)
+            assertEquals(
+                "simple",
+                registerPayload["registration_input_mode"]?.jsonPrimitive?.contentOrNull,
+            )
+
+            val stored = OobRunLogReplayService(context).getFunctionSpec(functionId)
+            assertNotNull(stored)
+            assertEquals("oob.reusable_function.v1", stored?.get("schema_version"))
+            val execution = stored?.get("execution") as? Map<*, *>
+            assertEquals(2, (execution?.get("step_count") as Number).toInt())
+            assertEquals(false, execution["requires_agent_fallback"])
+
+            val guard = handler.execute(
+                toolCall = toolCall("oob_function_guard_check"),
+                args = buildJsonObject {
+                    put("functionId", JsonPrimitive(functionId))
+                },
+                runtimeDescriptor = descriptor("oob_function_guard_check"),
+                env = env,
+                callback = NoOpAgentCallback,
+                toolHandle = NoOpAgentRunControl.beginToolExecution(
+                    "oob_function_guard_check",
+                    "guard",
+                ),
+            )
+            assertContextSuccess(guard)
+            val guardPayload = payloadObject(guard)
+            assertEquals("allow", guardPayload["decision"]?.jsonPrimitive?.contentOrNull)
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `agent workbench handler registers lists and deletes explicit oob functions`() = runBlocking {
         val context = TempFilesContext()
         try {

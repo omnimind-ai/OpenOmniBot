@@ -20,6 +20,68 @@ import org.junit.Test
 
 class OobOmniFlowLoopAcceptanceTest {
     @Test
+    fun `simple function registration builds structured spec and UDEG recall candidate`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val functionId = "simple_settings_from_agent"
+
+            val register = toolkit.registerFunction(
+                mapOf(
+                    "functionId" to functionId,
+                    "name" to "Open Settings",
+                    "description" to "Open Android Settings from the launcher",
+                    "packageName" to "com.android.settings",
+                    "sourcePage" to mapOf(
+                        "xml" to SOURCE_XML,
+                        "packageName" to "com.example.settings",
+                    ),
+                    "steps" to listOf(
+                        mapOf(
+                            "action" to "open_app",
+                            "packageName" to "com.android.settings",
+                        ),
+                        mapOf(
+                            "action" to "finished",
+                            "content" to "Settings opened",
+                        ),
+                    ),
+                )
+            )
+
+            assertEquals(true, register["success"])
+            assertEquals("simple", register["registration_input_mode"])
+            val stored = toolkit.getFunction(mapOf("function_id" to functionId))
+            assertEquals(functionId, stored["function_id"])
+            val execution = stored["execution"] as? Map<*, *>
+            assertEquals(2, (execution?.get("step_count") as Number).toInt())
+            assertEquals(false, execution["requires_agent_fallback"])
+
+            val guard = toolkit.guardCheck(mapOf("functionId" to functionId))
+            assertEquals(true, guard["success"])
+            assertEquals("allow", guard["decision"])
+
+            val recall = toolkit.recall(
+                mapOf(
+                    "goal" to "open settings",
+                    "current_package" to "com.example.settings",
+                    "current_xml" to SOURCE_XML,
+                    "k" to 3,
+                )
+            )
+            assertEquals(true, recall["success"])
+            assertEquals("agent_compact", recall["payload_mode"])
+            val candidates = recall["candidates"] as? List<*>
+            val firstCandidate = candidates?.firstOrNull() as? Map<*, *>
+            assertEquals(functionId, firstCandidate?.get("function_id"))
+            val policy = recall["decision_policy"] as? Map<*, *>
+            assertEquals("node_skill_context_only", policy?.get("mode"))
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `explored run log registers recalls and replays through local omniflow runner`() = runBlocking {
         val context = TempFilesContext()
         try {

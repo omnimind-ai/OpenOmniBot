@@ -403,13 +403,24 @@ BEHAVIOR:
 
     val oobFunctionRegisterTool = mapOf(
         "name" to "oob_function_register",
-        "description" to "Register or update one OOB reusable Function spec.",
+        "description" to "Register or update one OOB reusable Function. Prefer the simple shape {functionId,name,description,steps,sourcePage}; pass functionSpec only when you already have a full oob.reusable_function.v1 spec. Registration never auto-executes the Function.",
         "inputSchema" to mapOf(
             "type" to "object",
             "properties" to mapOf(
-                "functionSpec" to mapOf("type" to "object", "description" to "Reusable Function spec object.")
-            ),
-            "required" to listOf("functionSpec")
+                "functionId" to mapOf("type" to "string", "description" to "Optional stable Function id. Generated from name when omitted."),
+                "function_id" to mapOf("type" to "string", "description" to "Snake-case alias for functionId."),
+                "name" to mapOf("type" to "string", "description" to "User-readable Function name."),
+                "description" to mapOf("type" to "string", "description" to "One-sentence description of when to reuse this Function."),
+                "packageName" to mapOf("type" to "string", "description" to "Optional target/source app package for page-scoped recall."),
+                "sourcePage" to mapOf("type" to "object", "description" to "Optional source page context, for example {xml, packageName, activityName}."),
+                "parameters" to mapOf("type" to "array", "description" to "Optional Function parameter descriptors with name/type/required/default/bindings."),
+                "steps" to mapOf(
+                    "type" to "array",
+                    "description" to "Simple step list. Each item may include action/tool, title, args/arguments, packageName, x/y, direction, content, key, functionId. Supports open_app, click, long_press, input_text, swipe, press_back, press_home, press_key, finished, call_tool.",
+                    "items" to mapOf("type" to "object")
+                ),
+                "functionSpec" to mapOf("type" to "object", "description" to "Optional full oob.reusable_function.v1 spec object.")
+            )
         )
     )
 

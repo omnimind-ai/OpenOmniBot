@@ -123,6 +123,27 @@ class AgentToolDefinitionsMusicTest {
     }
 
     @Test
+    fun `oob function register exposes simple conversation schema`() {
+        val registerTool = AgentToolDefinitions.staticTools()
+            .first { definition ->
+                ((definition["function"] as? JsonObject)
+                    ?.get("name")
+                    ?.jsonPrimitive
+                    ?.contentOrNull) == "oob_function_register"
+            }
+        val function = registerTool["function"] as JsonObject
+        val parameters = function["parameters"] as JsonObject
+        val properties = parameters["properties"] as JsonObject
+
+        assertTrue(properties.containsKey("functionId"))
+        assertTrue(properties.containsKey("name"))
+        assertTrue(properties.containsKey("description"))
+        assertTrue(properties.containsKey("steps"))
+        assertTrue(properties.containsKey("sourcePage"))
+        assertTrue(properties.containsKey("functionSpec"))
+    }
+
+    @Test
     fun `workbench hot update accepts drawing frontend context`() {
         val hotUpdateTool = AgentToolDefinitions.staticTools()
             .first { definition ->

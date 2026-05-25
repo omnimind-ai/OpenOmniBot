@@ -2299,13 +2299,48 @@ object AgentToolDefinitions {
             put("name", "oob_function_register")
             put("displayName", "注册复用指令")
             put("toolType", "workbench")
-            put("description", "注册或更新一个 OOB 复用指令 Function spec。注册只沉淀能力，不代表在线 VLM 可以自动执行。")
+            put("description", "注册或更新一个 OOB 复用指令。优先使用轻量字段 functionId/name/description/steps；只有已有完整底层结构时才传 functionSpec。注册只沉淀能力，不代表在线 VLM 可以自动执行。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
+                    putJsonObject("functionId") {
+                        put("type", "string")
+                        put("description", "可选。复用指令 id；未传时会根据名称自动生成。")
+                    }
+                    putJsonObject("function_id") {
+                        put("type", "string")
+                        put("description", "functionId 的 snake-case 兼容字段。")
+                    }
+                    putJsonObject("name") {
+                        put("type", "string")
+                        put("description", "用户可读的复用指令名称。")
+                    }
+                    putJsonObject("description") {
+                        put("type", "string")
+                        put("description", "这条复用指令适合什么时候使用，写成一句自然语言简介。")
+                    }
+                    putJsonObject("packageName") {
+                        put("type", "string")
+                        put("description", "可选。目标或来源 App 包名，用于 UDEG 页面召回。")
+                    }
+                    putJsonObject("sourcePage") {
+                        put("type", "object")
+                        put("description", "可选。来源页面上下文，例如 {xml, packageName, activityName}；提供后可挂到 UDEG node。")
+                    }
+                    putJsonObject("parameters") {
+                        put("type", "array")
+                        put("description", "可选。Function 参数列表；每项可含 name/type/required/default/bindings。")
+                    }
+                    putJsonObject("steps") {
+                        put("type", "array")
+                        put("description", "轻量步骤列表。每步可用 action/tool、title、args/arguments、packageName、x/y、direction、content、functionId 等字段。支持 open_app/click/long_press/input_text/swipe/press_back/press_home/press_key/finished/call_tool。")
+                        putJsonObject("items") {
+                            put("type", "object")
+                        }
+                    }
                     putJsonObject("functionSpec") {
                         put("type", "object")
-                        put("description", "oob.reusable_function.v1 结构化 Function spec。")
+                        put("description", "可选。完整 oob.reusable_function.v1 结构化 Function spec；通常不需要手写。")
                     }
                     putJsonObject("function_spec") {
                         put("type", "object")

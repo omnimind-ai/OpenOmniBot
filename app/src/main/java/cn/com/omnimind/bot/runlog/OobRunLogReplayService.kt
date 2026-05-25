@@ -138,9 +138,6 @@ class OobRunLogReplayService(
             )
         }
         val success = registryResult["success"] == true
-        if (success) {
-            AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, true)
-        }
         return linkedMapOf(
             "success" to success,
             "function_id" to functionId,
@@ -230,7 +227,7 @@ class OobRunLogReplayService(
         val udegResult = OobUdegNodeStore(context).removeFunctionReferences(setOf(normalized))
         val deleted = deletedWorkspace || deletedPrefs
         if (listFunctionSpecs(limit = 1).isEmpty()) {
-            AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, false)
+            AgentToolFeatureStore.clearOobFunctionAsToolEnabled(context)
         }
         return linkedMapOf(
             "success" to deleted,
@@ -252,7 +249,7 @@ class OobRunLogReplayService(
         val workspaceResult = workspaceFunctionStore.clear()
         val registryResult = OobReusableFunctionStore.clear(context)
         val udegResult = OobUdegNodeStore(context).clearFunctionReferences()
-        AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, false)
+        AgentToolFeatureStore.clearOobFunctionAsToolEnabled(context)
         return linkedMapOf(
             "success" to true,
             "deleted" to true,
@@ -343,7 +340,10 @@ class OobRunLogReplayService(
             }
         }
         if (synced > 0) {
-            AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, true)
+            OmniLog.i(
+                TAG,
+                "synced workspace functions to local registry; oob function model-tool exposure remains user-controlled"
+            )
         }
     }
 

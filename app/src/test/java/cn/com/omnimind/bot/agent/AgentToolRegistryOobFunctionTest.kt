@@ -76,13 +76,58 @@ class AgentToolRegistryOobFunctionTest {
     }
 
     @Test
-    fun `registered oob function is exposed as agent tool and materializes changed argument`() {
+    fun `registered oob function is not exposed as model tool until feature is enabled`() {
+        val context = TempFilesContext()
+        try {
+            val functionId = "oob_registered_text_input"
+            val register = OobRunLogReplayService(context).registerFunctionSpec(functionSpec(functionId))
+            assertEquals(true, register["success"])
+            assertEquals(false, register["oob_function_as_tool_enabled"])
+
+            val registry = AgentToolRegistry(
+                context = context,
+                discoveredServers = emptyList(),
+            )
+
+            assertFalse(registry.toolsForModel.any { it.function.name == functionId })
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `legacy auto-enabled oob function tool preference is ignored until user explicitly opts in`() {
+        val context = TempFilesContext()
+        try {
+            context.getSharedPreferences("agent_tool_features", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("oob_function_as_tool_enabled", true)
+                .apply()
+            val functionId = "oob_legacy_auto_enabled"
+            val register = OobRunLogReplayService(context).registerFunctionSpec(functionSpec(functionId))
+            assertEquals(true, register["success"])
+            assertEquals(false, register["oob_function_as_tool_enabled"])
+
+            val registry = AgentToolRegistry(
+                context = context,
+                discoveredServers = emptyList(),
+            )
+
+            assertFalse(registry.toolsForModel.any { it.function.name == functionId })
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `registered oob function is exposed as agent tool after explicit feature enable and materializes changed argument`() {
         val context = TempFilesContext()
         try {
             val functionId = "oob_registered_text_input"
             val spec = functionSpec(functionId)
             val register = OobRunLogReplayService(context).registerFunctionSpec(spec)
             assertEquals(true, register["success"])
+            AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, true)
 
             val registry = AgentToolRegistry(
                 context = context,
@@ -139,6 +184,7 @@ class AgentToolRegistryOobFunctionTest {
             assertEquals("bad_id_with_dot", register["function_id"])
             assertEquals("bad_id_with_dot", register["created_function_id"])
             assertEquals("bad id.with.dot", register["normalized_from_function_id"])
+            AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, true)
 
             val stored = requireNotNull(
                 OobRunLogReplayService(context).getFunctionSpec("bad_id_with_dot")
@@ -187,6 +233,7 @@ class AgentToolRegistryOobFunctionTest {
             val register = OobRunLogReplayService(context)
                 .registerFunctionSpec(functionSpec(functionId))
             assertEquals(true, register["success"])
+            AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, true)
 
             val registry = AgentToolRegistry(
                 context = context,

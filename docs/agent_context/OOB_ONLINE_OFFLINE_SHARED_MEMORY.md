@@ -80,6 +80,14 @@ UI and tests:
 - Agent conversations expose `oob_function_list/get/register/guard_check/run/delete/clear`
   directly through the workbench tool handler. These are explicit management and
   execution tools; their presence does not change default context-only recall.
+- Registering or converting a Function does not enable Function-as-model-tool
+  exposure. `oobFunctionAsToolEnabled` is false by default and must be explicitly
+  enabled by the user/UI before Function ids are added to the model tool list.
+- `oob_function_register` accepts both full `oob.reusable_function.v1` specs and
+  a conversation-friendly simple shape: `functionId`, `name`, `description`,
+  `steps`, optional `parameters`, `packageName`, and `sourcePage`. The service
+  normalizes the simple shape into the same structured Function spec before
+  indexing and replay.
 - Reusable Function execution that needs click/scroll/input requires OOB
   accessibility backend readiness. If not ready, replay returns
   `OOB_ACCESSIBILITY_REQUIRED`.
@@ -448,6 +456,10 @@ decision=<decision>
 function_execution_policy=optional_candidates_only; do_not_auto_execute=true; require_explicit_agent_selection=true; live_vlm_uses_native_screen_tools_only=true
 ```
 
+This policy is separate from Function-as-model-tool exposure. Registered Functions
+remain in the store and UDEG node attachments, but are not added as individual
+model tools unless `oobFunctionAsToolEnabled=true`.
+
 Then it may include:
 
 - decision policy
@@ -677,6 +689,24 @@ execution.step_count = <count>
 4. Registers into `OobReusableFunctionStore` SharedPreferences.
 5. Enables OOB Function-as-tool feature flag.
 
+`OobOmniFlowToolkitService.registerFunction(...)` is the public management
+entrypoint used by MCP and in-app agent tools. It first checks for
+`functionSpec/function_spec`. If a full spec is absent, it accepts the simple
+conversation shape and builds:
+
+```text
+schema_version = oob.reusable_function.v1
+source.kind = agent_registered_function
+execution.kind = tool_sequence
+execution.runner = oob_tool_sequence
+execution.steps = normalized simple steps
+```
+
+Supported simple step actions are `open_app`, `click`, `long_press`,
+`input_text`, `swipe`, `press_back`, `press_home`, `press_key`, `finished`, and
+`call_tool`. `sourcePage.xml/packageName` is copied into the first step's source
+context so UDEG page-match recall can attach the Function to a node.
+
 ## UDEG Node Skill
 
 `OobUdegNodeStore` stores page nodes keyed by `OobPageVectorSet` page vectors.
@@ -889,7 +919,8 @@ There are three integration points:
    route: `oob_function_register` writes the Function store and UDEG references,
    `oob_function_list/get` inspect candidates, `oob_function_guard_check`
    preflights replay, and `oob_function_delete/clear` remove Function and UDEG
-   references.
+   references. The preferred conversation path is simple registration first,
+   full spec import only when the artifact already exists.
 
 This is why the online system must keep collecting high-quality `before` and
 `after` XML/package context. Replay and segment recall depend on those fields.

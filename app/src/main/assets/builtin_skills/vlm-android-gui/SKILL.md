@@ -241,7 +241,10 @@ external clients can call the same names through MCP:
 
 - `oob_function_list` to list local reusable Functions.
 - `oob_function_get` to inspect one Function spec.
-- `oob_function_register` to register/update a spec. Include source page
+- `oob_function_register` to register/update a reusable instruction. Prefer
+  the simple shape (`functionId`, `name`, `description`, `steps`,
+  optional `sourcePage`) during conversation; use full `functionSpec` only when
+  converting/importing an existing structured artifact. Include source page
   context when available so it can attach to a UDEG node.
 - `oob_function_guard_check` to check arguments, guard policy, and whether the
   Function can replay locally before any execution.
@@ -261,6 +264,12 @@ registered Functions are candidate actions only. Use direct Function replay only
 when the caller has explicitly selected the Function or set the advanced
 auto-execute flag.
 
+Do not assume a newly registered Function becomes a model-callable tool. OOB keeps
+that exposure off by default; the agent should inspect/list/guard candidates and
+call `oob_function_run` explicitly when it chooses one. The optional
+`oobFunctionAsToolEnabled` setting is an advanced UI setting and is not toggled by
+registration or RunLog conversion.
+
 Recommended agent workflow:
 
 1. Run `vlm_task` for the live task. Keep
@@ -269,11 +278,51 @@ Recommended agent workflow:
 2. Inspect the RunLog with `oob_run_log_get`; check `duration_ms`,
    `started_at`, `finished_at`, `step_count`, and `token_usage`.
 3. Convert a successful reusable RunLog with `oob_run_log_convert`, or register
-   a hand-authored spec with `oob_function_register`.
+   a simple hand-authored reusable instruction with `oob_function_register`.
 4. Present the Function as a candidate reusable instruction. Execute only after
    selection via `oob_function_run`.
 5. Use `oob_function_delete` to remove temporary validation Functions and
    detach their UDEG node references.
+
+Simple registration example:
+
+```json
+{
+  "functionId": "open_android_settings",
+  "name": "Open Android Settings",
+  "description": "Launch Android Settings from any app.",
+  "packageName": "com.android.settings",
+  "steps": [
+    {
+      "action": "open_app",
+      "packageName": "com.android.settings"
+    },
+    {
+      "action": "finished",
+      "content": "Settings opened"
+    }
+  ]
+}
+```
+
+For page-scoped recall, include:
+
+```json
+{
+  "sourcePage": {
+    "xml": "<hierarchy>...</hierarchy>",
+    "packageName": "com.android.settings"
+  }
+}
+```
+
+Supported simple step actions are `open_app`, `click`, `long_press`,
+`input_text`, `swipe`, `press_back`, `press_home`, `press_key`, `finished`, and
+`call_tool`. For deterministic replay steps, provide concrete arguments:
+`packageName` for `open_app`, `x/y` or source-page-backed coordinates for
+`click`, `direction` or `x1/y1/x2/y2` for `swipe`, `content` for `input_text`,
+and `key` for `press_key`. When a step calls another reusable instruction, use
+`action: "call_tool"` plus `functionId` and optional `arguments`.
 
 For real-device validation, also verify the current foreground package/page
 outside the tool response. A `FINISHED` response alone is not enough if the
@@ -501,6 +550,12 @@ or sets the advanced `allowOmniFlowFunctionAutoExecute=true` flag, and the
 Function has a strong page match, strongly matches the goal, needs no arguments,
 and passes guard checks. Parameterized or weakly matched commands remain decision
 context for the VLM/tool layer.
+
+Model-tool exposure for saved Functions is also disabled by default. Registering,
+converting, or syncing Functions updates the Function store and UDEG node
+attachments only; it does not add each Function id to the model tool list. Use the
+management tools plus explicit `oob_function_run` unless the user intentionally
+enables Function-as-tool exposure.
 
 `omniflow.recall` defaults to an agent-compact payload. It should contain the
 decision, node id/package, optional Function or segment candidates, compact

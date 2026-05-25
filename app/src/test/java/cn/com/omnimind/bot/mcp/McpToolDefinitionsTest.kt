@@ -104,4 +104,21 @@ class McpToolDefinitionsTest {
         val autoExecute = properties["allowOmniFlowFunctionAutoExecute"] as Map<*, *>
         assertEquals(false, autoExecute["default"])
     }
+
+    @Test
+    fun oobFunctionRegisterToolExposesSimpleConversationSchema() {
+        val tool = McpToolDefinitions.fixedTools.single {
+            it["name"] == "oob_function_register"
+        }
+        val schema = tool["inputSchema"] as Map<*, *>
+        val properties = schema["properties"] as Map<*, *>
+
+        assertTrue(properties.containsKey("functionId"))
+        assertTrue(properties.containsKey("name"))
+        assertTrue(properties.containsKey("description"))
+        assertTrue(properties.containsKey("steps"))
+        assertTrue(properties.containsKey("sourcePage"))
+        assertTrue(properties.containsKey("functionSpec"))
+        assertTrue(schema["required"] == null)
+    }
 }
