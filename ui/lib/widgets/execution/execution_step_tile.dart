@@ -33,7 +33,7 @@ class ExecutionStepTile extends StatelessWidget {
       localizedCompileLabel = l10n.executionVlmExecution;
     }
     // 如果没有路由类型，但有旧数据标签，使用它
-    final displayCompileLabel = localizedCompileLabel ?? step.compileLabel;
+    final displayCompileLabel = localizedCompileLabel ?? step.routeLabel;
     final isCompileHit = step.compileKind == CompileKind.hit;
 
     return Container(

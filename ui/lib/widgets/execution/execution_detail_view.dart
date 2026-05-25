@@ -419,16 +419,7 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
   }
 
   Future<void> _copyStepJson(ExecutionStep step) async {
-    final json = const JsonEncoder.withIndent('  ').convert({
-      'index': step.index,
-      'action_type': step.actionType,
-      'params': step.params,
-      'target_description': step.targetDescription,
-      'compile_label': step.compileLabel,
-      if (step.tokenUsage?.raw.isNotEmpty == true)
-        'token_usage': step.tokenUsage!.raw,
-      'success': step.success,
-    });
+    final json = const JsonEncoder.withIndent('  ').convert(step.toUserJson());
     await Clipboard.setData(ClipboardData(text: json));
     if (mounted) {
       showToast('已复制步骤 JSON', type: ToastType.success);

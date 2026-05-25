@@ -45,6 +45,20 @@ class ExecutionStep {
   /// 是否命中可复用技能
   bool get isCompileHit => compileKind == CompileKind.hit;
 
+  String? get routeLabel => _userVisibleRouteText(compileLabel);
+
+  Map<String, dynamic> toUserJson() {
+    return {
+      'index': index,
+      'action_type': actionType,
+      'params': params,
+      'target_description': targetDescription,
+      'route_label': routeLabel,
+      if (tokenUsage?.raw.isNotEmpty == true) 'token_usage': tokenUsage!.raw,
+      'success': success,
+    };
+  }
+
   /// 从 function action 创建
   factory ExecutionStep.fromFunctionAction(
     int index,
@@ -86,8 +100,10 @@ class ExecutionStep {
       compileKind = CompileKind.miss;
     }
 
-    // 兼容旧的 API 返回标签
-    final apiCompileLabel = step['compile_label']?.toString().trim();
+    // 兼容旧的 API 返回标签，但对 UI/复制内容只暴露 route/reuse 语义。
+    final apiCompileLabel = _userVisibleRouteText(
+      step['compile_label']?.toString(),
+    );
 
     return ExecutionStep(
       index: index,
@@ -514,6 +530,19 @@ int? _asInt(Object? value) {
   if (value is num) return value.toInt();
   if (value is String) return int.tryParse(value.trim());
   return null;
+}
+
+String? _userVisibleRouteText(String? raw) {
+  final value = raw?.trim();
+  if (value == null || value.isEmpty) {
+    return null;
+  }
+  return value
+      .replaceAll(RegExp(r'\bcompiled\b', caseSensitive: false), 'routed')
+      .replaceAll(RegExp(r'\bcompiler\b', caseSensitive: false), 'router')
+      .replaceAll(RegExp(r'\bcompilation\b', caseSensitive: false), 'routing')
+      .replaceAll(RegExp(r'\bcompile\b', caseSensitive: false), 'route')
+      .replaceAll('编译', '路由');
 }
 
 String _formatTokenCount(int value) {
