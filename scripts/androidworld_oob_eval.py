@@ -795,8 +795,17 @@ def build_method_record(args: argparse.Namespace) -> dict[str, Any]:
         },
         "mobilerun_reference_method": {
             "source": "droidrun/mobilerun is recorded as a process reference only, not as an OOB runtime dependency.",
+            "reviewed_flow_sources": [
+                "mobilerun/agent/droid/droid_agent.py",
+                "mobilerun/agent/fast_agent/fast_agent.py",
+                "mobilerun/agent/manager/manager_agent.py",
+                "mobilerun/agent/executor/executor_agent.py",
+                "mobilerun/tools/ui/provider.py",
+                "mobilerun/tools/formatters/indexed_formatter.py",
+            ],
             "observed_flow": [
                 "Fetch Accessibility tree, phone state, screen bounds, and optional screenshot every turn.",
+                "Retry transient state-read failures before letting the agent act on stale page evidence.",
                 "Format the tree into indexed UI evidence.",
                 "Build one LLM turn from goal, indexed state, screenshot, short memory/history, and previous tool result.",
                 "Parse a structured tool block and dispatch through a small action registry.",
@@ -810,9 +819,18 @@ def build_method_record(args: argparse.Namespace) -> dict[str, Any]:
                 "short task memory/history",
                 "trajectory artifacts with token and timing diagnostics",
             ],
+            "oob_native_mapping": {
+                "state_fetch": "OOB readCurrentPackage/readCurrentPage/screenshot capture plus post-action observation.",
+                "indexed_elements": "OOB indexed Accessibility evidence and marked screenshot labels.",
+                "tool_registry": "OOB VLMToolDefinitions and native DeviceOperator actions.",
+                "tool_results": "OOB structured tool results and RunLog post-action fields.",
+                "trajectory": "OOB RunLog, Function registration, replay, UDEG recall, token usage, and timing diagnostics.",
+            },
             "explicit_non_goals": [
                 "Do not call the Mobilerun Portal app.",
                 "Do not call the Mobilerun Python agent loop.",
+                "Do not import or install Mobilerun as part of OOB validation.",
+                "Do not invoke Mobilerun CLI or MCP tools from OOB validation.",
                 "Do not use Mobilerun macro replay as OOB replay.",
                 "Do not replace native Kotlin VLM, RunLog, Function registration, UDEG recall, or replay.",
             ],

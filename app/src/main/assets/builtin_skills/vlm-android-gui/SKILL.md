@@ -49,7 +49,8 @@ Mobilerun runtime, or delegating actions to Python.
 
 ## Mobilerun Reference Flow
 
-Record Mobilerun as a process reference only:
+Record Mobilerun as a process reference only. The goal is to capture useful
+workflow shape, then reimplement the matching OOB behavior in native Kotlin:
 
 1. Fetch a fresh device state every turn: Accessibility tree, phone state,
    screen bounds, and optional screenshot.
@@ -74,7 +75,23 @@ Borrow these advantages in OOB:
   changes and failure reasons.
 - Keep the action surface small and deterministic.
 - Track short memory/history for facts that must survive navigation.
+- Treat state fetch robustness as part of the agent loop: retry transient page
+  read failures, then recover OOB Accessibility state before asking the model
+  to act on stale evidence.
 - Separate method/reference runners from the production runtime.
+
+OOB mapping for the borrowed flow:
+
+- Mobilerun `StateProvider` shape -> OOB `readCurrentPackage`,
+  `readCurrentPage`, screenshot capture, and post-action observation.
+- Mobilerun indexed tree formatter -> OOB indexed Accessibility evidence and
+  marked screenshot labels.
+- Mobilerun tool registry -> OOB native `VLMToolDefinitions` and
+  `DeviceOperator` actions.
+- Mobilerun function results -> OOB structured tool result and RunLog card
+  post-action fields.
+- Mobilerun trajectory artifacts -> OOB RunLog, Function registration, replay,
+  UDEG node recall, token usage, and timing diagnostics.
 
 Do not borrow these parts as dependencies:
 
@@ -83,6 +100,7 @@ Do not borrow these parts as dependencies:
 - Mobilerun macro replay format.
 - A host-side agent loop that replaces OOB Kotlin `vlm_task`, RunLog, Function
   registration, UDEG recall, or model-free replay.
+- Mobilerun CLI/MCP, package import, or runtime installation in OOB validation.
 
 ## Activation
 

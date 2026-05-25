@@ -126,6 +126,8 @@ Mobilerun's useful flow is:
 OOB should borrow the method, not the runtime:
 
 - Use indexed Accessibility evidence plus screenshot in native `vlm_task`.
+- Recreate state-read retry/recovery inside OOB Accessibility/page capture when
+  device state is stale or temporarily unavailable.
 - Persist structured post-action observations and token/timing artifacts in
   RunLog.
 - Keep the action registry small and deterministic.
@@ -133,3 +135,6 @@ OOB should borrow the method, not the runtime:
   turn.
 - Do not replace Kotlin online VLM, RunLog collection, Function registration,
   UDEG recall, or model-free replay with Mobilerun internals.
+- Do not import, install, launch, or invoke Mobilerun CLI/MCP/Portal/Python
+  runtime during OOB validation. AndroidWorld and Mobilerun remain method
+  references unless a maintainer explicitly asks for an external comparison.

@@ -70,7 +70,19 @@ class AndroidWorldOobEvalTest(unittest.TestCase):
                 "droidrun/mobilerun is recorded as a process reference only, not as an OOB runtime dependency.",
             )
             self.assertIn(
+                "mobilerun/agent/fast_agent/fast_agent.py",
+                record["mobilerun_reference_method"]["reviewed_flow_sources"],
+            )
+            self.assertEqual(
+                record["mobilerun_reference_method"]["oob_native_mapping"]["tool_registry"],
+                "OOB VLMToolDefinitions and native DeviceOperator actions.",
+            )
+            self.assertIn(
                 "Do not call the Mobilerun Python agent loop.",
+                record["mobilerun_reference_method"]["explicit_non_goals"],
+            )
+            self.assertIn(
+                "Do not invoke Mobilerun CLI or MCP tools from OOB validation.",
                 record["mobilerun_reference_method"]["explicit_non_goals"],
             )
             self.assertIn("diagnosis_of_oob_gap", record)
