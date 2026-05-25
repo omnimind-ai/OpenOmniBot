@@ -24,8 +24,9 @@ Last Updated: 2026-05-11
 
 1. `AGENTS.md`
 2. `docs/reference/OOB_VLM_ANDROIDWORLD.md`
-3. `app/src/main/assets/builtin_skills/vlm-android-gui/SKILL.md`
-4. Target source files:
+3. `docs/agent_context/OOB_ONLINE_OFFLINE_SHARED_MEMORY.md`
+4. `app/src/main/assets/builtin_skills/vlm-android-gui/SKILL.md`
+5. Target source files:
    - `assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/VLMOperationService.kt`
    - `assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/VLMClient.kt`
    - `assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/VLMIndexedPageContext.kt`
@@ -39,7 +40,7 @@ Last Updated: 2026-05-11
    - `ui/lib/features/task/pages/execution_history/function_run_result_sheet.dart`
    - `ui/lib/features/task/pages/execution_history/run_log_timeline_page.dart`
    - `scripts/demo-vlm-runlog-e2e.sh`
-5. Focused tests:
+6. Focused tests:
    - `app/src/test/java/cn/com/omnimind/bot/manager/AssistsCoreManagerOobReusableFunctionPayloadTest.kt`
    - `app/src/test/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionToolHandlerOmniFlowExecutionTest.kt`
    - `ui/test/services/oob_reusable_function_execution_service_test.dart`
