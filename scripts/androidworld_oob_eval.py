@@ -925,6 +925,19 @@ def build_method_record(args: argparse.Namespace) -> dict[str, Any]:
             ],
         },
         "validation_without_androidworld_run": {
+            "test_layering": {
+                "ux_tests": [
+                    "Flutter RunLog timeline tests cover RunLog registration, local replay trigger, result sheets, and user-visible wording.",
+                    "Flutter Function library tests cover Function grouping, detail surface, run button, running state, and result sheet internal-field hiding.",
+                    "Flutter localization and execution widget tests guard user-visible route/reuse wording.",
+                ],
+                "runtime_method_tests": [
+                    "Python AndroidWorld method-only tests record the adapter contract without importing AndroidWorld or starting an emulator.",
+                    "Kotlin unit tests cover RunLog collection, native Function registration/replay, UDEG recall timing, segment reuse, and token/timing persistence.",
+                    "Live AndroidWorld reward runs stay behind --run-live and are not required for method-only evidence.",
+                ],
+                "separation_rule": "UX tests must not import AndroidWorld or start an emulator; runtime method tests must not assert Flutter layout details.",
+            },
             "static_checks": [
                 "Kotlin build/unit tests for VLM request, indexed page grounding, post-action observation, RunLog registration/replay, UDEG recall.",
                 "Python adapter method-only export and syntax check.",

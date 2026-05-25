@@ -86,6 +86,16 @@ class AndroidWorldOobEvalTest(unittest.TestCase):
                 record["mobilerun_reference_method"]["explicit_non_goals"],
             )
             self.assertIn("diagnosis_of_oob_gap", record)
+            layering = record["validation_without_androidworld_run"]["test_layering"]
+            self.assertIn(
+                "Flutter Function library tests cover Function grouping, detail surface, run button, running state, and result sheet internal-field hiding.",
+                layering["ux_tests"],
+            )
+            self.assertIn(
+                "Python AndroidWorld method-only tests record the adapter contract without importing AndroidWorld or starting an emulator.",
+                layering["runtime_method_tests"],
+            )
+            self.assertIn("UX tests must not import AndroidWorld", layering["separation_rule"])
             rendered = json.dumps(record, ensure_ascii=False).lower()
             self.assertNotIn("compile", rendered)
             self.assertNotIn("编译", rendered)
