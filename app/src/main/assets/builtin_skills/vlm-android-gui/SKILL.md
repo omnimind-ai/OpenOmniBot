@@ -1,6 +1,6 @@
 ---
 name: vlm-android-gui
-description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, vlm_task, OmniFlow replay, Function conversion, and RunLog validation.
+description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, vlm_task, OmniFlow replay, reusable command generation, and RunLog validation.
 ---
 
 # VLM Android GUI Skill
@@ -31,8 +31,8 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 ## Overview
 
 Use this skill when the user wants OOB to operate an Android screen, run a
-VLM task, validate an AndroidWorld-style scenario, replay a stored Function, or
-debug why a phone task did not execute.
+VLM task, validate an AndroidWorld-style scenario, replay a stored reusable
+command, or debug why a phone task did not execute.
 
 This skill is for OOB's executable phone runtime. Open-source model skills such
 as LLaVA, BLIP-2, or CLIP are useful references for vision-language modeling,
@@ -41,11 +41,11 @@ OmniFlow replay path.
 
 Mobilerun/Droidrun is also only a design reference for OOB, not an executable
 dependency. Its FastAgent uses a Python host, Portal Android app, indexed
-Accessibility tree, optional screenshot, XML function calls, and structured
-function results. OOB must keep the native Kotlin VLM loop and its own
-Accessibility, RunLog, Function registration, recall, and replay path; borrow
-the structured observation/result discipline without calling Portal, installing
-Mobilerun runtime, or delegating actions to Python.
+Accessibility tree, optional screenshot, XML-style tool calls, and structured
+tool results. OOB must keep the native Kotlin VLM loop and its own
+Accessibility, RunLog, reusable command registration, recall, and replay path;
+borrow the structured observation/result discipline without calling Portal,
+installing Mobilerun runtime, or delegating actions to Python.
 
 ## Mobilerun Reference Flow
 
@@ -88,18 +88,18 @@ OOB mapping for the borrowed flow:
   marked screenshot labels.
 - Mobilerun tool registry -> OOB native `VLMToolDefinitions` and
   `DeviceOperator` actions.
-- Mobilerun function results -> OOB structured tool result and RunLog card
+- Mobilerun structured results -> OOB structured tool result and RunLog card
   post-action fields.
-- Mobilerun trajectory artifacts -> OOB RunLog, Function registration, replay,
-  UDEG node recall, token usage, and timing diagnostics.
+- Mobilerun trajectory artifacts -> OOB RunLog, reusable command registration,
+  replay, UDEG node recall, token usage, and timing diagnostics.
 
 Do not borrow these parts as dependencies:
 
 - Portal app installation, TCP/content-provider protocol, or Python driver.
 - Mobilerun prompt templates as runtime prompts.
 - Mobilerun macro replay format.
-- A host-side agent loop that replaces OOB Kotlin `vlm_task`, RunLog, Function
-  registration, UDEG recall, or model-free replay.
+- A host-side agent loop that replaces OOB Kotlin `vlm_task`, RunLog, reusable
+  command registration, UDEG recall, or model-free replay.
 - Mobilerun CLI/MCP, package import, or runtime installation in OOB validation.
 
 ## Activation
@@ -110,8 +110,8 @@ Activate when the user asks for any of these:
   AndroidWorld validation.
 - Click, scroll, type, open app, or verify content on the current Android screen.
 - A long phone task that must keep acting until a visible stop condition is met.
-- Convert a successful VLM RunLog to a reusable Function.
-- Run a stored Function through `call_tool` or inspect why replay failed.
+- Convert a successful VLM RunLog to a reusable command.
+- Run a stored reusable command through `call_tool` or inspect why replay failed.
 - Compare live VLM behavior with OmniFlow replay behavior.
 
 Do not activate for ordinary image Q&A when the user only uploaded a picture and
@@ -122,12 +122,12 @@ does not ask to operate the phone screen.
 Use exactly one primary mode for a step sequence:
 
 - **VLM**: live model-planned screen operation through `vlm_task`.
-- **OmniFlow**: deterministic replay of an existing Function through `call_tool`
-  with `function_id`.
+- **OmniFlow**: deterministic replay of an existing reusable command through
+  `call_tool` with `function_id`.
 
 If VLM creates a successful RunLog and the user wants reuse, convert that RunLog
-to a Function after the run. If OmniFlow replay needs live perception, return to
-VLM as an explicit fallback instead of mixing labels inside one replay.
+to a reusable command after the run. If OmniFlow replay needs live perception,
+return to VLM as an explicit fallback instead of mixing labels inside one replay.
 
 ## Direct VLM Task
 
@@ -199,11 +199,11 @@ decision`.
 
 - Use the page-matched UDEG node's skill-like information to choose the next
   VLM/tool decision on the live screen.
-- Consider only Functions attached to that UDEG node as outgoing reusable
+- Consider only reusable commands attached to that UDEG node as outgoing reusable
   transitions.
-- Do not call `finished` just because recall returned `hit` or a prior Function
-  finished. Finish only after the current visible page satisfies the user's
-  requested end state.
+- Do not call `finished` just because recall returned `hit` or a prior reusable
+  command finished. Finish only after the current visible page satisfies the
+  user's requested end state.
 - If the current screen does not match the recalled step, re-ground on the
   current screenshot/XML and continue normally.
 - For form tasks, keep each field's intended value tied to the visible field
@@ -265,7 +265,7 @@ decision`.
 ## `call_tool` Dispatch
 
 Prefer `call_tool` when the user explicitly asks to call a tool or when a stored
-Function should call another Function/tool.
+reusable command should call another reusable command or tool.
 
 Run a live VLM task through `call_tool`:
 
@@ -281,7 +281,7 @@ Run a live VLM task through `call_tool`:
 }
 ```
 
-Replay a stored Function through `call_tool`:
+Replay a stored reusable command through `call_tool`:
 
 ```json
 {
@@ -292,34 +292,36 @@ Replay a stored Function through `call_tool`:
 
 Rules:
 
-- Use `function_id` for existing Functions.
+- Use `function_id` for existing reusable commands.
 - Use `tool_name` plus `arguments` for direct tools such as `vlm_task`.
-- Nested Function calls are valid only through `call_tool(function_id=...)`.
+- Nested reusable command calls are valid only through
+  `call_tool(function_id=...)`.
 - If `call_tool` returns `fallback=true` or `needs_agent`, switch to a bounded
   VLM task and report the fallback reason.
 
-## Function Segment Validation
+## Reusable Command Segment Validation
 
 When validating a reusable segment, do not only check registration or recall.
-Run a parent Function whose step is `call_tool(function_id=...)`, and verify that
-the result contains:
+Run a parent reusable command whose step is `call_tool(function_id=...)`, and
+verify that the result contains:
 
 - parent step `executor=omniflow_function`
 - `nested_function_id` equal to the expected segment id
 - nested `step_results` with concrete model-free actions such as `open_app`
-- the same child Function succeeds from at least two different current pages
+- the same child reusable command succeeds from at least two different current
+  pages
 
 ## Offline Flow UI Contract
 
-The user-facing flow is `RunLog -> Function registration -> local execution`.
-Keep this contract visible and separate from runtime tests:
+The user-facing flow is `RunLog -> reusable command registration -> local
+execution`. Keep this contract visible and separate from runtime tests:
 
-- A RunLog detail surface should expose direct RunLog replay and Function
+- A RunLog detail surface should expose direct RunLog replay and reusable command
   registration as adjacent actions.
-- A Function library surface should show that a Function is registered, which
-  RunLog(s) it came from, the step count, parameter count, and a local execution
-  action.
-- Function execution results should keep diagnostic timing internal. Persist
+- A reusable command library surface should show that a command is registered,
+  which RunLog(s) it came from, the step count, parameter count, and a local
+  execution action.
+- Reusable command execution results should keep diagnostic timing internal. Persist
   `duration_ms`, `started_at_ms`, `finished_at_ms`, and phase timings in RunLog
   and test artifacts, but do not expose these fields in user-facing UI.
 - Do not show internal route-building jargon to users. Keep legacy
@@ -330,16 +332,17 @@ Keep this contract visible and separate from runtime tests:
 Keep user experience validation and actual phone execution validation separate:
 
 - UX/widget validation: verify labels, buttons, disabled states, source RunLog
-  badges, and Function execution result sheets with mocked channel payloads.
+  badges, and reusable command execution result sheets with mocked channel
+  payloads.
   Timing telemetry should be parsed and asserted in tests, not shown to users.
   These tests must not start emulators, call VLM, or depend on AndroidWorld.
-- Runtime/unit validation: verify RunLog collection, conversion to Function,
-  nested Function calls, replay timing propagation, UDEG node recall, segment
-  recall, and no timing leakage into VLM prompts.
+- Runtime/unit validation: verify RunLog collection, reusable command
+  generation, nested reusable command calls, replay timing propagation, UDEG node
+  recall, segment recall, and no timing leakage into VLM prompts.
 - Device validation: run bounded tasks on emulator-5554 or emulator-5556 only
   when explicitly requested. Record run id, package, goal, step count, success,
   `duration_ms`, token usage, replay result, and whether recall hit a UDEG node
-  or Function segment.
+  or reusable command segment.
 - AndroidWorld method validation: by default export or inspect the method only.
   Do not claim benchmark success unless a live runner initialized the task,
   OOB executed the task through the native VLM loop, and AndroidWorld evaluated
@@ -348,7 +351,7 @@ Keep user experience validation and actual phone execution validation separate:
 ## No Wait Actions
 
 Never emit or preserve `wait`, `sleep`, delay, pause, or idle as a VLM or
-Function action step. OOB handles page settling through its internal stability
+reusable command action step. OOB handles page settling through its internal stability
 algorithm. A valid action sequence should contain concrete actions such as:
 
 - `click`
@@ -401,32 +404,35 @@ OOB recall follows OmniFlow's UDEG path:
 1. Encode the live accessibility page into a local `PageVectorSet`.
 2. Page-match that vector to a UDEG node.
 3. Read the UDEG node's skill-like decision context.
-4. Consider the Functions attached to that node as outgoing reusable
+4. Consider the reusable commands attached to that node as outgoing reusable
    transitions.
 
 The decision path is exactly: `page match -> UDEG node -> node skill-like
 decision context -> VLM/tool decision`. UDEG node data is skill-like decision
-context, not memory text and not a flat Function list. Do not skip the node by
-scanning the Function store directly.
+context, not memory text and not a flat reusable command list. Do not skip the
+node by scanning the reusable command store directly.
 
-Do not treat recall as a flat text search over all Functions. A recalled
-Function is trusted only when the current page has been localized to its UDEG
-node and the Function description/boundary fits the user goal. If the node skill
-is present but no Function clearly fits, continue with normal live VLM actions.
+Do not treat recall as a flat text search over all reusable commands. A recalled
+reusable command is trusted only when the current page has been localized to its
+UDEG node and the command description/boundary fits the user goal. If the node
+skill is present but no command clearly fits, continue with normal live VLM
+actions.
 
 Direct local execution is allowed only for a strong page match and a no-argument
-Function that strongly matches the goal. Parameterized or weakly matched
-Functions should remain decision context for the VLM/tool layer.
+reusable command that strongly matches the goal. Parameterized or weakly matched
+commands should remain decision context for the VLM/tool layer.
 
-## RunLog and Function Handling
+## RunLog and Reusable Command Handling
 
 After a successful VLM run:
 
 1. Check the RunLog contains concrete actions and a terminal `finished` marker.
-2. Convert to a Function only when the task is reusable and not perception-only.
-3. For VLM-only logs with no concrete action, do not create an empty Function.
-4. If converted, report the Function id, guard decision, replay status, and run
-   id.
+2. Generate a reusable command only when the task is reusable and not
+   perception-only.
+3. For VLM-only logs with no concrete action, do not create an empty reusable
+   command.
+4. If generated, report the reusable command id, guard decision, replay status,
+   and run id.
 
 For replay:
 
@@ -441,7 +447,7 @@ When the task finishes, report:
 
 - mode: `VLM` or `OmniFlow`
 - run id, if available
-- Function id, if created or replayed
+- reusable command id, if created or replayed
 - guard decision, if replayed
 - number of concrete actions executed
 - final visible result or failure reason

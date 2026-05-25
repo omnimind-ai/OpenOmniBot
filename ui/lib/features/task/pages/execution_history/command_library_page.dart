@@ -68,7 +68,7 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(_text(context, '删除 Function', 'Delete Function')),
+        title: Text(_text(context, '删除复用指令', 'Delete Reusable Command')),
         content: Text(
           _text(
             context,
@@ -121,8 +121,8 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
         });
         showToast(
           group.variantCount > 1
-              ? _text(context, '已删除 Function 组', 'Function group deleted')
-              : _text(context, '已删除 Function', 'Function deleted'),
+              ? _text(context, '已删除复用指令组', 'Reusable command group deleted')
+              : _text(context, '已删除复用指令', 'Reusable command deleted'),
           type: ToastType.success,
         );
       } else {
@@ -145,8 +145,15 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
     if (_runningIds.contains(group.signature)) return;
     setState(() => _runningIds.add(group.signature));
     try {
+      final spec = await AssistsMessageService.getOobReusableFunction(
+        group.primary.functionId,
+      );
+      if (!mounted) return;
+      final arguments = await _resolveRunArguments(context, spec);
+      if (!mounted || arguments == null) return;
       final result = await AssistsMessageService.runOobReusableFunction(
         functionId: group.primary.functionId,
+        arguments: arguments,
       );
       if (!mounted) return;
       showToast(
@@ -160,7 +167,7 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
       await showFunctionRunResultSheet(
         context,
         result: result,
-        title: _text(context, 'Function 执行结果', 'Function run result'),
+        title: _text(context, '复用指令执行结果', 'Reusable command result'),
       );
       if (result.success && mounted) {
         await _load();
@@ -193,7 +200,7 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
     return Scaffold(
       backgroundColor: palette.pageBackground,
       appBar: CommonAppBar(
-        title: _text(context, 'Function 库', 'Function Library'),
+        title: _text(context, '复用指令库', 'Reusable Commands'),
         primary: true,
         actions: [
           Tooltip(
@@ -226,11 +233,11 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
     if (_functions.isEmpty) {
       return _EmptyState(
         icon: Icons.bolt_outlined,
-        title: _text(context, '暂无 Function', 'No Functions Yet'),
+        title: _text(context, '暂无复用指令', 'No Reusable Commands Yet'),
         subtitle: _text(
           context,
-          '成功的 RunLog 会自动固化为 Function；也可以在 RunLog 详情页直接重放。',
-          'Successful RunLogs are saved as Functions. You can also replay from RunLog details.',
+          '成功的 RunLog 会自动保存为复用指令；也可以在 RunLog 详情页直接重放。',
+          'Successful RunLogs are saved as reusable commands. You can also replay from RunLog details.',
         ),
         actionLabel: _text(context, '刷新', 'Refresh'),
         onAction: _load,
@@ -321,7 +328,7 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(_text(context, '删除 Function', 'Delete Function')),
+        title: Text(_text(context, '删除复用指令', 'Delete Reusable Command')),
         content: Text(
           _text(
             context,
@@ -374,8 +381,8 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
         });
         showToast(
           group.variantCount > 1
-              ? _text(context, '已删除 Function 组', 'Function group deleted')
-              : _text(context, '已删除 Function', 'Function deleted'),
+              ? _text(context, '已删除复用指令组', 'Reusable command group deleted')
+              : _text(context, '已删除复用指令', 'Reusable command deleted'),
           type: ToastType.success,
         );
       } else {
@@ -398,8 +405,15 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
     if (_runningIds.contains(group.signature)) return;
     setState(() => _runningIds.add(group.signature));
     try {
+      final spec = await AssistsMessageService.getOobReusableFunction(
+        group.primary.functionId,
+      );
+      if (!mounted) return;
+      final arguments = await _resolveRunArguments(context, spec);
+      if (!mounted || arguments == null) return;
       final result = await AssistsMessageService.runOobReusableFunction(
         functionId: group.primary.functionId,
+        arguments: arguments,
       );
       if (!mounted) return;
       showToast(
@@ -413,7 +427,7 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
       await showFunctionRunResultSheet(
         context,
         result: result,
-        title: _text(context, 'Function 执行结果', 'Function run result'),
+        title: _text(context, '复用指令执行结果', 'Reusable command result'),
       );
       if (result.success && mounted) {
         await _load();
@@ -458,11 +472,11 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
     if (_functions.isEmpty) {
       return _EmptyState(
         icon: Icons.bolt_outlined,
-        title: _text(context, '暂无 Function', 'No Functions Yet'),
+        title: _text(context, '暂无复用指令', 'No Reusable Commands Yet'),
         subtitle: _text(
           context,
-          '成功的 RunLog 会自动固化为 Function；也可以在 RunLog 详情页直接重放。',
-          'Successful RunLogs are saved as Functions. You can also replay from RunLog details.',
+          '成功的 RunLog 会自动保存为复用指令；也可以在 RunLog 详情页直接重放。',
+          'Successful RunLogs are saved as reusable commands. You can also replay from RunLog details.',
         ),
         actionLabel: _text(context, '刷新', 'Refresh'),
         onAction: _load,
@@ -509,196 +523,143 @@ class _FunctionCard extends StatelessWidget {
     final function = group.primary;
     final palette = context.omniPalette;
     final summaryText = group.displayDescription.trim();
-    final previewText = function.stepPreview;
-    final parameterPreview = function.parameterPreview;
-    final functionKind = _functionKindLabel(context, function);
+    final previewText = _buildUserStepPreview(context, function.stepSummaries);
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: onOpenDetails,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          decoration: BoxDecoration(
-            color: context.isDarkTheme ? palette.surfacePrimary : Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: palette.borderSubtle),
-            boxShadow: context.isDarkTheme
-                ? const []
-                : [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: palette.accentPrimary.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.functions_rounded,
-                        size: 19,
-                        color: palette.accentPrimary,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+      child: Container(
+        decoration: BoxDecoration(
+          color: context.isDarkTheme ? palette.surfacePrimary : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: palette.borderSubtle),
+          boxShadow: context.isDarkTheme
+              ? const []
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _RunActionButton(isRunning: isRunning, onTap: onRun),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          group.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: palette.textPrimary,
+                            height: 1.35,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                        if (summaryText.isNotEmpty) ...[
+                          const SizedBox(height: 3),
                           Text(
-                            group.displayName,
+                            summaryText,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: palette.textPrimary,
+                              fontSize: 13,
+                              color: palette.textSecondary,
                               height: 1.35,
                               letterSpacing: 0,
                             ),
                           ),
                         ],
-                      ),
+                      ],
                     ),
-                    const SizedBox(width: 10),
-                    if (isDeleting)
-                      const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    else ...[
-                      _IconBtn(
-                        icon: Icons.info_outline_rounded,
-                        color: palette.textSecondary,
-                        backgroundColor: palette.surfaceSecondary,
-                        tooltip: _text(context, '详情', 'Details'),
-                        onTap: onOpenDetails,
-                      ),
-                      const SizedBox(width: 4),
-                      _IconBtn(
-                        icon: Icons.delete_outline_rounded,
-                        color: AppColors.alertRed,
-                        backgroundColor: AppColors.alertRed.withValues(
-                          alpha: 0.08,
-                        ),
-                        tooltip: _text(context, '删除', 'Delete'),
-                        onTap: onDelete,
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 10),
-                if (summaryText.isNotEmpty) ...[
-                  Text(
-                    summaryText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
+                  ),
+                  const SizedBox(width: 10),
+                  if (isDeleting)
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else ...[
+                    _IconBtn(
+                      icon: Icons.info_outline_rounded,
                       color: palette.textSecondary,
-                      height: 1.35,
-                      letterSpacing: 0,
+                      backgroundColor: palette.surfaceSecondary,
+                      tooltip: _text(context, '详情', 'Details'),
+                      onTap: onOpenDetails,
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                ],
-                if (previewText.isNotEmpty) ...[
-                  Text(
-                    previewText,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: palette.textTertiary,
-                      height: 1.35,
-                      letterSpacing: 0,
+                    const SizedBox(width: 4),
+                    _IconBtn(
+                      icon: Icons.delete_outline_rounded,
+                      color: AppColors.alertRed,
+                      backgroundColor: AppColors.alertRed.withValues(
+                        alpha: 0.08,
+                      ),
+                      tooltip: _text(context, '删除', 'Delete'),
+                      onTap: onDelete,
                     ),
-                  ),
-                  const SizedBox(height: 8),
+                  ],
                 ],
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
+              ),
+              if (previewText.isNotEmpty) ...[
+                const SizedBox(height: 9),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _MetricPill(
-                      label: _text(context, '类型', 'Kind'),
-                      value: functionKind,
+                    Icon(
+                      Icons.subject_rounded,
+                      size: 14,
+                      color: palette.textTertiary,
                     ),
-                    _MetricPill(
-                      label: _text(context, '状态', 'State'),
-                      value: _text(context, '已注册', 'Registered'),
-                    ),
-                    _MetricPill(
-                      label: _text(context, '步骤', 'Steps'),
-                      value: function.stepCount.toString(),
-                    ),
-                    _MetricPill(
-                      label: _text(context, '参数', 'Params'),
-                      value: function.parameterNames.length.toString(),
-                    ),
-                    if (group.sourceRunIds.isNotEmpty)
-                      _MetricPill(
-                        label: 'RunLog',
-                        value: group.sourceRunIds.length.toString(),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        previewText,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: palette.textTertiary,
+                          height: 1.35,
+                          letterSpacing: 0,
+                        ),
                       ),
-                    if (group.variantCount > 1)
-                      _MetricPill(
-                        label: _text(context, '变体', 'Variants'),
-                        value: group.variantCount.toString(),
-                      ),
+                    ),
                   ],
                 ),
-                if (parameterPreview.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    parameterPreview,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: palette.textTertiary,
-                      height: 1.35,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                ],
-                if (group.sourceRunIds.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    _text(
-                      context,
-                      '来自 ${group.sourceRunIds.length} 条 RunLog，可本地重放执行',
-                      'From ${group.sourceRunIds.length} RunLogs, executable by local replay',
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: palette.textTertiary,
-                      height: 1.35,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                _RunActionButton(isRunning: isRunning, onTap: onRun),
               ],
-            ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: [
+                  _MetricPill(
+                    label: _text(context, '步骤', 'Steps'),
+                    value: function.stepCount.toString(),
+                  ),
+                  _MetricPill(
+                    label: _text(context, '参数', 'Params'),
+                    value: function.parameterNames.length.toString(),
+                  ),
+                  if (group.sourceRunIds.isNotEmpty)
+                    _MetricPill(
+                      label: 'RunLogs',
+                      value: group.sourceRunIds.length.toString(),
+                    ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -716,7 +677,7 @@ class _RunActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = isRunning
         ? _text(context, '执行中', 'Running')
-        : _text(context, '执行 Function', 'Run Function');
+        : _text(context, '执行', 'Run');
     return Align(
       alignment: Alignment.centerLeft,
       child: FilledButton.icon(
@@ -870,7 +831,7 @@ class _FunctionDetailSheet extends StatelessWidget {
                       ),
                       const SizedBox(height: 18),
                       Text(
-                        _text(context, 'Function 详情', 'Function Details'),
+                        _text(context, '复用指令详情', 'Reusable Command Details'),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -948,10 +909,6 @@ class _FunctionDetailSheet extends StatelessWidget {
                           _MetricPill(
                             label: _text(context, '状态', 'State'),
                             value: _text(context, '已注册', 'Registered'),
-                          ),
-                          _MetricPill(
-                            label: _text(context, '类型', 'Kind'),
-                            value: _stepListKindLabel(context, detail.steps),
                           ),
                           _MetricPill(
                             label: _text(context, '步骤', 'Steps'),
@@ -1086,7 +1043,7 @@ class _FunctionPreviewPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
-    final stepPreview = _buildStepPreview(steps);
+    final stepPreview = _buildStepPreview(context, steps);
     final parameterPreview = _previewNames(
       parameters.map((parameter) => parameter.name).toList(growable: false),
     );
@@ -1181,8 +1138,8 @@ class _FunctionSourcePanel extends StatelessWidget {
                 Text(
                   _text(
                     context,
-                    '由 RunLog 注册，可通过 Function 库本地执行。',
-                    'Registered from RunLog and executable from the Function Library.',
+                    '由 RunLog 注册，可通过复用指令库本地执行。',
+                    'Registered from RunLog and executable from Reusable Commands.',
                   ),
                   style: TextStyle(
                     fontSize: 12,
@@ -1221,10 +1178,8 @@ class _StepDetailTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
-    final accent = step.executor == 'omniflow'
-        ? AppColors.primaryBlue
-        : palette.accentPrimary;
-    final kindLabel = _stepKindLabel(context, step);
+    final actionLabel = _localizedToolAction(context, step.displayTool).trim();
+    final subtitle = actionLabel.isNotEmpty ? actionLabel : step.displayTool;
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
@@ -1239,7 +1194,7 @@ class _StepDetailTile extends StatelessWidget {
             width: 26,
             height: 26,
             decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.12),
+              color: palette.accentPrimary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(7),
             ),
             alignment: Alignment.center,
@@ -1248,7 +1203,7 @@ class _StepDetailTile extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
-                color: accent,
+                color: palette.accentPrimary,
               ),
             ),
           ),
@@ -1267,7 +1222,7 @@ class _StepDetailTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '${step.displayTool}${kindLabel.isNotEmpty ? ' · $kindLabel' : ''}',
+                  subtitle,
                   style: TextStyle(fontSize: 11, color: palette.textSecondary),
                 ),
               ],
@@ -1518,8 +1473,6 @@ class _FunctionSummary {
     return displayDescription;
   }
 
-  String get stepPreview => _buildStepPreview(stepSummaries);
-
   String get parameterPreview => _previewNames(parameterNames);
 
   String get semanticSignature {
@@ -1570,13 +1523,13 @@ class _FunctionSummary {
 
   static String _fallbackNameFromId(String value) {
     final normalized = value.trim();
-    if (normalized.isEmpty) return 'Function';
+    if (normalized.isEmpty) return '复用指令';
     final cleaned = normalized
         .replaceFirst(RegExp(r'^oob_cmd_'), '')
         .replaceFirst(RegExp(r'^debug_'), '')
         .replaceAll(RegExp(r'[_-]+'), ' ')
         .trim();
-    if (cleaned.isEmpty) return 'Function';
+    if (cleaned.isEmpty) return '复用指令';
     return cleaned
         .split(' ')
         .where((part) => part.isNotEmpty)
@@ -1785,6 +1738,218 @@ class _FunctionDetailSnapshot {
   }
 }
 
+Future<Map<String, dynamic>?> _resolveRunArguments(
+  BuildContext context,
+  Map<String, dynamic>? spec,
+) async {
+  final arguments = _defaultArgumentsForFunctionSpec(spec);
+  final missing = _missingRequiredRunParameters(spec, arguments);
+  if (missing.isEmpty) {
+    return arguments;
+  }
+  final manualArguments = await _showRunArgumentsDialog(context, missing);
+  if (manualArguments == null) {
+    return null;
+  }
+  return <String, dynamic>{...arguments, ...manualArguments};
+}
+
+Map<String, dynamic> _defaultArgumentsForFunctionSpec(
+  Map<String, dynamic>? spec,
+) {
+  final rawParameters = spec?['parameters'];
+  if (rawParameters is! List) return const {};
+  final arguments = <String, dynamic>{};
+  for (final item in rawParameters) {
+    if (item is! Map) continue;
+    final name = (item['name'] ?? '').toString().trim();
+    if (name.isEmpty || !item.containsKey('default')) continue;
+    final value = item['default'];
+    if (value != null) {
+      arguments[name] = value;
+    }
+  }
+  return arguments;
+}
+
+List<_ParameterSummary> _missingRequiredRunParameters(
+  Map<String, dynamic>? spec,
+  Map<String, dynamic> arguments,
+) {
+  final rawParameters = spec?['parameters'];
+  if (rawParameters is! List) return const [];
+  final missing = <_ParameterSummary>[];
+  for (final item in rawParameters) {
+    if (item is! Map) continue;
+    final parameter = _ParameterSummary.fromMap(
+      Map<String, dynamic>.from(item.map((k, v) => MapEntry(k.toString(), v))),
+    );
+    if (!parameter.required || parameter.name.trim().isEmpty) continue;
+    final current = arguments[parameter.name];
+    final hasValue = current != null && current.toString().trim().isNotEmpty;
+    if (!hasValue) {
+      missing.add(parameter);
+    }
+  }
+  return missing;
+}
+
+Future<Map<String, dynamic>?> _showRunArgumentsDialog(
+  BuildContext context,
+  List<_ParameterSummary> parameters,
+) async {
+  final controllers = <String, TextEditingController>{
+    for (final parameter in parameters)
+      parameter.name: TextEditingController(text: parameter.defaultValue),
+  };
+  try {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) {
+        String? errorText;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final palette = ctx.omniPalette;
+            return AlertDialog(
+              title: Text(_text(ctx, '填写执行参数', 'Run arguments')),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _text(
+                          ctx,
+                          '这个复用指令需要补充参数后才能执行。',
+                          'This reusable command needs arguments before running.',
+                        ),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: palette.textSecondary,
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      for (final parameter in parameters) ...[
+                        TextField(
+                          controller: controllers[parameter.name],
+                          keyboardType: _keyboardTypeForParameter(parameter),
+                          decoration: InputDecoration(
+                            labelText: parameter.name,
+                            helperText: parameter.description.isEmpty
+                                ? (parameter.type.isEmpty
+                                      ? null
+                                      : parameter.type)
+                                : parameter.description,
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      if (errorText != null) ...[
+                        Text(
+                          errorText!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.alertRed,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(null),
+                  child: Text(_text(ctx, '取消', 'Cancel')),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final values = <String, dynamic>{};
+                    final missingNames = <String>[];
+                    for (final parameter in parameters) {
+                      final raw =
+                          controllers[parameter.name]?.text.trim() ?? '';
+                      if (raw.isEmpty) {
+                        missingNames.add(parameter.name);
+                        continue;
+                      }
+                      values[parameter.name] = _coerceArgumentValue(
+                        raw,
+                        parameter.type,
+                      );
+                    }
+                    if (missingNames.isNotEmpty) {
+                      setDialogState(() {
+                        errorText = _text(
+                          ctx,
+                          '请填写：${missingNames.join(', ')}',
+                          'Required: ${missingNames.join(', ')}',
+                        );
+                      });
+                      return;
+                    }
+                    Navigator.of(ctx).pop(values);
+                  },
+                  child: Text(_text(ctx, '执行', 'Run')),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    return result;
+  } finally {
+    for (final controller in controllers.values) {
+      controller.dispose();
+    }
+  }
+}
+
+TextInputType _keyboardTypeForParameter(_ParameterSummary parameter) {
+  final type = parameter.type.toLowerCase();
+  if (type.contains('int') ||
+      type.contains('number') ||
+      type.contains('float') ||
+      type.contains('double')) {
+    return TextInputType.number;
+  }
+  return TextInputType.text;
+}
+
+dynamic _coerceArgumentValue(String value, String type) {
+  final normalizedType = type.trim().toLowerCase();
+  if (normalizedType.contains('bool')) {
+    final normalizedValue = value.trim().toLowerCase();
+    if (normalizedValue == 'true' ||
+        normalizedValue == '1' ||
+        normalizedValue == 'yes' ||
+        normalizedValue == 'y') {
+      return true;
+    }
+    if (normalizedValue == 'false' ||
+        normalizedValue == '0' ||
+        normalizedValue == 'no' ||
+        normalizedValue == 'n') {
+      return false;
+    }
+  }
+  if (normalizedType.contains('int')) {
+    return int.tryParse(value) ?? value;
+  }
+  if (normalizedType.contains('number') ||
+      normalizedType.contains('float') ||
+      normalizedType.contains('double')) {
+    return num.tryParse(value) ?? value;
+  }
+  return value;
+}
+
 List<_FunctionGroup> _groupFunctions(List<_FunctionSummary> summaries) {
   final groups = <String, List<_FunctionSummary>>{};
   for (final summary in summaries) {
@@ -1833,16 +1998,32 @@ String _normalizeSignatureText(String value) {
   return normalized.replaceAll(RegExp(r'\s+'), ' ');
 }
 
-String _buildStepPreview(List<_StepSummary> steps) {
+String _buildStepPreview(BuildContext context, List<_StepSummary> steps) {
   final parts = <String>[];
   for (final step in steps.take(3)) {
     final title = step.displayTitle.trim();
-    final tool = step.displayTool.trim();
+    final tool = _localizedToolAction(context, step.displayTool).trim();
     final body = title.isNotEmpty && tool.isNotEmpty && title != tool
         ? '$title · $tool'
         : (title.isNotEmpty ? title : tool);
     if (body.isEmpty) continue;
     parts.add('${step.index + 1}. $body');
+  }
+  if (parts.isEmpty) return '';
+  final preview = parts.join('  ');
+  return steps.length > 3 ? '$preview …' : preview;
+}
+
+String _buildUserStepPreview(BuildContext context, List<_StepSummary> steps) {
+  final parts = <String>[];
+  for (final step in steps.take(3)) {
+    final title = step.title.trim();
+    final tool = step.displayTool.trim();
+    final text = title.isNotEmpty
+        ? title
+        : _localizedToolAction(context, tool).trim();
+    if (text.isEmpty) continue;
+    parts.add('${step.index + 1}. $text');
   }
   if (parts.isEmpty) return '';
   final preview = parts.join('  ');
@@ -1861,55 +2042,29 @@ String _previewNames(List<String> values, {int maxItems = 3}) {
   return '${names.take(maxItems).join(' · ')} +${names.length - maxItems}';
 }
 
-String _functionKindLabel(BuildContext context, _FunctionSummary summary) {
-  return _stepListKindLabel(context, summary.stepSummaries);
-}
-
-String _stepListKindLabel(BuildContext context, List<_StepSummary> steps) {
-  final kinds = steps
-      .map((step) => _canonicalStepKind(step))
-      .where((kind) => kind.isNotEmpty)
-      .toSet();
-  if (kinds.isEmpty) return _text(context, '未知', 'Unknown');
-  if (kinds.length == 1) {
-    return _localizedStepKind(context, kinds.first);
+String _localizedToolAction(BuildContext context, String tool) {
+  switch (tool.trim().toLowerCase()) {
+    case 'open_app':
+      return _text(context, '打开应用', 'Open app');
+    case 'click':
+      return _text(context, '点击', 'Tap');
+    case 'long_press':
+      return _text(context, '长按', 'Long press');
+    case 'input_text':
+    case 'type':
+      return _text(context, '输入文本', 'Enter text');
+    case 'swipe':
+      return _text(context, '滑动', 'Swipe');
+    case 'press_back':
+    case 'back':
+      return _text(context, '返回', 'Go back');
+    case 'press_home':
+    case 'home':
+      return _text(context, '回到桌面', 'Go home');
+    case 'wait':
+      return _text(context, '等待', 'Wait');
   }
-  return _text(context, '混合', 'Mixed');
-}
-
-String _stepKindLabel(BuildContext context, _StepSummary step) {
-  return _localizedStepKind(context, _canonicalStepKind(step));
-}
-
-String _canonicalStepKind(_StepSummary step) {
-  final executor = step.executor.trim().toLowerCase();
-  final kind = step.kind.trim().toLowerCase();
-  if (executor == 'omniflow' || kind.contains('omniflow')) {
-    return 'omniflow';
-  }
-  if (executor == 'tool' || kind.contains('tool')) {
-    return 'tool';
-  }
-  if (executor == 'agent' || kind.contains('agent')) {
-    return 'agent';
-  }
-  if (executor.isNotEmpty) return executor;
-  return kind;
-}
-
-String _localizedStepKind(BuildContext context, String kind) {
-  switch (kind) {
-    case 'omniflow':
-      return 'OmniFlow';
-    case 'tool':
-      return _text(context, '工具', 'Tool');
-    case 'agent':
-      return _text(context, 'Agent', 'Agent');
-    case '':
-      return '';
-    default:
-      return kind;
-  }
+  return tool.trim();
 }
 
 bool _asBool(dynamic value) {
@@ -1941,17 +2096,16 @@ String _text(BuildContext context, String zh, String en) {
 }
 
 String _runSuccessMessage(BuildContext context, UtgManualRunResult result) {
-  final status = result.terminalState['status']?.toString().trim() ?? '';
-  final taskId = result.terminalState['taskId']?.toString().trim() ?? '';
-  if (taskId.isNotEmpty) {
+  if (result.startedAgentFallback) {
+    final taskId = result.taskId;
     return _text(
       context,
-      'Function 已开始执行：$taskId',
-      'Function started: $taskId',
+      taskId.isEmpty ? '已交给 VLM 继续执行' : '已交给 VLM 继续执行：$taskId',
+      taskId.isEmpty ? 'Handed off to VLM' : 'Handed off to VLM: $taskId',
     );
   }
-  if (status == 'completed') {
-    return _text(context, 'Function 已本地执行完成', 'Function completed locally');
+  if (result.completedLocal) {
+    return _text(context, '复用指令已本地执行完成', 'Reusable command completed locally');
   }
-  return _text(context, 'Function 已开始执行', 'Function started');
+  return _text(context, '复用指令已开始执行', 'Reusable command started');
 }

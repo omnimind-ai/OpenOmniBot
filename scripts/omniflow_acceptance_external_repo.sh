@@ -244,13 +244,13 @@ click_function_id = os.environ.get("OMNIFLOW_CLICK_FUNCTION_ID", "settings_click
 
 kit = OmniFlowAgentKit()
 report = RepoProbe(".").run()
-prompt = kit.agent_prompt("Run the safest saved Function", report.summary())
+prompt = kit.agent_prompt("Run the safest saved reusable command", report.summary())
 
 assert "GUIAgent OmniFlow Skill" in kit.skill()
 assert kit.sample_function()["function_id"] == click_function_id
 if expected_mode:
     assert report.recommended_mode == expected_mode, (report.recommended_mode, expected_mode)
-assert "Run the safest saved Function" in prompt
+assert "Run the safest saved reusable command" in prompt
 
 print(f"project={project_name}")
 print("python_import=ok")
@@ -264,7 +264,7 @@ PY
   record_timing "cli_probe_repo" "$STEP_START_MS"
 
   STEP_START_MS="$(now_ms)"
-  "$VENV_DIR/bin/omniflow-agentkit" prompt "Run the safest saved Function" --repo . >"$WORK_ROOT/omniflow-agentkit-prompt.txt"
+  "$VENV_DIR/bin/omniflow-agentkit" prompt "Run the safest saved reusable command" --repo . >"$WORK_ROOT/omniflow-agentkit-prompt.txt"
   record_timing "cli_prompt_build" "$STEP_START_MS"
 
   STEP_START_MS="$(now_ms)"

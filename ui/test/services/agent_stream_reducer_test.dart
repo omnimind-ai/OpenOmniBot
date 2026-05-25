@@ -32,6 +32,35 @@ void main() {
     expect(event.status, 'running');
   });
 
+  test('parses snake_case agent event envelopes used by run log streams', () {
+    final event = AgentStreamEvent.fromMap(const {
+      'schema_version': 'oob.agent_event.v1',
+      'trace_id': 'trace-2',
+      'run_id': 'run-2',
+      'span_id': 'span-2',
+      'parent_span_id': 'root',
+      'channel': 'agent_stream',
+      'event': 'tool_progress',
+      'timestamp_ms': 4321,
+      'status': 'running',
+      'task_id': 'agent-task-snake',
+      'sequence': 9,
+      'entry_id': 'agent-task-snake-tool',
+      'round_index': 2,
+      'is_final': false,
+      'tool_type': 'vlm',
+    });
+
+    expect(event.kind, AgentStreamEventKind.toolProgress);
+    expect(event.taskId, 'agent-task-snake');
+    expect(event.seq, 9);
+    expect(event.entryId, 'agent-task-snake-tool');
+    expect(event.roundIndex, 2);
+    expect(event.runId, 'run-2');
+    expect(event.spanId, 'span-2');
+    expect(event.isFinal, isFalse);
+  });
+
   AgentStreamEvent toolEvent({
     required int seq,
     required AgentStreamEventKind kind,

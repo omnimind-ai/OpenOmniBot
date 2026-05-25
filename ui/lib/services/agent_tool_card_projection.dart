@@ -463,29 +463,64 @@ class _AgentToolCardEvent {
   factory _AgentToolCardEvent.fromMap(Map<dynamic, dynamic>? map) {
     final raw = map ?? const <dynamic, dynamic>{};
     return _AgentToolCardEvent(
-      cardId: (raw['cardId'] ?? '').toString(),
+      cardId: _firstString(raw, const ['cardId', 'card_id']),
       toolCallId: (raw['toolCallId'] ?? raw['tool_call_id'] ?? '').toString(),
       callId: (raw['callId'] ?? raw['call_id'] ?? '').toString(),
       toolTaskId: (raw['toolTaskId'] ?? raw['tool_task_id'] ?? '').toString(),
-      toolName: (raw['toolName'] ?? '').toString(),
-      displayName: (raw['displayName'] ?? raw['toolName'] ?? '').toString(),
-      toolTitle: (raw['toolTitle'] ?? raw['tool_title'] ?? '').toString(),
-      toolType: (raw['toolType'] ?? 'builtin').toString(),
-      serverName: raw['serverName']?.toString(),
+      toolName: _firstString(raw, const ['toolName', 'tool_name']),
+      displayName: _firstString(raw, const [
+        'displayName',
+        'display_name',
+        'toolName',
+        'tool_name',
+      ]),
+      toolTitle: _firstString(raw, const ['toolTitle', 'tool_title']),
+      toolType: _firstStringOr(raw, const ['toolType', 'tool_type'], 'builtin'),
+      serverName: _firstNullableString(raw, const [
+        'serverName',
+        'server_name',
+      ]),
       status: (raw['status'] ?? '').toString(),
-      argsJson: (raw['argsJson'] ?? raw['args'] ?? '').toString(),
+      argsJson: _firstString(raw, const ['argsJson', 'args_json', 'args']),
       progress: (raw['progress'] ?? '').toString(),
       summary: (raw['summary'] ?? '').toString(),
-      resultPreviewJson: (raw['resultPreviewJson'] ?? '').toString(),
-      rawResultJson: (raw['rawResultJson'] ?? '').toString(),
-      terminalOutput: (raw['terminalOutput'] ?? '').toString(),
-      terminalOutputDelta: (raw['terminalOutputDelta'] ?? '').toString(),
-      terminalSessionId: raw['terminalSessionId']?.toString(),
-      terminalStreamState: (raw['terminalStreamState'] ?? '').toString(),
-      workspaceId: raw['workspaceId']?.toString(),
-      interruptedBy: raw['interruptedBy']?.toString(),
-      interruptionReason: raw['interruptionReason']?.toString(),
-      runLogId: (raw['runLogId'] ?? raw['run_id'] ?? '').toString(),
+      resultPreviewJson: _firstString(raw, const [
+        'resultPreviewJson',
+        'result_preview_json',
+      ]),
+      rawResultJson: _firstString(raw, const [
+        'rawResultJson',
+        'raw_result_json',
+      ]),
+      terminalOutput: _firstString(raw, const [
+        'terminalOutput',
+        'terminal_output',
+      ]),
+      terminalOutputDelta: _firstString(raw, const [
+        'terminalOutputDelta',
+        'terminal_output_delta',
+      ]),
+      terminalSessionId: _firstNullableString(raw, const [
+        'terminalSessionId',
+        'terminal_session_id',
+      ]),
+      terminalStreamState: _firstString(raw, const [
+        'terminalStreamState',
+        'terminal_stream_state',
+      ]),
+      workspaceId: _firstNullableString(raw, const [
+        'workspaceId',
+        'workspace_id',
+      ]),
+      interruptedBy: _firstNullableString(raw, const [
+        'interruptedBy',
+        'interrupted_by',
+      ]),
+      interruptionReason: _firstNullableString(raw, const [
+        'interruptionReason',
+        'interruption_reason',
+      ]),
+      runLogId: _firstString(raw, const ['runLogId', 'run_log_id', 'run_id']),
       artifacts: AgentToolCardPolicy.asMapList(raw['artifacts']),
       actions: AgentToolCardPolicy.asMapList(raw['actions']),
       success: raw['success'] != false,
@@ -507,4 +542,31 @@ String _compactJsonField(String value, {required int maxChars}) {
     return normalized;
   }
   return '${normalized.substring(0, maxChars)}\n...(truncated)';
+}
+
+String _firstString(Map<dynamic, dynamic> raw, List<String> keys) {
+  return _firstNullableString(raw, keys) ?? '';
+}
+
+String _firstStringOr(
+  Map<dynamic, dynamic> raw,
+  List<String> keys,
+  String fallback,
+) {
+  final value = _firstNullableString(raw, keys);
+  return value == null || value.isEmpty ? fallback : value;
+}
+
+String? _firstNullableString(Map<dynamic, dynamic> raw, List<String> keys) {
+  for (final key in keys) {
+    final value = raw[key];
+    if (value == null) {
+      continue;
+    }
+    final text = value.toString();
+    if (text.trim().isNotEmpty) {
+      return text;
+    }
+  }
+  return null;
 }

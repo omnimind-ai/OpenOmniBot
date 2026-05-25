@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.agent
 import cn.com.omnimind.baselib.i18n.PromptLocale
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -159,7 +160,7 @@ class AgentSystemPromptTest {
     }
 
     @Test
-    fun buildIncludesWorkbenchHomeInputRoutingRules() {
+    fun buildOmitsWorkbenchProjectRulesByDefault() {
         val prompt = AgentSystemPrompt.build(
             workspace = AgentWorkspaceDescriptor(
                 id = "conversation-1",
@@ -181,7 +182,37 @@ class AgentSystemPromptTest {
             locale = PromptLocale.ZH_CN
         )
 
-        assertTrue(prompt.contains("OOB Workbench"))
+        assertFalse(prompt.contains("OOB Workbench"))
+        assertFalse(prompt.contains("workbench_api_call"))
+        assertFalse(prompt.contains("workbench_project_hot_update"))
+        assertFalse(prompt.contains("GitHub/OSS"))
+        assertFalse(prompt.contains("frontendContext.selectedElement.oobId"))
+    }
+
+    @Test
+    fun buildIncludesWorkbenchRulesWhenProjectIsActive() {
+        val prompt = AgentSystemPrompt.build(
+            workspace = AgentWorkspaceDescriptor(
+                id = "conversation-1",
+                rootPath = "/workspace",
+                androidRootPath = "/data/user/0/cn.com.omnimind.bot/workspace",
+                uriRoot = "omnibot://workspace",
+                currentCwd = "/workspace/demo",
+                androidCurrentCwd = "/data/user/0/cn.com.omnimind.bot/workspace/demo",
+                shellRootPath = "/workspace",
+                retentionPolicy = "shared_root"
+            ),
+            installedSkills = emptyList(),
+            skillsRootShellPath = "/workspace/.omnibot/skills",
+            skillsRootAndroidPath = "/data/user/0/cn.com.omnimind.bot/workspace/.omnibot/skills",
+            resolvedSkills = emptyList(),
+            memoryContext = null,
+            activeWorkbenchProjectContext = "projectId: oob-workbench-todo-log\napi: todo.add",
+            workbenchDisplayLayoutContext = "Workbench viewport: 412x700dp",
+            locale = PromptLocale.ZH_CN
+        )
+
+        assertTrue(prompt.contains("当前激活的 OOB Workbench Project"))
         assertTrue(prompt.contains("workbench_api_call"))
         assertTrue(prompt.contains("workbench_project_hot_update"))
         assertTrue(prompt.contains("htmlPatches"))

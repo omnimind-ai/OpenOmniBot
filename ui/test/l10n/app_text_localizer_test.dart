@@ -29,6 +29,59 @@ void main() {
     }
   });
 
+  test('localized reusable command surfaces avoid raw function wording', () {
+    final checkedKeys = const [
+      'settingsOobFunctionAsToolTitle',
+      'settingsOobFunctionAsToolSubtitle',
+      'memoryCommandsTitle',
+      'omniflowPanelDesc',
+      'omniflowFunctionList',
+      'omniflowFunctionSearch',
+      'functionLibraryTitle',
+      'functionLibrarySearchHint',
+      'functionLibraryEmpty',
+      'functionLibraryEditTitle',
+      'functionLibraryDeleteTitle',
+      'functionLibraryDetailBundleFunction',
+      'functionLibraryDetailFunctionSchema',
+      'executionReuseHit',
+      'executionReuseHitWithFunction',
+      'executionActionCallFunction',
+      'memorySaveAsSkillTitle',
+      'memorySaveAsSkillContent',
+      'memorySaveSuccess',
+      'memorySaveSuccessSimple',
+      'memorySaveFailed',
+      'omniflowAssetReuseHit',
+      'omniflowAssetLinkedFunction',
+      'omniflowAssetFunctionDetail',
+      'actionTypeCallFunction',
+    ];
+
+    final en =
+        jsonDecode(File('lib/l10n/app_en.arb').readAsStringSync())
+            as Map<String, dynamic>;
+    final zh =
+        jsonDecode(File('lib/l10n/app_zh.arb').readAsStringSync())
+            as Map<String, dynamic>;
+
+    String visibleText(String value) =>
+        value.replaceAll(RegExp(r'\{[^}]+\}'), '');
+
+    for (final key in checkedKeys) {
+      expect(
+        visibleText(en[key] as String).toLowerCase(),
+        isNot(contains('function')),
+        reason: 'lib/l10n/app_en.arb:$key',
+      );
+      expect(
+        visibleText(zh[key] as String),
+        isNot(contains('功能')),
+        reason: 'lib/l10n/app_zh.arb:$key',
+      );
+    }
+  });
+
   test('uses active locale override for source-text translations', () {
     AppTextLocalizer.setResolvedLocale(const Locale('zh'));
     expect(AppTextLocalizer.text('设置'), '设置');

@@ -123,7 +123,7 @@ class AgentOrchestratorTest {
     }
 
     @Test
-    fun pseudoToolMarkupIsHandledAsPlainAssistantText() = runBlocking {
+    fun pseudoToolMarkupIsNotPublishedAsAssistantText() = runBlocking {
         val llmClient = FakeLlmClient(
             turns = listOf(
                 assistantTurn(
@@ -143,7 +143,8 @@ class AgentOrchestratorTest {
 
         assertEquals(1, llmClient.requests.size)
         assertTrue(callback.errors.isEmpty())
-        assertTrue(callback.chatMessages.any { it.first.contains("<tool_call>") })
+        assertTrue(callback.chatMessages.isNotEmpty())
+        assertTrue(callback.chatMessages.none { it.first.contains("<tool_call>") })
     }
 
     @Test

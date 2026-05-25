@@ -54,18 +54,18 @@ After a successful VLM run:
 - Store concrete action cards with `started_at_ms`, `finished_at_ms`,
   `duration_ms`, `token_usage_total`, per-step token usage, and per-call token
   usage.
-- Convert replayable cards into an OOB OmniFlow Function.
+- Convert replayable cards into an OOB OmniFlow reusable command.
 - Replay model-free actions with `OobRunLogReplayService`.
 - Treat recorded page similarity as a compatibility gate, not as task reward.
 
 ## Recall Method
 
-Recall is not a flat Function-store search:
+Recall is not a flat reusable-command-store search:
 
 1. Match the current page to a UDEG node.
 2. Read that node's skill-like decision context.
-3. Consider Functions attached to that node.
-4. Rank attached Functions and segment candidates.
+3. Consider reusable commands attached to that node.
+4. Rank attached reusable commands and segment candidates.
 5. Execute a safe no-argument hit locally, or fall back to bounded VLM.
 
 Timing fields such as `parse_request_ms`, `read_current_package_ms`,
@@ -99,8 +99,8 @@ three phases:
 
 1. `online_vlm`: AndroidWorld initializes the task, OOB executes the goal with a
    bounded `maxSteps`, and AndroidWorld polls the task reward after OOB reports.
-2. `replay`: convert the successful OOB RunLog to a Function, reset the same
-   task params, then replay the Function without a model call.
+2. `replay`: convert the successful OOB RunLog to a reusable command, reset the
+   same task params, then replay the command without a model call.
 3. `recall_repeat`: reset the same task params again and call OOB VLM. A good
    run should hit direct or segment recall before falling back to live VLM.
 
@@ -133,7 +133,7 @@ OOB should borrow the method, not the runtime:
 - Keep the action registry small and deterministic.
 - Keep failure summaries and after-action evidence available to the next VLM
   turn.
-- Do not replace Kotlin online VLM, RunLog collection, Function registration,
+- Do not replace Kotlin online VLM, RunLog collection, reusable command registration,
   UDEG recall, or model-free replay with Mobilerun internals.
 - Do not import, install, launch, or invoke Mobilerun CLI/MCP/Portal/Python
   runtime during OOB validation. AndroidWorld and Mobilerun remain method

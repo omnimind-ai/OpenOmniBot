@@ -76,43 +76,62 @@ class DebugOobFunctionSegmentReceiver : BroadcastReceiver() {
         packageName: String,
         goal: String,
     ): Map<String, Any?> {
+        val timing = ValidationTiming()
         val toolkit = OobOmniFlowToolkitService(context)
-        waitForAccessibility(context)
-        val beforeObservation = waitForPageObservation()
+        timing.measure("wait_accessibility_ms") {
+            waitForAccessibility(context)
+        }
+        val beforeObservation = timing.measure("observe_before_ms") {
+            waitForPageObservation()
+        }
         val beforePackage = beforeObservation.packageName
         val beforeXml = beforeObservation.xml
-        val registerChild = toolkit.registerFunction(
-            mapOf(
-                "functionSpec" to openSettingsChildSpec(
-                    functionId = childFunctionId,
-                    packageName = packageName,
-                    sourcePageXml = beforeXml,
-                    sourcePackageName = beforePackage,
+        val registerChild = timing.measure("register_child_ms") {
+            toolkit.registerFunction(
+                mapOf(
+                    "functionSpec" to openSettingsChildSpec(
+                        functionId = childFunctionId,
+                        packageName = packageName,
+                        sourcePageXml = beforeXml,
+                        sourcePackageName = beforePackage,
+                    )
                 )
             )
-        )
-        val registerParent = toolkit.registerFunction(
-            mapOf("functionSpec" to parentCallsChildSpec(parentFunctionId, childFunctionId))
-        )
-        val storedChild = toolkit.getFunction(mapOf("function_id" to childFunctionId))
-        val recall = toolkit.recall(
-            mapOf(
-                "goal" to goal,
-                "current_package" to beforePackage,
-                "current_xml" to beforeXml,
-                "k" to 3,
-                "auto_execute" to true,
+        }
+        val registerParent = timing.measure("register_parent_ms") {
+            toolkit.registerFunction(
+                mapOf("functionSpec" to parentCallsChildSpec(parentFunctionId, childFunctionId))
             )
-        )
-        val parentRun = toolkit.callFunction(
-            mapOf(
-                "function_id" to parentFunctionId,
-                "goal" to goal,
-                "arguments" to emptyMap<String, Any?>(),
+        }
+        val storedChild = timing.measure("load_child_ms") {
+            toolkit.getFunction(mapOf("function_id" to childFunctionId))
+        }
+        val recall = timing.measure("recall_ms") {
+            toolkit.recall(
+                mapOf(
+                    "goal" to goal,
+                    "current_package" to beforePackage,
+                    "current_xml" to beforeXml,
+                    "k" to 3,
+                    "auto_execute" to true,
+                )
             )
-        )
-        delay(POST_RUN_DEVICE_SETTLE_MS)
-        val afterObservation = waitForPageObservation(expectedPackage = packageName)
+        }
+        val parentRun = timing.measure("parent_run_ms") {
+            toolkit.callFunction(
+                mapOf(
+                    "function_id" to parentFunctionId,
+                    "goal" to goal,
+                    "arguments" to emptyMap<String, Any?>(),
+                )
+            )
+        }
+        timing.measure("post_run_settle_ms") {
+            delay(POST_RUN_DEVICE_SETTLE_MS)
+        }
+        val afterObservation = timing.measure("observe_after_ms") {
+            waitForPageObservation(expectedPackage = packageName)
+        }
         val afterPackage = afterObservation.packageName
         val nestedSummary = nestedSummary(parentRun)
         val loaded = storedChild["function_id"] == childFunctionId
@@ -148,8 +167,54 @@ class DebugOobFunctionSegmentReceiver : BroadcastReceiver() {
             "recall" to recall,
             "parent_run" to parentRun,
             "parent_nested_summary" to nestedSummary,
+            "timing" to timing.finish(
+                counts = mapOf(
+                    "register_success_count" to listOf(
+                        registerChild["success"],
+                        registerParent["success"],
+                    ).count { it == true },
+                    "parent_step_count" to ((parentRun["step_count"] as? Number)?.toInt()
+                        ?: (parentRun["step_results"] as? List<*>)?.size
+                        ?: 0),
+                    "nested_step_count" to ((nestedSummary["nested_step_count"] as? Number)?.toInt()
+                        ?: 0),
+                    "recall_candidate_count" to ((recall["candidates"] as? List<*>)?.size ?: 0),
+                    "segment_candidate_count" to ((recall["segment_candidates"] as? List<*>)?.size
+                        ?: 0),
+                )
+            ),
             "source" to "debug_oob_function_segment_validation",
         )
+    }
+
+    private class ValidationTiming {
+        private val startedAtMs = System.currentTimeMillis()
+        private val startedAtNanos = System.nanoTime()
+        private val phases = linkedMapOf<String, Long>()
+
+        suspend fun <T> measure(name: String, block: suspend () -> T): T {
+            val startNanos = System.nanoTime()
+            return try {
+                block()
+            } finally {
+                phases[name] = elapsedMs(startNanos)
+            }
+        }
+
+        fun finish(counts: Map<String, Any?> = emptyMap()): Map<String, Any?> {
+            val finishedAtMs = System.currentTimeMillis()
+            return linkedMapOf(
+                "source" to "debug_oob_function_segment_validation",
+                "started_at_ms" to startedAtMs,
+                "finished_at_ms" to finishedAtMs,
+                "duration_ms" to elapsedMs(startedAtNanos),
+                "phase_ms" to phases.toMap(),
+                "counts" to counts,
+            )
+        }
+
+        private fun elapsedMs(startNanos: Long): Long =
+            ((System.nanoTime() - startNanos) / 1_000_000L).coerceAtLeast(0L)
     }
 
     private data class PageObservation(

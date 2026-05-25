@@ -47,6 +47,18 @@ class AssistsCoreManagerAgentFinalizationTest {
     }
 
     @Test
+    fun `ignores streamed tool protocol when resolving final error text`() {
+        val resolution = resolveAgentFinalErrorResolution(
+            streamed = """<tool_call>{"toolName":"web_search","previewJson":"{}","status":"success"}</tool_call>""",
+            error = "",
+            localizedFallback = "暂时无法生成回复，请重试。"
+        )
+
+        assertEquals("暂时无法生成回复，请重试。", resolution.text)
+        assertTrue(resolution.persistAsError)
+    }
+
+    @Test
     fun `falls back to error details when no assistant text was streamed`() {
         val resolution = resolveAgentFinalErrorResolution(
             streamed = "",

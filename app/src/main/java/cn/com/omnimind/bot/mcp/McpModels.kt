@@ -67,6 +67,8 @@ data class TaskState(
     @Volatile var summaryUnavailable: Boolean = false,
     @Volatile var compileStatus: String = "",
     @Volatile var executionRoute: String = "",
+    @Volatile var errorCode: String? = null,
+    @Volatile var missingPermissions: List<String> = emptyList(),
     @Volatile var vlmRequest: VlmTaskRequest? = null,
     val startTime: Long = System.currentTimeMillis(),
     @Volatile var stateChanged: Boolean = false
@@ -91,8 +93,10 @@ data class TaskState(
         "summary" to summaryText,
         "feedback" to feedback,
         "summaryUnavailable" to summaryUnavailable,
-        "compileStatus" to compileStatus,
+        "executionStatus" to compileStatus,
         "executionRoute" to executionRoute,
+        "errorCode" to errorCode,
+        "missingPermissions" to missingPermissions,
         "elapsedMs" to (System.currentTimeMillis() - startTime)
     )
     

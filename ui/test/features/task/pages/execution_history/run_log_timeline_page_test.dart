@@ -10,8 +10,22 @@ void main() {
   const assistCoreChannel = MethodChannel(
     'cn.com.omnimind.bot/AssistCoreEvent',
   );
+  var clipboardText = '';
 
   setUp(() {
+    clipboardText = '';
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            final args = Map<String, dynamic>.from(call.arguments as Map);
+            clipboardText = (args['text'] ?? '').toString();
+            return null;
+          }
+          if (call.method == 'Clipboard.getData') {
+            return <String, dynamic>{'text': clipboardText};
+          }
+          return null;
+        });
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(assistCoreChannel, (call) async {
           if (call.method == 'getInternalRunLogTimeline') {
@@ -145,6 +159,8 @@ void main() {
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(assistCoreChannel, null);
   });
 
@@ -162,10 +178,10 @@ void main() {
     expect(find.text('执行步骤'), findsOneWidget);
     expect(find.text('离线复用流程'), findsOneWidget);
     expect(find.text('RunLog 已收集'), findsOneWidget);
-    expect(find.text('可注册 Function'), findsOneWidget);
+    expect(find.text('可保存为复用指令'), findsOneWidget);
     expect(find.text('本地执行'), findsOneWidget);
     expect(find.text('重放 RunLog'), findsOneWidget);
-    expect(find.text('注册 Function'), findsOneWidget);
+    expect(find.text('保存复用指令'), findsOneWidget);
     expect(find.text('1 步'), findsOneWidget);
     expect(find.text('Token 消耗'), findsOneWidget);
     expect(_richTextContaining('总计  1.23k'), findsOneWidget);
@@ -196,13 +212,13 @@ void main() {
     expect(find.textContaining('Visual task'), findsNothing);
 
     await tester.scrollUntilVisible(
-      find.text('路由结果'),
+      find.text('执行信息'),
       300,
       scrollable: find.byType(Scrollable).last,
     );
-    await tester.tap(find.text('路由结果'));
+    await tester.tap(find.text('执行信息'));
     await tester.pumpAndSettle();
-    expect(_selectableTextContaining('route_status'), findsOneWidget);
+    expect(_selectableTextContaining('execution_status'), findsOneWidget);
     expect(_selectableTextContaining('compile_status'), findsNothing);
 
     await tester.scrollUntilVisible(
@@ -212,10 +228,12 @@ void main() {
     );
     await tester.tap(find.text('原始 JSON'));
     await tester.pumpAndSettle();
-    expect(_selectableTextContaining('route_kind'), findsOneWidget);
-    expect(_selectableTextContaining('route_result'), findsOneWidget);
+    expect(_selectableTextContaining('execution_kind'), findsOneWidget);
+    expect(_selectableTextContaining('execution_result'), findsOneWidget);
     expect(_selectableTextContaining('compile_kind'), findsNothing);
     expect(_selectableTextContaining('compile_result'), findsNothing);
+    expect(_selectableTextContaining('route_kind'), findsNothing);
+    expect(_selectableTextContaining('route_result'), findsNothing);
   });
 
   testWidgets('VLM-only runlog uses a single red VLM source badge', (
@@ -243,8 +261,36 @@ void main() {
     expect(_richTextContaining('OmniFlow'), findsNothing);
   });
 
+  testWidgets('RunLog copied transcript hides internal compile schema keys', (
+    tester,
+  ) async {
+    await Clipboard.setData(const ClipboardData(text: ''));
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        locale: const Locale('zh'),
+        child: const RunLogTimelinePage(runId: 'run-vlm', title: ''),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('复制全部文本'));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final clipboard = await Clipboard.getData('text/plain');
+    final text = clipboard?.text ?? '';
+    expect(text, contains('原始时间线数据'));
+    expect(text, contains('execution_kind'));
+    expect(text, contains('execution_result'));
+    expect(text, contains('execution_status'));
+    expect(text, isNot(contains('compile_kind')));
+    expect(text, isNot(contains('compile_result')));
+    expect(text, isNot(contains('compile_status')));
+    expect(text, isNot(contains('compile')));
+    expect(text, isNot(contains('编译')));
+  });
+
   testWidgets(
-    'RunLog local execution registers the run and executes the generated Function',
+    'RunLog local execution registers the run and executes the generated reusable command',
     (tester) async {
       final methodCalls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -286,7 +332,10 @@ void main() {
                 'success': true,
                 'function_id': 'fn_from_runlog',
                 'goal': 'oob_reusable_function_run:fn_from_runlog',
+                'execution_status': 'completed_local',
                 'terminal_state': <String, dynamic>{
+                  'status': 'completed_local',
+                  'execution_status': 'completed_local',
                   'runner': 'oob_omniflow_replay',
                   'step_count': 1,
                   'success_step_count': 1,
@@ -337,7 +386,7 @@ void main() {
   );
 
   testWidgets(
-    'RunLog registration sheet hides compile keys in generated Function JSON',
+    'RunLog registration sheet hides internal execution keys in generated reusable command JSON',
     (tester) async {
       final methodCalls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -393,7 +442,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('注册 Function').last);
+      await tester.tap(find.text('保存复用指令').last);
       await tester.pump();
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 500)),
@@ -410,15 +459,25 @@ void main() {
 
       await _pumpUntilFound(
         tester,
-        find.text('Function JSON', skipOffstage: false),
+        find.text('复用指令 JSON', skipOffstage: false),
       );
-      expect(find.text('Function JSON', skipOffstage: false), findsOneWidget);
-      expect(_selectableTextContaining('route_kind'), findsWidgets);
-      expect(_selectableTextContaining('route_result'), findsWidgets);
-      expect(_selectableTextContaining('route_status'), findsWidgets);
+      expect(find.text('RunLog 保存结果', skipOffstage: false), findsOneWidget);
+      expect(_richTextContaining('来源  已保存'), findsOneWidget);
+      expect(_richTextContaining('状态  可执行'), findsOneWidget);
+      expect(find.text('API', skipOffstage: false), findsNothing);
+      expect(find.text('Native', skipOffstage: false), findsNothing);
+      expect(find.text('Local', skipOffstage: false), findsNothing);
+      expect(find.textContaining('转换', skipOffstage: false), findsNothing);
+      expect(find.text('复用指令 JSON', skipOffstage: false), findsOneWidget);
+      expect(_selectableTextContaining('execution_kind'), findsWidgets);
+      expect(_selectableTextContaining('execution_result'), findsWidgets);
+      expect(_selectableTextContaining('execution_status'), findsWidgets);
       expect(_selectableTextContaining('compile_kind'), findsNothing);
       expect(_selectableTextContaining('compile_result'), findsNothing);
       expect(_selectableTextContaining('compile_status'), findsNothing);
+      expect(_selectableTextContaining('route_kind'), findsNothing);
+      expect(_selectableTextContaining('route_result'), findsNothing);
+      expect(_selectableTextContaining('route_status'), findsNothing);
     },
   );
 }

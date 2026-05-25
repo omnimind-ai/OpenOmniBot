@@ -474,10 +474,10 @@ class RunLogReusableFunctionConverter {
 
     if (useEnglish) {
       return [
-        'You can reuse this OOB function.',
+        'You can reuse this OOB reusable command.',
         '',
-        'Function: $name',
-        'Function ID: $functionId',
+        'Reusable command: $name',
+        'Reusable command ID: $functionId',
         if (description.isNotEmpty) 'Goal: $description',
         '',
         'Parameters:',
@@ -490,16 +490,16 @@ class RunLogReusableFunctionConverter {
         '4. For executor=agent or validation mismatch, call step.agent_call.tool / fallback.tool and re-plan that step from the current screen.',
         '5. Runtime arguments are applied through parameters.bindings before execution.',
         '',
-        'Function JSON:',
+        'Reusable command JSON:',
         const JsonEncoder.withIndent('  ').convert(functionJson),
       ].join('\n');
     }
 
     return [
-      '你可以复用这个 OOB function。',
+      '你可以复用这个 OOB 复用指令。',
       '',
-      'Function: $name',
-      'Function ID: $functionId',
+      '复用指令：$name',
+      '复用指令 ID：$functionId',
       if (description.isNotEmpty) '目标: $description',
       '',
       '参数:',
@@ -512,7 +512,7 @@ class RunLogReusableFunctionConverter {
       '4. executor=agent 或状态不匹配时，调用 step.agent_call.tool / fallback.tool，从当前屏幕重规划该步。',
       '5. 运行时参数会先通过 parameters.bindings 写入对应 step args。',
       '',
-      'Function JSON:',
+      '复用指令 JSON:',
       const JsonEncoder.withIndent('  ').convert(functionJson),
     ].join('\n');
   }
@@ -524,7 +524,7 @@ class RunLogReusableFunctionConverter {
     final compact = const JsonEncoder.withIndent('  ').convert(baseJson);
     if (useEnglish) {
       return '''
-You are the OOB/OmniFlow trajectory organizer. Convert the draft extracted from RunLog below into reusable function JSON.
+You are the OOB/OmniFlow trajectory organizer. Convert the draft extracted from RunLog below into reusable command JSON.
 
 Requirements:
 - Output exactly one JSON object. Do not use Markdown and do not explain.
@@ -532,7 +532,7 @@ Requirements:
 - Do not wrap the JSON in code fences. Do not include comments, prose, XML, YAML, or bullet lists.
 - Keep schema_version = "oob.reusable_function.v1" and keep function_id exactly unchanged.
 - Preserve execution.steps order, tool names, and key args. Do not invent tools that do not exist.
-- You may rewrite name/description to make it a clearer reusable function name.
+- You may rewrite name/description to make it a clearer reusable command name.
 - You may refine parameters: abstract hard-coded user input, search terms, message text, URLs, and target objects into parameters; do not abstract coordinate x/y into user parameters.
 - Every parameter must include name/type/description/bindings/default. bindings must be a JSONPath string array pointing to execution.steps[*].args.
 - Preserve or improve step executor/model_free/scriptable/omniflow_action/callable_tool/agent_call/validation/fallback fields.
@@ -546,7 +546,7 @@ $compact
 ''';
     }
     return '''
-你是 OOB/OmniFlow 的轨迹整理器。请把下面由 RunLog 抽取得到的草稿，整理成可复用的 function JSON。
+你是 OOB/OmniFlow 的轨迹整理器。请把下面由 RunLog 抽取得到的草稿，整理成复用指令 JSON。
 
 要求：
 - 只能输出一个 JSON object，不要 Markdown，不要解释。
@@ -554,7 +554,7 @@ $compact
 - 不要使用代码块，不要包含注释、说明文字、XML、YAML 或列表解释。
 - 保持 schema_version = "oob.reusable_function.v1"，并保持 function_id 完全不变。
 - 保留 execution.steps 的顺序、工具名和关键 args，不要编造不存在的工具。
-- 可以重写 name/description，使其更像可复用功能名。
+- 可以重写 name/description，使其更像复用指令名称。
 - 可以整理 parameters：把硬编码的用户输入、搜索词、消息文本、URL、目标对象抽象成参数；不要把坐标 x/y 抽象成用户参数。
 - 每个 parameter 必须包含 name/type/description/bindings/default，其中 bindings 是 JSONPath 字符串数组，指向 execution.steps[*].args。
 - 保留或优化每步的 executor/model_free/scriptable/omniflow_action/callable_tool/agent_call/validation/fallback 字段。

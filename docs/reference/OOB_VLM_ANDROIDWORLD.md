@@ -12,7 +12,8 @@ This path covers live phone operation through `vlm_task`:
 - Accessibility XML and screenshot grounding
 - AndroidWorld-style tasks that require multi-step navigation and visible
   verification
-- RunLog collection, token usage reporting, conversion, and replay validation
+- RunLog collection, token usage reporting, reusable-command generation, and
+  replay validation
 
 It does not cover generic memory recall, Workbench Project generation, browser
 automation, or offline Python harness compatibility.
@@ -135,7 +136,7 @@ is a general safety or execution invariant that applies outside AndroidWorld.
 
 A successful online VLM run should leave a RunLog with concrete action cards and
 token usage. The debug E2E receiver converts a finished RunLog into an OmniFlow
-Function when the log is reusable.
+reusable command when the log is reusable.
 
 Expected debug result fields:
 
@@ -153,7 +154,33 @@ Every VLM provider call should report token usage when the provider returns it.
 The debug script fails validation if total token usage, per-step usage, or
 per-call usage is missing.
 
+Reusable command execution has three terminal protocol statuses:
+
+- `completed_local`: the deterministic OmniFlow prefix covered the full command.
+- `started_agent_fallback`: OOB replayed the local prefix, then started a VLM
+  task for the remaining agent/tool-dependent segment.
+- `failed`: local replay, required arguments, asset lookup, or agent fallback
+  startup failed.
+
+Timing is internal evidence, not user-facing UI text. Native RunLog/replay
+payloads should retain `duration_ms`, `started_at_ms`, `finished_at_ms`, and
+`phase_ms` entries such as `parse_request_ms`, `read_current_package_ms`,
+`read_current_page_ms`, `page_match_ms`, `rank_functions_ms`, and
+`segment_match_ms`. Flutter screens may use the status to choose user-readable
+copy, but should not display raw phase timing or raw protocol labels in the
+main user surface.
+
 ## Validation
+
+Keep validation split into two categories:
+
+- UX tests verify that users see understandable copy such as `复用指令`, local
+  completion, VLM fallback, steps, params, and RunLogs. They also guard that raw
+  timing fields and raw protocol wording stay out of the primary UI.
+- Actual execution tests verify the MethodChannel bridge, native replay result
+  payloads, local OmniFlow execution, agent fallback handoff, RunLog timing, and
+  install/launch behavior on devices. These tests can inspect internal fields
+  that are deliberately hidden from users.
 
 Unit coverage:
 
@@ -169,7 +196,22 @@ Unit coverage:
   --tests cn.com.omnimind.assists.task.vlmserver.VLMClientRequestTest \
   --tests cn.com.omnimind.assists.task.vlmserver.VLMToolDefinitionsTest \
   --tests cn.com.omnimind.bot.mcp.McpToolDefinitionsTest \
-  --tests cn.com.omnimind.bot.agent.BuiltinSkillManifestConsistencyTest
+  --tests cn.com.omnimind.bot.agent.BuiltinSkillManifestConsistencyTest \
+  --tests cn.com.omnimind.bot.manager.AssistsCoreManagerOobReusableFunctionPayloadTest \
+  --tests cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandlerOmniFlowExecutionTest
+```
+
+Flutter UX and bridge coverage:
+
+```bash
+cd ui
+flutter test \
+  test/l10n/app_text_localizer_test.dart \
+  test/features/task/pages/execution_history/function_run_result_sheet_test.dart \
+  test/features/task/pages/execution_history/command_library_page_test.dart \
+  test/features/task/pages/execution_history/run_log_timeline_page_test.dart \
+  test/services/oob_reusable_function_execution_service_test.dart \
+  test/widgets/execution/execution_detail_view_test.dart
 ```
 
 Build validation:
@@ -187,6 +229,25 @@ scripts/demo-vlm-runlog-e2e.sh \
   --max-steps 12
 ```
 
+Reusable command segment validation:
+
+```bash
+scripts/oob-device-segment-validation.sh --device emulator-5554
+scripts/oob-device-segment-validation.sh --device emulator-5556
+```
+
+This debug receiver registers a model-free `open_app(Settings)` child reusable
+command, registers a parent command that calls the child segment, runs UDEG
+page-match recall from the current launcher page, executes the parent locally,
+and verifies that Settings is foreground. A passing result must include
+`success=true`, `recall.decision=recall`, `parent_run.success=true`,
+`parent_nested_summary.nested_function_id`, and timing fields under
+`recall.timing.phase_ms` plus `parent_run.timing.runner_duration_ms`.
+The wrapper script also verifies top-level device execution timing:
+`duration_ms`, `started_at_ms`, `finished_at_ms`, and phase timings for
+accessibility wait, before/after page reads, child/parent registration, recall,
+parent execution, and post-run settling.
+
 The E2E script performs:
 
 1. provider binding setup
@@ -194,8 +255,8 @@ The E2E script performs:
 3. raw VLM execution
 4. RunLog lookup
 5. token usage validation
-6. RunLog conversion to Function
-7. registered Function replay
+6. RunLog generation into a reusable command
+7. registered reusable command replay
 
 Use tasks that cross multiple visible states. Do not use one-click smoke tasks
 as acceptance evidence.

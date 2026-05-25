@@ -1,3 +1,4 @@
+import 'package:ui/features/home/pages/chat/utils/agent_internal_tool_payload.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/agent_tool_card_policy.dart';
 
@@ -293,10 +294,18 @@ AgentRunTimelineGroup? _buildTimelineGroup(
     candidates.toList(growable: false)
       ..sort((left, right) => _compareNewestFirst(left, right)),
   );
-  if (taskMessages.isEmpty ||
+  final displayMessages = taskMessages
+      .where(
+        (message) =>
+            !_isInternalToolPayloadMessage(message, taskMessages: taskMessages),
+      )
+      .toList(growable: false);
+  final removedInternalPayload = displayMessages.length != taskMessages.length;
+  if (displayMessages.isEmpty ||
       (!isActive &&
-          taskMessages.length < 2 &&
-          taskMessages.every(
+          displayMessages.length < 2 &&
+          !removedInternalPayload &&
+          displayMessages.every(
             (message) => !_shouldKeepRunLogOnlyGroup(message),
           ))) {
     return null;
@@ -307,17 +316,17 @@ AgentRunTimelineGroup? _buildTimelineGroup(
   // chronological execution transcript instead of "all cards, then all text".
   if (isActive) {
     final primaryVisibleMessage = _resolvePrimaryVisibleMessage(
-      taskMessages,
+      displayMessages,
       isActive: true,
     );
     final visibleMessages = primaryVisibleMessage == null
         ? const <ChatMessageModel>[]
         : _resolveVisibleMessages(
-            taskMessages,
+            displayMessages,
             primaryVisibleMessage: primaryVisibleMessage,
           );
     final visibleIds = visibleMessages.map((message) => message.id).toSet();
-    final processMessages = taskMessages
+    final processMessages = displayMessages
         .where((message) => !visibleIds.contains(message.id))
         .toList(growable: false);
     final compactProcessMessages = _resolveProcessMessages(processMessages);
@@ -334,19 +343,31 @@ AgentRunTimelineGroup? _buildTimelineGroup(
 
   // Completed run: only the final text is visible, everything else collapses.
   final primaryVisibleMessage = _resolvePrimaryVisibleMessage(
-    taskMessages,
+    displayMessages,
     isActive: false,
   );
   if (primaryVisibleMessage == null) {
-    return null;
+    if (!removedInternalPayload) {
+      return null;
+    }
+    final compactProcessMessages = _resolveProcessMessages(displayMessages);
+    if (compactProcessMessages.isEmpty) {
+      return null;
+    }
+    return AgentRunTimelineGroup(
+      taskId: taskId,
+      visibleMessagesNewestFirst: const <ChatMessageModel>[],
+      processMessagesNewestFirst: compactProcessMessages,
+      isActiveRun: false,
+    );
   }
 
   final visibleMessages = _resolveVisibleMessages(
-    taskMessages,
+    displayMessages,
     primaryVisibleMessage: primaryVisibleMessage,
   );
   final visibleIds = visibleMessages.map((message) => message.id).toSet();
-  final processMessages = taskMessages
+  final processMessages = displayMessages
       .where((message) => !visibleIds.contains(message.id))
       .toList(growable: false);
   final compactProcessMessages = _resolveProcessMessages(processMessages);
@@ -465,6 +486,23 @@ bool _isAgentRunCandidateMessage(ChatMessageModel message) {
     return false;
   }
   return ref.isThinkingCard || ref.isToolCard || ref.isPermissionCard;
+}
+
+bool _isInternalToolPayloadMessage(
+  ChatMessageModel message, {
+  required List<ChatMessageModel> taskMessages,
+}) {
+  final ref = agentRunMessageRef(message);
+  if (ref == null || !ref.isAssistantText) {
+    return false;
+  }
+  final hasSiblingToolCard = taskMessages.any(
+    (candidate) => agentRunMessageRef(candidate)?.isToolCard ?? false,
+  );
+  if (!hasSiblingToolCard) {
+    return false;
+  }
+  return isLikelyInternalToolPayloadText((message.text ?? '').trim());
 }
 
 ChatMessageModel? _resolvePrimaryVisibleMessage(

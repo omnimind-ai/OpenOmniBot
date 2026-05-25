@@ -79,6 +79,30 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
+    fun `identifies local replay actions that require accessibility`() {
+        assertTrue(
+            OmniflowStepExecutor.requiresAccessibility(
+                mapOf("executor" to "omniflow", "tool" to "click")
+            )
+        )
+        assertTrue(
+            OmniflowStepExecutor.requiresAccessibility(
+                mapOf("executor" to "omniflow", "tool" to "swipe")
+            )
+        )
+        assertFalse(
+            OmniflowStepExecutor.requiresAccessibility(
+                mapOf("executor" to "omniflow", "tool" to "open_app")
+            )
+        )
+        assertFalse(
+            OmniflowStepExecutor.requiresAccessibility(
+                mapOf("executor" to "omniflow", "tool" to "finished")
+            )
+        )
+    }
+
+    @Test
     fun `remap keeps non coordinate action args unchanged`() {
         val args = mapOf("content" to "hello")
         val result = OmniflowStepExecutor.remapStepArgs(

@@ -5,7 +5,7 @@ By default this writes the M3A/OOB adapter method only and does not load
 AndroidWorld or run emulator episodes. A live runner remains behind the explicit
 --run-live opt-in for later external validation. AndroidWorld owns task
 initialization and success checks in that mode; the OOB APK owns online VLM
-execution, RunLog conversion, Function replay, and recall.
+execution, RunLog reusable-command generation, replay, and recall.
 """
 
 from __future__ import annotations
@@ -376,7 +376,7 @@ class OobAdbClient:
             goal_b64,
             timeout=self.receiver_start_timeout(),
         )
-        return self.wait_for_json(FUNCTION_RESULT_FILE, "OOB Function replay result")
+        return self.wait_for_json(FUNCTION_RESULT_FILE, "OOB reusable command replay result")
 
 
 def boolish(value: Any) -> bool:
@@ -864,7 +864,7 @@ def build_method_record(args: argparse.Namespace) -> dict[str, Any]:
                 "indexed_elements": "OOB indexed Accessibility evidence and marked screenshot labels.",
                 "tool_registry": "OOB VLMToolDefinitions and native DeviceOperator actions.",
                 "tool_results": "OOB structured tool results and RunLog post-action fields.",
-                "trajectory": "OOB RunLog, Function registration, replay, UDEG recall, token usage, and timing diagnostics.",
+                "trajectory": "OOB RunLog, reusable command registration, replay, UDEG recall, token usage, and timing diagnostics.",
             },
             "explicit_non_goals": [
                 "Do not call the Mobilerun Portal app.",
@@ -872,7 +872,7 @@ def build_method_record(args: argparse.Namespace) -> dict[str, Any]:
                 "Do not import or install Mobilerun as part of OOB validation.",
                 "Do not invoke Mobilerun CLI or MCP tools from OOB validation.",
                 "Do not use Mobilerun macro replay as OOB replay.",
-                "Do not replace native Kotlin VLM, RunLog, Function registration, UDEG recall, or replay.",
+                "Do not replace native Kotlin VLM, RunLog, reusable command registration, UDEG recall, or replay.",
             ],
         },
         "diagnosis_of_oob_gap": {
@@ -911,15 +911,15 @@ def build_method_record(args: argparse.Namespace) -> dict[str, Any]:
                 "Keep one native tool call per VLM turn.",
                 "Persist post-action XML/package evidence, appeared/disappeared text feedback, token usage, and timing into RunLog cards.",
                 "Use waitTimeoutMs only as control-plane wait budget; maxSteps remains the task execution bound.",
-                "Validation can set disableOmniFlowRecall=true to force fresh online VLM RunLog capture instead of direct Function execution.",
+                "Validation can set disableOmniFlowRecall=true to force fresh online VLM RunLog capture instead of direct reusable command execution.",
             ],
             "runlog_replay": [
-                "Convert successful VLM RunLogs into native OmniFlow Functions.",
+                "Generate native OmniFlow reusable commands from successful VLM RunLogs.",
                 "Replay concrete actions through OobRunLogReplayService and OmniflowStepExecutor.",
                 "Use recorded post-action page similarity as compatibility gate rather than proof of task success.",
             ],
             "recall": [
-                "Recall follows page match -> UDEG node -> node skill-like decision context -> attached Functions.",
+                "Recall follows page match -> UDEG node -> node skill-like decision context -> attached reusable commands.",
                 "Direct no-argument hits may run locally; failed hits fall back to bounded VLM.",
                 "Timing fields are internal stats and are not injected into the agent prompt.",
             ],
@@ -928,12 +928,12 @@ def build_method_record(args: argparse.Namespace) -> dict[str, Any]:
             "test_layering": {
                 "ux_tests": [
                     "Flutter RunLog timeline tests cover RunLog registration, local replay trigger, result sheets, and user-visible wording.",
-                    "Flutter Function library tests cover Function grouping, detail surface, run button, running state, and result sheet internal-field hiding.",
+                    "Flutter reusable command library tests cover grouping, detail surface, run button, running state, and result sheet internal-field hiding.",
                     "Flutter localization and execution widget tests guard user-visible route/reuse wording.",
                 ],
                 "runtime_method_tests": [
                     "Python AndroidWorld method-only tests record the adapter contract without importing AndroidWorld or starting an emulator.",
-                    "Kotlin unit tests cover RunLog collection, native Function registration/replay, UDEG recall timing, segment reuse, and token/timing persistence.",
+                    "Kotlin unit tests cover RunLog collection, native reusable command registration/replay, UDEG recall timing, segment reuse, and token/timing persistence.",
                     "Live AndroidWorld reward runs stay behind --run-live and are not required for method-only evidence.",
                 ],
                 "separation_rule": "UX tests must not import AndroidWorld or start an emulator; runtime method tests must not assert Flutter layout details.",

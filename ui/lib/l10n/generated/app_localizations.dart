@@ -479,19 +479,19 @@ abstract class AppLocalizations {
   /// No description provided for @settingsOobFunctionAsToolTitle.
   ///
   /// In zh, this message translates to:
-  /// **'OOB 函数接入工具'**
+  /// **'OOB 复用指令接入工具'**
   String get settingsOobFunctionAsToolTitle;
 
   /// No description provided for @settingsOobFunctionAsToolSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'开启后 agent 可以直接调用已保存的 OOB 函数'**
+  /// **'开启后 agent 可以直接调用已保存的 OOB 复用指令'**
   String get settingsOobFunctionAsToolSubtitle;
 
   /// No description provided for @settingsOobFunctionAsToolToggleFailed.
   ///
   /// In zh, this message translates to:
-  /// **'OOB 函数工具开关失败'**
+  /// **'OOB 复用指令工具开关失败'**
   String get settingsOobFunctionAsToolToggleFailed;
 
   /// No description provided for @settingsCopiedAddress.
@@ -1043,7 +1043,7 @@ abstract class AppLocalizations {
   /// No description provided for @memoryCommandsTitle.
   ///
   /// In zh, this message translates to:
-  /// **'Function'**
+  /// **'复用指令'**
   String get memoryCommandsTitle;
 
   /// No description provided for @memoryNoShortTerm.
@@ -3851,19 +3851,19 @@ abstract class AppLocalizations {
   /// No description provided for @omniflowPanelDesc.
   ///
   /// In zh, this message translates to:
-  /// **'管理 OmniFlow Function：查看、执行或删除 Function 资产。'**
+  /// **'管理 OmniFlow 复用指令：查看、执行或删除复用指令资产。'**
   String get omniflowPanelDesc;
 
   /// No description provided for @omniflowFunctionList.
   ///
   /// In zh, this message translates to:
-  /// **'Function 列表'**
+  /// **'复用指令列表'**
   String get omniflowFunctionList;
 
   /// No description provided for @omniflowFunctionSearch.
   ///
   /// In zh, this message translates to:
-  /// **'搜索 Function'**
+  /// **'搜索复用指令'**
   String get omniflowFunctionSearch;
 
   /// No description provided for @omniflowFunctionSearchHint.
@@ -3947,19 +3947,19 @@ abstract class AppLocalizations {
   /// No description provided for @omniflowFunctionsLoadFailed.
   ///
   /// In zh, this message translates to:
-  /// **'加载 Function 列表失败'**
+  /// **'加载复用指令列表失败'**
   String get omniflowFunctionsLoadFailed;
 
   /// No description provided for @omniflowTempFunctions.
   ///
   /// In zh, this message translates to:
-  /// **'临时 Function'**
+  /// **'临时复用指令'**
   String get omniflowTempFunctions;
 
   /// No description provided for @omniflowReadyFunctions.
   ///
   /// In zh, this message translates to:
-  /// **'可用 Function'**
+  /// **'可用复用指令'**
   String get omniflowReadyFunctions;
 
   /// No description provided for @omniflowServiceAddressNotConfigured.
@@ -4049,7 +4049,7 @@ abstract class AppLocalizations {
   /// No description provided for @omniflowViewFunctionLibrary.
   ///
   /// In zh, this message translates to:
-  /// **'查看功能库'**
+  /// **'查看复用指令库'**
   String get omniflowViewFunctionLibrary;
 
   /// No description provided for @omniflowClearAllData.
@@ -4067,7 +4067,7 @@ abstract class AppLocalizations {
   /// No description provided for @omniflowClearAllDataConfirm.
   ///
   /// In zh, this message translates to:
-  /// **'确认清空所有 OmniFlow 数据？\n\n这将删除：\n• 所有 Functions\n• 所有 Run Logs\n• 所有 Shared Pages\n\n此操作不可恢复！'**
+  /// **'确认清空所有 OmniFlow 数据？\n\n这将删除：\n• 所有复用指令\n• 所有 Run Logs\n• 所有 Shared Pages\n\n此操作不可恢复！'**
   String get omniflowClearAllDataConfirm;
 
   /// No description provided for @omniflowCancel.
@@ -4085,7 +4085,7 @@ abstract class AppLocalizations {
   /// No description provided for @omniflowClearSuccess.
   ///
   /// In zh, this message translates to:
-  /// **'已清空: {functions} functions, {runLogs} run_logs'**
+  /// **'已清空：{functions} 条复用指令，{runLogs} 条 RunLog'**
   String omniflowClearSuccess(Object functions, Object runLogs);
 
   /// No description provided for @omniflowClearFailed.
@@ -4109,19 +4109,19 @@ abstract class AppLocalizations {
   /// No description provided for @functionLibraryTitle.
   ///
   /// In zh, this message translates to:
-  /// **'功能库'**
+  /// **'复用指令库'**
   String get functionLibraryTitle;
 
   /// No description provided for @functionLibrarySearchHint.
   ///
   /// In zh, this message translates to:
-  /// **'搜索功能名称或应用'**
+  /// **'搜索复用指令或应用'**
   String get functionLibrarySearchHint;
 
   /// No description provided for @functionLibraryEmpty.
   ///
   /// In zh, this message translates to:
-  /// **'暂无已学习的功能'**
+  /// **'暂无复用指令'**
   String get functionLibraryEmpty;
 
   /// No description provided for @functionLibraryEmptyDesc.
@@ -4181,13 +4181,13 @@ abstract class AppLocalizations {
   /// No description provided for @functionLibraryEditTitle.
   ///
   /// In zh, this message translates to:
-  /// **'编辑功能'**
+  /// **'编辑复用指令'**
   String get functionLibraryEditTitle;
 
   /// No description provided for @functionLibraryEditHint.
   ///
   /// In zh, this message translates to:
-  /// **'修改功能的描述名称'**
+  /// **'修改复用指令的描述名称'**
   String get functionLibraryEditHint;
 
   /// No description provided for @functionLibraryEditPlaceholder.
@@ -4217,7 +4217,7 @@ abstract class AppLocalizations {
   /// No description provided for @functionLibraryDeleteTitle.
   ///
   /// In zh, this message translates to:
-  /// **'删除功能'**
+  /// **'删除复用指令'**
   String get functionLibraryDeleteTitle;
 
   /// No description provided for @functionLibraryDeleteConfirm.
@@ -4424,11 +4424,11 @@ abstract class AppLocalizations {
   /// **'查看详情'**
   String get functionLibraryViewDetails;
 
-  /// No description provided for @functionLibraryDetailCompileSurface.
+  /// No description provided for @functionLibraryDetailExecutionSurface.
   ///
   /// In zh, this message translates to:
-  /// **'路由面'**
-  String get functionLibraryDetailCompileSurface;
+  /// **'执行面'**
+  String get functionLibraryDetailExecutionSurface;
 
   /// No description provided for @functionLibraryDetailGraphAnchors.
   ///
@@ -4457,7 +4457,7 @@ abstract class AppLocalizations {
   /// No description provided for @functionLibraryDetailDerivedFrom.
   ///
   /// In zh, this message translates to:
-  /// **'来源 raw function'**
+  /// **'来源复用指令'**
   String get functionLibraryDetailDerivedFrom;
 
   /// No description provided for @functionLibraryDetailRuns.
@@ -4511,44 +4511,44 @@ abstract class AppLocalizations {
   /// No description provided for @functionLibraryDetailBundleFunction.
   ///
   /// In zh, this message translates to:
-  /// **'Bundle Function'**
+  /// **'Bundle 复用指令'**
   String get functionLibraryDetailBundleFunction;
 
   /// No description provided for @functionLibraryDetailInternalBlocks.
   ///
   /// In zh, this message translates to:
-  /// **'内部 function block'**
+  /// **'内部复用指令片段'**
   String get functionLibraryDetailInternalBlocks;
 
   /// No description provided for @functionLibraryDetailNoBlocks.
   ///
   /// In zh, this message translates to:
-  /// **'当前没有展开的内部 function block'**
+  /// **'当前没有展开的内部复用指令片段'**
   String get functionLibraryDetailNoBlocks;
 
   /// No description provided for @functionLibraryDetailNoBundle.
   ///
   /// In zh, this message translates to:
-  /// **'当前没有可展示的 bundle function'**
+  /// **'当前没有可展示的 bundle 复用指令'**
   String get functionLibraryDetailNoBundle;
 
   /// No description provided for @functionLibraryDetailFunctionSchema.
   ///
   /// In zh, this message translates to:
-  /// **'Function Schema'**
+  /// **'复用指令 Schema'**
   String get functionLibraryDetailFunctionSchema;
 
-  /// No description provided for @executionCompileHit.
+  /// No description provided for @executionReuseHit.
   ///
   /// In zh, this message translates to:
-  /// **'复用技能'**
-  String get executionCompileHit;
+  /// **'复用指令'**
+  String get executionReuseHit;
 
-  /// No description provided for @executionCompileHitWithFunction.
+  /// No description provided for @executionReuseHitWithFunction.
   ///
   /// In zh, this message translates to:
-  /// **'复用技能 · {functionId}'**
-  String executionCompileHitWithFunction(Object functionId);
+  /// **'复用指令 · {functionId}'**
+  String executionReuseHitWithFunction(Object functionId);
 
   /// No description provided for @executionVlmExecution.
   ///
@@ -4619,7 +4619,7 @@ abstract class AppLocalizations {
   /// No description provided for @executionActionCallFunction.
   ///
   /// In zh, this message translates to:
-  /// **'调用技能'**
+  /// **'执行复用指令'**
   String get executionActionCallFunction;
 
   /// No description provided for @executionActionDefault.
@@ -4649,61 +4649,61 @@ abstract class AppLocalizations {
   /// No description provided for @memorySaveAsSkillTitle.
   ///
   /// In zh, this message translates to:
-  /// **'保存为功能（Function）'**
+  /// **'保存为复用指令'**
   String get memorySaveAsSkillTitle;
 
   /// No description provided for @memorySaveAsSkillContent.
   ///
   /// In zh, this message translates to:
-  /// **'是否将这次执行记录保存为可复用的功能？\n\n保存后可在「功能库」中查看和管理。'**
+  /// **'是否将这次执行记录保存为复用指令？\n\n保存后可在「复用指令库」中查看和管理。'**
   String get memorySaveAsSkillContent;
 
   /// No description provided for @memorySavingProgress.
   ///
   /// In zh, this message translates to:
-  /// **'正在保存功能...'**
+  /// **'正在保存复用指令...'**
   String get memorySavingProgress;
 
   /// No description provided for @memorySaveSuccess.
   ///
   /// In zh, this message translates to:
-  /// **'已保存为功能：{functionId}'**
+  /// **'已保存为复用指令：{functionId}'**
   String memorySaveSuccess(String functionId);
 
   /// No description provided for @memorySaveSuccessSimple.
   ///
   /// In zh, this message translates to:
-  /// **'已保存为功能'**
+  /// **'已保存为复用指令'**
   String get memorySaveSuccessSimple;
 
   /// No description provided for @memorySaveSuccessHint.
   ///
   /// In zh, this message translates to:
-  /// **'功能已保存到本地功能库。\n你可以在功能库中查看、编辑或升级此功能。'**
+  /// **'复用指令已保存到本地复用指令库。\n你可以在复用指令库中查看、编辑或升级。'**
   String get memorySaveSuccessHint;
 
   /// No description provided for @memoryViewInLibrary.
   ///
   /// In zh, this message translates to:
-  /// **'查看功能库'**
+  /// **'查看复用指令库'**
   String get memoryViewInLibrary;
 
   /// No description provided for @memorySaveCannotImport.
   ///
   /// In zh, this message translates to:
-  /// **'该执行记录无法保存为功能'**
+  /// **'该执行记录无法保存为复用指令'**
   String get memorySaveCannotImport;
 
   /// No description provided for @memorySaveFailed.
   ///
   /// In zh, this message translates to:
-  /// **'保存功能失败'**
+  /// **'保存复用指令失败'**
   String get memorySaveFailed;
 
   /// No description provided for @memorySaveFailedWithMessage.
   ///
   /// In zh, this message translates to:
-  /// **'保存功能失败：{message}'**
+  /// **'保存复用指令失败：{message}'**
   String memorySaveFailedWithMessage(String message);
 
   /// No description provided for @memoryRunIdMissing.
@@ -4736,17 +4736,17 @@ abstract class AppLocalizations {
   /// **'未知'**
   String get omniflowAssetUnknown;
 
-  /// No description provided for @omniflowAssetCompileHit.
+  /// No description provided for @omniflowAssetReuseHit.
   ///
   /// In zh, this message translates to:
-  /// **'复用功能'**
-  String get omniflowAssetCompileHit;
+  /// **'复用指令'**
+  String get omniflowAssetReuseHit;
 
-  /// No description provided for @omniflowAssetCompileMiss.
+  /// No description provided for @omniflowAssetVlmExecution.
   ///
   /// In zh, this message translates to:
   /// **'VLM 执行'**
-  String get omniflowAssetCompileMiss;
+  String get omniflowAssetVlmExecution;
 
   /// No description provided for @omniflowAssetSteps.
   ///
@@ -4775,7 +4775,7 @@ abstract class AppLocalizations {
   /// No description provided for @omniflowAssetLinkedFunction.
   ///
   /// In zh, this message translates to:
-  /// **'关联功能'**
+  /// **'关联复用指令'**
   String get omniflowAssetLinkedFunction;
 
   /// No description provided for @omniflowAssetCopyId.
@@ -4835,7 +4835,7 @@ abstract class AppLocalizations {
   /// No description provided for @omniflowAssetFunctionDetail.
   ///
   /// In zh, this message translates to:
-  /// **'功能详情'**
+  /// **'复用指令详情'**
   String get omniflowAssetFunctionDetail;
 
   /// No description provided for @omniflowAssetRunLogDetail.
@@ -5003,25 +5003,25 @@ abstract class AppLocalizations {
   /// No description provided for @functionLibraryEnrichTitle.
   ///
   /// In zh, this message translates to:
-  /// **'升级功能'**
+  /// **'升级复用指令'**
   String get functionLibraryEnrichTitle;
 
   /// No description provided for @functionLibraryEnrichConfirm.
   ///
   /// In zh, this message translates to:
-  /// **'使用 AI 补齐此功能的语义信息？\n\n将自动生成：描述、参数槽位、前置/后置条件等。'**
+  /// **'使用 AI 补齐此复用指令的语义信息？\n\n将自动生成：描述、参数槽位、前置/后置条件等。'**
   String get functionLibraryEnrichConfirm;
 
   /// No description provided for @functionLibraryEnrichProgress.
   ///
   /// In zh, this message translates to:
-  /// **'正在升级功能...'**
+  /// **'正在升级复用指令...'**
   String get functionLibraryEnrichProgress;
 
   /// No description provided for @functionLibraryEnrichSuccess.
   ///
   /// In zh, this message translates to:
-  /// **'功能升级成功'**
+  /// **'复用指令升级成功'**
   String get functionLibraryEnrichSuccess;
 
   /// No description provided for @functionLibraryEnrichFailed.
@@ -5045,25 +5045,25 @@ abstract class AppLocalizations {
   /// No description provided for @functionLibrarySplitTitle.
   ///
   /// In zh, this message translates to:
-  /// **'拆分功能'**
+  /// **'拆分复用指令'**
   String get functionLibrarySplitTitle;
 
   /// No description provided for @functionLibrarySplitConfirm.
   ///
   /// In zh, this message translates to:
-  /// **'使用 AI 将此功能拆分为多个更小的功能？'**
+  /// **'使用 AI 将此复用指令拆分为多个更小的指令？'**
   String get functionLibrarySplitConfirm;
 
   /// No description provided for @functionLibrarySplitProgress.
   ///
   /// In zh, this message translates to:
-  /// **'正在拆分功能...'**
+  /// **'正在拆分复用指令...'**
   String get functionLibrarySplitProgress;
 
   /// No description provided for @functionLibrarySplitSuccess.
   ///
   /// In zh, this message translates to:
-  /// **'功能拆分成功，生成了 {count} 个新功能'**
+  /// **'复用指令拆分成功，生成了 {count} 个新指令'**
   String functionLibrarySplitSuccess(int count);
 
   /// No description provided for @functionLibrarySplitFailed.
@@ -5129,7 +5129,7 @@ abstract class AppLocalizations {
   /// No description provided for @actionTypeCallFunction.
   ///
   /// In zh, this message translates to:
-  /// **'调用功能'**
+  /// **'执行复用指令'**
   String get actionTypeCallFunction;
 
   /// No description provided for @actionTypeDefault.
@@ -5573,7 +5573,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchRouteLabel.
   ///
   /// In zh, this message translates to:
-  /// **'路由'**
+  /// **'页面路径'**
   String get workbenchRouteLabel;
 
   /// No description provided for @workbenchSpacePathLabel.
@@ -5900,11 +5900,11 @@ abstract class AppLocalizations {
   /// **'当前项目还没有可运行的 Flutter 源码。请在 frontend/flutter/lib/main.dart 定义 OobProjectWidget。'**
   String get workbenchFlutterEvalNoSource;
 
-  /// No description provided for @workbenchFlutterEvalCompileFailed.
+  /// No description provided for @workbenchFlutterEvalRuntimeFailed.
   ///
   /// In zh, this message translates to:
   /// **'Flutter 源码暂不可运行，请回到输入框让小万修复这个页面。'**
-  String get workbenchFlutterEvalCompileFailed;
+  String get workbenchFlutterEvalRuntimeFailed;
 
   /// No description provided for @workbenchProjectSwitcher.
   ///
@@ -6275,7 +6275,7 @@ abstract class AppLocalizations {
   /// No description provided for @workbenchDebugContextRoute.
   ///
   /// In zh, this message translates to:
-  /// **'路由 {route}'**
+  /// **'页面路径 {route}'**
   String workbenchDebugContextRoute(String route);
 
   /// No description provided for @workbenchDebugVlmTest.

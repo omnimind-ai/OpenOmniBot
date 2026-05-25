@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/widgets/execution/execution_models.dart';
 
 void main() {
-  test('ExecutionStep.fromRunLogStep normalizes legacy route labels', () {
+  test('ExecutionStep.fromRunLogStep normalizes legacy execution labels', () {
     final step = ExecutionStep.fromRunLogStep(0, {
       'compile_label': 'Compile hit / 编译命中',
       'tool_call': {
@@ -11,28 +11,31 @@ void main() {
       },
     });
 
-    expect(step.compileLabel, 'route hit / 路由命中');
-    expect(step.routeLabel, 'route hit / 路由命中');
-    expect(step.compileLabel?.toLowerCase(), isNot(contains('compile')));
-    expect(step.compileLabel, isNot(contains('编译')));
+    expect(step.rawExecutionLabel, 'execute hit / 执行命中');
+    expect(step.executionLabel, 'execute hit / 执行命中');
+    expect(step.rawExecutionLabel?.toLowerCase(), isNot(contains('compile')));
+    expect(step.rawExecutionLabel, isNot(contains('编译')));
 
     final userJson = step.toUserJson();
-    expect(userJson, containsPair('route_label', 'route hit / 路由命中'));
+    expect(userJson, containsPair('execution_label', 'execute hit / 执行命中'));
     expect(userJson, isNot(contains('compile_label')));
+    expect(userJson, isNot(contains('route_label')));
   });
 
   test('ExecutionStep.toUserJson normalizes directly constructed labels', () {
     const step = ExecutionStep(
       index: 0,
       actionType: 'click',
-      compileLabel: 'Compiled / 编译完成',
+      rawExecutionLabel: 'Compiled / 编译完成',
     );
 
     final userJson = step.toUserJson();
-    expect(step.routeLabel, 'routed / 路由完成');
-    expect(userJson, containsPair('route_label', 'routed / 路由完成'));
+    expect(step.executionLabel, 'executed / 执行完成');
+    expect(userJson, containsPair('execution_label', 'executed / 执行完成'));
     expect(userJson.toString().toLowerCase(), isNot(contains('compile')));
     expect(userJson.toString(), isNot(contains('编译')));
+    expect(userJson.toString().toLowerCase(), isNot(contains('route')));
+    expect(userJson.toString(), isNot(contains('路由')));
   });
 
   test(

@@ -212,12 +212,18 @@ internal data class AgentFinalErrorResolution(
     val persistAsError: Boolean
 )
 
+internal fun sanitizeAgentVisibleText(text: String): String {
+    return AgentTextSanitizer.stripTextFunctionCalls(
+        AgentTextSanitizer.sanitizeUtf16(text)
+    ).trim()
+}
+
 internal fun resolveAgentFinalErrorResolution(
     streamed: String,
     error: String,
     localizedFallback: String
 ): AgentFinalErrorResolution {
-    val normalizedStreamed = AgentTextSanitizer.sanitizeUtf16(streamed).trim()
+    val normalizedStreamed = sanitizeAgentVisibleText(streamed)
     if (normalizedStreamed.isNotEmpty()) {
         return AgentFinalErrorResolution(
             text = normalizedStreamed,
@@ -225,9 +231,9 @@ internal fun resolveAgentFinalErrorResolution(
         )
     }
 
-    val normalizedError = AgentTextSanitizer.sanitizeUtf16(error).trim()
+    val normalizedError = sanitizeAgentVisibleText(error)
     val finalText = normalizedError.ifEmpty {
-        AgentTextSanitizer.sanitizeUtf16(localizedFallback).trim()
+        sanitizeAgentVisibleText(localizedFallback)
     }
     return AgentFinalErrorResolution(
         text = finalText,
@@ -427,6 +433,147 @@ private fun extractTextPayload(raw: JsonElement?): String {
         }
         else -> ""
     }
+}
+
+internal const val OOB_REUSABLE_EXECUTION_STATUS_COMPLETED_LOCAL = "completed_local"
+internal const val OOB_REUSABLE_EXECUTION_STATUS_STARTED_AGENT_FALLBACK =
+    "started_agent_fallback"
+internal const val OOB_REUSABLE_EXECUTION_STATUS_FAILED = "failed"
+
+internal fun isOobReusableFunctionPendingAgentStep(step: Map<*, *>): Boolean {
+    return step["needs_agent"] == true ||
+        (step["fallback_available"] == true && step["executor"]?.toString() == "agent") ||
+        step["blocked_executor"]?.toString() == "tool" ||
+        step["blocked_executor"]?.toString() == "omniflow"
+}
+
+internal fun buildOobReusableFunctionAgentFallbackPayload(
+    functionId: String,
+    taskId: String,
+    started: Boolean,
+    startErrorCode: String?,
+    startErrorMessage: String?,
+    runPayload: Map<String, Any?>,
+    stepResults: List<Map<*, *>>,
+    completedStepCount: Int,
+    pendingAgentStepCount: Int,
+    argumentCount: Int,
+): Map<String, Any?> {
+    val executionStatus = if (started) {
+        OOB_REUSABLE_EXECUTION_STATUS_STARTED_AGENT_FALLBACK
+    } else {
+        OOB_REUSABLE_EXECUTION_STATUS_FAILED
+    }
+    val stepCount = stepResults.size
+    val successStepCount = stepResults.count { it["success"] != false }
+    val timing = runPayload["timing"]
+    val runner = runPayload["runner"] ?: "oob_mixed_runner"
+    val sharedExecutionMeta = linkedMapOf<String, Any?>(
+        "taskId" to taskId,
+        "agent_task_id" to taskId,
+        "agent_task_started" to started,
+        "runner" to runner,
+        "local_steps_completed" to completedStepCount,
+        "agent_steps_pending" to pendingAgentStepCount,
+        "step_count" to stepCount,
+        "success_step_count" to successStepCount,
+        "arguments_applied" to true,
+        "model_required" to (runPayload["model_required"] == true),
+        "fallback_available" to (runPayload["fallback_available"] == true),
+        "timing" to timing
+    )
+
+    return linkedMapOf(
+        "success" to started,
+        "goal" to "oob_reusable_function_run:$functionId",
+        "function_id" to functionId,
+        "execution_status" to executionStatus,
+        "error_code" to startErrorCode,
+        "error_message" to startErrorMessage,
+        "timing" to timing,
+        "terminal_state" to linkedMapOf<String, Any?>(
+            "status" to if (started) {
+                OOB_REUSABLE_EXECUTION_STATUS_STARTED_AGENT_FALLBACK
+            } else {
+                "error"
+            },
+            "execution_status" to executionStatus
+        ).apply {
+            putAll(sharedExecutionMeta)
+        },
+        "context" to linkedMapOf<String, Any?>(
+            "source" to "oob_reusable_function",
+            "function_id" to functionId,
+            "execution_status" to executionStatus,
+            "argument_count" to argumentCount,
+            "step_results" to stepResults
+        ).apply {
+            putAll(sharedExecutionMeta)
+        }
+    )
+}
+
+internal fun buildOobReusableFunctionLocalPayload(
+    functionId: String,
+    localSuccess: Boolean,
+    runPayload: Map<String, Any?>,
+    stepResults: List<Map<*, *>>,
+    argumentCount: Int,
+): Map<String, Any?> {
+    val executionStatus = if (localSuccess) {
+        OOB_REUSABLE_EXECUTION_STATUS_COMPLETED_LOCAL
+    } else {
+        OOB_REUSABLE_EXECUTION_STATUS_FAILED
+    }
+    val stepCount = (runPayload["step_count"] as? Number)?.toInt() ?: stepResults.size
+    val successStepCount = (runPayload["success_step_count"] as? Number)?.toInt()
+        ?: stepResults.count { it["success"] != false }
+    val timing = runPayload["timing"]
+    val runner = runPayload["runner"] ?: "oob_mixed_runner"
+    val sharedExecutionMeta = linkedMapOf<String, Any?>(
+        "runner" to runner,
+        "step_count" to stepCount,
+        "success_step_count" to successStepCount,
+        "model_used" to (runPayload["model_used"] == true),
+        "model_required" to (runPayload["model_required"] == true),
+        "delegated_tool_used" to (runPayload["delegated_tool_used"] == true),
+        "arguments_applied" to true,
+        "fallback_available" to (runPayload["fallback_available"] == true),
+        "timing" to timing
+    )
+
+    return linkedMapOf(
+        "success" to localSuccess,
+        "goal" to "oob_reusable_function_run:$functionId",
+        "function_id" to functionId,
+        "execution_status" to executionStatus,
+        "error_code" to if (localSuccess) {
+            null
+        } else {
+            runPayload["error_code"] ?: "OOB_FUNCTION_STEP_FAILED"
+        },
+        "error_message" to runPayload["error_message"],
+        "timing" to timing,
+        "terminal_state" to linkedMapOf<String, Any?>(
+            "status" to if (localSuccess) {
+                OOB_REUSABLE_EXECUTION_STATUS_COMPLETED_LOCAL
+            } else {
+                "error"
+            },
+            "execution_status" to executionStatus
+        ).apply {
+            putAll(sharedExecutionMeta)
+        },
+        "context" to linkedMapOf<String, Any?>(
+            "source" to "oob_reusable_function",
+            "function_id" to functionId,
+            "execution_status" to executionStatus,
+            "argument_count" to argumentCount,
+            "step_results" to stepResults
+        ).apply {
+            putAll(sharedExecutionMeta)
+        }
+    )
 }
 
 class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
@@ -2756,9 +2903,13 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             "success" to false,
                             "goal" to "oob_reusable_function_run",
                             "function_id" to functionId,
+                            "execution_status" to OOB_REUSABLE_EXECUTION_STATUS_FAILED,
                             "error_code" to "OOB_FUNCTION_ID_EMPTY",
                             "error_message" to "functionId is empty",
-                            "terminal_state" to mapOf("status" to "error")
+                            "terminal_state" to mapOf(
+                                "status" to "error",
+                                "execution_status" to OOB_REUSABLE_EXECUTION_STATUS_FAILED
+                            )
                         )
                     )
                 }
@@ -2777,9 +2928,13 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             "success" to false,
                             "goal" to "oob_reusable_function_run:$functionId",
                             "function_id" to functionId,
+                            "execution_status" to OOB_REUSABLE_EXECUTION_STATUS_FAILED,
                             "error_code" to "OOB_FUNCTION_NOT_FOUND",
                             "error_message" to "OOB reusable function not found: $functionId",
-                            "terminal_state" to mapOf("status" to "error")
+                            "terminal_state" to mapOf(
+                                "status" to "error",
+                                "execution_status" to OOB_REUSABLE_EXECUTION_STATUS_FAILED
+                            )
                         )
                     )
                 }
@@ -2798,10 +2953,12 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             "success" to false,
                             "goal" to "oob_reusable_function_run:$functionId",
                             "function_id" to functionId,
+                            "execution_status" to OOB_REUSABLE_EXECUTION_STATUS_FAILED,
                             "error_code" to "OOB_FUNCTION_ARGUMENTS_MISSING",
                             "error_message" to "Missing required arguments: ${missingRequired.joinToString(", ")}",
                             "terminal_state" to mapOf(
                                 "status" to "error",
+                                "execution_status" to OOB_REUSABLE_EXECUTION_STATUS_FAILED,
                                 "runner" to "oob_agent_reusable_function"
                             ),
                             "context" to mapOf(
@@ -2850,22 +3007,12 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
             val stepResults = (runPayload["step_results"] as? List<*>)
                 ?.filterIsInstance<Map<*, *>>() ?: emptyList()
-            val pendingAgentSteps = stepResults.filter {
-                it["needs_agent"] == true ||
-                    (it["fallback_available"] == true && it["executor"] == "agent") ||
-                    it["blocked_executor"] == "tool" ||
-                    it["blocked_executor"] == "omniflow"
-            }
+            val pendingAgentSteps = stepResults.filter(::isOobReusableFunctionPendingAgentStep)
 
             // Phase 2: if agent steps couldn't run inline, hand them (and any
             // subsequent steps) to the agent with a targeted prompt.
             if (pendingAgentSteps.isNotEmpty()) {
-                val completedCount = stepResults.indexOfFirst {
-                    it["needs_agent"] == true ||
-                        (it["fallback_available"] == true && it["executor"] == "agent") ||
-                        it["blocked_executor"] == "tool" ||
-                        it["blocked_executor"] == "omniflow"
-                }
+                val completedCount = stepResults.indexOfFirst(::isOobReusableFunctionPendingAgentStep)
                 val conversationId = when (val raw = args["conversationId"]) {
                     is Number -> raw.toLong().takeIf { it > 0L }
                     is String -> raw.trim().toLongOrNull()?.takeIf { it > 0L }
@@ -2888,7 +3035,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     "reasoningEffort" to "low"
                 ).apply {
                     conversationId?.let { put("conversationId", it) }
-                    conversationMode?.let { put("conversationMode", it) }
+                    put("conversationMode", conversationMode)
                 }
                 var startResult: Any? = null
                 var startErrorCode: String? = null
@@ -2916,33 +3063,20 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     stepCount = stepResults.size,
                     errorMessage = startErrorMessage
                 )
+                val payload = buildOobReusableFunctionAgentFallbackPayload(
+                    functionId = functionId,
+                    taskId = taskId,
+                    started = started,
+                    startErrorCode = startErrorCode,
+                    startErrorMessage = startErrorMessage,
+                    runPayload = runPayload,
+                    stepResults = stepResults,
+                    completedStepCount = completedCount,
+                    pendingAgentStepCount = pendingAgentSteps.size,
+                    argumentCount = callArguments.size
+                )
                 withContext(Dispatchers.Main) {
-                    result.success(linkedMapOf(
-                        "success" to started,
-                        "goal" to "oob_reusable_function_run:$functionId",
-                        "function_id" to functionId,
-                        "error_code" to startErrorCode,
-                        "error_message" to startErrorMessage,
-                        "timing" to runPayload["timing"],
-                        "terminal_state" to linkedMapOf(
-                            "status" to if (started) "started" else "error",
-                            "taskId" to taskId,
-                            "runner" to (runPayload["runner"] ?: "oob_mixed_runner"),
-                            "local_steps_completed" to completedCount,
-                            "agent_steps_pending" to pendingAgentSteps.size,
-                            "arguments_applied" to true,
-                            "model_required" to (runPayload["model_required"] == true),
-                            "fallback_available" to (runPayload["fallback_available"] == true),
-                            "timing" to runPayload["timing"]
-                        ),
-                        "context" to linkedMapOf(
-                            "source" to "oob_reusable_function",
-                            "function_id" to functionId,
-                            "argument_count" to callArguments.size,
-                            "step_results" to stepResults,
-                            "timing" to runPayload["timing"]
-                        )
-                    ))
+                    result.success(payload)
                 }
                 return@launch
             }
@@ -2959,34 +3093,15 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     ?: stepResults.size,
                 errorMessage = runPayload["error_message"]?.toString()
             )
+            val payload = buildOobReusableFunctionLocalPayload(
+                functionId = functionId,
+                localSuccess = localSuccess,
+                runPayload = runPayload,
+                stepResults = stepResults,
+                argumentCount = callArguments.size
+            )
             withContext(Dispatchers.Main) {
-                result.success(linkedMapOf(
-                    "success" to localSuccess,
-                    "goal" to "oob_reusable_function_run:$functionId",
-                    "function_id" to functionId,
-                    "error_code" to if (localSuccess) null else "OOB_FUNCTION_STEP_FAILED",
-                    "error_message" to runPayload["error_message"],
-                    "timing" to runPayload["timing"],
-                    "terminal_state" to linkedMapOf(
-                        "status" to if (localSuccess) "completed" else "error",
-                        "runner" to (runPayload["runner"] ?: "oob_mixed_runner"),
-                        "step_count" to runPayload["step_count"],
-                        "success_step_count" to runPayload["success_step_count"],
-                        "model_used" to (runPayload["model_used"] == true),
-                        "model_required" to (runPayload["model_required"] == true),
-                        "delegated_tool_used" to (runPayload["delegated_tool_used"] == true),
-                        "arguments_applied" to true,
-                        "fallback_available" to (runPayload["fallback_available"] == true),
-                        "timing" to runPayload["timing"]
-                    ),
-                    "context" to linkedMapOf(
-                        "source" to "oob_reusable_function",
-                        "function_id" to functionId,
-                        "argument_count" to callArguments.size,
-                        "step_results" to stepResults,
-                        "timing" to runPayload["timing"]
-                    )
-                ))
+                result.success(payload)
             }
         }
     }
@@ -6761,7 +6876,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             streamKind: String = "text_snapshot"
         ) {
             val normalizedConversationId = conversationId ?: return
-            val normalizedText = AgentTextSanitizer.sanitizeUtf16(text).trim()
+            val normalizedText = sanitizeAgentVisibleText(text)
             if (normalizedText.isEmpty()) return
             val createdAt = entryCreatedAtTimes.getOrPut(entryId) {
                 System.currentTimeMillis()
@@ -7778,7 +7893,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             prefillTokensPerSecond: Double? = null,
             decodeTokensPerSecond: Double? = null
         ) {
-            val normalizedMessage = AgentTextSanitizer.sanitizeUtf16(message).trim()
+            val normalizedMessage = sanitizeAgentVisibleText(message)
             var entryId: String? = activeAssistantEntryId
             var roundIndex = assistantRound
             if (normalizedMessage.isNotEmpty()) {
@@ -7787,9 +7902,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 entryId = resolvedEntry.second
                 val resolvedEntryId = resolvedEntry.second
                 val currentSnapshot =
-                    AgentTextSanitizer.sanitizeUtf16(
-                        scheduledAssistantBuffer.toString()
-                    ).trim()
+                    sanitizeAgentVisibleText(scheduledAssistantBuffer.toString())
                 if (shouldIgnoreRegressiveSnapshot(currentSnapshot, normalizedMessage)) {
                     OmniLog.d(
                         TAG,
@@ -7810,9 +7923,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 )
             }
             val snapshotText = entryId?.let {
-                AgentTextSanitizer.sanitizeUtf16(
-                    scheduledAssistantBuffer.toString()
-                ).trim()
+                sanitizeAgentVisibleText(scheduledAssistantBuffer.toString())
             }.orEmpty()
             if (entryId != null && snapshotText.isNotEmpty()) {
                 sendStreamEvent(
@@ -7841,8 +7952,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             streamed: String,
             fallback: String
         ): String {
-            val normalizedStreamed = AgentTextSanitizer.sanitizeUtf16(streamed).trim()
-            val normalizedFallback = AgentTextSanitizer.sanitizeUtf16(fallback).trim()
+            val normalizedStreamed = sanitizeAgentVisibleText(streamed)
+            val normalizedFallback = sanitizeAgentVisibleText(fallback)
             if (normalizedFallback.isEmpty()) {
                 return normalizedStreamed
             }

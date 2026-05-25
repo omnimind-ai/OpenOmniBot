@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/widgets/execution/execution_models.dart';
 import 'package:ui/widgets/execution/execution_stats_panel.dart';
 
 /// 执行卡片组件
-/// 用于在列表中显示 Function 或 RunLog 的概要信息
+/// 用于在列表中显示复用指令或 RunLog 的概要信息
 class ExecutionCard extends StatelessWidget {
   final ExecutionDetail detail;
   final bool highlighted;
@@ -31,14 +32,10 @@ class ExecutionCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: highlighted
-            ? const Color(0xFFFFFBF0)
-            : palette.surfacePrimary,
+        color: highlighted ? const Color(0xFFFFFBF0) : palette.surfacePrimary,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: highlighted
-              ? const Color(0xFFF59E0B)
-              : Colors.transparent,
+          color: highlighted ? const Color(0xFFF59E0B) : Colors.transparent,
           width: highlighted ? 1.5 : 0,
         ),
         boxShadow: [
@@ -99,8 +96,12 @@ class ExecutionCard extends StatelessWidget {
                   _buildPill(
                     context,
                     detail.type == ExecutionDetailType.function
-                        ? 'Function'
-                        : 'Run Log',
+                        ? AppTextLocalizer.choose(
+                            zh: '复用指令',
+                            en: 'Reusable command',
+                            locale: Localizations.maybeLocaleOf(context),
+                          )
+                        : 'RunLog',
                     backgroundColor: detail.type == ExecutionDetailType.function
                         ? const Color(0xFFE8F0FF)
                         : const Color(0xFFF0E8FF),
@@ -130,7 +131,7 @@ class ExecutionCard extends StatelessWidget {
                 ],
               ),
 
-              // 统计信息（仅 Function）
+              // 统计信息（仅复用指令）
               if (detail.type == ExecutionDetailType.function &&
                   detail.stats != null &&
                   detail.stats!.callCount > 0) ...[
@@ -145,24 +146,34 @@ class ExecutionCard extends StatelessWidget {
                 Row(
                   children: [
                     if (detail.durationMs != null) ...[
-                      Icon(Icons.timer_outlined,
-                          size: 14, color: palette.textTertiary),
+                      Icon(
+                        Icons.timer_outlined,
+                        size: 14,
+                        color: palette.textTertiary,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         detail.durationText,
                         style: TextStyle(
-                            fontSize: 12, color: palette.textTertiary),
+                          fontSize: 12,
+                          color: palette.textTertiary,
+                        ),
                       ),
                       const SizedBox(width: 12),
                     ],
                     if (detail.startedAt != null) ...[
-                      Icon(Icons.schedule,
-                          size: 14, color: palette.textTertiary),
+                      Icon(
+                        Icons.schedule,
+                        size: 14,
+                        color: palette.textTertiary,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         _formatTime(detail.startedAt!),
                         style: TextStyle(
-                            fontSize: 12, color: palette.textTertiary),
+                          fontSize: 12,
+                          color: palette.textTertiary,
+                        ),
                       ),
                     ],
                   ],
@@ -170,7 +181,9 @@ class ExecutionCard extends StatelessWidget {
               ],
 
               // 操作按钮
-              if (onExecute != null || onViewDetail != null || onDelete != null) ...[
+              if (onExecute != null ||
+                  onViewDetail != null ||
+                  onDelete != null) ...[
                 const SizedBox(height: 14),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
@@ -182,7 +195,9 @@ class ExecutionCard extends StatelessWidget {
                         label: const Text('查看'),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           minimumSize: Size.zero,
                         ),
                       ),
@@ -195,7 +210,9 @@ class ExecutionCard extends StatelessWidget {
                         label: const Text('删除'),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           minimumSize: Size.zero,
                           foregroundColor: const Color(0xFFB42318),
                         ),
@@ -209,7 +226,9 @@ class ExecutionCard extends StatelessWidget {
                         label: const Text('执行'),
                         style: FilledButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           minimumSize: Size.zero,
                         ),
                       ),

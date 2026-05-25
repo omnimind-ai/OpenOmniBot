@@ -188,46 +188,57 @@ class AgentStreamEvent {
     if (kind == null) {
       throw ArgumentError('Unknown agent stream event kind: $eventName');
     }
-    final taskId = (raw['taskId'] ?? '').toString();
+    final taskId = _firstString(raw, const ['taskId', 'task_id', 'taskID']);
     if (taskId.trim().isEmpty) {
       throw ArgumentError('Agent stream event missing taskId');
     }
-    final workspaceId = (raw['workspaceId'] ?? '').toString().trim();
+    final workspaceId = _firstString(raw, const [
+      'workspaceId',
+      'workspace_id',
+    ]).trim();
     final browserSnapshot =
         kind == AgentStreamEventKind.toolCompleted &&
-            (raw['toolType'] ?? '').toString().trim() == 'browser' &&
+            _firstString(raw, const ['toolType', 'tool_type']).trim() ==
+                'browser' &&
             workspaceId.isNotEmpty
         ? (ChatBrowserSessionSnapshot.tryParseBrowserToolJson(
-                rawJson: (raw['rawResultJson'] ?? '').toString(),
+                rawJson: _firstString(raw, const [
+                  'rawResultJson',
+                  'raw_result_json',
+                ]),
                 workspaceId: workspaceId,
               ) ??
               ChatBrowserSessionSnapshot.tryParseBrowserToolJson(
-                rawJson: (raw['resultPreviewJson'] ?? '').toString(),
+                rawJson: _firstString(raw, const [
+                  'resultPreviewJson',
+                  'result_preview_json',
+                ]),
                 workspaceId: workspaceId,
               ))
         : null;
     return AgentStreamEvent(
       taskId: taskId,
-      seq: _asInt(raw['seq']) ?? 0,
+      seq: _asInt(_firstPresent(raw, const ['seq', 'sequence'])) ?? 0,
       kind: kind,
       createdAtMs:
           _asInt(raw['timestamp_ms']) ??
           _asInt(raw['createdAt']) ??
+          _asInt(raw['created_at']) ??
           DateTime.now().millisecondsSinceEpoch,
       schemaVersion: (raw['schema_version'] ?? '').toString(),
       traceId: (raw['trace_id'] ?? '').toString(),
-      runId: (raw['run_id'] ?? '').toString(),
-      spanId: (raw['span_id'] ?? '').toString(),
-      parentSpanId: (raw['parent_span_id'] ?? '').toString(),
+      runId: _firstString(raw, const ['run_id', 'runId', 'runLogId']),
+      spanId: _firstString(raw, const ['span_id', 'spanId']),
+      parentSpanId: _firstString(raw, const ['parent_span_id', 'parentSpanId']),
       channel: (raw['channel'] ?? '').toString(),
       eventName: eventName,
       status: (raw['status'] ?? '').toString(),
-      entryId: raw['entryId']?.toString(),
-      roundIndex: _asInt(raw['roundIndex']) ?? 0,
-      isFinal: raw['isFinal'] == true,
+      entryId: _firstNullableString(raw, const ['entryId', 'entry_id']),
+      roundIndex:
+          _asInt(_firstPresent(raw, const ['roundIndex', 'round_index'])) ?? 0,
+      isFinal: _asBool(_firstPresent(raw, const ['isFinal', 'is_final'])),
       text: (raw['text'] ?? raw['message'] ?? '').toString(),
-      thinking:
-          (raw['thinking'] ?? raw['reasoning_content'] ?? '').toString(),
+      thinking: (raw['thinking'] ?? raw['reasoning_content'] ?? '').toString(),
       stage: _asInt(raw['stage']) ?? 1,
       prefillTokensPerSecond: _asDouble(raw['prefillTokensPerSecond']),
       decodeTokensPerSecond: _asDouble(raw['decodeTokensPerSecond']),
@@ -239,7 +250,8 @@ class AgentStreamEvent {
       errorMessage: (raw['error'] ?? '').toString(),
       question: (raw['question'] ?? '').toString(),
       missingFields:
-          (raw['missingFields'] as List<dynamic>?)
+          (_firstPresent(raw, const ['missingFields', 'missing_fields'])
+                  as List<dynamic>?)
               ?.map((item) => item.toString())
               .toList(growable: false) ??
           const <String>[],
@@ -266,5 +278,37 @@ class AgentStreamEvent {
     if (raw is num) return raw.toDouble();
     if (raw is String) return double.tryParse(raw.trim());
     return null;
+  }
+
+  static dynamic _firstPresent(Map<String, dynamic> raw, List<String> keys) {
+    for (final key in keys) {
+      if (raw.containsKey(key) && raw[key] != null) {
+        return raw[key];
+      }
+    }
+    return null;
+  }
+
+  static String _firstString(Map<String, dynamic> raw, List<String> keys) {
+    return _firstNullableString(raw, keys) ?? '';
+  }
+
+  static String? _firstNullableString(
+    Map<String, dynamic> raw,
+    List<String> keys,
+  ) {
+    final value = _firstPresent(raw, keys);
+    final text = value?.toString();
+    return text == null || text.trim().isEmpty ? null : text;
+  }
+
+  static bool _asBool(dynamic raw) {
+    if (raw is bool) return raw;
+    if (raw is num) return raw != 0;
+    if (raw is String) {
+      final normalized = raw.trim().toLowerCase();
+      return normalized == 'true' || normalized == '1' || normalized == 'yes';
+    }
+    return false;
   }
 }

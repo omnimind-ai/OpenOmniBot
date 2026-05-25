@@ -268,7 +268,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       ),
       Tooltip(
         message: convertEligibility.canConvert
-            ? _text(context, '注册 RunLog', 'Register RunLog')
+            ? _text(context, '保存为复用指令', 'Save reusable command')
             : convertEligibility.message,
         child: IconButton(
           icon: _isConvertingFunction
@@ -482,7 +482,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
         _isConvertingFunction = false;
       });
       showToast(
-        _text(context, 'RunLog 已注册为 OOB API', 'RunLog registered as OOB API'),
+        _text(context, 'RunLog 已保存为复用指令', 'RunLog saved as reusable command'),
         type: ToastType.success,
       );
       await _showReusableFunctionSheet(spec, initialImportResult: importResult);
@@ -507,8 +507,8 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
     final executionFailedText = context.l10n.omniflowAssetReplayFailed;
     final conversionFailedText = _text(
       context,
-      '执行记录转换失败',
-      'Execution conversion failed',
+      '执行记录生成失败',
+      'Execution record generation failed',
     );
 
     try {
@@ -862,8 +862,8 @@ class _RunLogOfflineFlowCard extends StatelessWidget {
                     Text(
                       _text(
                         context,
-                        '这条 RunLog 可以直接重放，也可以注册成 Function 后从功能库复用。',
-                        'Replay this RunLog directly, or register it as a Function for library reuse.',
+                        '这条 RunLog 可以直接重放，也可以保存成复用指令后继续使用。',
+                        'Replay this RunLog directly, or save it as a reusable command.',
                       ),
                       style: TextStyle(
                         color: palette.textSecondary,
@@ -890,7 +890,7 @@ class _RunLogOfflineFlowCard extends StatelessWidget {
               _FlowStepPill(
                 icon: Icons.inventory_2_outlined,
                 label: canRegister
-                    ? _text(context, '可注册 Function', 'Function ready')
+                    ? _text(context, '可保存为复用指令', 'Reusable command ready')
                     : _text(context, '等待成功结果', 'Awaiting success'),
                 active: canRegister,
               ),
@@ -919,7 +919,7 @@ class _RunLogOfflineFlowCard extends StatelessWidget {
                   icon: Icons.cloud_upload_outlined,
                   label: isRegistering
                       ? _text(context, '注册中', 'Registering')
-                      : _text(context, '注册 Function', 'Register Function'),
+                      : _text(context, '保存复用指令', 'Save reusable command'),
                   onTap: onRegister,
                 ),
               ),
@@ -1787,11 +1787,11 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                                 ),
                               ),
                             ],
-                            // Route result — collapsed by default
+                            // Execution metadata — collapsed by default
                             if (!_isEmptyJsonValue(snapshot.compileResult)) ...[
                               const SizedBox(height: 8),
                               _CollapsibleSection(
-                                title: _text(context, '路由结果', 'Route result'),
+                                title: _text(context, '执行信息', 'Execution info'),
                                 copyValue: _prettyUserJson(
                                   snapshot.compileResult,
                                 ),
@@ -1856,7 +1856,7 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
       _isConvertingStep = true;
     });
     showToast(
-      _text(context, '正在转换此步...', 'Converting this step...'),
+      _text(context, '正在生成此步复用指令...', 'Generating this step command...'),
       type: ToastType.info,
     );
     final stepRunId = '${widget.runId}-step-${snapshot.stepNumber}';
@@ -1888,7 +1888,7 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
         showToast(spec.warning!, type: ToastType.warning);
       } else {
         showToast(
-          _text(context, '此步功能结构已生成', 'Step function spec generated'),
+          _text(context, '此步复用指令已生成', 'Step reusable command generated'),
           type: ToastType.success,
         );
       }
@@ -1910,7 +1910,7 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
         _isConvertingStep = false;
       });
       showToast(
-        '${_text(context, '转换失败', 'Conversion failed')}: $e',
+        '${_text(context, '生成失败', 'Generation failed')}: $e',
         type: ToastType.error,
       );
     }
@@ -2033,19 +2033,19 @@ class _ReusableFunctionSpecSheetState
                                   spec.aiEnhanced
                                       ? _text(
                                           context,
-                                          'AI 转换结果',
-                                          'AI conversion',
+                                          'AI 整理结果',
+                                          'AI prepared command',
                                         )
                                       : hasRegisteredFunction
                                       ? _text(
                                           context,
-                                          'RunLog 注册结果',
-                                          'Registered RunLog',
+                                          'RunLog 保存结果',
+                                          'Saved RunLog command',
                                         )
                                       : _text(
                                           context,
-                                          '本地转换结果',
-                                          'Local conversion',
+                                          '本地生成结果',
+                                          'Locally prepared command',
                                         ),
                                   style: TextStyle(
                                     fontSize: 12,
@@ -2072,8 +2072,8 @@ class _ReusableFunctionSpecSheetState
                           Tooltip(
                             message: _text(
                               context,
-                              '复制 Function JSON',
-                              'Copy function JSON',
+                              '复制复用指令 JSON',
+                              'Copy reusable command JSON',
                             ),
                             child: IconButton(
                               icon: const Icon(Icons.data_object_rounded),
@@ -2083,8 +2083,8 @@ class _ReusableFunctionSpecSheetState
                                 functionJsonForUser,
                                 _text(
                                   context,
-                                  '已复制 Function JSON',
-                                  'Function JSON copied',
+                                  '已复制复用指令 JSON',
+                                  'Reusable command JSON copied',
                                 ),
                               ),
                             ),
@@ -2123,18 +2123,18 @@ class _ReusableFunctionSpecSheetState
                                   value: spec.parameterCount.toString(),
                                 ),
                                 _SummaryPill(
-                                  label: _text(context, '转换', 'Mode'),
+                                  label: _text(context, '来源', 'Source'),
                                   value: spec.aiEnhanced
-                                      ? 'AI'
+                                      ? _text(context, 'AI 整理', 'AI prepared')
                                       : hasRegisteredFunction
-                                      ? 'Native'
-                                      : 'Local',
+                                      ? _text(context, '已保存', 'Saved')
+                                      : _text(context, '本地生成', 'Local'),
                                 ),
                                 _SummaryPill(
-                                  label: 'API',
+                                  label: _text(context, '状态', 'Status'),
                                   value: hasRegisteredFunction
                                       ? _text(context, '可执行', 'Executable')
-                                      : _text(context, '未注册', 'Draft'),
+                                      : _text(context, '待保存', 'Draft'),
                                 ),
                               ],
                             ),
@@ -2159,8 +2159,8 @@ class _ReusableFunctionSpecSheetState
                                         : _registeredFunctionId.isEmpty
                                         ? _text(
                                             context,
-                                            '注册为 OOB API',
-                                            'Register OOB API',
+                                            '保存复用指令',
+                                            'Save reusable command',
                                           )
                                         : _text(context, '重新注册', 'Re-register'),
                                     onTap: _isImporting
@@ -2176,8 +2176,8 @@ class _ReusableFunctionSpecSheetState
                                         ? _text(context, '执行中', 'Running')
                                         : _text(
                                             context,
-                                            '执行 OOB API',
-                                            'Run OOB API',
+                                            '执行复用指令',
+                                            'Run reusable command',
                                           ),
                                     onTap: _isImporting || _isExecuting
                                         ? null
@@ -2208,7 +2208,7 @@ class _ReusableFunctionSpecSheetState
                                   : _text(
                                       context,
                                       '转为定时任务',
-                                      'Schedule this function',
+                                      'Schedule this command',
                                     ),
                               onTap:
                                   _isImporting || _isExecuting || _isScheduling
@@ -2231,8 +2231,8 @@ class _ReusableFunctionSpecSheetState
                                       functionJsonForUser,
                                       _text(
                                         context,
-                                        '已复制 Function JSON',
-                                        'Function JSON copied',
+                                        '已复制复用指令 JSON',
+                                        'Reusable command JSON copied',
                                       ),
                                     ),
                                   ),
@@ -2263,8 +2263,8 @@ class _ReusableFunctionSpecSheetState
                             _DetailSection(
                               title: _text(
                                 context,
-                                'Function JSON',
-                                'Function JSON',
+                                '复用指令 JSON',
+                                'Reusable command JSON',
                               ),
                               copyValue: functionJsonForUser,
                               child: _JsonText(text: functionJsonForUser),
@@ -2282,11 +2282,7 @@ class _ReusableFunctionSpecSheetState
                             if (_apiCallJson.trim().isNotEmpty) ...[
                               const SizedBox(height: 12),
                               _DetailSection(
-                                title: _text(
-                                  context,
-                                  '真实 API 调用',
-                                  'Executable API call',
-                                ),
+                                title: _text(context, '执行调用', 'Run call'),
                                 copyValue: _apiCallJson,
                                 child: _JsonText(text: _apiCallJson),
                               ),
@@ -2323,8 +2319,8 @@ class _ReusableFunctionSpecSheetState
       if (result.success && registeredId.isEmpty) {
         final message = _text(
           context,
-          '注册返回缺少 function_id',
-          'Registration returned no function_id',
+          '注册返回缺少复用指令 ID',
+          'Registration returned no reusable command ID',
         );
         setState(() {
           _isImporting = false;
@@ -2349,7 +2345,7 @@ class _ReusableFunctionSpecSheetState
       });
       if (result.success) {
         showToast(
-          _text(context, '已注册为 OOB API', 'Registered OOB API'),
+          _text(context, '已保存为复用指令', 'Reusable command saved'),
           type: ToastType.success,
         );
       } else {
@@ -2381,7 +2377,7 @@ class _ReusableFunctionSpecSheetState
     }
     if (functionId.isEmpty) {
       showToast(
-        _text(context, '没有可执行 function_id', 'Missing executable function ID'),
+        _text(context, '没有可执行的复用指令', 'Missing runnable command'),
         type: ToastType.warning,
       );
       return;
@@ -2411,7 +2407,7 @@ class _ReusableFunctionSpecSheetState
       await showFunctionRunResultSheet(
         context,
         result: result,
-        title: _text(context, 'OOB API 执行结果', 'OOB API run result'),
+        title: _text(context, '复用指令执行结果', 'Reusable command result'),
       );
     } catch (e) {
       if (!mounted) return;
@@ -2443,8 +2439,8 @@ class _ReusableFunctionSpecSheetState
         showToast(
           _text(
             context,
-            'Function 注册失败，无法转定时任务',
-            'Function registration failed',
+            '复用指令保存失败，无法转定时任务',
+            'Reusable command registration failed',
           ),
           type: ToastType.error,
         );
@@ -2542,28 +2538,28 @@ class _ReusableFunctionSpecSheetState
     final argumentsJson = _prettyUserJson(_defaultArguments);
     if (_localeValue(context, zh: false, en: true)) {
       return [
-        'Execute this already registered OOB function now. Do not create, update, or discuss the schedule.',
+        'Execute this already registered OOB reusable command now. Do not create, update, or discuss the schedule.',
         '',
-        'Function ID: $functionId',
+        'Reusable command ID: $functionId',
         'Arguments JSON:',
         argumentsJson,
         '',
-        'Execution rule: call the OOB function API with the arguments above. The runtime executes executor=omniflow/model_free steps locally without a model call; executor=tool uses step.callable_tool; executor=agent or validation mismatch may re-plan with step.agent_call/fallback prompt.',
+        'Execution rule: run the OOB reusable command with the arguments above. The runtime executes executor=omniflow/model_free steps locally without a model call; executor=tool uses step.callable_tool; executor=agent or validation mismatch may re-plan with step.agent_call/fallback prompt.',
         '',
-        'Function JSON:',
+        'Reusable command JSON:',
         _functionJsonForUser,
       ].join('\n');
     }
     return [
-      '现在执行这个已经注册的 OOB function。不要创建、修改或讨论定时任务。',
+      '现在执行这个已经注册的 OOB 复用指令。不要创建、修改或讨论定时任务。',
       '',
-      'Function ID: $functionId',
+      '复用指令 ID: $functionId',
       'Arguments JSON:',
       argumentsJson,
       '',
-      '执行规则：用上面的参数调用 OOB function API。运行时会把 executor=omniflow/model_free 的步骤本地执行，不调用模型；executor=tool 调用 step.callable_tool；executor=agent 或 validation 不匹配时可使用 step.agent_call/fallback prompt 重规划。',
+      '执行规则：用上面的参数运行 OOB 复用指令。运行时会把 executor=omniflow/model_free 的步骤本地执行，不调用模型；executor=tool 调用 step.callable_tool；executor=agent 或 validation 不匹配时可使用 step.agent_call/fallback prompt 重规划。',
       '',
-      'Function JSON:',
+      '复用指令 JSON:',
       _functionJsonForUser,
     ].join('\n');
   }
@@ -2587,32 +2583,33 @@ class _ReusableFunctionSpecSheetState
       return '';
     }
     return _prettyUserJson({
-      'api': 'AssistsMessageService.runOobReusableFunction',
-      'body': {
-        'function_id': functionId,
-        'arguments': _defaultArguments,
-        'context': {
-          'source': 'oob_reusable_function',
-          'source_run_id': widget.runId,
-        },
+      'action': 'run_reusable_command',
+      'function_id': functionId,
+      'arguments': _defaultArguments,
+      'context': {
+        'source': 'oob_reusable_function',
+        'source_run_id': widget.runId,
       },
     });
   }
 
   String _runSuccessMessage(BuildContext context, UtgManualRunResult result) {
-    final status = result.terminalState['status']?.toString().trim() ?? '';
-    final taskId = result.terminalState['taskId']?.toString().trim() ?? '';
-    if (taskId.isNotEmpty) {
+    if (result.startedAgentFallback) {
+      final taskId = result.taskId;
       return _localeValue(
         context,
-        zh: 'API 已开始执行：$taskId',
-        en: 'API execution started: $taskId',
+        zh: taskId.isEmpty ? '已交给 VLM 继续执行' : '已交给 VLM 继续执行：$taskId',
+        en: taskId.isEmpty ? 'Handed off to VLM' : 'Handed off to VLM: $taskId',
       );
     }
-    if (status == 'completed') {
-      return _text(context, 'API 已本地执行完成', 'API completed locally');
+    if (result.completedLocal) {
+      return _text(
+        context,
+        '复用指令已本地执行完成',
+        'Reusable command completed locally',
+      );
     }
-    return _text(context, 'API 已开始执行', 'API execution started');
+    return _text(context, '复用指令已开始执行', 'Reusable command started');
   }
 
   String _runFailureMessage(BuildContext context, UtgManualRunResult result) {
@@ -2620,7 +2617,7 @@ class _ReusableFunctionSpecSheetState
     if (error != null && error.isNotEmpty) {
       return error;
     }
-    return _text(context, 'API 执行失败', 'API execution failed');
+    return _text(context, '复用指令执行失败', 'Reusable command failed');
   }
 
   void _copyText(BuildContext context, String text, String successMessage) {
@@ -2650,14 +2647,10 @@ class _FunctionApiStatusBox extends StatelessWidget {
         ? _successColor(context)
         : _errorColor(context);
     final lines = <String>[
-      if (functionId.isNotEmpty) 'function_id: $functionId',
-      if (importResult != null)
-        'import: ${importResult!.success ? 'success' : 'failed'}'
-            ' · functions=${importResult!.functionsCreated}'
-            ' · hits=${importResult!.hitFunctionIds.length}',
-      if (runResult != null)
-        'run: ${runResult.success ? 'started' : 'failed'}'
-            '${_runStatusSuffix(runResult)}',
+      if (functionId.isNotEmpty)
+        _text(context, '复用指令：$functionId', 'Reusable command: $functionId'),
+      if (importResult != null) _importStatusText(context, importResult!),
+      if (runResult != null) _runStatusText(context, runResult),
     ];
     return Container(
       width: double.infinity,
@@ -2673,7 +2666,11 @@ class _FunctionApiStatusBox extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.api_rounded, size: 18, color: statusColor),
+              Icon(
+                Icons.play_circle_outline_rounded,
+                size: 18,
+                color: statusColor,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -2682,13 +2679,12 @@ class _FunctionApiStatusBox extends StatelessWidget {
                     fontSize: 12,
                     color: palette.textSecondary,
                     height: 1.35,
-                    fontFamily: 'monospace',
                   ),
                 ),
               ),
               if (apiCallJson.trim().isNotEmpty)
                 Tooltip(
-                  message: _text(context, '复制 API 调用', 'Copy API call'),
+                  message: _text(context, '复制执行调用', 'Copy run call'),
                   child: IconButton(
                     visualDensity: VisualDensity.compact,
                     icon: const Icon(Icons.content_copy_rounded, size: 16),
@@ -2696,7 +2692,7 @@ class _FunctionApiStatusBox extends StatelessWidget {
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: apiCallJson));
                       showToast(
-                        _text(context, '已复制 API 调用', 'API call copied'),
+                        _text(context, '已复制执行调用', 'Run call copied'),
                         type: ToastType.success,
                       );
                     },
@@ -2713,20 +2709,44 @@ class _FunctionApiStatusBox extends StatelessWidget {
     );
   }
 
-  String _runStatusSuffix(UtgManualRunResult result) {
-    final parts = <String>[];
-    final status = result.terminalState['status']?.toString().trim() ?? '';
-    final runner = result.runner;
-    final taskId = result.terminalState['taskId']?.toString().trim() ?? '';
-    final error = result.errorMessage?.trim() ?? '';
+  String _importStatusText(
+    BuildContext context,
+    UtgRunLogImportResult importResult,
+  ) {
+    if (!importResult.success) {
+      return _text(context, '保存：失败', 'Save: failed');
+    }
+    final count = importResult.functionsCreated;
+    return _text(
+      context,
+      count > 0 ? '保存：已保存 $count 条复用指令' : '保存：已保存',
+      count > 0 ? 'Save: $count reusable commands saved' : 'Save: saved',
+    );
+  }
+
+  String _runStatusText(BuildContext context, UtgManualRunResult result) {
     final stepCount = result.stepCount;
-    if (status.isNotEmpty) parts.add('status=$status');
-    if (runner.isNotEmpty) parts.add('runner=$runner');
-    if (stepCount > 0) parts.add('steps=${result.successStepCount}/$stepCount');
-    if (taskId.isNotEmpty) parts.add('task=$taskId');
-    if (result.runFilePath.trim().isNotEmpty) parts.add(result.runFilePath);
-    if (!result.success && error.isNotEmpty) parts.add(error);
-    return parts.isEmpty ? '' : ' · ${parts.join(' · ')}';
+    final stepText = stepCount > 0
+        ? ' · ${result.successStepCount}/$stepCount'
+        : '';
+    if (result.startedAgentFallback) {
+      return _text(
+        context,
+        '执行：已交给 VLM 继续执行$stepText',
+        'Run: handed off to VLM$stepText',
+      );
+    }
+    if (result.completedLocal) {
+      return _text(
+        context,
+        '执行：本地执行完成$stepText',
+        'Run: completed locally$stepText',
+      );
+    }
+    if (!result.success) {
+      return _text(context, '执行：失败$stepText', 'Run: failed$stepText');
+    }
+    return _text(context, '执行：已开始$stepText', 'Run: started$stepText');
   }
 }
 
@@ -3088,7 +3108,10 @@ class _SummaryGrid extends StatelessWidget {
             : _text(context, '需要模型', 'Needs model'),
       ),
       if (!_hasRunLogSourceBadge(source) && snapshot.compileKind.isNotEmpty)
-        MapEntry(_text(context, '路由', 'Route'), snapshot.routeLabel(context)),
+        MapEntry(
+          _text(context, '处理方式', 'Handling'),
+          snapshot.routeLabel(context),
+        ),
       if (snapshot.durationMs != null)
         MapEntry(
           _text(context, '耗时', 'Duration'),
@@ -3498,9 +3521,9 @@ class _RunLogStepSnapshot {
       card['selection_source'],
       card['selectionSource'],
     ]).toLowerCase();
-    final normalizedCompileKind = compileKind.trim().toLowerCase();
-    return normalizedCompileKind == 'vlm_step' ||
-        normalizedCompileKind == 'vlm' ||
+    final normalizedExecutionKind = compileKind.trim().toLowerCase();
+    return normalizedExecutionKind == 'vlm_step' ||
+        normalizedExecutionKind == 'vlm' ||
         toolType == 'vlm' ||
         normalizedToolName == 'vlm_task' ||
         source == 'vlm';
@@ -3689,7 +3712,7 @@ class _RunLogStepSnapshot {
       return context.l10n.executionRouteAiPlanning;
     }
     if (compileKind == 'vlm_step' || compileKind == 'vlm') {
-      return _text(context, 'VLM 路由', 'VLM route');
+      return _text(context, 'VLM 执行', 'VLM execution');
     }
     return compileKind;
   }
@@ -3730,7 +3753,8 @@ class _RunLogStepSnapshot {
       if (title.isNotEmpty) 'Title: $title',
       if (toolName.isNotEmpty) 'Tool: $toolName',
       if (toolCallId.isNotEmpty) 'Tool Call ID: $toolCallId',
-      if (compileKind.isNotEmpty) 'Route: $compileKind',
+      if (compileKind.isNotEmpty)
+        'Execution: ${_userVisibleString(compileKind)}',
       if (success != null) 'Success: $success',
       if (durationMs != null) 'Duration: ${_formatMs(durationMs!)}',
       if (totalTokens != null) 'Token Usage: ${tokenUsageLabelTextOnly()}',
@@ -3749,7 +3773,7 @@ class _RunLogStepSnapshot {
       if (tokenUsageAttempts.isNotEmpty)
         'token_usage_attempts': tokenUsageAttempts,
     });
-    _appendTranscriptSection(lines, 'Route Result', compileResult);
+    _appendTranscriptSection(lines, 'Execution Info', compileResult);
     if (before.isNotEmpty || after.isNotEmpty) {
       _appendTranscriptSection(lines, 'Before / After', {
         if (before.isNotEmpty) 'before': before,
@@ -4027,16 +4051,17 @@ String _runLogReplaySuccessMessage(
   BuildContext context,
   UtgManualRunResult result,
 ) {
-  final status = result.terminalState['status']?.toString().trim() ?? '';
-  final taskId = result.terminalState['taskId']?.toString().trim() ?? '';
-  if (taskId.isNotEmpty) {
+  if (result.startedAgentFallback) {
+    final taskId = result.taskId;
     return _localeValue(
       context,
-      zh: '执行记录已交给 Agent 继续执行：$taskId',
-      en: 'Execution handed off to Agent: $taskId',
+      zh: taskId.isEmpty ? '执行记录已交给 VLM 继续执行' : '执行记录已交给 VLM 继续执行：$taskId',
+      en: taskId.isEmpty
+          ? 'Execution handed off to VLM'
+          : 'Execution handed off to VLM: $taskId',
     );
   }
-  if (status == 'completed') {
+  if (result.completedLocal) {
     return context.l10n.omniflowAssetReplaySuccess;
   }
   return context.l10n.omniflowAssetReplaySuccess;
@@ -4778,8 +4803,8 @@ String _userVisibleJsonKey(String key) => _userVisibleString(key);
 
 String _userVisibleString(String value) {
   return value
-      .replaceAll(RegExp('compile', caseSensitive: false), 'route')
-      .replaceAll('编译', '路由');
+      .replaceAll(RegExp('compile', caseSensitive: false), 'execution')
+      .replaceAll('编译', '执行');
 }
 
 dynamic _jsonSafe(dynamic value) {

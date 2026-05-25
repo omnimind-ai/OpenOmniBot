@@ -7,6 +7,7 @@ import android.content.pm.ApplicationInfo
 import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
 import cn.com.omnimind.bot.agent.config.AgentToolFeatureStore
 import cn.com.omnimind.bot.runlog.OobRunLogReplayService
+import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import java.io.File
 import java.nio.file.Files
 import kotlinx.serialization.json.JsonArray
@@ -21,6 +22,52 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentToolRegistryOobFunctionTest {
+    @Test
+    fun `project tools are hidden when no project capability is active`() {
+        val context = TempFilesContext()
+        try {
+            val registry = AgentToolRegistry(
+                context = context,
+                discoveredServers = emptyList(),
+            )
+            val toolNames = registry.toolsForModel.map { it.function.name }.toSet()
+
+            assertFalse(toolNames.contains("workbench_project_create"))
+            assertFalse(toolNames.contains("workbench_project_list"))
+            assertFalse(toolNames.contains("workbench_api_call"))
+            assertTrue(toolNames.contains("oob_run_log_list"))
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `project tools are exposed after activating a project`() {
+        val context = TempFilesContext()
+        try {
+            val store = WorkbenchProjectStore(context)
+            store.createProject(
+                mapOf(
+                    "projectId" to "test-project",
+                    "name" to "Test Project"
+                )
+            )
+            store.activateProject("test-project")
+
+            val registry = AgentToolRegistry(
+                context = context,
+                discoveredServers = emptyList(),
+            )
+            val toolNames = registry.toolsForModel.map { it.function.name }.toSet()
+
+            assertTrue(toolNames.contains("workbench_project_create"))
+            assertTrue(toolNames.contains("workbench_project_list"))
+            assertTrue(toolNames.contains("workbench_api_call"))
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
     @Test
     fun `registered oob function is exposed as agent tool and materializes changed argument`() {
         val context = TempFilesContext()

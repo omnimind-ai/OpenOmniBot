@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/execution/execution_models.dart';
@@ -122,8 +123,12 @@ class _ExecutionDetailViewState extends State<ExecutionDetailView> {
                         _buildPill(
                           context,
                           detail.type == ExecutionDetailType.function
-                              ? 'Function'
-                              : 'Run Log',
+                              ? AppTextLocalizer.choose(
+                                  zh: '复用指令',
+                                  en: 'Reusable command',
+                                  locale: Localizations.maybeLocaleOf(context),
+                                )
+                              : 'RunLog',
                           backgroundColor:
                               detail.type == ExecutionDetailType.function
                               ? const Color(0xFFE8F0FF)

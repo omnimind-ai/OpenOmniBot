@@ -1,11 +1,11 @@
 // 执行相关的通用数据模型
 // 用于统一 Function 和 RunLog 的展示
 
-/// Route/reuse kind from legacy payload keys.
-enum CompileKind {
+/// Reuse/planning kind from legacy payload keys.
+enum ExecutionRouteKind {
   hit, // 复用已有技能
   miss, // VLM 执行
-  none, // 无路由信息
+  none, // 无执行策略信息
 }
 
 /// 执行步骤的统一模型
@@ -16,9 +16,9 @@ class ExecutionStep {
   final String? screenshotUrl;
   final String? xmlUrl;
   final Map<String, dynamic> params;
-  final String? compileLabel; // 兼容旧 payload key，展示时按 route/reuse 语义处理
-  final CompileKind compileKind;
-  final String? compileFunctionId; // 复用命中时的 function id
+  final String? rawExecutionLabel; // 兼容旧 payload key，展示时按执行语义处理
+  final ExecutionRouteKind executionRouteKind;
+  final String? executionFunctionId; // 复用命中时的 function id
   final bool? success;
   final String? startedAt;
   final String? finishedAt;
@@ -32,9 +32,9 @@ class ExecutionStep {
     this.screenshotUrl,
     this.xmlUrl,
     this.params = const {},
-    this.compileLabel,
-    this.compileKind = CompileKind.none,
-    this.compileFunctionId,
+    this.rawExecutionLabel,
+    this.executionRouteKind = ExecutionRouteKind.none,
+    this.executionFunctionId,
     this.success,
     this.startedAt,
     this.finishedAt,
@@ -43,9 +43,11 @@ class ExecutionStep {
   });
 
   /// 是否命中可复用技能
-  bool get isCompileHit => compileKind == CompileKind.hit;
+  bool get isReuseHit => executionRouteKind == ExecutionRouteKind.hit;
 
-  String? get routeLabel => _userVisibleRouteText(compileLabel);
+  String? get routeLabel => _userVisibleExecutionText(rawExecutionLabel);
+
+  String? get executionLabel => routeLabel;
 
   Map<String, dynamic> toUserJson() {
     return {
@@ -53,7 +55,7 @@ class ExecutionStep {
       'action_type': actionType,
       'params': params,
       'target_description': targetDescription,
-      'route_label': routeLabel,
+      'execution_label': executionLabel,
       if (tokenUsage?.raw.isNotEmpty == true) 'token_usage': tokenUsage!.raw,
       'success': success,
     };
@@ -91,17 +93,17 @@ class ExecutionStep {
         ) ??
         {};
 
-    // 解析 route/reuse 信息
+    // 解析复用/规划信息
     final functionId = compileResult['function_id']?.toString().trim();
-    CompileKind compileKind = CompileKind.none;
+    ExecutionRouteKind executionRouteKind = ExecutionRouteKind.none;
     if (functionId != null && functionId.isNotEmpty) {
-      compileKind = CompileKind.hit;
+      executionRouteKind = ExecutionRouteKind.hit;
     } else if (step['selection_source'] == 'vlm') {
-      compileKind = CompileKind.miss;
+      executionRouteKind = ExecutionRouteKind.miss;
     }
 
-    // 兼容旧的 API 返回标签，但对 UI/复制内容只暴露 route/reuse 语义。
-    final apiCompileLabel = _userVisibleRouteText(
+    // 兼容旧的 API 返回标签，但对 UI/复制内容只暴露执行语义。
+    final apiExecutionLabel = _userVisibleExecutionText(
       step['compile_label']?.toString(),
     );
 
@@ -116,9 +118,9 @@ class ExecutionStep {
               .toString()
               .trim(),
       params: Map<String, dynamic>.from(params),
-      compileLabel: apiCompileLabel,
-      compileKind: compileKind,
-      compileFunctionId: functionId,
+      rawExecutionLabel: apiExecutionLabel,
+      executionRouteKind: executionRouteKind,
+      executionFunctionId: functionId,
       success: step['success'] as bool?,
       startedAt: step['started_at']?.toString(),
       finishedAt: step['finished_at']?.toString(),
@@ -532,17 +534,17 @@ int? _asInt(Object? value) {
   return null;
 }
 
-String? _userVisibleRouteText(String? raw) {
+String? _userVisibleExecutionText(String? raw) {
   final value = raw?.trim();
   if (value == null || value.isEmpty) {
     return null;
   }
   return value
-      .replaceAll(RegExp(r'\bcompiled\b', caseSensitive: false), 'routed')
-      .replaceAll(RegExp(r'\bcompiler\b', caseSensitive: false), 'router')
-      .replaceAll(RegExp(r'\bcompilation\b', caseSensitive: false), 'routing')
-      .replaceAll(RegExp(r'\bcompile\b', caseSensitive: false), 'route')
-      .replaceAll('编译', '路由');
+      .replaceAll(RegExp(r'\bcompiled\b', caseSensitive: false), 'executed')
+      .replaceAll(RegExp(r'\bcompiler\b', caseSensitive: false), 'runner')
+      .replaceAll(RegExp(r'\bcompilation\b', caseSensitive: false), 'execution')
+      .replaceAll(RegExp(r'\bcompile\b', caseSensitive: false), 'execute')
+      .replaceAll('编译', '执行');
 }
 
 String _formatTokenCount(int value) {

@@ -40,6 +40,59 @@ class AgentLlmStreamAccumulator(
             "<parameter\\s*=\\s*([A-Za-z0-9_.:-]+)\\s*>(.*?)</parameter\\s*>",
             setOf(RegexOption.DOT_MATCHES_ALL)
         )
+        private val JSON_TOOL_ARGUMENT_KEYS = listOf(
+            "arguments",
+            "argumentsJson",
+            "arguments_json",
+            "args",
+            "argsJson",
+            "args_json",
+            "input",
+            "inputJson",
+            "input_json",
+            "parameters"
+        )
+        private val JSON_TOOL_METADATA_KEYS = setOf(
+            "actions",
+            "artifacts",
+            "cardid",
+            "completed",
+            "displayname",
+            "function",
+            "kind",
+            "name",
+            "previewjson",
+            "progress",
+            "rawresultjson",
+            "resultpreviewjson",
+            "status",
+            "streammeta",
+            "success",
+            "summary",
+            "terminaloutput",
+            "terminaloutputdelta",
+            "terminalsessionid",
+            "tool",
+            "toolcallid",
+            "toolname",
+            "tooltitle",
+            "tooltype"
+        )
+        private val JSON_TOOL_RESULT_PAYLOAD_KEYS = setOf(
+            "actions",
+            "artifacts",
+            "previewjson",
+            "rawresultjson",
+            "resultpreviewjson",
+            "terminaloutput"
+        )
+        private val JSON_TOOL_RESULT_STATUS_KEYS = setOf(
+            "completed",
+            "progress",
+            "status",
+            "success",
+            "summary"
+        )
     }
 
     private val contentBuffer = StringBuilder()
@@ -146,6 +199,12 @@ class AgentLlmStreamAccumulator(
     }
 
     private fun splitCompositeChunk(raw: String): List<String>? {
+        if (
+            raw.contains(TOOL_CALL_OPEN_TAG, ignoreCase = true) ||
+            raw.contains(FUNCTION_OPEN_MARKER, ignoreCase = true)
+        ) {
+            return null
+        }
         splitChunkByLines(raw)?.let { return it }
         splitTrailingJsonChunk(raw)?.let { return it }
         return null
@@ -721,7 +780,12 @@ class AgentLlmStreamAccumulator(
                     .trim()
                 val parsed = parseInlineFunctionToolCall(innerBlock)
                 if (parsed == null) {
-                    appendPlainVisibleText(wrappedBlock)
+                    val fallbackSummary = inlineJsonToolPayloadSummary(innerBlock)
+                    if (fallbackSummary.isNullOrBlank()) {
+                        appendPlainVisibleText(wrappedBlock)
+                    } else {
+                        appendPlainVisibleText(fallbackSummary)
+                    }
                 } else {
                     mergeInlineFunctionToolCall(parsed)
                     OmniLog.d(TAG, "parsed inline function tool call: ${parsed.name}")
@@ -755,7 +819,13 @@ class AgentLlmStreamAccumulator(
     }
 
     private fun parseInlineFunctionToolCall(block: String): InlineFunctionToolCall? {
-        val match = FUNCTION_BLOCK_REGEX.matchEntire(block.trim()) ?: return null
+        val normalized = block.trim()
+        parseInlineFunctionMarkupToolCall(normalized)?.let { return it }
+        return parseInlineJsonToolCall(normalized)
+    }
+
+    private fun parseInlineFunctionMarkupToolCall(block: String): InlineFunctionToolCall? {
+        val match = FUNCTION_BLOCK_REGEX.matchEntire(block) ?: return null
         val name = xmlUnescape(match.groupValues[1]).trim()
         if (name.isEmpty()) {
             return null
@@ -778,6 +848,108 @@ class AgentLlmStreamAccumulator(
             return null
         }
         return InlineFunctionToolCall(name = name, arguments = JsonObject(arguments))
+    }
+
+    private fun parseInlineJsonToolCall(block: String): InlineFunctionToolCall? {
+        val payload = parseJsonObject(block) ?: return null
+        if (isLikelyInlineToolResultPayload(payload)) {
+            return null
+        }
+        val functionPayload = payload["function"] as? JsonObject
+        val name = firstJsonString(
+            payload["toolName"],
+            payload["tool_name"],
+            payload["name"],
+            functionPayload?.get("name"),
+            (payload["tool"] as? JsonObject)?.get("name")
+        )?.trim().orEmpty()
+        if (name.isEmpty()) {
+            return null
+        }
+
+        val explicitArguments = extractInlineJsonArguments(payload, functionPayload)
+        val arguments = explicitArguments ?: inferInlineJsonArguments(payload)
+        return InlineFunctionToolCall(name = name, arguments = arguments)
+    }
+
+    private fun extractInlineJsonArguments(
+        payload: JsonObject,
+        functionPayload: JsonObject?
+    ): JsonObject? {
+        functionPayload?.get("arguments")?.let { element ->
+            jsonObjectArgumentValue(element)?.let { return it }
+        }
+        JSON_TOOL_ARGUMENT_KEYS.forEach { key ->
+            payload[key]?.let { element ->
+                jsonObjectArgumentValue(element)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun jsonObjectArgumentValue(element: JsonElement): JsonObject? {
+        return when (element) {
+            is JsonObject -> element
+            is JsonPrimitive -> {
+                val text = element.contentOrNull?.trim().orEmpty()
+                if (text.isEmpty()) {
+                    JsonObject(emptyMap())
+                } else {
+                    parseJsonObject(text)
+                }
+            }
+            else -> null
+        }
+    }
+
+    private fun inferInlineJsonArguments(payload: JsonObject): JsonObject {
+        val arguments = linkedMapOf<String, JsonElement>()
+        payload.forEach { (key, value) ->
+            val normalizedKey = normalizePayloadKey(key)
+            if (JSON_TOOL_METADATA_KEYS.contains(normalizedKey)) {
+                return@forEach
+            }
+            arguments[key] = value
+        }
+        return JsonObject(arguments)
+    }
+
+    private fun isLikelyInlineToolResultPayload(payload: JsonObject): Boolean {
+        val keys = payload.keys.map(::normalizePayloadKey).toSet()
+        return keys.any(JSON_TOOL_RESULT_PAYLOAD_KEYS::contains) &&
+            keys.any(JSON_TOOL_RESULT_STATUS_KEYS::contains)
+    }
+
+    private fun inlineJsonToolPayloadSummary(block: String): String? {
+        val payload = parseJsonObject(block) ?: return null
+        if (!isLikelyInlineToolResultPayload(payload)) {
+            return null
+        }
+        return firstJsonString(
+            payload["summary"],
+            payload["progress"],
+            payload["message"],
+            payload["displayName"],
+            payload["display_name"],
+            payload["toolTitle"],
+            payload["tool_title"]
+        )?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun firstJsonString(vararg elements: JsonElement?): String? {
+        elements.forEach { element ->
+            val value = (element as? JsonPrimitive)
+                ?.contentOrNull
+                ?.takeIf { it.isNotBlank() }
+            if (value != null) {
+                return value
+            }
+        }
+        return null
+    }
+
+    private fun normalizePayloadKey(key: String): String {
+        return key.replace("_", "").lowercase()
     }
 
     private fun mergeInlineFunctionToolCall(call: InlineFunctionToolCall) {

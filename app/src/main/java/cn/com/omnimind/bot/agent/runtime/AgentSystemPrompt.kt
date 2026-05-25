@@ -158,98 +158,104 @@ object AgentSystemPrompt {
             enUS = "Workspace memory is unavailable, so continue without memory context for this turn."
         ).resolve(locale)
 
-        val workbenchProjectSection = activeWorkbenchProjectContext
+        val activeWorkbenchProjectText = activeWorkbenchProjectContext
             ?.takeIf { it.isNotBlank() }
-            ?.let { contextText ->
-                when (locale) {
-                    PromptLocale.ZH_CN -> """
-                        当前激活的 OOB Workbench Project：
-                        $contextText
-                    """.trimIndent()
-                    PromptLocale.EN_US -> """
-                        Active OOB Workbench Project:
-                        $contextText
-                    """.trimIndent()
-                }
-            } ?: LocalizedText(
-                zhCN = "当前未激活 OOB Workbench Project。只有用户选择 Project 后，才把 Project API 当作当前工作环境 toolbox。",
-                enUS = "No OOB Workbench Project is active. Treat Project APIs as the current toolbox only after the user selects a Project."
-            ).resolve(locale)
-        val workbenchLayoutSection = workbenchDisplayLayoutContext
-            ?.takeIf { it.isNotBlank() }
-            ?: when (locale) {
-                PromptLocale.ZH_CN -> "当前没有可用的 Workbench Display 布局实测值；HTML 生成必须保持响应式，并在 App 上报布局后按实测值热更新。"
-                PromptLocale.EN_US -> "No measured Workbench Display layout is available yet; generated HTML must remain responsive and update against measured app layout once reported."
+        val workbenchProjectEnabled = activeWorkbenchProjectText != null
+        val workbenchProjectSection = activeWorkbenchProjectText?.let { contextText ->
+            when (locale) {
+                PromptLocale.ZH_CN -> """
+                    当前激活的 OOB Workbench Project：
+                    $contextText
+                """.trimIndent()
+                PromptLocale.EN_US -> """
+                    Active OOB Workbench Project:
+                    $contextText
+                """.trimIndent()
             }
+        }.orEmpty()
+        val workbenchLayoutSection = if (workbenchProjectEnabled) {
+            workbenchDisplayLayoutContext
+                ?.takeIf { it.isNotBlank() }
+                ?: when (locale) {
+                    PromptLocale.ZH_CN -> "当前没有可用的 Workbench Display 布局实测值；HTML 生成必须保持响应式，并在 App 上报布局后按实测值热更新。"
+                    PromptLocale.EN_US -> "No measured Workbench Display layout is available yet; generated HTML must remain responsive and update against measured app layout once reported."
+                }
+        } else {
+            ""
+        }
 
-        val workbenchProjectOperationRules = when (locale) {
-            PromptLocale.ZH_CN -> """
-                OOB Workbench：完整规则在 oob-project skill 中。处理任何 Workbench 任务前，先调用 skills_read(skillId="oob-project") 读取完整规则。
-                核心：业务操作用 `workbench_api_call`；前端改动走 `workbench_project_hot_update`，优先 `htmlPatches`（~50 token）而非 `htmlFiles` 全量重写（~5000 token）。
-                标注定位：若 `frontendContext.selectedElement.oobId` 存在，直接搜 `data-oob-id="<oobId>"` 作为 `oldText` 锚点，不需要读全量 HTML；否则用 `file_read(lineStart/lineCount)` 只读相关段落。
+        val workbenchProjectOperationRules = if (workbenchProjectEnabled) {
+            when (locale) {
+                PromptLocale.ZH_CN -> """
+                    OOB Workbench：完整规则在 oob-project skill 中。处理任何 Workbench 任务前，先调用 skills_read(skillId="oob-project") 读取完整规则。
+                    核心：业务操作用 `workbench_api_call`；前端改动走 `workbench_project_hot_update`，优先 `htmlPatches`（~50 token）而非 `htmlFiles` 全量重写（~5000 token）。
+                    标注定位：若 `frontendContext.selectedElement.oobId` 存在，直接搜 `data-oob-id="<oobId>"` 作为 `oldText` 锚点，不需要读全量 HTML；否则用 `file_read(lineStart/lineCount)` 只读相关段落。
 
-                【Project 新建强制执行序列】收到新建 Project 请求时，必须先调用 skills_read(skillId="oob-project") 读取完整流程，然后严格按以下序列执行：
+                    【Project 新建强制执行序列】收到新建 Project 请求时，必须先调用 skills_read(skillId="oob-project") 读取完整流程，然后严格按以下序列执行：
 
-                Step 1 — 领域 + 开源调研（必须执行，不可跳过）
-                  至少调用 2 次 web_search 调研优秀产品/工具，再至少查询 1 次 GitHub/OSS 开源项目；必要时用 browser_use 打开 README/截图/示例深读。
-                  调研只用于校准一个小而精的 v1：一个核心闭环、一个实体、3-5 个字段、一屏展示。不要写竞品报告，不要把成熟 App 的模块都搬进来。
-                  输出：向用户展示 2-3 条产品调研要点、1-2 条开源启发，并说明 OOB v1 要保留什么、砍掉什么。
+                    Step 1 — 领域 + 开源调研（必须执行，不可跳过）
+                      至少调用 2 次 web_search 调研优秀产品/工具，再至少查询 1 次 GitHub/OSS 开源项目；必要时用 browser_use 打开 README/截图/示例深读。
+                      调研只用于校准一个小而精的 v1：一个核心闭环、一个实体、3-5 个字段、一屏展示。不要写竞品报告，不要把成熟 App 的模块都搬进来。
+                      输出：向用户展示 2-3 条产品调研要点、1-2 条开源启发，并说明 OOB v1 要保留什么、砍掉什么。
 
-                Step 2 — 方案确认（必须等用户回复，不可跳过）
-                  输出 v1 小方案：这是什么 / 1 个主操作 / 最多 3 条功能 / 一屏展示 / 暂不支持。
-                  末尾明确提问："这个方向对吗？有什么要改的？"
-                  收到用户明确确认前，禁止进入 Step 3。
+                    Step 2 — 方案确认（必须等用户回复，不可跳过）
+                      输出 v1 小方案：这是什么 / 1 个主操作 / 最多 3 条功能 / 一屏展示 / 暂不支持。
+                      末尾明确提问："这个方向对吗？有什么要改的？"
+                      收到用户明确确认前，禁止进入 Step 3。
 
-                Step 3 — ProjectContract（必须输出结构化 JSON）
-                  输出 ProjectContract JSON（格式见 oob-project skill）：entity、fields、actions（含 agentPrompt）、views。
-                  默认最多 6 个字段、最多 1 个 agent action；纯 CRUD 小工具允许。agent action 只有在主操作需要 OOB 原生能力时才加，且 agentPrompt 必须基于真实数据源/能力边界。
-                  禁止在此步骤手写 workbench_project_create 大块 JSON。
+                    Step 3 — ProjectContract（必须输出结构化 JSON）
+                      输出 ProjectContract JSON（格式见 oob-project skill）：entity、fields、actions（含 agentPrompt）、views。
+                      默认最多 6 个字段、最多 1 个 agent action；纯 CRUD 小工具允许。agent action 只有在主操作需要 OOB 原生能力时才加，且 agentPrompt 必须基于真实数据源/能力边界。
+                      禁止在此步骤手写 workbench_project_create 大块 JSON。
 
-                Step 4 — Builder（内部步骤）
-                  调用：terminal_execute("python3 {skillDir}/scripts/build_project_from_contract.py --contract '<contract json>'")
-                  使用 builder 的 stdout 输出，不手动修改。
-                  builder 有 FAIL 输出时必须修复 contract 再重跑，不能忽略错误继续。
+                    Step 4 — Builder（内部步骤）
+                      调用：terminal_execute("python3 {skillDir}/scripts/build_project_from_contract.py --contract '<contract json>'")
+                      使用 builder 的 stdout 输出，不手动修改。
+                      builder 有 FAIL 输出时必须修复 contract 再重跑，不能忽略错误继续。
 
-                Step 5 — 创建
-                  workbench_project_create(<builder 输出的 JSON>)
-                  workbench_project_activate → workbench_project_open
-                  禁止跳过任何 step 直接创建；禁止手写完整 workbench_project_create JSON。
+                    Step 5 — 创建
+                      workbench_project_create(<builder 输出的 JSON>)
+                      workbench_project_activate → workbench_project_open
+                      禁止跳过任何 step 直接创建；禁止手写完整 workbench_project_create JSON。
 
-                【Project 更新强制规则】更新已有 Project 时，先调用 skills_read(skillId="oob-project")，读取 PROJECT_SOUL.md 和 PROJECT_CONTEXT.md 后再动手改。
-            """.trimIndent()
-            PromptLocale.EN_US -> """
-                OOB Workbench: all rules are in the oob-project skill. When working on any Workbench task, call skills_read(skillId="oob-project") first.
-                Core: use `workbench_api_call` for business operations; use `workbench_project_hot_update` for frontend changes, preferring `htmlPatches` (~50 tokens) over full `htmlFiles` rewrite (~5000 tokens).
-                Targeting: if `frontendContext.selectedElement.oobId` exists, search directly for `data-oob-id="<oobId>"` as the `oldText` anchor — do NOT read the full HTML file. Otherwise use `file_read(lineStart/lineCount)` to read only the relevant section.
+                    【Project 更新强制规则】更新已有 Project 时，先调用 skills_read(skillId="oob-project")，读取 PROJECT_SOUL.md 和 PROJECT_CONTEXT.md 后再动手改。
+                """.trimIndent()
+                PromptLocale.EN_US -> """
+                    OOB Workbench: all rules are in the oob-project skill. When working on any Workbench task, call skills_read(skillId="oob-project") first.
+                    Core: use `workbench_api_call` for business operations; use `workbench_project_hot_update` for frontend changes, preferring `htmlPatches` (~50 tokens) over full `htmlFiles` rewrite (~5000 tokens).
+                    Targeting: if `frontendContext.selectedElement.oobId` exists, search directly for `data-oob-id="<oobId>"` as the `oldText` anchor — do NOT read the full HTML file. Otherwise use `file_read(lineStart/lineCount)` to read only the relevant section.
 
-                [Project creation mandatory sequence] When asked to create a new Project, first call skills_read(skillId="oob-project"), then follow these steps in order:
+                    [Project creation mandatory sequence] When asked to create a new Project, first call skills_read(skillId="oob-project"), then follow these steps in order:
 
-                Step 1 — Domain + open-source research (mandatory, cannot skip)
-                  Call web_search at least twice for strong existing products/tools, then query GitHub/OSS at least once; use browser_use on README/screenshots/examples when deeper reading is needed.
-                  Research only calibrates a small v1: one core loop, one entity, 3-5 fields, and one-screen display. Do not write a competitor report or import mature-app module sprawl.
-                  Show the user 2-3 product findings, 1-2 open-source inspirations, and what OOB v1 keeps versus cuts.
+                    Step 1 — Domain + open-source research (mandatory, cannot skip)
+                      Call web_search at least twice for strong existing products/tools, then query GitHub/OSS at least once; use browser_use on README/screenshots/examples when deeper reading is needed.
+                      Research only calibrates a small v1: one core loop, one entity, 3-5 fields, and one-screen display. Do not write a competitor report or import mature-app module sprawl.
+                      Show the user 2-3 product findings, 1-2 open-source inspirations, and what OOB v1 keeps versus cuts.
 
-                Step 2 — Proposal confirmation (must wait for user reply)
-                  Output a small v1 proposal: what it is / one primary action / up to 3 features / one-screen display / not included.
-                  End with: "Does this direction work for you?" Do NOT proceed until confirmed.
+                    Step 2 — Proposal confirmation (must wait for user reply)
+                      Output a small v1 proposal: what it is / one primary action / up to 3 features / one-screen display / not included.
+                      End with: "Does this direction work for you?" Do NOT proceed until confirmed.
 
-                Step 3 — ProjectContract (must output structured JSON)
-                  Output ProjectContract JSON (format in oob-project skill): entity, fields, actions (with agentPrompt), views.
-                  Default max: 6 fields and 1 agent action. Pure CRUD tools are allowed. Add an agent action only when the primary loop needs OOB-native capabilities, and base agentPrompt on real data sources/capability boundaries.
-                  Do NOT hand-write workbench_project_create JSON at this step.
+                    Step 3 — ProjectContract (must output structured JSON)
+                      Output ProjectContract JSON (format in oob-project skill): entity, fields, actions (with agentPrompt), views.
+                      Default max: 6 fields and 1 agent action. Pure CRUD tools are allowed. Add an agent action only when the primary loop needs OOB-native capabilities, and base agentPrompt on real data sources/capability boundaries.
+                      Do NOT hand-write workbench_project_create JSON at this step.
 
-                Step 4 — Builder (internal step)
-                  Call: terminal_execute("python3 {skillDir}/scripts/build_project_from_contract.py --contract '<contract json>'")
-                  Use the builder's stdout output as-is, do not modify it.
-                  If the builder has FAIL output, fix the contract and re-run — do not ignore errors.
+                    Step 4 — Builder (internal step)
+                      Call: terminal_execute("python3 {skillDir}/scripts/build_project_from_contract.py --contract '<contract json>'")
+                      Use the builder's stdout output as-is, do not modify it.
+                      If the builder has FAIL output, fix the contract and re-run — do not ignore errors.
 
-                Step 5 — Create
-                  workbench_project_create(<builder output JSON>)
-                  workbench_project_activate → workbench_project_open
-                  Skipping any step or hand-writing workbench_project_create JSON directly is forbidden.
+                    Step 5 — Create
+                      workbench_project_create(<builder output JSON>)
+                      workbench_project_activate → workbench_project_open
+                      Skipping any step or hand-writing workbench_project_create JSON directly is forbidden.
 
-                [Project update rule] When updating an existing Project, call skills_read(skillId="oob-project") first, then read PROJECT_SOUL.md and PROJECT_CONTEXT.md before making any changes.
-            """.trimIndent()
+                    [Project update rule] When updating an existing Project, call skills_read(skillId="oob-project") first, then read PROJECT_SOUL.md and PROJECT_CONTEXT.md before making any changes.
+                """.trimIndent()
+            }
+        } else {
+            ""
         }
 
         return when (locale) {

@@ -169,7 +169,7 @@ class _WorkbenchFlutterEvalPageState extends State<WorkbenchFlutterEvalPage> {
         _shouldSkipFlutterEval(sources)) {
       return _buildProjectDisplayFallback();
     }
-    return _buildCompiler(
+    return _buildRuntimeWidget(
       key: ValueKey(sourcesKey),
       sourcesKey: sourcesKey,
       sources: sources,
@@ -178,7 +178,7 @@ class _WorkbenchFlutterEvalPageState extends State<WorkbenchFlutterEvalPage> {
     );
   }
 
-  Widget _buildCompiler({
+  Widget _buildRuntimeWidget({
     required Key key,
     required String sourcesKey,
     required Map<String, String> sources,
@@ -200,7 +200,9 @@ class _WorkbenchFlutterEvalPageState extends State<WorkbenchFlutterEvalPage> {
       args: const [null],
       permissions: permissions,
       onError: (context, firstError, firstTrace) {
-        debugPrint('[flutter_eval] compile error (with-arg): $firstError');
+        debugPrint(
+          '[flutter_eval] runtime build error (with-arg): $firstError',
+        );
         return CompilerWidget(
           key: ValueKey('$key-no-arg-fallback'),
           packages: packages,
@@ -209,11 +211,13 @@ class _WorkbenchFlutterEvalPageState extends State<WorkbenchFlutterEvalPage> {
           args: const [],
           permissions: permissions,
           onError: (context, secondError, secondTrace) {
-            debugPrint('[flutter_eval] compile error (no-arg): $secondError');
+            debugPrint(
+              '[flutter_eval] runtime build error (no-arg): $secondError',
+            );
             _scheduleEvalFallback(sourcesKey);
             return _buildStatus(
               icon: Icons.sync_problem_rounded,
-              label: context.l10n.workbenchFlutterEvalCompileFailed,
+              label: context.l10n.workbenchFlutterEvalRuntimeFailed,
             );
           },
         );
@@ -245,7 +249,7 @@ class _WorkbenchFlutterEvalPageState extends State<WorkbenchFlutterEvalPage> {
     if (projectId == null || projectId.trim().isEmpty) {
       return _buildStatus(
         icon: Icons.error_outline_rounded,
-        label: context.l10n.workbenchFlutterEvalCompileFailed,
+        label: context.l10n.workbenchFlutterEvalRuntimeFailed,
       );
     }
     return WorkbenchProjectDisplayPage(

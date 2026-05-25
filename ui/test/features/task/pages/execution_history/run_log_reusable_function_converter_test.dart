@@ -622,10 +622,45 @@ void main() {
 
       expect(englishPrompt, contains('trajectory organizer'));
       expect(englishPrompt.toLowerCase(), isNot(contains('compiler')));
+      expect(englishPrompt, isNot(contains('reusable function JSON')));
+      expect(englishPrompt, isNot(contains('reusable function name')));
       expect(zhPrompt, contains('轨迹整理器'));
       expect(zhPrompt, isNot(contains('轨迹编译器')));
+      expect(zhPrompt, isNot(contains('可复用的 function JSON')));
+      expect(zhPrompt, isNot(contains('可复用功能名')));
     },
   );
+
+  test('agent prompt uses reusable command wording', () {
+    final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+      runId: 'run-agent-prompt-wording',
+      title: 'Open settings',
+      payload: const {'goal': 'Open settings'},
+      cards: [
+        card('open_app', const {'package_name': 'com.android.settings'}),
+      ],
+      useEnglish: true,
+    );
+
+    final englishPrompt = RunLogReusableFunctionConverter.buildAgentPrompt(
+      spec,
+      useEnglish: true,
+    );
+    final zhPrompt = RunLogReusableFunctionConverter.buildAgentPrompt(spec);
+
+    expect(englishPrompt, contains('Reusable command:'));
+    expect(englishPrompt, contains('Reusable command ID:'));
+    expect(englishPrompt, contains('Reusable command JSON:'));
+    expect(englishPrompt, isNot(contains('Function:')));
+    expect(englishPrompt, isNot(contains('Function ID:')));
+    expect(englishPrompt, isNot(contains('Function JSON:')));
+    expect(zhPrompt, contains('复用指令：'));
+    expect(zhPrompt, contains('复用指令 ID：'));
+    expect(zhPrompt, contains('复用指令 JSON:'));
+    expect(zhPrompt, isNot(contains('Function:')));
+    expect(zhPrompt, isNot(contains('Function ID:')));
+    expect(zhPrompt, isNot(contains('Function JSON:')));
+  });
 }
 
 Set<String> _stringSet(Object? value) {

@@ -203,7 +203,7 @@ if step_count < 1:
 if replay:
     replay_result = as_dict(result.get("replay"))
     if replay_result.get("success") is not True:
-        fail("replay_failed", "explore_replay did not replay the generated Function successfully", result)
+        fail("replay_failed", "explore_replay did not replay the generated reusable command successfully", result)
     replay_steps = as_list(replay_result.get("step_results"))
     actions_executed = number_value(replay_result.get("actions_executed"), len(replay_steps))
     if actions_executed < 1:
@@ -214,7 +214,7 @@ else:
 
 guard = client.guard_check(function_id)
 if guard.get("decision") not in {"allow", "needs_agent"}:
-    fail("guard_rejected_generated_function", "Generated Function guard did not allow replay", guard)
+    fail("guard_rejected_generated_function", "Generated reusable command guard did not allow replay", guard)
 
 function_spec = client.get_function(function_id)
 execution = as_dict(function_spec.get("execution"))
@@ -223,7 +223,7 @@ replayable_steps = number_value(
     number_value(execution.get("step_count"), len(as_list(execution.get("steps")))),
 )
 if replayable_steps < 1:
-    fail("replayable_function_empty", "Generated Function does not contain replayable steps", function_spec)
+    fail("replayable_function_empty", "Generated reusable command does not contain replayable steps", function_spec)
 
 print("explore_replay=ok")
 print(f"phase={result.get('phase')}")

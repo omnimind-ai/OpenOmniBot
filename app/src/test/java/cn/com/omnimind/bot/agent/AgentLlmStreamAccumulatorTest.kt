@@ -60,6 +60,46 @@ class AgentLlmStreamAccumulatorTest {
     }
 
     @Test
+    fun jsonInlineToolCallBuildsToolCallsAndSuppressesAssistantText() {
+        val accumulator = AgentLlmStreamAccumulator(json)
+
+        accumulator.consume(
+            """
+            <tool_call>
+            {"toolName":"web_search","arguments":{"query":"todo app features","limit":3}}
+            </tool_call>
+            """.trimIndent()
+        )
+
+        val turn = accumulator.buildTurn()
+
+        assertEquals("", turn.message.contentText())
+        val toolCalls = turn.message.toolCalls.orEmpty()
+        assertEquals(1, toolCalls.size)
+        assertEquals("web_search", toolCalls[0].function.name)
+        assertTrue(toolCalls[0].function.arguments.contains("todo app features"))
+        assertTrue(toolCalls[0].function.arguments.contains("\"limit\":3"))
+    }
+
+    @Test
+    fun jsonToolResultPayloadFallsBackToSummaryInsteadOfLeakingProtocolText() {
+        val accumulator = AgentLlmStreamAccumulator(json)
+
+        accumulator.consume(
+            """
+            <tool_call>
+            {"toolName":"web_search","status":"success","success":true,"summary":"找到 5 条网页搜索结果。","previewJson":"{}"}
+            </tool_call>
+            """.trimIndent()
+        )
+
+        val turn = accumulator.buildTurn()
+
+        assertEquals("找到 5 条网页搜索结果。", turn.message.contentText())
+        assertTrue(turn.message.toolCalls.orEmpty().isEmpty())
+    }
+
+    @Test
     fun `tool rounds retain reasoning content even without full deepseek adapter mode`() {
         val accumulator = AgentLlmStreamAccumulator(json = json)
 

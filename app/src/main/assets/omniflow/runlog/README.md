@@ -1,14 +1,14 @@
 # OOB RunLog
 
-OmniFlow is the pipeline from RunLog to Function matching, execution, and
-agent fallback. There is no separate OmniFlow skill runtime layer in this
+OmniFlow is the pipeline from RunLog to reusable command matching, execution,
+and agent fallback. There is no separate OmniFlow skill runtime layer in this
 contract.
 
 RunLog is a runtime contract, not just a UI feature. Keep these boundaries aligned:
 
 1. Native records tool cards into `InternalRunLogStore`.
-2. Flutter displays the timeline and converts cards into a reusable Function.
-3. Native stores and materializes Functions through `OobReusableFunctionStore`.
+2. Flutter displays the timeline and converts cards into a reusable command.
+3. Native stores and materializes reusable commands through `OobReusableFunctionStore`.
 4. `OobFunctionToolHandler` replays deterministic local steps first, then hands live-context steps back to Agent.
 5. Workspace command save must follow the same executor policy as Flutter conversion.
 
@@ -29,10 +29,10 @@ record. Do not read only the snapshot when correctness matters.
 
 - Native storage: `baselib/src/main/java/cn/com/omnimind/baselib/runlog/InternalRunLogStore.kt`
 - Shared replay policy: `app/src/main/assets/omniflow/runlog/replay_policy.json`
-- Function registry/materialization: `baselib/src/main/java/cn/com/omnimind/baselib/runlog/OobReusableFunctionStore.kt`
+- Reusable command registry/materialization: `baselib/src/main/java/cn/com/omnimind/baselib/runlog/OobReusableFunctionStore.kt`
 - Native timeline and method channel handlers: `app/src/main/java/cn/com/omnimind/bot/manager/AssistsCoreManager.kt`
 - Replay runner: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionToolHandler.kt`
-- Native replay policy and Function conversion: `app/src/main/java/cn/com/omnimind/bot/runlog/`
+- Native replay policy and reusable command conversion: `app/src/main/java/cn/com/omnimind/bot/runlog/`
 - Workspace command save: `app/src/main/java/cn/com/omnimind/bot/workbench/WorkspaceFunctionStore.kt`
 - Flutter timeline: `ui/lib/features/task/pages/execution_history/run_log_timeline_page.dart`
 - Flutter converter: `ui/lib/features/task/run_log/run_log_reusable_function_converter.dart`
@@ -68,7 +68,7 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
 - Keep parameter bindings aligned with actual `execution.steps` indexes after skipping wrapper cards.
 - For agent steps, bind runtime parameters into both `step.args` and `step.agent_call.args.original_args`.
 - AI normalization may rename and parameterize, but must not change executor policy. Normalize data-flow tools back to `executor=agent`.
-- OmniFlow graph/function tools convert to `kind=omniflow_graph` or
+- OmniFlow graph/reusable-command tools convert to `kind=omniflow_graph` or
   `kind=omniflow_function`, `executor=omniflow`, and `model_free=true`.
 
 ## Replay Rules
@@ -79,8 +79,8 @@ Direct UI execution is two phase:
 2. If a tool/data-flow/agent step is reached, return `needs_agent=true` and start an Agent task with the remaining function spec.
 
 Agent runtime execution may delegate normal tools through the router, but data-flow/perception-only steps should still be planned by Agent instead of blindly calling the original tool.
-OmniFlow function calls are resolved against the local OOB reusable function
-stores and execute recursively with a bounded call stack. OmniFlow graph calls
+OmniFlow reusable-command calls are resolved against the local OOB reusable
+command stores and execute recursively with a bounded call stack. OmniFlow graph calls
 execute explicit `path` entries or UTG edges by lowering them to supported
 primitive local actions.
 
@@ -93,7 +93,7 @@ Port into OOB:
   `launch_app`, and `done`.
 - `source_context.page` as an input alias for OOB's
   `source_context.src_ctx.page` coordinate remap shape.
-- Function metadata that keeps `source.run_id`, `source_run_ids`, execution
+- Reusable command metadata that keeps `source.run_id`, `source_run_ids`, execution
   counts, and local runner state available for future provider import/export.
 
 Keep in OmniFlow/provider for now:

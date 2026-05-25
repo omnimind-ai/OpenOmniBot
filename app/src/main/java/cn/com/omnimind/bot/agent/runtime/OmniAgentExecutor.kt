@@ -87,10 +87,12 @@ class OmniAgentExecutor(
                 WorkbenchProjectStore(context).activeProjectPromptContext()
             }.getOrNull()
             val promptLocale = AppLocaleManager.resolvePromptLocale(context)
-            val workbenchDisplayLayoutContext = WorkbenchDisplayLayoutContext.promptSection(
-                context = context,
-                locale = promptLocale
-            )
+            val workbenchDisplayLayoutContext = activeWorkbenchProjectContext?.let {
+                WorkbenchDisplayLayoutContext.promptSection(
+                    context = context,
+                    locale = promptLocale
+                )
+            }
             val ltmIndex = runCatching {
                 LongTermMemoryIndex(workspaceManager)
             }.getOrNull()

@@ -6,25 +6,39 @@ internal object AgentTextSanitizer {
         "<function=[^>]*>[\\s\\S]*?</function>",
         setOf(RegexOption.IGNORE_CASE)
     )
+    private val completeToolCallBlockRegex = Regex(
+        "<tool_call\\b[^>]*>[\\s\\S]*?</tool_call>",
+        setOf(RegexOption.IGNORE_CASE)
+    )
 
     /**
-     * Strips text-based function call syntax from LLM output before displaying to the user.
+     * Strips text-based tool call syntax from LLM output before displaying to the user.
      *
      * Some models emit tool calls as `<function=name>args</function>` inside content text
-     * in addition to (or instead of) structured tool_calls. This content must not be shown
-     * as chat text — only structured tool cards should represent those actions.
+     * or wrap JSON payloads in `<tool_call>...</tool_call>` in addition to (or instead of)
+     * structured tool_calls. This content must not be shown as chat text; only structured
+     * tool cards should represent those actions.
      *
      * Handles two cases:
-     * - Complete blocks: `<function=name>args</function>` → removed entirely
-     * - Incomplete streaming blocks: trailing `<function=` with no closing tag yet → trimmed
+     * - Complete blocks: `<tool_call>...</tool_call>` / `<function=name>...</function>` -> removed
+     * - Incomplete streaming blocks: trailing `<tool_call` / `<function=` with no close -> trimmed
      */
     fun stripTextFunctionCalls(text: String): String {
-        if (!text.contains("<function=", ignoreCase = true)) return text
+        if (
+            !text.contains("<function=", ignoreCase = true) &&
+            !text.contains("<tool_call", ignoreCase = true)
+        ) {
+            return text
+        }
         // Remove complete blocks first.
-        var result = completeFunctionBlockRegex.replace(text, "")
+        var result = completeToolCallBlockRegex.replace(text, "")
+        result = completeFunctionBlockRegex.replace(result, "")
         // If an incomplete block starts anywhere in the remaining text, drop it from that
         // point onward (the model is still streaming the arguments).
-        val incompleteStart = result.indexOf("<function=", ignoreCase = true)
+        val incompleteStart = listOf(
+            result.indexOf("<tool_call", ignoreCase = true),
+            result.indexOf("<function=", ignoreCase = true)
+        ).filter { it >= 0 }.minOrNull() ?: -1
         if (incompleteStart >= 0) {
             result = result.substring(0, incompleteStart)
         }

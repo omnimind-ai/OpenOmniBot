@@ -121,28 +121,55 @@ Map<String, dynamic>? _asStringMap(dynamic value) {
 }
 
 Map<String, dynamic> buildAgentStreamMetaFromEvent(AgentStreamEvent event) {
-  final rawStreamMeta = event.raw['streamMeta'];
+  final rawStreamMeta = event.raw['streamMeta'] ?? event.raw['stream_meta'];
   final existing = rawStreamMeta is Map
       ? rawStreamMeta.map((key, value) => MapEntry(key.toString(), value))
       : null;
+  final normalizedExisting = existing == null
+      ? null
+      : _normalizeAgentStreamMeta(existing);
   return ensureAgentStreamMessageMeta(
-        existing,
-        seq: existing?.containsKey('seq') == true
+        normalizedExisting,
+        seq: normalizedExisting?.containsKey('seq') == true
             ? null
-            : (_asInt(event.raw['seq']) ?? event.seq),
-        roundIndex: existing?.containsKey('roundIndex') == true
+            : (_asInt(event.raw['seq']) ??
+                  _asInt(event.raw['sequence']) ??
+                  event.seq),
+        roundIndex: normalizedExisting?.containsKey('roundIndex') == true
             ? null
-            : (_asInt(event.raw['roundIndex']) ?? event.roundIndex),
-        kind: existing?.containsKey('kind') == true ? null : event.kind.value,
-        parentTaskId: existing?.containsKey('parentTaskId') == true
+            : (_asInt(event.raw['roundIndex']) ??
+                  _asInt(event.raw['round_index']) ??
+                  event.roundIndex),
+        kind: normalizedExisting?.containsKey('kind') == true
+            ? null
+            : event.kind.value,
+        parentTaskId: normalizedExisting?.containsKey('parentTaskId') == true
             ? null
             : event.taskId,
-        entryId: existing?.containsKey('entryId') == true
+        entryId: normalizedExisting?.containsKey('entryId') == true
             ? null
             : event.entryId,
         isFinal: event.isFinal,
       ) ??
       <String, dynamic>{};
+}
+
+Map<String, dynamic> _normalizeAgentStreamMeta(Map<String, dynamic> value) {
+  final normalized = Map<String, dynamic>.from(value);
+  void copyAlias(String from, String to) {
+    if (normalized.containsKey(to) || !normalized.containsKey(from)) {
+      return;
+    }
+    normalized[to] = normalized[from];
+  }
+
+  copyAlias('round_index', 'roundIndex');
+  copyAlias('parent_task_id', 'parentTaskId');
+  copyAlias('entry_id', 'entryId');
+  copyAlias('is_final', 'isFinal');
+  copyAlias('run_id', 'runId');
+  copyAlias('run_log_id', 'runLogId');
+  return normalized;
 }
 
 Map<String, dynamic>? ensureAgentStreamMessageMeta(

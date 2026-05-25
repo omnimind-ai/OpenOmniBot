@@ -18,7 +18,7 @@ RunLog cards should preserve:
 - `header.status`, `header.success`, and `duration_ms`
 - before-state XML when coordinate remap is possible
 
-Functions use:
+Reusable command specs use:
 
 - `schema_version = oob.reusable_function.v1`
 - `function_id`
@@ -34,7 +34,7 @@ Functions use:
 
 Do not require a separate skill manifest, `SKILL.md`, `script_reuse`,
 `agent_reuse`, or runtime target wrapper for RunLog-derived assets. OmniFlow is
-the Function lifecycle itself: convert, index, match, execute, and fallback.
+the reusable-command lifecycle itself: convert, index, match, execute, and fallback.
 
 ## Executor Classification
 
@@ -64,7 +64,7 @@ before execution: `tap/click_at/click_element -> click`,
 `finish/done/complete -> finished`. `source_context.page` and OOB's
 `source_context.src_ctx.page` are both valid coordinate remap inputs.
 Legacy `wait` cards are skipped during conversion because page settling is an
-internal backend concern, not a reusable Function step.
+internal backend concern, not a reusable command step.
 
 Perception-only agent:
 
@@ -112,7 +112,7 @@ without `function_id` delegates to the live tool router when available. Legacy
 
 ## Known Failure Modes
 
-- Empty function from VLM-only RunLog.
+- Empty reusable command from VLM-only RunLog.
 - Wrapper card skipped but parameter bindings still point to old indexes.
 - AI normalization turns `browser_use` back into `executor=tool`.
 - Direct UI replay tries to execute a tool step without router.
@@ -122,7 +122,7 @@ without `function_id` delegates to the live tool router when available. Legacy
   the VLM fallback.
 - `android_privileged_action.arguments` stays nested and produces a model-free
   click/swipe/type step without executable top-level args.
-- Regression where provider/exported Function uses canonical
+- Regression where a provider/exported reusable command uses canonical
   `input_text/swipe/press_key` while OOB only handles legacy
   `type/scroll/press_home/press_back`.
 - OmniFlow `go_to_node/click_node/call_tool(function_id)` accidentally becomes
@@ -138,7 +138,7 @@ without `function_id` delegates to the live tool router when available. Legacy
 - Command save distillation follows the same executor policy.
 - Provider canonical action names and aliases normalize to deterministic local
   replay actions.
-- OmniFlow graph/function commands convert and execute as local
+- OmniFlow graph/reusable-command commands convert and execute as local
   `executor=omniflow` steps.
 - Failed local action does not suppress VLM-only fallback.
 - `android_privileged_action` local UI wrappers flatten nested `arguments` into

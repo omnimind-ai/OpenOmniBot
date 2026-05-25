@@ -201,13 +201,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsMcpToggleFailed => 'MCP 开关失败';
 
   @override
-  String get settingsOobFunctionAsToolTitle => 'OOB 函数接入工具';
+  String get settingsOobFunctionAsToolTitle => 'OOB 复用指令接入工具';
 
   @override
-  String get settingsOobFunctionAsToolSubtitle => '开启后 agent 可以直接调用已保存的 OOB 函数';
+  String get settingsOobFunctionAsToolSubtitle =>
+      '开启后 agent 可以直接调用已保存的 OOB 复用指令';
 
   @override
-  String get settingsOobFunctionAsToolToggleFailed => 'OOB 函数工具开关失败';
+  String get settingsOobFunctionAsToolToggleFailed => 'OOB 复用指令工具开关失败';
 
   @override
   String get settingsCopiedAddress => '已复制访问地址';
@@ -494,7 +495,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get memoryLongTermTitle => '长期记忆';
 
   @override
-  String get memoryCommandsTitle => 'Function';
+  String get memoryCommandsTitle => '复用指令';
 
   @override
   String get memoryNoShortTerm => '还没有短期记忆';
@@ -2000,13 +2001,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get omniflowPanelTitle => 'OmniFlow 轨迹面板';
 
   @override
-  String get omniflowPanelDesc => '管理 OmniFlow Function：查看、执行或删除 Function 资产。';
+  String get omniflowPanelDesc => '管理 OmniFlow 复用指令：查看、执行或删除复用指令资产。';
 
   @override
-  String get omniflowFunctionList => 'Function 列表';
+  String get omniflowFunctionList => '复用指令列表';
 
   @override
-  String get omniflowFunctionSearch => '搜索 Function';
+  String get omniflowFunctionSearch => '搜索复用指令';
 
   @override
   String get omniflowFunctionSearchHint => '按名称、描述等关键字过滤';
@@ -2048,13 +2049,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get omniflowConfigLoadFailed => '加载 OmniFlow 配置失败';
 
   @override
-  String get omniflowFunctionsLoadFailed => '加载 Function 列表失败';
+  String get omniflowFunctionsLoadFailed => '加载复用指令列表失败';
 
   @override
-  String get omniflowTempFunctions => '临时 Function';
+  String get omniflowTempFunctions => '临时复用指令';
 
   @override
-  String get omniflowReadyFunctions => '可用 Function';
+  String get omniflowReadyFunctions => '可用复用指令';
 
   @override
   String get omniflowServiceAddressNotConfigured => '服务地址未配置';
@@ -2099,7 +2100,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get omniflowViewSkillLibrary => '查看技能库';
 
   @override
-  String get omniflowViewFunctionLibrary => '查看功能库';
+  String get omniflowViewFunctionLibrary => '查看复用指令库';
 
   @override
   String get omniflowClearAllData => '清空所有数据';
@@ -2109,7 +2110,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get omniflowClearAllDataConfirm =>
-      '确认清空所有 OmniFlow 数据？\n\n这将删除：\n• 所有 Functions\n• 所有 Run Logs\n• 所有 Shared Pages\n\n此操作不可恢复！';
+      '确认清空所有 OmniFlow 数据？\n\n这将删除：\n• 所有复用指令\n• 所有 Run Logs\n• 所有 Shared Pages\n\n此操作不可恢复！';
 
   @override
   String get omniflowCancel => '取消';
@@ -2119,7 +2120,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String omniflowClearSuccess(Object functions, Object runLogs) {
-    return '已清空: $functions functions, $runLogs run_logs';
+    return '已清空：$functions 条复用指令，$runLogs 条 RunLog';
   }
 
   @override
@@ -2136,13 +2137,13 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get functionLibraryTitle => '功能库';
+  String get functionLibraryTitle => '复用指令库';
 
   @override
-  String get functionLibrarySearchHint => '搜索功能名称或应用';
+  String get functionLibrarySearchHint => '搜索复用指令或应用';
 
   @override
-  String get functionLibraryEmpty => '暂无已学习的功能';
+  String get functionLibraryEmpty => '暂无复用指令';
 
   @override
   String get functionLibraryEmptyDesc => '执行任务后，高频操作会自动沉淀到这里';
@@ -2172,10 +2173,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get functionLibraryEdit => '编辑';
 
   @override
-  String get functionLibraryEditTitle => '编辑功能';
+  String get functionLibraryEditTitle => '编辑复用指令';
 
   @override
-  String get functionLibraryEditHint => '修改功能的描述名称';
+  String get functionLibraryEditHint => '修改复用指令的描述名称';
 
   @override
   String get functionLibraryEditPlaceholder => '输入新的描述';
@@ -2190,7 +2191,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get functionLibraryDelete => '删除';
 
   @override
-  String get functionLibraryDeleteTitle => '删除功能';
+  String get functionLibraryDeleteTitle => '删除复用指令';
 
   @override
   String functionLibraryDeleteConfirm(Object name) {
@@ -2311,7 +2312,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get functionLibraryViewDetails => '查看详情';
 
   @override
-  String get functionLibraryDetailCompileSurface => '路由面';
+  String get functionLibraryDetailExecutionSurface => '执行面';
 
   @override
   String get functionLibraryDetailGraphAnchors => '图锚点';
@@ -2326,7 +2327,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get functionLibraryDetailExamples => '参数示例';
 
   @override
-  String get functionLibraryDetailDerivedFrom => '来源 raw function';
+  String get functionLibraryDetailDerivedFrom => '来源复用指令';
 
   @override
   String get functionLibraryDetailRuns => '执行次数';
@@ -2355,26 +2356,26 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get functionLibraryDetailBundleFunction => 'Bundle Function';
+  String get functionLibraryDetailBundleFunction => 'Bundle 复用指令';
 
   @override
-  String get functionLibraryDetailInternalBlocks => '内部 function block';
+  String get functionLibraryDetailInternalBlocks => '内部复用指令片段';
 
   @override
-  String get functionLibraryDetailNoBlocks => '当前没有展开的内部 function block';
+  String get functionLibraryDetailNoBlocks => '当前没有展开的内部复用指令片段';
 
   @override
-  String get functionLibraryDetailNoBundle => '当前没有可展示的 bundle function';
+  String get functionLibraryDetailNoBundle => '当前没有可展示的 bundle 复用指令';
 
   @override
-  String get functionLibraryDetailFunctionSchema => 'Function Schema';
+  String get functionLibraryDetailFunctionSchema => '复用指令 Schema';
 
   @override
-  String get executionCompileHit => '复用技能';
+  String get executionReuseHit => '复用指令';
 
   @override
-  String executionCompileHitWithFunction(Object functionId) {
-    return '复用技能 · $functionId';
+  String executionReuseHitWithFunction(Object functionId) {
+    return '复用指令 · $functionId';
   }
 
   @override
@@ -2411,7 +2412,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get executionActionFinished => '完成';
 
   @override
-  String get executionActionCallFunction => '调用技能';
+  String get executionActionCallFunction => '执行复用指令';
 
   @override
   String get executionActionDefault => '动作';
@@ -2428,38 +2429,38 @@ class AppLocalizationsZh extends AppLocalizations {
   String get executionFailed => '失败';
 
   @override
-  String get memorySaveAsSkillTitle => '保存为功能（Function）';
+  String get memorySaveAsSkillTitle => '保存为复用指令';
 
   @override
   String get memorySaveAsSkillContent =>
-      '是否将这次执行记录保存为可复用的功能？\n\n保存后可在「功能库」中查看和管理。';
+      '是否将这次执行记录保存为复用指令？\n\n保存后可在「复用指令库」中查看和管理。';
 
   @override
-  String get memorySavingProgress => '正在保存功能...';
+  String get memorySavingProgress => '正在保存复用指令...';
 
   @override
   String memorySaveSuccess(String functionId) {
-    return '已保存为功能：$functionId';
+    return '已保存为复用指令：$functionId';
   }
 
   @override
-  String get memorySaveSuccessSimple => '已保存为功能';
+  String get memorySaveSuccessSimple => '已保存为复用指令';
 
   @override
-  String get memorySaveSuccessHint => '功能已保存到本地功能库。\n你可以在功能库中查看、编辑或升级此功能。';
+  String get memorySaveSuccessHint => '复用指令已保存到本地复用指令库。\n你可以在复用指令库中查看、编辑或升级。';
 
   @override
-  String get memoryViewInLibrary => '查看功能库';
+  String get memoryViewInLibrary => '查看复用指令库';
 
   @override
-  String get memorySaveCannotImport => '该执行记录无法保存为功能';
+  String get memorySaveCannotImport => '该执行记录无法保存为复用指令';
 
   @override
-  String get memorySaveFailed => '保存功能失败';
+  String get memorySaveFailed => '保存复用指令失败';
 
   @override
   String memorySaveFailedWithMessage(String message) {
-    return '保存功能失败：$message';
+    return '保存复用指令失败：$message';
   }
 
   @override
@@ -2478,10 +2479,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get omniflowAssetUnknown => '未知';
 
   @override
-  String get omniflowAssetCompileHit => '复用功能';
+  String get omniflowAssetReuseHit => '复用指令';
 
   @override
-  String get omniflowAssetCompileMiss => 'VLM 执行';
+  String get omniflowAssetVlmExecution => 'VLM 执行';
 
   @override
   String omniflowAssetSteps(int count) {
@@ -2498,7 +2499,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get omniflowAssetSourceRuns => '来源执行';
 
   @override
-  String get omniflowAssetLinkedFunction => '关联功能';
+  String get omniflowAssetLinkedFunction => '关联复用指令';
 
   @override
   String get omniflowAssetCopyId => '复制 ID';
@@ -2528,7 +2529,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get omniflowAssetJsonCopied => 'JSON 已复制';
 
   @override
-  String get omniflowAssetFunctionDetail => '功能详情';
+  String get omniflowAssetFunctionDetail => '复用指令详情';
 
   @override
   String get omniflowAssetRunLogDetail => '执行记录详情';
@@ -2622,17 +2623,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get functionLibraryEnrich => '升级';
 
   @override
-  String get functionLibraryEnrichTitle => '升级功能';
+  String get functionLibraryEnrichTitle => '升级复用指令';
 
   @override
   String get functionLibraryEnrichConfirm =>
-      '使用 AI 补齐此功能的语义信息？\n\n将自动生成：描述、参数槽位、前置/后置条件等。';
+      '使用 AI 补齐此复用指令的语义信息？\n\n将自动生成：描述、参数槽位、前置/后置条件等。';
 
   @override
-  String get functionLibraryEnrichProgress => '正在升级功能...';
+  String get functionLibraryEnrichProgress => '正在升级复用指令...';
 
   @override
-  String get functionLibraryEnrichSuccess => '功能升级成功';
+  String get functionLibraryEnrichSuccess => '复用指令升级成功';
 
   @override
   String get functionLibraryEnrichFailed => '升级失败';
@@ -2646,17 +2647,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get functionLibrarySplit => '拆分';
 
   @override
-  String get functionLibrarySplitTitle => '拆分功能';
+  String get functionLibrarySplitTitle => '拆分复用指令';
 
   @override
-  String get functionLibrarySplitConfirm => '使用 AI 将此功能拆分为多个更小的功能？';
+  String get functionLibrarySplitConfirm => '使用 AI 将此复用指令拆分为多个更小的指令？';
 
   @override
-  String get functionLibrarySplitProgress => '正在拆分功能...';
+  String get functionLibrarySplitProgress => '正在拆分复用指令...';
 
   @override
   String functionLibrarySplitSuccess(int count) {
-    return '功能拆分成功，生成了 $count 个新功能';
+    return '复用指令拆分成功，生成了 $count 个新指令';
   }
 
   @override
@@ -2690,7 +2691,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get actionTypeFinished => '结束';
 
   @override
-  String get actionTypeCallFunction => '调用功能';
+  String get actionTypeCallFunction => '执行复用指令';
 
   @override
   String get actionTypeDefault => '动作';
@@ -2933,7 +2934,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workbenchProjectIdLabel => '项目 ID';
 
   @override
-  String get workbenchRouteLabel => '路由';
+  String get workbenchRouteLabel => '页面路径';
 
   @override
   String get workbenchSpacePathLabel => 'Space 路径';
@@ -3119,7 +3120,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '当前项目还没有可运行的 Flutter 源码。请在 frontend/flutter/lib/main.dart 定义 OobProjectWidget。';
 
   @override
-  String get workbenchFlutterEvalCompileFailed =>
+  String get workbenchFlutterEvalRuntimeFailed =>
       'Flutter 源码暂不可运行，请回到输入框让小万修复这个页面。';
 
   @override
@@ -3323,7 +3324,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String workbenchDebugContextRoute(String route) {
-    return '路由 $route';
+    return '页面路径 $route';
   }
 
   @override

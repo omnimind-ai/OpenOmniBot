@@ -17,6 +17,9 @@ import cn.com.omnimind.bot.agent.WorkspaceMemoryService
 import cn.com.omnimind.bot.agent.NoOpAgentRunControl
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
 import cn.com.omnimind.baselib.llm.AssistantToolCall
+import cn.com.omnimind.bot.runlog.OmniflowActionBackend
+import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
+import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
@@ -31,6 +34,49 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OobFunctionToolHandlerOmniFlowExecutionTest {
+    @Test
+    fun `local click replay fails before execution when accessibility is unavailable`() = runBlocking {
+        val context = TempFilesContext()
+        val backend = NotReadyBackend()
+        try {
+            val spec = functionSpec(
+                functionId = "click_requires_accessibility",
+                steps = listOf(
+                    mapOf(
+                        "id" to "click_step",
+                        "title" to "Click target",
+                        "kind" to "omniflow_action",
+                        "executor" to "omniflow",
+                        "model_free" to true,
+                        "scriptable" to true,
+                        "tool" to "click",
+                        "callable_tool" to "click",
+                        "args" to mapOf("x" to 100, "y" to 240),
+                    )
+                ),
+            )
+            OmniflowActionRuntime.useBackendForTesting(backend).use {
+                val run = handler(context, WorkspaceFunctionStore(context.root)).runMaterializedFunction(
+                    functionId = "click_requires_accessibility",
+                    spec = spec,
+                    materializedSpec = OobReusableFunctionStore.materialize(spec, emptyMap()),
+                    allowAgentFallback = false,
+                )
+
+                assertEquals(false, run["success"])
+                assertEquals("OOB_ACCESSIBILITY_REQUIRED", run["error_code"])
+                assertEquals("accessibility", run["required_permission"])
+                assertEquals(0, backend.clickCount)
+                assertTrue(run["error_message"].toString().contains("无障碍"))
+                val step = stepResults(run).single()
+                assertEquals("click", step["tool"])
+                assertEquals("OOB_ACCESSIBILITY_REQUIRED", step["error_code"])
+            }
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
     @Test
     fun `call_tool executes nested registered function locally by function id`() = runBlocking {
         val context = TempFilesContext()
@@ -542,6 +588,38 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
         override fun getFilesDir(): File = root
 
         override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences = prefs
+    }
+
+    private class NotReadyBackend : OmniflowActionBackend {
+        var clickCount = 0
+
+        override fun isReady(): Boolean = false
+
+        override suspend fun click(x: Float, y: Float) {
+            clickCount += 1
+        }
+
+        override suspend fun longPress(x: Float, y: Float, durationMs: Long) = Unit
+
+        override suspend fun scroll(
+            x: Float,
+            y: Float,
+            direction: ScrollDirection,
+            distance: Float,
+            durationMs: Long,
+        ) = Unit
+
+        override suspend fun inputTextToFocusedNode(text: String) = Unit
+
+        override suspend fun launchApplication(packageName: String) = Unit
+
+        override suspend fun pressHotKey(key: String) = Unit
+
+        override fun currentXml(): String? = null
+
+        override fun currentPackageName(): String? = null
+
+        override fun currentActivityName(): String? = null
     }
 
     private class InMemoryPrefs : SharedPreferences {

@@ -31,7 +31,22 @@ Last Updated: 2026-05-11
    - `assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/VLMIndexedPageContext.kt`
    - `assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/VLMPostActionObservation.kt`
    - `app/src/debug/java/cn/com/omnimind/bot/debug/DebugVlmRunLogReceiver.kt`
+   - `app/src/debug/java/cn/com/omnimind/bot/debug/DebugOobFunctionSegmentReceiver.kt`
+   - `app/src/main/java/cn/com/omnimind/bot/manager/AssistsCoreManager.kt`
+   - `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionToolHandler.kt`
+   - `ui/lib/services/assists_core_service.dart`
+   - `ui/lib/features/task/pages/execution_history/command_library_page.dart`
+   - `ui/lib/features/task/pages/execution_history/function_run_result_sheet.dart`
+   - `ui/lib/features/task/pages/execution_history/run_log_timeline_page.dart`
    - `scripts/demo-vlm-runlog-e2e.sh`
+5. Focused tests:
+   - `app/src/test/java/cn/com/omnimind/bot/manager/AssistsCoreManagerOobReusableFunctionPayloadTest.kt`
+   - `app/src/test/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionToolHandlerOmniFlowExecutionTest.kt`
+   - `ui/test/services/oob_reusable_function_execution_service_test.dart`
+   - `ui/test/features/task/pages/execution_history/command_library_page_test.dart`
+   - `ui/test/features/task/pages/execution_history/function_run_result_sheet_test.dart`
+   - `ui/test/features/task/pages/execution_history/run_log_timeline_page_test.dart`
+   - `ui/test/widgets/execution/execution_detail_view_test.dart`
 
 ## Current Workbench Focus
 

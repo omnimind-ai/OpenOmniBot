@@ -103,6 +103,72 @@ void main() {
     expect(entries.first.message?.text, '普通回答');
   });
 
+  test('hides internal tool payload text when a sibling tool card exists', () {
+    final messages = <ChatMessageModel>[
+      _assistantMessage(
+        id: 'task-tool-payload-text',
+        text:
+            '{"success":true,"summary":"Found 5 web search results.","progress":"Extracting search results","previewJson":"{\\\\n  \\"query\\": \\"popular todo list apps features\\"}"}',
+        taskId: 'task-tool-payload',
+        kind: 'text_snapshot',
+        seq: 30,
+        isFinal: true,
+      ),
+      _cardMessage(
+        id: 'task-tool-payload-card',
+        taskId: 'task-tool-payload',
+        kind: 'tool_completed',
+        seq: 20,
+        cardData: <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'status': 'success',
+          'toolType': 'research',
+          'toolName': 'web_search',
+          'toolTitle': 'Web search',
+          'summary': 'Found 5 web search results.',
+        },
+      ),
+      ChatMessageModel.userMessage('找 todo app', id: 'user-tool-payload'),
+    ];
+
+    final entries = buildAgentRunTimelineEntries(messages);
+
+    expect(entries, hasLength(2));
+    final group = entries.first.group;
+    expect(group?.visibleMessagesNewestFirst, isEmpty);
+    expect(group?.outputSegmentCount, 0);
+    expect(group?.toolCount, 1);
+    expect(
+      group?.processMessagesNewestFirst.single.id,
+      'task-tool-payload-card',
+    );
+  });
+
+  test(
+    'keeps structured assistant answer when there is no sibling tool card',
+    () {
+      final messages = <ChatMessageModel>[
+        _assistantMessage(
+          id: 'task-json-answer-text',
+          text: '{"summary":"用户可见结果","items":[1,2,3]}',
+          taskId: 'task-json-answer',
+          kind: 'text_snapshot',
+          seq: 30,
+          isFinal: true,
+        ),
+        ChatMessageModel.userMessage('输出 JSON', id: 'user-json-answer'),
+      ];
+
+      final entries = buildAgentRunTimelineEntries(messages);
+
+      expect(entries, hasLength(2));
+      expect(
+        entries.first.group?.visibleMessagesNewestFirst.single.text,
+        '{"summary":"用户可见结果","items":[1,2,3]}',
+      );
+    },
+  );
+
   test('groups in-flight process messages while task is active', () {
     final entries = buildAgentRunTimelineEntries(
       _buildCompletedRunMessages(isFinal: false),

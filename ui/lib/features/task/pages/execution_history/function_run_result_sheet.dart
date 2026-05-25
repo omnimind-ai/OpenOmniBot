@@ -149,8 +149,8 @@ class _FunctionRunResultSheet extends StatelessWidget {
                                   ? title!.trim()
                                   : _text(
                                       context,
-                                      'Function 执行结果',
-                                      'Function run result',
+                                      '复用指令执行结果',
+                                      'Reusable command result',
                                     ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -248,14 +248,8 @@ class _RunResultMetrics extends StatelessWidget {
       children: [
         _MetricPill(
           label: _text(context, '状态', 'Status'),
-          value: status.isEmpty
-              ? (result.success
-                    ? _text(context, '成功', 'Success')
-                    : _text(context, '失败', 'Failed'))
-              : status,
+          value: _runStateText(context, result, rawStatus: status),
         ),
-        if (result.runner.isNotEmpty)
-          _MetricPill(label: 'Runner', value: result.runner),
         if (stepCount > 0)
           _MetricPill(
             label: _text(context, '步骤', 'Steps'),
@@ -781,9 +775,8 @@ String _runSubtitle(BuildContext context, UtgManualRunResult result) {
       ? result.successStepCount
       : result.stepResults.where((step) => step['success'] != false).length;
   final parts = <String>[
-    result.functionId,
+    _runStateText(context, result),
     if (stepCount > 0) '$successCount/$stepCount',
-    if (result.runner.isNotEmpty) result.runner,
   ].where((value) => value.trim().isNotEmpty).toList(growable: false);
   if (parts.isEmpty) {
     return result.success
@@ -791,6 +784,29 @@ String _runSubtitle(BuildContext context, UtgManualRunResult result) {
         : _text(context, '执行失败', 'Run failed');
   }
   return parts.join(' · ');
+}
+
+String _runStateText(
+  BuildContext context,
+  UtgManualRunResult result, {
+  String? rawStatus,
+}) {
+  if (result.startedAgentFallback) {
+    return _text(context, '已交给 VLM 继续执行', 'Handed off to VLM');
+  }
+  if (result.completedLocal) {
+    return _text(context, '本地执行完成', 'Completed locally');
+  }
+  if (result.failed) {
+    return _text(context, '执行失败', 'Run failed');
+  }
+  final status = rawStatus ?? result.executionStatus;
+  if (status.trim().isNotEmpty && status != 'success') {
+    return status;
+  }
+  return result.success
+      ? _text(context, '执行成功', 'Run succeeded')
+      : _text(context, '执行失败', 'Run failed');
 }
 
 String _postconditionText(
@@ -940,8 +956,8 @@ dynamic _userVisibleJson(dynamic value) {
 
 String _userVisibleString(String value) {
   return value
-      .replaceAll(RegExp('compile', caseSensitive: false), 'route')
-      .replaceAll('编译', '路由');
+      .replaceAll(RegExp('compile', caseSensitive: false), 'execution')
+      .replaceAll('编译', '执行');
 }
 
 String _text(BuildContext context, String zh, String en) {

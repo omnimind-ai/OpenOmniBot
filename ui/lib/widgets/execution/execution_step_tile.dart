@@ -24,17 +24,17 @@ class ExecutionStepTile extends StatelessWidget {
     final l10n = context.l10n;
 
     // 获取本地化的 route/reuse label
-    String? localizedCompileLabel;
-    if (step.compileKind == CompileKind.hit) {
-      localizedCompileLabel = step.compileFunctionId != null
-          ? l10n.executionCompileHitWithFunction(step.compileFunctionId!)
-          : l10n.executionCompileHit;
-    } else if (step.compileKind == CompileKind.miss) {
-      localizedCompileLabel = l10n.executionVlmExecution;
+    String? localizedExecutionLabel;
+    if (step.executionRouteKind == ExecutionRouteKind.hit) {
+      localizedExecutionLabel = step.executionFunctionId != null
+          ? l10n.executionReuseHitWithFunction(step.executionFunctionId!)
+          : l10n.executionReuseHit;
+    } else if (step.executionRouteKind == ExecutionRouteKind.miss) {
+      localizedExecutionLabel = l10n.executionVlmExecution;
     }
     // 如果没有路由类型，但有旧数据标签，使用它
-    final displayCompileLabel = localizedCompileLabel ?? step.routeLabel;
-    final isCompileHit = step.compileKind == CompileKind.hit;
+    final displayExecutionLabel = localizedExecutionLabel ?? step.routeLabel;
+    final isReuseHit = step.executionRouteKind == ExecutionRouteKind.hit;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -89,14 +89,14 @@ class ExecutionStepTile extends StatelessWidget {
                     ),
                   ),
                   // Route/reuse 标签
-                  if (displayCompileLabel != null) ...[
+                  if (displayExecutionLabel != null) ...[
                     _buildPill(
                       context,
-                      displayCompileLabel,
-                      backgroundColor: isCompileHit
+                      displayExecutionLabel,
+                      backgroundColor: isReuseHit
                           ? const Color(0xFFE8F7EE)
                           : palette.surfaceSecondary,
-                      textColor: isCompileHit
+                      textColor: isReuseHit
                           ? const Color(0xFF117A37)
                           : palette.textSecondary,
                     ),

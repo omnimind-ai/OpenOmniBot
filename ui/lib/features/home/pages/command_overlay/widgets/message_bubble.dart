@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:ui/features/home/pages/chat/utils/agent_internal_tool_payload.dart';
 import 'package:ui/features/home/pages/omnibot_workspace/omnibot_artifact_preview_page.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
@@ -212,7 +213,10 @@ class MessageBubble extends StatelessWidget {
 
   /// 构建文本消息
   Widget _buildTextMessage(BuildContext context, bool isUserMessage) {
-    final text = message.text ?? '';
+    final rawText = message.text ?? '';
+    final text = isUserMessage
+        ? rawText
+        : stripInternalToolPayloadText(rawText);
     final attachments = _extractAttachments();
     final linkPreviews = message.linkPreviews;
 
@@ -273,6 +277,10 @@ class MessageBubble extends StatelessWidget {
           );
         },
       );
+    }
+
+    if (text.isEmpty && attachments.isEmpty && linkPreviews.isEmpty) {
+      return const SizedBox.shrink();
     }
 
     if (attachments.isEmpty && linkPreviews.isEmpty) {

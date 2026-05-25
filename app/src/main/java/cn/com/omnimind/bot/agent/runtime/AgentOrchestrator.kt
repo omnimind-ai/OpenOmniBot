@@ -102,15 +102,24 @@ class AgentOrchestrator(
                         }
                     },
                     onContentUpdate = { content ->
-                        if (content.isNotBlank()) {
+                        val visibleContent = normalizeAssistantVisibleText(content)
+                        if (visibleContent.isNotBlank()) {
                             callback.onChatMessage(
                                 combineContinuationContent(
                                     prefix = assistantContentPrefix,
-                                    content = content
+                                    content = visibleContent
                                 ),
                                 false
                             )
                         }
+                    },
+                    onToolCallUpdate = { snapshot ->
+                        callback.onToolCallPreview(
+                            toolName = snapshot.name.orEmpty(),
+                            argumentsJson = snapshot.arguments,
+                            toolCallId = snapshot.id,
+                            toolCallIndex = snapshot.index
+                        )
                     }
                 )
 
@@ -119,7 +128,9 @@ class AgentOrchestrator(
                     turn.usage?.prefillTokensPerSecond ?: lastPrefillTokensPerSecond
                 lastDecodeTokensPerSecond =
                     turn.usage?.decodeTokensPerSecond ?: lastDecodeTokensPerSecond
-                val rawAssistantContent = turn.message.contentText().trim()
+                val rawAssistantContent = normalizeAssistantVisibleText(
+                    turn.message.contentText()
+                )
                 lastAssistantContent = combineContinuationContent(
                     prefix = accumulatedAssistantContent,
                     content = rawAssistantContent
@@ -387,7 +398,7 @@ class AgentOrchestrator(
             throw e
         } catch (e: Exception) {
             callback.onError("Agent execution failed: ${e.message}")
-            return AgentResult.Error("Agent execution failed", e as? Exception)
+            return AgentResult.Error("Agent execution failed", e)
         } finally {
             runCatching { toolRouter.dispose() }
         }
@@ -626,6 +637,12 @@ class AgentOrchestrator(
         return normalized.trim()
     }
 
+    private fun normalizeAssistantVisibleText(text: String): String {
+        return AgentTextSanitizer.stripTextFunctionCalls(
+            AgentTextSanitizer.sanitizeUtf16(text)
+        ).trim()
+    }
+
     private fun isLengthFinishReason(reason: String?): Boolean {
         val normalized = reason?.trim()?.lowercase().orEmpty()
         return normalized == "length" ||
@@ -643,8 +660,8 @@ class AgentOrchestrator(
     }
 
     private fun combineContinuationContent(prefix: String, content: String): String {
-        val normalizedPrefix = AgentTextSanitizer.sanitizeUtf16(prefix).trim()
-        val normalizedContent = AgentTextSanitizer.sanitizeUtf16(content).trim()
+        val normalizedPrefix = normalizeAssistantVisibleText(prefix)
+        val normalizedContent = normalizeAssistantVisibleText(content)
         if (normalizedPrefix.isEmpty()) return normalizedContent
         if (normalizedContent.isEmpty()) return normalizedPrefix
         if (normalizedContent.startsWith(normalizedPrefix)) return normalizedContent

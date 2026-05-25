@@ -27,4 +27,24 @@ class AgentTextSanitizerTest {
             AgentTextSanitizer.sanitizeUtf16("前缀\uDE00后缀")
         )
     }
+
+    @Test
+    fun `strips complete text tool call blocks`() {
+        assertEquals(
+            "前缀  后缀",
+            AgentTextSanitizer.stripTextFunctionCalls(
+                """前缀 <tool_call>{"toolName":"web_search","summary":"done"}</tool_call> 后缀"""
+            )
+        )
+    }
+
+    @Test
+    fun `trims incomplete text tool call blocks`() {
+        assertEquals(
+            "前缀",
+            AgentTextSanitizer.stripTextFunctionCalls(
+                """前缀 <tool_call>{"toolName":"web_search","previewJson":"""
+            )
+        )
+    }
 }

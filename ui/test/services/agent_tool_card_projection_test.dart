@@ -165,6 +165,47 @@ void main() {
     expect(projection.cardData['success'], isFalse);
   });
 
+  test('projects snake_case VLM tool events into visible tool cards', () {
+    final event = AgentStreamEvent.fromMap(const <String, dynamic>{
+      'event': 'tool_completed',
+      'task_id': 'vlm-run-1',
+      'entry_id': 'vlm-step-1',
+      'seq': 3,
+      'round_index': 1,
+      'is_final': true,
+      'tool_call_id': 'vlm-step-1',
+      'tool_name': 'click',
+      'display_name': 'click',
+      'tool_type': 'vlm',
+      'tool_title': '点击确认按钮',
+      'args_json': '{"target_description":"确认按钮"}',
+      'result_preview_json': '{"message":"done"}',
+      'raw_result_json': '{"message":"done","compile_kind":"vlm_step"}',
+      'run_log_id': 'vlm-run-1',
+      'status': 'success',
+      'success': true,
+    });
+
+    final projection = AgentToolCardProjection.projectStreamEvent(
+      event: event,
+      messages: const <ChatMessageModel>[],
+      defaultRunningSummary: 'Calling tool',
+    );
+
+    expect(projection, isNotNull);
+    expect(projection!.cardId, 'vlm-step-1');
+    expect(projection.cardData['type'], 'agent_tool_summary');
+    expect(projection.cardData['taskId'], 'vlm-run-1');
+    expect(projection.cardData['toolType'], 'vlm');
+    expect(projection.cardData['toolName'], 'click');
+    expect(projection.cardData['toolTitle'], '点击确认按钮');
+    expect(projection.cardData['argsJson'], '{"target_description":"确认按钮"}');
+    expect(projection.cardData['resultPreviewJson'], '{"message":"done"}');
+    expect(projection.cardData['rawResultJson'], contains('vlm_step'));
+    expect(projection.streamMeta?['parentTaskId'], 'vlm-run-1');
+    expect(projection.streamMeta?['entryId'], 'vlm-step-1');
+  });
+
   test('completed card does not keep the default running summary', () {
     final messages = <ChatMessageModel>[];
 

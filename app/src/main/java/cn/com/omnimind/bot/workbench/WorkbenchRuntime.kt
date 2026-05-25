@@ -911,6 +911,18 @@ class WorkbenchProjectStore(
         )
     }
 
+    @Synchronized
+    fun isProjectCapabilityEnabled(): Boolean {
+        val activeProjectId = readActiveProjectId()?.takeIf { it.isNotBlank() } ?: return false
+        if (!readActiveProjectCapabilityEnabled()) return false
+        val exists = readProjectRegistry().any { it.projectId == activeProjectId }
+        if (!exists) {
+            activeProjectFile.delete()
+            syncProjectRelatedBuiltinSkillsEnabled(false)
+        }
+        return exists
+    }
+
     /**
      * Clears the active Workbench Project without deleting the Project itself.
      *

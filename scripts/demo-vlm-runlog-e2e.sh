@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end demo for raw VLM execution -> runlog -> registered function -> replay.
+# End-to-end demo for raw VLM execution -> runlog -> registered reusable command -> replay.
 # The API key is read by scripts/configure-oob-model-provider.sh and is never printed here.
 set -euo pipefail
 
@@ -299,7 +299,7 @@ sleep 1
 "${ADB[@]}" shell run-as "$PACKAGE_NAME" rm -f "$VLM_RESULT_FILE" "$FUNCTION_RESULT_FILE" 2>/dev/null || true
 sleep 1
 
-echo "== Phase 1: raw VLM -> runlog -> registered function =="
+echo "== Phase 1: raw VLM -> runlog -> registered reusable command =="
 goal_b64="$(printf '%s' "$GOAL" | base64_no_wrap)"
 "${ADB[@]}" shell am broadcast \
   -a cn.com.omnimind.bot.debug.RUN_VLM_RUNLOG \
@@ -346,7 +346,7 @@ if [[ "$vlm_success" != "true" || -z "$function_id" ]]; then
       exit 0
     fi
   fi
-  echo "VLM phase did not produce a registered reusable function." >&2
+  echo "VLM phase did not produce a registered reusable command." >&2
   echo "success=$vlm_success function_id=${function_id:-<empty>}" >&2
   exit 1
 fi
@@ -360,7 +360,7 @@ fi
 printf '%s' "$vlm_result" | json_validate_vlm_token_usage
 echo "registered_function_id=$function_id"
 
-echo "== Phase 2: registered function replay =="
+echo "== Phase 2: registered reusable command replay =="
 "${ADB[@]}" shell run-as "$PACKAGE_NAME" rm -f "$FUNCTION_RESULT_FILE" 2>/dev/null || true
 "${ADB[@]}" shell am force-stop "$TARGET_APP_PACKAGE" >/dev/null 2>&1 || true
 "${ADB[@]}" shell am start -a "$START_INTENT_ACTION" >/dev/null
@@ -376,7 +376,7 @@ printf '%s\n' "$function_result"
 function_success="$(printf '%s' "$function_result" | json_get_success)"
 
 if [[ "$function_success" != "true" ]]; then
-  echo "Function replay failed." >&2
+  echo "Reusable command replay failed." >&2
   exit 1
 fi
 

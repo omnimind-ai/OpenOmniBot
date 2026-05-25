@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.vlm
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import cn.com.omnimind.accessibility.util.ScreenStateUtil
 import cn.com.omnimind.assists.api.bean.VlmTaskTerminalResult
 import cn.com.omnimind.assists.api.interfaces.OnMessagePushListener
@@ -46,6 +47,8 @@ data class VlmToolOutcome(
     val summaryUnavailable: Boolean = false,
     val recentActivity: List<String> = emptyList(),
     val executionRoute: String = "",
+    val errorCode: String? = null,
+    val missingPermissions: List<String> = emptyList(),
 ) {
     fun toPayload(): Map<String, Any?> = linkedMapOf(
         "taskId" to taskId,
@@ -61,6 +64,8 @@ data class VlmToolOutcome(
         "summaryUnavailable" to summaryUnavailable,
         "recentActivity" to recentActivity,
         "executionRoute" to executionRoute,
+        "errorCode" to errorCode,
+        "missingPermissions" to missingPermissions,
     )
 }
 
@@ -85,6 +90,42 @@ object VlmToolCoordinator {
     ): VlmToolOutcome = withContext(Dispatchers.IO) {
         val taskId = UUID.randomUUID().toString()
         val needSummary = request.needSummary == true
+
+        val missingPermissions = missingAutomationPermissions(context)
+        if (missingPermissions.isNotEmpty()) {
+            val taskState = McpTaskManager.createTask(
+                taskId = taskId,
+                goal = request.goal,
+                status = TaskStatus.ERROR,
+                needSummary = needSummary
+            )
+            val errorCode = automationPermissionErrorCode(missingPermissions)
+            val message = automationPermissionMessage(missingPermissions)
+            taskState.message = message
+            taskState.errorCode = errorCode
+            taskState.missingPermissions = missingPermissions
+            taskState.addChatMessage("[SYSTEM] Automation permission required: ${missingPermissions.joinToString(",")}")
+            taskState.markStateChanged()
+            emitProgress(
+                progressReporter,
+                taskId,
+                taskState.status,
+                "权限缺失",
+                mapOf(
+                    "summary" to message,
+                    "errorCode" to errorCode,
+                    "missingPermissions" to missingPermissions,
+                )
+            )
+            McpTaskManager.scheduleTaskCleanup(taskId, scope)
+            return@withContext taskState.toOutcome(
+                status = VlmToolOutcomeStatus.ERROR,
+                message = message,
+                errorMessage = message,
+                errorCode = errorCode,
+                missingPermissions = missingPermissions,
+            )
+        }
 
         if (!ScreenStateUtil.isOperable()) {
             val taskState = McpTaskManager.createTask(
@@ -244,6 +285,36 @@ object VlmToolCoordinator {
                 taskState.addChatMessage("[SYSTEM] Screen unlocked, starting task...")
                 taskState.status = TaskStatus.RUNNING
                 taskState.message = "屏幕已解锁，任务启动中"
+                val missingPermissions = missingAutomationPermissions(context)
+                if (missingPermissions.isNotEmpty()) {
+                    val errorCode = automationPermissionErrorCode(missingPermissions)
+                    val message = automationPermissionMessage(missingPermissions)
+                    taskState.status = TaskStatus.ERROR
+                    taskState.message = message
+                    taskState.errorCode = errorCode
+                    taskState.missingPermissions = missingPermissions
+                    taskState.addChatMessage("[SYSTEM] Automation permission required after unlock: ${missingPermissions.joinToString(",")}")
+                    taskState.markStateChanged()
+                    McpTaskManager.scheduleTaskCleanup(taskId, scope)
+                    emitProgress(
+                        progressReporter,
+                        taskId,
+                        taskState.status,
+                        "权限缺失",
+                        mapOf(
+                            "summary" to message,
+                            "errorCode" to errorCode,
+                            "missingPermissions" to missingPermissions,
+                        )
+                    )
+                    return@withContext taskState.toOutcome(
+                        status = VlmToolOutcomeStatus.ERROR,
+                        message = message,
+                        errorMessage = message,
+                        errorCode = errorCode,
+                        missingPermissions = missingPermissions,
+                    )
+                }
                 val request = taskState.vlmRequest ?: VlmTaskRequest(
                     goal = taskState.goal,
                     needSummary = taskState.needSummary
@@ -449,6 +520,38 @@ object VlmToolCoordinator {
         val requested = requestedWaitTimeoutMs?.takeIf { it > 0L }
             ?: return McpTaskManager.MAX_WAIT_TIME_MS
         return requested.coerceIn(MIN_WAIT_TIMEOUT_MS, MAX_WAIT_TIMEOUT_MS)
+    }
+
+    internal fun missingAutomationPermissions(context: Context): List<String> {
+        val missing = mutableListOf<String>()
+        if (!AssistsUtil.Core.isAccessibilityServiceEnabled()) {
+            missing += "accessibility"
+        }
+        if (!Settings.canDrawOverlays(context)) {
+            missing += "overlay"
+        }
+        return missing
+    }
+
+    private fun automationPermissionErrorCode(missingPermissions: List<String>): String =
+        if ("accessibility" in missingPermissions) {
+            "OOB_ACCESSIBILITY_REQUIRED"
+        } else {
+            "OOB_PERMISSION_REQUIRED"
+        }
+
+    private fun automationPermissionMessage(missingPermissions: List<String>): String {
+        val missing = missingPermissions.toSet()
+        return when {
+            "accessibility" in missing && "overlay" in missing ->
+                "请先开启无障碍权限和悬浮窗权限，视觉执行才能点击、滑动、输入并显示执行状态。"
+            "accessibility" in missing ->
+                "请先开启无障碍权限，视觉执行才能点击、滑动和输入。"
+            "overlay" in missing ->
+                "请先开启悬浮窗权限，视觉执行才能显示执行状态。"
+            else ->
+                "请先开启必要权限后再执行视觉任务。"
+        }
     }
 
     private suspend fun startVlmTaskInternal(
@@ -784,7 +887,9 @@ object VlmToolCoordinator {
         status: VlmToolOutcomeStatus,
         message: String = this.message,
         waitingQuestion: String? = this.waitingQuestion,
-        errorMessage: String? = null
+        errorMessage: String? = null,
+        errorCode: String? = this.errorCode,
+        missingPermissions: List<String> = this.missingPermissions,
     ): VlmToolOutcome {
         return VlmToolOutcome(
             taskId = taskId,
@@ -805,6 +910,8 @@ object VlmToolCoordinator {
             summaryUnavailable = summaryUnavailable,
             recentActivity = chatMessages.takeLast(5),
             executionRoute = executionRoute,
+            errorCode = errorCode,
+            missingPermissions = missingPermissions,
         )
     }
 

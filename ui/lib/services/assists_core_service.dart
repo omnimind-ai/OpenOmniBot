@@ -737,6 +737,44 @@ class UtgManualRunResult {
           .toString()
           .trim();
 
+  String get executionStatus =>
+      (terminalState['execution_status'] ??
+              terminalState['executionStatus'] ??
+              rawJson['execution_status'] ??
+              rawJson['executionStatus'] ??
+              context['execution_status'] ??
+              context['executionStatus'] ??
+              terminalState['status'] ??
+              '')
+          .toString()
+          .trim();
+
+  String get taskId =>
+      (terminalState['taskId'] ??
+              terminalState['task_id'] ??
+              terminalState['agent_task_id'] ??
+              rawJson['taskId'] ??
+              rawJson['task_id'] ??
+              '')
+          .toString()
+          .trim();
+
+  bool get completedLocal =>
+      executionStatus == 'completed_local' ||
+      executionStatus == 'completed' ||
+      terminalState['status'] == 'completed';
+
+  bool get startedAgentFallback =>
+      executionStatus == 'started_agent_fallback' ||
+      executionStatus == 'started_agent' ||
+      (taskId.isNotEmpty && modelRequired);
+
+  bool get failed =>
+      !success ||
+      executionStatus == 'failed' ||
+      executionStatus == 'error' ||
+      terminalState['status'] == 'error';
+
   int get startedAtMs => _intValue(
     _firstPresent([
       rawJson['started_at_ms'],
@@ -954,12 +992,12 @@ class UtgRunLogSummary {
   final String finishedAt;
   final num? durationMs;
   final String toolName;
-  final String compileStatus;
-  final String compileFunctionId;
-  final String compileMode;
+  final String executionStatus;
+  final String executionFunctionId;
+  final String executionMode;
   final String actFunctionId;
   final String source;
-  final String compileSummary;
+  final String executionSummary;
   final String operationDescription;
   final String selectorLabel;
   final String selectorReason;
@@ -979,12 +1017,12 @@ class UtgRunLogSummary {
     required this.finishedAt,
     required this.durationMs,
     required this.toolName,
-    required this.compileStatus,
-    required this.compileFunctionId,
-    required this.compileMode,
+    required this.executionStatus,
+    required this.executionFunctionId,
+    required this.executionMode,
     required this.actFunctionId,
     required this.source,
-    required this.compileSummary,
+    required this.executionSummary,
     required this.operationDescription,
     required this.selectorLabel,
     required this.selectorReason,
@@ -1009,12 +1047,18 @@ class UtgRunLogSummary {
       finishedAt: (raw['finished_at'] ?? '').toString(),
       durationMs: raw['duration_ms'] as num?,
       toolName: (raw['tool_name'] ?? '').toString(),
-      compileStatus: (raw['compile_status'] ?? '').toString(),
-      compileFunctionId: (raw['compile_function_id'] ?? '').toString(),
-      compileMode: (raw['compile_mode'] ?? '').toString(),
+      executionStatus: (raw['execution_status'] ?? raw['compile_status'] ?? '')
+          .toString(),
+      executionFunctionId:
+          (raw['execution_function_id'] ?? raw['compile_function_id'] ?? '')
+              .toString(),
+      executionMode: (raw['execution_mode'] ?? raw['compile_mode'] ?? '')
+          .toString(),
       actFunctionId: (raw['act_function_id'] ?? '').toString(),
       source: (raw['source'] ?? '').toString(),
-      compileSummary: (raw['compile_summary'] ?? '').toString(),
+      executionSummary: _userVisibleExecutionText(
+        (raw['execution_summary'] ?? raw['compile_summary'] ?? '').toString(),
+      ),
       operationDescription: (raw['operation_description'] ?? '').toString(),
       selectorLabel: (raw['selector_label'] ?? '').toString(),
       selectorReason: (raw['selector_reason'] ?? '').toString(),
@@ -1035,6 +1079,17 @@ class UtgRunLogSummary {
       ),
     );
   }
+}
+
+String _userVisibleExecutionText(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return '';
+  return trimmed
+      .replaceAll(RegExp(r'\bcompiled\b', caseSensitive: false), 'executed')
+      .replaceAll(RegExp(r'\bcompiler\b', caseSensitive: false), 'runner')
+      .replaceAll(RegExp(r'\bcompilation\b', caseSensitive: false), 'execution')
+      .replaceAll(RegExp(r'\bcompile\b', caseSensitive: false), 'execute')
+      .replaceAll('编译', '执行');
 }
 
 class UtgRunLogsSnapshot {

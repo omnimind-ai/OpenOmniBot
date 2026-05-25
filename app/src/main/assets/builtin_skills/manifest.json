@@ -33,7 +33,7 @@
     {
       "id": "vlm-android-gui",
       "name": "vlm-android-gui",
-      "description": "Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, vlm_task, OmniFlow replay, Function conversion, and RunLog validation.",
+      "description": "Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, vlm_task, OmniFlow replay, reusable command generation, and RunLog validation.",
       "assetPath": "builtin_skills/vlm-android-gui",
       "hasScripts": false,
       "hasReferences": true,

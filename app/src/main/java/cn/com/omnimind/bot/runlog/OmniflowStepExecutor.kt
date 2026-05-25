@@ -44,6 +44,17 @@ object OmniflowStepExecutor {
             else -> emptyMap()
         }
 
+    fun requiresAccessibility(step: Map<String, Any?>): Boolean =
+        isOmniflowStep(step) && actionRequiresAccessibility(actionNameForStep(step))
+
+    fun actionRequiresAccessibility(action: String): Boolean {
+        val normalized = RunLogReplayPolicy.omniflowActionForToolName(action)
+            ?: RunLogReplayPolicy.normalizeToolName(action)
+        return normalized in RunLogReplayPolicy.omniflowActions &&
+            normalized != "open_app" &&
+            normalized != "finished"
+    }
+
     fun stringArg(args: Map<String, Any?>, vararg keys: String): String? {
         for (key in keys) {
             val value = args[key] ?: continue
@@ -65,7 +76,7 @@ object OmniflowStepExecutor {
             throw IllegalArgumentException("Unsupported omniflow action: $action")
         }
         val backend = OmniflowActionRuntime.backend
-        if (action.requiresAccessibility() && !backend.isReady()) {
+        if (actionRequiresAccessibility(action) && !backend.isReady()) {
             throw IllegalStateException("OmniFlow action backend is not ready")
         }
         preActionSatisfiedPostcondition(step, action)?.let { postcondition ->
@@ -774,9 +785,6 @@ object OmniflowStepExecutor {
         }
         return ""
     }
-
-    private fun String.requiresAccessibility(): Boolean =
-        this != "open_app" && this != "finished"
 
     private data class Rect(
         val left: Float,
