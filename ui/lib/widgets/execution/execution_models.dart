@@ -1,11 +1,11 @@
 // 执行相关的通用数据模型
 // 用于统一 Function 和 RunLog 的展示
 
-/// Compile kind 枚举
+/// Route/reuse kind from legacy payload keys.
 enum CompileKind {
   hit, // 复用已有技能
   miss, // VLM 执行
-  none, // 无 compile 信息
+  none, // 无路由信息
 }
 
 /// 执行步骤的统一模型
@@ -16,9 +16,9 @@ class ExecutionStep {
   final String? screenshotUrl;
   final String? xmlUrl;
   final Map<String, dynamic> params;
-  final String? compileLabel; // 兼容旧代码，建议使用 compileKind
+  final String? compileLabel; // 兼容旧 payload key，展示时按 route/reuse 语义处理
   final CompileKind compileKind;
-  final String? compileFunctionId; // compile hit 时的 function id
+  final String? compileFunctionId; // 复用命中时的 function id
   final bool? success;
   final String? startedAt;
   final String? finishedAt;
@@ -42,7 +42,7 @@ class ExecutionStep {
     this.tokenUsage,
   });
 
-  /// 是否是 compile hit（复用已有技能）
+  /// 是否命中可复用技能
   bool get isCompileHit => compileKind == CompileKind.hit;
 
   /// 从 function action 创建
@@ -77,7 +77,7 @@ class ExecutionStep {
         ) ??
         {};
 
-    // 解析 compile 信息
+    // 解析 route/reuse 信息
     final functionId = compileResult['function_id']?.toString().trim();
     CompileKind compileKind = CompileKind.none;
     if (functionId != null && functionId.isNotEmpty) {
@@ -86,7 +86,7 @@ class ExecutionStep {
       compileKind = CompileKind.miss;
     }
 
-    // 兼容旧的 compileLabel（来自 API 返回）
+    // 兼容旧的 API 返回标签
     final apiCompileLabel = step['compile_label']?.toString().trim();
 
     return ExecutionStep(

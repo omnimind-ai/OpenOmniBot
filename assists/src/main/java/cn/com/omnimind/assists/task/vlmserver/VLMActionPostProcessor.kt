@@ -2208,7 +2208,12 @@ object VLMActionPostProcessor {
         "home",
         "current screen",
         "current page",
-        "current"
+        "current",
+        "it",
+        "this",
+        "that",
+        "them",
+        "there"
     )
     private val ORDERED_TARGET_STOP_WORDS = setOf(
         "visible",
@@ -2222,7 +2227,11 @@ object VLMActionPostProcessor {
         "with",
         "and",
         "or",
+        "it",
+        "this",
         "that",
+        "them",
+        "there",
         "has",
         "have",
         "contains",

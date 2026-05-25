@@ -793,6 +793,30 @@ def build_method_record(args: argparse.Namespace) -> dict[str, Any]:
                 "explicit completion decision",
             ],
         },
+        "mobilerun_reference_method": {
+            "source": "droidrun/mobilerun is recorded as a process reference only, not as an OOB runtime dependency.",
+            "observed_flow": [
+                "Fetch Accessibility tree, phone state, screen bounds, and optional screenshot every turn.",
+                "Format the tree into indexed UI evidence.",
+                "Build one LLM turn from goal, indexed state, screenshot, short memory/history, and previous tool result.",
+                "Parse a structured tool block and dispatch through a small action registry.",
+                "Feed structured tool results back into the next turn.",
+                "Persist trajectory artifacts for debugging.",
+            ],
+            "oob_borrowed_properties": [
+                "indexed screenshot-grounded observations",
+                "stable structured tool result feedback",
+                "small deterministic action surface",
+                "short task memory/history",
+                "trajectory artifacts with token and timing diagnostics",
+            ],
+            "explicit_non_goals": [
+                "Do not call the Mobilerun Portal app.",
+                "Do not call the Mobilerun Python agent loop.",
+                "Do not use Mobilerun macro replay as OOB replay.",
+                "Do not replace native Kotlin VLM, RunLog, Function registration, UDEG recall, or replay.",
+            ],
+        },
         "diagnosis_of_oob_gap": {
             "main_gap": "A full OOB episode was previously wrapped as a single AndroidWorld agent step, while M3A externally observes, acts, settles, and summarizes every step.",
             "kotlin_alignment": [
@@ -844,7 +868,7 @@ def build_method_record(args: argparse.Namespace) -> dict[str, Any]:
         },
         "validation_without_androidworld_run": {
             "static_checks": [
-                "Kotlin compile/unit tests for VLM request, indexed page grounding, post-action observation, RunLog compile/replay, UDEG recall.",
+                "Kotlin build/unit tests for VLM request, indexed page grounding, post-action observation, RunLog registration/replay, UDEG recall.",
                 "Python adapter method-only export and syntax check.",
             ],
             "artifact_checks": [
@@ -854,8 +878,8 @@ def build_method_record(args: argparse.Namespace) -> dict[str, Any]:
             ],
             "deferred_runtime_checks": [
                 "With --run-live, run online_vlm, replay, and recall_repeat on the same simple task params.",
-                "If DroidRun is used instead of AndroidWorld, it should only call the same OOB control-plane entry and verify external task success.",
-                "DroidRun is optional runner plumbing; it must not replace the Kotlin RunLog, replay, recall, or VLM decision runtime.",
+                "Mobilerun/DroidRun remains a method reference only for this work; do not call its Portal or Python runtime during OOB validation.",
+                "Do not replace the Kotlin RunLog, replay, recall, or VLM decision runtime with Mobilerun/DroidRun internals.",
             ],
         },
     }

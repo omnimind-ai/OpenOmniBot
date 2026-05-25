@@ -175,7 +175,7 @@ class RunLogReusableFunctionConverter {
           RunLogReplayPolicy.isPerceptionTool(snapshot.toolName) &&
           hasRecordedReplayStep;
       // Skip vlm_task outer calls entirely when concrete recorded actions are
-      // present. The VLM-driven actions (click/scroll/type with compile_kind
+      // present. The VLM-driven actions (click/scroll/type with legacy route kind
       // metadata) are recorded as separate omniflow cards with source_context
       // for coordinate remapping.
       if (shouldSkipPerceptionStep) continue;

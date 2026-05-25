@@ -149,7 +149,7 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
-    fun `compiler prepends initial app launch for app scoped replay`() {
+    fun `builder prepends initial app launch for app scoped replay`() {
         val spec = compile(
             listOf(
                 card(
@@ -169,7 +169,7 @@ class RunLogReusableFunctionCompilerTest {
 
         assertEquals("open_app", openApp["tool"])
         assertEquals("omniflow", openApp["executor"])
-        assertEquals("injected_initial_package_from_runlog", openApp["compile_note"])
+        assertEquals("injected_initial_package_from_runlog", openApp["route_note"])
         assertEquals(
             "com.android.settings",
             (openApp["args"] as Map<*, *>)["package_name"],
@@ -181,6 +181,48 @@ class RunLogReusableFunctionCompilerTest {
         assertEquals("click", click["tool"])
         assertEquals("step_2", click["id"])
         assertEquals(1, (click["index"] as Number).toInt())
+    }
+
+    @Test
+    fun `builder prefers page inferred package over transient launcher package`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf("target_description" to "Search settings", "x" to 360, "y" to 112),
+                    beforeXml = SETTINGS_XML,
+                    beforePackage = "com.google.android.apps.nexuslauncher",
+                ),
+            ),
+            runId = "run-launcher-foreground-click",
+        )
+
+        val openApp = stepsFrom(spec).first()
+        assertEquals("open_app", openApp["tool"])
+        assertEquals(
+            "com.android.settings",
+            (openApp["args"] as Map<*, *>)["package_name"],
+        )
+        assertEquals("injected_initial_package_from_runlog", openApp["route_note"])
+    }
+
+    @Test
+    fun `builder does not inject launcher package without page evidence`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf("target_description" to "Open", "x" to 120, "y" to 240),
+                    beforeXml = SOURCE_XML,
+                    beforePackage = "com.google.android.apps.nexuslauncher",
+                ),
+            ),
+            runId = "run-launcher-only-click",
+        )
+
+        val steps = stepsFrom(spec)
+        assertEquals(1, steps.size)
+        assertEquals("click", steps.single()["tool"])
     }
 
     @Test
@@ -206,7 +248,7 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
-    fun `compiler infers page package when recorded package disagrees with xml`() {
+    fun `builder infers page package when recorded package disagrees with xml`() {
         val spec = compile(
             listOf(
                 card(
@@ -221,7 +263,14 @@ class RunLogReusableFunctionCompilerTest {
             runId = "run-click-package-infer",
         )
 
-        val click = stepsFrom(spec).single()
+        val steps = stepsFrom(spec)
+        val openApp = steps.first()
+        val click = steps.first { it["tool"] == "click" }
+        assertEquals("open_app", openApp["tool"])
+        assertEquals(
+            "com.android.settings",
+            (openApp["args"] as Map<*, *>)["package_name"],
+        )
         val sourceContext = click["source_context"] as Map<*, *>
         val srcCtx = sourceContext["src_ctx"] as Map<*, *>
         val dstCtx = sourceContext["dst_ctx"] as Map<*, *>
@@ -250,7 +299,7 @@ class RunLogReusableFunctionCompilerTest {
             runId = "run-settings-search",
         )
 
-        val click = stepsFrom(spec).single()
+        val click = stepsFrom(spec).first { it["tool"] == "click" }
         val postcondition = click["postcondition"] as Map<*, *>
 
         assertEquals("recorded_after_page_similarity", postcondition["kind"])

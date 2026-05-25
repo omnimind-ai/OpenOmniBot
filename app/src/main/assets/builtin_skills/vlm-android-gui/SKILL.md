@@ -9,6 +9,10 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 
 - AndroidWorld first-step policy lives here; choose the simplest action that changes one variable, then verify.
 - M3A-style per-step loop: observe raw screenshot, marked screenshot, UI element/index list, short history, choose one action, then use after-action feedback to correct the next step.
+- Mobilerun-style structured loop is a reference pattern, not a runtime
+  replacement: inject current device state, indexed page evidence, screenshot,
+  and the previous tool result; require exactly one executable tool call; then
+  feed structured action results back into the next turn.
 - OOB indexed page evidence: choose by visible label/role; include `element_index`
   or `scrollable_index` when available and emit 0-1000 normalized centers as fallback.
 - Pass `packageName` when known; derive unknown packages from installed apps.
@@ -34,6 +38,51 @@ This skill is for OOB's executable phone runtime. Open-source model skills such
 as LLaVA, BLIP-2, or CLIP are useful references for vision-language modeling,
 but they do not replace OOB's `vlm_task`, accessibility actions, RunLog, or
 OmniFlow replay path.
+
+Mobilerun/Droidrun is also only a design reference for OOB, not an executable
+dependency. Its FastAgent uses a Python host, Portal Android app, indexed
+Accessibility tree, optional screenshot, XML function calls, and structured
+function results. OOB must keep the native Kotlin VLM loop and its own
+Accessibility, RunLog, Function registration, recall, and replay path; borrow
+the structured observation/result discipline without calling Portal, installing
+Mobilerun runtime, or delegating actions to Python.
+
+## Mobilerun Reference Flow
+
+Record Mobilerun as a process reference only:
+
+1. Fetch a fresh device state every turn: Accessibility tree, phone state,
+   screen bounds, and optional screenshot.
+2. Format the tree into indexed UI evidence with stable element indexes.
+3. Build one LLM turn from the goal, current device state, optional screenshot,
+   short memory/history, and the previous tool result.
+4. Require one structured tool block per model response. Multiple concrete
+   invokes are allowed only when they are clearly sequential on the same stable
+   screen; OOB should normally keep one native action per turn.
+5. Execute actions through a small registry: indexed click, coordinate click,
+   type, swipe, open app, back/home/enter, wait only as internal settling, and
+   explicit completion.
+6. Feed structured action results back into the next turn instead of relying on
+   free-form chat history.
+7. Persist trajectory artifacts for inspection: UI state, screenshot when
+   enabled, tool call, tool result, success/failure, and token usage.
+
+Borrow these advantages in OOB:
+
+- Keep the VLM prompt grounded in indexed UI evidence plus screenshot.
+- Make tool result schemas explicit and stable, especially after-action page
+  changes and failure reasons.
+- Keep the action surface small and deterministic.
+- Track short memory/history for facts that must survive navigation.
+- Separate method/reference runners from the production runtime.
+
+Do not borrow these parts as dependencies:
+
+- Portal app installation, TCP/content-provider protocol, or Python driver.
+- Mobilerun prompt templates as runtime prompts.
+- Mobilerun macro replay format.
+- A host-side agent loop that replaces OOB Kotlin `vlm_task`, RunLog, Function
+  registration, UDEG recall, or model-free replay.
 
 ## Activation
 
@@ -252,9 +301,9 @@ Keep this contract visible and separate from runtime tests:
 - A Function library surface should show that a Function is registered, which
   RunLog(s) it came from, the step count, parameter count, and a local execution
   action.
-- Function execution results should show diagnostic timing such as
-  `duration_ms`, `started_at_ms`, `finished_at_ms`, and phase timings when the
-  runtime returns them.
+- Function execution results should keep diagnostic timing internal. Persist
+  `duration_ms`, `started_at_ms`, `finished_at_ms`, and phase timings in RunLog
+  and test artifacts, but do not expose these fields in user-facing UI.
 - Do not show internal route-building jargon to users. Keep legacy
   route-building field names only as compatibility keys.
 
@@ -263,9 +312,9 @@ Keep this contract visible and separate from runtime tests:
 Keep user experience validation and actual phone execution validation separate:
 
 - UX/widget validation: verify labels, buttons, disabled states, source RunLog
-  badges, Function execution result sheets, and timing chips with mocked channel
-  payloads. These tests must not start emulators, call VLM, or depend on
-  AndroidWorld.
+  badges, and Function execution result sheets with mocked channel payloads.
+  Timing telemetry should be parsed and asserted in tests, not shown to users.
+  These tests must not start emulators, call VLM, or depend on AndroidWorld.
 - Runtime/unit validation: verify RunLog collection, conversion to Function,
   nested Function calls, replay timing propagation, UDEG node recall, segment
   recall, and no timing leakage into VLM prompts.

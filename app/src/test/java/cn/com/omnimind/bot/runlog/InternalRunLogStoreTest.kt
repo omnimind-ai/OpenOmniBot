@@ -106,6 +106,48 @@ class InternalRunLogStoreTest {
         }
     }
 
+    @Test
+    fun `timeline preserves internal timing fields on cards`() {
+        val context = TempFilesContext()
+        try {
+            val runId = "run-timing-${System.nanoTime()}"
+            InternalRunLogStore.beginRun(
+                context = context,
+                runId = runId,
+                goal = "Timing usage",
+                source = "vlm",
+                toolName = "vlm"
+            )
+            InternalRunLogStore.appendCard(
+                context = context,
+                runId = runId,
+                card = linkedMapOf(
+                    "card_id" to "card-timing-1",
+                    "tool_name" to "open_app",
+                    "duration_ms" to 125L,
+                    "started_at_ms" to 1700000000000L,
+                    "finished_at_ms" to 1700000000125L,
+                    "header" to linkedMapOf(
+                        "step_index" to 0,
+                        "duration_ms" to 125L
+                    )
+                )
+            )
+
+            val timeline = InternalRunLogStore.timelinePayload(context, runId)
+            val cards = timeline["cards"] as List<*>
+            val card = cards.single() as Map<*, *>
+            val header = card["header"] as Map<*, *>
+
+            assertEquals(125L, (card["duration_ms"] as Number).toLong())
+            assertEquals(1700000000000L, (card["started_at_ms"] as Number).toLong())
+            assertEquals(1700000000125L, (card["finished_at_ms"] as Number).toLong())
+            assertEquals(125L, (header["duration_ms"] as Number).toLong())
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
     private fun runningCard(cardId: String, summary: String): Map<String, Any?> {
         return linkedMapOf(
             "card_id" to cardId,

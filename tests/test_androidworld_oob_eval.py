@@ -65,7 +65,18 @@ class AndroidWorldOobEvalTest(unittest.TestCase):
                 "disableOmniFlowRecall=true",
                 " ".join(record["oob_runtime_alignment"]["online_vlm"]),
             )
+            self.assertEqual(
+                record["mobilerun_reference_method"]["source"],
+                "droidrun/mobilerun is recorded as a process reference only, not as an OOB runtime dependency.",
+            )
+            self.assertIn(
+                "Do not call the Mobilerun Python agent loop.",
+                record["mobilerun_reference_method"]["explicit_non_goals"],
+            )
             self.assertIn("diagnosis_of_oob_gap", record)
+            rendered = json.dumps(record, ensure_ascii=False).lower()
+            self.assertNotIn("compile", rendered)
+            self.assertNotIn("编译", rendered)
 
     def test_live_mode_requires_task_before_loading_androidworld(self):
         module = load_script_module()

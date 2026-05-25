@@ -52,7 +52,7 @@ object RunLogReusableFunctionCompiler {
                 "card_count" to record.cards.size,
                 "replayable_card_count" to replayableCards.size,
                 "converted_at" to now,
-                "converter" to "native_run_log_reusable_function_compiler",
+                "converter" to "native_run_log_reusable_function_builder",
                 "parameter_inference" to linkedMapOf(
                     "strategy" to "deterministic_input_text_bindings",
                     "parameter_count" to parameters.size,
@@ -96,7 +96,7 @@ object RunLogReusableFunctionCompiler {
         )
         if (firstAction == "open_app") return steps
 
-        val packageName = initialReplayPackage(replayableCards) ?: return steps
+        val packageName = initialReplayPackage(steps, replayableCards) ?: return steps
         val openAppStep = nullableMap(
             "title" to "open_app: $packageName",
             "kind" to "omniflow_action",
@@ -112,12 +112,16 @@ object RunLogReusableFunctionCompiler {
                 "reset_task" to true,
                 "launch_mode" to "fresh_task",
             ),
-            "compile_note" to "injected_initial_package_from_runlog",
+            "route_note" to "injected_initial_package_from_runlog",
         )
         return listOf(openAppStep) + steps
     }
 
-    private fun initialReplayPackage(replayableCards: List<Map<String, Any?>>): String? {
+    private fun initialReplayPackage(
+        steps: List<Map<String, Any?>>,
+        replayableCards: List<Map<String, Any?>>,
+    ): String? {
+        initialReplayPackageFromSteps(steps)?.let { return it }
         val packageName = replayableCards.asSequence()
             .mapNotNull { card ->
                 firstNonBlank(
@@ -132,6 +136,19 @@ object RunLogReusableFunctionCompiler {
         return packageName.takeIf(::isLaunchableInitialPackageCandidate)
     }
 
+    private fun initialReplayPackageFromSteps(steps: List<Map<String, Any?>>): String? {
+        return steps.asSequence()
+            .mapNotNull { step ->
+                val sourceContext = asMap(step["source_context"])
+                val srcCtx = asMap(sourceContext["src_ctx"])
+                firstNonBlank(
+                    srcCtx["package_name"],
+                    srcCtx["packageName"],
+                ).takeIf { it.isNotBlank() }
+            }
+            .firstOrNull(::isLaunchableInitialPackageCandidate)
+    }
+
     private fun isLaunchableInitialPackageCandidate(packageName: String): Boolean {
         val normalized = packageName.trim()
         if (!PACKAGE_NAME_PATTERN.matches(normalized)) return false
@@ -140,6 +157,7 @@ object RunLogReusableFunctionCompiler {
         if (normalized == "com.android.systemui") return false
         if (normalized.startsWith("com.android.inputmethod")) return false
         if (normalized.startsWith("com.google.android.inputmethod")) return false
+        if (normalized.contains("launcher", ignoreCase = true)) return false
         if (normalized.startsWith("com.example")) return false
         return true
     }
@@ -700,7 +718,7 @@ object RunLogReusableFunctionCompiler {
                     repairedAfterXml == nextBeforeXml && nextBeforeXml.isNotBlank() && repairedAfterXml != afterXml
                 },
             ).filterValues { value ->
-                value?.toString()?.trim()?.isNotEmpty() == true
+                value != null && value.toString().trim().isNotEmpty()
             }.takeIf { it.isNotEmpty() },
             "action" to sourceAction,
         ).filterValues { it != null }

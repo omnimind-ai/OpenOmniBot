@@ -86,9 +86,11 @@ Use static and unit checks for the method:
 - Artifact inspection that verifies RunLog token usage, action durations, and
   recall timing fields are present.
 
-If a real runner is needed later, AndroidWorld or DroidRun should call the same
-OOB control-plane entry. DroidRun is optional runner plumbing only; it should not
-replace the Kotlin VLM, RunLog, replay, or recall runtime.
+For the current OOB work, Mobilerun/DroidRun is a recorded method reference
+only. Do not call its Portal app, Python runtime, or macro replay path for OOB
+validation. If an external benchmark runner is needed, it should be
+AndroidWorld calling the same OOB control-plane entry while OOB keeps ownership
+of Kotlin VLM, RunLog, replay, and recall.
 
 ## Live Adapter Verification Shape
 
@@ -106,10 +108,28 @@ Use simple AndroidWorld tasks first, such as opening Settings pages or verifying
 Clock/Contacts read-only pages. These are validation gates for the adapter and
 runtime plumbing, not final benchmark claims.
 
-## DroidRun Reuse Decision
+## Mobilerun/DroidRun Reference Method
 
-DroidRun can be used as an alternate external runner only if it calls the same
-OOB control-plane entry. Its useful ideas are the same as M3A/OOB already need:
-accessibility tree + screenshot observations, action tracing, state summaries,
-and app-specific cards. Do not replace the Kotlin online VLM, RunLog, replay, or
-UDEG recall with DroidRun internals.
+Mobilerun's useful flow is:
+
+1. Fetch current device state through a device service: Accessibility tree,
+   phone state, screen bounds, and optional screenshot.
+2. Transform the tree into indexed UI evidence.
+3. Build one LLM turn from goal, indexed state, screenshot, short memory/history,
+   and previous tool result.
+4. Parse a structured tool block.
+5. Execute through a small action registry: click, coordinate click, type,
+   swipe, open app, system button, and explicit complete.
+6. Feed structured tool results into the next turn.
+7. Save trajectory artifacts for debugging.
+
+OOB should borrow the method, not the runtime:
+
+- Use indexed Accessibility evidence plus screenshot in native `vlm_task`.
+- Persist structured post-action observations and token/timing artifacts in
+  RunLog.
+- Keep the action registry small and deterministic.
+- Keep failure summaries and after-action evidence available to the next VLM
+  turn.
+- Do not replace Kotlin online VLM, RunLog collection, Function registration,
+  UDEG recall, or model-free replay with Mobilerun internals.

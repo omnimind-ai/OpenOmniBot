@@ -1179,6 +1179,33 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
+    fun `does not treat pronoun open it as pending ordered target`() {
+        val step = VLMStep(
+            observation = "The About phone page shows Android version 13.",
+            thought = "Android version is visible, so the verification target is satisfied.",
+            summary = "Verified Android version 13 on the About phone page.",
+            action = FinishedAction(content = "Android version 13 is visible on the About phone page.")
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = ABOUT_PHONE_VERIFY_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(aboutPhoneStep(), aboutPhoneVersionScrollStep())
+            ),
+            currentXml = ABOUT_PHONE_ANDROID_VERSION_XML,
+            currentPackageName = "com.android.settings",
+            stepIndex = 7,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertFalse(result.applied)
+        assertTrue(result.step.action is FinishedAction)
+    }
+
+    @Test
     fun `allows finished after every ordered target was clicked in order`() {
         val step = VLMStep(
             observation = "phone detail page",
@@ -1215,6 +1242,9 @@ class VLMActionPostProcessorTest {
 
         private const val DEFAULT_APPS_VERIFY_TASK =
             "From the Settings home screen, open Apps, open Default apps, verify the Default apps page is visible with Browser app or Phone app rows, then finish."
+
+        private const val ABOUT_PHONE_VERIFY_TASK =
+            "From the Settings home screen, scroll to About phone, open it, verify the About phone page title or Android version is visible, then finish."
 
         private fun wifiToggleStep(): UIStep =
             UIStep(
@@ -1279,6 +1309,28 @@ class VLMActionPostProcessorTest {
                 thought = "open Network & internet settings",
                 action = ClickAction(targetDescription = "Network & internet option", x = 540f, y = 885.5f),
                 result = "clicked Network & internet"
+            )
+
+        private fun aboutPhoneStep(): UIStep =
+            UIStep(
+                observation = "settings home",
+                thought = "open About phone",
+                action = ClickAction(targetDescription = "About emulated device", x = 360f, y = 968f),
+                result = "clicked About emulated device"
+            )
+
+        private fun aboutPhoneVersionScrollStep(): UIStep =
+            UIStep(
+                observation = "About phone page",
+                thought = "scroll to Android version",
+                action = ScrollAction(
+                    targetDescription = "scroll down to reveal Android version",
+                    x1 = 360f,
+                    y1 = 1178f,
+                    x2 = 360f,
+                    y2 = 384f
+                ),
+                result = "scrolled"
             )
 
         private fun pressBackStep(): UIStep =
@@ -1371,6 +1423,23 @@ class VLMActionPostProcessorTest {
                     <node text="(System default)" enabled="true" bounds="[316,711][996,762]" />
                   </node>
                   <node text="Apps that allow you to make and receive telephone calls on your device" enabled="true" bounds="[63,920][1038,1077]" />
+                </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val ABOUT_PHONE_ANDROID_VERSION_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][720,1280]">
+                <node content-desc="Navigate up" clickable="true" focusable="true" enabled="true" bounds="[0,48][112,160]" />
+                <node class="androidx.recyclerview.widget.RecyclerView" scrollable="true" focusable="true" enabled="true" bounds="[0,180][720,1232]">
+                  <node text="SIM status" enabled="true" bounds="[48,208][246,262]" />
+                  <node text="Model" enabled="true" bounds="[48,362][170,416]" />
+                  <node text="sdk_gphone64_arm64" enabled="true" bounds="[48,416][423,462]" />
+                  <node text="Android version" enabled="true" bounds="[48,540][387,594]" />
+                  <node text="13" enabled="true" bounds="[48,594][88,640]" />
+                  <node text="Device identifiers" enabled="true" bounds="[48,718][444,772]" />
                 </node>
               </node>
             </hierarchy>

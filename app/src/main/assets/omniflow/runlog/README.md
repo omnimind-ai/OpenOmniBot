@@ -32,7 +32,7 @@ record. Do not read only the snapshot when correctness matters.
 - Function registry/materialization: `baselib/src/main/java/cn/com/omnimind/baselib/runlog/OobReusableFunctionStore.kt`
 - Native timeline and method channel handlers: `app/src/main/java/cn/com/omnimind/bot/manager/AssistsCoreManager.kt`
 - Replay runner: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionToolHandler.kt`
-- Native replay policy and compiler: `app/src/main/java/cn/com/omnimind/bot/runlog/`
+- Native replay policy and Function conversion: `app/src/main/java/cn/com/omnimind/bot/runlog/`
 - Workspace command save: `app/src/main/java/cn/com/omnimind/bot/workbench/WorkspaceFunctionStore.kt`
 - Flutter timeline: `ui/lib/features/task/pages/execution_history/run_log_timeline_page.dart`
 - Flutter converter: `ui/lib/features/task/run_log/run_log_reusable_function_converter.dart`
@@ -68,7 +68,7 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
 - Keep parameter bindings aligned with actual `execution.steps` indexes after skipping wrapper cards.
 - For agent steps, bind runtime parameters into both `step.args` and `step.agent_call.args.original_args`.
 - AI normalization may rename and parameterize, but must not change executor policy. Normalize data-flow tools back to `executor=agent`.
-- OmniFlow graph/function tools compile to `kind=omniflow_graph` or
+- OmniFlow graph/function tools convert to `kind=omniflow_graph` or
   `kind=omniflow_function`, `executor=omniflow`, and `model_free=true`.
 
 ## Replay Rules
@@ -117,7 +117,7 @@ dart analyze lib/features/task/run_log/run_log_reusable_function_converter.dart 
 ```
 
 ```bash
-./gradlew :app:testDevelopStandardDebugUnitTest --tests cn.com.omnimind.bot.runlog.RunLogReusableFunctionCompilerTest
+./gradlew :app:testDevelopStandardDebugUnitTest --tests cn.com.omnimind.bot.runlog.InternalRunLogStoreTest
 ./gradlew :app:testDevelopStandardDebugUnitTest --tests cn.com.omnimind.bot.runlog.OmniflowStepExecutorTest
 ./gradlew :app:testDevelopStandardDebugUnitTest --tests cn.com.omnimind.bot.workbench.OobSkillReplayTest
 ```

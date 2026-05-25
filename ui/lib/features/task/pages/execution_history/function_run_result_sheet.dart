@@ -52,11 +52,12 @@ class FunctionRunResultInlinePanel extends StatelessWidget {
         ],
         if (artifacts.isNotEmpty) ...[
           const SizedBox(height: 10),
-          _ResultSection(
+          _ExpandableResultSection(
             title: _text(context, '运行产物', 'Run artifacts'),
             copyValue: artifacts
                 .map((entry) => '${entry.key}: ${entry.value}')
                 .join('\n'),
+            initiallyExpanded: false,
             child: _RunArtifactList(entries: artifacts),
           ),
         ],
@@ -68,9 +69,11 @@ class FunctionRunResultInlinePanel extends StatelessWidget {
           const SizedBox(height: 10),
           _ExpandableResultSection(
             title: _text(context, '原始结果', 'Raw result'),
-            copyValue: _prettyJson(result.rawJson),
+            copyValue: _prettyJson(_stripInternalTiming(result.rawJson)),
             initiallyExpanded: false,
-            child: _JsonText(text: _prettyJson(result.rawJson)),
+            child: _JsonText(
+              text: _prettyJson(_stripInternalTiming(result.rawJson)),
+            ),
           ),
         ],
       ],
@@ -181,7 +184,11 @@ class _FunctionRunResultSheet extends StatelessWidget {
                           color: palette.textSecondary,
                           onPressed: () {
                             Clipboard.setData(
-                              ClipboardData(text: _prettyJson(result.rawJson)),
+                              ClipboardData(
+                                text: _prettyJson(
+                                  _stripInternalTiming(result.rawJson),
+                                ),
+                              ),
                             );
                             showToast(
                               _text(
@@ -209,7 +216,7 @@ class _FunctionRunResultSheet extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
                     child: FunctionRunResultInlinePanel(
                       result: result,
-                      showRawJson: true,
+                      showRawJson: false,
                     ),
                   ),
                 ),
@@ -235,7 +242,6 @@ class _RunResultMetrics extends StatelessWidget {
     final successCount = result.successStepCount > 0
         ? result.successStepCount
         : steps.where((step) => step['success'] != false).length;
-    final durationMs = result.durationMs;
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -255,36 +261,6 @@ class _RunResultMetrics extends StatelessWidget {
             label: _text(context, '步骤', 'Steps'),
             value: '$successCount/$stepCount',
           ),
-        if (durationMs > 0)
-          _MetricPill(
-            label: _text(context, '耗时', 'Duration'),
-            value: _formatDurationMs(durationMs),
-          ),
-        if (result.startedAtMs > 0)
-          _MetricPill(
-            label: _text(context, '开始', 'Started'),
-            value: _formatClockMs(result.startedAtMs),
-          ),
-        if (result.finishedAtMs > 0)
-          _MetricPill(
-            label: _text(context, '结束', 'Finished'),
-            value: _formatClockMs(result.finishedAtMs),
-          ),
-        _MetricPill(
-          label: _text(context, '模型', 'Model'),
-          value: result.modelRequired
-              ? _text(context, '需要', 'Required')
-              : _text(context, '未用', 'Not used'),
-        ),
-        _MetricPill(
-          label: 'Fallback',
-          value: result.fallbackAvailable
-              ? _text(context, '可用', 'Available')
-              : _text(context, '未触发', 'Not triggered'),
-        ),
-        if (result.delegatedToolUsed)
-          _MetricPill(label: _text(context, '委托', 'Delegated'), value: 'Tool'),
-        ..._phaseMetricPills(context, result.phaseMs),
       ],
     );
   }
@@ -297,9 +273,10 @@ class _StepResultList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _ResultSection(
-      title: _text(context, '执行步骤', 'Step results'),
-      copyValue: _prettyJson(steps),
+    return _ExpandableResultSection(
+      title: '${_text(context, '执行步骤', 'Step results')} · ${steps.length}',
+      copyValue: _prettyJson(_stripInternalTiming(steps)),
+      initiallyExpanded: false,
       child: Column(
         children: steps
             .asMap()
@@ -347,7 +324,6 @@ class _StepResultTile extends StatelessWidget {
     final meta = [
       _firstNonBlank([step['executor']]),
       _firstNonBlank([step['tool']]),
-      if (step['duration_ms'] != null) '${step['duration_ms']}ms',
       if (step['needs_agent'] == true)
         _text(context, '需要 Agent', 'Needs agent'),
       if (step['blocked_executor'] != null)
@@ -817,79 +793,6 @@ String _runSubtitle(BuildContext context, UtgManualRunResult result) {
   return parts.join(' · ');
 }
 
-List<Widget> _phaseMetricPills(
-  BuildContext context,
-  Map<String, dynamic> phases,
-) {
-  const orderedKeys = <String>[
-    'parse_request_ms',
-    'read_current_package_ms',
-    'read_current_page_ms',
-    'page_match_ms',
-    'rank_functions_ms',
-    'segment_match_ms',
-  ];
-  final widgets = <Widget>[];
-  for (final key in orderedKeys) {
-    final value = phases[key] ?? phases[_camelKey(key)];
-    final duration = _asIntValue(value);
-    if (duration == null || duration < 0) continue;
-    widgets.add(
-      _MetricPill(label: _phaseLabel(context, key), value: '${duration}ms'),
-    );
-  }
-  return widgets;
-}
-
-String _phaseLabel(BuildContext context, String key) {
-  switch (key) {
-    case 'parse_request_ms':
-      return _text(context, '解析请求', 'Parse');
-    case 'read_current_package_ms':
-      return _text(context, '读取应用', 'Package');
-    case 'read_current_page_ms':
-      return _text(context, '读取页面', 'Page');
-    case 'page_match_ms':
-      return _text(context, '页面匹配', 'Page match');
-    case 'rank_functions_ms':
-      return _text(context, 'Function 排序', 'Rank');
-    case 'segment_match_ms':
-      return _text(context, '段命中', 'Segment');
-    default:
-      return key;
-  }
-}
-
-String _camelKey(String snake) {
-  final parts = snake.split('_');
-  if (parts.isEmpty) return snake;
-  return parts.first +
-      parts
-          .skip(1)
-          .map(
-            (part) => part.isEmpty
-                ? ''
-                : '${part.substring(0, 1).toUpperCase()}${part.substring(1)}',
-          )
-          .join();
-}
-
-String _formatDurationMs(int durationMs) {
-  if (durationMs < 1000) return '${durationMs}ms';
-  final seconds = durationMs / 1000;
-  if (seconds < 60) {
-    return '${seconds.toStringAsFixed(seconds >= 10 ? 0 : 1)}s';
-  }
-  final minutes = seconds / 60;
-  return '${minutes.toStringAsFixed(minutes >= 10 ? 0 : 1)}min';
-}
-
-String _formatClockMs(int millis) {
-  final time = DateTime.fromMillisecondsSinceEpoch(millis).toLocal();
-  String two(int value) => value.toString().padLeft(2, '0');
-  return '${two(time.hour)}:${two(time.minute)}:${two(time.second)}';
-}
-
 String _postconditionText(
   BuildContext context,
   Map<String, dynamic> postcondition,
@@ -960,19 +863,52 @@ Map<String, dynamic> _asMap(dynamic value) {
   return const <String, dynamic>{};
 }
 
-int? _asIntValue(dynamic value) {
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  if (value is String) return int.tryParse(value.trim());
-  return null;
-}
-
 String _firstNonBlank(Iterable<dynamic> values) {
   for (final value in values) {
     final text = value?.toString().trim() ?? '';
     if (text.isNotEmpty) return text;
   }
   return '';
+}
+
+dynamic _stripInternalTiming(dynamic value) {
+  const blockedKeys = <String>{
+    'duration_ms',
+    'durationMs',
+    'started_at_ms',
+    'startedAtMs',
+    'finished_at_ms',
+    'finishedAtMs',
+    'phase_ms',
+    'phaseMs',
+    'timing',
+    'runner_duration_ms',
+    'runnerDurationMs',
+  };
+  if (value is Map<String, dynamic>) {
+    return value.map((key, item) {
+      if (blockedKeys.contains(key)) {
+        return MapEntry<String, dynamic>(key, null);
+      }
+      return MapEntry<String, dynamic>(key, _stripInternalTiming(item));
+    })..removeWhere((_, item) => item == null);
+  }
+  if (value is Map) {
+    return Map<String, dynamic>.fromEntries(
+      value.entries
+          .where((entry) => !blockedKeys.contains(entry.key.toString()))
+          .map(
+            (entry) => MapEntry(
+              entry.key.toString(),
+              _stripInternalTiming(entry.value),
+            ),
+          ),
+    );
+  }
+  if (value is List) {
+    return value.map(_stripInternalTiming).toList(growable: false);
+  }
+  return value;
 }
 
 String _prettyJson(dynamic value) {

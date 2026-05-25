@@ -8,6 +8,8 @@ cd "$ROOT_DIR"
 
 DEVICE_SERIAL="${ANDROID_SERIAL:-emulator-5554}"
 PACKAGE_NAME="${OOB_PACKAGE_NAME:-cn.com.omnimind.bot.debug}"
+TARGET_APP_PACKAGE="${OOB_E2E_TARGET_APP_PACKAGE:-com.android.settings}"
+START_INTENT_ACTION="${OOB_E2E_START_INTENT_ACTION:-android.settings.SETTINGS}"
 PROFILE_ID="${OOB_PROVIDER_PROFILE_ID:-profile-dashscope}"
 MODEL_ID="${OMNIMIND_MODEL:-${OPENAI_MODEL:-qwen-vl-max-latest}}"
 BASE_URL="${OMNIMIND_API_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}"
@@ -29,6 +31,8 @@ Usage:
 Options:
   --device <serial>          Target adb device. Default: ANDROID_SERIAL or emulator-5554.
   --package <package>        App package. Default: cn.com.omnimind.bot.debug.
+  --target-app-package <pkg> Target app to reset before each phase. Default: com.android.settings.
+  --start-intent-action <a>  Intent action used to open the target app. Default: android.settings.SETTINGS.
   --goal <text>              VLM task goal. Default: Bluetooth settings demo.
   --max-steps <n>            VLM max steps. Default: 10.
   --timeout <seconds>        Poll timeout for each phase. Default: 240.
@@ -39,7 +43,7 @@ Options:
   --skill-id <id>            Builtin skill guidance for VLM. Default: vlm-android-gui.
   --skip-configure-provider  Do not call scripts/configure-oob-model-provider.sh.
   --allow-recall             Allow OmniFlow recall during phase 1. Default disables recall so the demo validates fresh VLM RunLog capture.
-  --expect-recall            Validate direct OmniFlow recall and skip replay. Implies --allow-recall.
+  --expect-recall            Validate OmniFlow recall hit and skip replay. Accepts direct or segment recall; implies --allow-recall.
   --help                     Show this help text.
 EOF
 }
@@ -59,6 +63,20 @@ while [[ $# -gt 0 ]]; do
       ;;
     --package=*)
       PACKAGE_NAME="${1#--package=}"
+      ;;
+    --target-app-package)
+      TARGET_APP_PACKAGE="$2"
+      shift
+      ;;
+    --target-app-package=*)
+      TARGET_APP_PACKAGE="${1#--target-app-package=}"
+      ;;
+    --start-intent-action)
+      START_INTENT_ACTION="$2"
+      shift
+      ;;
+    --start-intent-action=*)
+      START_INTENT_ACTION="${1#--start-intent-action=}"
       ;;
     --goal)
       GOAL="$2"
@@ -249,6 +267,8 @@ base64_no_wrap() {
 echo "== OOB VLM runlog E2E demo =="
 echo "device=$DEVICE_SERIAL"
 echo "package=$PACKAGE_NAME"
+echo "target_app_package=$TARGET_APP_PACKAGE"
+echo "start_intent_action=$START_INTENT_ACTION"
 echo "model=$MODEL_ID"
 echo "profile_id=$PROFILE_ID"
 echo "skill_id=$SKILL_ID"
@@ -274,7 +294,8 @@ echo "== Prepare device =="
 sleep 1
 "${ADB[@]}" shell settings --user 0 put secure enabled_accessibility_services "$PACKAGE_NAME/com.google.android.accessibility.selecttospeak.SelectToSpeakService"
 "${ADB[@]}" shell settings put secure accessibility_enabled 1
-"${ADB[@]}" shell am start -a android.settings.SETTINGS >/dev/null
+"${ADB[@]}" shell am force-stop "$TARGET_APP_PACKAGE" >/dev/null 2>&1 || true
+"${ADB[@]}" shell am start -a "$START_INTENT_ACTION" >/dev/null
 "${ADB[@]}" shell run-as "$PACKAGE_NAME" rm -f "$VLM_RESULT_FILE" "$FUNCTION_RESULT_FILE" 2>/dev/null || true
 sleep 1
 
@@ -297,6 +318,23 @@ printf '%s\n' "$vlm_result"
 vlm_success="$(printf '%s' "$vlm_result" | json_get_success)"
 function_id="$(printf '%s' "$vlm_result" | json_get_function_id)"
 
+if [[ "$EXPECT_RECALL" -eq 1 && "$vlm_success" == "true" ]]; then
+  direct_recall="$(printf '%s' "$vlm_result" | json_get_direct_recall_completed)"
+  execution_route="$(printf '%s' "$vlm_result" | json_get_execution_route)"
+  if [[ "$direct_recall" == "true" || "$execution_route" == *omniflow_recall* ]]; then
+    echo "direct_recall_completed=$direct_recall"
+    echo "execution_route=$execution_route"
+    if [[ "$direct_recall" != "true" ]]; then
+      printf '%s' "$vlm_result" | json_validate_vlm_token_usage
+      if [[ -n "$function_id" ]]; then
+        echo "registered_function_id=$function_id"
+      fi
+    fi
+    echo "== Recall validation passed =="
+    exit 0
+  fi
+fi
+
 if [[ "$vlm_success" != "true" || -z "$function_id" ]]; then
   if [[ "$EXPECT_RECALL" -eq 1 ]]; then
     direct_recall="$(printf '%s' "$vlm_result" | json_get_direct_recall_completed)"
@@ -314,7 +352,8 @@ if [[ "$vlm_success" != "true" || -z "$function_id" ]]; then
 fi
 
 if [[ "$EXPECT_RECALL" -eq 1 ]]; then
-  echo "Expected direct recall, but VLM produced a new function: $function_id" >&2
+  execution_route="$(printf '%s' "$vlm_result" | json_get_execution_route)"
+  echo "Expected OmniFlow recall hit, but execution_route=${execution_route:-<empty>} and new function=$function_id" >&2
   exit 1
 fi
 
@@ -323,7 +362,8 @@ echo "registered_function_id=$function_id"
 
 echo "== Phase 2: registered function replay =="
 "${ADB[@]}" shell run-as "$PACKAGE_NAME" rm -f "$FUNCTION_RESULT_FILE" 2>/dev/null || true
-"${ADB[@]}" shell am start -a android.settings.SETTINGS >/dev/null
+"${ADB[@]}" shell am force-stop "$TARGET_APP_PACKAGE" >/dev/null 2>&1 || true
+"${ADB[@]}" shell am start -a "$START_INTENT_ACTION" >/dev/null
 sleep 1
 "${ADB[@]}" shell am broadcast \
   -a cn.com.omnimind.bot.debug.RUN_OOB_FUNCTION \

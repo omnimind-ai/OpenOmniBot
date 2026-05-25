@@ -8,7 +8,6 @@ import cn.com.omnimind.assists.api.enums.TaskFinishType
 import cn.com.omnimind.assists.api.enums.TaskType
 import cn.com.omnimind.assists.api.interfaces.OnMessagePushListener
 import cn.com.omnimind.assists.api.interfaces.TaskChangeListener
-import cn.com.omnimind.assists.api.enums.toStatus
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.assists.controller.http.HttpController
 import cn.com.omnimind.assists.task.Task
@@ -442,6 +441,8 @@ open class VLMOperationTask(
         val tokenUsageAttempts = step.tokenUsageAttempts
             .map(VLMTokenUsageMapper::toRunLogMap)
             .filter { it.isNotEmpty() }
+        val postActionObservation = VLMPostActionObservation.summarize(step)
+        val postActionObservationMap = postActionObservation?.toRunLogMap()
         val header = linkedMapOf<String, Any?>(
             "step_index" to index,
             "title" to title,
@@ -482,10 +483,18 @@ open class VLMOperationTask(
                 "arguments" to actionParams
             ),
             "params" to actionParams,
-            "result" to linkedMapOf(
+            "result" to linkedMapOf<String, Any?>(
                 "message" to step.result,
-                "summary" to step.summary
-            ),
+                "summary" to step.summary,
+                "post_action_observation" to postActionObservationMap,
+                "screen_changed" to postActionObservation?.screenChanged,
+                "package_changed" to postActionObservation?.packageChanged,
+                "after_visible_texts" to postActionObservation?.afterVisibleTexts?.takeIf { it.isNotEmpty() },
+                "appeared_texts" to postActionObservation?.appearedTexts?.takeIf { it.isNotEmpty() },
+                "disappeared_texts" to postActionObservation?.disappearedTexts?.takeIf { it.isNotEmpty() },
+                "after_focused_editable" to postActionObservation?.afterFocusedEditable,
+                "observation_summary" to postActionObservation?.summaryText
+            ).filterValues { it != null },
             "before" to linkedMapOf(
                 "observation" to step.observation,
                 "observation_xml" to step.observationXml,
@@ -502,6 +511,19 @@ open class VLMOperationTask(
 
     private fun vlmStepCardId(index: Int): String = "$id-vlm-${index + 1}"
 
+    private fun VLMPostActionObservation.Summary.toRunLogMap(): Map<String, Any?> =
+        linkedMapOf<String, Any?>(
+            "summary" to summaryText,
+            "screen_changed" to screenChanged,
+            "package_changed" to packageChanged,
+            "before_package" to beforePackageName,
+            "after_package" to afterPackageName,
+            "after_visible_texts" to afterVisibleTexts.takeIf { it.isNotEmpty() },
+            "appeared_texts" to appearedTexts.takeIf { it.isNotEmpty() },
+            "disappeared_texts" to disappearedTexts.takeIf { it.isNotEmpty() },
+            "after_focused_editable" to afterFocusedEditable
+        ).filterValues { it != null }
+
     private fun notifyVlmToolEvent(
         streamKind: String,
         index: Int,
@@ -517,6 +539,8 @@ open class VLMOperationTask(
         val resultJson = runCatching {
             val tokenUsage = step.tokenUsage?.let(VLMTokenUsageMapper::toRunLogMap)
                 ?.takeIf { it.isNotEmpty() }
+            val postActionObservation = VLMPostActionObservation.summarize(step)
+            val postActionObservationMap = postActionObservation?.toRunLogMap()
             JSONObject(
                 linkedMapOf<String, Any?>(
                     "message" to step.result,
@@ -527,6 +551,14 @@ open class VLMOperationTask(
                     "package_name" to step.packageName,
                     "token_usage" to tokenUsage,
                     "token_usage_total" to tokenUsage?.get("total_tokens"),
+                    "post_action_observation" to postActionObservationMap,
+                    "screen_changed" to postActionObservation?.screenChanged,
+                    "package_changed" to postActionObservation?.packageChanged,
+                    "after_visible_texts" to postActionObservation?.afterVisibleTexts?.takeIf { it.isNotEmpty() },
+                    "appeared_texts" to postActionObservation?.appearedTexts?.takeIf { it.isNotEmpty() },
+                    "disappeared_texts" to postActionObservation?.disappearedTexts?.takeIf { it.isNotEmpty() },
+                    "after_focused_editable" to postActionObservation?.afterFocusedEditable,
+                    "observation_summary" to postActionObservation?.summaryText,
                     "compile_kind" to "vlm_step"
                 ).filterValues { it != null }
             ).toString()
@@ -893,8 +925,16 @@ open class VLMOperationTask(
         super.onTaskStop(finishType, message)
         // 更新执行记录的状态
         if (finishType != TaskFinishType.WAITING_INPUT && finishType != TaskFinishType.USER_PAUSED && taskContext != null) {
-            DatabaseHelper.updateExecutionRecordStatus(executionRecordId, finishType.toStatus())
+            DatabaseHelper.updateExecutionRecordStatus(executionRecordId, finishType.toExecutionRecordStatus())
         }
+    }
+
+    private fun TaskFinishType.toExecutionRecordStatus(): String = when (this) {
+        TaskFinishType.FINISH -> "success"
+        TaskFinishType.ERROR -> "failed"
+        TaskFinishType.CANCEL -> "cancelled"
+        TaskFinishType.WAITING_INPUT -> "waiting"
+        TaskFinishType.USER_PAUSED -> "paused"
     }
 
     private fun hasSummaryIntent(goal: String?): Boolean {

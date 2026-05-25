@@ -5,7 +5,7 @@ import 'package:ui/l10n/generated/app_localizations.dart';
 import 'package:ui/services/assists_core_service.dart';
 
 void main() {
-  testWidgets('Function run result displays timing diagnostics', (
+  testWidgets('Function run result keeps timing internal and hidden from UI', (
     tester,
   ) async {
     final result = UtgManualRunResult.fromMap(<String, dynamic>{
@@ -43,6 +43,16 @@ void main() {
       },
     });
 
+    expect(result.durationMs, 2450);
+    expect(result.startedAtMs, 1700000000000);
+    expect(result.finishedAtMs, 1700000002450);
+    expect(result.phaseMs['parse_request_ms'], 3);
+    expect(result.phaseMs['read_current_package_ms'], 4);
+    expect(result.phaseMs['read_current_page_ms'], 5);
+    expect(result.phaseMs['page_match_ms'], 6);
+    expect(result.phaseMs['rank_functions_ms'], 7);
+    expect(result.phaseMs['segment_match_ms'], 8);
+
     await tester.pumpWidget(
       MaterialApp(
         locale: const Locale('zh'),
@@ -56,21 +66,29 @@ void main() {
       ),
     );
 
-    expect(_richTextContaining('耗时  2.5s'), findsOneWidget);
-    expect(_richTextContaining('开始'), findsOneWidget);
-    expect(_richTextContaining('结束'), findsOneWidget);
-    expect(_richTextContaining('解析请求  3ms'), findsOneWidget);
-    expect(_richTextContaining('读取应用  4ms'), findsOneWidget);
-    expect(_richTextContaining('读取页面  5ms'), findsOneWidget);
-    expect(_richTextContaining('页面匹配  6ms'), findsOneWidget);
-    expect(_richTextContaining('Function 排序  7ms'), findsOneWidget);
-    expect(_richTextContaining('段命中  8ms'), findsOneWidget);
+    expect(find.text('时间统计'), findsNothing);
+    expect(_selectableTextContaining('duration_ms'), findsNothing);
+    expect(_selectableTextContaining('2450ms'), findsNothing);
+    expect(_selectableTextContaining('started_at_ms'), findsNothing);
+    expect(_selectableTextContaining('finished_at_ms'), findsNothing);
+    expect(_selectableTextContaining('phase_ms'), findsNothing);
+    expect(_selectableTextContaining('parse_request_ms'), findsNothing);
+    expect(_selectableTextContaining('read_current_package_ms'), findsNothing);
+    expect(_selectableTextContaining('read_current_page_ms'), findsNothing);
+    expect(_selectableTextContaining('page_match_ms'), findsNothing);
+    expect(_selectableTextContaining('rank_functions_ms'), findsNothing);
+    expect(_selectableTextContaining('segment_match_ms'), findsNothing);
+    expect(find.text('执行步骤 · 1'), findsOneWidget);
+    expect(find.text('open_app'), findsNothing);
+    expect(find.text('120ms'), findsNothing);
+    expect(find.text('模型'), findsNothing);
+    expect(find.text('Fallback'), findsNothing);
   });
 }
 
-Finder _richTextContaining(String text) {
+Finder _selectableTextContaining(String text) {
   return find.byWidgetPredicate(
-    (widget) => widget is RichText && widget.text.toPlainText().contains(text),
-    description: 'RichText containing "$text"',
+    (widget) => widget is SelectableText && widget.data?.contains(text) == true,
+    description: 'SelectableText containing "$text"',
   );
 }

@@ -104,7 +104,7 @@ OOB-native OmniFlow execution:
 - `call_function`
 - `oob_function_run`
 
-Graph tools and `call_tool` entries with `function_id` compile to
+Graph tools and `call_tool` entries with `function_id` convert to
 `executor=omniflow`, not `executor=agent`. Graph tools execute embedded
 `path`/UTG edge data through the local primitive action executor. `call_tool`
 without `function_id` delegates to the live tool router when available. Legacy
@@ -138,7 +138,7 @@ without `function_id` delegates to the live tool router when available. Legacy
 - Command save distillation follows the same executor policy.
 - Provider canonical action names and aliases normalize to deterministic local
   replay actions.
-- OmniFlow graph/function commands compile and execute as local
+- OmniFlow graph/function commands convert and execute as local
   `executor=omniflow` steps.
 - Failed local action does not suppress VLM-only fallback.
 - `android_privileged_action` local UI wrappers flatten nested `arguments` into

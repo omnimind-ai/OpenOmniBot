@@ -23,7 +23,7 @@ class ExecutionStepTile extends StatelessWidget {
     final palette = context.omniPalette;
     final l10n = context.l10n;
 
-    // 获取本地化的 compile label
+    // 获取本地化的 route/reuse label
     String? localizedCompileLabel;
     if (step.compileKind == CompileKind.hit) {
       localizedCompileLabel = step.compileFunctionId != null
@@ -32,7 +32,7 @@ class ExecutionStepTile extends StatelessWidget {
     } else if (step.compileKind == CompileKind.miss) {
       localizedCompileLabel = l10n.executionVlmExecution;
     }
-    // 如果没有 compileKind，但有 compileLabel（兼容旧数据），使用它
+    // 如果没有路由类型，但有旧数据标签，使用它
     final displayCompileLabel = localizedCompileLabel ?? step.compileLabel;
     final isCompileHit = step.compileKind == CompileKind.hit;
 
@@ -88,7 +88,7 @@ class ExecutionStepTile extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // Compile 标签
+                  // Route/reuse 标签
                   if (displayCompileLabel != null) ...[
                     _buildPill(
                       context,
