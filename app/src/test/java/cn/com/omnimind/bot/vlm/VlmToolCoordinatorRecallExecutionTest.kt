@@ -176,4 +176,125 @@ class VlmToolCoordinatorRecallExecutionTest {
         assertEquals(true, result.first.payload["recall_disabled"])
         assertEquals(request, result.second)
     }
+
+    @Test
+    fun `vlm requests default to recall context without function auto execution`() {
+        val request = VlmTaskRequest(
+            goal = "open settings",
+            packageName = "com.android.settings",
+        )
+
+        assertEquals(false, request.allowOmniFlowFunctionAutoExecute)
+    }
+
+    @Test
+    fun `final package check passes when no target package is requested`() {
+        val check = VlmToolCoordinator.evaluateFinalTargetPackage(
+            targetPackageName = null,
+            observedPackageName = "com.android.launcher3",
+        )
+
+        assertEquals(true, check.ok)
+        assertNull(check.errorCode)
+    }
+
+    @Test
+    fun `final package check passes when observed package matches target`() {
+        val check = VlmToolCoordinator.evaluateFinalTargetPackage(
+            targetPackageName = " com.android.settings ",
+            observedPackageName = "com.android.settings",
+        )
+
+        assertEquals(true, check.ok)
+        assertEquals("com.android.settings", check.targetPackageName)
+        assertEquals("com.android.settings", check.observedPackageName)
+    }
+
+    @Test
+    fun `final package check fails when finished task left target app`() {
+        val check = VlmToolCoordinator.evaluateFinalTargetPackage(
+            targetPackageName = "com.android.settings",
+            observedPackageName = "com.android.launcher3",
+        )
+
+        assertEquals(false, check.ok)
+        assertEquals(VlmToolCoordinator.FINAL_STATE_MISMATCH_ERROR_CODE, check.errorCode)
+        assertTrue(check.message?.contains("target=com.android.settings") == true)
+        assertTrue(check.message?.contains("observed=com.android.launcher3") == true)
+    }
+
+    @Test
+    fun `recall hit is not executed unless request explicitly allows auto execution`() = runBlocking {
+        val request = VlmTaskRequest(
+            goal = "open settings",
+            packageName = "com.android.settings",
+        )
+        val state = TaskState(
+            taskId = "task-default-context-only",
+            goal = request.goal,
+            status = TaskStatus.RUNNING,
+        )
+        var called = false
+
+        val outcome = VlmToolCoordinator.tryExecuteRecallHitIfAllowed(
+            request = request,
+            taskState = state,
+            recallGuidance = VlmRecallGuidance(
+                decision = "hit",
+                guidance = "OmniFlow UDEG node skill-like decision context",
+                payload = mapOf("success" to true),
+                directHitFunctionId = "open_settings_segment",
+            ),
+            progressReporter = { _, _ -> },
+            callFunction = { _, _ ->
+                called = true
+                mapOf("success" to true)
+            },
+        )
+
+        assertNull(outcome)
+        assertEquals(false, called)
+        assertEquals(TaskStatus.RUNNING, state.status)
+    }
+
+    @Test
+    fun `recall hit executes when request explicitly allows auto execution`() = runBlocking {
+        val request = VlmTaskRequest(
+            goal = "open settings",
+            packageName = "com.android.settings",
+            allowOmniFlowFunctionAutoExecute = true,
+        )
+        val state = TaskState(
+            taskId = "task-explicit-auto-execute",
+            goal = request.goal,
+            status = TaskStatus.RUNNING,
+        )
+        var called = false
+
+        val outcome = VlmToolCoordinator.tryExecuteRecallHitIfAllowed(
+            request = request,
+            taskState = state,
+            recallGuidance = VlmRecallGuidance(
+                decision = "hit",
+                guidance = "OmniFlow UDEG node skill-like decision context",
+                payload = mapOf("success" to true),
+                directHitFunctionId = "open_settings_segment",
+            ),
+            progressReporter = { _, _ -> },
+            callFunction = { _, _ ->
+                called = true
+                mapOf(
+                    "success" to true,
+                    "fallback" to false,
+                    "function_id" to "open_settings_segment",
+                    "run_id" to "omniflow_run_test",
+                    "actions_executed" to 1,
+                )
+            },
+        )
+
+        assertNotNull(outcome)
+        assertEquals(true, called)
+        assertEquals(TaskStatus.FINISHED, state.status)
+    }
 }

@@ -735,12 +735,16 @@ class VLMOperationService(
                     displayWidth = deviceOperator.getDisplayWidth(),
                     displayHeight = deviceOperator.getDisplayHeight()
                 )
-                val markedScreenshot = VLMIndexedPageContext.renderMarkedScreenshot(
-                    screenshotBase64 = screenshot,
-                    currentXml = beforeXml,
-                    displayWidth = deviceOperator.getDisplayWidth(),
-                    displayHeight = deviceOperator.getDisplayHeight()
-                )
+                val markedScreenshot = if (SEND_MARKED_SCREENSHOT_BY_DEFAULT) {
+                    VLMIndexedPageContext.renderMarkedScreenshot(
+                        screenshotBase64 = screenshot,
+                        currentXml = beforeXml,
+                        displayWidth = deviceOperator.getDisplayWidth(),
+                        displayHeight = deviceOperator.getDisplayHeight()
+                    )
+                } else {
+                    null
+                }
 
                 // Note: Compactor 已移至 executeTask 主循环，在超时计时之外执行
 
@@ -750,23 +754,30 @@ class VLMOperationService(
                 var vlmResult: VLMResult
                 var sceneTurn: SceneChatCompletionTurn? = null
                 var currentUserTextSnapshot = ""
+                val hasIndexedEvidenceForRetry =
+                    _context.currentPageSummary.contains("OOB Accessibility tree / indexed page evidence")
                 conversationState.updateStreamingReasoning("")
                 lastReasoningOverlay = ""
                 lastReasoningOverlayAt = 0L
 
                 while (true) {
+                    val includeCurrentScreenshot =
+                        toolCallRetryCount == 0 || !hasIndexedEvidenceForRetry
+                    val requestScreenshot = screenshot.takeIf { includeCurrentScreenshot }
+                    val requestMarkedScreenshot = markedScreenshot.takeIf { includeCurrentScreenshot }
                     val requestEnvelope = vlmClient.buildUIOperationRequest(
                         context = _context,
-                        screenshot = screenshot,
-                        markedScreenshot = markedScreenshot,
+                        screenshot = requestScreenshot,
+                        markedScreenshot = requestMarkedScreenshot,
                         conversationState = conversationState,
                         model = model,
-                        retryState = retryState
+                        retryState = retryState,
+                        includeMarkedScreenshot = SEND_MARKED_SCREENSHOT_BY_DEFAULT && includeCurrentScreenshot
                     )
                     currentUserTextSnapshot = requestEnvelope.currentUserText
                     OmniLog.i(
                         Tag,
-                        "Dispatching VLM stream request: attempt=$stabilityAttempt toolRetry=$toolCallRetryCount scene=$model activeGoal=${_context.activeGoal()} traceSize=${_context.trace.size} historyRounds=${conversationState.roundCount()}"
+                        "Dispatching VLM stream request: attempt=$stabilityAttempt toolRetry=$toolCallRetryCount scene=$model activeGoal=${_context.activeGoal()} traceSize=${_context.trace.size} historyRounds=${conversationState.roundCount()} currentScreenshot=$includeCurrentScreenshot"
                     )
 
                     safePauseCheck("before_http_${stabilityAttempt}_retry_$toolCallRetryCount")
@@ -1763,6 +1774,7 @@ private const val POST_ACTION_XML_STABLE_MAX_CHECKS = 4
 private const val POST_ACTION_XML_STABLE_INTERVAL_MS = 350L
 private const val POST_ACTION_XML_STABLE_SIMILARITY = 0.86
 private const val POST_ACTION_XML_CHANGED_MAX_SIMILARITY = 0.82
+private const val SEND_MARKED_SCREENSHOT_BY_DEFAULT = false
 private val PACKAGE_ATTR_PATTERN = Regex("""\bpackage\s*=\s*["']([^"']+)["']""")
 private val RESOURCE_ID_PACKAGE_PATTERN =
     Regex("""\bresource-id\s*=\s*["']([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+):id/[^"']*["']""")

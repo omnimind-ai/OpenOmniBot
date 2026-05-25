@@ -1125,6 +1125,41 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
+    fun `does not treat platform qualifier in app launch as pending ordered target`() {
+        val step = VLMStep(
+            observation = "The Display page is visible with Brightness level and Dark theme options shown.",
+            thought = "the requested page is verified",
+            summary = "Display settings page is confirmed open.",
+            action = FinishedAction(content = "Display page is visible.")
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = "Open Android Settings, open Display settings, verify the Display page is visible, then finish.",
+                targetPackageName = "com.android.settings",
+                trace = listOf(
+                    UIStep(
+                        observation = "launcher",
+                        thought = "open Android Settings",
+                        action = OpenAppAction(packageName = "com.android.settings"),
+                        result = "opened com.android.settings"
+                    ),
+                    displaySettingsStep()
+                )
+            ),
+            currentXml = DISPLAY_SETTINGS_PAGE_XML,
+            currentPackageName = "com.android.settings",
+            stepIndex = 2,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertFalse(result.applied)
+        assertTrue(result.step.action is FinishedAction)
+    }
+
+    @Test
     fun `allows finished when repeated terms appear in pending verify target`() {
         val step = VLMStep(
             observation = "The Network & internet page is visible with options like Internet, SIMs, and others.",

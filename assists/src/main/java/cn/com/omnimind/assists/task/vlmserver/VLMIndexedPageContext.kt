@@ -19,10 +19,10 @@ import kotlin.math.roundToInt
 /**
  * Builds OOB indexed page evidence from live Accessibility XML.
  *
- * The VLM still receives the screenshot as the primary visual signal. This
- * context gives it stable element labels, flags, 0-1000 normalized centers, and
- * an optional marked screenshot so AndroidWorld-style tasks do not depend on raw
- * coordinate guessing.
+ * The VLM receives one current screenshot plus this compact Accessibility-tree
+ * view by default. The indexed evidence gives stable labels, flags, and
+ * 0-1000 normalized centers so the model can choose element_index /
+ * scrollable_index without requiring a second marked screenshot.
  */
 object VLMIndexedPageContext {
     data class IndexedTarget(
@@ -82,7 +82,7 @@ object VLMIndexedPageContext {
         }
 
         return buildString {
-            appendLine("OOB indexed page evidence (live Accessibility XML; coordinates are 0-1000 normalized and match the marked screenshot indexes):")
+            appendLine("OOB Accessibility tree / indexed page evidence (live Accessibility XML; coordinates are 0-1000 normalized):")
             candidates.forEachIndexed { index, node ->
                 append("#").append(index)
                     .append(" center=(").append(norm(node.bounds.centerX, screen.left, screen.width))

@@ -57,7 +57,36 @@ class VLMClientRequestTest {
     }
 
     @Test
-    fun `operation request can include raw and marked screenshots`() {
+    fun `operation request defaults to one screenshot plus a11 tree text`() {
+        val client = VLMClient(
+            systemPromptBuilder = { "system prompt" },
+            turnPromptBuilder = { context, _ -> "${context.overallTask}\n${context.currentPageSummary}" }
+        )
+
+        val envelope = client.buildUIOperationRequest(
+            context = UIContext(
+                overallTask = "Open Settings",
+                currentPageSummary = "OOB Accessibility tree / indexed page evidence:\n#0 label=\"Settings\""
+            ),
+            screenshot = "RAW_IMAGE",
+            markedScreenshot = "MARKED_IMAGE",
+            conversationState = VLMConversationState()
+        )
+
+        val currentUser = envelope.request.messages.last()
+        val blocks = currentUser.content!!.jsonArray
+        assertEquals(3, blocks.size)
+        assertTrue(blocks[0].jsonObject["text"]!!.jsonPrimitive.contentOrNull!!.contains("Accessibility tree"))
+        assertEquals("Current screenshot.", blocks[1].jsonObject["text"]!!.jsonPrimitive.contentOrNull)
+        assertEquals(
+            "data:image/png;base64,RAW_IMAGE",
+            blocks[2].jsonObject["image_url"]!!.jsonObject["url"]!!.jsonPrimitive.contentOrNull
+        )
+        assertFalse(currentUser.content.toString().contains("MARKED_IMAGE"))
+    }
+
+    @Test
+    fun `operation request can opt into marked screenshot fallback`() {
         val client = VLMClient(
             systemPromptBuilder = { "system prompt" },
             turnPromptBuilder = { context, _ -> context.overallTask }
@@ -67,17 +96,13 @@ class VLMClientRequestTest {
             context = UIContext(overallTask = "Open Settings"),
             screenshot = "RAW_IMAGE",
             markedScreenshot = "MARKED_IMAGE",
-            conversationState = VLMConversationState()
+            conversationState = VLMConversationState(),
+            includeMarkedScreenshot = true
         )
 
         val currentUser = envelope.request.messages.last()
         val blocks = currentUser.content!!.jsonArray
         assertEquals(5, blocks.size)
-        assertEquals("Raw screenshot.", blocks[1].jsonObject["text"]!!.jsonPrimitive.contentOrNull)
-        assertEquals(
-            "data:image/png;base64,RAW_IMAGE",
-            blocks[2].jsonObject["image_url"]!!.jsonObject["url"]!!.jsonPrimitive.contentOrNull
-        )
         assertEquals(
             "Marked screenshot with indexes matching OOB indexed page evidence.",
             blocks[3].jsonObject["text"]!!.jsonPrimitive.contentOrNull
@@ -85,6 +110,42 @@ class VLMClientRequestTest {
         assertEquals(
             "data:image/png;base64,MARKED_IMAGE",
             blocks[4].jsonObject["image_url"]!!.jsonObject["url"]!!.jsonPrimitive.contentOrNull
+        )
+    }
+
+    @Test
+    fun `protocol retry request can omit unchanged screenshot`() {
+        val client = VLMClient(
+            systemPromptBuilder = { "system prompt" },
+            turnPromptBuilder = { context, _ -> "${context.overallTask}\n${context.currentPageSummary}" }
+        )
+
+        val envelope = client.buildUIOperationRequest(
+            context = UIContext(
+                overallTask = "Open Settings",
+                currentPageSummary = "OOB Accessibility tree / indexed page evidence:\n#0 label=\"Settings\""
+            ),
+            screenshot = null,
+            markedScreenshot = null,
+            conversationState = VLMConversationState(),
+            retryState = VLMToolCallRetryState(
+                retryIndex = 1,
+                thinking = VLMThinkingContext(rawContent = """{"thought":"missing tool"}"""),
+                failureReason = "missing native tool_call"
+            ),
+            includeMarkedScreenshot = true
+        )
+
+        val currentUser = envelope.request.messages[1]
+        val blocks = currentUser.content!!.jsonArray
+        assertEquals(1, blocks.size)
+        assertTrue(blocks[0].jsonObject["text"]!!.jsonPrimitive.contentOrNull!!.contains("Accessibility tree"))
+        assertFalse(currentUser.content.toString().contains("image_url"))
+        assertFalse(currentUser.content.toString().contains("MARKED_IMAGE"))
+        assertEquals("assistant", envelope.request.messages[2].role)
+        assertEquals("user", envelope.request.messages[3].role)
+        assertTrue(
+            envelope.request.messages[3].content!!.jsonPrimitive.contentOrNull!!.contains("tool_call")
         )
     }
 
@@ -132,6 +193,55 @@ class VLMClientRequestTest {
         assertTrue(payload["after_visible_texts"].toString().contains("Network & internet"))
         assertTrue(payload["appeared_texts"].toString().contains("Network & internet"))
         assertTrue(payload["post_action_observation"].toString().contains("after action screen changed"))
+    }
+
+    @Test
+    fun `conversation history compacts previous user prompt to avoid repeating page evidence`() {
+        val client = VLMClient()
+        val verbosePrompt = """
+            用户任务: Open Settings
+            OOB Accessibility tree / indexed page evidence:
+            #0 label="Settings" bounds=[0,0][720,1280]
+        """.trimIndent()
+        val round = client.buildConversationRound(
+            currentUserText = verbosePrompt,
+            assistantTurn = SceneChatCompletionTurn(
+                parser = ModelSceneRegistry.ResponseParser.OPENAI_TOOL_ACTIONS,
+                route = "scene.vlm.operation.primary",
+                resolvedModel = "vlm-test-model",
+                turn = ChatCompletionTurn(
+                    message = ChatCompletionMessage(
+                        role = "assistant",
+                        toolCalls = listOf(
+                            AssistantToolCall(
+                                id = "call_1",
+                                function = AssistantToolCallFunction(
+                                    name = "click",
+                                    arguments = """{"target_description":"Settings","x":100,"y":100}"""
+                                )
+                            )
+                        )
+                    )
+                )
+            ),
+            executedStep = UIStep(
+                observation = "before",
+                thought = "tap",
+                action = ClickAction(targetDescription = "Settings", x = 100f, y = 100f),
+                result = "OK",
+                observationXml = BEFORE_XML,
+                afterObservationXml = AFTER_XML,
+                packageName = "com.android.launcher",
+                afterPackageName = "com.android.settings"
+            )
+        )
+
+        val compactUser = round.userMessage.content!!.jsonPrimitive.contentOrNull.orEmpty()
+        assertTrue(compactUser.contains("Previous turn compact context"))
+        assertTrue(compactUser.contains("Prior action: click Settings"))
+        assertTrue(compactUser.contains("Post-action observation"))
+        assertFalse(compactUser.contains("OOB Accessibility tree / indexed page evidence"))
+        assertFalse(compactUser.contains("bounds=[0,0][720,1280]"))
     }
 
     @Test

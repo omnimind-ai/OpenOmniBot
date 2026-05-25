@@ -227,13 +227,42 @@ class OobRunLogReplayService(
         }
         val deletedWorkspace = workspaceFunctionStore.delete(normalized)
         val deletedPrefs = OobReusableFunctionStore.delete(context, normalized)
+        val udegResult = OobUdegNodeStore(context).removeFunctionReferences(setOf(normalized))
         val deleted = deletedWorkspace || deletedPrefs
+        if (listFunctionSpecs(limit = 1).isEmpty()) {
+            AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, false)
+        }
         return linkedMapOf(
             "success" to deleted,
             "function_id" to normalized,
             "deleted" to deleted,
             "deleted_workspace" to deletedWorkspace,
-            "deleted_registry" to deletedPrefs
+            "deleted_registry" to deletedPrefs,
+            "udeg" to udegResult,
+        )
+    }
+
+    fun clearFunctions(): Map<String, Any?> {
+        val workspaceIds = workspaceFunctionStore.functionIds()
+        val registryIds = OobReusableFunctionStore.functionIds(context)
+        val functionIds = (workspaceIds + registryIds)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        val workspaceResult = workspaceFunctionStore.clear()
+        val registryResult = OobReusableFunctionStore.clear(context)
+        val udegResult = OobUdegNodeStore(context).clearFunctionReferences()
+        AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, false)
+        return linkedMapOf(
+            "success" to true,
+            "deleted" to true,
+            "deleted_count" to functionIds.size,
+            "function_ids" to functionIds,
+            "workspace" to workspaceResult,
+            "registry" to registryResult,
+            "udeg" to udegResult,
+            "oob_function_as_tool_enabled" to false,
+            "source" to "oob_run_log_replay_service",
         )
     }
 

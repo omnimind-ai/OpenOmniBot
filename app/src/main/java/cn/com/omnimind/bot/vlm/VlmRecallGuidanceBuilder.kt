@@ -17,8 +17,9 @@ data class VlmRecallGuidance(
  * Builds online VLM guidance from OOB-native OmniFlow recall.
  *
  * VLM still observes the live screen and emits concrete actions for recall
- * candidates. Recall defaults to UDEG node skill context; direct local execution
- * is only used when the recall payload explicitly contains a hit.
+ * candidates. Recall defaults to UDEG node skill context and optional Function
+ * candidates; direct local execution is only used when the caller explicitly
+ * enables auto-execution and the recall payload contains a strict hit.
  */
 object VlmRecallGuidanceBuilder {
     fun build(
@@ -28,6 +29,7 @@ object VlmRecallGuidanceBuilder {
         currentPackageName: String? = null,
         currentXml: String? = null,
         k: Int = DEFAULT_RECALL_COUNT,
+        allowDirectExecutionDecision: Boolean = false,
     ): VlmRecallGuidance {
         val normalizedGoal = goal.trim()
         if (normalizedGoal.isEmpty()) return VlmRecallGuidance(decision = "miss", guidance = "")
@@ -42,7 +44,11 @@ object VlmRecallGuidanceBuilder {
                 "goal" to normalizedGoal,
                 "current_package" to currentPackage,
                 "k" to k,
-                "decision_mode" to "context_only",
+                "decision_mode" to if (allowDirectExecutionDecision) {
+                    "auto_execute"
+                } else {
+                    "context_only"
+                },
             ).apply {
                     currentXml?.trim()?.takeIf { it.isNotEmpty() }?.let {
                         put("current_xml", it)
@@ -77,6 +83,7 @@ object VlmRecallGuidanceBuilder {
             "segment_hit" -> mapArg(payload["segment_hit"]).takeUnless { requiresArguments(it) }
             else -> null
         } ?: return null
+        if (!hasStrictDirectHitEvidence(source)) return null
         return source["function_id"]
             ?.toString()
             ?.trim()
@@ -88,6 +95,7 @@ object VlmRecallGuidanceBuilder {
         if (payload["decision"]?.toString()?.trim() != "segment_hit") return 0
         val segmentHit = mapArg(payload["segment_hit"])
         if (requiresArguments(segmentHit)) return 0
+        if (!hasStrictDirectHitEvidence(segmentHit)) return 0
         return intArg(segmentHit["start_step_index"], segmentHit["startStepIndex"])
             .coerceAtLeast(0)
     }
@@ -97,22 +105,31 @@ object VlmRecallGuidanceBuilder {
         val decision = payload["decision"]?.toString()?.trim().orEmpty()
         if (decision == "miss" || decision.isBlank()) return ""
 
-        val candidates = candidateList(payload)
-            .take(MAX_GUIDANCE_CANDIDATES)
-        val segmentCandidates = segmentCandidateList(payload)
-            .take(MAX_GUIDANCE_CANDIDATES)
+        val decisionPolicy = mapArg(payload["decision_policy"])
+        val directDecision = isDirectExecutionRequested(decision, decisionPolicy)
+        val directCandidatePayload = hasDirectCandidatePayload(decision, payload)
         val nodeCandidates = listArg(payload["node_candidates"]).mapNotNull { raw ->
             mapArg(raw).takeIf { it.isNotEmpty() }
         }.take(MAX_GUIDANCE_CANDIDATES)
-        val directDecision = decision == "hit" || decision == "segment_hit"
-        if (!directDecision && nodeCandidates.isEmpty()) return ""
+        val anchoredContext = nodeCandidates.isNotEmpty() || directDecision || directCandidatePayload
+        val candidates = if (anchoredContext) {
+            candidateList(payload).take(MAX_GUIDANCE_CANDIDATES)
+        } else {
+            emptyList()
+        }
+        val segmentCandidates = if (anchoredContext) {
+            segmentCandidateList(payload).take(MAX_GUIDANCE_CANDIDATES)
+        } else {
+            emptyList()
+        }
+        if (!directDecision && nodeCandidates.isEmpty() && !directCandidatePayload) return ""
         if (candidates.isEmpty() && segmentCandidates.isEmpty() && nodeCandidates.isEmpty()) return ""
 
         return buildString {
             appendLine("OmniFlow UDEG node skill-like decision context:")
             appendLine("path=${OobUdegNodeStore.UDEG_DECISION_PATH}")
             appendLine("decision=$decision")
-            val decisionPolicy = mapArg(payload["decision_policy"])
+            appendLine(functionExecutionPolicyLine(directDecision))
             if (decisionPolicy.isNotEmpty()) {
                 val mode = firstNonBlank(decisionPolicy["mode"])
                 val requiresDecision = firstNonBlank(decisionPolicy["requires_vlm_or_tool_decision"])
@@ -145,12 +162,6 @@ object VlmRecallGuidanceBuilder {
                 }
                 if (guidance.isNotBlank()) {
                     appendLine("   node_skill_decision_context: $guidance")
-                }
-                val body = skill["body"]?.toString()?.trim().orEmpty()
-                    .take(MAX_SKILL_BODY_CHARS)
-                if (body.isNotBlank()) {
-                    appendLine("   node_skill_body:")
-                    appendIndented(body, "      ")
                 }
             }
             candidates.forEachIndexed { index, candidate ->
@@ -197,7 +208,7 @@ object VlmRecallGuidanceBuilder {
                         "remaining_step_count=$remainingStepCount matched_boundary=$matchedBoundary " +
                         "description=$description"
                 )
-                appendLine("   call: call_tool function_id=$functionId start_step_index=$startStepIndex")
+                appendLine("   agent_optional_function: function_id=$functionId start_step_index=$startStepIndex")
                 renderStepSummaries(candidate).take(MAX_STEP_SUMMARIES).forEach { summary ->
                     appendLine("   remaining_step: $summary")
                 }
@@ -230,12 +241,6 @@ object VlmRecallGuidanceBuilder {
         }
     }
 
-    private fun StringBuilder.appendIndented(text: String, prefix: String) {
-        text.lineSequence()
-            .take(MAX_SKILL_BODY_LINES)
-            .forEach { line -> appendLine(prefix + line) }
-    }
-
     private fun renderDecisionContext(decisionContext: Map<String, Any?>): String {
         if (decisionContext.isEmpty()) return ""
         val role = firstNonBlank(decisionContext["role"])
@@ -265,6 +270,38 @@ object VlmRecallGuidanceBuilder {
         ).filterNotNull().joinToString(" ")
     }
 
+    private fun functionExecutionPolicyLine(directDecision: Boolean): String =
+        if (directDecision) {
+            "function_execution_policy=direct_execution_requested_by_caller; if_live_vlm_continues_use_native_screen_tools_only=true"
+        } else {
+            "function_execution_policy=optional_candidates_only; do_not_auto_execute=true; require_explicit_agent_selection=true; live_vlm_uses_native_screen_tools_only=true"
+        }
+
+    private fun isDirectExecutionRequested(
+        decision: String,
+        decisionPolicy: Map<String, Any?>,
+    ): Boolean {
+        if (decision != "hit" && decision != "segment_hit") return false
+        if (boolArg(decisionPolicy["direct_hit_requested"], decisionPolicy["directHitRequested"])) return true
+        val mode = firstNonBlank(
+            decisionPolicy["mode"],
+            decisionPolicy["execution_policy"],
+            decisionPolicy["executionPolicy"],
+        ).lowercase()
+        return mode in setOf("direct_execution_allowed", "direct", "auto_execute", "auto-execute")
+    }
+
+    private fun hasDirectCandidatePayload(
+        decision: String,
+        payload: Map<String, Any?>,
+    ): Boolean {
+        return when (decision) {
+            "hit" -> mapArg(payload["hit"]).isNotEmpty()
+            "segment_hit" -> mapArg(payload["segment_hit"]).isNotEmpty()
+            else -> false
+        }
+    }
+
     private fun firstNonBlank(vararg values: Any?): String {
         for (value in values) {
             val text = value?.toString()?.trim().orEmpty()
@@ -283,6 +320,33 @@ object VlmRecallGuidanceBuilder {
         }
     }
 
+    private fun boolArg(vararg values: Any?): Boolean {
+        values.forEach { value ->
+            when (value) {
+                is Boolean -> return value
+                is Number -> return value.toInt() != 0
+                is String -> {
+                    val normalized = value.trim().lowercase()
+                    if (normalized in setOf("true", "1", "yes", "y")) return true
+                    if (normalized in setOf("false", "0", "no", "n")) return false
+                }
+            }
+        }
+        return false
+    }
+
+    private fun hasStrictDirectHitEvidence(payload: Map<String, Any?>): Boolean {
+        if (payload.isEmpty()) return false
+        val score = doubleArg(payload["score"])
+        val pageSimilarity = doubleArg(payload["page_similarity"], payload["pageSimilarity"])
+        val textScore = doubleArg(payload["text_score"], payload["textScore"])
+        if (score < STRICT_DIRECT_HIT_SCORE) return false
+        if (pageSimilarity < STRICT_DIRECT_HIT_SCORE) return false
+        if (textScore < STRICT_DIRECT_HIT_SCORE) return false
+        if (requiresArguments(payload)) return false
+        return true
+    }
+
     private fun intArg(vararg values: Any?): Int {
         values.forEach { value ->
             when (value) {
@@ -291,6 +355,16 @@ object VlmRecallGuidanceBuilder {
             }
         }
         return 0
+    }
+
+    private fun doubleArg(vararg values: Any?): Double {
+        values.forEach { value ->
+            when (value) {
+                is Number -> return value.toDouble()
+                is String -> value.trim().toDoubleOrNull()?.let { return it }
+            }
+        }
+        return 0.0
     }
 
     private fun mapArg(value: Any?): Map<String, Any?> {
@@ -330,12 +404,11 @@ object VlmRecallGuidanceBuilder {
         }
 
     private const val DEFAULT_RECALL_COUNT = 3
-    private const val MAX_GUIDANCE_CANDIDATES = 3
-    private const val MAX_STEP_SUMMARIES = 5
-    private const val MAX_DESCRIPTION_CHARS = 120
-    private const val MAX_STEP_TITLE_CHARS = 120
-    private const val MAX_SKILL_BODY_CHARS = 900
-    private const val MAX_SKILL_BODY_LINES = 18
+    private const val MAX_GUIDANCE_CANDIDATES = 2
+    private const val MAX_STEP_SUMMARIES = 3
+    private const val MAX_DESCRIPTION_CHARS = 96
+    private const val MAX_STEP_TITLE_CHARS = 96
+    private const val STRICT_DIRECT_HIT_SCORE = 0.999
     private val AGENT_HIDDEN_RECALL_KEYS = setOf(
         "timing",
         "duration_ms",

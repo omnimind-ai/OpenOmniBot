@@ -15,7 +15,7 @@ class VLMIndexedPageContextTest {
             displayHeight = 1280
         )
 
-        assertTrue(rendered.contains("OOB indexed page evidence"))
+        assertTrue(rendered.contains("OOB Accessibility tree / indexed page evidence"))
         assertTrue(rendered.contains("label=\"Network & internet\""))
         assertTrue(rendered.contains("center=(430,473)"))
         assertTrue(rendered.contains("flags=click"))
@@ -51,7 +51,7 @@ class VLMIndexedPageContextTest {
         )
 
         assertTrue(enriched.currentPageSummary.contains("UDEG page-match context"))
-        assertTrue(enriched.currentPageSummary.contains("OOB indexed page evidence"))
+        assertTrue(enriched.currentPageSummary.contains("OOB Accessibility tree / indexed page evidence"))
         assertTrue(enriched.currentPageSummary.contains("Connected devices"))
     }
 

@@ -70,6 +70,14 @@ class AgentToolDefinitionsMusicTest {
         assertTrue(toolNames.contains("oob_command_save"))
         assertTrue(toolNames.contains("oob_command_list"))
         assertTrue(toolNames.contains("oob_command_delete"))
+        assertTrue(toolNames.contains("oob_command_clear"))
+        assertTrue(toolNames.contains("oob_function_list"))
+        assertTrue(toolNames.contains("oob_function_get"))
+        assertTrue(toolNames.contains("oob_function_register"))
+        assertTrue(toolNames.contains("oob_function_guard_check"))
+        assertTrue(toolNames.contains("oob_function_run"))
+        assertTrue(toolNames.contains("oob_function_delete"))
+        assertTrue(toolNames.contains("oob_function_clear"))
         assertTrue(toolNames.contains("oob_run_log_list"))
         assertTrue(toolNames.contains("oob_run_log_get"))
         assertTrue(toolNames.contains("oob_run_log_convert"))
@@ -89,6 +97,29 @@ class AgentToolDefinitionsMusicTest {
         val properties = parameters["properties"] as JsonObject
 
         assertTrue(properties.containsKey("prompt"))
+    }
+
+    @Test
+    fun `vlm task metadata defaults function auto execution off`() {
+        val vlmTool = AgentToolDefinitions.staticTools()
+            .first { definition ->
+                ((definition["function"] as? JsonObject)
+                    ?.get("name")
+                    ?.jsonPrimitive
+                    ?.contentOrNull) == "vlm_task"
+            }
+        val function = vlmTool["function"] as JsonObject
+        val parameters = function["parameters"] as JsonObject
+        val properties = parameters["properties"] as JsonObject
+        val autoExecute = properties["allowOmniFlowFunctionAutoExecute"] as JsonObject
+
+        assertEquals(false, autoExecute["default"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull())
+        assertTrue(
+            autoExecute["description"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.contains("默认 false") == true
+        )
     }
 
     @Test

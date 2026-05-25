@@ -18,6 +18,10 @@ class VlmRecallGuidanceBuilderTest {
             mapOf(
                 "success" to true,
                 "decision" to "hit",
+                "decision_policy" to mapOf(
+                    "mode" to "direct_execution_allowed",
+                    "direct_hit_requested" to true,
+                ),
                 "hit" to mapOf(
                     "function_id" to "open_network_settings",
                     "score" to 0.99,
@@ -32,10 +36,36 @@ class VlmRecallGuidanceBuilderTest {
 
         assertTrue(guidance.contains("OmniFlow UDEG node skill-like decision context"))
         assertTrue(guidance.contains("path=page match -> UDEG node -> node skill-like decision context -> VLM/tool decision"))
+        assertTrue(guidance.contains("function_execution_policy=direct_execution_requested_by_caller"))
         assertTrue(guidance.contains("function_id=open_network_settings"))
         assertTrue(guidance.contains("step: 1. open_app"))
         assertFalse(guidance.contains("任务已完成"))
         assertFalse(guidance.contains("current task is complete"))
+    }
+
+    @Test
+    fun `legacy direct hit payload is rendered as optional candidate unless direct execution was requested`() {
+        val guidance = VlmRecallGuidanceBuilder.renderGuidance(
+            mapOf(
+                "success" to true,
+                "decision" to "hit",
+                "hit" to mapOf(
+                    "function_id" to "open_network_settings",
+                    "score" to 1.0,
+                    "page_similarity" to 1.0,
+                    "text_score" to 1.0,
+                    "description" to "open network settings",
+                    "step_summaries" to listOf(
+                        mapOf("tool" to "click", "title" to "click: Network"),
+                    ),
+                ),
+            )
+        )
+
+        assertTrue(guidance.contains("function_execution_policy=optional_candidates_only"))
+        assertTrue(guidance.contains("do_not_auto_execute=true"))
+        assertTrue(guidance.contains("function_id=open_network_settings"))
+        assertFalse(guidance.contains("function_execution_policy=direct_execution_requested_by_caller"))
     }
 
     @Test
@@ -131,15 +161,75 @@ class VlmRecallGuidanceBuilderTest {
     }
 
     @Test
+    fun `context only recall renders function candidates without making them direct calls`() {
+        val guidance = VlmRecallGuidanceBuilder.renderGuidance(
+            mapOf(
+                "success" to true,
+                "decision" to "recall",
+                "decision_policy" to mapOf(
+                    "mode" to "node_skill_context_only",
+                    "requires_vlm_or_tool_decision" to true,
+                ),
+                "node_candidates" to listOf(
+                    mapOf(
+                        "node_id" to "udeg_node_settings",
+                        "page_similarity" to 0.93,
+                    )
+                ),
+                "candidates" to listOf(
+                    mapOf(
+                        "function_id" to "open_network_settings",
+                        "score" to 0.91,
+                        "description" to "Open Network settings from Settings.",
+                        "step_summaries" to listOf(
+                            mapOf("tool" to "click", "title" to "click: Network & internet"),
+                        ),
+                    )
+                ),
+                "segment_candidates" to listOf(
+                    mapOf(
+                        "function_id" to "settings_suffix",
+                        "score" to 0.88,
+                        "page_similarity" to 0.93,
+                        "start_step_index" to 1,
+                        "remaining_step_count" to 2,
+                        "description" to "Continue Settings suffix.",
+                        "step_summaries" to listOf(
+                            mapOf("tool" to "click", "title" to "click: Network"),
+                        ),
+                    )
+                ),
+            )
+        )
+
+        assertTrue(guidance.contains("function_execution_policy=optional_candidates_only"))
+        assertTrue(guidance.contains("do_not_auto_execute=true"))
+        assertTrue(guidance.contains("1. function_id=open_network_settings"))
+        assertTrue(guidance.contains("segment 1: function_id=settings_suffix"))
+        assertTrue(guidance.contains("agent_optional_function: function_id=settings_suffix start_step_index=1"))
+        assertFalse(guidance.contains("call: call_tool function_id=settings_suffix"))
+        assertNull(
+            VlmRecallGuidanceBuilder.directHitFunctionId(
+                mapOf(
+                    "success" to true,
+                    "decision" to "recall",
+                    "candidates" to listOf(mapOf("function_id" to "open_network_settings")),
+                )
+            )
+        )
+    }
+
+    @Test
     fun `render guidance exposes segment hit with suffix execution id`() {
         val payload = mapOf(
             "success" to true,
             "decision" to "segment_hit",
             "segment_hit" to mapOf(
-                "function_id" to "continue_from_internal_page_segment",
-                "score" to 0.98,
-                "page_similarity" to 1.0,
-                "start_step_index" to 2,
+                    "function_id" to "continue_from_internal_page_segment",
+                    "score" to 1.0,
+                    "text_score" to 1.0,
+                    "page_similarity" to 1.0,
+                    "start_step_index" to 2,
                 "remaining_step_count" to 3,
                 "matched_boundary" to "src_ctx",
                 "description" to "Continue from an internal page",
@@ -156,13 +246,13 @@ class VlmRecallGuidanceBuilderTest {
         assertTrue(guidance.contains("segment 1: function_id=continue_from_internal_page_segment"))
         assertTrue(guidance.contains("start_step_index=2"))
         assertTrue(guidance.contains("remaining_step: 1. click"))
-        assertTrue(guidance.contains("call: call_tool function_id=continue_from_internal_page_segment start_step_index=2"))
+        assertTrue(guidance.contains("agent_optional_function: function_id=continue_from_internal_page_segment start_step_index=2"))
         assertEquals("continue_from_internal_page_segment", VlmRecallGuidanceBuilder.directHitFunctionId(payload))
         assertEquals(2, VlmRecallGuidanceBuilder.directHitStartStepIndex(payload))
     }
 
     @Test
-    fun `weak recall candidates are kept out of online VLM step guidance`() {
+    fun `weak recall candidates without page matched node are kept out of online VLM step guidance`() {
         val guidance = VlmRecallGuidanceBuilder.renderGuidance(
             mapOf(
                 "success" to true,
@@ -232,9 +322,37 @@ class VlmRecallGuidanceBuilderTest {
     }
 
     @Test
-    fun `direct hit function id is exposed only for recall hit`() {
+    fun `direct hit function id requires strict page and text evidence`() {
         assertEquals(
             "open_settings",
+            VlmRecallGuidanceBuilder.directHitFunctionId(
+                mapOf(
+                    "success" to true,
+                    "decision" to "hit",
+                    "hit" to mapOf(
+                        "function_id" to "open_settings",
+                        "score" to 1.0,
+                        "page_similarity" to 1.0,
+                        "text_score" to 1.0,
+                    ),
+                )
+            )
+        )
+        assertNull(
+            VlmRecallGuidanceBuilder.directHitFunctionId(
+                mapOf(
+                    "success" to true,
+                    "decision" to "hit",
+                    "hit" to mapOf(
+                        "function_id" to "open_settings",
+                        "score" to 0.999,
+                        "page_similarity" to 0.998,
+                        "text_score" to 1.0,
+                    ),
+                )
+            )
+        )
+        assertNull(
             VlmRecallGuidanceBuilder.directHitFunctionId(
                 mapOf(
                     "success" to true,

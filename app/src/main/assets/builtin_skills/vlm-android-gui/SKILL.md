@@ -8,11 +8,17 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 ## Step Guidance Essentials
 
 - AndroidWorld first-step policy lives here; choose the simplest action that changes one variable, then verify.
-- M3A-style per-step loop: observe raw screenshot, marked screenshot, UI element/index list, short history, choose one action, then use after-action feedback to correct the next step.
+- M3A/Mobilerun-style per-step loop: observe one current screenshot,
+  Accessibility tree / indexed UI state, short history, and previous tool
+  result; choose one action, then use after-action feedback to correct the next
+  step. Marked screenshots are optional fallback evidence, not the default.
 - Mobilerun-style structured loop is a reference pattern, not a runtime
   replacement: inject current device state, indexed page evidence, screenshot,
   and the previous tool result; require exactly one executable tool call; then
   feed structured action results back into the next turn.
+- Protocol correction retries for the same unchanged screen may omit the
+  screenshot when indexed Accessibility evidence is present; do not treat that
+  as a new observation turn.
 - OOB indexed page evidence: choose by visible label/role; include `element_index`
   or `scrollable_index` when available and emit 0-1000 normalized centers as fallback.
 - Pass `packageName` when known; derive unknown packages from installed apps.
@@ -53,7 +59,7 @@ Record Mobilerun as a process reference only. The goal is to capture useful
 workflow shape, then reimplement the matching OOB behavior in native Kotlin:
 
 1. Fetch a fresh device state every turn: Accessibility tree, phone state,
-   screen bounds, and optional screenshot.
+   screen bounds, and screenshot.
 2. Format the tree into indexed UI evidence with stable element indexes.
 3. Build one LLM turn from the goal, current device state, optional screenshot,
    short memory/history, and the previous tool result.
@@ -70,7 +76,10 @@ workflow shape, then reimplement the matching OOB behavior in native Kotlin:
 
 Borrow these advantages in OOB:
 
-- Keep the VLM prompt grounded in indexed UI evidence plus screenshot.
+- Keep the VLM prompt grounded in indexed Accessibility evidence plus one
+  current screenshot.
+- Do not resend unchanged pixels for a tool-call protocol correction when the
+  text Accessibility evidence is sufficient.
 - Make tool result schemas explicit and stable, especially after-action page
   changes and failure reasons.
 - Keep the action surface small and deterministic.
@@ -84,8 +93,7 @@ OOB mapping for the borrowed flow:
 
 - Mobilerun `StateProvider` shape -> OOB `readCurrentPackage`,
   `readCurrentPage`, screenshot capture, and post-action observation.
-- Mobilerun indexed tree formatter -> OOB indexed Accessibility evidence and
-  marked screenshot labels.
+- Mobilerun indexed tree formatter -> OOB indexed Accessibility evidence.
 - Mobilerun tool registry -> OOB native `VLMToolDefinitions` and
   `DeviceOperator` actions.
 - Mobilerun structured results -> OOB structured tool result and RunLog card
@@ -113,6 +121,7 @@ Activate when the user asks for any of these:
 - Convert a successful VLM RunLog to a reusable command.
 - Run a stored reusable command through `call_tool` or inspect why replay failed.
 - Compare live VLM behavior with OmniFlow replay behavior.
+- Register, list, inspect, delete, or clear OOB reusable Functions/复用指令.
 
 Do not activate for ordinary image Q&A when the user only uploaded a picture and
 does not ask to operate the phone screen.
@@ -145,6 +154,11 @@ Use `vlm_task` for live Android GUI work:
 
 Guidelines:
 
+- Default recall policy: keep `allowOmniFlowFunctionAutoExecute=false`. Recalled
+  Functions are optional candidates and UDEG node decision context for the live
+  VLM agent; do not auto-run a Function unless the user explicitly asks for a
+  strict direct Function execution path.
+- For bare online validation, set `disableOmniFlowRecall=true`.
 - Include the app, starting point, target page, and visible finish condition.
 - Set `startFromCurrent=true` only when the user explicitly wants the current
   page or the target package is already foreground.
@@ -157,7 +171,8 @@ Guidelines:
   evidence: match the pending target by visible label/role, copy its normalized
   center as action coordinates, include `element_index` for `#N` rows or
   `scrollable_index` for `S<N>` rows, and keep `target_description` tied to that
-  row's label. The marked screenshot uses the same indexes.
+  row's label. Treat the screenshot as visual confirmation and the indexed tree
+  as the coordinate source.
 - If the desired target is not present in the indexed element list and is not
   visually visible, scroll a listed scrollable region once, then re-observe. Do
   not tap the first unrelated row.
@@ -201,6 +216,10 @@ decision`.
   VLM/tool decision on the live screen.
 - Consider only reusable commands attached to that UDEG node as outgoing reusable
   transitions.
+- In default online VLM mode, those reusable commands are candidates only. The
+  native VLM loop still has screen tools only (`click`, `scroll`, `input_text`,
+  etc.); direct replay must be a separate explicit agent/user-selected Function
+  run.
 - Do not call `finished` just because recall returned `hit` or a prior reusable
   command finished. Finish only after the current visible page satisfies the
   user's requested end state.
@@ -213,6 +232,64 @@ decision`.
 - If a replay-like action appears unsafe or ambiguous, choose a bounded live VLM
   action such as `press_back`, `scroll`, or a specific visible `click`, rather
   than blindly following historical coordinates.
+
+## Function Management
+
+Use real MCP/control-plane tools for reusable Function management. In normal
+agent conversation these tools are exposed directly as agent workbench tools;
+external clients can call the same names through MCP:
+
+- `oob_function_list` to list local reusable Functions.
+- `oob_function_get` to inspect one Function spec.
+- `oob_function_register` to register/update a spec. Include source page
+  context when available so it can attach to a UDEG node.
+- `oob_function_guard_check` to check arguments, guard policy, and whether the
+  Function can replay locally before any execution.
+- `oob_function_delete` to delete one Function and remove UDEG node references.
+- `oob_function_clear` with `confirm=true` to clear all Functions and detach
+  all UDEG node Function/segment references.
+- `oob_function_run` or `omniflow.call_tool` with `function_id` to explicitly
+  replay a Function after user/agent selection.
+
+`oob_command_save/list/delete/clear` are user-friendly aliases for saving and
+maintaining RunLog-derived reusable instructions. Prefer `oob_function_*` when
+the agent is doing explicit Function registration, inspection, guard checks, or
+execution.
+
+Do not treat registration as permission to auto-execute. In online VLM tasks,
+registered Functions are candidate actions only. Use direct Function replay only
+when the caller has explicitly selected the Function or set the advanced
+auto-execute flag.
+
+Recommended agent workflow:
+
+1. Run `vlm_task` for the live task. Keep
+   `allowOmniFlowFunctionAutoExecute=false` unless the user explicitly asks for
+   strict direct replay.
+2. Inspect the RunLog with `oob_run_log_get`; check `duration_ms`,
+   `started_at`, `finished_at`, `step_count`, and `token_usage`.
+3. Convert a successful reusable RunLog with `oob_run_log_convert`, or register
+   a hand-authored spec with `oob_function_register`.
+4. Present the Function as a candidate reusable instruction. Execute only after
+   selection via `oob_function_run`.
+5. Use `oob_function_delete` to remove temporary validation Functions and
+   detach their UDEG node references.
+
+For real-device validation, also verify the current foreground package/page
+outside the tool response. A `FINISHED` response alone is not enough if the
+device has already left the requested target app.
+
+Token control:
+
+- Each online VLM step sends the current screenshot plus compact indexed page
+  evidence. This is necessary for correctness; do not remove current screenshot
+  evidence by default.
+- History should stay compact: carry prior action/result/post-action visible
+  text, not the full previous prompt or old Accessibility XML.
+- Prefer goals with explicit target app, start page, and visible finish
+  condition. Ambiguous goals increase rounds and token cost.
+- RunLog token fields are diagnostic and should be used for testing/reporting,
+  not shown as normal user-facing UI details.
 
 - If the target app is known, pass `packageName` in `vlm_task` instead of asking
   the model to guess the package.
@@ -418,9 +495,18 @@ UDEG node and the command description/boundary fits the user goal. If the node
 skill is present but no command clearly fits, continue with normal live VLM
 actions.
 
-Direct local execution is allowed only for a strong page match and a no-argument
-reusable command that strongly matches the goal. Parameterized or weakly matched
-commands should remain decision context for the VLM/tool layer.
+Direct local execution is disabled by default. It is allowed only when the caller
+explicitly selects a Function (`oob_function_run` or `call_tool(function_id=...)`)
+or sets the advanced `allowOmniFlowFunctionAutoExecute=true` flag, and the
+Function has a strong page match, strongly matches the goal, needs no arguments,
+and passes guard checks. Parameterized or weakly matched commands remain decision
+context for the VLM/tool layer.
+
+`omniflow.recall` defaults to an agent-compact payload. It should contain the
+decision, node id/package, optional Function or segment candidates, compact
+step summaries, and decision policy. It should not include raw timing, full node
+skill body, page vectors, or skill artifacts unless a test/debug caller sets
+`include_debug=true`.
 
 ## RunLog and Reusable Command Handling
 

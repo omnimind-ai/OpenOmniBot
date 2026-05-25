@@ -120,8 +120,8 @@ object PromptTemplate {
             appendLine(
                 t(
                     locale,
-                    "以下是当前这一轮的动态上下文，请结合当前截图选择下一步动作。",
-                    "Below is the dynamic context for the current turn. Use it together with the current screenshot to choose the next action."
+                    "以下是当前这一轮的动态上下文，请结合当前截图和 Accessibility tree / indexed page evidence 选择下一步动作。",
+                    "Below is the dynamic context for the current turn. Use it together with the current screenshot and Accessibility tree / indexed page evidence to choose the next action."
                 )
             )
             appendLine("${t(locale, "场景", "Scene")}: $resolvedSceneId")
@@ -196,8 +196,8 @@ object PromptTemplate {
             appendLine(
                 t(
                     locale,
-                    "7. 像 M3A 一样每轮只推进一个可验证变化：先用 raw screenshot、marked screenshot、OOB indexed page evidence 和上一轮 tool 结果判断当前页；动作后根据 appeared/disappeared/visible 文本继续，不要忽略失败或无变化反馈。",
-                    "7. Follow an M3A-style one-change loop: use the raw screenshot, marked screenshot, OOB indexed page evidence, and previous tool result to judge the current page; after each action, continue from appeared/disappeared/visible text feedback and do not ignore failed or unchanged actions."
+                    "7. 像 M3A/Mobilerun 一样每轮只推进一个可验证变化：先用当前 screenshot、Accessibility tree / OOB indexed page evidence 和上一轮 tool 结果判断当前页；动作后根据 appeared/disappeared/visible 文本继续，不要忽略失败或无变化反馈。",
+                    "7. Follow an M3A/Mobilerun-style one-change loop: use the current screenshot, Accessibility tree / OOB indexed page evidence, and previous tool result to judge the current page; after each action, continue from appeared/disappeared/visible text feedback and do not ignore failed or unchanged actions."
                 )
             )
             appendLine(

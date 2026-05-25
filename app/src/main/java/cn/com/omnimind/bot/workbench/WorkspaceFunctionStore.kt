@@ -75,8 +75,29 @@ class WorkspaceFunctionStore(private val workspaceRoot: File) {
             .orEmpty()
     }
 
+    fun functionIds(limit: Int = 500): List<String> =
+        list(limit).mapNotNull { spec ->
+            spec["function_id"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        }
+
     fun delete(functionId: String): Boolean =
         functionFile(functionId.trim()).takeIf { it.exists() }?.delete() == true
+
+    fun clear(): Map<String, Any?> {
+        val dir = functionsDir
+        val files = dir.listFiles { file -> file.isFile && file.extension == "json" }
+            .orEmpty()
+            .toList()
+        var deleted = 0
+        files.forEach { file ->
+            if (file.delete()) deleted += 1
+        }
+        return mapOf(
+            "success" to true,
+            "deleted_count" to deleted,
+            "path" to dir.absolutePath,
+        )
+    }
 
     fun canHandle(functionId: String): Boolean = functionFile(functionId.trim()).exists()
 

@@ -248,6 +248,34 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
+    fun `recorded initial open app is normalized to fresh task launch`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "open_app",
+                    mapOf("package_name" to "com.android.settings"),
+                    title = "打开应用",
+                ),
+                card(
+                    "click",
+                    mapOf("target_description" to "Display", "x" to 360, "y" to 760),
+                    beforeXml = SETTINGS_XML,
+                    beforePackage = "com.android.settings",
+                ),
+            ),
+            runId = "run-recorded-open-app-first",
+        )
+
+        val openApp = stepsFrom(spec).first()
+        val args = openApp["args"] as Map<*, *>
+        assertEquals("open_app", openApp["tool"])
+        assertEquals("com.android.settings", args["package_name"])
+        assertEquals(true, args["reset_task"])
+        assertEquals("fresh_task", args["launch_mode"])
+        assertEquals("initial_open_app_fresh_launch", openApp["route_note"])
+    }
+
+    @Test
     fun `builder infers page package when recorded package disagrees with xml`() {
         val spec = compile(
             listOf(

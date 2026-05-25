@@ -1660,7 +1660,7 @@ object VLMActionPostProcessor {
     }
 
     private fun stepCompletesOrderedTarget(step: UIStep, target: OrderedGoalTarget): Boolean {
-        if (step.action !is ClickAction && step.action !is LongPressAction) return false
+        if (step.action !is ClickAction && step.action !is LongPressAction && step.action !is OpenAppAction) return false
         val actionText = actionSemanticText(step.action)
         return orderedTargetTextScore(target, actionText) >= MIN_ORDERED_TARGET_ACTION_SCORE
     }
@@ -2209,6 +2209,9 @@ object VLMActionPostProcessor {
         "current screen",
         "current page",
         "current",
+        "android",
+        "system",
+        "device",
         "it",
         "this",
         "that",

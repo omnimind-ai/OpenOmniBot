@@ -96,6 +96,32 @@ object OobReusableFunctionStore {
     }
 
     @Synchronized
+    fun functionIds(context: Context): List<String> =
+        readIndex(prefs(context))
+
+    @Synchronized
+    fun clear(context: Context): Map<String, Any?> {
+        val prefs = prefs(context)
+        val indexedIds = readIndex(prefs)
+        val orphanKeys = prefs.all.keys.filter { it.startsWith(SPEC_PREFIX) }
+        val deletedIds = (indexedIds + orphanKeys.map { it.removePrefix(SPEC_PREFIX) })
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        prefs.edit().apply {
+            indexedIds.forEach { functionId -> remove("$SPEC_PREFIX$functionId") }
+            orphanKeys.forEach(::remove)
+            remove(INDEX_KEY)
+        }.apply()
+        return linkedMapOf(
+            "success" to true,
+            "deleted_count" to deletedIds.size,
+            "function_ids" to deletedIds,
+            "source" to "oob_reusable_function_store"
+        )
+    }
+
+    @Synchronized
     fun recordRun(
         context: Context,
         functionId: String,

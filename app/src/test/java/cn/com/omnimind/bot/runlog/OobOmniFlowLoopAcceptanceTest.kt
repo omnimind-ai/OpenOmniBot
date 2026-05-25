@@ -94,6 +94,7 @@ class OobOmniFlowLoopAcceptanceTest {
                     "current_package" to "com.example.settings",
                     "current_xml" to SOURCE_XML,
                     "k" to 3,
+                    "include_debug" to true,
                 )
             )
             assertEquals(true, recall["success"])
@@ -134,6 +135,25 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals(true, decisionPolicy?.get("requires_vlm_or_tool_decision"))
             val recalledSteps = firstCandidate?.get("step_summaries") as? List<*>
             assertEquals(1, recalledSteps?.size)
+
+            val compactRecall = toolkit.recall(
+                mapOf(
+                    "goal" to goal,
+                    "current_package" to "com.example.settings",
+                    "current_xml" to SOURCE_XML,
+                    "k" to 3,
+                )
+            )
+            assertEquals(true, compactRecall["success"])
+            assertEquals("agent_compact", compactRecall["payload_mode"])
+            assertEquals(null, compactRecall["timing"])
+            assertEquals(null, compactRecall["node_skill"])
+            val compactNode = compactRecall["current_node"] as? Map<*, *>
+            assertEquals(null, compactNode?.get("skill_artifact"))
+            val compactCandidate = (compactRecall["candidates"] as? List<*>)?.firstOrNull() as? Map<*, *>
+            val compactNodeSkillContext = compactCandidate?.get("node_skill_context") as? Map<*, *>
+            assertEquals(null, compactNodeSkillContext?.get("skill_artifact"))
+            assertEquals(null, compactNodeSkillContext?.get("skill"))
 
             val call = toolkit.callFunction(
                 mapOf(
@@ -204,6 +224,7 @@ class OobOmniFlowLoopAcceptanceTest {
                     "current_package" to "com.example.settings",
                     "current_xml" to SOURCE_XML,
                     "k" to 5,
+                    "include_debug" to true,
                 )
             )
 
@@ -233,6 +254,69 @@ class OobOmniFlowLoopAcceptanceTest {
                     .contains(otherFunctionId)
             )
             assertEquals(0, segmentCapabilities.orEmpty().size)
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `clear functions removes registry workspace tools and UDEG references`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val functionId = "clearable_open_network"
+
+            val register = toolkit.registerFunction(
+                mapOf(
+                    "functionSpec" to pageBackedFunctionSpec(
+                        functionId = functionId,
+                        description = "open network settings",
+                        sourceXml = SOURCE_XML,
+                        packageName = "com.example.settings",
+                    )
+                )
+            )
+            assertEquals(true, register["success"])
+
+            val before = toolkit.recall(
+                mapOf(
+                    "goal" to "open network settings",
+                    "current_package" to "com.example.settings",
+                    "current_xml" to SOURCE_XML,
+                    "k" to 5,
+                    "include_debug" to true,
+                )
+            )
+            val beforeNode = before["current_node"] as? Map<*, *>
+            assertTrue((beforeNode?.get("function_ids") as? List<*>).orEmpty().contains(functionId))
+            assertEquals(1, ((toolkit.listFunctions(mapOf("limit" to 10))["count"] as Number).toInt()))
+
+            val blockedClear = toolkit.clearFunctions(emptyMap())
+            assertEquals(false, blockedClear["success"])
+            assertEquals("OOB_FUNCTION_CLEAR_CONFIRMATION_REQUIRED", blockedClear["error_code"])
+
+            val clear = toolkit.clearFunctions(mapOf("confirm" to true))
+            assertEquals(true, clear["success"])
+            assertEquals(1, (clear["deleted_count"] as Number).toInt())
+
+            val listAfter = toolkit.listFunctions(mapOf("limit" to 10))
+            assertEquals(true, listAfter["success"])
+            assertEquals(0, (listAfter["count"] as Number).toInt())
+
+            val after = toolkit.recall(
+                mapOf(
+                    "goal" to "open network settings",
+                    "current_package" to "com.example.settings",
+                    "current_xml" to SOURCE_XML,
+                    "k" to 5,
+                    "include_debug" to true,
+                )
+            )
+            assertEquals(true, after["success"])
+            val afterNode = after["current_node"] as? Map<*, *>
+            assertEquals(emptyList<String>(), afterNode?.get("function_ids"))
+            assertEquals(emptyList<Any?>(), after["candidates"])
+            assertEquals(emptyList<Any?>(), after["node_function_capabilities"])
         } finally {
             context.root.deleteRecursively()
         }
@@ -345,7 +429,13 @@ class OobOmniFlowLoopAcceptanceTest {
 
             val storedChild = toolkit.getFunction(mapOf("function_id" to childFunctionId))
             assertEquals(childFunctionId, storedChild["function_id"])
-            val recall = toolkit.recall(mapOf("goal" to "open settings", "current_package" to "com.android.contacts"))
+            val recall = toolkit.recall(
+                mapOf(
+                    "goal" to "open settings",
+                    "current_package" to "com.android.contacts",
+                    "include_debug" to true,
+                )
+            )
             assertEquals(true, recall["success"])
             assertEquals("miss", recall["decision"])
             assertEquals("missing_current_page_for_udeg_page_match", recall["reason"])
@@ -432,6 +522,7 @@ class OobOmniFlowLoopAcceptanceTest {
                     "current_package" to "com.example.target",
                     "current_xml" to TARGET_XML,
                     "k" to 5,
+                    "include_debug" to true,
                 )
             )
             assertEquals(true, recall["success"])
@@ -487,11 +578,13 @@ class OobOmniFlowLoopAcceptanceTest {
                     "current_xml" to TARGET_XML,
                     "k" to 5,
                     "auto_execute" to true,
+                    "include_debug" to true,
                 )
             )
             assertEquals(true, directRecall["success"])
-            assertEquals("segment_hit", directRecall["decision"])
-            assertEquals("page_vector_segment_function_hit", directRecall["reason"])
+            assertEquals("segment_recall", directRecall["decision"])
+            assertEquals("udeg_node_segment_recall", directRecall["reason"])
+            assertEquals(null, directRecall["segment_hit"])
 
             val call = toolkit.callFunction(
                 mapOf(

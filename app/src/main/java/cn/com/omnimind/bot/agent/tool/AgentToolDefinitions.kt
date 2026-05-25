@@ -591,7 +591,7 @@ object AgentToolDefinitions {
             put("toolType", "builtin")
             put(
                 "description",
-                "使用视觉语言模型执行手机当前屏幕操作任务，只用于点击、滑动、输入、打开 App 或跨 App 自动化。不要用于用户上传图片/截图/照片的识别、OCR、解释、总结或对比；这类图片已在多模态对话里，应该直接回答。该工具会阻塞等待到任务完成、需要用户输入、屏幕锁定或超时，再把终态结果返回给模型。若需要最终整理文本，必须设置 needSummary=true。"
+                "使用视觉语言模型执行手机当前屏幕操作任务，只用于点击、滑动、输入、打开 App 或跨 App 自动化。不要用于用户上传图片/截图/照片的识别、OCR、解释、总结或对比；这类图片已在多模态对话里，应该直接回答。该工具会阻塞等待到任务完成、需要用户输入、屏幕锁定或超时，再把终态结果返回给模型。若需要最终整理文本，必须设置 needSummary=true。默认只把召回的复用指令作为候选上下文交给在线 VLM 决策，不会自动执行 Function。"
             )
             putJsonObject("parameters") {
                 put("type", "object")
@@ -623,6 +623,15 @@ object AgentToolDefinitions {
                     putJsonObject("startFromCurrent") {
                         put("type", "boolean")
                         put("description", "仅在用户明确要求从当前页面继续时设为 true。")
+                    }
+                    putJsonObject("disableOmniFlowRecall") {
+                        put("type", "boolean")
+                        put("description", "可选。设为 true 时不注入复用指令/UDEG 召回上下文，用于裸跑在线 VLM 验证。")
+                    }
+                    putJsonObject("allowOmniFlowFunctionAutoExecute") {
+                        put("type", "boolean")
+                        put("default", false)
+                        put("description", "可选高级开关，默认 false。false 时召回 Function 只作为候选让在线 VLM 决策；只有用户明确要求严格命中即执行时才设为 true。")
                     }
                 }
                 putJsonArray("required") {
@@ -2220,6 +2229,225 @@ object AgentToolDefinitions {
         }
     }
 
+    val oobCommandClearTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_command_clear")
+            put("displayName", "清空 OOB 指令")
+            put("toolType", "workbench")
+            put("description", "清空本机和当前 Workspace 中所有 OOB 可重放指令，并从 UDEG 页面技能中移除指令引用。只有用户明确要求清空全部指令时才能调用。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("confirm") {
+                        put("type", "boolean")
+                        put("description", "必须为 true。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("confirm")
+                }
+            }
+        }
+    }
+
+    val oobFunctionListTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_function_list")
+            put("displayName", "列出复用指令")
+            put("toolType", "workbench")
+            put("description", "列出本机已注册的 OOB 复用指令。用于让 agent 查看可选 Function 候选；不会执行任何手机操作。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("limit") {
+                        put("type", "integer")
+                        put("description", "可选。返回数量上限，默认 100，最大 500。")
+                    }
+                }
+            }
+        }
+    }
+
+    val oobFunctionGetTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_function_get")
+            put("displayName", "查看复用指令")
+            put("toolType", "workbench")
+            put("description", "读取一个 OOB 复用指令的结构化 Function spec，用于确认步骤、参数和来源。不会执行手机操作。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("functionId") {
+                        put("type", "string")
+                        put("description", "要读取的 Function id。")
+                    }
+                    putJsonObject("function_id") {
+                        put("type", "string")
+                        put("description", "functionId 的 snake-case 兼容字段。")
+                    }
+                }
+            }
+        }
+    }
+
+    val oobFunctionRegisterTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_function_register")
+            put("displayName", "注册复用指令")
+            put("toolType", "workbench")
+            put("description", "注册或更新一个 OOB 复用指令 Function spec。注册只沉淀能力，不代表在线 VLM 可以自动执行。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("functionSpec") {
+                        put("type", "object")
+                        put("description", "oob.reusable_function.v1 结构化 Function spec。")
+                    }
+                    putJsonObject("function_spec") {
+                        put("type", "object")
+                        put("description", "functionSpec 的 snake-case 兼容字段。")
+                    }
+                }
+            }
+        }
+    }
+
+    val oobFunctionGuardCheckTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_function_guard_check")
+            put("displayName", "检查复用指令")
+            put("toolType", "workbench")
+            put("description", "执行前检查一个 OOB 复用指令是否可本地回放、是否缺参数、是否需要确认或 agent 接管。不会执行手机操作。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("functionId") {
+                        put("type", "string")
+                        put("description", "要检查的 Function id。")
+                    }
+                    putJsonObject("function_id") {
+                        put("type", "string")
+                        put("description", "functionId 的 snake-case 兼容字段。")
+                    }
+                    putJsonObject("arguments") {
+                        put("type", "object")
+                        put("description", "Function 参数。")
+                    }
+                    putJsonObject("startStepIndex") {
+                        put("type", "integer")
+                        put("description", "可选。从某个步骤下标开始检查。")
+                    }
+                    putJsonObject("start_step_index") {
+                        put("type", "integer")
+                        put("description", "startStepIndex 的 snake-case 兼容字段。")
+                    }
+                }
+            }
+        }
+    }
+
+    val oobFunctionRunTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_function_run")
+            put("displayName", "执行复用指令")
+            put("toolType", "workbench")
+            put("description", "显式执行一个用户或 agent 已选择的 OOB 复用指令。默认在线 VLM 召回不会调用本工具，只有明确选择 Function 时才使用。")
+            put("postToolRule", "执行后等待工具结果；若 guard 返回需要确认或需要 agent 接管，不要假设已经完成。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("functionId") {
+                        put("type", "string")
+                        put("description", "要执行的 Function id。")
+                    }
+                    putJsonObject("function_id") {
+                        put("type", "string")
+                        put("description", "functionId 的 snake-case 兼容字段。")
+                    }
+                    putJsonObject("arguments") {
+                        put("type", "object")
+                        put("description", "Function 参数。")
+                    }
+                    putJsonObject("dryRun") {
+                        put("type", "boolean")
+                        put("description", "仅做 guard 检查，不执行。")
+                    }
+                    putJsonObject("continueWithAgent") {
+                        put("type", "boolean")
+                        put("description", "当 Function 内含需要在线规划的步骤时，允许 agent 继续接管。")
+                    }
+                    putJsonObject("executionMode") {
+                        put("type", "string")
+                        put("description", "执行模式，默认 foreground。")
+                    }
+                    putJsonObject("confirmed") {
+                        put("type", "boolean")
+                        put("description", "guard 要求用户确认时，确认后设为 true。")
+                    }
+                    putJsonObject("startStepIndex") {
+                        put("type", "integer")
+                        put("description", "可选。从某个步骤下标开始执行。")
+                    }
+                    putJsonObject("start_step_index") {
+                        put("type", "integer")
+                        put("description", "startStepIndex 的 snake-case 兼容字段。")
+                    }
+                }
+            }
+        }
+    }
+
+    val oobFunctionDeleteTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_function_delete")
+            put("displayName", "删除复用指令")
+            put("toolType", "workbench")
+            put("description", "删除一个 OOB 复用指令，并从 UDEG 节点引用中移除。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("functionId") {
+                        put("type", "string")
+                        put("description", "要删除的 Function id。")
+                    }
+                    putJsonObject("function_id") {
+                        put("type", "string")
+                        put("description", "functionId 的 snake-case 兼容字段。")
+                    }
+                }
+            }
+        }
+    }
+
+    val oobFunctionClearTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "oob_function_clear")
+            put("displayName", "清空复用指令")
+            put("toolType", "workbench")
+            put("description", "清空本机所有 OOB 复用指令，并从 UDEG 节点移除全部 Function 引用。只有用户明确要求清空全部时才能调用。")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("confirm") {
+                        put("type", "boolean")
+                        put("description", "必须为 true。")
+                    }
+                }
+                putJsonArray("required") {
+                    add("confirm")
+                }
+            }
+        }
+    }
+
     val oobRunLogListTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -2919,6 +3147,14 @@ object AgentToolDefinitions {
         oobCommandSaveTool,
         oobCommandListTool,
         oobCommandDeleteTool,
+        oobCommandClearTool,
+        oobFunctionListTool,
+        oobFunctionGetTool,
+        oobFunctionRegisterTool,
+        oobFunctionGuardCheckTool,
+        oobFunctionRunTool,
+        oobFunctionDeleteTool,
+        oobFunctionClearTool,
         oobRunLogListTool,
         oobRunLogGetTool,
         oobRunLogConvertTool

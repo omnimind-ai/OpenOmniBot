@@ -35,6 +35,13 @@ class AgentToolRegistryOobFunctionTest {
             assertFalse(toolNames.contains("workbench_project_create"))
             assertFalse(toolNames.contains("workbench_project_list"))
             assertFalse(toolNames.contains("workbench_api_call"))
+            assertTrue(toolNames.contains("oob_function_list"))
+            assertTrue(toolNames.contains("oob_function_get"))
+            assertTrue(toolNames.contains("oob_function_register"))
+            assertTrue(toolNames.contains("oob_function_guard_check"))
+            assertTrue(toolNames.contains("oob_function_run"))
+            assertTrue(toolNames.contains("oob_function_delete"))
+            assertTrue(toolNames.contains("oob_function_clear"))
             assertTrue(toolNames.contains("oob_run_log_list"))
         } finally {
             context.root.deleteRecursively()

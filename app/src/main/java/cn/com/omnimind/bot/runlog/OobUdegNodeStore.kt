@@ -291,6 +291,94 @@ class OobUdegNodeStore(
             ?: getNodeFromArtifact(nodeId)
     }
 
+    fun removeFunctionReferences(functionIds: Set<String>): Map<String, Any?> {
+        val normalizedIds = functionIds.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        return rewriteFunctionReferences { functionId ->
+            normalizedIds.isEmpty() || functionId in normalizedIds
+        }
+    }
+
+    fun clearFunctionReferences(): Map<String, Any?> =
+        rewriteFunctionReferences { true }
+
+    private fun rewriteFunctionReferences(shouldRemove: (String) -> Boolean): Map<String, Any?> {
+        var scanned = 0
+        var updated = 0
+        var removedFunctions = 0
+        var removedSegments = 0
+        listNodes(limit = MAX_NODE_SCAN).forEach { node ->
+            scanned += 1
+            val nodeId = firstNonBlank(node["node_id"])
+            if (nodeId.isBlank()) return@forEach
+            val currentFunctions = functionSummaries(node)
+            val currentSegments = segmentSummaries(node)
+            val nextFunctions = currentFunctions.filterNot { function ->
+                val functionId = firstNonBlank(function["function_id"])
+                functionId.isNotBlank() && shouldRemove(functionId)
+            }
+            val nextSegments = currentSegments.filterNot { segment ->
+                val functionId = firstNonBlank(segment["function_id"])
+                functionId.isNotBlank() && shouldRemove(functionId)
+            }
+            if (nextFunctions.size == currentFunctions.size &&
+                nextSegments.size == currentSegments.size
+            ) {
+                return@forEach
+            }
+            removedFunctions += currentFunctions.size - nextFunctions.size
+            removedSegments += currentSegments.size - nextSegments.size
+            val packageName = firstNonBlank(node["package_name"])
+            val pageAnalysis = mapArg(node["page_analysis"])
+            val updatedNode = linkedMapOf<String, Any?>().apply {
+                putAll(node)
+                put("functions", nextFunctions)
+                put("segments", nextSegments)
+                put(
+                    "skill",
+                    buildNodeSkill(
+                        nodeId = nodeId,
+                        packageName = packageName,
+                        functions = nextFunctions,
+                        segments = nextSegments,
+                        pageAnalysis = pageAnalysis,
+                    )
+                )
+                put(
+                    "decision_context",
+                    buildDecisionContext(
+                        nodeId = nodeId,
+                        packageName = packageName,
+                        functionCount = nextFunctions.size,
+                        segmentCount = nextSegments.size,
+                        pageAnalysis = pageAnalysis,
+                    )
+                )
+                put("updated_at", System.currentTimeMillis())
+                val registry = mapArg(node["_oob_registry"]).toMutableMap()
+                put(
+                    "_oob_registry",
+                    registry.apply {
+                        put("node_kind", "page")
+                        put("function_count", nextFunctions.size)
+                        put("segment_count", nextSegments.size)
+                        put("updated_at", System.currentTimeMillis())
+                        if (nextFunctions.isEmpty()) remove("last_function_id")
+                    }
+                )
+            }.filterValues { it != null }.toMutableMap()
+            saveNode(nodeId, updatedNode)
+            updated += 1
+        }
+        return linkedMapOf(
+            "success" to true,
+            "scanned_node_count" to scanned,
+            "updated_node_count" to updated,
+            "removed_function_reference_count" to removedFunctions,
+            "removed_segment_reference_count" to removedSegments,
+            "source" to "oob_udeg_node_store",
+        )
+    }
+
     private fun getNodeFromPreferences(nodeId: String): Map<String, Any?> {
         val raw = prefs().getString(nodeKey(nodeId.trim()), null)?.takeIf { it.isNotBlank() }
             ?: return emptyMap()

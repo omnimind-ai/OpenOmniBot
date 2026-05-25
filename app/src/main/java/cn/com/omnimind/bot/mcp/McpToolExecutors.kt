@@ -54,6 +54,13 @@ object McpToolExecutors {
                 "disable_omniflow_recall",
                 "disableRecall",
                 "disable_recall",
+            ),
+            allowOmniFlowFunctionAutoExecute = boolArg(
+                args,
+                "allowOmniFlowFunctionAutoExecute",
+                "allow_omniflow_function_auto_execute",
+                "autoExecuteFunction",
+                "auto_execute_function",
             )
         )
 

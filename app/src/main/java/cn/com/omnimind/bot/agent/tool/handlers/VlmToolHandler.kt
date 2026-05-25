@@ -33,7 +33,8 @@ class VlmToolHandler(
         val maxSteps: Int?,
         val waitTimeoutMs: Long?,
         val model: String?,
-        val disableOmniFlowRecall: Boolean
+        val disableOmniFlowRecall: Boolean,
+        val allowOmniFlowFunctionAutoExecute: Boolean
     )
 
     data class VlmArgsSanitizeResult(
@@ -77,6 +78,13 @@ class VlmToolHandler(
                 "disableRecall",
                 "disable_recall"
             ) ?: false
+            val allowOmniFlowFunctionAutoExecute = firstBoolean(
+                args,
+                "allowOmniFlowFunctionAutoExecute",
+                "allow_omniflow_function_auto_execute",
+                "autoExecuteFunction",
+                "auto_execute_function"
+            ) ?: false
             val rawArgs = VlmExecutionArgs(
                 goal = goal,
                 packageName = packageName?.takeIf { it.isNotBlank() },
@@ -85,7 +93,8 @@ class VlmToolHandler(
                 maxSteps = maxSteps,
                 waitTimeoutMs = waitTimeoutMs,
                 model = model?.takeIf { it.isNotBlank() },
-                disableOmniFlowRecall = disableOmniFlowRecall
+                disableOmniFlowRecall = disableOmniFlowRecall,
+                allowOmniFlowFunctionAutoExecute = allowOmniFlowFunctionAutoExecute
             )
             val appNameToPackage = runtimeContextRepository.getAppNameToPackageMap()
             val detectedTargetPackage = detectTargetAppPackage(userMessage, appNameToPackage)
@@ -133,7 +142,8 @@ class VlmToolHandler(
                     needSummary = safeArgs.needSummary,
                     skipGoHome = safeArgs.startFromCurrent,
                     stepSkillGuidance = resolvedSkills.joinToString("\n\n") { it.stepGuidance() },
-                    disableOmniFlowRecall = safeArgs.disableOmniFlowRecall
+                    disableOmniFlowRecall = safeArgs.disableOmniFlowRecall,
+                    allowOmniFlowFunctionAutoExecute = safeArgs.allowOmniFlowFunctionAutoExecute
                 ),
                 scope = scope,
                 progressReporter = { progress, extras ->

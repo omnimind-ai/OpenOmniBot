@@ -8,8 +8,8 @@ require running AndroidWorld episodes.
 AndroidWorld M3A uses a host-side loop:
 
 1. Observe current AndroidWorld state.
-2. Build one action prompt from the user goal, short history, raw screenshot,
-   marked screenshot, and UI element list.
+2. Build one action prompt from the user goal, short history, current
+   screenshot, and UI element list.
 3. Ask the VLM for exactly one JSON action.
 4. Execute the action through AndroidWorld.
 5. Wait for screen stabilization.
@@ -40,7 +40,7 @@ OOB should keep the runtime Kotlin-native:
 OOB mirrors the M3A method through native components:
 
 - `vlm-android-gui` skill guidance supplies task policy.
-- Indexed page evidence and marked screenshot provide target grounding.
+- Indexed page evidence and the current screenshot provide target grounding.
 - `VLMToolDefinitions` forces one native tool call per turn.
 - `VLMPostActionObservation` records after-action XML/package evidence into
   the next turn history.

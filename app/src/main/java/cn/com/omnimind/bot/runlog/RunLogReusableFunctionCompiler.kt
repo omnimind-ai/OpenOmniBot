@@ -20,7 +20,9 @@ object RunLogReusableFunctionCompiler {
                     nextReplayableCard = replayableCards.getOrNull(index + 1),
                 )
             }
-        val stepsWithStart = prependInitialOpenAppStepIfNeeded(replayableCards, rawSteps)
+        val stepsWithStart = prepareInitialOpenAppStep(
+            prependInitialOpenAppStepIfNeeded(replayableCards, rawSteps)
+        )
         val steps = stepsWithStart
             .mapIndexed { index, rawStep ->
                 linkedMapOf<String, Any?>().apply {
@@ -115,6 +117,41 @@ object RunLogReusableFunctionCompiler {
             "route_note" to "injected_initial_package_from_runlog",
         )
         return listOf(openAppStep) + steps
+    }
+
+    private fun prepareInitialOpenAppStep(
+        steps: List<Map<String, Any?>>,
+    ): List<Map<String, Any?>> {
+        if (steps.isEmpty()) return steps
+        val first = steps.first()
+        val firstAction = RunLogReplayPolicy.omniflowActionForToolName(
+            firstNonBlank(
+                first["omniflow_action"],
+                first["local_action"],
+                first["tool"],
+                first["callable_tool"],
+            )
+        ) ?: RunLogReplayPolicy.normalizeToolName(
+            firstNonBlank(first["tool"], first["callable_tool"])
+        )
+        if (firstAction != "open_app") return steps
+        val args = jsonSafeMap(first["args"])
+        val packageName = firstNonBlank(args["package_name"], args["packageName"])
+        if (!isLaunchableInitialPackageCandidate(packageName)) return steps
+        val preparedFirst = linkedMapOf<String, Any?>().apply {
+            putAll(first)
+            put(
+                "args",
+                linkedMapOf<String, Any?>().apply {
+                    putAll(args)
+                    put("package_name", packageName)
+                    putIfAbsent("reset_task", true)
+                    putIfAbsent("launch_mode", "fresh_task")
+                }
+            )
+            putIfAbsent("route_note", "initial_open_app_fresh_launch")
+        }
+        return listOf(preparedFirst) + steps.drop(1)
     }
 
     private fun initialReplayPackage(

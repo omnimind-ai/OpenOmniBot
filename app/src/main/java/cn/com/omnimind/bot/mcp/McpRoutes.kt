@@ -253,6 +253,8 @@ object McpRoutes {
             "oob_function_register" -> omniflowToolkit.registerFunction(args)
             "oob_function_guard_check" -> omniflowToolkit.guardCheck(args)
             "oob_function_run" -> omniflowToolkit.runFunction(args)
+            "oob_function_delete" -> omniflowToolkit.deleteFunction(args)
+            "oob_function_clear" -> omniflowToolkit.clearFunctions(args)
             "oob_run_log_list" -> omniflowToolkit.listRunLogs(args)
             "oob_run_log_get" -> omniflowToolkit.getRunLog(args)
             "oob_run_log_convert" -> omniflowToolkit.convertRunLog(args)
@@ -612,16 +614,24 @@ object McpRoutes {
             return
         }
 
-        val args = mapOf(
-            "goal" to payload.goal,
-            "model" to payload.model,
-            "packageName" to payload.packageName,
-            "needSummary" to payload.needSummary
-        )
+        val args = legacyVlmRequestToToolArgs(payload)
 
         val result = McpToolExecutors.executeVlmTask(context, args, serverScope)
         call.respond(HttpStatusCode.OK, result)
     }
+
+    internal fun legacyVlmRequestToToolArgs(payload: VlmTaskRequest): Map<String, Any?> =
+        linkedMapOf(
+            "goal" to payload.goal,
+            "model" to payload.model,
+            "maxSteps" to payload.maxSteps,
+            "waitTimeoutMs" to payload.waitTimeoutMs,
+            "packageName" to payload.packageName,
+            "needSummary" to payload.needSummary,
+            "skipGoHome" to payload.skipGoHome,
+            "disableOmniFlowRecall" to payload.disableOmniFlowRecall,
+            "allowOmniFlowFunctionAutoExecute" to payload.allowOmniFlowFunctionAutoExecute,
+        )
 
     private suspend fun handleLegacyTaskReply(
         call: io.ktor.server.application.ApplicationCall

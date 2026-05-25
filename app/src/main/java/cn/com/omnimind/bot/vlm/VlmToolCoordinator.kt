@@ -79,6 +79,10 @@ object VlmToolCoordinator {
     private const val RECALL_OBSERVE_INTERVAL_MS = 250L
     private const val MIN_WAIT_TIMEOUT_MS = 30_000L
     private const val MAX_WAIT_TIMEOUT_MS = 600_000L
+    private const val FINAL_STATE_SETTLE_MS = 1_200L
+    private const val FINAL_STATE_OBSERVE_ATTEMPTS = 4
+    private const val FINAL_STATE_OBSERVE_INTERVAL_MS = 350L
+    internal const val FINAL_STATE_MISMATCH_ERROR_CODE = "OOB_FINAL_STATE_MISMATCH"
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -187,9 +191,9 @@ object VlmToolCoordinator {
                 )
             )
         }
-        tryExecuteRecallHit(
+        tryExecuteRecallHitIfAllowed(
+            request = request,
             taskState = taskState,
-            goal = request.goal,
             recallGuidance = recallGuidance,
             progressReporter = progressReporter,
             callFunction = { functionId, startStepIndex ->
@@ -251,7 +255,8 @@ object VlmToolCoordinator {
             taskId = taskId,
             goal = request.goal,
             progressReporter = progressReporter,
-            waitTimeoutMs = request.waitTimeoutMs
+            waitTimeoutMs = request.waitTimeoutMs,
+            targetPackageName = augmentedRequest.packageName
         )
     }
 
@@ -260,8 +265,14 @@ object VlmToolCoordinator {
         goal: String,
         progressReporter: VlmToolProgressReporter = { _, _ -> }
     ): VlmToolOutcome = withContext(Dispatchers.IO) {
-        val waitTimeoutMs = McpTaskManager.getTask(taskId)?.vlmRequest?.waitTimeoutMs
-        awaitTask(taskId, goal, progressReporter, waitTimeoutMs)
+        val request = McpTaskManager.getTask(taskId)?.vlmRequest
+        awaitTask(
+            taskId = taskId,
+            goal = goal,
+            progressReporter = progressReporter,
+            waitTimeoutMs = request?.waitTimeoutMs,
+            targetPackageName = request?.packageName,
+        )
     }
 
     suspend fun resumeAfterUnlock(
@@ -329,9 +340,9 @@ object VlmToolCoordinator {
                     taskState.executionRoute = "vlm_with_omniflow_recall:${recallGuidance.decision}"
                     taskState.markStateChanged()
                 }
-                tryExecuteRecallHit(
+                tryExecuteRecallHitIfAllowed(
+                    request = request,
                     taskState = taskState,
-                    goal = request.goal,
                     recallGuidance = recallGuidance,
                     progressReporter = progressReporter,
                     callFunction = { functionId, startStepIndex ->
@@ -383,7 +394,8 @@ object VlmToolCoordinator {
                     taskId = taskId,
                     goal = taskState.goal,
                     progressReporter = progressReporter,
-                    waitTimeoutMs = request.waitTimeoutMs
+                    waitTimeoutMs = request.waitTimeoutMs,
+                    targetPackageName = augmentedRequest.packageName
                 )
             }
             delay(McpTaskManager.POLL_INTERVAL_MS)
@@ -399,7 +411,8 @@ object VlmToolCoordinator {
         taskId: String,
         goal: String,
         progressReporter: VlmToolProgressReporter,
-        waitTimeoutMs: Long? = null
+        waitTimeoutMs: Long? = null,
+        targetPackageName: String? = null,
     ): VlmToolOutcome {
         val startWaitTime = System.currentTimeMillis()
         val resolvedWaitTimeoutMs = resolveWaitTimeoutMs(waitTimeoutMs)
@@ -473,7 +486,11 @@ object VlmToolCoordinator {
                         state.summaryUnavailable = true
                         state.markStateChanged()
                     }
-                    return state.toOutcome(VlmToolOutcomeStatus.FINISHED)
+                    return finishOutcomeAfterPostcondition(
+                        state = state,
+                        progressReporter = progressReporter,
+                        targetPackageName = targetPackageName,
+                    )
                 }
                 TaskStatus.ERROR -> {
                     return state.toOutcome(
@@ -508,12 +525,127 @@ object VlmToolCoordinator {
 
         val state = McpTaskManager.getTask(taskId)
         if (state?.status == TaskStatus.FINISHED) {
-            return state.toOutcome(VlmToolOutcomeStatus.FINISHED)
+            return finishOutcomeAfterPostcondition(
+                state = state,
+                progressReporter = progressReporter,
+                targetPackageName = targetPackageName,
+            )
         }
         return (state ?: TaskState(taskId = taskId, goal = goal, status = TaskStatus.RUNNING)).toOutcome(
             status = VlmToolOutcomeStatus.TIMEOUT,
             message = "任务在等待时间内仍未结束，仍在设备上继续执行。"
         )
+    }
+
+    private suspend fun finishOutcomeAfterPostcondition(
+        state: TaskState,
+        progressReporter: VlmToolProgressReporter,
+        targetPackageName: String?,
+    ): VlmToolOutcome {
+        val finalCheck = verifyFinalTargetPackage(targetPackageName)
+        if (finalCheck.ok) {
+            return state.toOutcome(VlmToolOutcomeStatus.FINISHED)
+        }
+        val message = finalCheck.message ?: "任务结束后未停留在目标应用。"
+        state.status = TaskStatus.ERROR
+        state.message = message
+        state.errorCode = finalCheck.errorCode
+        state.addChatMessage(
+            "[SYSTEM] Final state check failed: target=${finalCheck.targetPackageName.orEmpty()} " +
+                "observed=${finalCheck.observedPackageName.orEmpty()}"
+        )
+        state.markStateChanged()
+        emitProgress(
+            progressReporter,
+            state.taskId,
+            state.status,
+            "终态校验失败",
+            mapOf(
+                "summary" to message,
+                "errorCode" to finalCheck.errorCode,
+                "targetPackageName" to finalCheck.targetPackageName,
+                "observedPackageName" to finalCheck.observedPackageName,
+            )
+        )
+        return state.toOutcome(
+            status = VlmToolOutcomeStatus.ERROR,
+            message = message,
+            errorMessage = message,
+            errorCode = finalCheck.errorCode,
+        )
+    }
+
+    private suspend fun verifyFinalTargetPackage(targetPackageName: String?): FinalTargetPackageCheck {
+        val normalizedTarget = targetPackageName.normalizePackageName()
+            ?: return FinalTargetPackageCheck.ok(targetPackageName = null, observedPackageName = null)
+        delay(FINAL_STATE_SETTLE_MS)
+        var lastObserved: String? = null
+        repeat(FINAL_STATE_OBSERVE_ATTEMPTS) { attempt ->
+            val observed = readCurrentPackageForFinalCheck()
+            if (observed != null) lastObserved = observed
+            val check = evaluateFinalTargetPackage(
+                targetPackageName = normalizedTarget,
+                observedPackageName = observed,
+            )
+            if (check.ok) return check
+            if (attempt < FINAL_STATE_OBSERVE_ATTEMPTS - 1) {
+                delay(FINAL_STATE_OBSERVE_INTERVAL_MS)
+            }
+        }
+        return evaluateFinalTargetPackage(
+            targetPackageName = normalizedTarget,
+            observedPackageName = lastObserved,
+        )
+    }
+
+    private fun readCurrentPackageForFinalCheck(): String? =
+        runCatching { AccessibilityController.getPackageName() }
+            .getOrNull()
+            .normalizePackageName()
+
+    private fun String?.normalizePackageName(): String? =
+        this?.trim()?.takeIf { it.isNotEmpty() }
+
+    internal fun evaluateFinalTargetPackage(
+        targetPackageName: String?,
+        observedPackageName: String?,
+    ): FinalTargetPackageCheck {
+        val target = targetPackageName.normalizePackageName()
+            ?: return FinalTargetPackageCheck.ok(targetPackageName = null, observedPackageName = observedPackageName.normalizePackageName())
+        val observed = observedPackageName.normalizePackageName()
+        if (observed == target) {
+            return FinalTargetPackageCheck.ok(targetPackageName = target, observedPackageName = observed)
+        }
+        return FinalTargetPackageCheck(
+            ok = false,
+            targetPackageName = target,
+            observedPackageName = observed,
+            errorCode = FINAL_STATE_MISMATCH_ERROR_CODE,
+            message = buildString {
+                append("任务报告已完成，但当前页面不在目标应用。")
+                append(" target=")
+                append(target)
+                append(" observed=")
+                append(observed ?: "unknown")
+            }
+        )
+    }
+
+    internal data class FinalTargetPackageCheck(
+        val ok: Boolean,
+        val targetPackageName: String?,
+        val observedPackageName: String?,
+        val errorCode: String? = null,
+        val message: String? = null,
+    ) {
+        companion object {
+            fun ok(targetPackageName: String?, observedPackageName: String?): FinalTargetPackageCheck =
+                FinalTargetPackageCheck(
+                    ok = true,
+                    targetPackageName = targetPackageName,
+                    observedPackageName = observedPackageName,
+                )
+        }
     }
 
     internal fun resolveWaitTimeoutMs(requestedWaitTimeoutMs: Long?): Long {
@@ -726,6 +858,7 @@ object VlmToolCoordinator {
             targetPackageName = request.packageName,
             currentPackageName = currentPackage,
             currentXml = observation.xml,
+            allowDirectExecutionDecision = request.allowOmniFlowFunctionAutoExecute,
         )
         return guidance to observedRequest
     }
@@ -871,6 +1004,23 @@ object VlmToolCoordinator {
             )
         )
         return taskState.toOutcome(VlmToolOutcomeStatus.FINISHED)
+    }
+
+    internal suspend fun tryExecuteRecallHitIfAllowed(
+        request: VlmTaskRequest,
+        taskState: TaskState,
+        recallGuidance: VlmRecallGuidance,
+        progressReporter: VlmToolProgressReporter,
+        callFunction: suspend (String, Int) -> Map<String, Any?>,
+    ): VlmToolOutcome? {
+        if (!request.allowOmniFlowFunctionAutoExecute) return null
+        return tryExecuteRecallHit(
+            taskState = taskState,
+            goal = request.goal,
+            recallGuidance = recallGuidance,
+            progressReporter = progressReporter,
+            callFunction = callFunction,
+        )
     }
 
     private fun recallFallbackReason(result: Map<String, Any?>): String =

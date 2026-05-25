@@ -1,7 +1,7 @@
 # OOB Online/Offline Shared Memory
 
 Status: Living implementation note
-Last Updated: 2026-05-25
+Last Updated: 2026-05-26
 
 This document is the shared memory for OOB's native OmniFlow layer, online VLM
 agent, offline replay path, RunLog conversion, UDEG recall, and prompt assembly.
@@ -24,7 +24,8 @@ Online VLM entry and coordination:
 - `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/VlmToolHandler.kt`
   - parses `vlm_task`, checks permissions, injects resolved skills.
 - `app/src/main/java/cn/com/omnimind/bot/vlm/VlmToolCoordinator.kt`
-  - owns task lifecycle, recall guidance, direct Function hit, and task start.
+  - owns task lifecycle, recall guidance, optional explicit Function replay, and
+    task start.
 - `app/src/main/java/cn/com/omnimind/bot/vlm/VlmRecallGuidanceBuilder.kt`
   - converts OmniFlow recall payload into VLM `stepSkillGuidance`.
 - `assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/VLMOperationTask.kt`
@@ -71,8 +72,14 @@ UI and tests:
 - UDEG recall starts from page match. After a node is hit, the decision context
   is the node skill and its attached Function/segment capabilities. It must not
   globally scan every Function as the primary decision path.
-- Direct replay is allowed only when recall returns a direct no-argument
-  Function hit or no-argument segment hit.
+- Default online recall is context-only. Recalled Functions are optional
+  candidates for VLM/agent decision, not automatic execution.
+- Direct replay is allowed only when the caller explicitly sets
+  `allowOmniFlowFunctionAutoExecute=true` or explicitly calls `oob_function_run`
+  / `call_tool(function_id=...)`, and the selected Function/segment passes guard.
+- Agent conversations expose `oob_function_list/get/register/guard_check/run/delete/clear`
+  directly through the workbench tool handler. These are explicit management and
+  execution tools; their presence does not change default context-only recall.
 - Reusable Function execution that needs click/scroll/input requires OOB
   accessibility backend readiness. If not ready, replay returns
   `OOB_ACCESSIBILITY_REQUIRED`.
@@ -114,7 +121,10 @@ automation permission error code.
 3. Calls `buildRecallGuidanceAfterOptionalPrelaunch(...)`.
 4. Appends recall guidance to `stepSkillGuidance` through
    `VlmTaskRequest.withRecallGuidance(...)`.
-5. If recall returns a direct hit, calls
+5. Calls `tryExecuteRecallHitIfAllowed(...)`. By default this returns null
+   because `allowOmniFlowFunctionAutoExecute=false`.
+6. Only when the request explicitly allows Function auto-execution and recall
+   returned a strict direct no-argument hit, calls
    `OobOmniFlowToolkitService.callFunction(...)` with:
 
 ```kotlin
@@ -126,9 +136,10 @@ mapOf(
 )
 ```
 
-6. If the direct replay succeeds without fallback, the task is marked
+7. If the explicit direct replay succeeds without fallback, the task is marked
    `FINISHED` and no live VLM loop runs.
-7. If the direct replay fails or there is no direct hit, starts the native VLM
+8. If explicit direct replay is not allowed, fails, or there is no strict direct
+   hit, starts the native VLM
    task through `AssistsUtil.Core.createVLMOperationTask(...)`.
 
 `buildRecallGuidanceAfterOptionalPrelaunch(...)` optionally launches the target
@@ -199,8 +210,13 @@ operationDescription = goal
 4. Apply `VLMFirstStepOptimizer.enrichContext(...)`.
 5. Apply registered page context provider:
    `VLMPageContextProviderRegistry.enrich(...)`.
-6. Apply `VLMIndexedPageContext.enrich(...)`.
-7. Render marked screenshot with index overlays.
+6. Apply `VLMIndexedPageContext.enrich(...)` to append compact
+   Accessibility-tree/indexed UI state.
+7. Use one current screenshot by default. Marked screenshots are opt-in
+   fallback evidence and are not generated for the default online request.
+   If the model response needs a same-screen tool-call protocol correction and
+   indexed Accessibility evidence is available, the retry request can omit the
+   unchanged screenshot and use text evidence only.
 8. Build request through `VLMClient.buildUIOperationRequest(...)`.
 9. Stream one VLM turn through `streamClient.streamTurn(...)`.
 10. Aggregate token usage from streamed response usage chunks.
@@ -294,8 +310,9 @@ The default Chinese system prompt requires:
 - Do not put action args, tool name, Markdown, or explanations in content.
 - Use `finished` only when truly complete; `info` for user/manual help; `abort`
   when impossible.
-- Follow M3A-style one-change loop: use raw screenshot, marked screenshot,
-  indexed evidence, previous tool result, and post-action feedback.
+- Follow M3A/Mobilerun-style one-change loop: use the current screenshot,
+  Accessibility-tree/indexed evidence, previous tool result, and post-action
+  feedback.
 - Do not emit wait/idle/no-op actions.
 - Coordinates are normalized 0-1000 scalars.
 - `click`/`long_press` use only `x/y`; `scroll` uses only
@@ -310,7 +327,8 @@ The default Chinese system prompt requires:
 `PromptTemplate.buildTurnUserPrompt(context, sceneId)` renders one text block
 in this order:
 
-1. Intro: current dynamic context plus screenshot should determine next action.
+1. Intro: current dynamic context plus screenshot and Accessibility-tree /
+   indexed page evidence should determine next action.
 2. `Scene: <sceneId>`
 3. `Current time: <TimeUtil.getCurrentTimeString()>`
 4. `User task: <context.overallTask>`
@@ -348,15 +366,20 @@ text, not as hidden state.
 whose `content` is a JSON array:
 
 1. `{ "type": "text", "text": currentUserText }`
-2. If raw screenshot exists:
-   - text item: `Raw screenshot.`
+2. If screenshot exists:
+   - text item: `Current screenshot.`
    - image item: screenshot base64
-3. If marked screenshot exists:
+3. If marked screenshot fallback is explicitly enabled:
    - text item:
      `Marked screenshot with indexes matching OOB indexed page evidence.`
    - image item: marked screenshot base64
 
-Raw screenshot is therefore always before marked screenshot.
+The default policy is screenshot + Accessibility-tree text, so normal VLM
+requests contain one image, not raw + marked double images.
+For same-screen protocol correction retries, `VLMOperationService` passes
+`screenshot = null` when indexed Accessibility evidence is already present; the
+retry request still includes the current page text plus the correction prompt,
+but does not resend unchanged screenshot bytes.
 
 ### History Messages
 
@@ -422,6 +445,7 @@ It sanitizes the payload for the agent and renders guidance starting with:
 OmniFlow UDEG node skill-like decision context:
 path=page match -> UDEG node -> node skill-like decision context -> VLM/tool decision
 decision=<decision>
+function_execution_policy=optional_candidates_only; do_not_auto_execute=true; require_explicit_agent_selection=true; live_vlm_uses_native_screen_tools_only=true
 ```
 
 Then it may include:
@@ -433,6 +457,10 @@ Then it may include:
 - capability candidates
 - segment candidates with `function_id`, page similarity, start step index,
   remaining step count, matched boundary, and remaining step summaries
+
+In context-only mode these are not native VLM tools. The live VLM loop can use
+them to choose grounded screen actions (`click`, `scroll`, `input_text`, etc.).
+Direct replay requires a separate explicit Function run path.
 
 `VlmTaskRequest.withRecallGuidance(...)` appends this rendered block to existing
 `stepSkillGuidance` using two newlines.
@@ -484,7 +512,7 @@ UDEG page node and injects a compact page-match context into
 evidence to the prompt. The rendered block starts with:
 
 ```text
-OOB indexed page evidence (live Accessibility XML; coordinates are 0-1000 normalized and match the marked screenshot indexes):
+OOB Accessibility tree / indexed page evidence (live Accessibility XML; coordinates are 0-1000 normalized):
 ```
 
 It lists visible/actionable elements as `#<index>` plus role, label, bounds,
@@ -722,19 +750,27 @@ The recall flow:
 7. Rank node-attached Functions by page match plus goal text match.
 8. Match segments from recalled Functions and node segment boundaries.
 9. Choose decision:
-   - `hit` for direct no-argument strong Function hit
-   - `segment_hit` for no-argument strong segment hit
+   - `hit` for explicit direct no-argument strong Function hit only when the
+     caller requested direct execution mode
+   - `segment_hit` for explicit no-argument strong segment hit only when the
+     caller requested direct execution mode
    - `segment_recall` when segment candidates exist
    - `recall` when node candidates exist
    - `miss` otherwise
-10. Return agent-safe candidates plus `timing`.
+10. Return `payload_mode = agent_compact` by default. The compact payload keeps
+    decision policy, node id/package, candidates, segment candidates, compact
+    step summaries, and Function call hints. It intentionally omits raw timing,
+    full node skill body, page vectors, and skill artifacts.
+11. If `include_debug=true`, return `payload_mode = debug_full` with the full
+    internal payload, including `timing`, `node_skill`, `skill_artifact`, and
+    page-vector metadata. Use this only in tests and diagnostics.
 
 Current thresholds/weights:
 
 - UDEG minimum page match: `0.30`
 - UDEG strong page match: `0.87`
 - recall minimum text score: `0.30`
-- direct hit text score: `0.97`
+- direct hit text/page/combined score: `0.999`
 - page match weight: `0.70`
 - goal match weight: `0.30`
 
@@ -844,9 +880,16 @@ There are three integration points:
 1. Online VLM writes RunLog cards while executing.
 2. Offline convert turns a successful RunLog into a reusable Function and
    attaches it to UDEG nodes.
-3. Later online VLM calls recall from the current page; recall either:
-   - injects node-skill/Function/segment context into the prompt, or
-   - directly executes a no-argument strong hit before VLM loop starts.
+3. Later online VLM calls recall from the current page. Default recall injects
+   node-skill/Function/segment context into the prompt. A no-argument strong hit
+   is replayed before the VLM loop only on explicit auto-execution requests; a
+   user/agent can also run a selected Function through `oob_function_run` or
+   `call_tool(function_id=...)`.
+4. In an agent conversation, Function management uses the native workbench
+   route: `oob_function_register` writes the Function store and UDEG references,
+   `oob_function_list/get` inspect candidates, `oob_function_guard_check`
+   preflights replay, and `oob_function_delete/clear` remove Function and UDEG
+   references.
 
 This is why the online system must keep collecting high-quality `before` and
 `after` XML/package context. Replay and segment recall depend on those fields.

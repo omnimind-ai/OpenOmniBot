@@ -40,6 +40,9 @@ class OobOmniFlowToolkitService(
         val timing = RecallTiming()
         val request = timing.measure("parse_request_ms") { args ?: emptyMap() }
         val goal = firstNonBlank(request["goal"], request["query"], request["task"])
+        val includeDebug = boolArg(request["include_debug"]) ||
+            boolArg(request["includeDebug"]) ||
+            boolArg(request["debug"])
         val currentPackage = timing.measure("read_current_package_ms") {
             firstNonBlank(
                 request["current_package"],
@@ -73,7 +76,7 @@ class OobOmniFlowToolkitService(
             }
         }
         if (currentXml.isBlank()) {
-            return linkedMapOf<String, Any?>(
+            val payload = linkedMapOf<String, Any?>(
                 "success" to true,
                 "decision" to "miss",
                 "decision_path" to OobUdegNodeStore.UDEG_DECISION_PATH,
@@ -98,6 +101,7 @@ class OobOmniFlowToolkitService(
                 ),
                 "source" to "oob_native_udeg_page_match",
             )
+            return compactRecallPayload(payload, includeDebug)
         }
 
         val nodeStore = OobUdegNodeStore(context)
@@ -145,13 +149,15 @@ class OobOmniFlowToolkitService(
             )
         }
         val segmentCandidates = segmentMatches.matches.map { it.toMap() }
-        val segmentHit = segmentMatches.matches.firstOrNull {
-            it.pageScore >= OobUdegNodeStore.STRONG_PAGE_MATCH_SCORE.toDouble() &&
-                it.textScore >= MIN_RECALL_SCORE &&
+        val segmentHit = segmentMatches.matches.takeIf { it.size == 1 }?.firstOrNull {
+            it.score >= DIRECT_HIT_SCORE &&
+                it.pageScore >= DIRECT_HIT_SCORE &&
+                it.textScore >= DIRECT_HIT_SCORE &&
                 it.noArgumentFunction
         }.takeIf { allowDirectExecutionDecision }
-        val directHit = ranked.firstOrNull {
-            it.pageScore >= OobUdegNodeStore.STRONG_PAGE_MATCH_SCORE.toDouble() &&
+        val directHit = ranked.takeIf { it.size == 1 }?.firstOrNull {
+            it.score >= DIRECT_HIT_SCORE &&
+                it.pageScore >= DIRECT_HIT_SCORE &&
                 it.textScore >= DIRECT_HIT_SCORE &&
                 isNoArgumentFunction(it.spec)
         }.takeIf { allowDirectExecutionDecision }
@@ -163,7 +169,7 @@ class OobOmniFlowToolkitService(
             else -> "miss"
         }
 
-        return linkedMapOf<String, Any?>(
+        val payload = linkedMapOf<String, Any?>(
             "success" to true,
             "decision" to decision,
             "decision_path" to OobUdegNodeStore.UDEG_DECISION_PATH,
@@ -175,6 +181,7 @@ class OobOmniFlowToolkitService(
                     "reason" to it.reason,
                     "text_score" to roundScore(it.textScore),
                     "page_similarity" to roundScore(it.pageScore),
+                    "strict_direct_hit" to true,
                     "udeg_node" to it.node,
                     "node_skill_context" to it.node["node_skill_context"],
                     "step_summaries" to stepSummaries(it.spec)
@@ -196,6 +203,9 @@ class OobOmniFlowToolkitService(
                 "mode" to if (allowDirectExecutionDecision) "direct_execution_allowed" else "node_skill_context_only",
                 "requires_vlm_or_tool_decision" to !allowDirectExecutionDecision,
                 "direct_hit_requested" to allowDirectExecutionDecision,
+                "direct_hit_min_score" to DIRECT_HIT_SCORE,
+                "direct_hit_requires_single_candidate" to true,
+                "direct_hit_requires_no_arguments" to true,
             ),
             "count" to candidates.size,
             "segment_count" to segmentCandidates.size,
@@ -229,6 +239,7 @@ class OobOmniFlowToolkitService(
             ),
             "source" to "oob_native_udeg_page_match"
         )
+        return compactRecallPayload(payload, includeDebug)
     }
 
     suspend fun callFunction(args: Map<String, Any?>?): Map<String, Any?> {
@@ -500,6 +511,25 @@ class OobOmniFlowToolkitService(
             message = "OOB reusable function not found: $functionId",
             functionId = functionId
         )
+    }
+
+    fun deleteFunction(args: Map<String, Any?>?): Map<String, Any?> {
+        val functionId = firstNonBlank(args?.get("functionId"), args?.get("function_id"))
+        return replayService.deleteFunction(functionId)
+    }
+
+    fun clearFunctions(args: Map<String, Any?>?): Map<String, Any?> {
+        val request = args ?: emptyMap()
+        val confirmed = boolArg(request["confirm"]) ||
+            boolArg(request["confirmed"]) ||
+            firstNonBlank(request["action"]).equals("clear_all", ignoreCase = true)
+        if (!confirmed) {
+            return errorPayload(
+                code = "OOB_FUNCTION_CLEAR_CONFIRMATION_REQUIRED",
+                message = "Set confirm=true to clear all registered OOB Functions"
+            )
+        }
+        return replayService.clearFunctions()
     }
 
     fun registerFunction(args: Map<String, Any?>?): Map<String, Any?> {
@@ -1147,6 +1177,11 @@ class OobOmniFlowToolkitService(
             "score" to roundScore(score),
             "text_score" to roundScore(textScore),
             "page_similarity" to roundScore(pageScore),
+            "strict_direct_hit" to (
+                score >= DIRECT_HIT_SCORE &&
+                    pageScore >= DIRECT_HIT_SCORE &&
+                    textScore >= DIRECT_HIT_SCORE
+                ),
             "reason" to reason,
             "node_id" to firstNonBlank(node["node_id"]),
             "udeg_node" to node.takeIf { it.isNotEmpty() },
@@ -1350,6 +1385,182 @@ class OobOmniFlowToolkitService(
         )
     }
 
+    private fun compactRecallPayload(
+        payload: Map<String, Any?>,
+        includeDebug: Boolean,
+    ): Map<String, Any?> {
+        if (includeDebug) {
+            return linkedMapOf<String, Any?>().apply {
+                putAll(payload)
+                put("payload_mode", "debug_full")
+            }
+        }
+        return linkedMapOf<String, Any?>().apply {
+            put("success", payload["success"])
+            put("decision", payload["decision"])
+            put("decision_path", payload["decision_path"])
+            put("hit", compactRecallCandidate(payload["hit"]))
+            put("segment_hit", compactRecallCandidate(payload["segment_hit"]))
+            put(
+                "candidates",
+                listArg(payload["candidates"]).mapNotNull { compactRecallCandidate(it) }
+            )
+            put(
+                "segment_candidates",
+                listArg(payload["segment_candidates"]).mapNotNull { compactRecallCandidate(it) }
+            )
+            put(
+                "capability_candidates",
+                listArg(payload["capability_candidates"]).mapNotNull { compactRecallCandidate(it) }
+            )
+            put(
+                "node_capabilities",
+                listArg(payload["node_capabilities"]).mapNotNull { compactRecallCandidate(it) }
+            )
+            put(
+                "node_function_capabilities",
+                listArg(payload["node_function_capabilities"]).mapNotNull { compactRecallCandidate(it) }
+            )
+            put(
+                "node_segment_capabilities",
+                listArg(payload["node_segment_capabilities"]).mapNotNull { compactRecallCandidate(it) }
+            )
+            put(
+                "node_candidates",
+                listArg(payload["node_candidates"]).mapNotNull { compactRecallNode(it) }
+            )
+            put("current_node", compactRecallNode(payload["current_node"]))
+            put("node_skill_context", compactNodeSkillContext(payload["node_skill_context"]))
+            put("decision_context", compactDecisionContext(payload["decision_context"]))
+            put("decision_policy", payload["decision_policy"])
+            put("count", payload["count"])
+            put("segment_count", payload["segment_count"])
+            put("reason", payload["reason"])
+            put("current_package", payload["current_package"])
+            put("current_node_id", payload["current_node_id"])
+            put("source", payload["source"])
+            put("payload_mode", "agent_compact")
+            put("debug_available", true)
+        }.filterValues { it != null }
+    }
+
+    private fun compactRecallCandidate(value: Any?): Map<String, Any?>? {
+        val candidate = mapArg(value).takeIf { it.isNotEmpty() } ?: return null
+        return linkedMapOf<String, Any?>(
+            "capability_type" to candidate["capability_type"],
+            "function_id" to candidate["function_id"],
+            "description" to candidate["description"],
+            "name" to candidate["name"],
+            "inputSchema" to candidate["inputSchema"],
+            "score" to candidate["score"],
+            "text_score" to candidate["text_score"],
+            "page_similarity" to candidate["page_similarity"],
+            "strict_direct_hit" to candidate["strict_direct_hit"],
+            "reason" to candidate["reason"],
+            "node_id" to firstNonBlank(
+                candidate["node_id"],
+                mapArg(candidate["udeg_node"])["node_id"],
+            ).takeIf { it.isNotBlank() },
+            "node_skill_context" to compactNodeSkillContext(candidate["node_skill_context"]),
+            "recall_scope" to candidate["recall_scope"],
+            "matched_boundary" to candidate["matched_boundary"],
+            "matched_step_index" to candidate["matched_step_index"],
+            "start_step_index" to candidate["start_step_index"],
+            "remaining_step_count" to candidate["remaining_step_count"],
+            "requires_arguments" to candidate["requires_arguments"],
+            "execution_scope" to candidate["execution_scope"],
+            "call" to candidate["call"],
+            "step_count" to candidate["step_count"],
+            "requires_agent_fallback" to candidate["requires_agent_fallback"],
+            "step_summaries" to listArg(candidate["step_summaries"]).mapNotNull {
+                compactStepSummary(it)
+            },
+            "function_kind" to candidate["function_kind"],
+            "asset_state" to candidate["asset_state"],
+            "source" to candidate["source"],
+        ).filterValues { it != null }
+    }
+
+    private fun compactRecallNode(value: Any?): Map<String, Any?>? {
+        val node = mapArg(value).takeIf { it.isNotEmpty() } ?: return null
+        return linkedMapOf<String, Any?>(
+            "node_id" to node["node_id"],
+            "package_name" to node["package_name"],
+            "page_similarity" to node["page_similarity"],
+            "reason" to node["reason"],
+            "decision_context" to compactDecisionContext(node["decision_context"]),
+            "node_skill_context" to compactNodeSkillContext(node["node_skill_context"]),
+            "function_ids" to listArg(node["function_ids"]).mapNotNull {
+                it?.toString()?.trim()?.takeIf(String::isNotEmpty)
+            },
+            "segment_count" to node["segment_count"],
+            "source" to node["source"],
+        ).filterValues { it != null }
+    }
+
+    private fun compactNodeSkillContext(value: Any?): Map<String, Any?>? {
+        val context = mapArg(value).takeIf { it.isNotEmpty() } ?: return null
+        val pageMatch = mapArg(context["page_match"])
+        val udegNode = mapArg(context["udeg_node"])
+        return linkedMapOf<String, Any?>(
+            "schema_version" to context["schema_version"],
+            "role" to context["role"],
+            "context_kind" to context["context_kind"],
+            "decision_path" to context["decision_path"],
+            "entry_policy" to context["entry_policy"],
+            "page_match" to linkedMapOf(
+                "node_id" to pageMatch["node_id"],
+                "page_similarity" to pageMatch["page_similarity"],
+                "reason" to pageMatch["reason"],
+            ).filterValues { it != null }.takeIf { it.isNotEmpty() },
+            "udeg_node" to linkedMapOf(
+                "node_id" to udegNode["node_id"],
+                "package_name" to udegNode["package_name"],
+                "activity_name" to udegNode["activity_name"],
+            ).filterValues { it != null }.takeIf { it.isNotEmpty() },
+            "decision_context" to compactDecisionContext(context["decision_context"]),
+            "attached_function_count" to listArg(context["attached_functions"]).size,
+            "attached_segment_count" to listArg(context["attached_segments"]).size,
+        ).filterValues { it != null }
+    }
+
+    private fun compactDecisionContext(value: Any?): Map<String, Any?>? {
+        val context = mapArg(value).takeIf { it.isNotEmpty() } ?: return null
+        return linkedMapOf<String, Any?>(
+            "schema_version" to context["schema_version"],
+            "role" to context["role"],
+            "entry_policy" to context["entry_policy"],
+            "skill_id" to context["skill_id"],
+            "decision_path" to context["decision_path"],
+            "function_count" to context["function_count"],
+            "segment_count" to context["segment_count"],
+            "page_analysis" to compactPageAnalysis(context["page_analysis"]),
+        ).filterValues { it != null }
+    }
+
+    private fun compactPageAnalysis(value: Any?): Map<String, Any?>? {
+        val analysis = mapArg(value).takeIf { it.isNotEmpty() } ?: return null
+        return linkedMapOf<String, Any?>(
+            "package_name" to analysis["package_name"],
+            "activity_name" to analysis["activity_name"],
+            "page_title" to analysis["page_title"],
+            "summary" to analysis["summary"],
+            "visible_text" to listArg(analysis["visible_text"]).take(8),
+            "primary_actions" to listArg(analysis["primary_actions"]).take(8),
+        ).filterValues { it != null }
+    }
+
+    private fun compactStepSummary(value: Any?): Map<String, Any?>? {
+        val step = mapArg(value).takeIf { it.isNotEmpty() } ?: return null
+        return linkedMapOf<String, Any?>(
+            "index" to step["index"],
+            "id" to step["id"],
+            "title" to step["title"],
+            "kind" to step["kind"],
+            "tool" to step["tool"],
+        ).filterValues { it != null }
+    }
+
     private fun SegmentMatch.toMap(): Map<String, Any?> =
         linkedMapOf(
             "capability_type" to "function_segment",
@@ -1361,6 +1572,11 @@ class OobOmniFlowToolkitService(
             "reason" to reason,
             "text_score" to roundScore(textScore),
             "page_similarity" to roundScore(pageScore),
+            "strict_direct_hit" to (
+                score >= DIRECT_HIT_SCORE &&
+                    pageScore >= DIRECT_HIT_SCORE &&
+                    textScore >= DIRECT_HIT_SCORE
+                ),
             "udeg_node" to node.takeIf { it.isNotEmpty() },
             "node_skill_context" to node["node_skill_context"],
             "recall_scope" to recallScope,
@@ -1977,7 +2193,7 @@ class OobOmniFlowToolkitService(
 
     companion object {
         private const val MIN_RECALL_SCORE = 0.30
-        private const val DIRECT_HIT_SCORE = 0.97
+        private const val DIRECT_HIT_SCORE = 0.999
         private const val PAGE_MATCH_WEIGHT = 0.70
         private const val GOAL_MATCH_WEIGHT = 0.30
         private const val SEGMENT_PACKAGE_MISMATCH_MULTIPLIER = 0.82f

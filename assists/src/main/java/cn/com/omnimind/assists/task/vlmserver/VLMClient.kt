@@ -40,27 +40,29 @@ class VLMClient(
         markedScreenshot: String? = null,
         conversationState: VLMConversationState,
         model: String = "scene.vlm.operation.primary",
-        retryState: VLMToolCallRetryState? = null
+        retryState: VLMToolCallRetryState? = null,
+        includeMarkedScreenshot: Boolean = false
     ): VLMRequestEnvelope {
         val sceneId = resolveVlmSceneId(model)
         val modelOverride = resolveVlmModelOverride(model)
         val systemPrompt = systemPromptBuilder(sceneId)
         val currentUserText = turnPromptBuilder(context, sceneId)
         val historyMessages = conversationState.historyMessages()
+        val effectiveMarkedScreenshot = markedScreenshot.takeIf { includeMarkedScreenshot }
         val messages = buildMessages(
             systemPrompt = systemPrompt,
             historyMessages = historyMessages,
             currentUserText = currentUserText,
             screenshot = screenshot,
-            markedScreenshot = markedScreenshot,
+            markedScreenshot = effectiveMarkedScreenshot,
             context = context,
             retryState = retryState
         )
-        val imageCount = listOf(screenshot, markedScreenshot).count { !it.isNullOrBlank() }
+        val imageCount = listOf(screenshot, effectiveMarkedScreenshot).count { !it.isNullOrBlank() }
 
         OmniLog.i(
             TAG,
-            "buildUIOperationRequest scene=$model historyRounds=${conversationState.roundCount()} historyMessages=${historyMessages.size} totalMessages=${messages.size} currentImages=$imageCount retry=${retryState?.retryIndex ?: 0}"
+            "buildUIOperationRequest scene=$model historyRounds=${conversationState.roundCount()} historyMessages=${historyMessages.size} totalMessages=${messages.size} currentImages=$imageCount visualPolicy=screenshot+a11_tree marked=${includeMarkedScreenshot && !markedScreenshot.isNullOrBlank()} retry=${retryState?.retryIndex ?: 0}"
         )
 
         return VLMRequestEnvelope(
@@ -68,7 +70,7 @@ class VLMClient(
                 model = sceneId,
                 modelOverride = modelOverride,
                 messages = messages,
-                maxCompletionTokens = 2048,
+                maxCompletionTokens = 1024,
                 temperature = 0.2,
                 stream = true,
                 streamOptions = ChatCompletionStreamOptions(includeUsage = true),
@@ -173,7 +175,7 @@ class VLMClient(
         return VLMConversationRound(
             userMessage = ChatCompletionMessage(
                 role = "user",
-                content = JsonPrimitive(currentUserText)
+                content = JsonPrimitive(buildCompactHistoryUserMessage(currentUserText, executedStep))
             ),
             assistantMessage = assistantMessage,
             toolMessage = ChatCompletionMessage(
@@ -182,6 +184,47 @@ class VLMClient(
                 toolCallId = toolCallId.ifBlank { null }
             )
         )
+    }
+
+    internal fun buildCompactHistoryUserMessage(currentUserText: String, executedStep: UIStep): String {
+        val actionSummary = when (val action = executedStep.action) {
+            is ClickAction -> "click ${action.targetDescription} @(${action.x},${action.y})"
+            is InputTextAction -> "input_text ${action.targetDescription} @(${action.x},${action.y})"
+            is TypeAction -> "type ${action.content.take(MAX_HISTORY_ACTION_CHARS)}"
+            is ScrollAction -> "scroll ${action.targetDescription} ${action.direction.orEmpty()} @(${action.x1},${action.y1})->(${action.x2},${action.y2})"
+            is LongPressAction -> "long_press ${action.targetDescription} @(${action.x},${action.y})"
+            is OpenAppAction -> "open_app ${action.packageName}"
+            is PressHomeAction -> "press_home"
+            is PressBackAction -> "press_back"
+            is FinishedAction -> "finished"
+            is RequireUserChoiceAction -> "require_user_choice"
+            is RequireUserConfirmationAction -> "require_user_confirmation"
+            is InfoAction -> "info"
+            is FeedbackAction -> "feedback"
+            is AbortAction -> "abort"
+            is HotKeyAction -> "hot_key ${action.key}"
+            is WaitAction -> "wait"
+            is RecordAction -> "record"
+        }.take(MAX_HISTORY_ACTION_CHARS)
+        val pageResult = VLMPostActionObservation.summarize(executedStep)?.summaryText
+            ?.take(MAX_HISTORY_OBSERVATION_CHARS)
+        return buildString {
+            append("Previous turn compact context. ")
+            append("Do not use this as current page evidence; use the latest user message and screenshot for grounding. ")
+            append("Prior action: ")
+            append(actionSummary)
+            executedStep.result?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                append(". Result: ")
+                append(it.take(MAX_HISTORY_RESULT_CHARS))
+            }
+            pageResult?.takeIf { it.isNotBlank() }?.let {
+                append(". Post-action observation: ")
+                append(it)
+            }
+            if (currentUserText.contains("用户任务") || currentUserText.contains("User task")) {
+                append(". The full previous prompt was intentionally compacted to control tokens.")
+            }
+        }
     }
 
     private fun parseToolActionResponse(response: SceneChatCompletionTurn): VLMResult {
@@ -321,7 +364,7 @@ class VLMClient(
                     add(
                         buildJsonObject {
                             put("type", JsonPrimitive("text"))
-                            put("text", JsonPrimitive("Raw screenshot."))
+                            put("text", JsonPrimitive("Current screenshot."))
                         }
                     )
                     add(buildImageContent(screenshot))
@@ -692,6 +735,9 @@ class VLMClient(
 
     private companion object {
         private const val TAG = "VLMClient"
+        private const val MAX_HISTORY_ACTION_CHARS = 160
+        private const val MAX_HISTORY_RESULT_CHARS = 220
+        private const val MAX_HISTORY_OBSERVATION_CHARS = 360
         private val TOOL_CALL_TAG_REGEX = Regex("""(?is)<tool_call>\s*(.*?)\s*</tool_call>""")
         private val ARG_PAIR_REGEX = Regex(
             """(?is)<arg_key>\s*([^<]+?)\s*</arg_key>\s*<arg_value>\s*(.*?)\s*(?=</arg_value>|</tool_call>|```|$)(?:</arg_value>)?"""

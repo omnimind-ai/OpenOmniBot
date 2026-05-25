@@ -77,7 +77,12 @@ WORKFLOW:
                 ),
                 "disableOmniFlowRecall" to mapOf(
                     "type" to "boolean",
-                    "description" to "Optional validation/debug flag: set true to force a fresh online VLM run instead of executing a recalled OmniFlow Function. Default false."
+                    "description" to "Optional validation/debug flag: set true to force a fresh online VLM run without OmniFlow recall context. Default false."
+                ),
+                "allowOmniFlowFunctionAutoExecute" to mapOf(
+                    "type" to "boolean",
+                    "default" to false,
+                    "description" to "Optional advanced flag. Default false: recalled Functions are only provided as choices/context for the live VLM agent. Set true only when the caller explicitly wants a strict direct Function hit to run before VLM."
                 )
             ),
             "required" to listOf("goal")
@@ -313,7 +318,12 @@ BEHAVIOR:
                 "current_package" to mapOf("type" to "string", "description" to "Optional foreground Android package for scope matching."),
                 "current_node_id" to mapOf("type" to "string", "description" to "Optional current page/node id for future OmniFlow compatibility."),
                 "current_xml" to mapOf("type" to "string", "description" to "Optional live accessibility XML. When omitted, OOB captures the foreground page and page-matches it to a UDEG node."),
-                "k" to mapOf("type" to "integer", "description" to "Maximum candidates to return. Default 8.")
+                "k" to mapOf("type" to "integer", "description" to "Maximum candidates to return. Default 8."),
+                "include_debug" to mapOf(
+                    "type" to "boolean",
+                    "default" to false,
+                    "description" to "Default false returns an agent-compact payload without timing, full node skill body, page vectors, or artifacts. Set true only for tests/debugging."
+                )
             ),
             "required" to listOf("goal")
         )
@@ -433,6 +443,31 @@ BEHAVIOR:
         )
     )
 
+    val oobFunctionDeleteTool = mapOf(
+        "name" to "oob_function_delete",
+        "description" to "Delete one registered OOB reusable Function from Workspace, local registry, and UDEG node references.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "functionId" to mapOf("type" to "string", "description" to "Function id to delete."),
+                "function_id" to mapOf("type" to "string", "description" to "Snake-case alias for functionId.")
+            ),
+            "required" to listOf("functionId")
+        )
+    )
+
+    val oobFunctionClearTool = mapOf(
+        "name" to "oob_function_clear",
+        "description" to "Clear all registered OOB reusable Functions and detach all Function references from UDEG node skills. Requires confirm=true.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "confirm" to mapOf("type" to "boolean", "description" to "Must be true to clear all Functions.")
+            ),
+            "required" to listOf("confirm")
+        )
+    )
+
     val oobRunLogListTool = mapOf(
         "name" to "oob_run_log_list",
         "description" to "List recent OOB internal RunLogs that can be inspected or converted to Functions.",
@@ -548,6 +583,8 @@ This is the MCP control entry for Project creation. It writes the normal Workben
             oobFunctionRegisterTool,
             oobFunctionGuardCheckTool,
             oobFunctionRunTool,
+            oobFunctionDeleteTool,
+            oobFunctionClearTool,
             oobRunLogListTool,
             oobRunLogGetTool,
             oobRunLogConvertTool,

@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.mcp
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -22,6 +23,8 @@ class McpToolDefinitionsTest {
         assertTrue(names.contains("oob_function_register"))
         assertTrue(names.contains("oob_function_guard_check"))
         assertTrue(names.contains("oob_function_run"))
+        assertTrue(names.contains("oob_function_delete"))
+        assertTrue(names.contains("oob_function_clear"))
         assertTrue(names.contains("oob_run_log_list"))
         assertTrue(names.contains("oob_run_log_get"))
         assertTrue(names.contains("oob_run_log_convert"))
@@ -78,6 +81,9 @@ class McpToolDefinitionsTest {
         assertTrue(properties.containsKey("current_node_id"))
         assertTrue(properties.containsKey("current_xml"))
         assertTrue(properties.containsKey("k"))
+        assertTrue(properties.containsKey("include_debug"))
+        val includeDebug = properties["include_debug"] as Map<*, *>
+        assertEquals(false, includeDebug["default"])
     }
 
     @Test
@@ -94,5 +100,8 @@ class McpToolDefinitionsTest {
         assertTrue(properties.containsKey("maxSteps"))
         assertTrue(properties.containsKey("startFromCurrent"))
         assertTrue(properties.containsKey("needSummary"))
+        assertTrue(properties.containsKey("allowOmniFlowFunctionAutoExecute"))
+        val autoExecute = properties["allowOmniFlowFunctionAutoExecute"] as Map<*, *>
+        assertEquals(false, autoExecute["default"])
     }
 }
